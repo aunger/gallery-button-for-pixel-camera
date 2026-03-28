@@ -9,7 +9,6 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
-import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
@@ -313,20 +312,27 @@ class SecureViewerActivity : ComponentActivity() {
                 val uri = Uri.parse(item.uri)
                 if (item.isVideo) {
                     // SF-09: Show video thumbnail with play overlay
-                    val thumbnail = contentResolver.loadThumbnail(uri, android.util.Size(1024, 1024), null)
-                    imageView.setImageBitmap(thumbnail)
-                    // TODO: Add play button overlay
+                    val bitmap = loadBitmap(uri)
+                    imageView.setImageBitmap(bitmap)
                     imageView.setOnClickListener {
                         Toast.makeText(this@SecureViewerActivity, R.string.viewer_unlock_to_play, Toast.LENGTH_SHORT).show()
                     }
                 } else {
-                    // SF-08: Load image (basic implementation; SubsamplingScaleImageView for production)
-                    val bitmap = contentResolver.loadThumbnail(uri, android.util.Size(2048, 2048), null)
+                    // SF-08: Load image
+                    val bitmap = loadBitmap(uri)
                     imageView.setImageBitmap(bitmap)
                 }
             } catch (e: Exception) {
                 DebugLog.log("Failed to load media: ${e.message}")
                 imageView.setImageResource(android.R.drawable.ic_menu_report_image)
+            }
+        }
+
+        private fun loadBitmap(uri: Uri): android.graphics.Bitmap? {
+            return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                contentResolver.loadThumbnail(uri, android.util.Size(2048, 2048), null)
+            } else {
+                android.provider.MediaStore.Images.Media.getBitmap(contentResolver, uri)
             }
         }
 

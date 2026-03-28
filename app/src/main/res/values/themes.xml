@@ -9,7 +9,7 @@
         <item name="android:windowNoTitle">true</item>
     </style>
 
-    <style name="Theme.GB4PC.Viewer" parent="android:Theme.Material.NoActionBar">
+    <style name="Theme.GB4PC.Viewer" parent="Theme.MaterialComponents.NoActionBar">
         <item name="android:windowFullscreen">true</item>
         <item name="android:windowBackground">@android:color/black</item>
     </style>
