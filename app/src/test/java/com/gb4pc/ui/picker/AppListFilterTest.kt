@@ -1,5 +1,7 @@
 package com.gb4pc.ui.picker
 
+import com.gb4pc.ui.picker.AppInfo
+import com.gb4pc.ui.picker.AppListFilter
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -46,21 +48,5 @@ class AppListFilterTest {
         val filtered = AppListFilter.filter(apps, "simplemobile", "com.gb4pc")
         assertEquals(1, filtered.size)
         assertEquals("Simple Gallery", filtered[0].label)
-    }
-}
-
-data class AppInfo(val label: String, val packageName: String)
-
-object AppListFilter {
-    fun filter(apps: List<AppInfo>, query: String, ownPackage: String): List<AppInfo> {
-        val excluded = setOf("com.google.android.GoogleCamera", ownPackage)
-        return apps
-            .filter { it.packageName !in excluded }
-            .filter { app ->
-                if (query.isBlank()) true
-                else app.label.contains(query, ignoreCase = true) ||
-                    app.packageName.contains(query, ignoreCase = true)
-            }
-            .sortedBy { it.label.lowercase() }
     }
 }

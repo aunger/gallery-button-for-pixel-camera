@@ -53,17 +53,3 @@ class BootReceiverTest {
         assertFalse(BootReceiverLogic.isBootIntent(null))
     }
 }
-
-/**
- * Extracted logic for testability without needing a real BroadcastReceiver context.
- */
-object BootReceiverLogic {
-    fun shouldStartService(context: Context): Boolean {
-        val prefs = context.getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getBoolean(Constants.PREF_SERVICE_ENABLED, false)
-    }
-
-    fun isBootIntent(action: String?): Boolean {
-        return action == Intent.ACTION_BOOT_COMPLETED
-    }
-}

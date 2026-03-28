@@ -1,5 +1,7 @@
 package com.gb4pc.ui.setup
 
+import com.gb4pc.ui.setup.SetupState
+import com.gb4pc.ui.setup.SetupStep
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -58,40 +60,5 @@ class SetupStateTest {
     fun `isCompleted initially false`() {
         val state = SetupState(apiLevel = 32)
         assertFalse(state.isCompleted)
-    }
-}
-
-enum class SetupStep {
-    NOTIFICATION,
-    USAGE_ACCESS,
-    OVERLAY,
-    BATTERY
-}
-
-class SetupState(apiLevel: Int) {
-    private val steps = getSteps(apiLevel)
-    private var currentIndex = 0
-
-    val currentStep: SetupStep get() = steps[currentIndex]
-    var isCompleted: Boolean = false
-        private set
-
-    fun advance() {
-        if (currentIndex < steps.size - 1) {
-            currentIndex++
-        } else {
-            isCompleted = true
-        }
-    }
-
-    companion object {
-        fun getSteps(apiLevel: Int): List<SetupStep> {
-            return buildList {
-                if (apiLevel >= 33) add(SetupStep.NOTIFICATION)
-                add(SetupStep.USAGE_ACCESS)
-                add(SetupStep.OVERLAY)
-                add(SetupStep.BATTERY)
-            }
-        }
     }
 }
