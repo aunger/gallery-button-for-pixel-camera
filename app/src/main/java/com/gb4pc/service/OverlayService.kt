@@ -18,6 +18,7 @@ import com.gb4pc.overlay.OverlayManager
 import com.gb4pc.ui.settings.MainActivity
 import com.gb4pc.util.DebugLog
 import com.gb4pc.util.PermissionHelper
+import com.gb4pc.viewer.SessionTracker
 
 /**
  * Foreground service that monitors camera hardware and manages the overlay (§3, §7).
@@ -143,6 +144,13 @@ class OverlayService : Service() {
         DebugLog.log("Showing overlay")
         overlayManager.show()
         isOverlayActive = true
+
+        // SF-01: Start secure session if device is locked
+        val km = getSystemService(Context.KEYGUARD_SERVICE) as android.app.KeyguardManager
+        if (km.isKeyguardLocked) {
+            SessionTracker.instance.startSession()
+            DebugLog.log("Secure camera session started")
+        }
     }
 
     /**
@@ -155,6 +163,11 @@ class OverlayService : Service() {
                 DebugLog.log("Deactivating overlay (all cameras available)")
                 overlayManager.hide()
                 isOverlayActive = false
+                // SF-01: End secure session on overlay deactivation
+                if (SessionTracker.instance.isSessionActive) {
+                    SessionTracker.instance.endSession()
+                    DebugLog.log("Secure camera session ended")
+                }
             }
         }
         handler.postDelayed(deactivateRunnable!!, Constants.CAMERA_DEBOUNCE_MS)
