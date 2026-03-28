@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- GB4PC launcher icon foreground: camera with gallery overlay -->
+    <path
+        android:fillColor="#1565C0"
+        android:pathData="M54,34.8c-6.6,0 -12,5.4 -12,12s5.4,12 12,12 12,-5.4 12,-12 -5.4,-12 -12,-12zM78,24h-8.58L66,20H42l-3.42,4H30c-2.76,0 -5,2.24 -5,5v30c0,2.76 2.24,5 5,5h48c2.76,0 5,-2.24 5,-5V29c0,-2.76 -2.24,-5 -5,-5zM54,62.8c-8.84,0 -16,-7.16 -16,-16s7.16,-16 16,-16 16,7.16 16,16 -7.16,16 -16,16z" />
+    <path
+        android:fillColor="#FFA726"
+        android:pathData="M34,60l6,-8 4,5 6,-7 8,10z" />
+</vector>
