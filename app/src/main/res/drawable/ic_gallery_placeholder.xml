@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <!-- Placeholder gallery icon with warning badge (AC-04) -->
+    <path
+        android:fillColor="#757575"
+        android:pathData="M4,8v28c0,2.21 1.79,4 4,4h28c2.21,0 4,-1.79 4,-4V8c0,-2.21 -1.79,-4 -4,-4H8C5.79,4 4,5.79 4,8zM32,26L26,34l-6,-8L10,38h28L32,26z" />
+    <!-- Warning badge -->
+    <path
+        android:fillColor="#FFA000"
+        android:pathData="M38,2l-4,0 0,4 4,0zM38,8l-4,0 0,2 4,0z" />
+</vector>
