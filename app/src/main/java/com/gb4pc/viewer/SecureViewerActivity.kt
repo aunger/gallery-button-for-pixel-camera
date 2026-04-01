@@ -11,6 +11,7 @@ import android.os.Looper
 import android.provider.MediaStore
 import android.view.View
 import android.view.ViewGroup
+import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
@@ -18,6 +19,8 @@ import androidx.activity.ComponentActivity
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
+import com.davemorrissey.labs.subscaleview.ImageSource
+import com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView
 import com.gb4pc.R
 import com.gb4pc.util.DebugLog
 import com.google.android.material.snackbar.Snackbar
@@ -294,44 +297,81 @@ class SecureViewerActivity : ComponentActivity() {
         override fun getItemCount() = items.size
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): MediaViewHolder {
-            val imageView = ImageView(parent.context).apply {
+            val container = FrameLayout(parent.context).apply {
                 layoutParams = ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT
                 )
-                scaleType = ImageView.ScaleType.FIT_CENTER
             }
-            return MediaViewHolder(imageView)
+            return MediaViewHolder(container)
         }
 
         override fun onBindViewHolder(holder: MediaViewHolder, position: Int) {
             val item = items[position]
-            val imageView = holder.itemView as ImageView
+            val container = holder.itemView as FrameLayout
+            container.removeAllViews()
 
             try {
                 val uri = Uri.parse(item.uri)
                 if (item.isVideo) {
-                    // SF-09: Show video thumbnail with play overlay
+                    // SF-09: Show video thumbnail with play button overlay
+                    val imageView = ImageView(container.context).apply {
+                        layoutParams = FrameLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                        scaleType = ImageView.ScaleType.FIT_CENTER
+                    }
                     val bitmap = loadBitmap(uri)
                     imageView.setImageBitmap(bitmap)
-                    imageView.setOnClickListener {
+                    container.addView(imageView)
+
+                    // SF-09: Play button icon overlay
+                    val playIcon = ImageView(container.context).apply {
+                        setImageResource(android.R.drawable.ic_media_play)
+                        setColorFilter(0xCCFFFFFF.toInt())
+                        val iconSize = (64 * resources.displayMetrics.density).toInt()
+                        layoutParams = FrameLayout.LayoutParams(iconSize, iconSize).apply {
+                            gravity = android.view.Gravity.CENTER
+                        }
+                    }
+                    container.addView(playIcon)
+
+                    container.setOnClickListener {
                         Toast.makeText(this@SecureViewerActivity, R.string.viewer_unlock_to_play, Toast.LENGTH_SHORT).show()
                     }
                 } else {
-                    // SF-08: Load image
-                    val bitmap = loadBitmap(uri)
-                    imageView.setImageBitmap(bitmap)
+                    // SF-08: Use SubsamplingScaleImageView for pinch-to-zoom
+                    val scaleView = SubsamplingScaleImageView(container.context).apply {
+                        layoutParams = FrameLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                        setMinimumDpi(80)
+                        setDoubleTapZoomDpi(240)
+                    }
+                    scaleView.setImage(ImageSource.uri(uri))
+                    container.addView(scaleView)
                 }
             } catch (e: Exception) {
                 DebugLog.log("Failed to load media: ${e.message}")
-                imageView.setImageResource(android.R.drawable.ic_menu_report_image)
+                val errorView = ImageView(container.context).apply {
+                    layoutParams = FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                    setImageResource(android.R.drawable.ic_menu_report_image)
+                    scaleType = ImageView.ScaleType.CENTER
+                }
+                container.addView(errorView)
             }
         }
 
         private fun loadBitmap(uri: Uri): android.graphics.Bitmap? {
             return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                contentResolver.loadThumbnail(uri, android.util.Size(2048, 2048), null)
+                contentResolver.loadThumbnail(uri, android.util.Size(1024, 1024), null)
             } else {
+                @Suppress("DEPRECATION")
                 android.provider.MediaStore.Images.Media.getBitmap(contentResolver, uri)
             }
         }

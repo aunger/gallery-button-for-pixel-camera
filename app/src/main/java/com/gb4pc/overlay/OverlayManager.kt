@@ -123,31 +123,19 @@ class OverlayManager(
 
         DebugLog.log("Overlay tapped: locked=$isLocked, gallery=$galleryPackage, installed=$isGalleryInstalled")
 
-        when {
-            // AC-03: No gallery app configured
-            galleryPackage == null -> {
-                if (isLocked) {
-                    Toast.makeText(context, R.string.toast_unlock_to_setup, Toast.LENGTH_SHORT).show()
-                } else {
-                    launchPicker()
-                }
-            }
-            // AC-04: Gallery app uninstalled
-            !isGalleryInstalled -> {
-                if (isLocked) {
-                    Toast.makeText(context, R.string.toast_gallery_not_found, Toast.LENGTH_SHORT).show()
-                } else {
-                    launchPicker()
-                }
-            }
-            // AC-02: Device locked — open secure viewer
-            isLocked -> {
-                launchSecureViewer()
-            }
-            // AC-01: Device unlocked — launch gallery app
-            else -> {
-                launchGalleryApp(galleryPackage)
-            }
+        val action = TapActionResolver.resolve(isLocked, galleryPackage, isGalleryInstalled)
+        executeTapAction(action)
+    }
+
+    private fun executeTapAction(action: TapAction) {
+        when (action) {
+            is TapAction.LaunchGallery -> launchGalleryApp(action.packageName)
+            is TapAction.LaunchSecureViewer -> launchSecureViewer()
+            is TapAction.LaunchPicker, is TapAction.LaunchPickerGalleryMissing -> launchPicker()
+            is TapAction.ShowUnlockToSetupToast ->
+                Toast.makeText(context, R.string.toast_unlock_to_setup, Toast.LENGTH_SHORT).show()
+            is TapAction.ShowGalleryNotFoundToast ->
+                Toast.makeText(context, R.string.toast_gallery_not_found, Toast.LENGTH_SHORT).show()
         }
     }
 
