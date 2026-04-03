@@ -54,7 +54,17 @@ jobs:
           grep -q "BUILD SUCCESSFUL" build-output.txt
 
       - name: Run unit tests
-        run: ./gradlew testDebugUnitTest --no-daemon
+        run: ./gradlew testDebugUnitTest --no-daemon 2>&1 | tee test-output.txt || true
+
+      - name: Print test failures
+        if: always()
+        run: |
+          echo "=== TEST OUTPUT TAIL ==="
+          tail -200 test-output.txt
+          echo "=== FAILED TEST DETAILS ==="
+          find app/build/reports/tests -name "*.html" -exec grep -l "failures" {} \; 2>/dev/null || true
+          find app/build/test-results -name "*.xml" -exec grep -l 'failures="[^0]' {} \; 2>/dev/null | while read f; do echo "--- $f ---"; cat "$f"; done || true
+          grep -q "BUILD SUCCESSFUL" test-output.txt
 
       - name: Upload test results
         if: always()
