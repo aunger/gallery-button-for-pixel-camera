@@ -36,7 +36,22 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build debug APK
-        run: ./gradlew assembleDebug --no-daemon
+        run: ./gradlew assembleDebug --no-daemon 2>&1 | tee build-output.txt || true
+
+      - name: Upload build log on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build-output.txt
+          retention-days: 3
+
+      - name: Check build result
+        run: |
+          if grep -q "BUILD FAILED\|BUILD SUCCESSFUL" build-output.txt; then
+            tail -100 build-output.txt
+          fi
+          grep -q "BUILD SUCCESSFUL" build-output.txt
 
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --no-daemon
