@@ -7,11 +7,12 @@ import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.*
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Tests ForegroundDetector with simulated MOVE_TO_FOREGROUND events (T5).
+ * Tests ForegroundDetector with simulated events (T5).
  * Note: UsageEvents.Event is an Android framework class. With isReturnDefaultValues = true,
- * its fields return defaults. We use a mock UsageEvents that simulates event iteration.
+ * its fields return defaults (eventType=0, packageName=null).
  */
 class ForegroundDetectorEventTest {
 
@@ -31,7 +32,7 @@ class ForegroundDetectorEventTest {
     }
 
     @Test
-    fun `returns null when no MOVE_TO_FOREGROUND events exist`() {
+    fun `returns null when no events exist`() {
         val events: UsageEvents = mock {
             on { hasNextEvent() } doReturn false
         }
@@ -40,29 +41,24 @@ class ForegroundDetectorEventTest {
     }
 
     @Test
-    fun `returns package name from single MOVE_TO_FOREGROUND event`() {
-        // Create a mock UsageEvents that returns one event
-        val mockEvent = UsageEvents.Event()
-
-        val events: UsageEvents = mock {
-            var called = false
-            on { hasNextEvent() } doAnswer {
-                if (!called) { called = true; true } else false
-            }
-            on { getNextEvent(any()) } doAnswer { invocation ->
-                val event = invocation.getArgument<UsageEvents.Event>(0)
-                // With isReturnDefaultValues = true, eventType returns 0 and packageName returns null
-                // We need to verify that our detector handles the iteration correctly
-                // Since we can't set fields on the real Event object in unit tests,
-                // this test verifies the iteration logic completes without error
-                true
-            }
+    fun `iterates through events without crashing`() {
+        // With isReturnDefaultValues = true, Event() returns a stub object
+        // eventType defaults to 0 (not MOVE_TO_FOREGROUND which is 1)
+        // so the detector should return null since no matching events found
+        val called = AtomicBoolean(false)
+        val events: UsageEvents = mock()
+        whenever(events.hasNextEvent()).thenAnswer {
+            if (!called.getAndSet(true)) true else false
         }
+        whenever(events.getNextEvent(any())).thenAnswer { /* no-op, fields stay default */ }
         whenever(usm.queryEvents(any(), any())).thenReturn(events)
 
-        // With default values (eventType=0, not MOVE_TO_FOREGROUND=1), result should be null
         val result = detector.getForegroundPackage()
         assertNull(result)
+
+        // Verify iteration happened
+        verify(events, times(2)).hasNextEvent()
+        verify(events, times(1)).getNextEvent(any())
     }
 
     @Test

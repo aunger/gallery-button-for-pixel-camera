@@ -1,6 +1,5 @@
 package com.gb4pc.service
 
-import android.app.usage.UsageStatsManager
 import com.gb4pc.Constants
 import org.junit.Assert.*
 import org.junit.Before
@@ -11,7 +10,6 @@ class OverlayServiceLogicTest {
 
     private lateinit var cameraState: CameraState
     private lateinit var foregroundDetector: ForegroundDetector
-    private lateinit var usm: UsageStatsManager
     private var hasUsageStats = true
     private var hasOverlay = true
     private var isLocked = false
@@ -21,7 +19,6 @@ class OverlayServiceLogicTest {
     @Before
     fun setUp() {
         cameraState = CameraState()
-        usm = mock()
         foregroundDetector = mock()
         hasUsageStats = true
         hasOverlay = true

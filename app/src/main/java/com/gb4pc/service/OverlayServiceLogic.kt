@@ -1,7 +1,6 @@
 package com.gb4pc.service
 
 import com.gb4pc.Constants
-import com.gb4pc.util.DebugLog
 
 /**
  * Extracted testable logic for OverlayService's camera callback handling.
