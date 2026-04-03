@@ -41,9 +41,20 @@ jobs:
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --no-daemon
 
-      - name: Print test failures
-        if: failure()
-        run: find app/build/test-results -name "*.xml" -exec grep -l 'failures="[^0]' {} \; 2>/dev/null | while read f; do echo "--- $f ---"; cat "$f"; done
+      - name: Post test failures to PR
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BODY=""
+          for f in $(find app/build/test-results -name "*.xml" 2>/dev/null); do
+            if grep -q 'failures="[^0]' "$f" 2>/dev/null || grep -q 'errors="[^0]' "$f" 2>/dev/null; then
+              BODY+="### $(basename $f)\n\`\`\`xml\n$(cat "$f")\n\`\`\`\n\n"
+            fi
+          done
+          if [ -n "$BODY" ]; then
+            printf "## Test Failures\n\n$BODY" | gh pr comment ${{ github.event.pull_request.number }} --body-file -
+          fi
 
       - name: Upload test results
         if: always()
