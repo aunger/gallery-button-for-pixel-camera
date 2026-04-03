@@ -22,48 +22,60 @@ class SessionTracker {
     /**
      * SF-01: Begin a new session, recording the start timestamp (SF-02).
      */
-    fun startSession() = synchronized(lock) {
-        isSessionActive = true
-        sessionStartTimestamp = System.currentTimeMillis()
-        mediaItems.clear()
+    fun startSession() {
+        synchronized(lock) {
+            isSessionActive = true
+            sessionStartTimestamp = System.currentTimeMillis()
+            mediaItems.clear()
+        }
     }
 
     /**
      * SF-01: End the session, clearing all media (SF-05).
      */
-    fun endSession() = synchronized(lock) {
-        isSessionActive = false
-        mediaItems.clear()
+    fun endSession() {
+        synchronized(lock) {
+            isSessionActive = false
+            mediaItems.clear()
+        }
     }
 
-    fun addMedia(item: MediaItem) = synchronized(lock) {
-        if (!isSessionActive) return
-        mediaItems.add(item)
+    fun addMedia(item: MediaItem) {
+        synchronized(lock) {
+            if (!isSessionActive) return
+            mediaItems.add(item)
+        }
     }
 
-    fun removeMedia(uri: String) = synchronized(lock) {
-        mediaItems.removeAll { it.uri == uri }
+    fun removeMedia(uri: String) {
+        synchronized(lock) {
+            mediaItems.removeAll { it.uri == uri }
+        }
     }
 
     /**
      * SF-07: Returns session media sorted most recent first.
      */
-    fun getSessionMedia(): List<MediaItem> = synchronized(lock) {
-        mediaItems.sortedByDescending { it.dateTaken }
+    fun getSessionMedia(): List<MediaItem> {
+        return synchronized(lock) {
+            mediaItems.sortedByDescending { it.dateTaken }
+        }
     }
 
     /**
      * SF-04: Check if a media item belongs to the current session.
      */
-    fun isMediaInSession(dateTaken: Long, relativePath: String): Boolean = synchronized(lock) {
-        if (!isSessionActive) return false
+    fun isMediaInSession(dateTaken: Long, relativePath: String): Boolean {
+        return synchronized(lock) {
+            if (!isSessionActive) return false
 
-        val threshold = sessionStartTimestamp - Constants.SESSION_TIMESTAMP_TOLERANCE_MS
-        if (dateTaken < threshold) return false
+            val threshold = sessionStartTimestamp - Constants.SESSION_TIMESTAMP_TOLERANCE_MS
+            if (dateTaken < threshold) return false
 
-        if (!relativePath.startsWith(Constants.MEDIA_RELATIVE_PATH_PREFIX)) return false
+            if (!relativePath.startsWith(Constants.MEDIA_RELATIVE_PATH_PREFIX)) return false
 
-        return true
+            true
+        }
     }
 
     companion object {
