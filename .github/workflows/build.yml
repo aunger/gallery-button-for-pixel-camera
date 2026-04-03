@@ -41,6 +41,10 @@ jobs:
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --no-daemon
 
+      - name: Print test failures
+        if: failure()
+        run: find app/build/test-results -name "*.xml" -exec grep -l 'failures="[^0]' {} \; 2>/dev/null | while read f; do echo "--- $f ---"; cat "$f"; done
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
