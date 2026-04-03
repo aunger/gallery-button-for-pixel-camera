@@ -50,7 +50,7 @@ class ForegroundDetectorEventTest {
         whenever(events.hasNextEvent()).thenAnswer {
             if (!called.getAndSet(true)) true else false
         }
-        whenever(events.getNextEvent(any())).thenAnswer { /* no-op, fields stay default */ }
+        whenever(events.getNextEvent(any())).thenReturn(true)
         whenever(usm.queryEvents(any(), any())).thenReturn(events)
 
         val result = detector.getForegroundPackage()

@@ -6,10 +6,6 @@ on:
   pull_request:
     branches: [main]
 
-permissions:
-  contents: read
-  pull-requests: write
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -44,31 +40,6 @@ jobs:
 
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --no-daemon
-
-      - name: Post test failures to PR
-        if: failure() && github.event_name == 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          {
-            echo "## Test Failures"
-            echo ""
-            find app/build/test-results -name "*.xml" 2>/dev/null | while read f; do
-              if grep -q 'failures="[^0]' "$f" 2>/dev/null || grep -q 'errors="[^0]' "$f" 2>/dev/null; then
-                echo "### $(basename "$f")"
-                echo '```xml'
-                cat "$f"
-                echo '```'
-                echo ""
-              fi
-            done
-          } > /tmp/test-failures.md
-          if [ -s /tmp/test-failures.md ] && [ "$(wc -l < /tmp/test-failures.md)" -gt 2 ]; then
-            gh pr comment ${{ github.event.pull_request.number }} --body-file /tmp/test-failures.md
-          else
-            echo "No XML failures found, dumping all test XML files:"
-            find app/build/test-results -name "*.xml" -exec echo "=== {} ===" \; -exec head -5 {} \; 2>/dev/null || echo "No test result files found"
-          fi
 
       - name: Upload test results
         if: always()
