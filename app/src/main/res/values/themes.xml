@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.GB4PC" parent="android:Theme.Material.Light.NoActionBar">
+    </style>
+
+    <style name="Theme.GB4PC.Transparent" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+
+    <style name="Theme.GB4PC.Viewer" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
+</resources>
