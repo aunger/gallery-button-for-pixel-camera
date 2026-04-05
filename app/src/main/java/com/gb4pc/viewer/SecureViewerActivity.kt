@@ -24,7 +24,7 @@ import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
-import kotlinx.coroutines.CoroutineScope
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -377,7 +377,7 @@ class SecureViewerActivity : ComponentActivity() {
                     }
 
                     // Decode thumbnail on IO thread, then set on main thread
-                    holder.loadJob = CoroutineScope(Dispatchers.Main).launch {
+                    holder.loadJob = lifecycleScope.launch {
                         val bitmap = withContext(Dispatchers.IO) {
                             try { loadBitmap(uri) } catch (e: Exception) {
                                 DebugLog.log("Failed to load video thumbnail: ${e.message}")
