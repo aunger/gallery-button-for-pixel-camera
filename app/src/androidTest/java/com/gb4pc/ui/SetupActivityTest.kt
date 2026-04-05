@@ -57,7 +57,10 @@ class SetupActivityTest {
                 composeRule.onNodeWithText("Skip").performClick()
                 composeRule.waitForIdle()
             } catch (_: AssertionError) {
-                // Activity may have already finished — acceptable
+                // Activity finished — verify setup is actually marked complete
+                assert(PrefsManager(context).isSetupCompleted) {
+                    "Activity finished but isSetupCompleted is still false"
+                }
                 return
             }
         }

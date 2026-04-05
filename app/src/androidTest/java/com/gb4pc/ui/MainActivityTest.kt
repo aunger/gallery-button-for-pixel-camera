@@ -4,10 +4,13 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.test.core.app.ActivityScenario
+import androidx.test.espresso.intent.Intents
+import androidx.test.espresso.intent.matcher.IntentMatchers.hasComponent
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.gb4pc.data.PrefsManager
 import com.gb4pc.ui.settings.MainActivity
+import com.gb4pc.ui.setup.SetupActivity
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -38,13 +41,13 @@ class MainActivityRedirectTest {
     }
 
     @Test
-    fun whenSetupNotCompleted_mainActivityFinishes() {
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-            var isFinishing = false
-            scenario.onActivity { activity ->
-                isFinishing = activity.isFinishing
-            }
-            assert(isFinishing) { "MainActivity should call finish() when setup is not completed" }
+    fun whenSetupNotCompleted_launchesSetupActivity() {
+        Intents.init()
+        try {
+            ActivityScenario.launch(MainActivity::class.java)
+            Intents.intended(hasComponent(SetupActivity::class.java.name))
+        } finally {
+            Intents.release()
         }
     }
 }
