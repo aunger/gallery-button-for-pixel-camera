@@ -244,7 +244,7 @@ class SecureViewerActivity : ComponentActivity() {
                         Toast.makeText(this, R.string.viewer_delete_failed, Toast.LENGTH_SHORT).show()
                     }
                 }
-            } catch (e: android.os.RecoverableSecurityException) {
+            } catch (e: android.app.RecoverableSecurityException) {
                 // API 29: request permission via the embedded action intent
                 try {
                     pendingDeleteUri = uriString
