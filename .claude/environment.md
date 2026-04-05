@@ -2,8 +2,8 @@
 
 This document describes how to configure a fresh **Claude Code for Web** container
 to build this project. Every step is also automated by the session-start hook
-(`scripts/setup-env.sh`), which runs automatically on session start and is
-idempotent (safe to run repeatedly).
+(`.claude/hooks/session-start.sh`), which runs automatically on session start
+and is idempotent (safe to run repeatedly).
 
 ---
 
@@ -31,9 +31,11 @@ fails with `UnknownHostException`.
 ```bash
 # Strip *.googleapis.com|*.google.com from nonProxyHosts so Java
 # routes those domains through the container proxy instead.
-if [[ -n "$JAVA_TOOL_OPTIONS" ]]; then
+# Guard with grep so re-running is a no-op once the entries are gone.
+if echo "${JAVA_TOOL_OPTIONS:-}" | grep -qE '\*\.(google|googleapis)\.com'; then
     export JAVA_TOOL_OPTIONS=$(echo "$JAVA_TOOL_OPTIONS" \
-        | sed 's/|\*\.googleapis\.com|\*\.google\.com//')
+        | sed 's/|\*\.googleapis\.com//' \
+        | sed 's/|\*\.google\.com//')
 fi
 ```
 
@@ -50,7 +52,7 @@ as a system `Authenticator`. Without an explicit authenticator, the proxy return
 `407 Proxy Authentication Required` even though the credentials are set.
 
 The fix is a one-line Gradle init script at `~/.gradle/init.d/proxy-auth.gradle`
-(created by `scripts/setup-env.sh`):
+(created by `.claude/hooks/session-start.sh`):
 
 ```groovy
 import java.net.Authenticator, java.net.PasswordAuthentication
@@ -73,7 +75,7 @@ distribution download.
 
 The SDK is installed to `/home/user/android-sdk`. The container has no pre-installed
 Android SDK, but `sdkmanager` (from the command-line tools) and the required
-packages are downloaded by `scripts/setup-env.sh`.
+packages are downloaded by `.claude/hooks/session-start.sh`.
 
 ### Manual steps (what the script does)
 

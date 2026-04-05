@@ -31,11 +31,14 @@ echo "[session-start] GB4PC environment setup…"
 # already do.  The fixed value is exported via $CLAUDE_ENV_FILE so it persists
 # for all subsequent tool invocations in this session.
 # ─────────────────────────────────────────────────────────────────────────────
-if echo "${JAVA_TOOL_OPTIONS:-}" | grep -q '\*\.google\.com'; then
+if echo "${JAVA_TOOL_OPTIONS:-}" | grep -qE '\*\.(google|googleapis)\.com'; then
+    # Strip each entry independently — order in the container value is not guaranteed.
     FIXED_JTO=$(echo "$JAVA_TOOL_OPTIONS" \
-        | sed 's/|\*\.googleapis\.com|\*\.google\.com//')
+        | sed 's/|\*\.googleapis\.com//' \
+        | sed 's/|\*\.google\.com//')
     export JAVA_TOOL_OPTIONS="$FIXED_JTO"
-    if [[ -n "${CLAUDE_ENV_FILE:-}" ]]; then
+    if [[ -n "${CLAUDE_ENV_FILE:-}" ]] \
+            && ! grep -q 'JAVA_TOOL_OPTIONS' "${CLAUDE_ENV_FILE}" 2>/dev/null; then
         echo "export JAVA_TOOL_OPTIONS=$(printf '%q' "$FIXED_JTO")" >> "$CLAUDE_ENV_FILE"
     fi
     echo "[session-start] Step 0: stripped *.google.com from nonProxyHosts"
@@ -72,25 +75,29 @@ GROOVY
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STEP 2 — Android SDK command-line tools.
+# STEP 2a — Android SDK command-line tools.
 # ─────────────────────────────────────────────────────────────────────────────
 if [[ -x "$SDKMANAGER" ]]; then
     echo "[session-start] Step 2a: sdkmanager present — skip"
 else
     echo "[session-start] Step 2a: downloading Android command-line tools…"
-    mkdir -p "$ANDROID_HOME_DIR/cmdline-tools"
     TMP_ZIP=$(mktemp /tmp/cmdline-tools-XXXXXX.zip)
+    TMP_EXTRACT=$(mktemp -d /tmp/cmdline-tools-extract-XXXXXX)
+    # Clean up temp files and any partial extraction on failure.
+    trap 'rm -rf "$TMP_ZIP" "$TMP_EXTRACT"' EXIT
     wget -q "$CMDLINE_TOOLS_URL" -O "$TMP_ZIP"
-    unzip -q "$TMP_ZIP" -d "$ANDROID_HOME_DIR/cmdline-tools"
-    mv "$ANDROID_HOME_DIR/cmdline-tools/cmdline-tools" \
-       "$ANDROID_HOME_DIR/cmdline-tools/latest"
-    rm "$TMP_ZIP"
+    unzip -q "$TMP_ZIP" -d "$TMP_EXTRACT"
+    mkdir -p "$ANDROID_HOME_DIR/cmdline-tools"
+    mv "$TMP_EXTRACT/cmdline-tools" "$ANDROID_HOME_DIR/cmdline-tools/latest"
+    rm -rf "$TMP_ZIP" "$TMP_EXTRACT"
+    trap - EXIT
     echo "[session-start] Step 2a: cmdline-tools installed"
 fi
 
 export ANDROID_HOME="$ANDROID_HOME_DIR"
 export PATH="$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools"
-if [[ -n "${CLAUDE_ENV_FILE:-}" ]]; then
+if [[ -n "${CLAUDE_ENV_FILE:-}" ]] \
+        && ! grep -q 'ANDROID_HOME' "${CLAUDE_ENV_FILE}" 2>/dev/null; then
     echo "export ANDROID_HOME=$ANDROID_HOME_DIR" >> "$CLAUDE_ENV_FILE"
     echo "export PATH=\$PATH:$ANDROID_HOME_DIR/cmdline-tools/latest/bin:$ANDROID_HOME_DIR/platform-tools" \
         >> "$CLAUDE_ENV_FILE"
@@ -131,7 +138,8 @@ done
 
 if [[ ${#MISSING[@]} -gt 0 ]]; then
     echo "[session-start] Step 2c: installing: ${MISSING[*]}"
-    yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+    yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 \
+        || echo "[session-start] Step 2c: warning: sdkmanager --licenses failed — install may fail if license is unaccepted"
     "$SDKMANAGER" "${MISSING[@]}"
     echo "[session-start] Step 2c: done"
 else
