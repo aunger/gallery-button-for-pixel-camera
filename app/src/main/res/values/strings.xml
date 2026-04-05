@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">GB4PC</string>
+
+    <!-- Notification -->
+    <string name="notification_channel_name">GB4PC Service</string>
+    <string name="notification_channel_description">Persistent notification while GB4PC is monitoring camera</string>
+    <string name="notification_running">GB4PC is running</string>
+    <string name="notification_stop">Stop</string>
+    <string name="notification_usage_access_lost">GB4PC cannot detect apps — tap to fix</string>
+    <string name="notification_overlay_lost">GB4PC cannot show overlay — tap to grant permission</string>
+
+    <!-- Setup Flow -->
+    <string name="setup_title">GB4PC Setup</string>
+    <string name="setup_usage_access_title">Usage Access</string>
+    <string name="setup_usage_access_desc">GB4PC needs to confirm which app is using the camera. This permission lets GB4PC see which app is in the foreground. It cannot read your personal data.</string>
+    <string name="setup_usage_access_button">Grant Usage Access</string>
+    <string name="setup_overlay_title">Draw Over Apps</string>
+    <string name="setup_overlay_desc">Allows GB4PC to show the gallery button on top of Pixel Camera.</string>
+    <string name="setup_overlay_button">Grant Overlay Permission</string>
+    <string name="setup_battery_title">Battery Optimization</string>
+    <string name="setup_battery_desc">GB4PC needs to stay running in the background to detect when you open the camera. Excluding it from battery optimization prevents Android from killing it.</string>
+    <string name="setup_battery_button">Exclude from Battery Optimization</string>
+    <string name="setup_skip">Skip</string>
+    <string name="setup_notification_title">Notifications</string>
+    <string name="setup_notification_desc">GB4PC needs notification permission to show its required foreground service notification.</string>
+    <string name="setup_notification_button">Allow Notifications</string>
+
+    <!-- Main Settings -->
+    <string name="settings_service_toggle">Enable GB4PC</string>
+    <string name="settings_gallery_app">Gallery App</string>
+    <string name="settings_gallery_not_set">Not set — tap to choose</string>
+    <string name="settings_advanced">Advanced Settings</string>
+    <string name="settings_pixel_camera_missing">Pixel Camera is not installed. GB4PC requires Pixel Camera to function.</string>
+    <string name="settings_battery_warning">Not excluded from battery optimization — GB4PC may be killed in the background. Tap to fix.</string>
+    <string name="settings_permission_missing">Missing permission: %s. Tap to fix.</string>
+
+    <!-- App Picker -->
+    <string name="picker_title">Choose Gallery App</string>
+    <string name="picker_search_hint">Search apps…</string>
+
+    <!-- Advanced Settings -->
+    <string name="advanced_title">Advanced Settings</string>
+    <string name="advanced_x_position">X position</string>
+    <string name="advanced_y_position">Y position</string>
+    <string name="advanced_size">Size</string>
+    <string name="advanced_reset">Reset to Defaults</string>
+    <string name="advanced_reset_confirm_title">Reset Position?</string>
+    <string name="advanced_reset_confirm_message">This will restore the default overlay position for the current display aspect ratio.</string>
+    <string name="advanced_debug_log">Debug Log</string>
+
+    <!-- Secure Viewer -->
+    <string name="viewer_no_photos">No photos yet — take a picture!</string>
+    <string name="viewer_unlock_to_play">Unlock to play video</string>
+    <string name="viewer_photo_deleted">Photo deleted</string>
+    <string name="viewer_undo">Undo</string>
+
+    <!-- Toasts -->
+    <string name="toast_unlock_to_setup">Unlock to set up your gallery app.</string>
+    <string name="toast_gallery_not_found">Gallery app not found — unlock to choose a new one.</string>
+</resources>
