@@ -1,13 +1,14 @@
 package com.gb4pc.viewer
 
 import android.app.KeyguardManager
+import android.content.BroadcastReceiver
 import android.content.ContentUris
+import android.content.Context
 import android.content.Intent
-import android.database.ContentObserver
+import android.content.IntentFilter
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.provider.MediaStore
 import android.view.View
 import android.view.ViewGroup
@@ -16,7 +17,12 @@ import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ItemTouchHelper
+import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
 import com.davemorrissey.labs.subscaleview.ImageSource
@@ -35,10 +41,32 @@ class SecureViewerActivity : ComponentActivity() {
     private lateinit var emptyMessage: TextView
     private lateinit var shareButton: ImageView
     private lateinit var adapter: MediaPagerAdapter
-    private val handler = Handler(Looper.getMainLooper())
-    private var mediaObserver: ContentObserver? = null
 
     private val sessionTracker get() = SessionTracker.instance
+
+    // L4: BroadcastReceiver to finish the activity when the device unlocks (SF-15)
+    private val userPresentReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == Intent.ACTION_USER_PRESENT) {
+                finish()
+            }
+        }
+    }
+
+    // C3: Pending URI awaiting delete permission grant
+    private var pendingDeleteUri: String? = null
+
+    // C3: ActivityResultLauncher for MediaStore delete request (API 30+)
+    private val deleteRequestLauncher: ActivityResultLauncher<IntentSenderRequest> =
+        registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+            val uri = pendingDeleteUri
+            pendingDeleteUri = null
+            if (result.resultCode == RESULT_OK && uri != null) {
+                // Permission granted — retry the delete
+                retryDeleteFromMediaStore(uri)
+            }
+            // If cancelled, the item was already removed from session; nothing more to do.
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,8 +74,23 @@ class SecureViewerActivity : ComponentActivity() {
         setTurnScreenOn(true)
 
         setupLayout()
-        setupMediaObserver()
         refreshMedia()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // L4: Register receiver for device-unlock events
+        registerReceiver(userPresentReceiver, IntentFilter(Intent.ACTION_USER_PRESENT))
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // L4: Unregister the unlock receiver
+        try {
+            unregisterReceiver(userPresentReceiver)
+        } catch (e: IllegalArgumentException) {
+            DebugLog.log("userPresentReceiver was not registered: ${e.message}")
+        }
     }
 
     override fun onResume() {
@@ -61,10 +104,9 @@ class SecureViewerActivity : ComponentActivity() {
         refreshMedia()
     }
 
-    override fun onDestroy() {
-        mediaObserver?.let { contentResolver.unregisterContentObserver(it) }
-        super.onDestroy()
-    }
+    // H4: ContentObserver registration/unregistration has been removed.
+    // The OverlayService registers the ContentObserver and populates SessionTracker.
+    // This activity reads SessionTracker directly.
 
     private fun setupLayout() {
         val root = ViewGroup.LayoutParams(
@@ -127,8 +169,13 @@ class SecureViewerActivity : ComponentActivity() {
         setContentView(container)
     }
 
+    // L5: Null/type-safe access to the ViewPager2's internal RecyclerView
     private fun setupSwipeToDelete() {
-        val recyclerView = viewPager.getChildAt(0) as? RecyclerView ?: return
+        val recyclerView = viewPager.getChildAt(0) as? RecyclerView
+        if (recyclerView == null) {
+            DebugLog.log("setupSwipeToDelete: ViewPager2 child is not a RecyclerView — swipe-to-delete unavailable")
+            return
+        }
         val swipeCallback = object : ItemTouchHelper.SimpleCallback(0, ItemTouchHelper.UP or ItemTouchHelper.DOWN) {
             override fun onMove(rv: RecyclerView, vh: RecyclerView.ViewHolder, target: RecyclerView.ViewHolder) = false
 
@@ -166,18 +213,79 @@ class SecureViewerActivity : ComponentActivity() {
             .show()
     }
 
+    // C3: Delete with proper scoped-storage permission handling
     private fun deleteFromMediaStore(uriString: String) {
+        val uri = Uri.parse(uriString)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            // API 30+: use createDeleteRequest — shows system dialog for items we don't own
+            try {
+                val pendingIntent = MediaStore.createDeleteRequest(contentResolver, listOf(uri))
+                pendingDeleteUri = uriString
+                deleteRequestLauncher.launch(
+                    IntentSenderRequest.Builder(pendingIntent.intentSender).build()
+                )
+            } catch (e: Exception) {
+                DebugLog.log("Failed to create delete request: ${e.message}")
+                runOnUiThread {
+                    Toast.makeText(this, R.string.viewer_delete_failed, Toast.LENGTH_SHORT).show()
+                }
+            }
+        } else {
+            // API 26–29: attempt direct delete; catch RecoverableSecurityException for items we
+            // don't own (API 29) and launch the associated user-action intent
+            try {
+                val deleted = contentResolver.delete(uri, null, null)
+                if (deleted > 0) {
+                    DebugLog.log("Deleted media: $uriString")
+                } else {
+                    DebugLog.log("Delete returned 0 rows for: $uriString")
+                    runOnUiThread {
+                        Toast.makeText(this, R.string.viewer_delete_failed, Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: android.os.RecoverableSecurityException) {
+                // API 29: request permission via the embedded action intent
+                try {
+                    pendingDeleteUri = uriString
+                    deleteRequestLauncher.launch(
+                        IntentSenderRequest.Builder(e.userAction.actionIntent.intentSender).build()
+                    )
+                } catch (inner: Exception) {
+                    DebugLog.log("Could not launch delete permission UI: ${inner.message}")
+                    runOnUiThread {
+                        Toast.makeText(this, R.string.viewer_delete_failed, Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                DebugLog.log("Failed to delete media: ${e.message}")
+                runOnUiThread {
+                    Toast.makeText(this, R.string.viewer_delete_failed, Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    // C3: Retry after permission was granted by the system dialog
+    private fun retryDeleteFromMediaStore(uriString: String) {
+        val uri = Uri.parse(uriString)
         try {
-            val uri = Uri.parse(uriString)
-            contentResolver.delete(uri, null, null)
-            DebugLog.log("Deleted media: $uriString")
+            val deleted = contentResolver.delete(uri, null, null)
+            if (deleted > 0) {
+                DebugLog.log("Deleted media (retry): $uriString")
+            } else {
+                DebugLog.log("Retry delete returned 0 rows for: $uriString")
+                Toast.makeText(this, R.string.viewer_delete_failed, Toast.LENGTH_SHORT).show()
+            }
         } catch (e: Exception) {
-            DebugLog.log("Failed to delete media: ${e.message}")
+            DebugLog.log("Retry delete failed: ${e.message}")
+            Toast.makeText(this, R.string.viewer_delete_failed, Toast.LENGTH_SHORT).show()
         }
     }
 
     /**
      * SF-11: Share requires authentication first.
+     * L3: UI operations are dispatched to the main thread via runOnUiThread.
      */
     private fun handleShare() {
         val currentPosition = viewPager.currentItem
@@ -186,90 +294,19 @@ class SecureViewerActivity : ComponentActivity() {
         val km = getSystemService(KEYGUARD_SERVICE) as KeyguardManager
         km.requestDismissKeyguard(this, object : KeyguardManager.KeyguardDismissCallback() {
             override fun onDismissSucceeded() {
-                val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                    type = if (media.isVideo) "video/*" else "image/*"
-                    putExtra(Intent.EXTRA_STREAM, Uri.parse(media.uri))
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                runOnUiThread {
+                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                        type = if (media.isVideo) "video/*" else "image/*"
+                        putExtra(Intent.EXTRA_STREAM, Uri.parse(media.uri))
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    startActivity(Intent.createChooser(shareIntent, null))
                 }
-                startActivity(Intent.createChooser(shareIntent, null))
             }
 
             override fun onDismissError() {}
             override fun onDismissCancelled() {}
         })
-    }
-
-    /**
-     * SF-03/SF-14: Observe MediaStore for new/removed media.
-     */
-    private fun setupMediaObserver() {
-        mediaObserver = object : ContentObserver(handler) {
-            override fun onChange(selfChange: Boolean, uri: Uri?) {
-                queryNewMedia()
-                refreshMedia()
-            }
-        }
-        contentResolver.registerContentObserver(
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true, mediaObserver!!
-        )
-        contentResolver.registerContentObserver(
-            MediaStore.Video.Media.EXTERNAL_CONTENT_URI, true, mediaObserver!!
-        )
-    }
-
-    private fun queryNewMedia() {
-        if (!sessionTracker.isSessionActive) return
-
-        val projection = arrayOf(
-            MediaStore.MediaColumns._ID,
-            MediaStore.MediaColumns.DATE_ADDED,
-            MediaStore.MediaColumns.RELATIVE_PATH,
-            MediaStore.MediaColumns.MIME_TYPE
-        )
-
-        val threshold = (sessionTracker.sessionStartTimestamp / 1000) -
-            (com.gb4pc.Constants.SESSION_TIMESTAMP_TOLERANCE_MS / 1000)
-        val selection = "${MediaStore.MediaColumns.DATE_ADDED} >= ?"
-        val selectionArgs = arrayOf(threshold.toString())
-
-        // Query images
-        queryMediaUri(
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            projection, selection, selectionArgs, isVideo = false
-        )
-        // Query videos
-        queryMediaUri(
-            MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-            projection, selection, selectionArgs, isVideo = true
-        )
-    }
-
-    private fun queryMediaUri(
-        contentUri: Uri,
-        projection: Array<String>,
-        selection: String,
-        selectionArgs: Array<String>,
-        isVideo: Boolean
-    ) {
-        contentResolver.query(contentUri, projection, selection, selectionArgs, null)?.use { cursor ->
-            val idCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
-            val dateCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_ADDED)
-            val pathCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.RELATIVE_PATH)
-
-            while (cursor.moveToNext()) {
-                val id = cursor.getLong(idCol)
-                val dateAdded = cursor.getLong(dateCol) * 1000 // Convert to millis
-                val relativePath = cursor.getString(pathCol) ?: ""
-                val uri = ContentUris.withAppendedId(contentUri, id).toString()
-
-                if (sessionTracker.isMediaInSession(dateAdded, relativePath)) {
-                    // Check if already in session list
-                    if (sessionTracker.getSessionMedia().none { it.uri == uri }) {
-                        sessionTracker.addMedia(MediaItem(uri = uri, dateTaken = dateAdded, isVideo = isVideo))
-                    }
-                }
-            }
-        }
     }
 
     private fun refreshMedia() {
@@ -281,20 +318,11 @@ class SecureViewerActivity : ComponentActivity() {
     }
 
     /**
-     * ViewPager2 adapter for session media items.
+     * L6: ViewPager2 adapter using ListAdapter + DiffUtil for efficient updates.
      */
-    inner class MediaPagerAdapter : RecyclerView.Adapter<MediaPagerAdapter.MediaViewHolder>() {
+    inner class MediaPagerAdapter : ListAdapter<MediaItem, MediaPagerAdapter.MediaViewHolder>(DIFF_CALLBACK) {
 
-        private var items = listOf<MediaItem>()
-
-        fun submitList(newItems: List<MediaItem>) {
-            items = newItems
-            notifyDataSetChanged()
-        }
-
-        fun getItemAt(position: Int): MediaItem? = items.getOrNull(position)
-
-        override fun getItemCount() = items.size
+        fun getItemAt(position: Int): MediaItem? = if (position in 0 until itemCount) getItem(position) else null
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): MediaViewHolder {
             val container = FrameLayout(parent.context).apply {
@@ -307,7 +335,7 @@ class SecureViewerActivity : ComponentActivity() {
         }
 
         override fun onBindViewHolder(holder: MediaViewHolder, position: Int) {
-            val item = items[position]
+            val item = getItem(position)
             val container = holder.itemView as FrameLayout
             container.removeAllViews()
 
@@ -368,14 +396,25 @@ class SecureViewerActivity : ComponentActivity() {
         }
 
         private fun loadBitmap(uri: Uri): android.graphics.Bitmap? {
-            return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 contentResolver.loadThumbnail(uri, android.util.Size(1024, 1024), null)
             } else {
                 @Suppress("DEPRECATION")
-                android.provider.MediaStore.Images.Media.getBitmap(contentResolver, uri)
+                MediaStore.Images.Media.getBitmap(contentResolver, uri)
             }
         }
 
         inner class MediaViewHolder(view: View) : RecyclerView.ViewHolder(view)
+    }
+
+    companion object {
+        // L6: DiffUtil callback — items are the same if they share the same URI
+        val DIFF_CALLBACK = object : DiffUtil.ItemCallback<MediaItem>() {
+            override fun areItemsTheSame(oldItem: MediaItem, newItem: MediaItem): Boolean =
+                oldItem.uri == newItem.uri
+
+            override fun areContentsTheSame(oldItem: MediaItem, newItem: MediaItem): Boolean =
+                oldItem == newItem
+        }
     }
 }

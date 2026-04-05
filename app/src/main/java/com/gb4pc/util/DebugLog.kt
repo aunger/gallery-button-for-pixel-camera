@@ -14,6 +14,9 @@ object DebugLog {
     private val buffer = LinkedList<Entry>()
     private val lock = Any()
 
+    /** Called on the thread that called [log] whenever a new entry is added. */
+    var listener: (() -> Unit)? = null
+
     fun log(message: String) {
         synchronized(lock) {
             buffer.addLast(Entry(timestamp = System.currentTimeMillis(), message = message))
@@ -21,6 +24,7 @@ object DebugLog {
                 buffer.removeFirst()
             }
         }
+        listener?.invoke()
     }
 
     fun getEntries(): List<Entry> {
