@@ -5,14 +5,14 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.PixelFormat
-import android.graphics.drawable.AdaptiveIconDrawable
 import android.graphics.drawable.Drawable
+import android.graphics.drawable.LayerDrawable
 import android.os.Build
 import android.view.Gravity
 import android.view.WindowManager
 import android.widget.ImageView
 import android.widget.Toast
-import com.gb4pc.Constants
+import androidx.core.content.ContextCompat
 import com.gb4pc.R
 import com.gb4pc.data.AspectRatioUtil
 import com.gb4pc.data.PrefsManager
@@ -102,14 +102,40 @@ class OverlayManager(
     private fun getGalleryIcon(packageName: String?): Drawable {
         if (packageName != null) {
             try {
+                // L2/WG-02: packageManager.getApplicationIcon() applies the device's adaptive icon
+                // shape mask on API 26+ automatically, so we get a properly-masked icon for free.
                 return context.packageManager.getApplicationIcon(packageName)
             } catch (_: PackageManager.NameNotFoundException) {
-                // Gallery app uninstalled — fall through to placeholder
+                // Gallery app uninstalled — fall through to warning placeholder (AC-04)
             }
+            // AC-04/M3: Gallery configured but uninstalled — show placeholder with warning badge.
+            return buildWarningPlaceholder()
         }
-        // AC-03/AC-04: placeholder icon
-        return context.getDrawable(R.drawable.ic_gallery_placeholder)
-            ?: context.getDrawable(android.R.drawable.ic_menu_gallery)!!
+        // AC-03: No gallery configured — plain placeholder.
+        // L7: guarantee non-null via fallback chain.
+        return ContextCompat.getDrawable(context, R.drawable.ic_gallery_placeholder)
+            ?: ContextCompat.getDrawable(context, android.R.drawable.ic_menu_gallery)!!
+    }
+
+    /**
+     * AC-04/M3: Combines the placeholder icon with a small warning badge in the bottom-right
+     * corner using LayerDrawable, so the user knows the configured gallery app is missing.
+     * Uses android.R.drawable.ic_dialog_alert scaled to ~25% of the icon as the badge.
+     */
+    private fun buildWarningPlaceholder(): Drawable {
+        // L7: guarantee non-null at each step
+        val placeholder: Drawable = ContextCompat.getDrawable(context, R.drawable.ic_gallery_placeholder)
+            ?: ContextCompat.getDrawable(context, android.R.drawable.ic_menu_gallery)!!
+        val badge: Drawable = ContextCompat.getDrawable(context, android.R.drawable.ic_dialog_alert)
+            ?: return placeholder // if badge unavailable, fall back to plain placeholder
+
+        // Position the badge in the bottom-right quadrant (inset by 50% from top-left).
+        val layers = arrayOf(placeholder, badge)
+        val layered = LayerDrawable(layers)
+        val badgeLayerIndex = 1
+        // Inset: badge occupies the bottom-right quarter of the icon bounds.
+        layered.setLayerInsetRelative(badgeLayerIndex, placeholder.intrinsicWidth / 2, placeholder.intrinsicHeight / 2, 0, 0)
+        return layered
     }
 
     /**
@@ -166,9 +192,17 @@ class OverlayManager(
     }
 
     private fun createLayoutParams(): WindowManager.LayoutParams {
-        val display = context.resources.displayMetrics
-        val displayWidth = display.widthPixels
-        val displayHeight = display.heightPixels
+        // M8: On API 30+ use currentWindowMetrics for correct bounds in split-screen;
+        // fall back to displayMetrics on older API.
+        val (displayWidth, displayHeight) = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val bounds = windowManager.currentWindowMetrics.bounds
+            bounds.width() to bounds.height()
+        } else {
+            @Suppress("DEPRECATION")
+            val dm = android.util.DisplayMetrics()
+            windowManager.defaultDisplay.getMetrics(dm)
+            dm.widthPixels to dm.heightPixels
+        }
 
         val aspectRatio = AspectRatioUtil.quantize(displayWidth, displayHeight)
         val position = prefsManager.getOverlayPosition(aspectRatio)
