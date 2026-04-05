@@ -54,6 +54,15 @@ fun AdvancedSettingsScreen(prefsManager: PrefsManager) {
         prefsManager.saveOverlayPosition(aspectRatio, pos)
     }
 
+    // M2 fix: live-updating debug log entries via DebugLog listener
+    var debugEntries by remember { mutableStateOf(DebugLog.getEntries()) }
+    DisposableEffect(Unit) {
+        DebugLog.listener = { debugEntries = DebugLog.getEntries() }
+        onDispose { DebugLog.listener = null }
+    }
+
+    val dateFormat = remember { SimpleDateFormat("HH:mm:ss.SSS", Locale.US) }
+
     Scaffold(
         topBar = {
             TopAppBar(title = { Text(stringResource(R.string.advanced_title)) })
@@ -65,7 +74,7 @@ fun AdvancedSettingsScreen(prefsManager: PrefsManager) {
                 .padding(16.dp)
                 .fillMaxWidth()
         ) {
-            // UI-10.1: Position sliders
+            // UI-10.1: Position sliders (M4 fix: persist only on onValueChangeFinished)
             Text(
                 text = stringResource(R.string.advanced_x_position),
                 style = MaterialTheme.typography.labelLarge
@@ -73,7 +82,8 @@ fun AdvancedSettingsScreen(prefsManager: PrefsManager) {
             Text(text = "%.2f%%".format(xPercent), style = MaterialTheme.typography.bodySmall)
             Slider(
                 value = xPercent,
-                onValueChange = { xPercent = it; savePosition() },
+                onValueChange = { xPercent = it },
+                onValueChangeFinished = { savePosition() },
                 valueRange = 0f..100f,
                 modifier = Modifier.padding(bottom = 16.dp)
             )
@@ -85,7 +95,8 @@ fun AdvancedSettingsScreen(prefsManager: PrefsManager) {
             Text(text = "%.2f%%".format(yPercent), style = MaterialTheme.typography.bodySmall)
             Slider(
                 value = yPercent,
-                onValueChange = { yPercent = it; savePosition() },
+                onValueChange = { yPercent = it },
+                onValueChangeFinished = { savePosition() },
                 valueRange = 0f..100f,
                 modifier = Modifier.padding(bottom = 16.dp)
             )
@@ -97,7 +108,8 @@ fun AdvancedSettingsScreen(prefsManager: PrefsManager) {
             Text(text = "%.2f%%".format(sizePercent), style = MaterialTheme.typography.bodySmall)
             Slider(
                 value = sizePercent,
-                onValueChange = { sizePercent = it; savePosition() },
+                onValueChange = { sizePercent = it },
+                onValueChangeFinished = { savePosition() },
                 valueRange = Constants.MIN_SIZE_PERCENT..Constants.MAX_SIZE_PERCENT,
                 modifier = Modifier.padding(bottom = 16.dp)
             )
@@ -117,9 +129,6 @@ fun AdvancedSettingsScreen(prefsManager: PrefsManager) {
                 modifier = Modifier.padding(bottom = 8.dp)
             )
 
-            val debugEntries = remember { DebugLog.getEntries() }
-            val dateFormat = remember { SimpleDateFormat("HH:mm:ss.SSS", Locale.US) }
-
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -132,8 +141,12 @@ fun AdvancedSettingsScreen(prefsManager: PrefsManager) {
                         style = MaterialTheme.typography.bodySmall
                     )
                 } else {
-                    LazyColumn(modifier = Modifier.padding(8.dp)) {
-                        items(debugEntries.reversed()) { entry ->
+                    // L8 fix: reverseLayout = true instead of .reversed() copy
+                    LazyColumn(
+                        modifier = Modifier.padding(8.dp),
+                        reverseLayout = true
+                    ) {
+                        items(debugEntries) { entry ->
                             Text(
                                 text = "${dateFormat.format(Date(entry.timestamp))}  ${entry.message}",
                                 style = MaterialTheme.typography.bodySmall,

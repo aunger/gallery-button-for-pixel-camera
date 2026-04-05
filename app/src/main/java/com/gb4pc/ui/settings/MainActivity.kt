@@ -3,7 +3,6 @@ package com.gb4pc.ui.settings
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -19,7 +18,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import com.gb4pc.Constants
 import com.gb4pc.R
 import com.gb4pc.data.PrefsManager
 import com.gb4pc.service.OverlayService
@@ -31,6 +29,12 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var prefsManager: PrefsManager
 
+    // Permission states updated in onResume so Compose reacts to changes
+    private var isPixelCameraInstalled = mutableStateOf(false)
+    private var hasUsageStats = mutableStateOf(false)
+    private var hasOverlay = mutableStateOf(false)
+    private var isBatteryExcluded = mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefsManager = PrefsManager(this)
@@ -39,28 +43,42 @@ class MainActivity : ComponentActivity() {
         if (!prefsManager.isSetupCompleted) {
             startActivity(Intent(this, SetupActivity::class.java))
         }
+
+        // setContent called only once here (H2 fix)
+        setContent {
+            MaterialTheme {
+                MainSettingsScreen(
+                    prefsManager = prefsManager,
+                    isPixelCameraInstalled = isPixelCameraInstalled.value,
+                    hasUsageStats = hasUsageStats.value,
+                    hasOverlay = hasOverlay.value,
+                    isBatteryExcluded = isBatteryExcluded.value
+                )
+            }
+        }
     }
 
     override fun onResume() {
         super.onResume()
-        setContent {
-            MaterialTheme {
-                MainSettingsScreen(prefsManager)
-            }
-        }
+        // Re-check permissions on every resume so banners appear/disappear correctly (H1 fix)
+        isPixelCameraInstalled.value = PermissionHelper.isPixelCameraInstalled(this)
+        hasUsageStats.value = PermissionHelper.hasUsageStatsPermission(this)
+        hasOverlay.value = PermissionHelper.hasOverlayPermission(this)
+        isBatteryExcluded.value = PermissionHelper.isBatteryOptimizationExcluded(this)
     }
 }
 
 @Composable
-fun MainSettingsScreen(prefsManager: PrefsManager) {
+fun MainSettingsScreen(
+    prefsManager: PrefsManager,
+    isPixelCameraInstalled: Boolean,
+    hasUsageStats: Boolean,
+    hasOverlay: Boolean,
+    isBatteryExcluded: Boolean
+) {
     val context = LocalContext.current
     var isServiceEnabled by remember { mutableStateOf(prefsManager.isServiceEnabled) }
     var galleryPackage by remember { mutableStateOf(prefsManager.galleryPackage) }
-
-    val isPixelCameraInstalled = remember { PermissionHelper.isPixelCameraInstalled(context) }
-    val hasUsageStats = remember { PermissionHelper.hasUsageStatsPermission(context) }
-    val hasOverlay = remember { PermissionHelper.hasOverlayPermission(context) }
-    val isBatteryExcluded = remember { PermissionHelper.isBatteryOptimizationExcluded(context) }
 
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(
