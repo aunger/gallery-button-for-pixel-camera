@@ -1,5 +1,6 @@
 package com.gb4pc.service
 
+import android.app.KeyguardManager
 import android.app.Notification
 import android.app.PendingIntent
 import android.app.Service
@@ -39,9 +40,7 @@ class OverlayService : Service() {
     private lateinit var overlayManager: OverlayManager
     private lateinit var cameraState: CameraState
     private lateinit var handler: Handler
-
-    private var deactivateRunnable: Runnable? = null
-    private var isOverlayActive = false
+    private lateinit var logic: OverlayServiceLogic
 
     // H7: Track registration state to avoid re-registering on each onStartCommand
     private var callbackRegistered = false
@@ -55,19 +54,12 @@ class OverlayService : Service() {
     private val cameraCallback = object : CameraManager.AvailabilityCallback() {
         override fun onCameraUnavailable(cameraId: String) {
             DebugLog.log("Camera $cameraId unavailable")
-            cameraState.setCameraUnavailable(cameraId)
-            cancelPendingDeactivation()
-            evaluateForeground()
+            logic.onCameraUnavailable(cameraId)
         }
 
         override fun onCameraAvailable(cameraId: String) {
             DebugLog.log("Camera $cameraId available")
-            cameraState.setCameraAvailable(cameraId)
-
-            // DT-04/DT-05: Only deactivate if ALL cameras available, with debounce
-            if (cameraState.areAllCamerasAvailable()) {
-                scheduleDeactivation()
-            }
+            logic.onCameraAvailable(cameraId)
         }
     }
 
@@ -80,6 +72,32 @@ class OverlayService : Service() {
         prefsManager = PrefsManager(this)
         overlayManager = OverlayManager(this, prefsManager)
         cameraState = CameraState()
+        val km = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+
+        logic = OverlayServiceLogic(
+            hasUsageStatsPermission = { PermissionHelper.hasUsageStatsPermission(this) },
+            hasOverlayPermission = { PermissionHelper.hasOverlayPermission(this) },
+            overlayManager = overlayManager,
+            cameraState = cameraState,
+            foregroundDetector = foregroundDetector,
+            sessionTracker = SessionTracker.instance,
+            handler = handler,
+            onUsageAccessLost = {
+                postPermissionNotification(
+                    Constants.NOTIFICATION_PERMISSION_ID,
+                    getString(R.string.notification_usage_access_lost)
+                )
+            },
+            onOverlayPermissionLost = {
+                postPermissionNotification(
+                    Constants.NOTIFICATION_PERMISSION_ID,
+                    getString(R.string.notification_overlay_lost)
+                )
+            },
+            isKeyguardLocked = { km.isKeyguardLocked },
+            onRegisterMediaObserver = ::registerMediaObserver,
+            onUnregisterMediaObserver = ::unregisterMediaObserver,
+        )
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -106,7 +124,7 @@ class OverlayService : Service() {
 
     override fun onDestroy() {
         DebugLog.log("Service destroyed")
-        cancelPendingDeactivation()
+        logic.reset()
         if (callbackRegistered) {
             cameraManager.unregisterAvailabilityCallback(cameraCallback)
             callbackRegistered = false
@@ -115,7 +133,6 @@ class OverlayService : Service() {
         unregisterMediaObserver()
         overlayManager.hide()
         cameraState.reset()
-        isOverlayActive = false
         super.onDestroy()
     }
 
@@ -166,7 +183,7 @@ class OverlayService : Service() {
     // H3: When screen turns off while overlay is active but session not started, start session
     private fun onScreenOff() {
         DebugLog.log("Screen off received")
-        if (isOverlayActive && !SessionTracker.instance.isSessionActive) {
+        if (logic.isOverlayActive && !SessionTracker.instance.isSessionActive) {
             SessionTracker.instance.startSession()
             registerMediaObserver()
             DebugLog.log("Secure camera session started on screen off")
@@ -181,59 +198,6 @@ class OverlayService : Service() {
             unregisterMediaObserver()
             DebugLog.log("Secure camera session ended on device unlock")
         }
-    }
-
-    /**
-     * DT-02/DT-03: Check if Pixel Camera is the foreground app.
-     */
-    private fun evaluateForeground() {
-        if (!PermissionHelper.hasUsageStatsPermission(this)) {
-            DebugLog.log("Usage stats permission missing — hiding overlay (PM-03)")
-            if (isOverlayActive) {
-                overlayManager.hide()
-                isOverlayActive = false
-                postPermissionNotification(
-                    Constants.NOTIFICATION_PERMISSION_ID,
-                    getString(R.string.notification_usage_access_lost)
-                )
-            }
-            return
-        }
-
-        val foregroundPackage = foregroundDetector.getForegroundPackage()
-        DebugLog.log("Foreground app: $foregroundPackage")
-
-        if (ForegroundDetector.isPixelCameraPackage(foregroundPackage)) {
-            if (!isOverlayActive) {
-                showOverlay()
-            }
-        } else {
-            // Not Pixel Camera — do nothing (DT-03, EC-07)
-            // The overlay will be hidden via the deactivation path when camera is released
-        }
-    }
-
-    private fun showOverlay() {
-        if (!PermissionHelper.hasOverlayPermission(this)) {
-            DebugLog.log("Overlay permission missing (PM-04)")
-            postPermissionNotification(
-                Constants.NOTIFICATION_PERMISSION_ID,
-                getString(R.string.notification_overlay_lost)
-            )
-            return
-        }
-        DebugLog.log("Showing overlay")
-        overlayManager.show()
-        isOverlayActive = true
-
-        // SF-01: Start secure session if device is locked at the moment overlay activates
-        val km = getSystemService(Context.KEYGUARD_SERVICE) as android.app.KeyguardManager
-        if (km.isKeyguardLocked) {
-            SessionTracker.instance.startSession()
-            registerMediaObserver()
-            DebugLog.log("Secure camera session started (device already locked)")
-        }
-        // H3: If device is not locked now, onScreenOff() will start the session when it locks
     }
 
     // H4: Register ContentObserver on session start (SF-03)
@@ -317,34 +281,6 @@ class OverlayService : Service() {
             }
         }
         return null
-    }
-
-    /**
-     * DT-04: Schedule overlay deactivation with debounce delay.
-     */
-    private fun scheduleDeactivation() {
-        cancelPendingDeactivation()
-        deactivateRunnable = Runnable {
-            if (cameraState.areAllCamerasAvailable()) {
-                DebugLog.log("Deactivating overlay (all cameras available)")
-                overlayManager.hide()
-                isOverlayActive = false
-                // SF-01: End secure session on overlay deactivation
-                if (SessionTracker.instance.isSessionActive) {
-                    SessionTracker.instance.endSession()
-                    unregisterMediaObserver()
-                    DebugLog.log("Secure camera session ended")
-                }
-            }
-        }
-        handler.postDelayed(deactivateRunnable!!, Constants.CAMERA_DEBOUNCE_MS)
-    }
-
-    private fun cancelPendingDeactivation() {
-        deactivateRunnable?.let {
-            handler.removeCallbacks(it)
-            deactivateRunnable = null
-        }
     }
 
     private fun buildNotification(): Notification {
