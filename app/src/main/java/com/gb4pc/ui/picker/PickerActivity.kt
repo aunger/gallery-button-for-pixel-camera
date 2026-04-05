@@ -13,6 +13,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
@@ -79,20 +81,23 @@ fun PickerScreen(
     val context = LocalContext.current
     var searchQuery by remember { mutableStateOf("") }
 
-    // Load all launchable apps
-    val allApps = remember {
-        val pm = context.packageManager
-        val mainIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        val resolveInfos = pm.queryIntentActivities(mainIntent, PackageManager.MATCH_ALL)
-        resolveInfos.map { ri ->
-            AppInfo(
-                label = ri.loadLabel(pm).toString(),
-                packageName = ri.activityInfo.packageName
-            )
-        }.distinctBy { it.packageName }
+    // Load all launchable apps off the main thread
+    var allApps by remember { mutableStateOf(emptyList<AppInfo>()) }
+    LaunchedEffect(Unit) {
+        allApps = withContext(Dispatchers.IO) {
+            val pm = context.packageManager
+            val mainIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+            val resolveInfos = pm.queryIntentActivities(mainIntent, PackageManager.MATCH_ALL)
+            resolveInfos.map { ri ->
+                AppInfo(
+                    label = ri.loadLabel(pm).toString(),
+                    packageName = ri.activityInfo.packageName
+                )
+            }.distinctBy { it.packageName }
+        }
     }
 
-    val filteredApps = remember(searchQuery) {
+    val filteredApps = remember(allApps, searchQuery) {
         AppListFilter.filter(allApps, searchQuery, context.packageName)
     }
 

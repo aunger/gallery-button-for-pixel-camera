@@ -17,6 +17,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.provider.MediaStore
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.gb4pc.Constants
 import com.gb4pc.R
 import com.gb4pc.data.PrefsManager
@@ -149,7 +150,7 @@ class OverlayService : Service() {
             addAction(Intent.ACTION_SCREEN_OFF)
             addAction(Intent.ACTION_USER_PRESENT)
         }
-        registerReceiver(screenEventReceiver, filter)
+        ContextCompat.registerReceiver(this, screenEventReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
         DebugLog.log("Screen event receiver registered")
     }
 

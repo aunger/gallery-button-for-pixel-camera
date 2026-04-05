@@ -43,7 +43,9 @@ class SessionTracker {
     fun addMedia(item: MediaItem) {
         synchronized(lock) {
             if (!isSessionActive) return
-            mediaItems.add(item)
+            if (mediaItems.none { it.uri == item.uri }) {
+                mediaItems.add(item)
+            }
         }
     }
 

@@ -24,6 +24,11 @@ import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.viewpager2.widget.ViewPager2
 import com.davemorrissey.labs.subscaleview.ImageSource
 import com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView
@@ -335,6 +340,10 @@ class SecureViewerActivity : ComponentActivity() {
         }
 
         override fun onBindViewHolder(holder: MediaViewHolder, position: Int) {
+            // Cancel any pending load from a previous bind of this holder
+            holder.loadJob?.cancel()
+            holder.loadJob = null
+
             val item = getItem(position)
             val container = holder.itemView as FrameLayout
             container.removeAllViews()
@@ -350,8 +359,6 @@ class SecureViewerActivity : ComponentActivity() {
                         )
                         scaleType = ImageView.ScaleType.FIT_CENTER
                     }
-                    val bitmap = loadBitmap(uri)
-                    imageView.setImageBitmap(bitmap)
                     container.addView(imageView)
 
                     // SF-09: Play button icon overlay
@@ -367,6 +374,17 @@ class SecureViewerActivity : ComponentActivity() {
 
                     container.setOnClickListener {
                         Toast.makeText(this@SecureViewerActivity, R.string.viewer_unlock_to_play, Toast.LENGTH_SHORT).show()
+                    }
+
+                    // Decode thumbnail on IO thread, then set on main thread
+                    holder.loadJob = lifecycleScope.launch {
+                        val bitmap = withContext(Dispatchers.IO) {
+                            try { loadBitmap(uri) } catch (e: Exception) {
+                                DebugLog.log("Failed to load video thumbnail: ${e.message}")
+                                null
+                            }
+                        }
+                        imageView.setImageBitmap(bitmap)
                     }
                 } else {
                     // SF-08: Use SubsamplingScaleImageView for pinch-to-zoom
@@ -404,7 +422,9 @@ class SecureViewerActivity : ComponentActivity() {
             }
         }
 
-        inner class MediaViewHolder(view: View) : RecyclerView.ViewHolder(view)
+        inner class MediaViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+            var loadJob: Job? = null
+        }
     }
 
     companion object {
