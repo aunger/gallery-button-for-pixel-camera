@@ -4,12 +4,18 @@ import android.app.Notification
 import android.app.PendingIntent
 import android.app.Service
 import android.app.usage.UsageStatsManager
+import android.content.BroadcastReceiver
+import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.database.ContentObserver
 import android.hardware.camera2.CameraManager
+import android.net.Uri
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.provider.MediaStore
 import androidx.core.app.NotificationCompat
 import com.gb4pc.Constants
 import com.gb4pc.R
@@ -18,6 +24,7 @@ import com.gb4pc.overlay.OverlayManager
 import com.gb4pc.ui.settings.MainActivity
 import com.gb4pc.util.DebugLog
 import com.gb4pc.util.PermissionHelper
+import com.gb4pc.viewer.MediaItem
 import com.gb4pc.viewer.SessionTracker
 
 /**
@@ -34,6 +41,15 @@ class OverlayService : Service() {
 
     private var deactivateRunnable: Runnable? = null
     private var isOverlayActive = false
+
+    // H7: Track registration state to avoid re-registering on each onStartCommand
+    private var callbackRegistered = false
+
+    // H3/M1: BroadcastReceiver for screen-off (start session) and user-present (end session)
+    private var screenEventReceiver: BroadcastReceiver? = null
+
+    // H4: ContentObserver registered at session start, unregistered at session end
+    private var mediaObserver: ContentObserver? = null
 
     private val cameraCallback = object : CameraManager.AvailabilityCallback() {
         override fun onCameraUnavailable(cameraId: String) {
@@ -73,8 +89,16 @@ class OverlayService : Service() {
             return START_NOT_STICKY
         }
 
+        // H6: Refuse to start if Pixel Camera is not installed (OV-04)
+        if (!PermissionHelper.isPixelCameraInstalled(this)) {
+            DebugLog.log("Pixel Camera not installed — stopping service (OV-04)")
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
         startForeground(Constants.NOTIFICATION_ID, buildNotification())
         registerCameraCallbacks()
+        registerScreenEventReceiver()
         DebugLog.log("Service started")
         return START_STICKY
     }
@@ -82,7 +106,12 @@ class OverlayService : Service() {
     override fun onDestroy() {
         DebugLog.log("Service destroyed")
         cancelPendingDeactivation()
-        cameraManager.unregisterAvailabilityCallback(cameraCallback)
+        if (callbackRegistered) {
+            cameraManager.unregisterAvailabilityCallback(cameraCallback)
+            callbackRegistered = false
+        }
+        unregisterScreenEventReceiver()
+        unregisterMediaObserver()
         overlayManager.hide()
         cameraState.reset()
         isOverlayActive = false
@@ -92,13 +121,64 @@ class OverlayService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun registerCameraCallbacks() {
+        // H7: Only register if not already registered
+        if (callbackRegistered) return
         // DT-01: Register for all camera IDs
         try {
             cameraManager.registerAvailabilityCallback(cameraCallback, handler)
+            callbackRegistered = true
             val ids = cameraManager.cameraIdList
             DebugLog.log("Registered camera callback for ${ids.size} cameras: ${ids.joinToString()}")
         } catch (e: Exception) {
             DebugLog.log("Failed to register camera callback: ${e.message}")
+        }
+    }
+
+    // H3/M1: Register receiver for screen-off and user-present events
+    private fun registerScreenEventReceiver() {
+        if (screenEventReceiver != null) return
+        screenEventReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                when (intent?.action) {
+                    Intent.ACTION_SCREEN_OFF -> onScreenOff()
+                    Intent.ACTION_USER_PRESENT -> onUserPresent()
+                }
+            }
+        }
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_USER_PRESENT)
+        }
+        registerReceiver(screenEventReceiver, filter)
+        DebugLog.log("Screen event receiver registered")
+    }
+
+    private fun unregisterScreenEventReceiver() {
+        screenEventReceiver?.let {
+            try {
+                unregisterReceiver(it)
+            } catch (_: Exception) {}
+            screenEventReceiver = null
+        }
+    }
+
+    // H3: When screen turns off while overlay is active but session not started, start session
+    private fun onScreenOff() {
+        DebugLog.log("Screen off received")
+        if (isOverlayActive && !SessionTracker.instance.isSessionActive) {
+            SessionTracker.instance.startSession()
+            registerMediaObserver()
+            DebugLog.log("Secure camera session started on screen off")
+        }
+    }
+
+    // M1: When device unlocks while session is active, end the session
+    private fun onUserPresent() {
+        DebugLog.log("User present (device unlocked)")
+        if (SessionTracker.instance.isSessionActive) {
+            SessionTracker.instance.endSession()
+            unregisterMediaObserver()
+            DebugLog.log("Secure camera session ended on device unlock")
         }
     }
 
@@ -145,12 +225,97 @@ class OverlayService : Service() {
         overlayManager.show()
         isOverlayActive = true
 
-        // SF-01: Start secure session if device is locked
+        // SF-01: Start secure session if device is locked at the moment overlay activates
         val km = getSystemService(Context.KEYGUARD_SERVICE) as android.app.KeyguardManager
         if (km.isKeyguardLocked) {
             SessionTracker.instance.startSession()
-            DebugLog.log("Secure camera session started")
+            registerMediaObserver()
+            DebugLog.log("Secure camera session started (device already locked)")
         }
+        // H3: If device is not locked now, onScreenOff() will start the session when it locks
+    }
+
+    // H4: Register ContentObserver on session start (SF-03)
+    private fun registerMediaObserver() {
+        if (mediaObserver != null) return
+        val sessionStartMs = SessionTracker.instance.sessionStartTimestamp
+        mediaObserver = object : ContentObserver(handler) {
+            override fun onChange(selfChange: Boolean, uri: Uri?) {
+                val item = queryLatestMedia(sessionStartMs)
+                if (item != null) {
+                    SessionTracker.instance.addMedia(item)
+                    DebugLog.log("Media added to session: ${item.uri}")
+                }
+            }
+        }
+        contentResolver.registerContentObserver(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            true,
+            mediaObserver!!
+        )
+        contentResolver.registerContentObserver(
+            MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+            true,
+            mediaObserver!!
+        )
+        DebugLog.log("ContentObserver registered at session start")
+    }
+
+    private fun unregisterMediaObserver() {
+        mediaObserver?.let {
+            contentResolver.unregisterContentObserver(it)
+            mediaObserver = null
+            DebugLog.log("ContentObserver unregistered")
+        }
+    }
+
+    // H4: Query for latest media item added after session start
+    private fun queryLatestMedia(sessionStartMs: Long): MediaItem? {
+        val projection = arrayOf(
+            MediaStore.MediaColumns._ID,
+            MediaStore.MediaColumns.MIME_TYPE,
+            MediaStore.MediaColumns.DATE_ADDED,
+            MediaStore.MediaColumns.DATE_TAKEN
+        )
+        val selectionArgs = arrayOf((sessionStartMs / 1000).toString())
+
+        // Query images
+        val imageResult = queryMediaStore(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            projection,
+            selectionArgs,
+            isVideo = false
+        )
+        if (imageResult != null) return imageResult
+
+        // Query videos
+        return queryMediaStore(
+            MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+            projection,
+            selectionArgs,
+            isVideo = true
+        )
+    }
+
+    private fun queryMediaStore(
+        contentUri: Uri,
+        projection: Array<String>,
+        selectionArgs: Array<String>,
+        isVideo: Boolean
+    ): MediaItem? {
+        val selection = "${MediaStore.MediaColumns.DATE_ADDED} >= ?"
+        val sortOrder = "${MediaStore.MediaColumns.DATE_ADDED} DESC LIMIT 1"
+        contentResolver.query(contentUri, projection, selection, selectionArgs, sortOrder)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID))
+                val mime = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE))
+                val dateTakenCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_TAKEN)
+                val dateTaken = if (dateTakenCol >= 0) cursor.getLong(dateTakenCol) else System.currentTimeMillis()
+                val uri = ContentUris.withAppendedId(contentUri, id)
+                return MediaItem(uri.toString(), dateTaken, isVideo)
+            }
+        }
+        return null
     }
 
     /**
@@ -166,6 +331,7 @@ class OverlayService : Service() {
                 // SF-01: End secure session on overlay deactivation
                 if (SessionTracker.instance.isSessionActive) {
                     SessionTracker.instance.endSession()
+                    unregisterMediaObserver()
                     DebugLog.log("Secure camera session ended")
                 }
             }

@@ -18,14 +18,35 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // M6: Conditionally configure release signing from environment variables.
+    // CI sets KEYSTORE_PATH/KEYSTORE_PASSWORD/KEY_ALIAS/KEY_PASSWORD to sign with a real keystore.
+    // Locally (no env vars) the release APK will be unsigned — never uses the debug keystore.
+    val keystorePath = System.getenv("KEYSTORE_PATH")
+    if (keystorePath != null) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(keystorePath)
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
+            // M7: Enable minification and resource shrinking for release builds.
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // M6: Only apply release signing config when keystore env vars are present.
+            if (keystorePath != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+            // else signingConfig stays null → unsigned release build locally
         }
     }
 

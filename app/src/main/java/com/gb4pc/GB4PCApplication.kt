@@ -3,7 +3,6 @@ package com.gb4pc
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.os.Build
 
 class GB4PCApplication : Application() {
     override fun onCreate() {
