@@ -18,13 +18,13 @@ object DebugLog {
     var listener: (() -> Unit)? = null
 
     fun log(message: String) {
+        val snapshot: (() -> Unit)?
         synchronized(lock) {
-            buffer.addLast(Entry(timestamp = System.currentTimeMillis(), message = message))
-            while (buffer.size > Constants.DEBUG_LOG_BUFFER_SIZE) {
-                buffer.removeFirst()
-            }
+            buffer.addLast(Entry(System.currentTimeMillis(), message))
+            while (buffer.size > Constants.DEBUG_LOG_BUFFER_SIZE) buffer.removeFirst()
+            snapshot = listener
         }
-        listener?.invoke()
+        snapshot?.invoke()
     }
 
     fun getEntries(): List<Entry> {

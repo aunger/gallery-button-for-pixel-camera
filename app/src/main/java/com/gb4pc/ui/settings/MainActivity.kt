@@ -42,6 +42,8 @@ class MainActivity : ComponentActivity() {
         // Redirect to setup if not completed
         if (!prefsManager.isSetupCompleted) {
             startActivity(Intent(this, SetupActivity::class.java))
+            finish()
+            return
         }
 
         // setContent called only once here (H2 fix)
