@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -142,16 +143,19 @@ fun AdvancedSettingsScreen(prefsManager: PrefsManager) {
                     )
                 } else {
                     // L8 fix: reverseLayout = true instead of .reversed() copy
-                    LazyColumn(
-                        modifier = Modifier.padding(8.dp),
-                        reverseLayout = true
-                    ) {
-                        items(debugEntries) { entry ->
-                            Text(
-                                text = "${dateFormat.format(Date(entry.timestamp))}  ${entry.message}",
-                                style = MaterialTheme.typography.bodySmall,
-                                modifier = Modifier.padding(vertical = 2.dp)
-                            )
+                    // #14: SelectionContainer enables text highlight and copy
+                    SelectionContainer {
+                        LazyColumn(
+                            modifier = Modifier.padding(8.dp),
+                            reverseLayout = true
+                        ) {
+                            items(debugEntries) { entry ->
+                                Text(
+                                    text = "${dateFormat.format(Date(entry.timestamp))}  ${entry.message}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.padding(vertical = 2.dp)
+                                )
+                            }
                         }
                     }
                 }
