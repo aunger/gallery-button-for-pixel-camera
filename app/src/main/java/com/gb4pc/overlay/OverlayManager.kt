@@ -33,6 +33,9 @@ class OverlayManager(
     private var overlayView: ImageView? = null
     private var isShowing = false
 
+    /** Whether the overlay window is currently added to the screen. Exposed for testing. */
+    val isVisible: Boolean get() = isShowing
+
     fun show() {
         if (isShowing) {
             updateIcon()

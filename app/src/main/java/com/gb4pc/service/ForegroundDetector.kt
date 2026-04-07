@@ -7,14 +7,14 @@ import com.gb4pc.Constants
 /**
  * Detects the current foreground app using UsageStatsManager (DT-02, DT-06).
  */
-class ForegroundDetector(private val usageStatsManager: UsageStatsManager) {
+open class ForegroundDetector(private val usageStatsManager: UsageStatsManager) {
 
     /**
      * Queries UsageStatsManager for the most recent MOVE_TO_FOREGROUND event
      * in the last [Constants.USAGE_STATS_WINDOW_MS] milliseconds.
      * Returns the package name, or null if no event found (EC-09).
      */
-    fun getForegroundPackage(): String? {
+    open fun getForegroundPackage(): String? {
         val endTime = System.currentTimeMillis()
         val beginTime = endTime - Constants.USAGE_STATS_WINDOW_MS
 
