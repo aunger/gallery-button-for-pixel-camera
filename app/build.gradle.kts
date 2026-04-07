@@ -1,8 +1,17 @@
+import java.text.SimpleDateFormat
+import java.util.Date
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+
+// Versioning: semver versionName + yyyyMMdd time-based versionCode.
+// GitHub releases must be tagged v{versionName} (e.g. v0.0.1).
+// CI may override the build number via the BUILD_NUMBER env var.
+val buildNumber: Int = System.getenv("BUILD_NUMBER")?.toIntOrNull()
+    ?: SimpleDateFormat("yyyyMMdd").format(Date()).toInt()
 
 android {
     namespace = "com.gb4pc"
@@ -12,8 +21,9 @@ android {
         applicationId = "com.gb4pc"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+
+        versionCode = buildNumber
+        versionName = "0.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -61,6 +71,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     testOptions {
