@@ -4,9 +4,9 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -142,14 +142,16 @@ fun AdvancedSettingsScreen(prefsManager: PrefsManager) {
                         style = MaterialTheme.typography.bodySmall
                     )
                 } else {
-                    // L8 fix: reverseLayout = true instead of .reversed() copy
-                    // #14: SelectionContainer enables text highlight and copy
+                    // Column+verticalScroll (not LazyColumn) so SelectionContainer can
+                    // maintain selection state across the full list without items being
+                    // disposed on scroll. 200 short strings have negligible memory cost.
                     SelectionContainer {
-                        LazyColumn(
-                            modifier = Modifier.padding(8.dp),
-                            reverseLayout = true
+                        Column(
+                            modifier = Modifier
+                                .verticalScroll(rememberScrollState())
+                                .padding(8.dp)
                         ) {
-                            items(debugEntries) { entry ->
+                            for (entry in debugEntries.asReversed()) {
                                 Text(
                                     text = "${dateFormat.format(Date(entry.timestamp))}  ${entry.message}",
                                     style = MaterialTheme.typography.bodySmall,
