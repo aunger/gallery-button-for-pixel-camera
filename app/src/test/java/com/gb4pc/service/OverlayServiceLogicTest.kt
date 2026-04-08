@@ -20,7 +20,7 @@ class OverlayServiceLogicTest {
 
     // ── Mocked collaborators ────────────────────────────────────────────────
     private lateinit var overlayManager: OverlayManager
-    private lateinit var foregroundDetector: ForegroundDetector
+    private lateinit var foregroundDetector: ForegroundDetectorPort
     private lateinit var sessionTracker: SessionTracker
     private lateinit var handler: Handler
 

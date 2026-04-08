@@ -2,12 +2,14 @@ package com.gb4pc.overlay
 
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.filters.LargeTest
 import androidx.test.platform.app.InstrumentationRegistry
 import com.gb4pc.Constants
 import com.gb4pc.data.PrefsManager
 import com.gb4pc.service.CameraState
-import com.gb4pc.service.ForegroundDetector
+import com.gb4pc.service.ForegroundDetectorPort
 import com.gb4pc.service.OverlayServiceLogic
 import com.gb4pc.viewer.SessionTracker
 import org.junit.After
@@ -22,13 +24,15 @@ import org.junit.runner.RunWith
  * viewfinder becoming active and inactive).
  *
  * Pixel Camera is absent on stock AOSP emulators, so camera availability is
- * driven through [OverlayServiceLogic] and the foreground-app signal is stubbed
- * to return the Pixel Camera package.  All other collaborators — [OverlayManager],
+ * driven through [OverlayServiceLogic] and the foreground-app signal is provided
+ * via [ForegroundDetectorPort].  All other collaborators — [OverlayManager],
  * [CameraState], and [android.os.Handler] — are real objects so that the
  * WindowManager interaction is exercised end-to-end.
  *
- * SYSTEM_ALERT_WINDOW permission is granted before the suite via `appops set`.
+ * SYSTEM_ALERT_WINDOW permission is granted before each test via `appops set`;
+ * setUp polls [Settings.canDrawOverlays] to confirm the grant before proceeding.
  */
+@LargeTest
 @RunWith(AndroidJUnit4::class)
 class OverlayVisibilityE2ETest {
 
@@ -40,14 +44,20 @@ class OverlayVisibilityE2ETest {
 
     @Before
     fun setUp() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+
         // Grant SYSTEM_ALERT_WINDOW so OverlayManager can add a window.
         InstrumentationRegistry.getInstrumentation().uiAutomation
-            .executeShellCommand("appops set ${InstrumentationRegistry.getInstrumentation().targetContext.packageName} SYSTEM_ALERT_WINDOW allow")
+            .executeShellCommand("appops set ${context.packageName} SYSTEM_ALERT_WINDOW allow")
             .close()
-        // Give the permission grant a moment to propagate.
-        Thread.sleep(300)
 
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        // Poll until the permission propagates to this process (max 3 s).
+        val deadline = System.currentTimeMillis() + 3_000
+        while (!Settings.canDrawOverlays(context) && System.currentTimeMillis() < deadline) {
+            Thread.sleep(50)
+        }
+        check(Settings.canDrawOverlays(context)) { "SYSTEM_ALERT_WINDOW not granted after 3 s" }
+
         val prefsManager = PrefsManager(context)
         overlayManager = OverlayManager(context, prefsManager)
         cameraState = CameraState()
@@ -59,12 +69,8 @@ class OverlayVisibilityE2ETest {
             hasOverlayPermission = { true },
             overlayManager = overlayManager,
             cameraState = cameraState,
-            foregroundDetector = object : ForegroundDetector(
-                context.getSystemService(android.app.usage.UsageStatsManager::class.java)
-            ) {
-                // Simulate Pixel Camera always being in the foreground.
-                override fun getForegroundPackage(): String = Constants.PIXEL_CAMERA_PACKAGE
-            },
+            // Stub: simulate Pixel Camera always in the foreground.
+            foregroundDetector = ForegroundDetectorPort { Constants.PIXEL_CAMERA_PACKAGE },
             sessionTracker = sessionTracker,
             handler = handler,
             debounceMs = 0L,
@@ -105,10 +111,10 @@ class OverlayVisibilityE2ETest {
         runOnMain { logic.onCameraUnavailable("0") }
         assertTrue("Pre-condition: overlay must be visible after camera opens", overlayManager.isVisible)
 
-        // Release the camera — with debounceMs = 0 the runnable fires immediately.
+        // Release the camera — with debounceMs = 0 the deactivation runnable is
+        // posted immediately; waitForIdleSync drains the main looper deterministically.
         runOnMain { logic.onCameraAvailable("0") }
-        // Allow the deactivation runnable to execute on the main thread.
-        Thread.sleep(200)
+        InstrumentationRegistry.getInstrumentation().waitForIdleSync()
 
         assertFalse("Overlay must be hidden after camera releases", overlayManager.isVisible)
         assertFalse("Logic must track overlay as inactive", logic.isOverlayActive)
@@ -126,7 +132,7 @@ class OverlayVisibilityE2ETest {
 
         // Cycle 1: close
         runOnMain { logic.onCameraAvailable("0") }
-        Thread.sleep(200)
+        InstrumentationRegistry.getInstrumentation().waitForIdleSync()
         assertFalse("Overlay must disappear after first close", overlayManager.isVisible)
 
         // Cycle 2: reopen
@@ -135,18 +141,25 @@ class OverlayVisibilityE2ETest {
 
         // Cycle 2: close
         runOnMain { logic.onCameraAvailable("0") }
-        Thread.sleep(200)
+        InstrumentationRegistry.getInstrumentation().waitForIdleSync()
         assertFalse("Overlay must disappear after second close", overlayManager.isVisible)
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────
 
-    /** Runs [block] on the main thread and waits for it to complete. */
+    /**
+     * Runs [block] on the main thread, waits for completion, and re-throws any
+     * exception thrown inside [block] on the calling thread.
+     */
     private fun runOnMain(block: () -> Unit) {
         val latch = java.util.concurrent.CountDownLatch(1)
+        var thrown: Throwable? = null
         Handler(Looper.getMainLooper()).post {
-            try { block() } finally { latch.countDown() }
+            try { block() } catch (t: Throwable) { thrown = t } finally { latch.countDown() }
         }
-        latch.await(5, java.util.concurrent.TimeUnit.SECONDS)
+        check(latch.await(5, java.util.concurrent.TimeUnit.SECONDS)) {
+            "runOnMain timed out after 5 s"
+        }
+        thrown?.let { throw it }
     }
 }

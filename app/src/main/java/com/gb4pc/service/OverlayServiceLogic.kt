@@ -18,7 +18,7 @@ class OverlayServiceLogic(
     private val hasOverlayPermission: () -> Boolean,
     private val overlayManager: OverlayManager,
     private val cameraState: CameraState,
-    private val foregroundDetector: ForegroundDetector,
+    private val foregroundDetector: ForegroundDetectorPort,
     private val sessionTracker: SessionTracker,
     private val handler: Handler,
     private val debounceMs: Long = Constants.CAMERA_DEBOUNCE_MS,
