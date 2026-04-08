@@ -49,9 +49,11 @@ jobs:
           path: app/build/reports/tests/
           retention-days: 14
 
+  # Run instrumented (E2E) tests on an AVD. Requires KVM, which ubuntu-latest supports.
+  # Gates on build so the emulator only spins up when the build and unit tests pass.
   instrumented-tests:
+    needs: build
     runs-on: ubuntu-latest
-    # Instrumented tests run on every PR and push to main, just like unit tests.
 
     steps:
       - uses: actions/checkout@v4
@@ -65,6 +67,13 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Enable KVM (required for hardware-accelerated emulator)
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
       - name: Cache Gradle packages
         uses: actions/cache@v4
         with:
@@ -77,13 +86,6 @@ jobs:
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
-
-      - name: Enable KVM (required for hardware-accelerated emulator)
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
 
       - name: Run instrumented tests on emulator
         uses: reactivecircus/android-emulator-runner@v2
