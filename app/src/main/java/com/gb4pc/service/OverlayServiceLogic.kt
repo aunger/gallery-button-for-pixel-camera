@@ -22,6 +22,7 @@ class OverlayServiceLogic(
     private val sessionTracker: SessionTracker,
     private val handler: Handler,
     private val debounceMs: Long = Constants.CAMERA_DEBOUNCE_MS,
+    private val activationRetryMs: Long = Constants.ACTIVATION_RETRY_MS,
     /** Called when usage-stats permission is lost while the overlay is active (PM-03). */
     private val onUsageAccessLost: () -> Unit,
     /** Called when the overlay DRAW_OVERLAYS permission is missing on showOverlay() (PM-04). */
@@ -34,6 +35,7 @@ class OverlayServiceLogic(
         private set
 
     private var deactivateRunnable: Runnable? = null
+    private var activationRetryRunnable: Runnable? = null
 
     // ── Camera callback delegation ──────────────────────────────────────────
 
@@ -41,12 +43,19 @@ class OverlayServiceLogic(
         cameraState.setCameraUnavailable(cameraId)
         cancelPendingDeactivation()
         evaluateForeground()
+        // EC-09: If UsageStats hasn't delivered the MOVE_TO_FOREGROUND event yet, the
+        // overlay won't have activated. Schedule one retry so the overlay appears even
+        // when the camera opens before UsageStats catches up.
+        if (!isOverlayActive) {
+            scheduleActivationRetry()
+        }
     }
 
     fun onCameraAvailable(cameraId: String) {
         cameraState.setCameraAvailable(cameraId)
         // DT-04/DT-05: Only schedule deactivation when ALL cameras have been released
         if (cameraState.areAllCamerasAvailable()) {
+            cancelActivationRetry()
             scheduleDeactivation()
         }
     }
@@ -117,9 +126,28 @@ class OverlayServiceLogic(
         }
     }
 
+    private fun scheduleActivationRetry() {
+        cancelActivationRetry()
+        activationRetryRunnable = Runnable {
+            activationRetryRunnable = null
+            if (cameraState.anyCameraUnavailable() && !isOverlayActive) {
+                evaluateForeground()
+            }
+        }
+        handler.postDelayed(activationRetryRunnable!!, activationRetryMs)
+    }
+
+    private fun cancelActivationRetry() {
+        activationRetryRunnable?.let {
+            handler.removeCallbacks(it)
+            activationRetryRunnable = null
+        }
+    }
+
     /** Called from onDestroy to clean up mutable state. */
     fun reset() {
         cancelPendingDeactivation()
+        cancelActivationRetry()
         isOverlayActive = false
     }
 }

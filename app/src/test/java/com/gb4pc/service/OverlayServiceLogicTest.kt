@@ -62,7 +62,8 @@ class OverlayServiceLogicTest {
             foregroundDetector = foregroundDetector,
             sessionTracker = sessionTracker,
             handler = handler,
-            debounceMs = 0L, // keep handler calls synchronous-looking in tests
+            debounceMs = 0L,          // keep handler calls synchronous-looking in tests
+            activationRetryMs = 0L,   // same — retry fires immediately
             onUsageAccessLost = { usageAccessLostCount++ },
             onOverlayPermissionLost = { overlayLostCount++ },
             isKeyguardLocked = { keyguardLocked },
@@ -258,5 +259,72 @@ class OverlayServiceLogicTest {
         assertTrue(logic.isOverlayActive)
         verify(sessionTracker, never()).startSession()
         assertFalse("Media observer should not be registered when device is unlocked", mediaObserverRegistered)
+    }
+
+    // ── EC-09: UsageStats activation retry ─────────────────────────────────
+
+    /**
+     * Regression test for the bug in issue #15: if UsageStatsManager hasn't delivered
+     * the MOVE_TO_FOREGROUND event for Pixel Camera by the time the first
+     * onCameraUnavailable callback fires, the overlay must still appear once the
+     * activation-retry runnable executes and foreground detection succeeds.
+     */
+    @Test
+    fun `EC-09 overlay activates on retry when UsageStats initially lags`() {
+        // First call returns null (UsageStats hasn't delivered the event yet).
+        // Second call (retry) returns the PC package.
+        var callCount = 0
+        val laggingDetector = ForegroundDetectorPort {
+            callCount++
+            if (callCount == 1) null else Constants.PIXEL_CAMERA_PACKAGE
+        }
+        val logicWithLaggingDetector = OverlayServiceLogic(
+            hasUsageStatsPermission = { true },
+            hasOverlayPermission = { true },
+            overlayManager = overlayManager,
+            cameraState = cameraState,
+            foregroundDetector = laggingDetector,
+            sessionTracker = sessionTracker,
+            handler = handler,
+            debounceMs = 0L,
+            activationRetryMs = 0L,
+            onUsageAccessLost = {},
+            onOverlayPermissionLost = {},
+            isKeyguardLocked = { false },
+            onRegisterMediaObserver = {},
+            onUnregisterMediaObserver = {},
+        )
+
+        // Camera opens — first evaluateForeground call returns null; overlay stays hidden.
+        logicWithLaggingDetector.onCameraUnavailable("0")
+        assertFalse("Overlay must not appear when UsageStats returns null", logicWithLaggingDetector.isOverlayActive)
+
+        // The retry runnable was posted to handler. Capture it and execute it.
+        val runnableCaptor = argumentCaptor<Runnable>()
+        verify(handler, atLeastOnce()).postDelayed(runnableCaptor.capture(), eq(0L))
+        // Run the retry runnable (the one posted for activation retry).
+        runnableCaptor.allValues.last().run()
+
+        assertTrue("Overlay must appear after retry when UsageStats delivers the event", logicWithLaggingDetector.isOverlayActive)
+        verify(overlayManager).show()
+    }
+
+    /**
+     * When the camera is released before the retry fires, the retry must be cancelled
+     * and the overlay must NOT appear (EC-07 / EC-09 interaction).
+     */
+    @Test
+    fun `EC-09 retry is cancelled when camera becomes available before retry fires`() {
+        whenever(foregroundDetector.getForegroundPackage()).thenReturn(null)
+
+        logic.onCameraUnavailable("0")
+        assertFalse("Overlay must not appear when foreground is unknown", logic.isOverlayActive)
+
+        // Camera releases before retry fires.
+        logic.onCameraAvailable("0")
+
+        // Verify removeCallbacks was called (cancels both deactivation and retry posts).
+        verify(handler, atLeastOnce()).removeCallbacks(any())
+        assertFalse("Overlay must remain hidden when camera released before retry", logic.isOverlayActive)
     }
 }

@@ -15,6 +15,11 @@ object Constants {
     // Camera debounce delay (DT-04)
     const val CAMERA_DEBOUNCE_MS = 500L
 
+    // EC-09: UsageStats events can lag by several hundred ms after the app comes to foreground.
+    // If the overlay didn't activate on the first camera-unavailable callback, retry once after
+    // this delay to give UsageStats time to deliver the MOVE_TO_FOREGROUND event.
+    const val ACTIVATION_RETRY_MS = 1000L
+
     // UsageStats query window (DT-02)
     const val USAGE_STATS_WINDOW_MS = 5000L
 
