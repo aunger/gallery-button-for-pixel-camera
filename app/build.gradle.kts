@@ -1,5 +1,6 @@
-import java.text.SimpleDateFormat
-import java.util.Date
+import java.time.LocalDate
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 
 plugins {
     id("com.android.application")
@@ -10,8 +11,14 @@ plugins {
 // Versioning: semver versionName + yyyyMMdd time-based versionCode.
 // GitHub releases must be tagged v{versionName} (e.g. v0.0.1).
 // CI may override the build number via the BUILD_NUMBER env var.
-val buildNumber: Int = System.getenv("BUILD_NUMBER")?.toIntOrNull()
-    ?: SimpleDateFormat("yyyyMMdd").format(Date()).toInt()
+// BUILD_NUMBER must be a valid integer; a malformed value fails the build loudly.
+val envBuildNumber: String? = System.getenv("BUILD_NUMBER")
+val buildNumber: Int = when {
+    envBuildNumber == null ->
+        LocalDate.now(ZoneOffset.UTC).format(DateTimeFormatter.BASIC_ISO_DATE).toInt()
+    envBuildNumber.toIntOrNull() != null -> envBuildNumber.toInt()
+    else -> error("BUILD_NUMBER env var is set but not a valid integer: '$envBuildNumber'")
+}
 
 android {
     namespace = "com.gb4pc"

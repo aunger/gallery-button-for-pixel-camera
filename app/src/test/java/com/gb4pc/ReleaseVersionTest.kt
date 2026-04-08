@@ -3,25 +3,29 @@ package com.gb4pc
 import org.junit.Assert.*
 import org.junit.Test
 import java.time.LocalDate
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 
 /**
  * Automated release test suite (issue #16).
  *
+ * These tests read [BuildConfig] constants that are baked in at compile time — they
+ * validate the build that produced this APK, not future builds.
+ *
  * Verifies:
- *  1. versionName follows semver (MAJOR.MINOR.PATCH).
- *  2. versionCode is a valid yyyyMMdd build date.
- *  3. The GitHub tag convention (v{versionName}) is satisfied.
+ *  1. versionName follows semver (MAJOR.MINOR.PATCH, no leading zeros).
+ *  2. versionCode is a valid yyyyMMdd build date (UTC) within a sane range.
  */
 class ReleaseVersionTest {
 
     @Test
-    fun `versionName follows semver MAJOR dot MINOR dot PATCH`() {
+    fun `versionName follows semver MAJOR dot MINOR dot PATCH without leading zeros`() {
         val versionName = BuildConfig.VERSION_NAME
-        val semver = Regex("""^\d+\.\d+\.\d+$""")
+        // Strict semver: no leading zeros per spec item 2.
+        val semver = Regex("""^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$""")
         assertTrue(
-            "versionName '$versionName' must follow semver MAJOR.MINOR.PATCH",
+            "versionName '$versionName' must follow semver MAJOR.MINOR.PATCH (no leading zeros)",
             semver.matches(versionName)
         )
     }
@@ -42,25 +46,18 @@ class ReleaseVersionTest {
     }
 
     @Test
-    fun `versionCode build date is not in the future by more than one day`() {
+    fun `versionCode build date is within sane bounds`() {
         val code = BuildConfig.VERSION_CODE
         val buildDate = LocalDate.parse(code.toString(), DateTimeFormatter.ofPattern("yyyyMMdd"))
-        val tomorrow = LocalDate.now().plusDays(1)
+        val projectEpoch = LocalDate.of(2024, 1, 1)
+        val tomorrow = LocalDate.now(ZoneOffset.UTC).plusDays(1)
+        assertTrue(
+            "versionCode build date '$buildDate' is before project epoch ($projectEpoch)",
+            !buildDate.isBefore(projectEpoch)
+        )
         assertFalse(
             "versionCode build date '$buildDate' should not be in the future",
             buildDate.isAfter(tomorrow)
-        )
-    }
-
-    @Test
-    fun `github tag v-versionName is a valid tag name`() {
-        // Convention: each GitHub release must be tagged v{versionName} (e.g. v0.0.1).
-        val versionName = BuildConfig.VERSION_NAME
-        val githubTag = "v$versionName"
-        val validTag = Regex("""^v\d+\.\d+\.\d+$""")
-        assertTrue(
-            "GitHub tag '$githubTag' must match pattern v{semver}",
-            validTag.matches(githubTag)
         )
     }
 }
