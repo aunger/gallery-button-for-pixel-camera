@@ -18,6 +18,9 @@ object Constants {
     // UsageStats query window (DT-02)
     const val USAGE_STATS_WINDOW_MS = 5000L
 
+    // Retry delay when UsageStats hasn't caught up with the foreground app yet (DT-06a)
+    const val ACTIVATION_RETRY_MS = 1000L
+
     // Debug log buffer size (UI-10)
     const val DEBUG_LOG_BUFFER_SIZE = 200
 

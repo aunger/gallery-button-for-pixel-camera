@@ -97,6 +97,7 @@ class OverlayService : Service() {
             isKeyguardLocked = { km.isKeyguardLocked },
             onRegisterMediaObserver = ::registerMediaObserver,
             onUnregisterMediaObserver = ::unregisterMediaObserver,
+            onOverlayStateChanged = { active -> isOverlayActive = active },
         )
     }
 
@@ -124,6 +125,7 @@ class OverlayService : Service() {
 
     override fun onDestroy() {
         DebugLog.log("Service destroyed")
+        isOverlayActive = false
         logic.reset()
         if (callbackRegistered) {
             cameraManager.unregisterAvailabilityCallback(cameraCallback)
@@ -330,6 +332,14 @@ class OverlayService : Service() {
 
     companion object {
         const val ACTION_STOP = "com.gb4pc.STOP_SERVICE"
+
+        /**
+         * True while the overlay is currently visible. Updated by the running service instance;
+         * resets to false when the service is destroyed. Observable by E2E tests without binding.
+         */
+        @Volatile
+        @JvmField
+        var isOverlayActive: Boolean = false
 
         fun start(context: Context) {
             val intent = Intent(context, OverlayService::class.java)
