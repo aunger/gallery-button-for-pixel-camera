@@ -7,7 +7,7 @@ import com.gb4pc.Constants
 import com.gb4pc.data.PrefsManager
 import com.gb4pc.service.OverlayService
 import org.junit.Assert.assertTrue
-import org.junit.Assume
+import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -35,14 +35,16 @@ class PixelCameraOverlayE2ETest {
 
     @Before
     fun preconditionCheck() {
-        // Verify Pixel Camera is installed; skip gracefully if not.
+        // Pixel Camera must be installed. Failing here (not skipping) is intentional:
+        // the E2E suite should not silently pass on an emulator that lacks PC.
+        // Set up the emulator with scripts/setup-e2e-emulator.sh before running these tests.
         try {
             context.packageManager.getPackageInfo(PC_PACKAGE, 0)
         } catch (e: PackageManager.NameNotFoundException) {
-            Assume.assumeTrue(
+            fail(
                 "Pixel Camera ($PC_PACKAGE) is not installed. " +
-                    "Install it via 'adb install e2e/pixel-camera.apk' before running E2E tests.",
-                false
+                    "Run 'scripts/setup-e2e-emulator.sh' (or 'adb install e2e/pixel-camera.apk') " +
+                    "before executing the E2E suite."
             )
         }
 
@@ -78,10 +80,10 @@ class PixelCameraOverlayE2ETest {
      */
     @Test
     fun overlayDisappearsWhenViewfinderCloses() {
-        // Pre-condition: bring overlay up.
+        // Pre-condition: bring overlay up. If it doesn't appear, that is itself a failure.
         uiAutomation.executeShellCommand("am start -n $PC_ACTIVITY").close()
         val appeared = waitForCondition(timeoutMs = 5000L) { OverlayService.isOverlayActive }
-        Assume.assumeTrue("Pre-condition: overlay must be active with PC in foreground", appeared)
+        assertTrue("Pre-condition: overlay must appear within 5 s after launching PC", appeared)
 
         // Send PC to background; camera is released.
         uiAutomation.executeShellCommand(
