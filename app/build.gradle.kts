@@ -1,7 +1,23 @@
+import java.time.LocalDate
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+}
+
+// Versioning: semver versionName + yyyyMMdd time-based versionCode.
+// GitHub releases must be tagged v{versionName} (e.g. v0.0.1).
+// CI may override the build number via the BUILD_NUMBER env var.
+// BUILD_NUMBER must be a valid integer; a malformed value fails the build loudly.
+val envBuildNumber: String? = System.getenv("BUILD_NUMBER")
+val buildNumber: Int = when {
+    envBuildNumber == null ->
+        LocalDate.now(ZoneOffset.UTC).format(DateTimeFormatter.BASIC_ISO_DATE).toInt()
+    envBuildNumber.toIntOrNull() != null -> envBuildNumber.toInt()
+    else -> error("BUILD_NUMBER env var is set but not a valid integer: '$envBuildNumber'")
 }
 
 android {
@@ -12,8 +28,8 @@ android {
         applicationId = "com.gb4pc"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = buildNumber
+        versionName = "0.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -61,6 +77,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     testOptions {
