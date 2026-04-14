@@ -1,3 +1,4 @@
+import java.io.ByteArrayOutputStream
 import java.time.LocalDate
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -155,14 +156,26 @@ tasks.register("connectedE2EAndroidTest") {
     description = "Runs E2E instrumented tests (requires device/emulator with Pixel Camera installed)."
     dependsOn("assembleDebug", "assembleDebugAndroidTest")
     doLast {
+        // Install app first so SYSTEM_ALERT_WINDOW can be granted by package name.
         exec { commandLine(e2eAdb, "install", "-r", e2eAppApk.get().asFile.absolutePath) }
+        // Grant SYSTEM_ALERT_WINDOW now that the app UID exists on the device.
+        exec { commandLine(e2eAdb, "shell", "appops", "set", "com.gb4pc", "SYSTEM_ALERT_WINDOW", "allow") }
         exec { commandLine(e2eAdb, "install", "-r", e2eTestApk.get().asFile.absolutePath) }
+        // Run E2E tests. am instrument exits non-zero on test failure but returns 0
+        // on process crash; capture stdout and fail loudly if "Process crashed" appears.
+        val instrumentOut = ByteArrayOutputStream()
         exec {
             commandLine(
                 e2eAdb, "shell", "am", "instrument", "-w",
                 "-e", "package", "com.gb4pc.e2e",
                 "com.gb4pc.test/androidx.test.runner.AndroidJUnitRunner"
             )
+            standardOutput = instrumentOut
+        }
+        val output = instrumentOut.toString()
+        print(output)
+        if (output.contains("Process crashed") || output.contains("INSTRUMENTATION_ABORTED")) {
+            throw GradleException("E2E instrumentation process crashed — check device logs")
         }
     }
 }

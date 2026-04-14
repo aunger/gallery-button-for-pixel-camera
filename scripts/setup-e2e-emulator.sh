@@ -117,7 +117,9 @@ else
 fi
 
 # ── Step 5: Grant PACKAGE_USAGE_STATS to Pixel Camera ───────────────────────
-echo "==> Granting PACKAGE_USAGE_STATS to Pixel Camera..."
+# API 29+ renamed the appops string from PACKAGE_USAGE_STATS to GET_USAGE_STATS.
+echo "==> Granting usage stats permission to Pixel Camera..."
+"$ADB" shell appops set com.google.android.GoogleCamera GET_USAGE_STATS allow || \
 "$ADB" shell appops set com.google.android.GoogleCamera PACKAGE_USAGE_STATS allow || true
 
 # ── Step 6: Grant SYSTEM_ALERT_WINDOW to GB4PC ──────────────────────────────
