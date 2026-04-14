@@ -71,7 +71,10 @@ jobs:
   # aunger/gallery-button-test-assets where the Pixel Camera APKM is stored).
   # Mark this job as required in branch protection to block merges on failure.
   e2e-tests:
-    runs-on: ubuntu-latest
+    # macOS-14 (Apple Silicon M1) is required: arm64-v8a Android emulator images
+    # run natively on ARM hardware. The arm64-v8a Pixel Camera splits cannot be
+    # installed on x86_64 Linux runners (no ARM translation in CI emulators).
+    runs-on: macos-14
     needs: check-e2e-config
     if: needs.check-e2e-config.outputs.enabled == 'true'
 
@@ -115,7 +118,7 @@ jobs:
         with:
           api-level: 33
           target: google_apis
-          arch: x86_64
+          arch: arm64-v8a
           profile: pixel_6
           disable-animations: true
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
