@@ -49,16 +49,31 @@ jobs:
           path: app/build/reports/tests/
           retention-days: 14
 
+  # Checks whether E2E_PC_APK_TOKEN is configured; gates the e2e-tests job.
+  # Secrets cannot be referenced in job-level if conditions, so we check in a step.
+  check-e2e-config:
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.check.outputs.enabled }}
+    steps:
+      - id: check
+        env:
+          TOKEN: ${{ secrets.E2E_PC_APK_TOKEN }}
+        run: |
+          if [[ -n "$TOKEN" ]]; then
+            echo "enabled=true" >> $GITHUB_OUTPUT
+          else
+            echo "enabled=false" >> $GITHUB_OUTPUT
+          fi
+
   # End-to-end tests against a real Pixel Camera process on an emulator.
   # Requires the E2E_PC_APK_TOKEN secret to be set (PAT with read access to
   # aunger/gallery-button-test-assets where the Pixel Camera APKM is stored).
   # Mark this job as required in branch protection to block merges on failure.
   e2e-tests:
     runs-on: ubuntu-latest
-    # Skip gracefully if E2E testing is not configured for this repo.
-    # Set repository variable E2E_ENABLED=true (Settings → Variables → Actions)
-    # and repository secret E2E_PC_APK_TOKEN to enable this job.
-    if: vars.E2E_ENABLED != ''
+    needs: check-e2e-config
+    if: needs.check-e2e-config.outputs.enabled == 'true'
 
     steps:
       - uses: actions/checkout@v4
