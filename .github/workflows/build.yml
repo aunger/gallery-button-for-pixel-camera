@@ -121,7 +121,7 @@ jobs:
           arch: arm64-v8a
           profile: pixel_6
           disable-animations: true
-          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
+          emulator-options: -no-window -no-audio -no-boot-anim
           script: |
             chmod +x scripts/setup-e2e-emulator.sh
             scripts/setup-e2e-emulator.sh --post-boot
