@@ -55,8 +55,10 @@ jobs:
   # Mark this job as required in branch protection to block merges on failure.
   e2e-tests:
     runs-on: ubuntu-latest
-    # Skip gracefully if the private-assets PAT is not configured.
-    if: secrets.E2E_PC_APK_TOKEN != ''
+    # Skip gracefully if E2E testing is not configured for this repo.
+    # Set repository variable E2E_ENABLED=true (Settings → Variables → Actions)
+    # and repository secret E2E_PC_APK_TOKEN to enable this job.
+    if: vars.E2E_ENABLED != ''
 
     steps:
       - uses: actions/checkout@v4
