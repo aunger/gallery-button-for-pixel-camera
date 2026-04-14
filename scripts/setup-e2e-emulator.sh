@@ -20,7 +20,8 @@
 # Prerequisites:
 #   - ANDROID_HOME (or ANDROID_SDK_ROOT) must be set
 #   - For full setup: sdkmanager, avdmanager must be on PATH (or in $ANDROID_HOME/cmdline-tools/latest/bin)
-#   - e2e/pixel-camera.apk must exist (run scripts/download-pc-apk.sh first)
+#   - e2e/pixel-camera.apkm must exist (run scripts/download-pc-apk.sh first)
+#   - unzip must be available (standard on Ubuntu/macOS)
 
 set -euo pipefail
 
@@ -99,15 +100,20 @@ if [[ "$POST_BOOT_ONLY" == false ]]; then
     echo "==> Device fully booted."
 fi
 
-# ── Step 4: Install Pixel Camera APK ────────────────────────────────────────
-PC_APK="$REPO_ROOT/e2e/pixel-camera.apk"
-if [[ -f "$PC_APK" ]]; then
-    echo "==> Installing Pixel Camera APK..."
-    "$ADB" install -r "$PC_APK"
+# ── Step 4: Install Pixel Camera from APKM bundle ───────────────────────────
+PC_APKM="$REPO_ROOT/e2e/pixel-camera.apkm"
+if [[ -f "$PC_APKM" ]]; then
+    echo "==> Extracting Pixel Camera splits from APKM bundle..."
+    SPLITS_DIR=$(mktemp -d)
+    unzip -o "$PC_APKM" -d "$SPLITS_DIR" > /dev/null
+    echo "==> Installing Pixel Camera splits (adb install-multiple)..."
+    # shellcheck disable=SC2086
+    "$ADB" install-multiple "$SPLITS_DIR"/*.apk
+    rm -rf "$SPLITS_DIR"
     echo "Pixel Camera installed."
 else
-    echo "WARNING: $PC_APK not found. Skipping Pixel Camera install."
-    echo "  Run 'scripts/download-pc-apk.sh <URL>' to download it."
+    echo "WARNING: $PC_APKM not found. Skipping Pixel Camera install."
+    echo "  Run 'scripts/download-pc-apk.sh' to download it."
 fi
 
 # ── Step 5: Grant PACKAGE_USAGE_STATS to Pixel Camera ───────────────────────

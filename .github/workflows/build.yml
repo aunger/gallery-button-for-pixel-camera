@@ -50,12 +50,13 @@ jobs:
           retention-days: 14
 
   # End-to-end tests against a real Pixel Camera process on an emulator.
-  # Requires the E2E_PC_APK_URL Actions variable (or secret) to be set.
+  # Requires the E2E_PC_APK_TOKEN secret to be set (PAT with read access to
+  # aunger/gallery-button-test-assets where the Pixel Camera APKM is stored).
   # Mark this job as required in branch protection to block merges on failure.
   e2e-tests:
     runs-on: ubuntu-latest
-    # Skip gracefully if the APK URL secret/variable is not configured.
-    if: vars.E2E_PC_APK_URL != '' || secrets.E2E_PC_APK_URL != ''
+    # Skip gracefully if the private-assets PAT is not configured.
+    if: secrets.E2E_PC_APK_TOKEN != ''
 
     steps:
       - uses: actions/checkout@v4
@@ -85,12 +86,12 @@ jobs:
       - name: Build debug and test APKs
         run: ./gradlew assembleDebug assembleDebugAndroidTest --no-daemon
 
-      - name: Download Pixel Camera APK
+      - name: Download Pixel Camera APKM
         env:
-          PC_APK_URL: ${{ vars.E2E_PC_APK_URL || secrets.E2E_PC_APK_URL }}
+          GH_TOKEN: ${{ secrets.E2E_PC_APK_TOKEN }}
         run: |
           chmod +x scripts/download-pc-apk.sh
-          scripts/download-pc-apk.sh "$PC_APK_URL"
+          scripts/download-pc-apk.sh
 
       - name: Run E2E tests on emulator
         uses: reactivecircus/android-emulator-runner@v2
