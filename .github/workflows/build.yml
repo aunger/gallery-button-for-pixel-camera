@@ -121,6 +121,7 @@ jobs:
           arch: x86_64
           profile: pixel_6
           disable-animations: false
+          emulator-boot-timeout: 900
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
           script: |
             chmod +x scripts/setup-e2e-emulator.sh
