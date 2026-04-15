@@ -74,6 +74,13 @@ jobs:
     # ubuntu-latest has KVM hardware acceleration (available since April 2024).
     # API 35 x86_64 emulators include ARM translation (libndk_translation) that
     # allows arm64-v8a Pixel Camera splits to be installed and run on x86_64.
+    #
+    # We manage the emulator lifecycle ourselves rather than using
+    # reactivecircus/android-emulator-runner@v2 because the runner action
+    # unconditionally runs `adb shell input keyevent 82` immediately after
+    # sys.boot_completed=1, before system services accept binder connections on
+    # the slow API-35 emulator — causing exit code 224 (Broken Pipe) before our
+    # script ever starts. The explicit steps below poll for true service readiness.
     runs-on: ubuntu-latest
     needs: check-e2e-config
     if: needs.check-e2e-config.outputs.enabled == 'true'
@@ -90,6 +97,13 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | \
+            sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
       - name: Cache Gradle packages
         uses: actions/cache@v4
         with:
@@ -99,6 +113,29 @@ jobs:
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties') }}
           restore-keys: |
             ${{ runner.os }}-gradle-
+
+      # Cache AVD + snapshot so subsequent runs boot in seconds instead of ~15 min.
+      - name: Cache AVD snapshot
+        uses: actions/cache@v4
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-api35-google_apis-x86_64-v1
+
+      - name: Install Android emulator
+        run: sdkmanager --install "emulator"
+
+      - name: Install system image and create AVD
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        run: |
+          sdkmanager --install "system-images;android-35;google_apis;x86_64"
+          echo "no" | avdmanager create avd \
+            --name e2e_avd \
+            --package "system-images;android-35;google_apis;x86_64" \
+            --device pixel_6 \
+            --force
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
@@ -113,24 +150,69 @@ jobs:
           chmod +x scripts/download-pc-apk.sh
           scripts/download-pc-apk.sh
 
-      - name: Run E2E tests on emulator
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          target: google_apis
-          arch: x86_64
-          profile: pixel_6
-          disable-animations: false
-          emulator-boot-timeout: 1200
-          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
-          script: |
-            chmod +x scripts/setup-e2e-emulator.sh
-            scripts/setup-e2e-emulator.sh --post-boot
-            ./gradlew connectedE2EAndroidTest --no-daemon || {
-              echo "=== LOGCAT (last 300 lines) ==="
-              adb logcat -d | grep -E "AndroidRuntime|FATAL|Process crashed|com\.gb4pc|OverlayService|E/\w" | tail -300
+      - name: Start emulator
+        run: |
+          $ANDROID_HOME/emulator/emulator \
+            -avd e2e_avd \
+            -no-window -no-audio -no-boot-anim \
+            -gpu swiftshader_indirect \
+            > /tmp/emulator.log 2>&1 &
+          echo "EMULATOR_PID=$!" >> $GITHUB_ENV
+          echo "Emulator launched (PID=$!)"
+
+      # Poll for true service readiness — not just sys.boot_completed=1.
+      # sys.boot_completed is set while binder threads are still saturated;
+      # we wait until `settings` actually responds before issuing any commands.
+      - name: Wait for emulator service readiness
+        timeout-minutes: 25
+        run: |
+          ADB="$ANDROID_HOME/platform-tools/adb"
+
+          echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Waiting for ADB device..."
+          "$ADB" wait-for-device
+
+          echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Waiting for sys.boot_completed=1..."
+          until [[ "$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]]; do
+            sleep 5
+          done
+          echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Boot flag set."
+
+          echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Waiting for settings service..."
+          SVCWAIT=0
+          until "$ADB" shell settings get global airplane_mode_on > /dev/null 2>&1; do
+            if [[ $SVCWAIT -ge 120 ]]; then
+              echo "ERROR: Services not ready after 120s post-boot." >&2
               exit 1
-            }
+            fi
+            sleep 5
+            SVCWAIT=$((SVCWAIT + 5))
+            echo "  ...not ready yet (${SVCWAIT}s since boot flag)"
+          done
+          echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Services ready (${SVCWAIT}s after boot flag)."
+
+          # Unlock screen and disable animations now that services are up.
+          "$ADB" shell input keyevent 82
+          "$ADB" shell settings put global window_animation_scale 0
+          "$ADB" shell settings put global transition_animation_scale 0
+          "$ADB" shell settings put global animator_duration_scale 0
+
+      - name: Run E2E setup and tests
+        run: |
+          chmod +x scripts/setup-e2e-emulator.sh
+          scripts/setup-e2e-emulator.sh --post-boot
+          ./gradlew connectedE2EAndroidTest --no-daemon || {
+            echo "=== LOGCAT (last 300 lines) ==="
+            $ANDROID_HOME/platform-tools/adb logcat -d | \
+              grep -E "AndroidRuntime|FATAL|Process crashed|com\.gb4pc|OverlayService|E/\w" | \
+              tail -300
+            exit 1
+          }
+
+      - name: Kill emulator
+        if: always()
+        run: |
+          $ANDROID_HOME/platform-tools/adb emu kill 2>/dev/null || true
+          [[ -n "${EMULATOR_PID:-}" ]] && kill "$EMULATOR_PID" 2>/dev/null || true
 
       - name: Upload E2E test results
         if: always()

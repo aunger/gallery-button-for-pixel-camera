@@ -14,8 +14,8 @@
 #   6. Grant SYSTEM_ALERT_WINDOW to GB4PC
 #   7. Disable animations
 #
-# Post-boot setup (CI): the emulator is already running (started by
-# reactivecircus/android-emulator-runner@v2); this script performs steps 4–7 only.
+# Post-boot setup (CI): the emulator is already running and all system services
+# have been verified ready by the workflow; this script performs steps 4–7 only.
 #
 # Prerequisites:
 #   - ANDROID_HOME (or ANDROID_SDK_ROOT) must be set
