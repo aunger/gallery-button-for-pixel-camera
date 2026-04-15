@@ -126,7 +126,11 @@ jobs:
           script: |
             chmod +x scripts/setup-e2e-emulator.sh
             scripts/setup-e2e-emulator.sh --post-boot
-            ./gradlew connectedE2EAndroidTest --no-daemon
+            ./gradlew connectedE2EAndroidTest --no-daemon || {
+              echo "=== LOGCAT (last 300 lines) ==="
+              adb logcat -d | grep -E "AndroidRuntime|FATAL|Process crashed|com\.gb4pc|OverlayService|E/\w" | tail -300
+              exit 1
+            }
 
       - name: Upload E2E test results
         if: always()
