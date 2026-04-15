@@ -153,11 +153,15 @@ else
     echo "  Run 'scripts/download-pc-apk.sh' to download it."
 fi
 
-# ── Step 5: Grant PACKAGE_USAGE_STATS to Pixel Camera ───────────────────────
+# ── Step 5: Grant GET_USAGE_STATS to GB4PC ──────────────────────────────────
+# GB4PC's ForegroundDetector reads UsageStatsManager to detect which app is in
+# the foreground. Without this permission, the overlay never appears.
 # API 29+ renamed the appops string from PACKAGE_USAGE_STATS to GET_USAGE_STATS.
-echo "==> Granting usage stats permission to Pixel Camera..."
-"$ADB" shell appops set com.google.android.GoogleCamera GET_USAGE_STATS allow || \
-"$ADB" shell appops set com.google.android.GoogleCamera PACKAGE_USAGE_STATS allow || true
+# Note: in CI the app may not be installed yet at this point (the Gradle task
+# installs it); the Gradle task also grants this permission after install.
+echo "==> Granting GET_USAGE_STATS to GB4PC..."
+"$ADB" shell appops set com.gb4pc GET_USAGE_STATS allow || \
+"$ADB" shell appops set com.gb4pc PACKAGE_USAGE_STATS allow || true
 
 # ── Step 6: Grant SYSTEM_ALERT_WINDOW to GB4PC ──────────────────────────────
 echo "==> Granting SYSTEM_ALERT_WINDOW to GB4PC..."
