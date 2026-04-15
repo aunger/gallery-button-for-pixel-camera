@@ -119,11 +119,26 @@ jobs:
           sdkmanager --install \
             "emulator" \
             "system-images;android-35;google_apis;x86_64"
+
+          # Pin AVD home to a stable path so both avdmanager and the emulator
+          # agree on where AVDs live, regardless of what android-actions sets.
+          AVD_HOME="$HOME/.android/avd"
+          mkdir -p "$AVD_HOME"
+          export ANDROID_AVD_HOME="$AVD_HOME"
+          echo "ANDROID_AVD_HOME=$AVD_HOME" >> $GITHUB_ENV
+
+          echo "==> Creating AVD (ANDROID_AVD_HOME=$AVD_HOME)..."
           echo "no" | avdmanager create avd \
             --name e2e_avd \
             --package "system-images;android-35;google_apis;x86_64" \
             --device pixel_6 \
             --force
+
+          echo "==> AVD directory contents:"
+          ls -la "$AVD_HOME/" || echo "(empty or missing)"
+
+          echo "==> emulator -list-avds:"
+          ANDROID_AVD_HOME="$AVD_HOME" $ANDROID_HOME/emulator/emulator -list-avds
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
