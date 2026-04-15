@@ -221,6 +221,20 @@ jobs:
           "$ADB" shell settings put global transition_animation_scale 0
           "$ADB" shell settings put global animator_duration_scale 0
 
+      - name: Diagnose Pixel Camera
+        run: |
+          ADB="$ANDROID_HOME/platform-tools/adb"
+          echo "==> Pixel Camera package info:"
+          "$ADB" shell pm list packages | grep -i google || echo "(none found)"
+          echo "==> Pixel Camera launcher activity:"
+          "$ADB" shell pm resolve-activity --brief \
+            -a android.media.action.STILL_IMAGE_CAMERA \
+            -p com.google.android.GoogleCamera \
+            2>/dev/null || echo "(resolve failed)"
+          echo "==> Pixel Camera main activities:"
+          "$ADB" shell pm dump com.google.android.GoogleCamera 2>/dev/null | \
+            grep -E "Activity|MAIN|CAMERA|Launcher" | head -30 || echo "(dump failed)"
+
       - name: Run E2E setup and tests
         run: |
           chmod +x scripts/setup-e2e-emulator.sh
@@ -228,7 +242,7 @@ jobs:
           ./gradlew connectedE2EAndroidTest --no-daemon || {
             echo "=== LOGCAT (last 300 lines) ==="
             $ANDROID_HOME/platform-tools/adb logcat -d | \
-              grep -E "AndroidRuntime|FATAL|Process crashed|com\.gb4pc|OverlayService|E/\w" | \
+              grep -E "AndroidRuntime|FATAL|Process crashed|com\.gb4pc|OverlayService|GoogleCamera|CameraService|E/\w" | \
               tail -300
             exit 1
           }

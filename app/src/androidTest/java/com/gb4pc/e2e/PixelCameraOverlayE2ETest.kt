@@ -68,7 +68,9 @@ class PixelCameraOverlayE2ETest {
      */
     @Test
     fun overlayAppearsWhenViewfinderOpens() {
-        uiAutomation.executeShellCommand("am start -n $PC_ACTIVITY").close()
+        uiAutomation.executeShellCommand(
+            "am start -a android.media.action.STILL_IMAGE_CAMERA -p $PC_PACKAGE"
+        ).close()
 
         val appeared = waitForCondition(timeoutMs = 5000L) { OverlayService.isOverlayActive }
         assertTrue("Overlay should appear within 5 s of launching Pixel Camera viewfinder", appeared)
@@ -81,7 +83,9 @@ class PixelCameraOverlayE2ETest {
     @Test
     fun overlayDisappearsWhenViewfinderCloses() {
         // Pre-condition: bring overlay up. If it doesn't appear, that is itself a failure.
-        uiAutomation.executeShellCommand("am start -n $PC_ACTIVITY").close()
+        uiAutomation.executeShellCommand(
+            "am start -a android.media.action.STILL_IMAGE_CAMERA -p $PC_PACKAGE"
+        ).close()
         val appeared = waitForCondition(timeoutMs = 5000L) { OverlayService.isOverlayActive }
         assertTrue("Pre-condition: overlay must appear within 5 s after launching PC", appeared)
 
@@ -111,7 +115,9 @@ class PixelCameraOverlayE2ETest {
     @Test
     fun overlayAppearsAfterUsageStatsLag() {
         // Launch PC — camera unavailable fires quickly; UsageStats may lag behind.
-        uiAutomation.executeShellCommand("am start -n $PC_ACTIVITY").close()
+        uiAutomation.executeShellCommand(
+            "am start -a android.media.action.STILL_IMAGE_CAMERA -p $PC_PACKAGE"
+        ).close()
 
         // Generous window: ACTIVATION_RETRY_MS (1 s) + 1 s headroom for scheduling overhead.
         val timeoutMs = Constants.ACTIVATION_RETRY_MS + 1000L
@@ -140,6 +146,5 @@ class PixelCameraOverlayE2ETest {
 
     companion object {
         private const val PC_PACKAGE = Constants.PIXEL_CAMERA_PACKAGE
-        private const val PC_ACTIVITY = "$PC_PACKAGE/.CameraActivity"
     }
 }
