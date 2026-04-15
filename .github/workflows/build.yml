@@ -114,23 +114,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
-      # Cache AVD + snapshot so subsequent runs boot in seconds instead of ~15 min.
-      - name: Cache AVD snapshot
-        uses: actions/cache@v4
-        id: avd-cache
-        with:
-          path: |
-            ~/.android/avd/*
-            ~/.android/adb*
-          key: avd-api35-google_apis-x86_64-v1
-
-      - name: Install Android emulator
-        run: sdkmanager --install "emulator"
-
-      - name: Install system image and create AVD
-        if: steps.avd-cache.outputs.cache-hit != 'true'
+      - name: Install emulator, system image, and create AVD
         run: |
-          sdkmanager --install "system-images;android-35;google_apis;x86_64"
+          sdkmanager --install \
+            "emulator" \
+            "system-images;android-35;google_apis;x86_64"
           echo "no" | avdmanager create avd \
             --name e2e_avd \
             --package "system-images;android-35;google_apis;x86_64" \
