@@ -152,13 +152,31 @@ jobs:
 
       - name: Start emulator
         run: |
+          echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === KVM device:"
+          ls -la /dev/kvm || echo "WARNING: /dev/kvm not found"
+
+          echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Available AVDs:"
+          $ANDROID_HOME/emulator/emulator -list-avds
+
           $ANDROID_HOME/emulator/emulator \
             -avd e2e_avd \
             -no-window -no-audio -no-boot-anim \
             -gpu swiftshader_indirect \
+            -enable-kvm \
             > /tmp/emulator.log 2>&1 &
-          echo "EMULATOR_PID=$!" >> $GITHUB_ENV
-          echo "Emulator launched (PID=$!)"
+          EMUPID=$!
+          echo "EMULATOR_PID=$EMUPID" >> $GITHUB_ENV
+          echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Emulator launched (PID=$EMUPID)"
+
+          # Give it 5 seconds to detect an immediate crash
+          sleep 5
+          if ! kill -0 "$EMUPID" 2>/dev/null; then
+            echo "ERROR: Emulator process already exited!" >&2
+            echo "=== Emulator log ===" >&2
+            cat /tmp/emulator.log >&2
+            exit 1
+          fi
+          echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Emulator process alive."
 
       # Poll for true service readiness — not just sys.boot_completed=1.
       # sys.boot_completed is set while binder threads are still saturated;
@@ -168,8 +186,13 @@ jobs:
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
 
-          echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Waiting for ADB device..."
-          "$ADB" wait-for-device
+          echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Waiting for ADB device (timeout 1200s)..."
+          timeout 1200 "$ADB" wait-for-device || {
+            echo "ERROR: Emulator did not appear on ADB after 1200s" >&2
+            echo "=== Emulator log (last 80 lines) ===" >&2
+            tail -80 /tmp/emulator.log >&2
+            exit 1
+          }
 
           echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Waiting for sys.boot_completed=1..."
           until [[ "$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]]; do
