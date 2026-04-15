@@ -100,6 +100,23 @@ if [[ "$POST_BOOT_ONLY" == false ]]; then
     echo "==> Device fully booted."
 fi
 
+# ── Wait for package manager to be fully ready ──────────────────────────────
+# sys.boot_completed=1 can be set before the package manager service accepts
+# install sessions. Poll until 'pm list packages' succeeds.
+echo "==> Waiting for package manager to be ready..."
+PM_TIMEOUT=120
+PM_ELAPSED=0
+until "$ADB" shell pm list packages > /dev/null 2>&1; do
+    if [[ $PM_ELAPSED -ge $PM_TIMEOUT ]]; then
+        echo "ERROR: Package manager not ready after ${PM_TIMEOUT}s." >&2
+        exit 1
+    fi
+    sleep 5
+    PM_ELAPSED=$((PM_ELAPSED + 5))
+    echo "  ...waiting for PM ($PM_ELAPSED / ${PM_TIMEOUT}s)"
+done
+echo "Package manager is ready."
+
 # ── Step 4: Install Pixel Camera from APKM bundle ───────────────────────────
 PC_APKM="$REPO_ROOT/e2e/pixel-camera.apkm"
 if [[ -f "$PC_APKM" ]]; then
@@ -107,10 +124,25 @@ if [[ -f "$PC_APKM" ]]; then
     SPLITS_DIR=$(mktemp -d)
     unzip -o "$PC_APKM" -d "$SPLITS_DIR" > /dev/null
     echo "==> Installing Pixel Camera splits (adb install-multiple)..."
-    # shellcheck disable=SC2086
-    "$ADB" install-multiple "$SPLITS_DIR"/*.apk
+    # Retry up to 3 times; 'Broken pipe' can occur if the package manager
+    # service is still warming up immediately after sys.boot_completed=1.
+    INSTALL_OK=false
+    for attempt in 1 2 3; do
+        echo "  Install attempt $attempt..."
+        # shellcheck disable=SC2046
+        if "$ADB" install-multiple -r $(find "$SPLITS_DIR" -maxdepth 1 -name "*.apk" | sort); then
+            INSTALL_OK=true
+            break
+        fi
+        echo "  Attempt $attempt failed — waiting 15s before retry..."
+        sleep 15
+    done
     rm -rf "$SPLITS_DIR"
-    echo "Pixel Camera installed."
+    if [[ "$INSTALL_OK" == true ]]; then
+        echo "Pixel Camera installed."
+    else
+        echo "WARNING: Pixel Camera install failed after 3 attempts — tests will report missing PC." >&2
+    fi
 else
     echo "WARNING: $PC_APKM not found. Skipping Pixel Camera install."
     echo "  Run 'scripts/download-pc-apk.sh' to download it."
