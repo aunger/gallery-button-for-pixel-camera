@@ -177,5 +177,8 @@ tasks.register("connectedE2EAndroidTest") {
         if (output.contains("Process crashed") || output.contains("INSTRUMENTATION_ABORTED")) {
             throw GradleException("E2E instrumentation process crashed — check device logs")
         }
+        if (output.contains("FAILURES!!!") || output.contains("FAILURES:")) {
+            throw GradleException("E2E tests FAILED — see instrument output above")
+        }
     }
 }

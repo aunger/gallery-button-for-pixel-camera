@@ -184,7 +184,7 @@ jobs:
       # sys.boot_completed is set while binder threads are still saturated;
       # we wait until `settings` actually responds before issuing any commands.
       - name: Wait for emulator service readiness
-        timeout-minutes: 25
+        timeout-minutes: 10
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
 

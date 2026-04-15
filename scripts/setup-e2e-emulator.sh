@@ -130,18 +130,23 @@ if [[ -f "$PC_APKM" ]]; then
     for attempt in 1 2 3; do
         echo "  Install attempt $attempt..."
         # shellcheck disable=SC2046
-        if "$ADB" install-multiple -r $(find "$SPLITS_DIR" -maxdepth 1 -name "*.apk" | sort); then
+        INSTALL_OUT=$("$ADB" install-multiple -r \
+            $(find "$SPLITS_DIR" -maxdepth 1 -name "*.apk" | sort) 2>&1)
+        INSTALL_EXIT=$?
+        echo "$INSTALL_OUT"
+        if [[ $INSTALL_EXIT -eq 0 ]]; then
             INSTALL_OK=true
             break
         fi
-        echo "  Attempt $attempt failed — waiting 15s before retry..."
+        echo "  Attempt $attempt failed (exit $INSTALL_EXIT) — waiting 15s before retry..."
         sleep 15
     done
     rm -rf "$SPLITS_DIR"
     if [[ "$INSTALL_OK" == true ]]; then
         echo "Pixel Camera installed."
     else
-        echo "WARNING: Pixel Camera install failed after 3 attempts — tests will report missing PC." >&2
+        echo "ERROR: Pixel Camera install failed after 3 attempts — cannot run E2E tests." >&2
+        exit 1
     fi
 else
     echo "WARNING: $PC_APKM not found. Skipping Pixel Camera install."
