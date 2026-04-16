@@ -353,6 +353,29 @@ class OverlayServiceLogicTest {
     }
 
     /**
+     * When the retry fires but UsageStats still has not caught up, no second retry must be
+     * scheduled — the retry is strictly one-shot per camera-open event.
+     *
+     * Without the activationRetryPending flag, scheduleActivationRetry() re-schedules on every
+     * evaluateForeground() call triggered by the runnable, creating a 1 Hz polling loop.
+     */
+    @Test
+    fun `DT-06a retry does not re-schedule when foreground still not detected after firing`() {
+        whenever(foregroundDetector.getForegroundPackage()).thenReturn(null)
+        cameraState.setCameraUnavailable("0")
+        logic.evaluateForeground()
+
+        // Fire the retry runnable
+        val runnableCaptor = argumentCaptor<Runnable>()
+        verify(handler).postDelayed(runnableCaptor.capture(), eq(Constants.ACTIVATION_RETRY_MS))
+        runnableCaptor.firstValue.run()
+
+        // Foreground still not detected — must NOT schedule a second postDelayed
+        verify(handler, times(1)).postDelayed(any(), eq(Constants.ACTIVATION_RETRY_MS))
+        assertFalse("Overlay must not be active when foreground was never detected", logic.isOverlayActive)
+    }
+
+    /**
      * When usage-stats permission is revoked, any pending retry should be cancelled so the
      * retry cannot fire and attempt to show the overlay without permission.
      */

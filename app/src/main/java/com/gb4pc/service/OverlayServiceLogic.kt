@@ -35,7 +35,10 @@ class OverlayServiceLogic(
 
     private var deactivateRunnable: Runnable? = null
     // DT-06a: Retry runnable for UsageStats lag — fires if foreground not detected on first check.
+    // activationRetryPending gates re-scheduling: it stays true while the runnable is executing
+    // so that evaluateForeground() inside the runnable cannot queue a second retry.
     private var activationRetryRunnable: Runnable? = null
+    private var activationRetryPending = false
 
     // ── Camera callback delegation ──────────────────────────────────────────
 
@@ -49,6 +52,7 @@ class OverlayServiceLogic(
         cameraState.setCameraAvailable(cameraId)
         // DT-04/DT-05: Only schedule deactivation when ALL cameras have been released
         if (cameraState.areAllCamerasAvailable()) {
+            cancelActivationRetry()
             scheduleDeactivation()
         }
     }
@@ -125,14 +129,19 @@ class OverlayServiceLogic(
         }
     }
 
-    // DT-06a: Retry activation after UsageStats lag.
+    // DT-06a: Retry activation after UsageStats lag — one shot per camera-open event.
     private fun scheduleActivationRetry() {
-        if (activationRetryRunnable != null) return  // already scheduled
-        activationRetryRunnable = Runnable {
+        if (activationRetryPending) return  // already scheduled or currently executing
+        activationRetryPending = true
+        val runnable = Runnable {
             activationRetryRunnable = null
+            // activationRetryPending stays true while evaluateForeground() runs, so any
+            // scheduleActivationRetry() call inside cannot queue a second retry.
             evaluateForeground()
+            activationRetryPending = false
         }
-        handler.postDelayed(activationRetryRunnable!!, Constants.ACTIVATION_RETRY_MS)
+        activationRetryRunnable = runnable
+        handler.postDelayed(runnable, Constants.ACTIVATION_RETRY_MS)
     }
 
     private fun cancelActivationRetry() {
@@ -140,6 +149,7 @@ class OverlayServiceLogic(
             handler.removeCallbacks(it)
             activationRetryRunnable = null
         }
+        activationRetryPending = false
     }
 
     /** Called from onDestroy to clean up mutable state. */
