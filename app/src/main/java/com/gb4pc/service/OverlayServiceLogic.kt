@@ -34,6 +34,8 @@ class OverlayServiceLogic(
         private set
 
     private var deactivateRunnable: Runnable? = null
+    // DT-06a: Retry runnable for UsageStats lag — fires if foreground not detected on first check.
+    private var activationRetryRunnable: Runnable? = null
 
     // ── Camera callback delegation ──────────────────────────────────────────
 
@@ -55,6 +57,7 @@ class OverlayServiceLogic(
 
     /**
      * DT-02/DT-03: Check if Pixel Camera is the foreground app and show/hide overlay.
+     * DT-06a: If the foreground event hasn't appeared in UsageStats yet (lag), schedule a retry.
      */
     fun evaluateForeground() {
         if (!hasUsageStatsPermission()) {
@@ -63,12 +66,17 @@ class OverlayServiceLogic(
                 isOverlayActive = false
                 onUsageAccessLost()
             }
+            cancelActivationRetry()
             return
         }
 
         val pkg = foregroundDetector.getForegroundPackage()
         if (ForegroundDetector.isPixelCameraPackage(pkg) && !isOverlayActive) {
+            cancelActivationRetry()
             showOverlay()
+        } else if (!isOverlayActive && cameraState.anyCameraUnavailable()) {
+            // UsageStats may not have caught up yet; schedule a retry (DT-06a).
+            scheduleActivationRetry()
         }
     }
 
@@ -117,9 +125,27 @@ class OverlayServiceLogic(
         }
     }
 
+    // DT-06a: Retry activation after UsageStats lag.
+    private fun scheduleActivationRetry() {
+        if (activationRetryRunnable != null) return  // already scheduled
+        activationRetryRunnable = Runnable {
+            activationRetryRunnable = null
+            evaluateForeground()
+        }
+        handler.postDelayed(activationRetryRunnable!!, Constants.ACTIVATION_RETRY_MS)
+    }
+
+    private fun cancelActivationRetry() {
+        activationRetryRunnable?.let {
+            handler.removeCallbacks(it)
+            activationRetryRunnable = null
+        }
+    }
+
     /** Called from onDestroy to clean up mutable state. */
     fun reset() {
         cancelPendingDeactivation()
+        cancelActivationRetry()
         isOverlayActive = false
     }
 }
