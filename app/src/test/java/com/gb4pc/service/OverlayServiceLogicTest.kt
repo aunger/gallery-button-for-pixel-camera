@@ -394,4 +394,22 @@ class OverlayServiceLogicTest {
 
         verify(handler).removeCallbacks(runnableCaptor.firstValue)
     }
+
+    /**
+     * If the camera is released while a retry is pending (e.g. a non-Pixel-Camera app
+     * briefly opened the camera), the retry should be cancelled so it doesn't fire stale.
+     */
+    @Test
+    fun `DT-06a pending retry cancelled when camera released before retry fires`() {
+        whenever(foregroundDetector.getForegroundPackage()).thenReturn(null)
+        logic.onCameraUnavailable("0")
+
+        val runnableCaptor = argumentCaptor<Runnable>()
+        verify(handler).postDelayed(runnableCaptor.capture(), eq(Constants.ACTIVATION_RETRY_MS))
+
+        // Camera released — all cameras now available
+        logic.onCameraAvailable("0")
+
+        verify(handler).removeCallbacks(runnableCaptor.firstValue)
+    }
 }
