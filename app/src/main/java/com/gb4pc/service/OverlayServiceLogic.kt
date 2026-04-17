@@ -34,6 +34,11 @@ class OverlayServiceLogic(
         private set
 
     private var deactivateRunnable: Runnable? = null
+    // DT-06a: Retry runnable for UsageStats lag — fires if foreground not detected on first check.
+    // activationRetryPending gates re-scheduling: it stays true while the runnable is executing
+    // so that evaluateForeground() inside the runnable cannot queue a second retry.
+    private var activationRetryRunnable: Runnable? = null
+    private var activationRetryPending = false
 
     // ── Camera callback delegation ──────────────────────────────────────────
 
@@ -47,6 +52,7 @@ class OverlayServiceLogic(
         cameraState.setCameraAvailable(cameraId)
         // DT-04/DT-05: Only schedule deactivation when ALL cameras have been released
         if (cameraState.areAllCamerasAvailable()) {
+            cancelActivationRetry()
             scheduleDeactivation()
         }
     }
@@ -55,6 +61,7 @@ class OverlayServiceLogic(
 
     /**
      * DT-02/DT-03: Check if Pixel Camera is the foreground app and show/hide overlay.
+     * DT-06a: If the foreground event hasn't appeared in UsageStats yet (lag), schedule a retry.
      */
     fun evaluateForeground() {
         if (!hasUsageStatsPermission()) {
@@ -63,12 +70,17 @@ class OverlayServiceLogic(
                 isOverlayActive = false
                 onUsageAccessLost()
             }
+            cancelActivationRetry()
             return
         }
 
         val pkg = foregroundDetector.getForegroundPackage()
         if (ForegroundDetector.isPixelCameraPackage(pkg) && !isOverlayActive) {
+            cancelActivationRetry()
             showOverlay()
+        } else if (!isOverlayActive && cameraState.anyCameraUnavailable()) {
+            // UsageStats may not have caught up yet; schedule a retry (DT-06a).
+            scheduleActivationRetry()
         }
     }
 
@@ -117,9 +129,33 @@ class OverlayServiceLogic(
         }
     }
 
+    // DT-06a: Retry activation after UsageStats lag — one shot per camera-open event.
+    private fun scheduleActivationRetry() {
+        if (activationRetryPending) return  // already scheduled or currently executing
+        activationRetryPending = true
+        val runnable = Runnable {
+            activationRetryRunnable = null
+            // activationRetryPending stays true while evaluateForeground() runs, so any
+            // scheduleActivationRetry() call inside cannot queue a second retry.
+            evaluateForeground()
+            activationRetryPending = false
+        }
+        activationRetryRunnable = runnable
+        handler.postDelayed(runnable, Constants.ACTIVATION_RETRY_MS)
+    }
+
+    private fun cancelActivationRetry() {
+        activationRetryRunnable?.let {
+            handler.removeCallbacks(it)
+            activationRetryRunnable = null
+        }
+        activationRetryPending = false
+    }
+
     /** Called from onDestroy to clean up mutable state. */
     fun reset() {
         cancelPendingDeactivation()
+        cancelActivationRetry()
         isOverlayActive = false
     }
 }
