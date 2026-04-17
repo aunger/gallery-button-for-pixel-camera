@@ -259,4 +259,157 @@ class OverlayServiceLogicTest {
         verify(sessionTracker, never()).startSession()
         assertFalse("Media observer should not be registered when device is unlocked", mediaObserverRegistered)
     }
+
+    // ── DT-06a: UsageStats lag retry ────────────────────────────────────────
+
+    /**
+     * When the camera becomes unavailable but UsageStats hasn't caught up yet (foreground
+     * package is not Pixel Camera), evaluateForeground() should schedule a retry runnable
+     * via handler.postDelayed with ACTIVATION_RETRY_MS.
+     */
+    @Test
+    fun `DT-06a retry scheduled when camera unavailable but foreground not yet detected`() {
+        whenever(foregroundDetector.getForegroundPackage()).thenReturn(null)
+
+        cameraState.setCameraUnavailable("0")
+        logic.evaluateForeground()
+
+        verify(handler).postDelayed(any(), eq(Constants.ACTIVATION_RETRY_MS))
+        assertFalse("Overlay should not be active yet", logic.isOverlayActive)
+    }
+
+    /**
+     * A second evaluateForeground() call while a retry is already pending must not schedule
+     * a second handler.postDelayed — the existing retry is reused (idempotent scheduling).
+     */
+    @Test
+    fun `DT-06a retry is not double-scheduled on repeated evaluateForeground calls`() {
+        whenever(foregroundDetector.getForegroundPackage()).thenReturn(null)
+
+        cameraState.setCameraUnavailable("0")
+        logic.evaluateForeground()
+        logic.evaluateForeground()
+        logic.evaluateForeground()
+
+        verify(handler, times(1)).postDelayed(any(), eq(Constants.ACTIVATION_RETRY_MS))
+    }
+
+    /**
+     * When the retry fires and UsageStats now returns Pixel Camera as the foreground app,
+     * the overlay is shown.
+     */
+    @Test
+    fun `DT-06a overlay shows when retry fires and UsageStats has caught up`() {
+        // First call: foreground not yet detected → retry scheduled
+        whenever(foregroundDetector.getForegroundPackage()).thenReturn(null)
+        cameraState.setCameraUnavailable("0")
+        logic.evaluateForeground()
+
+        val runnableCaptor = argumentCaptor<Runnable>()
+        verify(handler).postDelayed(runnableCaptor.capture(), eq(Constants.ACTIVATION_RETRY_MS))
+
+        // UsageStats has now caught up
+        whenever(foregroundDetector.getForegroundPackage()).thenReturn(Constants.PIXEL_CAMERA_PACKAGE)
+
+        // Execute the retry runnable
+        runnableCaptor.firstValue.run()
+
+        assertTrue("Overlay should be active after retry succeeds", logic.isOverlayActive)
+        verify(overlayManager).show()
+    }
+
+    /**
+     * When evaluateForeground() succeeds immediately (Pixel Camera is already in the foreground),
+     * no retry should be scheduled.
+     */
+    @Test
+    fun `DT-06a no retry scheduled when Pixel Camera is already in foreground`() {
+        whenever(foregroundDetector.getForegroundPackage()).thenReturn(Constants.PIXEL_CAMERA_PACKAGE)
+
+        cameraState.setCameraUnavailable("0")
+        logic.evaluateForeground()
+
+        verify(handler, never()).postDelayed(any(), eq(Constants.ACTIVATION_RETRY_MS))
+        assertTrue(logic.isOverlayActive)
+    }
+
+    /**
+     * If the camera becomes available again before the retry fires, the pending retry should
+     * be cancelled on reset() so it cannot trigger a stale activation.
+     */
+    @Test
+    fun `DT-06a pending retry is cancelled on reset`() {
+        whenever(foregroundDetector.getForegroundPackage()).thenReturn(null)
+        cameraState.setCameraUnavailable("0")
+        logic.evaluateForeground()
+
+        val runnableCaptor = argumentCaptor<Runnable>()
+        verify(handler).postDelayed(runnableCaptor.capture(), eq(Constants.ACTIVATION_RETRY_MS))
+
+        logic.reset()
+
+        verify(handler).removeCallbacks(runnableCaptor.firstValue)
+        assertFalse(logic.isOverlayActive)
+    }
+
+    /**
+     * When the retry fires but UsageStats still has not caught up, no second retry must be
+     * scheduled — the retry is strictly one-shot per camera-open event.
+     *
+     * Without the activationRetryPending flag, scheduleActivationRetry() re-schedules on every
+     * evaluateForeground() call triggered by the runnable, creating a 1 Hz polling loop.
+     */
+    @Test
+    fun `DT-06a retry does not re-schedule when foreground still not detected after firing`() {
+        whenever(foregroundDetector.getForegroundPackage()).thenReturn(null)
+        cameraState.setCameraUnavailable("0")
+        logic.evaluateForeground()
+
+        // Fire the retry runnable
+        val runnableCaptor = argumentCaptor<Runnable>()
+        verify(handler).postDelayed(runnableCaptor.capture(), eq(Constants.ACTIVATION_RETRY_MS))
+        runnableCaptor.firstValue.run()
+
+        // Foreground still not detected — must NOT schedule a second postDelayed
+        verify(handler, times(1)).postDelayed(any(), eq(Constants.ACTIVATION_RETRY_MS))
+        assertFalse("Overlay must not be active when foreground was never detected", logic.isOverlayActive)
+    }
+
+    /**
+     * When usage-stats permission is revoked, any pending retry should be cancelled so the
+     * retry cannot fire and attempt to show the overlay without permission.
+     */
+    @Test
+    fun `DT-06a pending retry cancelled when usage stats permission is revoked`() {
+        whenever(foregroundDetector.getForegroundPackage()).thenReturn(null)
+        cameraState.setCameraUnavailable("0")
+        logic.evaluateForeground()
+
+        val runnableCaptor = argumentCaptor<Runnable>()
+        verify(handler).postDelayed(runnableCaptor.capture(), eq(Constants.ACTIVATION_RETRY_MS))
+
+        // Revoke permission; evaluateForeground should cancel the retry
+        usageStatsPermission = false
+        logic.evaluateForeground()
+
+        verify(handler).removeCallbacks(runnableCaptor.firstValue)
+    }
+
+    /**
+     * If the camera is released while a retry is pending (e.g. a non-Pixel-Camera app
+     * briefly opened the camera), the retry should be cancelled so it doesn't fire stale.
+     */
+    @Test
+    fun `DT-06a pending retry cancelled when camera released before retry fires`() {
+        whenever(foregroundDetector.getForegroundPackage()).thenReturn(null)
+        logic.onCameraUnavailable("0")
+
+        val runnableCaptor = argumentCaptor<Runnable>()
+        verify(handler).postDelayed(runnableCaptor.capture(), eq(Constants.ACTIVATION_RETRY_MS))
+
+        // Camera released — all cameras now available
+        logic.onCameraAvailable("0")
+
+        verify(handler).removeCallbacks(runnableCaptor.firstValue)
+    }
 }
