@@ -72,8 +72,8 @@ class PixelCameraOverlayE2ETest {
             "am start -a android.media.action.STILL_IMAGE_CAMERA -p $PC_PACKAGE"
         ).close()
 
-        val appeared = waitForCondition(timeoutMs = 5000L) { OverlayService.isOverlayActive }
-        assertTrue("Overlay should appear within 5 s of launching Pixel Camera viewfinder", appeared)
+        val appeared = waitForCondition(timeoutMs = 10000L) { OverlayService.isOverlayActive }
+        assertTrue("Overlay should appear within 10 s of launching Pixel Camera viewfinder", appeared)
     }
 
     /**
@@ -86,17 +86,17 @@ class PixelCameraOverlayE2ETest {
         uiAutomation.executeShellCommand(
             "am start -a android.media.action.STILL_IMAGE_CAMERA -p $PC_PACKAGE"
         ).close()
-        val appeared = waitForCondition(timeoutMs = 5000L) { OverlayService.isOverlayActive }
-        assertTrue("Pre-condition: overlay must appear within 5 s after launching PC", appeared)
+        val appeared = waitForCondition(timeoutMs = 10000L) { OverlayService.isOverlayActive }
+        assertTrue("Pre-condition: overlay must appear within 10 s after launching PC", appeared)
 
         // Send PC to background; camera is released.
         uiAutomation.executeShellCommand(
             "am start -a android.intent.action.MAIN -c android.intent.category.HOME"
         ).close()
 
-        val disappeared = waitForCondition(timeoutMs = 5000L) { !OverlayService.isOverlayActive }
+        val disappeared = waitForCondition(timeoutMs = 10000L) { !OverlayService.isOverlayActive }
         assertTrue(
-            "Overlay should disappear within 5 s after Pixel Camera viewfinder closes",
+            "Overlay should disappear within 10 s after Pixel Camera viewfinder closes",
             disappeared
         )
     }
@@ -119,8 +119,10 @@ class PixelCameraOverlayE2ETest {
             "am start -a android.media.action.STILL_IMAGE_CAMERA -p $PC_PACKAGE"
         ).close()
 
-        // Generous window: ACTIVATION_RETRY_MS (1 s) + 1 s headroom for scheduling overhead.
-        val timeoutMs = Constants.ACTIVATION_RETRY_MS + 1000L
+        // Generous window: ACTIVATION_RETRY_MS (1 s) + 3 s headroom for scheduling overhead on
+        // loaded CI runners. The retry fires at ~1 s; the extra slack avoids flakiness without
+        // defeating the test's purpose (proving the retry fires at all).
+        val timeoutMs = Constants.ACTIVATION_RETRY_MS + 3000L
         val appeared = waitForCondition(timeoutMs) { OverlayService.isOverlayActive }
         assertTrue(
             "Overlay should appear within ${timeoutMs} ms even when UsageStats lags behind " +

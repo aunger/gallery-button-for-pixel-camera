@@ -6,6 +6,7 @@ import android.hardware.camera2.CameraManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 
 /**
  * Minimal stub activity for E2E testing.
@@ -57,9 +58,8 @@ class MockCameraActivity : Activity() {
         val cameraId = cm.cameraIdList.firstOrNull() ?: return
         try {
             cm.openCamera(cameraId, stateCallback, handler)
-        } catch (_: Exception) {
-            // Camera unavailable (e.g. already in use) — ignore; the callback
-            // fired by the other app will still trigger OverlayService.
+        } catch (e: Exception) {
+            Log.w("MockCameraActivity", "openCamera failed for $cameraId: ${e.message}")
         }
     }
 

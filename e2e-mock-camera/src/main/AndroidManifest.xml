@@ -5,8 +5,7 @@
     <uses-permission android:name="android.permission.CAMERA" />
 
     <application
-        android:label="Mock Pixel Camera (E2E)"
-        android:exported="true">
+        android:label="Mock Pixel Camera (E2E)">
 
         <activity
             android:name=".MockCameraActivity"

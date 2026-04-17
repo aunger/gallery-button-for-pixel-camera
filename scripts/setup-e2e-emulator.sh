@@ -6,7 +6,7 @@
 #   scripts/setup-e2e-emulator.sh --post-boot # CI post-boot setup only (steps 4–7)
 #
 # Full setup (local):
-#   1. Create AVD (API 33, Google APIs, x86_64, Pixel_6 skin)
+#   1. Create AVD (API 35, Google APIs, x86_64, Pixel_6 skin)
 #   2. Start emulator headlessly
 #   3. Wait for full boot
 #   4. Install Pixel Camera APK
@@ -55,7 +55,7 @@ fi
 # ── Step 1–3: AVD creation and emulator start (local only) ──────────────────
 if [[ "$POST_BOOT_ONLY" == false ]]; then
     AVD_NAME="gb4pc_e2e"
-    API_LEVEL=33
+    API_LEVEL=35
     SYSTEM_IMAGE="system-images;android-${API_LEVEL};google_apis;x86_64"
 
     echo "==> Installing system image: $SYSTEM_IMAGE"
