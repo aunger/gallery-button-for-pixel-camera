@@ -1,4 +1,5 @@
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.time.LocalDate
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -150,6 +151,8 @@ val e2eAppApk = layout.buildDirectory
     .file("outputs/apk/debug/app-debug.apk")
 val e2eTestApk = layout.buildDirectory
     .file("outputs/apk/androidTest/debug/app-debug-androidTest.apk")
+val e2eXmlDir = layout.buildDirectory
+    .dir("outputs/androidTest-results/connected/debug")
 
 tasks.register("connectedE2EAndroidTest") {
     group = "verification"
@@ -164,24 +167,84 @@ tasks.register("connectedE2EAndroidTest") {
         // which app is in the foreground — without this the overlay never appears.
         exec { commandLine(e2eAdb, "shell", "appops", "set", "com.gb4pc", "GET_USAGE_STATS", "allow") }
         exec { commandLine(e2eAdb, "install", "-r", e2eTestApk.get().asFile.absolutePath) }
-        // Run E2E tests. am instrument exits non-zero on test failure but returns 0
-        // on process crash; capture stdout and fail loudly if "Process crashed" appears.
+        // Run E2E tests with -r for machine-parseable per-test status lines.
+        // am instrument exits non-zero on test failure but returns 0 on process crash;
+        // capture stdout, write JUnit XML, then fail loudly on crash or test failure.
         val instrumentOut = ByteArrayOutputStream()
         exec {
             commandLine(
-                e2eAdb, "shell", "am", "instrument", "-w",
+                e2eAdb, "shell", "am", "instrument", "-r", "-w",
                 "-e", "package", "com.gb4pc.e2e",
                 "com.gb4pc.test/androidx.test.runner.AndroidJUnitRunner"
             )
             standardOutput = instrumentOut
+            // Don't throw on non-zero exit: am instrument exits 1 on test failure,
+            // but we must write the JUnit XML before surfacing the error ourselves.
+            isIgnoreExitValue = true
         }
         val output = instrumentOut.toString()
         print(output)
+
+        // Parse INSTRUMENTATION_STATUS blocks into JUnit XML.
+        // Each test emits STATUS_CODE 1 (started) then 0 (pass), -2 (failure), or -1 (error).
+        // Stack-trace values continue on lines starting with \t until the next STATUS: key.
+        data class TestCase(val cls: String, val name: String, val code: Int, val stack: String)
+        val cases = mutableListOf<TestCase>()
+        var curName = ""; var curClass = ""; var curStack = StringBuilder(); var inStack = false
+        for (line in output.lines()) {
+            when {
+                line.startsWith("INSTRUMENTATION_STATUS: test=") -> {
+                    curName = line.removePrefix("INSTRUMENTATION_STATUS: test="); inStack = false
+                }
+                line.startsWith("INSTRUMENTATION_STATUS: class=") -> {
+                    curClass = line.removePrefix("INSTRUMENTATION_STATUS: class="); inStack = false
+                }
+                line.startsWith("INSTRUMENTATION_STATUS: stack=") -> {
+                    curStack = StringBuilder(line.removePrefix("INSTRUMENTATION_STATUS: stack="))
+                    inStack = true
+                }
+                // Any other INSTRUMENTATION_STATUS: key ends a stack-trace continuation.
+                line.startsWith("INSTRUMENTATION_STATUS:") -> inStack = false
+                inStack && line.startsWith("\t") -> curStack.append('\n').append(line)
+                line.startsWith("INSTRUMENTATION_STATUS_CODE:") -> {
+                    inStack = false
+                    val code = line.removePrefix("INSTRUMENTATION_STATUS_CODE:").trim().toIntOrNull() ?: 0
+                    if (curName.isNotEmpty()) {
+                        if (code != 1) cases += TestCase(curClass, curName, code, curStack.toString())
+                        curStack = StringBuilder()  // always reset so stale stack can't leak into the next test
+                    }
+                }
+                inStack -> curStack.append('\n').append(line)
+            }
+        }
+        val xmlOutDir = e2eXmlDir.get().asFile.also { it.mkdirs() }
+        val failCount = cases.count { it.code != 0 }
+        fun String.esc() = replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
+        File(xmlOutDir, "TEST-com.gb4pc.e2e.xml").writeText(buildString {
+            appendLine("""<?xml version="1.0" encoding="UTF-8"?>""")
+            appendLine("""<testsuite name="com.gb4pc.e2e" tests="${cases.size}" failures="$failCount" errors="0">""")
+            for (c in cases) {
+                append("""  <testcase name="${c.name.esc()}" classname="${c.cls.esc()}"""")
+                if (c.code == 0) { appendLine("/>") } else {
+                    appendLine(">")
+                    val msg = c.stack.lines().firstOrNull().orEmpty().take(200).esc()
+                    appendLine("""    <failure message="$msg">""")
+                    appendLine(c.stack.esc())
+                    appendLine("    </failure>")
+                    appendLine("  </testcase>")
+                }
+            }
+            appendLine("</testsuite>")
+        })
+
+        // Crash guard: these strings appear in -r output on hard abort/crash.
         if (output.contains("Process crashed") || output.contains("INSTRUMENTATION_ABORTED")) {
             throw GradleException("E2E instrumentation process crashed — check device logs")
         }
-        if (output.contains("FAILURES!!!") || output.contains("INSTRUMENTATION_FAILED")) {
-            throw GradleException("E2E tests FAILED — see instrument output above")
+        // Failure guard: use the parsed result rather than the human-readable summary
+        // (which may be absent in -r mode).
+        if (failCount > 0) {
+            throw GradleException("E2E tests FAILED ($failCount failure(s)) — see instrument output above")
         }
     }
 }

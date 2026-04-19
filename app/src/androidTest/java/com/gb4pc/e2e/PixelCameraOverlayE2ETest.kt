@@ -24,6 +24,17 @@ import org.junit.runner.RunWith
  * and real CameraManager.AvailabilityCallback — not OverlayServiceLogic wired by hand.
  *
  * Run with: ./gradlew connectedE2EAndroidTest
+ *
+ * future-work: emulator tests use a mock-camera stub and cannot cover:
+ *   - UsageStats lag (stub returns synthetic data; real app accumulates
+ *     foreground-time across reboots and lifecycle transitions)
+ *   - Camera-mode switching (Photo/Video/Portrait intent/result codes
+ *     not exercised; transition-state UI bugs invisible)
+ *   - PairIP / hardware-feature compatibility gating (stub bypasses
+ *     device-compatibility checks that gate UI surfaces on real hardware)
+ *   - Package-signature validation (stub installed under same package ID
+ *     but not signed the same way as real Pixel Camera)
+ * True E2E on a physical Pixel device is tracked in issue #15.
  */
 @E2ETest
 @RunWith(AndroidJUnit4::class)
