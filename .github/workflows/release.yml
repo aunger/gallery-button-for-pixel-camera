@@ -4,6 +4,11 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release tag (e.g. v0.0.2)'
+        required: true
 
 jobs:
   build-and-release:
@@ -44,7 +49,10 @@ jobs:
 
       - name: Extract version from tag
         id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: |
+          REF="${{ github.event.inputs.tag_name || github.ref_name }}"
+          echo "version=${REF#v}" >> "$GITHUB_OUTPUT"
+          echo "tag_name=${REF}" >> "$GITHUB_OUTPUT"
 
       - name: Rename APK
         run: |
@@ -54,6 +62,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3
         with:
-          name: GB4PC ${{ github.ref_name }}
+          tag_name: ${{ steps.version.outputs.tag_name }}
+          name: GB4PC ${{ steps.version.outputs.tag_name }}
           generate_release_notes: true
           files: app/build/outputs/apk/release/gb4pc-${{ steps.version.outputs.version }}.apk
