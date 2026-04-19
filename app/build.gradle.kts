@@ -241,6 +241,12 @@ tasks.register("connectedE2EAndroidTest") {
         if (output.contains("Process crashed") || output.contains("INSTRUMENTATION_ABORTED")) {
             throw GradleException("E2E instrumentation process crashed — check device logs")
         }
+        // Empty-results guard: if no test cases were parsed the runner never started
+        // (missing APK, ADB disconnect, wrong runner class, etc.) — catch it before
+        // failCount produces a false-green 0/0 result.
+        if (cases.isEmpty()) {
+            throw GradleException("E2E: no test results parsed — runner or device failure (check logcat)")
+        }
         // Failure guard: use the parsed result rather than the human-readable summary
         // (which may be absent in -r mode).
         if (failCount > 0) {
