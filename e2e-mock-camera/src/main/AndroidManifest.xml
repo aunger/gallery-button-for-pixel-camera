@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Camera permission required to open camera hardware (granted via ADB in CI). -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <application
+        android:label="Mock Pixel Camera (E2E)">
+
+        <activity
+            android:name=".MockCameraActivity"
+            android:exported="true">
+
+            <!-- Respond to the same camera intent the E2E test fires. -->
+            <intent-filter>
+                <action android:name="android.media.action.STILL_IMAGE_CAMERA" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+
+            <!-- Also reachable as the launcher activity for `am start -p`. -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+        </activity>
+    </application>
+
+</manifest>

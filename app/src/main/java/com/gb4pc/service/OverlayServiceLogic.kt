@@ -29,6 +29,8 @@ class OverlayServiceLogic(
     private val isKeyguardLocked: () -> Boolean,
     private val onRegisterMediaObserver: () -> Unit,
     private val onUnregisterMediaObserver: () -> Unit,
+    /** Called whenever the overlay visibility changes; default no-op. Used by tests and UI. */
+    private val onOverlayStateChanged: (Boolean) -> Unit = {},
 ) {
     var isOverlayActive: Boolean = false
         private set
@@ -68,6 +70,7 @@ class OverlayServiceLogic(
             if (isOverlayActive) {
                 overlayManager.hide()
                 isOverlayActive = false
+                onOverlayStateChanged(false)
                 onUsageAccessLost()
             }
             cancelActivationRetry()
@@ -95,6 +98,7 @@ class OverlayServiceLogic(
         }
         overlayManager.show()
         isOverlayActive = true
+        onOverlayStateChanged(true)
 
         // SF-01: If device is locked at activation time, begin a secure session immediately.
         // H3: If unlocked, onScreenOff() will start the session when the screen locks.
@@ -113,6 +117,7 @@ class OverlayServiceLogic(
             if (cameraState.areAllCamerasAvailable()) {
                 overlayManager.hide()
                 isOverlayActive = false
+                onOverlayStateChanged(false)
                 if (sessionTracker.isSessionActive) {
                     sessionTracker.endSession()
                     onUnregisterMediaObserver()
