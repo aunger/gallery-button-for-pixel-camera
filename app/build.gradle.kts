@@ -1,3 +1,4 @@
+import java.io.ByteArrayOutputStream
 import java.time.LocalDate
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -32,6 +33,10 @@ android {
         versionName = "0.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Exclude E2E tests from the standard instrumented-test run.
+        // E2E tests live in com.gb4pc.e2e and require a device with Pixel Camera installed.
+        // Run them separately with: ./gradlew connectedE2EAndroidTest
+        testInstrumentationRunnerArguments["notPackage"] = "com.gb4pc.e2e"
     }
 
     // M6: Conditionally configure release signing from environment variables.
@@ -131,4 +136,52 @@ dependencies {
     // Debug
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+}
+
+// ── E2E test task ────────────────────────────────────────────────────────────
+// Builds the APKs, installs them on the connected device/emulator, and runs only
+// the com.gb4pc.e2e package (the standard connectedDebugAndroidTest excludes it).
+// Usage: ./gradlew connectedE2EAndroidTest
+//
+// Note: captures SDK dir and APK paths at configuration time so they are available
+// inside the doLast execution closure where the project extension is out of scope.
+val e2eAdb = "${android.sdkDirectory.absolutePath}/platform-tools/adb"
+val e2eAppApk = layout.buildDirectory
+    .file("outputs/apk/debug/app-debug.apk")
+val e2eTestApk = layout.buildDirectory
+    .file("outputs/apk/androidTest/debug/app-debug-androidTest.apk")
+
+tasks.register("connectedE2EAndroidTest") {
+    group = "verification"
+    description = "Runs E2E instrumented tests (requires device/emulator with Pixel Camera installed)."
+    dependsOn("assembleDebug", "assembleDebugAndroidTest")
+    doLast {
+        // Install app first so permissions can be granted by package name.
+        exec { commandLine(e2eAdb, "install", "-r", e2eAppApk.get().asFile.absolutePath) }
+        // Grant permissions now that the app UID exists on the device.
+        exec { commandLine(e2eAdb, "shell", "appops", "set", "com.gb4pc", "SYSTEM_ALERT_WINDOW", "allow") }
+        // GET_USAGE_STATS (= PACKAGE_USAGE_STATS on API 29+) lets ForegroundDetector see
+        // which app is in the foreground — without this the overlay never appears.
+        exec { commandLine(e2eAdb, "shell", "appops", "set", "com.gb4pc", "GET_USAGE_STATS", "allow") }
+        exec { commandLine(e2eAdb, "install", "-r", e2eTestApk.get().asFile.absolutePath) }
+        // Run E2E tests. am instrument exits non-zero on test failure but returns 0
+        // on process crash; capture stdout and fail loudly if "Process crashed" appears.
+        val instrumentOut = ByteArrayOutputStream()
+        exec {
+            commandLine(
+                e2eAdb, "shell", "am", "instrument", "-w",
+                "-e", "package", "com.gb4pc.e2e",
+                "com.gb4pc.test/androidx.test.runner.AndroidJUnitRunner"
+            )
+            standardOutput = instrumentOut
+        }
+        val output = instrumentOut.toString()
+        print(output)
+        if (output.contains("Process crashed") || output.contains("INSTRUMENTATION_ABORTED")) {
+            throw GradleException("E2E instrumentation process crashed — check device logs")
+        }
+        if (output.contains("FAILURES!!!") || output.contains("INSTRUMENTATION_FAILED")) {
+            throw GradleException("E2E tests FAILED — see instrument output above")
+        }
+    }
 }

@@ -49,6 +49,198 @@ jobs:
           path: app/build/reports/tests/
           retention-days: 14
 
+  # End-to-end tests on an emulator using a minimal mock Pixel Camera stub.
+  #
+  # The real Pixel Camera APK refuses to start on non-Pixel emulators (PairIP
+  # device-compatibility check). The e2e-mock-camera module has the same
+  # applicationId ("com.google.android.GoogleCamera") and opens the camera
+  # hardware on resume, so GB4PC's CameraManager callback and UsageStats-based
+  # foreground detection are exercised identically to the real app.
+  #
+  # We manage the emulator lifecycle ourselves rather than using
+  # reactivecircus/android-emulator-runner@v2 because the runner action
+  # unconditionally runs `adb shell input keyevent 82` immediately after
+  # sys.boot_completed=1, before system services accept binder connections on
+  # the slow API-35 emulator — causing exit code 224 (Broken Pipe) before our
+  # script ever starts. The explicit steps below poll for true service readiness.
+  e2e-tests:
+    # ubuntu-latest has KVM hardware acceleration (available since April 2024).
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | \
+            sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Install emulator, system image, and create AVD
+        run: |
+          sdkmanager --install \
+            "emulator" \
+            "system-images;android-35;google_apis;x86_64"
+
+          # Pin AVD home to a stable path so both avdmanager and the emulator
+          # agree on where AVDs live, regardless of what android-actions sets.
+          AVD_HOME="$HOME/.android/avd"
+          mkdir -p "$AVD_HOME"
+          export ANDROID_AVD_HOME="$AVD_HOME"
+          echo "ANDROID_AVD_HOME=$AVD_HOME" >> $GITHUB_ENV
+
+          echo "==> Creating AVD (ANDROID_AVD_HOME=$AVD_HOME)..."
+          echo "no" | avdmanager create avd \
+            --name e2e_avd \
+            --package "system-images;android-35;google_apis;x86_64" \
+            --device pixel_6 \
+            --force
+
+          echo "==> AVD directory contents:"
+          ls -la "$AVD_HOME/" || echo "(empty or missing)"
+
+          echo "==> emulator -list-avds:"
+          ANDROID_AVD_HOME="$AVD_HOME" $ANDROID_HOME/emulator/emulator -list-avds
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build app, test, and mock Pixel Camera APKs
+        run: ./gradlew assembleDebug assembleDebugAndroidTest :e2e-mock-camera:assembleDebug --no-daemon
+
+      - name: Start emulator
+        run: |
+          echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === KVM device:"
+          ls -la /dev/kvm || echo "WARNING: /dev/kvm not found"
+
+          echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Available AVDs:"
+          $ANDROID_HOME/emulator/emulator -list-avds
+
+          $ANDROID_HOME/emulator/emulator \
+            -avd e2e_avd \
+            -no-window -no-audio -no-boot-anim \
+            -gpu swiftshader_indirect \
+            > /tmp/emulator.log 2>&1 &
+          EMUPID=$!
+          echo "EMULATOR_PID=$EMUPID" >> $GITHUB_ENV
+          echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Emulator launched (PID=$EMUPID)"
+
+          # Give it 5 seconds to detect an immediate crash
+          sleep 5
+          if ! kill -0 "$EMUPID" 2>/dev/null; then
+            echo "ERROR: Emulator process already exited!" >&2
+            echo "=== Emulator log ===" >&2
+            cat /tmp/emulator.log >&2
+            exit 1
+          fi
+          echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Emulator process alive."
+
+      # Poll for true service readiness — not just sys.boot_completed=1.
+      # sys.boot_completed is set while binder threads are still saturated;
+      # we wait until `settings` actually responds before issuing any commands.
+      - name: Wait for emulator service readiness
+        timeout-minutes: 10
+        run: |
+          ADB="$ANDROID_HOME/platform-tools/adb"
+
+          echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Waiting for ADB device (timeout 1200s)..."
+          timeout 1200 "$ADB" wait-for-device || {
+            echo "ERROR: Emulator did not appear on ADB after 1200s" >&2
+            echo "=== Emulator log (last 80 lines) ===" >&2
+            tail -80 /tmp/emulator.log >&2
+            exit 1
+          }
+
+          echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Waiting for sys.boot_completed=1..."
+          until [[ "$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]]; do
+            sleep 5
+          done
+          echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Boot flag set."
+
+          echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Waiting for settings service..."
+          SVCWAIT=0
+          until "$ADB" shell settings get global airplane_mode_on > /dev/null 2>&1; do
+            if [[ $SVCWAIT -ge 120 ]]; then
+              echo "ERROR: Services not ready after 120s post-boot." >&2
+              exit 1
+            fi
+            sleep 5
+            SVCWAIT=$((SVCWAIT + 5))
+            echo "  ...not ready yet (${SVCWAIT}s since boot flag)"
+          done
+          echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Services ready (${SVCWAIT}s after boot flag)."
+
+          # Unlock screen and disable animations now that services are up.
+          "$ADB" shell input keyevent 82
+          "$ADB" shell settings put global window_animation_scale 0
+          "$ADB" shell settings put global transition_animation_scale 0
+          "$ADB" shell settings put global animator_duration_scale 0
+
+      - name: Run E2E setup and tests
+        run: |
+          ADB="$ANDROID_HOME/platform-tools/adb"
+
+          chmod +x scripts/setup-e2e-emulator.sh
+          # --post-boot skips AVD creation/boot. No pixel-camera.apkm exists so the
+          # script's PC install step is skipped; we install the mock below instead.
+          scripts/setup-e2e-emulator.sh --post-boot
+
+          # Install mock Pixel Camera (applicationId = com.google.android.GoogleCamera)
+          # and grant CAMERA permission so it can open the camera hardware.
+          echo "==> Installing mock Pixel Camera..."
+          "$ADB" install -r \
+            e2e-mock-camera/build/outputs/apk/debug/e2e-mock-camera-debug.apk
+          echo "==> Granting CAMERA permission to mock Pixel Camera..."
+          "$ADB" shell pm grant com.google.android.GoogleCamera \
+            android.permission.CAMERA
+
+          echo "==> Mock PC resolve check:"
+          "$ADB" shell pm resolve-activity --brief \
+            -a android.media.action.STILL_IMAGE_CAMERA \
+            -p com.google.android.GoogleCamera 2>/dev/null || true
+
+          ./gradlew connectedE2EAndroidTest --no-daemon || {
+            echo "=== LOGCAT (last 300 lines) ==="
+            "$ADB" logcat -d | \
+              grep -E "AndroidRuntime|FATAL|Process crashed|com\.gb4pc|OverlayService|MockCamera|CameraService|E/\w" | \
+              tail -300
+            exit 1
+          }
+
+      - name: Kill emulator
+        if: always()
+        run: |
+          $ANDROID_HOME/platform-tools/adb emu kill 2>/dev/null || true
+          [[ -n "${EMULATOR_PID:-}" ]] && kill "$EMULATOR_PID" 2>/dev/null || true
+
+      - name: Upload E2E test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-test-results
+          path: app/build/outputs/androidTest-results/
+          retention-days: 14
+
   # Produce a release build on every merge to main (continuous delivery)
   release-build:
     if: github.event_name == 'push'

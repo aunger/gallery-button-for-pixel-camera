@@ -5,8 +5,11 @@
 .DS_Store
 /build
 /app/build
+/e2e-mock-camera/build
 /captures
 .externalNativeBuild
 .cxx
 local.properties
+e2e/pixel-camera.apk
+e2e/pixel-camera.apkm
 .kotlin/
