@@ -52,7 +52,7 @@ jobs:
              app/build/outputs/apk/release/gb4pc-${{ steps.version.outputs.version }}.apk
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3
         with:
           name: GB4PC ${{ github.ref_name }}
           generate_release_notes: true
