@@ -57,11 +57,37 @@ fun AdvancedSettingsScreen(prefsManager: PrefsManager) {
     var yText by remember { mutableStateOf("%.2f".format(currentPosition.yPercent)) }
     var debounceText by remember { mutableStateOf(prefsManager.cameraDebounceMs.toString()) }
     var showResetDialog by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
 
     // Save on change (UI-11)
     fun savePosition() {
         val pos = OverlayPosition(xPercent, yPercent, sizePercent)
         prefsManager.saveOverlayPosition(aspectRatio, pos)
+    }
+
+    fun commitXText() {
+        val parsed = xText.toFloatOrNull()
+        xPercent = (parsed ?: xPercent).coerceIn(0f, 100f)
+        xText = "%.2f".format(xPercent)
+        savePosition()
+    }
+
+    fun commitYText() {
+        val parsed = yText.toFloatOrNull()
+        yPercent = (parsed ?: yPercent).coerceIn(0f, 100f)
+        yText = "%.2f".format(yPercent)
+        savePosition()
+    }
+
+    fun commitDebounceText() {
+        val parsed = debounceText.toLongOrNull()
+        if (parsed != null && parsed >= 0) {
+            val clamped = parsed.coerceAtMost(Constants.MAX_CAMERA_DEBOUNCE_MS)
+            prefsManager.cameraDebounceMs = clamped
+            debounceText = clamped.toString()
+        } else {
+            debounceText = prefsManager.cameraDebounceMs.toString()
+        }
     }
 
     // M2 fix: live-updating debug log entries via DebugLog listener
@@ -84,9 +110,7 @@ fun AdvancedSettingsScreen(prefsManager: PrefsManager) {
                 .padding(16.dp)
                 .fillMaxWidth()
         ) {
-            val focusManager = LocalFocusManager.current
-
-            // UI-10.1: Position sliders with text inputs (M4 fix: persist only on onValueChangeFinished)
+            // UI-10.1: Position sliders with text inputs (M4 fix: persist only on commit/onValueChangeFinished)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.padding(bottom = 4.dp)
@@ -103,7 +127,6 @@ fun AdvancedSettingsScreen(prefsManager: PrefsManager) {
                         val parsed = text.toFloatOrNull()
                         if (parsed != null) {
                             xPercent = parsed.coerceIn(0f, 100f)
-                            savePosition()
                         }
                     },
                     suffix = { Text("%") },
@@ -111,7 +134,10 @@ fun AdvancedSettingsScreen(prefsManager: PrefsManager) {
                         keyboardType = KeyboardType.Decimal,
                         imeAction = ImeAction.Done
                     ),
-                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                    keyboardActions = KeyboardActions(onDone = {
+                        commitXText()
+                        focusManager.clearFocus()
+                    }),
                     singleLine = true,
                     modifier = Modifier.width(96.dp)
                 )
@@ -143,7 +169,6 @@ fun AdvancedSettingsScreen(prefsManager: PrefsManager) {
                         val parsed = text.toFloatOrNull()
                         if (parsed != null) {
                             yPercent = parsed.coerceIn(0f, 100f)
-                            savePosition()
                         }
                     },
                     suffix = { Text("%") },
@@ -151,7 +176,10 @@ fun AdvancedSettingsScreen(prefsManager: PrefsManager) {
                         keyboardType = KeyboardType.Decimal,
                         imeAction = ImeAction.Done
                     ),
-                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                    keyboardActions = KeyboardActions(onDone = {
+                        commitYText()
+                        focusManager.clearFocus()
+                    }),
                     singleLine = true,
                     modifier = Modifier.width(96.dp)
                 )
@@ -187,21 +215,23 @@ fun AdvancedSettingsScreen(prefsManager: PrefsManager) {
             )
             OutlinedTextField(
                 value = debounceText,
-                onValueChange = { text ->
-                    debounceText = text
-                    val parsed = text.toLongOrNull()
-                    if (parsed != null && parsed > 0) {
-                        prefsManager.cameraDebounceMs = parsed
-                    }
-                },
+                onValueChange = { debounceText = it },
                 suffix = { Text("ms") },
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Number,
                     imeAction = ImeAction.Done
                 ),
-                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                keyboardActions = KeyboardActions(onDone = {
+                    commitDebounceText()
+                    focusManager.clearFocus()
+                }),
                 singleLine = true,
-                modifier = Modifier.padding(bottom = 24.dp).width(128.dp)
+                modifier = Modifier.width(128.dp)
+            )
+            Text(
+                text = stringResource(R.string.advanced_camera_debounce_restart),
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(bottom = 24.dp)
             )
 
             // UI-10.2: Reset to defaults
