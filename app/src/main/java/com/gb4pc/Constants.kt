@@ -13,7 +13,7 @@ object Constants {
     const val MAX_SIZE_PERCENT = 30.0f
 
     // Camera debounce delay (DT-04)
-    const val CAMERA_DEBOUNCE_MS = 500L
+    const val CAMERA_DEBOUNCE_MS = 50L
 
     // UsageStats query window (DT-02)
     const val USAGE_STATS_WINDOW_MS = 5000L
@@ -35,6 +35,7 @@ object Constants {
     const val PREF_GALLERY_PACKAGE = "gallery_package"
     const val PREF_OVERLAY_POSITIONS = "overlay_positions"
     const val PREF_SETUP_COMPLETED = "setup_completed"
+    const val PREF_CAMERA_DEBOUNCE_MS = "camera_debounce_ms"
 
     // Secure viewer
     const val SESSION_TIMESTAMP_TOLERANCE_MS = 2000L
