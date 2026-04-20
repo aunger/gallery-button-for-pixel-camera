@@ -14,7 +14,8 @@ object Constants {
 
     // Camera debounce delay (DT-04)
     const val CAMERA_DEBOUNCE_MS = 50L
-    const val MAX_CAMERA_DEBOUNCE_MS = 5000L
+    const val MIN_CAMERA_DEBOUNCE_MS = 10L
+    const val MAX_CAMERA_DEBOUNCE_MS = 1000L
 
     // UsageStats query window (DT-02)
     const val USAGE_STATS_WINDOW_MS = 5000L

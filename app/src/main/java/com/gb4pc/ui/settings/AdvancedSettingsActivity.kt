@@ -55,6 +55,7 @@ fun AdvancedSettingsScreen(prefsManager: PrefsManager) {
     var sizePercent by remember { mutableFloatStateOf(currentPosition.sizePercent) }
     var xText by remember { mutableStateOf("%.2f".format(currentPosition.xPercent)) }
     var yText by remember { mutableStateOf("%.2f".format(currentPosition.yPercent)) }
+    var sizeText by remember { mutableStateOf("%.2f".format(currentPosition.sizePercent)) }
     var debounceText by remember { mutableStateOf(prefsManager.cameraDebounceMs.toString()) }
     var showResetDialog by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
@@ -79,9 +80,16 @@ fun AdvancedSettingsScreen(prefsManager: PrefsManager) {
         savePosition()
     }
 
+    fun commitSizeText() {
+        val parsed = sizeText.toFloatOrNull()
+        sizePercent = (parsed ?: sizePercent).coerceIn(Constants.MIN_SIZE_PERCENT, Constants.MAX_SIZE_PERCENT)
+        sizeText = "%.2f".format(sizePercent)
+        savePosition()
+    }
+
     fun commitDebounceText() {
         val parsed = debounceText.toLongOrNull()
-        if (parsed != null && parsed >= 0) {
+        if (parsed != null && parsed >= Constants.MIN_CAMERA_DEBOUNCE_MS) {
             val clamped = parsed.coerceAtMost(Constants.MAX_CAMERA_DEBOUNCE_MS)
             prefsManager.cameraDebounceMs = clamped
             debounceText = clamped.toString()
@@ -195,14 +203,43 @@ fun AdvancedSettingsScreen(prefsManager: PrefsManager) {
                 modifier = Modifier.padding(bottom = 16.dp)
             )
 
-            Text(
-                text = stringResource(R.string.advanced_size),
-                style = MaterialTheme.typography.labelLarge
-            )
-            Text(text = "%.2f%%".format(sizePercent), style = MaterialTheme.typography.bodySmall)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(bottom = 4.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.advanced_size),
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.weight(1f)
+                )
+                OutlinedTextField(
+                    value = sizeText,
+                    onValueChange = { text ->
+                        sizeText = text
+                        val parsed = text.toFloatOrNull()
+                        if (parsed != null) {
+                            sizePercent = parsed.coerceIn(Constants.MIN_SIZE_PERCENT, Constants.MAX_SIZE_PERCENT)
+                        }
+                    },
+                    suffix = { Text("%") },
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Decimal,
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(onDone = {
+                        commitSizeText()
+                        focusManager.clearFocus()
+                    }),
+                    singleLine = true,
+                    modifier = Modifier.width(96.dp)
+                )
+            }
             Slider(
                 value = sizePercent,
-                onValueChange = { sizePercent = it },
+                onValueChange = {
+                    sizePercent = it
+                    sizeText = "%.2f".format(it)
+                },
                 onValueChangeFinished = { savePosition() },
                 valueRange = Constants.MIN_SIZE_PERCENT..Constants.MAX_SIZE_PERCENT,
                 modifier = Modifier.padding(bottom = 16.dp)
@@ -298,6 +335,7 @@ fun AdvancedSettingsScreen(prefsManager: PrefsManager) {
                         sizePercent = defaultPos.sizePercent
                         xText = "%.2f".format(defaultPos.xPercent)
                         yText = "%.2f".format(defaultPos.yPercent)
+                        sizeText = "%.2f".format(defaultPos.sizePercent)
                         showResetDialog = false
                     }) {
                         Text("Reset")
