@@ -44,6 +44,8 @@
     <string name="advanced_x_position">X position</string>
     <string name="advanced_y_position">Y position</string>
     <string name="advanced_size">Size</string>
+    <string name="advanced_camera_debounce_ms">Camera close detection interval (ms, 10–1000)</string>
+    <string name="advanced_camera_debounce_restart">Takes effect when the service is restarted.</string>
     <string name="advanced_reset">Reset to Defaults</string>
     <string name="advanced_reset_confirm_title">Reset Position?</string>
     <string name="advanced_reset_confirm_message">This will restore the default overlay position for the current display aspect ratio.</string>

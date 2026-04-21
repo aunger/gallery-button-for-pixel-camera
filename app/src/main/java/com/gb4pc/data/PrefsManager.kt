@@ -24,6 +24,10 @@ class PrefsManager(context: Context) {
         get() = prefs.getBoolean(Constants.PREF_SETUP_COMPLETED, false)
         set(value) = prefs.edit().putBoolean(Constants.PREF_SETUP_COMPLETED, value).apply()
 
+    var cameraDebounceMs: Long
+        get() = prefs.getLong(Constants.PREF_CAMERA_DEBOUNCE_MS, Constants.CAMERA_DEBOUNCE_MS)
+        set(value) = prefs.edit().putLong(Constants.PREF_CAMERA_DEBOUNCE_MS, value).apply()
+
     /**
      * Returns the overlay position for the given aspect ratio.
      * Falls back to the closest stored ratio (PS-04), then to defaults.

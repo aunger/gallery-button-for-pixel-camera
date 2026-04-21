@@ -5,13 +5,19 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.gb4pc.Constants
 import com.gb4pc.R
@@ -47,12 +53,49 @@ fun AdvancedSettingsScreen(prefsManager: PrefsManager) {
     var xPercent by remember { mutableFloatStateOf(currentPosition.xPercent) }
     var yPercent by remember { mutableFloatStateOf(currentPosition.yPercent) }
     var sizePercent by remember { mutableFloatStateOf(currentPosition.sizePercent) }
+    var xText by remember { mutableStateOf("%.2f".format(currentPosition.xPercent)) }
+    var yText by remember { mutableStateOf("%.2f".format(currentPosition.yPercent)) }
+    var sizeText by remember { mutableStateOf("%.2f".format(currentPosition.sizePercent)) }
+    var debounceText by remember { mutableStateOf(prefsManager.cameraDebounceMs.toString()) }
     var showResetDialog by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
 
     // Save on change (UI-11)
     fun savePosition() {
         val pos = OverlayPosition(xPercent, yPercent, sizePercent)
         prefsManager.saveOverlayPosition(aspectRatio, pos)
+    }
+
+    fun commitXText() {
+        val parsed = xText.toFloatOrNull()
+        xPercent = (parsed ?: xPercent).coerceIn(0f, 100f)
+        xText = "%.2f".format(xPercent)
+        savePosition()
+    }
+
+    fun commitYText() {
+        val parsed = yText.toFloatOrNull()
+        yPercent = (parsed ?: yPercent).coerceIn(0f, 100f)
+        yText = "%.2f".format(yPercent)
+        savePosition()
+    }
+
+    fun commitSizeText() {
+        val parsed = sizeText.toFloatOrNull()
+        sizePercent = (parsed ?: sizePercent).coerceIn(Constants.MIN_SIZE_PERCENT, Constants.MAX_SIZE_PERCENT)
+        sizeText = "%.2f".format(sizePercent)
+        savePosition()
+    }
+
+    fun commitDebounceText() {
+        val parsed = debounceText.toLongOrNull()
+        if (parsed != null && parsed >= Constants.MIN_CAMERA_DEBOUNCE_MS) {
+            val clamped = parsed.coerceAtMost(Constants.MAX_CAMERA_DEBOUNCE_MS)
+            prefsManager.cameraDebounceMs = clamped
+            debounceText = clamped.toString()
+        } else {
+            debounceText = prefsManager.cameraDebounceMs.toString()
+        }
     }
 
     // M2 fix: live-updating debug log entries via DebugLog listener
@@ -75,44 +118,157 @@ fun AdvancedSettingsScreen(prefsManager: PrefsManager) {
                 .padding(16.dp)
                 .fillMaxWidth()
         ) {
-            // UI-10.1: Position sliders (M4 fix: persist only on onValueChangeFinished)
-            Text(
-                text = stringResource(R.string.advanced_x_position),
-                style = MaterialTheme.typography.labelLarge
-            )
-            Text(text = "%.2f%%".format(xPercent), style = MaterialTheme.typography.bodySmall)
+            // UI-10.1: Position sliders with text inputs (M4 fix: persist only on commit/onValueChangeFinished)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(bottom = 4.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.advanced_x_position),
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.weight(1f)
+                )
+                OutlinedTextField(
+                    value = xText,
+                    onValueChange = { text ->
+                        xText = text
+                        val parsed = text.toFloatOrNull()
+                        if (parsed != null) {
+                            xPercent = parsed.coerceIn(0f, 100f)
+                        }
+                    },
+                    suffix = { Text("%") },
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Decimal,
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(onDone = {
+                        commitXText()
+                        focusManager.clearFocus()
+                    }),
+                    singleLine = true,
+                    modifier = Modifier.width(96.dp)
+                )
+            }
             Slider(
                 value = xPercent,
-                onValueChange = { xPercent = it },
+                onValueChange = {
+                    xPercent = it
+                    xText = "%.2f".format(it)
+                },
                 onValueChangeFinished = { savePosition() },
                 valueRange = 0f..100f,
                 modifier = Modifier.padding(bottom = 16.dp)
             )
 
-            Text(
-                text = stringResource(R.string.advanced_y_position),
-                style = MaterialTheme.typography.labelLarge
-            )
-            Text(text = "%.2f%%".format(yPercent), style = MaterialTheme.typography.bodySmall)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(bottom = 4.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.advanced_y_position),
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.weight(1f)
+                )
+                OutlinedTextField(
+                    value = yText,
+                    onValueChange = { text ->
+                        yText = text
+                        val parsed = text.toFloatOrNull()
+                        if (parsed != null) {
+                            yPercent = parsed.coerceIn(0f, 100f)
+                        }
+                    },
+                    suffix = { Text("%") },
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Decimal,
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(onDone = {
+                        commitYText()
+                        focusManager.clearFocus()
+                    }),
+                    singleLine = true,
+                    modifier = Modifier.width(96.dp)
+                )
+            }
             Slider(
                 value = yPercent,
-                onValueChange = { yPercent = it },
+                onValueChange = {
+                    yPercent = it
+                    yText = "%.2f".format(it)
+                },
                 onValueChangeFinished = { savePosition() },
                 valueRange = 0f..100f,
                 modifier = Modifier.padding(bottom = 16.dp)
             )
 
-            Text(
-                text = stringResource(R.string.advanced_size),
-                style = MaterialTheme.typography.labelLarge
-            )
-            Text(text = "%.2f%%".format(sizePercent), style = MaterialTheme.typography.bodySmall)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(bottom = 4.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.advanced_size),
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.weight(1f)
+                )
+                OutlinedTextField(
+                    value = sizeText,
+                    onValueChange = { text ->
+                        sizeText = text
+                        val parsed = text.toFloatOrNull()
+                        if (parsed != null) {
+                            sizePercent = parsed.coerceIn(Constants.MIN_SIZE_PERCENT, Constants.MAX_SIZE_PERCENT)
+                        }
+                    },
+                    suffix = { Text("%") },
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Decimal,
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(onDone = {
+                        commitSizeText()
+                        focusManager.clearFocus()
+                    }),
+                    singleLine = true,
+                    modifier = Modifier.width(96.dp)
+                )
+            }
             Slider(
                 value = sizePercent,
-                onValueChange = { sizePercent = it },
+                onValueChange = {
+                    sizePercent = it
+                    sizeText = "%.2f".format(it)
+                },
                 onValueChangeFinished = { savePosition() },
                 valueRange = Constants.MIN_SIZE_PERCENT..Constants.MAX_SIZE_PERCENT,
                 modifier = Modifier.padding(bottom = 16.dp)
+            )
+
+            Text(
+                text = stringResource(R.string.advanced_camera_debounce_ms),
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+            OutlinedTextField(
+                value = debounceText,
+                onValueChange = { debounceText = it },
+                suffix = { Text("ms") },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Number,
+                    imeAction = ImeAction.Done
+                ),
+                keyboardActions = KeyboardActions(onDone = {
+                    commitDebounceText()
+                    focusManager.clearFocus()
+                }),
+                singleLine = true,
+                modifier = Modifier.width(128.dp)
+            )
+            Text(
+                text = stringResource(R.string.advanced_camera_debounce_restart),
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(bottom = 24.dp)
             )
 
             // UI-10.2: Reset to defaults
@@ -177,6 +333,9 @@ fun AdvancedSettingsScreen(prefsManager: PrefsManager) {
                         xPercent = defaultPos.xPercent
                         yPercent = defaultPos.yPercent
                         sizePercent = defaultPos.sizePercent
+                        xText = "%.2f".format(defaultPos.xPercent)
+                        yText = "%.2f".format(defaultPos.yPercent)
+                        sizeText = "%.2f".format(defaultPos.sizePercent)
                         showResetDialog = false
                     }) {
                         Text("Reset")

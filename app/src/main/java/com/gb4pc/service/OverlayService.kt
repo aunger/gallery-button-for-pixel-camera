@@ -82,6 +82,7 @@ class OverlayService : Service() {
             foregroundDetector = foregroundDetector,
             sessionTracker = SessionTracker.instance,
             handler = handler,
+            debounceMs = prefsManager.cameraDebounceMs,
             onUsageAccessLost = {
                 postPermissionNotification(
                     Constants.NOTIFICATION_PERMISSION_ID,
