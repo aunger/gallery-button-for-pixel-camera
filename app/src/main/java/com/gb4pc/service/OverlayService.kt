@@ -50,6 +50,8 @@ class OverlayService : Service() {
 
     // H4: ContentObserver registered at session start, unregistered at session end
     private var mediaObserver: ContentObserver? = null
+    private var thumbnailObserver: ContentObserver? = null
+    private var overlayActiveTimestamp: Long = 0L
 
     private val cameraCallback = object : CameraManager.AvailabilityCallback() {
         override fun onCameraUnavailable(cameraId: String) {
@@ -98,6 +100,8 @@ class OverlayService : Service() {
             isKeyguardLocked = { km.isKeyguardLocked },
             onRegisterMediaObserver = ::registerMediaObserver,
             onUnregisterMediaObserver = ::unregisterMediaObserver,
+            onRegisterThumbnailObserver = ::registerThumbnailObserver,
+            onUnregisterThumbnailObserver = ::unregisterThumbnailObserver,
             onOverlayStateChanged = { active -> isOverlayActive = active },
         )
     }
@@ -133,6 +137,7 @@ class OverlayService : Service() {
             callbackRegistered = false
         }
         unregisterScreenEventReceiver()
+        unregisterThumbnailObserver()
         unregisterMediaObserver()
         overlayManager.hide()
         cameraState.reset()
@@ -234,6 +239,36 @@ class OverlayService : Service() {
             contentResolver.unregisterContentObserver(it)
             mediaObserver = null
             DebugLog.log("ContentObserver unregistered")
+        }
+    }
+
+    private fun registerThumbnailObserver() {
+        if (thumbnailObserver != null) return
+        overlayActiveTimestamp = System.currentTimeMillis()
+        val startMs = overlayActiveTimestamp
+        thumbnailObserver = object : ContentObserver(handler) {
+            override fun onChange(selfChange: Boolean, uri: Uri?) {
+                val item = queryLatestMedia(startMs)
+                if (item != null) {
+                    overlayManager.showLatestPhotoThumbnail(item.uri)
+                    DebugLog.log("Thumbnail updated: ${item.uri}")
+                }
+            }
+        }
+        contentResolver.registerContentObserver(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true, thumbnailObserver!!
+        )
+        contentResolver.registerContentObserver(
+            MediaStore.Video.Media.EXTERNAL_CONTENT_URI, true, thumbnailObserver!!
+        )
+        DebugLog.log("Thumbnail observer registered")
+    }
+
+    private fun unregisterThumbnailObserver() {
+        thumbnailObserver?.let {
+            contentResolver.unregisterContentObserver(it)
+            thumbnailObserver = null
+            DebugLog.log("Thumbnail observer unregistered")
         }
     }
 

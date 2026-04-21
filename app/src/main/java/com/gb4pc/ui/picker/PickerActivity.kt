@@ -80,25 +80,33 @@ fun PickerScreen(
 ) {
     val context = LocalContext.current
     var searchQuery by remember { mutableStateOf("") }
+    var showAll by remember { mutableStateOf(false) }
 
-    // Load all launchable apps off the main thread
     var allApps by remember { mutableStateOf(emptyList<AppInfo>()) }
+    var photoRelatedPackages by remember { mutableStateOf(emptySet<String>()) }
+
     LaunchedEffect(Unit) {
-        allApps = withContext(Dispatchers.IO) {
+        val (apps, photoPackages) = withContext(Dispatchers.IO) {
             val pm = context.packageManager
             val mainIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
             val resolveInfos = pm.queryIntentActivities(mainIntent, PackageManager.MATCH_ALL)
-            resolveInfos.map { ri ->
+            val loadedApps = resolveInfos.map { ri ->
                 AppInfo(
                     label = ri.loadLabel(pm).toString(),
                     packageName = ri.activityInfo.packageName
                 )
             }.distinctBy { it.packageName }
+            val loadedPhotoPackages = AppListFilter.buildPhotoRelatedPackages(context)
+            loadedApps to loadedPhotoPackages
         }
+        allApps = apps
+        photoRelatedPackages = photoPackages
+        if (photoPackages.isEmpty()) showAll = true
     }
 
-    val filteredApps = remember(allApps, searchQuery) {
-        AppListFilter.filter(allApps, searchQuery, context.packageName)
+    val filteredApps = remember(allApps, photoRelatedPackages, searchQuery, showAll) {
+        val baseList = if (showAll) allApps else allApps.filter { it.packageName in photoRelatedPackages }
+        AppListFilter.filter(baseList, searchQuery, context.packageName)
     }
 
     Scaffold(
@@ -107,7 +115,6 @@ fun PickerScreen(
         }
     ) { padding ->
         Column(modifier = Modifier.padding(padding)) {
-            // UI-06: Search bar
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
@@ -118,10 +125,31 @@ fun PickerScreen(
                 singleLine = true
             )
 
-            // UI-05: App list
             LazyColumn {
+                if (!showAll) {
+                    item {
+                        Text(
+                            text = stringResource(R.string.picker_filtered_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                        )
+                    }
+                }
                 items(filteredApps, key = { it.packageName }) { app ->
                     AppRow(app = app, onClick = { onAppSelected(app.packageName) })
+                }
+                if (!showAll) {
+                    item {
+                        TextButton(
+                            onClick = { showAll = true },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                        ) {
+                            Text(stringResource(R.string.picker_show_all))
+                        }
+                    }
                 }
             }
         }

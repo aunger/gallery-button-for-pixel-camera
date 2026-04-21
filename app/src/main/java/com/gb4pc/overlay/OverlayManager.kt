@@ -73,14 +73,43 @@ class OverlayManager(
         } catch (_: Exception) {}
     }
 
+    fun showLatestPhotoThumbnail(photoUri: String) {
+        val targetView = overlayView ?: return
+        val uri = android.net.Uri.parse(photoUri)
+        Thread {
+            try {
+                val bitmap = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                    context.contentResolver.loadThumbnail(uri, android.util.Size(200, 200), null)
+                } else {
+                    context.contentResolver.openInputStream(uri)?.use { stream ->
+                        val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = 4 }
+                        android.graphics.BitmapFactory.decodeStream(stream, null, opts)
+                    }
+                }
+                bitmap?.let { bmp ->
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        targetView.setImageBitmap(bmp)
+                    }
+                }
+            } catch (e: Exception) {
+                DebugLog.log("Failed to load thumbnail: ${e.message}")
+            }
+        }.start()
+    }
+
     private fun createOverlayView(): ImageView {
         val imageView = ImageView(context)
         imageView.scaleType = ImageView.ScaleType.FIT_CENTER
         imageView.clipToOutline = true
-
+        imageView.outlineProvider = object : android.view.ViewOutlineProvider() {
+            override fun getOutline(view: android.view.View, outline: android.graphics.Outline) {
+                if (view.width == 0 || view.height == 0) return
+                val radius = view.width * 0.30f
+                outline.setRoundRect(0, 0, view.width, view.height, radius)
+            }
+        }
         updateIconDrawable(imageView)
         imageView.setOnClickListener { handleTap() }
-
         return imageView
     }
 
@@ -192,6 +221,9 @@ class OverlayManager(
     }
 
     private fun createLayoutParams(): WindowManager.LayoutParams {
+        @Suppress("DEPRECATION")
+        val showWhenLockedFlag = WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
+
         // M8: On API 30+ use currentWindowMetrics for correct bounds in split-screen;
         // fall back to displayMetrics on older API.
         val (displayWidth, displayHeight) = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -222,7 +254,8 @@ class OverlayManager(
             sizePx,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                showWhenLockedFlag,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START

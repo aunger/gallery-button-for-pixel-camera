@@ -38,6 +38,8 @@
     <!-- App Picker -->
     <string name="picker_title">Choose Gallery App</string>
     <string name="picker_search_hint">Search apps…</string>
+    <string name="picker_show_all">Show all apps</string>
+    <string name="picker_filtered_hint">Showing photo-related apps</string>
 
     <!-- Advanced Settings -->
     <string name="advanced_title">Advanced Settings</string>
