@@ -44,6 +44,13 @@ jobs:
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --no-daemon
 
+      - name: Extract version from tag
+        id: version
+        run: |
+          REF="${{ github.event.inputs.tag_name || github.ref_name }}"
+          echo "version=${REF#v}" >> "$GITHUB_OUTPUT"
+          echo "tag_name=${REF}" >> "$GITHUB_OUTPUT"
+
       - name: Decode keystore
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > "$RUNNER_TEMP/release.keystore"
@@ -54,14 +61,7 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: ./gradlew assembleRelease --no-daemon
-
-      - name: Extract version from tag
-        id: version
-        run: |
-          REF="${{ github.event.inputs.tag_name || github.ref_name }}"
-          echo "version=${REF#v}" >> "$GITHUB_OUTPUT"
-          echo "tag_name=${REF}" >> "$GITHUB_OUTPUT"
+        run: ./gradlew assembleRelease -PversionName=${{ steps.version.outputs.version }} --no-daemon
 
       - name: Rename APK
         run: |
