@@ -29,6 +29,8 @@ class OverlayServiceLogic(
     private val isKeyguardLocked: () -> Boolean,
     private val onRegisterMediaObserver: () -> Unit,
     private val onUnregisterMediaObserver: () -> Unit,
+    private val onRegisterThumbnailObserver: () -> Unit = {},
+    private val onUnregisterThumbnailObserver: () -> Unit = {},
     /** Called whenever the overlay visibility changes; default no-op. Used by tests and UI. */
     private val onOverlayStateChanged: (Boolean) -> Unit = {},
 ) {
@@ -99,6 +101,7 @@ class OverlayServiceLogic(
         overlayManager.show()
         isOverlayActive = true
         onOverlayStateChanged(true)
+        onRegisterThumbnailObserver()   // always register thumbnail observer on activation
 
         // SF-01: If device is locked at activation time, begin a secure session immediately.
         // H3: If unlocked, onScreenOff() will start the session when the screen locks.
@@ -118,6 +121,7 @@ class OverlayServiceLogic(
                 overlayManager.hide()
                 isOverlayActive = false
                 onOverlayStateChanged(false)
+                onUnregisterThumbnailObserver()   // unregister thumbnail observer on deactivation
                 if (sessionTracker.isSessionActive) {
                     sessionTracker.endSession()
                     onUnregisterMediaObserver()
@@ -161,6 +165,7 @@ class OverlayServiceLogic(
     fun reset() {
         cancelPendingDeactivation()
         cancelActivationRetry()
+        onUnregisterThumbnailObserver()
         isOverlayActive = false
     }
 }
