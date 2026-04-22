@@ -13,7 +13,8 @@ plugins {
 // Versioning: git tag is the single source of truth for versionName.
 // To release: run scripts/tag-release.sh <version> (e.g. 1.2.3).
 // CI extracts the version from the tag and injects it via -PversionName=X.Y.Z.
-// Dev builds (no property) show "dev". versionCode uses yyyyMMdd date or BUILD_NUMBER env var.
+// Dev builds (no property) show "dev". versionCode uses yyyyMMdd date locally or
+// github.run_number (via BUILD_NUMBER env var) in CI — monotonically increasing, no collisions.
 // BUILD_NUMBER must be a valid integer; a malformed value fails the build loudly.
 val envBuildNumber: String? = System.getenv("BUILD_NUMBER")
 val buildNumber: Int = when {
