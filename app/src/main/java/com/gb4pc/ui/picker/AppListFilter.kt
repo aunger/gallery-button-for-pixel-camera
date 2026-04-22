@@ -32,7 +32,7 @@ object AppListFilter {
      * Returns the set of package names that are plausibly photo-related, built from
      * the union of two PackageManager queries:
      *   1. Apps declaring CATEGORY_APP_GALLERY
-     *   2. Apps that can handle ACTION_VIEW with image/* MIME type
+     *   2. Apps that can handle ACTION_VIEW for image MIME types
      */
     fun buildPhotoRelatedPackages(context: Context): Set<String> {
         val pm = context.packageManager
