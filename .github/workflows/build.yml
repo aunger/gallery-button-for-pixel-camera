@@ -35,11 +35,10 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Build debug APK
-        run: ./gradlew assembleDebug --no-daemon
-
-      - name: Run unit tests
-        run: ./gradlew testDebugUnitTest --no-daemon
+      - name: Build and test
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: ./gradlew assembleDebug testDebugUnitTest -PversionName=dev.${{ github.run_number }} --no-daemon
 
       - name: Upload test results
         if: always()
@@ -126,7 +125,11 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build app, test, and mock Pixel Camera APKs
-        run: ./gradlew assembleDebug assembleDebugAndroidTest :e2e-mock-camera:assembleDebug --no-daemon
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: >
+          ./gradlew assembleDebug assembleDebugAndroidTest :e2e-mock-camera:assembleDebug
+          -PversionName=dev.${{ github.run_number }} --no-daemon
 
       - name: Start emulator
         run: |
@@ -241,7 +244,9 @@ jobs:
           path: app/build/outputs/androidTest-results/
           retention-days: 14
 
-  # Produce a release build on every merge to main (continuous delivery)
+  # Produce a signed release APK on every merge to main for easy sideloading.
+  # Named gb4pc-dev.<run_number>.apk to distinguish from tagged releases.
+  # Runs after build (unit tests must pass) but independently of e2e-tests.
   release-build:
     if: github.event_name == 'push'
     needs: build
@@ -272,12 +277,27 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Build release APK
-        run: ./gradlew assembleRelease --no-daemon
+      - name: Decode keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > "$RUNNER_TEMP/release.keystore"
+
+      - name: Build signed release APK
+        env:
+          KEYSTORE_PATH: ${{ runner.temp }}/release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: ./gradlew assembleRelease -PversionName=dev.${{ github.run_number }} --no-daemon
+
+      - name: Rename APK
+        run: |
+          mv app/build/outputs/apk/release/*.apk \
+             app/build/outputs/apk/release/gb4pc-dev.${{ github.run_number }}.apk
 
       - name: Upload release APK
         uses: actions/upload-artifact@v7
         with:
-          name: release-apk
-          path: app/build/outputs/apk/release/*.apk
+          name: gb4pc-dev.${{ github.run_number }}
+          path: app/build/outputs/apk/release/gb4pc-dev.${{ github.run_number }}.apk
           retention-days: 14

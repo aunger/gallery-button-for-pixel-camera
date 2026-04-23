@@ -14,50 +14,48 @@ import java.time.format.DateTimeParseException
  * validate the build that produced this APK, not future builds.
  *
  * Verifies:
- *  1. versionName follows semver (MAJOR.MINOR.PATCH, no leading zeros).
- *  2. versionCode is a valid yyyyMMdd build date (UTC) within a sane range.
+ *  1. versionName is either semver (MAJOR.MINOR.PATCH) for tagged releases, or
+ *     dev.N for CI/pre-release builds (where N is github.run_number).
+ *  2. versionCode is either a valid yyyyMMdd build date (local dev builds) or a
+ *     positive CI run number (github.run_number in CI builds).
  */
 class ReleaseVersionTest {
 
     @Test
-    fun `versionName follows semver MAJOR dot MINOR dot PATCH without leading zeros`() {
+    fun `versionName is semver or dev build label`() {
         val versionName = BuildConfig.VERSION_NAME
-        // Strict semver: no leading zeros per spec item 2.
         val semver = Regex("""^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$""")
+        val devLabel = Regex("""^dev\.\d+$""")
         assertTrue(
-            "versionName '$versionName' must follow semver MAJOR.MINOR.PATCH (no leading zeros)",
-            semver.matches(versionName)
+            "versionName '$versionName' must be semver (X.Y.Z) or a dev label (dev.N)",
+            semver.matches(versionName) || devLabel.matches(versionName)
         )
     }
 
     @Test
-    fun `versionCode is a valid yyyyMMdd build date`() {
+    fun `versionCode is a valid yyyyMMdd date or positive CI run number`() {
         val code = BuildConfig.VERSION_CODE
         val str = code.toString()
-        assertEquals(
-            "versionCode must be exactly 8 digits (yyyyMMdd format), was '$str'",
-            8, str.length
-        )
-        try {
-            LocalDate.parse(str, DateTimeFormatter.ofPattern("yyyyMMdd"))
-        } catch (e: DateTimeParseException) {
-            fail("versionCode '$code' is not a valid yyyyMMdd date: ${e.message}")
+        assertTrue("versionCode must be positive, was $code", code > 0)
+        if (str.length == 8) {
+            // Local dev build: validate as yyyyMMdd within sane range.
+            val buildDate = try {
+                LocalDate.parse(str, DateTimeFormatter.ofPattern("yyyyMMdd"))
+            } catch (e: DateTimeParseException) {
+                fail("8-digit versionCode '$code' is not a valid yyyyMMdd date: ${e.message}")
+                return
+            }
+            val projectEpoch = LocalDate.of(2024, 1, 1)
+            val tomorrow = LocalDate.now(ZoneOffset.UTC).plusDays(1)
+            assertTrue(
+                "versionCode date '$buildDate' is before project epoch ($projectEpoch)",
+                !buildDate.isBefore(projectEpoch)
+            )
+            assertFalse(
+                "versionCode date '$buildDate' should not be in the future",
+                buildDate.isAfter(tomorrow)
+            )
         }
-    }
-
-    @Test
-    fun `versionCode build date is within sane bounds`() {
-        val code = BuildConfig.VERSION_CODE
-        val buildDate = LocalDate.parse(code.toString(), DateTimeFormatter.ofPattern("yyyyMMdd"))
-        val projectEpoch = LocalDate.of(2024, 1, 1)
-        val tomorrow = LocalDate.now(ZoneOffset.UTC).plusDays(1)
-        assertTrue(
-            "versionCode build date '$buildDate' is before project epoch ($projectEpoch)",
-            !buildDate.isBefore(projectEpoch)
-        )
-        assertFalse(
-            "versionCode build date '$buildDate' should not be in the future",
-            buildDate.isAfter(tomorrow)
-        )
+        // else: CI build — github.run_number is any positive integer, already checked above.
     }
 }
