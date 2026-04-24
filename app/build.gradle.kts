@@ -10,9 +10,11 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-// Versioning: semver versionName + yyyyMMdd time-based versionCode.
-// GitHub releases must be tagged v{versionName} (e.g. v0.0.1).
-// CI may override the build number via the BUILD_NUMBER env var.
+// Versioning: git tag is the single source of truth for versionName.
+// To release: run scripts/tag-release.sh <version> (e.g. 1.2.3).
+// CI extracts the version from the tag and injects it via -PversionName=X.Y.Z.
+// Dev builds (no property) show "dev". versionCode uses yyyyMMdd date locally or
+// github.run_number (via BUILD_NUMBER env var) in CI — monotonically increasing, no collisions.
 // BUILD_NUMBER must be a valid integer; a malformed value fails the build loudly.
 val envBuildNumber: String? = System.getenv("BUILD_NUMBER")
 val buildNumber: Int = when {
@@ -31,7 +33,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = buildNumber
-        versionName = "0.0.2"
+        versionName = findProperty("versionName") as String? ?: "dev"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Exclude E2E tests from the standard instrumented-test run.

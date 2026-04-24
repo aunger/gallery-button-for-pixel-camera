@@ -7,55 +7,15 @@ on:
     branches: [main]
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v5
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v4
-
-      - name: Cache Gradle packages
-        uses: actions/cache@v5
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
-
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
-
-      - name: Build debug APK
-        run: ./gradlew assembleDebug --no-daemon
-
-      - name: Run unit tests
-        run: ./gradlew testDebugUnitTest --no-daemon
-
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: test-results
-          path: app/build/reports/tests/
-          retention-days: 14
-
-  # End-to-end tests on an emulator using a minimal mock Pixel Camera stub.
+  # Gate for PRs and merges: compiles, runs unit tests, then E2E tests on an emulator.
+  # Unit tests run first so a fast failure skips the slower emulator phase.
+  # On success the single debug build is reused for both test suites.
   #
-  # The real Pixel Camera APK refuses to start on non-Pixel emulators (PairIP
-  # device-compatibility check). The e2e-mock-camera module has the same
-  # applicationId ("com.google.android.GoogleCamera") and opens the camera
-  # hardware on resume, so GB4PC's CameraManager callback and UsageStats-based
-  # foreground detection are exercised identically to the real app.
+  # E2E background: the real Pixel Camera APK refuses to start on non-Pixel emulators
+  # (PairIP device-compatibility check). The e2e-mock-camera module has the same
+  # applicationId ("com.google.android.GoogleCamera") and opens the camera hardware
+  # on resume, so GB4PC's CameraManager callback and UsageStats-based foreground
+  # detection are exercised identically to the real app.
   #
   # We manage the emulator lifecycle ourselves rather than using
   # reactivecircus/android-emulator-runner@v2 because the runner action
@@ -63,7 +23,7 @@ jobs:
   # sys.boot_completed=1, before system services accept binder connections on
   # the slow API-35 emulator — causing exit code 224 (Broken Pipe) before our
   # script ever starts. The explicit steps below poll for true service readiness.
-  e2e-tests:
+  build-and-test:
     # ubuntu-latest has KVM hardware acceleration (available since April 2024).
     runs-on: ubuntu-latest
 
@@ -125,8 +85,20 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Build app, test, and mock Pixel Camera APKs
-        run: ./gradlew assembleDebug assembleDebugAndroidTest :e2e-mock-camera:assembleDebug --no-daemon
+      - name: Build and run unit tests
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: >
+          ./gradlew assembleDebug assembleDebugAndroidTest :e2e-mock-camera:assembleDebug
+          testDebugUnitTest -PversionName=dev.${{ github.run_number }} --no-daemon
+
+      - name: Upload unit test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: unit-test-results
+          path: app/build/reports/tests/
+          retention-days: 14
 
       - name: Start emulator
         run: |
@@ -241,10 +213,12 @@ jobs:
           path: app/build/outputs/androidTest-results/
           retention-days: 14
 
-  # Produce a release build on every merge to main (continuous delivery)
-  release-build:
+  # Produce a signed release-config APK on every merge to main for easy sideloading.
+  # Named gb4pc-dev.<run_number>.apk to distinguish from tagged releases.
+  # Waits for the full test suite (unit + E2E) before producing an artifact.
+  dev-build:
     if: github.event_name == 'push'
-    needs: build
+    needs: build-and-test
     runs-on: ubuntu-latest
 
     steps:
@@ -272,12 +246,27 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Build release APK
-        run: ./gradlew assembleRelease --no-daemon
+      - name: Decode keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > "$RUNNER_TEMP/release.keystore"
 
-      - name: Upload release APK
+      - name: Build signed release-config APK
+        env:
+          KEYSTORE_PATH: ${{ runner.temp }}/release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: ./gradlew assembleRelease -PversionName=dev.${{ github.run_number }} --no-daemon
+
+      - name: Rename APK
+        run: |
+          mv app/build/outputs/apk/release/*.apk \
+             app/build/outputs/apk/release/gb4pc-dev.${{ github.run_number }}.apk
+
+      - name: Upload dev APK
         uses: actions/upload-artifact@v7
         with:
-          name: release-apk
-          path: app/build/outputs/apk/release/*.apk
+          name: gb4pc-dev.${{ github.run_number }}
+          path: app/build/outputs/apk/release/gb4pc-dev.${{ github.run_number }}.apk
           retention-days: 14

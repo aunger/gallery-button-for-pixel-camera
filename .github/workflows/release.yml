@@ -11,7 +11,7 @@ on:
         required: true
 
 jobs:
-  build-and-release:
+  tagged-release:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -41,8 +41,17 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      - name: Extract version from tag
+        id: version
+        run: |
+          REF="${{ github.event.inputs.tag_name || github.ref_name }}"
+          echo "version=${REF#v}" >> "$GITHUB_OUTPUT"
+          echo "tag_name=${REF}" >> "$GITHUB_OUTPUT"
+
       - name: Run unit tests
-        run: ./gradlew testDebugUnitTest --no-daemon
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: ./gradlew testDebugUnitTest -PversionName=${{ steps.version.outputs.version }} --no-daemon
 
       - name: Decode keystore
         run: |
@@ -54,14 +63,8 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: ./gradlew assembleRelease --no-daemon
-
-      - name: Extract version from tag
-        id: version
-        run: |
-          REF="${{ github.event.inputs.tag_name || github.ref_name }}"
-          echo "version=${REF#v}" >> "$GITHUB_OUTPUT"
-          echo "tag_name=${REF}" >> "$GITHUB_OUTPUT"
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: ./gradlew assembleRelease -PversionName=${{ steps.version.outputs.version }} --no-daemon
 
       - name: Rename APK
         run: |
