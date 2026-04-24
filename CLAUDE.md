@@ -1,5 +1,1 @@
-# Project Documentation
-
-```include
-./AGENTS.md
-```
+@./AGENTS.md
