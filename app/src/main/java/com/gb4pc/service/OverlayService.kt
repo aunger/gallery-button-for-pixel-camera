@@ -307,7 +307,7 @@ class OverlayService : Service() {
         isVideo: Boolean
     ): MediaItem? {
         val selection = "${MediaStore.MediaColumns.DATE_ADDED} >= ?"
-        val sortOrder = "${MediaStore.MediaColumns.DATE_ADDED} DESC LIMIT 1"
+        val sortOrder = "${MediaStore.MediaColumns.DATE_ADDED} DESC"
         contentResolver.query(contentUri, projection, selection, selectionArgs, sortOrder)?.use { cursor ->
             if (cursor.moveToFirst()) {
                 val id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID))
