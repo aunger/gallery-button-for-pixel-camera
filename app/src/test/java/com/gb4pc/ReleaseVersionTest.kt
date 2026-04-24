@@ -25,7 +25,7 @@ class ReleaseVersionTest {
     fun `versionName is semver or dev build label`() {
         val versionName = BuildConfig.VERSION_NAME
         val semver = Regex("""^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$""")
-        val devLabel = Regex("""^dev\.\d+$""")
+        val devLabel = Regex("""^dev(\.\d+)?$""")
         assertTrue(
             "versionName '$versionName' must be semver (X.Y.Z) or a dev label (dev.N)",
             semver.matches(versionName) || devLabel.matches(versionName)

@@ -18,7 +18,7 @@ fi
 
 TAG="v${VERSION}"
 
-if git rev-parse "$TAG" &>/dev/null; then
+if git rev-parse "refs/tags/$TAG" &>/dev/null; then
     echo "Error: tag $TAG already exists." >&2
     exit 1
 fi
