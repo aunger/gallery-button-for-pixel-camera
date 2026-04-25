@@ -16,6 +16,6 @@
 - During the code review process, don't allow the scope of work to increase.
 - Instead, spawn related items in the issue tracker.
 
-## Creating a PR
+## Only one topic per PR
 
 Do not combine unrelated work in a single PR. You may resolve multiple issues with one PR, but **only** if they are both symptoms of the same technical issue.
