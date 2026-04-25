@@ -57,7 +57,12 @@ class OverlayServiceLogic(
         // DT-04/DT-05: Only schedule deactivation when ALL cameras have been released
         if (cameraState.areAllCamerasAvailable()) {
             cancelActivationRetry()
-            scheduleDeactivation()
+            // Issue #46: If Pixel Camera is no longer in the foreground, skip the debounce delay.
+            // The debounce is only needed for transient camera switches (where hardware briefly
+            // shows available between switching cameras); for a true app-close we want 0 ms.
+            val pkg = foregroundDetector.getForegroundPackage()
+            val delay = if (ForegroundDetector.isPixelCameraPackage(pkg)) debounceMs else 0L
+            scheduleDeactivation(delay)
         }
     }
 
@@ -112,9 +117,11 @@ class OverlayServiceLogic(
     }
 
     /**
-     * DT-04: Schedule overlay deactivation with a debounce delay.
+     * DT-04: Schedule overlay deactivation with an optional delay.
+     * Defaults to [debounceMs] for transient camera switches; pass 0L when the app has already
+     * left the foreground (Issue #46).
      */
-    fun scheduleDeactivation() {
+    fun scheduleDeactivation(delayMs: Long = debounceMs) {
         cancelPendingDeactivation()
         deactivateRunnable = Runnable {
             if (cameraState.areAllCamerasAvailable()) {
@@ -128,7 +135,7 @@ class OverlayServiceLogic(
                 }
             }
         }
-        handler.postDelayed(deactivateRunnable!!, debounceMs)
+        handler.postDelayed(deactivateRunnable!!, delayMs)
     }
 
     fun cancelPendingDeactivation() {
