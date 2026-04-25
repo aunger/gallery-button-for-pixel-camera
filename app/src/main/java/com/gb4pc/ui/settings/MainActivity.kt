@@ -34,10 +34,12 @@ class MainActivity : ComponentActivity() {
     private var hasUsageStats = mutableStateOf(false)
     private var hasOverlay = mutableStateOf(false)
     private var isBatteryExcluded = mutableStateOf(false)
+    private var galleryPackage = mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefsManager = PrefsManager(this)
+        galleryPackage.value = prefsManager.galleryPackage
 
         // Redirect to setup if not completed
         if (!prefsManager.isSetupCompleted) {
@@ -54,7 +56,8 @@ class MainActivity : ComponentActivity() {
                     isPixelCameraInstalled = isPixelCameraInstalled.value,
                     hasUsageStats = hasUsageStats.value,
                     hasOverlay = hasOverlay.value,
-                    isBatteryExcluded = isBatteryExcluded.value
+                    isBatteryExcluded = isBatteryExcluded.value,
+                    galleryPackage = galleryPackage.value
                 )
             }
         }
@@ -67,6 +70,7 @@ class MainActivity : ComponentActivity() {
         hasUsageStats.value = PermissionHelper.hasUsageStatsPermission(this)
         hasOverlay.value = PermissionHelper.hasOverlayPermission(this)
         isBatteryExcluded.value = PermissionHelper.isBatteryOptimizationExcluded(this)
+        galleryPackage.value = prefsManager.galleryPackage
     }
 }
 
@@ -76,11 +80,11 @@ fun MainSettingsScreen(
     isPixelCameraInstalled: Boolean,
     hasUsageStats: Boolean,
     hasOverlay: Boolean,
-    isBatteryExcluded: Boolean
+    isBatteryExcluded: Boolean,
+    galleryPackage: String?
 ) {
     val context = LocalContext.current
     var isServiceEnabled by remember { mutableStateOf(prefsManager.isServiceEnabled) }
-    var galleryPackage by remember { mutableStateOf(prefsManager.galleryPackage) }
 
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(
