@@ -56,4 +56,19 @@ class MainViewModelTest {
         val state2 = MainSettingsState.from(prefs)
         assertEquals(state1, state2)
     }
+
+    @Test
+    fun `from re-reads galleryPackage each call so resumed state reflects new selection`() {
+        // First call: no gallery selected
+        val stateBeforeSelection = MainSettingsState.from(prefs)
+        assertNull(stateBeforeSelection.galleryPackage)
+
+        // Simulate user returning from PickerActivity having chosen a gallery app
+        whenever(prefs.galleryPackage).thenReturn("com.example.gallery")
+
+        // Second call (mimics onResume updating the state): should reflect the new selection
+        val stateAfterSelection = MainSettingsState.from(prefs)
+        assertEquals("com.example.gallery", stateAfterSelection.galleryPackage)
+        assertNotEquals(stateBeforeSelection, stateAfterSelection)
+    }
 }
