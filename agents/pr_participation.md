@@ -1,5 +1,7 @@
 # PR participation
 
+**Terminology**: In most cases, the *Author* is also referred to as *Programmer*. In this document, we use the term *Author* to allow for PRs that don't involve code changes.
+
 ## Reviews must be conversational, and slightly competitive, between **at least two parties**.
 
 - A *Reviewer* must not make code changes itself, but should communicate discoveries clearly enough to convince an Author of the need to change the PR.
