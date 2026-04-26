@@ -25,7 +25,7 @@ The Orchestrator is not a code reviewer or a programmer.
 ## Assigning a programmer
 
 - Create a Sonnet sub-agent unless the user requested otherwise
-- Inform the programmer of its role as an expert software developer resolving the issue
+- Inform the agent of its role as an expert software developer resolving the issue
 - Inform the programmer of its responsibility to commit its work to a branch and open a PR (if one doesn't speedy exist)
 - Pass the issue number to the subagent
 - Relay any relevant instruction from the user
