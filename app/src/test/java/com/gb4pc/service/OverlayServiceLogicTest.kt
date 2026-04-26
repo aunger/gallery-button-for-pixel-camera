@@ -412,4 +412,61 @@ class OverlayServiceLogicTest {
 
         verify(handler).removeCallbacks(runnableCaptor.firstValue)
     }
+
+    // ── Issue #46: foreground-aware deactivation delay ──────────────────────
+
+    /**
+     * When all cameras become available and Pixel Camera is no longer the foreground app
+     * (the user closed the camera app), deactivation should be scheduled with 0 ms delay —
+     * no debounce needed for a true app-close.
+     */
+    @Test
+    fun `issue-46 deactivation uses 0ms delay when Pixel Camera is not foreground on camera release`() {
+        // Activate the overlay while Pixel Camera is in the foreground
+        whenever(foregroundDetector.getForegroundPackage()).thenReturn(Constants.PIXEL_CAMERA_PACKAGE)
+        logic.onCameraUnavailable("0")
+        assertTrue("Pre-condition: overlay should be active", logic.isOverlayActive)
+
+        // User closed Pixel Camera; UsageStats now shows a different app
+        whenever(foregroundDetector.getForegroundPackage()).thenReturn("com.example.otherapp")
+
+        logic.onCameraAvailable("0")
+
+        verify(handler).postDelayed(any(), eq(0L))
+    }
+
+    /**
+     * When all cameras become available and Pixel Camera is still the foreground app
+     * (transient camera switch between lenses), deactivation should be scheduled with the
+     * configured debounceMs so the overlay is not prematurely hidden.
+     */
+    @Test
+    fun `issue-46 deactivation uses debounceMs delay when Pixel Camera is still foreground on camera switch`() {
+        val debounce = 50L
+        val logicWithDebounce = OverlayServiceLogic(
+            hasUsageStatsPermission = { true },
+            hasOverlayPermission = { true },
+            overlayManager = overlayManager,
+            cameraState = CameraState(),
+            foregroundDetector = foregroundDetector,
+            sessionTracker = sessionTracker,
+            handler = handler,
+            debounceMs = debounce,
+            onUsageAccessLost = {},
+            onOverlayPermissionLost = {},
+            isKeyguardLocked = { false },
+            onRegisterMediaObserver = {},
+            onUnregisterMediaObserver = {},
+        )
+
+        // Activate the overlay
+        whenever(foregroundDetector.getForegroundPackage()).thenReturn(Constants.PIXEL_CAMERA_PACKAGE)
+        logicWithDebounce.onCameraUnavailable("0")
+        assertTrue("Pre-condition: overlay should be active", logicWithDebounce.isOverlayActive)
+
+        // Camera becomes available while Pixel Camera is still in the foreground (camera switch)
+        logicWithDebounce.onCameraAvailable("0")
+
+        verify(handler).postDelayed(any(), eq(debounce))
+    }
 }
