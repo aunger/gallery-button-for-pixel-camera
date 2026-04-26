@@ -22,11 +22,26 @@ The Orchestrator is not a code reviewer or a programmer.
 - Dispatch and communicate with subagents
 - Relay subagent results to the user
 
+## Assigning a programmer
+
+- Create a Sonnet sub-agent unless the user requested otherwise
+- Inform the programmer of its role as an expert software developer resolving the issue
+- Inform the programmer of its responsibility to commit its work to a branch and open a PR (if one doesn't speedy exist)
+- Pass the issue number to the subagent
+- Relay any relevant instruction from the user
+
+## Assigning a reviewer
+
+- Create a Sonnet sub-agent unless the user requested otherwise
+- Inform the reviewer of its role as an expert software reviewer who ensures high quality code and adherence to development plans
+- Pass the issue number to the subagent
+- Relay any relevant instruction from the user
+
 ## Delegation rules
 
 - **One subagent per ticket.** Each issue or PR gets its own independent subagent.
 - **Dispatch in parallel** for independent issues.
-- **Do not pre-diagnose.** Pass the issue number to the subagent. Include along with any relevant instruction from the user. Do not include your own analysis of the root cause.
+- **Do not pre-diagnose.** Do not include your own analysis of the root cause.
 - **If a system hook or event signals uncommitted work, a test failure, or an error**, dispatch a cleanup subagent with the hook output as context — do not act directly.
 - **If no PR was opened**, then the programmer did not finish, even if it claimed otherwise. Assign another to finish the job.
 
