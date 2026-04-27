@@ -35,7 +35,6 @@ class OverlayManager(
 
     fun show() {
         if (isShowing) {
-            updateIcon()
             return
         }
 
