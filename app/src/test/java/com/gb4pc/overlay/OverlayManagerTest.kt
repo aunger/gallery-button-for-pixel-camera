@@ -1,6 +1,5 @@
 package com.gb4pc.overlay
 
-import com.gb4pc.Constants
 import com.gb4pc.data.OverlayPosition
 import org.junit.Assert.*
 import org.junit.Test
@@ -18,16 +17,13 @@ import org.junit.Test
  *
  * A direct unit test for this behaviour requires OverlayManager to be instantiated,
  * which in turn needs a real Android Context, WindowManager and KeyguardManager. Those
- * are not available in JVM unit tests without Robolectric. A Robolectric (or
- * instrumented) test should verify:
+ * are not available in JVM unit tests without Robolectric. See
+ * OverlayManagerRobolectricTest for a Robolectric test that verifies:
  *
  *   1. Call show() → overlay is created with the gallery icon drawable.
  *   2. Call showLatestPhotoThumbnail(...) → the ImageView now holds a Bitmap drawable.
  *   3. Call show() again (simulating a second onCameraUnavailable event) → the ImageView
  *      still holds the Bitmap drawable, NOT a Drawable (i.e. updateIcon() was NOT called).
- *
- * Because the fixed code path is a single-line deletion in OverlayManager.show(), the
- * correctness guarantee lives in the diff itself plus this documented contract.
  */
 class OverlayManagerTest {
 
