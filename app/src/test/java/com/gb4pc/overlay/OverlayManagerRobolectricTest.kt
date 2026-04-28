@@ -16,7 +16,6 @@ import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.mock
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
-import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowWindowManagerImpl
 
 /**
@@ -32,7 +31,6 @@ import org.robolectric.shadows.ShadowWindowManagerImpl
  * thumbnail intact.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
 class OverlayManagerRobolectricTest {
 
     /**
