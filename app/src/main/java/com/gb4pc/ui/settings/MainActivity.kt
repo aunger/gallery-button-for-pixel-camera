@@ -231,6 +231,11 @@ fun MainSettingsScreen(
                         onCheckedChange = { enabled ->
                             isFocusableOverlay = enabled
                             prefsManager.focusableOverlay = enabled
+                            // Re-apply window flags on the running overlay immediately
+                            // so the toggle takes effect without a camera open/close cycle.
+                            if (prefsManager.isServiceEnabled) {
+                                OverlayService.reshowOverlay(context)
+                            }
                         }
                     )
                 }
