@@ -112,10 +112,6 @@ class OverlayManager(
         return imageView
     }
 
-    private fun updateIcon() {
-        overlayView?.let { updateIconDrawable(it) }
-    }
-
     /**
      * WG-01: Extract icon live from PackageManager each time.
      * WG-02: Use adaptive icon shape mask.
