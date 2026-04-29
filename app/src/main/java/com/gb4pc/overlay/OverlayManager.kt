@@ -292,8 +292,10 @@ class OverlayManager(
         )
 
         // FLAG_NOT_FOCUSABLE: safe default — overlay never steals input focus.
-        // FLAG_NOT_TOUCH_MODAL (experimental): makes the window focusable, enabling
-        // onWindowFocusChanged(false) as a task-switcher signal. Trade-off: may steal
+        // Experimental focusable path: omit FLAG_NOT_FOCUSABLE so the window can receive focus
+        // events, enabling onWindowFocusChanged(false) as a task-switcher signal.
+        // FLAG_NOT_TOUCH_MODAL is also set to keep touch events outside the overlay's bounds
+        // passing through to the camera app. Trade-off: the focusable window may steal
         // volume/power key events from the camera app even when dispatchKeyEvent returns false.
         val windowFlags = if (prefsManager.focusableOverlay) {
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
