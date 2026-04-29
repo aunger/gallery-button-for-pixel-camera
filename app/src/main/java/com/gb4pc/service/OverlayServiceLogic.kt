@@ -33,17 +33,6 @@ class OverlayServiceLogic(
     private val onUnregisterThumbnailObserver: () -> Unit = {},
     /** Called whenever the overlay visibility changes; default no-op. Used by tests and UI. */
     private val onOverlayStateChanged: (Boolean) -> Unit = {},
-    /**
-     * Called when the overlay window loses focus, indicating a system surface (task-switcher,
-     * notification shade, etc.) has covered the camera app.
-     * Only fired when the experimental focusable-overlay preference is enabled.
-     */
-    val onOverlayFocusLost: () -> Unit = {},
-    /**
-     * Called when the overlay window regains focus, indicating the camera app is back in front.
-     * Only fired when the experimental focusable-overlay preference is enabled.
-     */
-    val onOverlayFocusGained: () -> Unit = {},
 ) {
     var isOverlayActive: Boolean = false
         private set
@@ -185,5 +174,36 @@ class OverlayServiceLogic(
         cancelActivationRetry()
         onUnregisterThumbnailObserver()
         isOverlayActive = false
+    }
+
+    // ── Focusable-overlay focus callbacks (Issue #55) ────────────────────────
+
+    /**
+     * Called by [com.gb4pc.overlay.OverlayManager] when the overlay window loses focus.
+     * Indicates a system surface (task-switcher, notification shade, etc.) has covered the
+     * camera app. Hides the overlay so it does not obscure the system surface.
+     * Only fired when the experimental focusable-overlay preference is enabled.
+     */
+    fun onOverlayFocusLost() {
+        if (!isOverlayActive) return
+        overlayManager.hide()
+        isOverlayActive = false
+        onOverlayStateChanged(false)
+    }
+
+    /**
+     * Called by [com.gb4pc.overlay.OverlayManager] when the overlay window regains focus.
+     * Indicates the camera app is back in the foreground. Re-shows the overlay.
+     * Only fired when the experimental focusable-overlay preference is enabled.
+     */
+    fun onOverlayFocusGained() {
+        if (isOverlayActive) return
+        if (!hasOverlayPermission()) {
+            onOverlayPermissionLost()
+            return
+        }
+        overlayManager.show()
+        isOverlayActive = true
+        onOverlayStateChanged(true)
     }
 }

@@ -470,96 +470,97 @@ class OverlayServiceLogicTest {
         verify(handler).postDelayed(any(), eq(debounce))
     }
 
-    // ── Issue #55: focusable overlay focus-change callbacks ─────────────────
+    // ── Issue #55: focusable overlay focus-change behaviour ─────────────────
 
     /**
      * When the overlay window loses focus (task-switcher or notification shade is shown),
-     * the onOverlayFocusLost lambda is invoked.
+     * the overlay is hidden and isOverlayActive becomes false.
      */
     @Test
-    fun `onOverlayFocusLost lambda is invoked when overlay loses focus`() {
-        var focusLostCount = 0
-        val focusLogic = OverlayServiceLogic(
-            hasUsageStatsPermission = { true },
-            hasOverlayPermission = { true },
-            overlayManager = overlayManager,
-            cameraState = CameraState(),
-            foregroundDetector = foregroundDetector,
-            sessionTracker = sessionTracker,
-            handler = handler,
-            debounceMs = 0L,
-            onUsageAccessLost = {},
-            onOverlayPermissionLost = {},
-            isKeyguardLocked = { false },
-            onRegisterMediaObserver = {},
-            onUnregisterMediaObserver = {},
-            onOverlayFocusLost = { focusLostCount++ },
-        )
+    fun `onOverlayFocusLost hides overlay and marks it inactive`() {
+        // Activate the overlay first
+        whenever(foregroundDetector.getForegroundPackage()).thenReturn(Constants.PIXEL_CAMERA_PACKAGE)
+        logic.showOverlay()
+        assertTrue("Pre-condition: overlay should be active", logic.isOverlayActive)
 
-        focusLogic.onOverlayFocusLost()
+        logic.onOverlayFocusLost()
 
-        assertEquals("onOverlayFocusLost should be invoked once", 1, focusLostCount)
+        verify(overlayManager).hide()
+        assertFalse("Overlay should be inactive after focus loss", logic.isOverlayActive)
+    }
+
+    /**
+     * onOverlayFocusLost is idempotent: a second call while already inactive is a no-op.
+     */
+    @Test
+    fun `onOverlayFocusLost is a no-op when overlay is not active`() {
+        assertFalse("Pre-condition: overlay should not be active", logic.isOverlayActive)
+
+        logic.onOverlayFocusLost()
+
+        verify(overlayManager, never()).hide()
+        assertFalse(logic.isOverlayActive)
     }
 
     /**
      * When the overlay window regains focus (camera app is back in front),
-     * the onOverlayFocusGained lambda is invoked.
+     * the overlay is re-shown and isOverlayActive becomes true.
      */
     @Test
-    fun `onOverlayFocusGained lambda is invoked when overlay regains focus`() {
-        var focusGainedCount = 0
-        val focusLogic = OverlayServiceLogic(
-            hasUsageStatsPermission = { true },
-            hasOverlayPermission = { true },
-            overlayManager = overlayManager,
-            cameraState = CameraState(),
-            foregroundDetector = foregroundDetector,
-            sessionTracker = sessionTracker,
-            handler = handler,
-            debounceMs = 0L,
-            onUsageAccessLost = {},
-            onOverlayPermissionLost = {},
-            isKeyguardLocked = { false },
-            onRegisterMediaObserver = {},
-            onUnregisterMediaObserver = {},
-            onOverlayFocusGained = { focusGainedCount++ },
-        )
+    fun `onOverlayFocusGained shows overlay and marks it active`() {
+        assertFalse("Pre-condition: overlay should not be active", logic.isOverlayActive)
 
-        focusLogic.onOverlayFocusGained()
+        logic.onOverlayFocusGained()
 
-        assertEquals("onOverlayFocusGained should be invoked once", 1, focusGainedCount)
+        verify(overlayManager).show()
+        assertTrue("Overlay should be active after focus gained", logic.isOverlayActive)
     }
 
     /**
-     * Both focus lambdas are independent — invoking one does not trigger the other.
+     * onOverlayFocusGained is idempotent: a second call while already active is a no-op.
      */
     @Test
-    fun `focus loss and gain lambdas fire independently`() {
-        var lostCount = 0
-        var gainedCount = 0
-        val focusLogic = OverlayServiceLogic(
-            hasUsageStatsPermission = { true },
-            hasOverlayPermission = { true },
-            overlayManager = overlayManager,
-            cameraState = CameraState(),
-            foregroundDetector = foregroundDetector,
-            sessionTracker = sessionTracker,
-            handler = handler,
-            debounceMs = 0L,
-            onUsageAccessLost = {},
-            onOverlayPermissionLost = {},
-            isKeyguardLocked = { false },
-            onRegisterMediaObserver = {},
-            onUnregisterMediaObserver = {},
-            onOverlayFocusLost = { lostCount++ },
-            onOverlayFocusGained = { gainedCount++ },
-        )
+    fun `onOverlayFocusGained is a no-op when overlay is already active`() {
+        whenever(foregroundDetector.getForegroundPackage()).thenReturn(Constants.PIXEL_CAMERA_PACKAGE)
+        logic.showOverlay()
+        assertTrue("Pre-condition: overlay should be active", logic.isOverlayActive)
 
-        focusLogic.onOverlayFocusLost()
-        focusLogic.onOverlayFocusLost()
-        focusLogic.onOverlayFocusGained()
+        logic.onOverlayFocusGained()
 
-        assertEquals("Lost count should be 2", 2, lostCount)
-        assertEquals("Gained count should be 1", 1, gainedCount)
+        // show() called once (by showOverlay), not again by onOverlayFocusGained
+        verify(overlayManager, times(1)).show()
+    }
+
+    /**
+     * A full focus-lost → focus-gained cycle hides and then re-shows the overlay.
+     */
+    @Test
+    fun `focus lost then gained cycle hides and re-shows overlay`() {
+        whenever(foregroundDetector.getForegroundPackage()).thenReturn(Constants.PIXEL_CAMERA_PACKAGE)
+        logic.showOverlay()
+        assertTrue("Pre-condition: overlay should be active", logic.isOverlayActive)
+
+        logic.onOverlayFocusLost()
+        assertFalse("Overlay should be hidden after focus loss", logic.isOverlayActive)
+        verify(overlayManager).hide()
+
+        logic.onOverlayFocusGained()
+        assertTrue("Overlay should be visible after focus regained", logic.isOverlayActive)
+        verify(overlayManager, times(2)).show() // once for showOverlay(), once for onOverlayFocusGained()
+    }
+
+    /**
+     * onOverlayFocusGained does not show the overlay when overlay permission has been revoked.
+     */
+    @Test
+    fun `onOverlayFocusGained does not show overlay when overlay permission is missing`() {
+        assertFalse("Pre-condition: overlay should not be active", logic.isOverlayActive)
+        overlayPermission = false
+
+        logic.onOverlayFocusGained()
+
+        verify(overlayManager, never()).show()
+        assertFalse(logic.isOverlayActive)
+        assertEquals("Overlay-permission-lost notification should fire", 1, overlayLostCount)
     }
 }
