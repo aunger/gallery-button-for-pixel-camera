@@ -9,6 +9,7 @@ import android.graphics.drawable.Drawable
 import android.graphics.drawable.LayerDrawable
 import android.os.Build
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.WindowManager
 import android.widget.ImageView
 import android.widget.Toast
@@ -26,7 +27,19 @@ import com.gb4pc.viewer.SecureViewerActivity
  */
 class OverlayManager(
     private val context: Context,
-    private val prefsManager: PrefsManager
+    private val prefsManager: PrefsManager,
+    /**
+     * Called when the overlay window loses focus (hasFocus == false), which signals that a
+     * system surface (task-switcher, notification shade, etc.) has covered the camera app.
+     * Only fired when [PrefsManager.focusableOverlay] is true.
+     */
+    private val onFocusLost: () -> Unit = {},
+    /**
+     * Called when the overlay window regains focus (hasFocus == true), signalling that the
+     * camera app is back in front.
+     * Only fired when [PrefsManager.focusableOverlay] is true.
+     */
+    private val onFocusGained: () -> Unit = {},
 ) {
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private val keyguardManager = context.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
@@ -72,6 +85,17 @@ class OverlayManager(
         } catch (_: Exception) {}
     }
 
+    /**
+     * Re-apply window flags by hiding and re-showing the overlay.
+     * Call this after [PrefsManager.focusableOverlay] changes while the overlay is visible,
+     * so the new FLAG_NOT_FOCUSABLE / FLAG_NOT_TOUCH_MODAL setting takes effect.
+     */
+    fun reshow() {
+        if (!isShowing) return
+        hide()
+        show()
+    }
+
     fun showLatestPhotoThumbnail(photoUri: String) {
         val targetView = overlayView ?: return
         val uri = android.net.Uri.parse(photoUri)
@@ -97,7 +121,30 @@ class OverlayManager(
     }
 
     private fun createOverlayView(): ImageView {
-        val imageView = ImageView(context)
+        // When focusable overlay is enabled we need a custom subclass to handle key and focus
+        // events on the root view.
+        val imageView = object : ImageView(context) {
+            /**
+             * Do not consume key events — pass them through to the camera app.
+             *
+             * NOTE (Issue #55 open question): Even with dispatchKeyEvent returning false, a
+             * focusable TYPE_APPLICATION_OVERLAY window may steal input focus from the camera
+             * app when first shown. If that happens, volume-as-shutter and zoom keys will be
+             * broken regardless of this override. This must be verified on a real device.
+             */
+            override fun dispatchKeyEvent(event: KeyEvent): Boolean = false
+
+            override fun onWindowFocusChanged(hasFocus: Boolean) {
+                super.onWindowFocusChanged(hasFocus)
+                if (hasFocus) {
+                    DebugLog.log("Overlay gained window focus")
+                    onFocusGained()
+                } else {
+                    DebugLog.log("Overlay lost window focus — task switcher or system surface active")
+                    onFocusLost()
+                }
+            }
+        }
         imageView.scaleType = ImageView.ScaleType.FIT_CENTER
         imageView.clipToOutline = true
         imageView.outlineProvider = object : android.view.ViewOutlineProvider() {
@@ -244,13 +291,25 @@ class OverlayManager(
             position.yPercent, displayHeight, sizePx
         )
 
+        // FLAG_NOT_FOCUSABLE: safe default — overlay never steals input focus.
+        // FLAG_NOT_TOUCH_MODAL (experimental): makes the window focusable, enabling
+        // onWindowFocusChanged(false) as a task-switcher signal. Trade-off: may steal
+        // volume/power key events from the camera app even when dispatchKeyEvent returns false.
+        val windowFlags = if (prefsManager.focusableOverlay) {
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                showWhenLockedFlag
+        } else {
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                showWhenLockedFlag
+        }
+
         return WindowManager.LayoutParams(
             sizePx,
             sizePx,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                showWhenLockedFlag,
+            windowFlags,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
