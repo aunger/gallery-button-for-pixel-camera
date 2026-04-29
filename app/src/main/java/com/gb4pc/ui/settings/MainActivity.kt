@@ -85,6 +85,7 @@ fun MainSettingsScreen(
 ) {
     val context = LocalContext.current
     var isServiceEnabled by remember { mutableStateOf(prefsManager.isServiceEnabled) }
+    var isFocusableOverlay by remember { mutableStateOf(prefsManager.focusableOverlay) }
 
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -202,6 +203,36 @@ fun MainSettingsScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                }
+
+                HorizontalDivider()
+
+                // UI-01.4: Experimental responsiveness boost toggle (#55)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.settings_focusable_overlay_title),
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = stringResource(R.string.settings_focusable_overlay_subtitle),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = isFocusableOverlay,
+                        onCheckedChange = { enabled ->
+                            isFocusableOverlay = enabled
+                            prefsManager.focusableOverlay = enabled
+                        }
+                    )
                 }
 
                 HorizontalDivider()
