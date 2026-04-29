@@ -469,4 +469,97 @@ class OverlayServiceLogicTest {
 
         verify(handler).postDelayed(any(), eq(debounce))
     }
+
+    // ── Issue #55: focusable overlay focus-change callbacks ─────────────────
+
+    /**
+     * When the overlay window loses focus (task-switcher or notification shade is shown),
+     * the onOverlayFocusLost lambda is invoked.
+     */
+    @Test
+    fun `onOverlayFocusLost lambda is invoked when overlay loses focus`() {
+        var focusLostCount = 0
+        val focusLogic = OverlayServiceLogic(
+            hasUsageStatsPermission = { true },
+            hasOverlayPermission = { true },
+            overlayManager = overlayManager,
+            cameraState = CameraState(),
+            foregroundDetector = foregroundDetector,
+            sessionTracker = sessionTracker,
+            handler = handler,
+            debounceMs = 0L,
+            onUsageAccessLost = {},
+            onOverlayPermissionLost = {},
+            isKeyguardLocked = { false },
+            onRegisterMediaObserver = {},
+            onUnregisterMediaObserver = {},
+            onOverlayFocusLost = { focusLostCount++ },
+        )
+
+        focusLogic.onOverlayFocusLost()
+
+        assertEquals("onOverlayFocusLost should be invoked once", 1, focusLostCount)
+    }
+
+    /**
+     * When the overlay window regains focus (camera app is back in front),
+     * the onOverlayFocusGained lambda is invoked.
+     */
+    @Test
+    fun `onOverlayFocusGained lambda is invoked when overlay regains focus`() {
+        var focusGainedCount = 0
+        val focusLogic = OverlayServiceLogic(
+            hasUsageStatsPermission = { true },
+            hasOverlayPermission = { true },
+            overlayManager = overlayManager,
+            cameraState = CameraState(),
+            foregroundDetector = foregroundDetector,
+            sessionTracker = sessionTracker,
+            handler = handler,
+            debounceMs = 0L,
+            onUsageAccessLost = {},
+            onOverlayPermissionLost = {},
+            isKeyguardLocked = { false },
+            onRegisterMediaObserver = {},
+            onUnregisterMediaObserver = {},
+            onOverlayFocusGained = { focusGainedCount++ },
+        )
+
+        focusLogic.onOverlayFocusGained()
+
+        assertEquals("onOverlayFocusGained should be invoked once", 1, focusGainedCount)
+    }
+
+    /**
+     * Both focus lambdas are independent — invoking one does not trigger the other.
+     */
+    @Test
+    fun `focus loss and gain lambdas fire independently`() {
+        var lostCount = 0
+        var gainedCount = 0
+        val focusLogic = OverlayServiceLogic(
+            hasUsageStatsPermission = { true },
+            hasOverlayPermission = { true },
+            overlayManager = overlayManager,
+            cameraState = CameraState(),
+            foregroundDetector = foregroundDetector,
+            sessionTracker = sessionTracker,
+            handler = handler,
+            debounceMs = 0L,
+            onUsageAccessLost = {},
+            onOverlayPermissionLost = {},
+            isKeyguardLocked = { false },
+            onRegisterMediaObserver = {},
+            onUnregisterMediaObserver = {},
+            onOverlayFocusLost = { lostCount++ },
+            onOverlayFocusGained = { gainedCount++ },
+        )
+
+        focusLogic.onOverlayFocusLost()
+        focusLogic.onOverlayFocusLost()
+        focusLogic.onOverlayFocusGained()
+
+        assertEquals("Lost count should be 2", 2, lostCount)
+        assertEquals("Gained count should be 1", 1, gainedCount)
+    }
 }

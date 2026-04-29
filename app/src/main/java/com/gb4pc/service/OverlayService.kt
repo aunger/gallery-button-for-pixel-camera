@@ -72,7 +72,12 @@ class OverlayService : Service() {
         val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
         foregroundDetector = ForegroundDetector(usm)
         prefsManager = PrefsManager(this)
-        overlayManager = OverlayManager(this, prefsManager)
+        overlayManager = OverlayManager(
+            context = this,
+            prefsManager = prefsManager,
+            onFocusLost = { logic.onOverlayFocusLost() },
+            onFocusGained = { logic.onOverlayFocusGained() },
+        )
         cameraState = CameraState()
         val km = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
 
