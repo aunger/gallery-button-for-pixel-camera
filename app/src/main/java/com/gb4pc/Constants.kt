@@ -38,6 +38,7 @@ object Constants {
     const val PREF_OVERLAY_POSITIONS = "overlay_positions"
     const val PREF_SETUP_COMPLETED = "setup_completed"
     const val PREF_CAMERA_DEBOUNCE_MS = "camera_debounce_ms"
+    const val PREF_FOCUSABLE_OVERLAY = "focusable_overlay"
 
     // Secure viewer
     const val SESSION_TIMESTAMP_TOLERANCE_MS = 2000L
