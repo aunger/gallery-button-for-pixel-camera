@@ -27,6 +27,7 @@ The Orchestrator is not a Reviewer or a Programmer.
 - Create a Sonnet sub-agent unless the user requested otherwise
 - Inform the agent of its role as an expert software developer resolving the issue
 - Inform the agent of its responsibility to commit its work to a branch and open a PR (if one doesn't already exist)
+- Specify a dedicated per-issue branch name for the Programmer to use. Branch names should follow the pattern `fix/issue-N-short-description` for bug fixes or `feature/issue-N-short-description` for new features. Never direct two Programmers for unrelated issues to the same branch.
 - Pass the issue number to the subagent
 - Relay any relevant instruction from the user
 
@@ -39,6 +40,7 @@ The Orchestrator is not a Reviewer or a Programmer.
 
 ## Delegation rules
 
+- **One branch per ticket.** Each issue gets its own dedicated branch. Parallel independent issues must each have their own branch. See `inaugurate.md` for the full protocol when starting fresh work.
 - **One subagent per ticket.** Each issue or PR gets its own independent subagent.
 - **Dispatch in parallel** for independent issues.
 - **Do not pre-diagnose.** Do not include your own analysis of the root cause.
