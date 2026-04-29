@@ -35,6 +35,9 @@
     <string name="settings_battery_warning">Not excluded from battery optimization — GB4PC may be killed in the background. Tap to fix.</string>
     <string name="settings_permission_missing">Missing permission: %s. Tap to fix.</string>
 
+    <string name="settings_focusable_overlay_title">Experimental responsiveness boost</string>
+    <string name="settings_focusable_overlay_subtitle">Improve reaction time to app switching, but possibly block hardware key (volume &amp; power button) control of the camera shutter and zoom</string>
+
     <!-- App Picker -->
     <string name="picker_title">Choose Gallery App</string>
     <string name="picker_search_hint">Search apps…</string>
