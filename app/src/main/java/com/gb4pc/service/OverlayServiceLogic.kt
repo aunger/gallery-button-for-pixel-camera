@@ -33,6 +33,17 @@ class OverlayServiceLogic(
     private val onUnregisterThumbnailObserver: () -> Unit = {},
     /** Called whenever the overlay visibility changes; default no-op. Used by tests and UI. */
     private val onOverlayStateChanged: (Boolean) -> Unit = {},
+    /**
+     * Called when the overlay window loses focus, indicating a system surface (task-switcher,
+     * notification shade, etc.) has covered the camera app.
+     * Only fired when the experimental focusable-overlay preference is enabled.
+     */
+    val onOverlayFocusLost: () -> Unit = {},
+    /**
+     * Called when the overlay window regains focus, indicating the camera app is back in front.
+     * Only fired when the experimental focusable-overlay preference is enabled.
+     */
+    val onOverlayFocusGained: () -> Unit = {},
 ) {
     var isOverlayActive: Boolean = false
         private set
