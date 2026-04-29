@@ -26,6 +26,7 @@ class PrefsManagerTest {
             on { getString(eq(Constants.PREF_GALLERY_PACKAGE), anyOrNull()) } doReturn null
             on { getBoolean(eq(Constants.PREF_SERVICE_ENABLED), any()) } doReturn false
             on { getBoolean(eq(Constants.PREF_SETUP_COMPLETED), any()) } doReturn false
+            on { getBoolean(eq(Constants.PREF_FOCUSABLE_OVERLAY), any()) } doReturn false
             on { getString(eq(Constants.PREF_OVERLAY_POSITIONS), anyOrNull()) } doReturn ""
         }
         context = mock {
@@ -98,6 +99,18 @@ class PrefsManagerTest {
     fun `saveOverlayPosition persists json`() {
         prefsManager.saveOverlayPosition("0.45", OverlayPosition(25f, 85f, 12f))
         verify(editor).putString(eq(Constants.PREF_OVERLAY_POSITIONS), any())
+        verify(editor).apply()
+    }
+
+    @Test
+    fun `focusableOverlay returns false by default`() {
+        assertFalse(prefsManager.focusableOverlay)
+    }
+
+    @Test
+    fun `setFocusableOverlay persists to prefs`() {
+        prefsManager.focusableOverlay = true
+        verify(editor).putBoolean(Constants.PREF_FOCUSABLE_OVERLAY, true)
         verify(editor).apply()
     }
 }
