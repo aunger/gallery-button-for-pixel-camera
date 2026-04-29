@@ -119,6 +119,17 @@ class OverlayService : Service() {
             return START_NOT_STICKY
         }
 
+        if (intent?.action == ACTION_RESHOW_OVERLAY) {
+            if (callbackRegistered) {
+                // Service already running — re-apply window flags immediately.
+                DebugLog.log("Reshow overlay requested (focusable-overlay pref changed)")
+                overlayManager.reshow()
+                return START_STICKY
+            }
+            // Service was not running — fall through to normal startup so it initialises
+            // correctly (startForeground, camera callback registration, etc.).
+        }
+
         // H6: Refuse to start if Pixel Camera is not installed (OV-04)
         if (!PermissionHelper.isPixelCameraInstalled(this)) {
             DebugLog.log("Pixel Camera not installed — stopping service (OV-04)")
@@ -375,6 +386,13 @@ class OverlayService : Service() {
         const val ACTION_STOP = "com.gb4pc.STOP_SERVICE"
 
         /**
+         * Sent to a running service to re-apply window flags after
+         * [PrefsManager.focusableOverlay] is toggled in settings.
+         * No-op if the service is not running or the overlay is not currently visible.
+         */
+        const val ACTION_RESHOW_OVERLAY = "com.gb4pc.RESHOW_OVERLAY"
+
+        /**
          * True while the overlay is currently visible. Updated by the running service instance;
          * resets to false when the service is destroyed. Observable by E2E tests without binding.
          */
@@ -389,6 +407,18 @@ class OverlayService : Service() {
 
         fun stop(context: Context) {
             context.stopService(Intent(context, OverlayService::class.java))
+        }
+
+        /**
+         * Tells a running service to re-apply window flags immediately.
+         * If the service is not currently running, the intent falls through to normal
+         * startup (startForeground + camera callback registration).
+         */
+        fun reshowOverlay(context: Context) {
+            val intent = Intent(context, OverlayService::class.java).apply {
+                action = ACTION_RESHOW_OVERLAY
+            }
+            context.startForegroundService(intent)
         }
     }
 }
