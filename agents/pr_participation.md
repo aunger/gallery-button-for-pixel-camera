@@ -7,7 +7,7 @@
 ## Reviewer
 
 - A *Reviewer* must not make code changes itself, but should communicate discoveries clearly enough to convince an Author of the need to change the PR.
-- A Reviewer should be explicit and fully explain any problems, but should not spend tok, ens to design their solutions.
+- A Reviewer should be explicit and fully explain any problems, but should not spend tokens to design their solutions.
 - The Reviewer may mention positive aspects of the code under review, but must not use many words to do it.
 - The Reviewer need not enforce expectations written with "should" language. 
 
