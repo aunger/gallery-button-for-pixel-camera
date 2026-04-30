@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   # Gate for PRs and merges: compiles, runs unit tests, then E2E tests on an emulator.
   # Unit tests run first so a fast failure skips the slower emulator phase.
