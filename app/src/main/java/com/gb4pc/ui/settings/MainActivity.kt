@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import com.gb4pc.R
 import com.gb4pc.data.PrefsManager
 import com.gb4pc.service.OverlayService
+import com.gb4pc.service.ServiceChecker
 import com.gb4pc.ui.picker.PickerActivity
 import com.gb4pc.ui.setup.SetupActivity
 import com.gb4pc.ui.theme.GB4PCTheme
@@ -48,6 +49,9 @@ class MainActivity : ComponentActivity() {
             finish()
             return
         }
+
+        // Issue #67: recover a service that should be running but was killed
+        ServiceChecker.ensureServiceRunningIfEnabled(this, prefsManager)
 
         // setContent called only once here (H2 fix)
         setContent {
