@@ -8,14 +8,16 @@ import com.gb4pc.data.PrefsManager
 data class MainSettingsState(
     val isServiceEnabled: Boolean,
     val galleryPackage: String?,
-    val isSetupCompleted: Boolean
+    val isSetupCompleted: Boolean,
+    val focusableOverlay: Boolean = false,
 ) {
     companion object {
         fun from(prefs: PrefsManager): MainSettingsState {
             return MainSettingsState(
                 isServiceEnabled = prefs.isServiceEnabled,
                 galleryPackage = prefs.galleryPackage,
-                isSetupCompleted = prefs.isSetupCompleted
+                isSetupCompleted = prefs.isSetupCompleted,
+                focusableOverlay = prefs.focusableOverlay,
             )
         }
     }

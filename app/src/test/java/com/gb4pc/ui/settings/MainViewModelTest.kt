@@ -16,6 +16,7 @@ class MainViewModelTest {
             on { isServiceEnabled } doReturn false
             on { galleryPackage } doReturn null
             on { isSetupCompleted } doReturn true
+            on { focusableOverlay } doReturn false
         }
     }
 
@@ -55,6 +56,19 @@ class MainViewModelTest {
         val state1 = MainSettingsState.from(prefs)
         val state2 = MainSettingsState.from(prefs)
         assertEquals(state1, state2)
+    }
+
+    @Test
+    fun `focusableOverlay defaults to false`() {
+        val state = MainSettingsState.from(prefs)
+        assertFalse(state.focusableOverlay)
+    }
+
+    @Test
+    fun `state reflects focusable overlay enabled`() {
+        whenever(prefs.focusableOverlay).thenReturn(true)
+        val state = MainSettingsState.from(prefs)
+        assertTrue(state.focusableOverlay)
     }
 
     @Test
