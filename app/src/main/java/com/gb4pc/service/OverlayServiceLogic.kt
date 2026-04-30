@@ -3,6 +3,7 @@ package com.gb4pc.service
 import android.os.Handler
 import com.gb4pc.Constants
 import com.gb4pc.overlay.OverlayManager
+import com.gb4pc.util.DebugLog
 import com.gb4pc.viewer.SessionTracker
 
 /**
@@ -48,20 +49,24 @@ class OverlayServiceLogic(
 
     fun onCameraUnavailable(cameraId: String) {
         cameraState.setCameraUnavailable(cameraId)
+        DebugLog.log("Logic: camera $cameraId unavailable; unavailable=${cameraState.getUnavailableCameraIds()}")
         cancelPendingDeactivation()
         evaluateForeground()
     }
 
     fun onCameraAvailable(cameraId: String) {
         cameraState.setCameraAvailable(cameraId)
+        val allAvailable = cameraState.areAllCamerasAvailable()
+        DebugLog.log("Logic: camera $cameraId available; allAvailable=$allAvailable, remaining=${cameraState.getUnavailableCameraIds()}")
         // DT-04/DT-05: Only schedule deactivation when ALL cameras have been released
-        if (cameraState.areAllCamerasAvailable()) {
+        if (allAvailable) {
             cancelActivationRetry()
             // Issue #46: If Pixel Camera is no longer in the foreground, skip the debounce delay.
             // The debounce is only needed for transient camera switches (where hardware briefly
             // shows available between switching cameras); for a true app-close we want 0 ms.
             val pkg = foregroundDetector.getForegroundPackage()
             val delay = if (ForegroundDetector.isPixelCameraPackage(pkg)) debounceMs else 0L
+            DebugLog.log("Logic: all cameras released; scheduling deactivation delay=${delay}ms (foreground=$pkg)")
             scheduleDeactivation(delay)
         }
     }
@@ -74,6 +79,7 @@ class OverlayServiceLogic(
      */
     fun evaluateForeground() {
         if (!hasUsageStatsPermission()) {
+            DebugLog.log("Logic: evaluateForeground — usage-stats permission missing; overlayActive=$isOverlayActive")
             if (isOverlayActive) {
                 overlayManager.hide()
                 isOverlayActive = false
@@ -85,11 +91,15 @@ class OverlayServiceLogic(
         }
 
         val pkg = foregroundDetector.getForegroundPackage()
-        if (ForegroundDetector.isPixelCameraPackage(pkg) && !isOverlayActive) {
+        val isPixelCamera = ForegroundDetector.isPixelCameraPackage(pkg)
+        DebugLog.log("Logic: evaluateForeground — foreground=$pkg, isPixelCamera=$isPixelCamera, overlayActive=$isOverlayActive, anyCameraUnavailable=${cameraState.anyCameraUnavailable()}")
+
+        if (isPixelCamera && !isOverlayActive) {
             cancelActivationRetry()
             showOverlay()
         } else if (!isOverlayActive && cameraState.anyCameraUnavailable()) {
             // UsageStats may not have caught up yet; schedule a retry (DT-06a).
+            DebugLog.log("Logic: Pixel Camera not yet in foreground — scheduling activation retry")
             scheduleActivationRetry()
         }
     }
@@ -100,9 +110,12 @@ class OverlayServiceLogic(
      */
     fun showOverlay() {
         if (!hasOverlayPermission()) {
+            DebugLog.log("Logic: showOverlay — overlay permission missing; cannot show")
             onOverlayPermissionLost()
             return
         }
+        val locked = isKeyguardLocked()
+        DebugLog.log("Logic: showOverlay — showing overlay; keyguardLocked=$locked")
         overlayManager.show()
         isOverlayActive = true
         onOverlayStateChanged(true)
@@ -110,7 +123,8 @@ class OverlayServiceLogic(
 
         // SF-01: If device is locked at activation time, begin a secure session immediately.
         // H3: If unlocked, onScreenOff() will start the session when the screen locks.
-        if (isKeyguardLocked()) {
+        if (locked) {
+            DebugLog.log("Logic: device locked at activation — starting secure session immediately")
             sessionTracker.startSession()
             onRegisterMediaObserver()
         }
@@ -122,17 +136,23 @@ class OverlayServiceLogic(
      * left the foreground (Issue #46).
      */
     fun scheduleDeactivation(delayMs: Long = debounceMs) {
+        DebugLog.log("Logic: scheduleDeactivation delay=${delayMs}ms")
         cancelPendingDeactivation()
         deactivateRunnable = Runnable {
-            if (cameraState.areAllCamerasAvailable()) {
+            val allAvailable = cameraState.areAllCamerasAvailable()
+            DebugLog.log("Logic: deactivation runnable fired; allCamerasAvailable=$allAvailable, overlayActive=$isOverlayActive")
+            if (allAvailable) {
                 overlayManager.hide()
                 isOverlayActive = false
                 onOverlayStateChanged(false)
                 onUnregisterThumbnailObserver()   // unregister thumbnail observer on deactivation
                 if (sessionTracker.isSessionActive) {
+                    DebugLog.log("Logic: ending secure session on overlay deactivation")
                     sessionTracker.endSession()
                     onUnregisterMediaObserver()
                 }
+            } else {
+                DebugLog.log("Logic: deactivation skipped — camera still in use")
             }
         }
         handler.postDelayed(deactivateRunnable!!, delayMs)
@@ -140,6 +160,7 @@ class OverlayServiceLogic(
 
     fun cancelPendingDeactivation() {
         deactivateRunnable?.let {
+            DebugLog.log("Logic: cancelling pending deactivation")
             handler.removeCallbacks(it)
             deactivateRunnable = null
         }
@@ -148,9 +169,11 @@ class OverlayServiceLogic(
     // DT-06a: Retry activation after UsageStats lag — one shot per camera-open event.
     private fun scheduleActivationRetry() {
         if (activationRetryPending) return  // already scheduled or currently executing
+        DebugLog.log("Logic: scheduling activation retry in ${Constants.ACTIVATION_RETRY_MS}ms")
         activationRetryPending = true
         val runnable = Runnable {
             activationRetryRunnable = null
+            DebugLog.log("Logic: activation retry firing")
             // activationRetryPending stays true while evaluateForeground() runs, so any
             // scheduleActivationRetry() call inside cannot queue a second retry.
             evaluateForeground()
@@ -162,6 +185,7 @@ class OverlayServiceLogic(
 
     private fun cancelActivationRetry() {
         activationRetryRunnable?.let {
+            DebugLog.log("Logic: cancelling pending activation retry")
             handler.removeCallbacks(it)
             activationRetryRunnable = null
         }
@@ -185,6 +209,7 @@ class OverlayServiceLogic(
      * Only fired when the experimental focusable-overlay preference is enabled.
      */
     fun onOverlayFocusLost() {
+        DebugLog.log("Logic: overlay focus lost; overlayActive=$isOverlayActive")
         if (!isOverlayActive) return
         overlayManager.hide()
         isOverlayActive = false
@@ -197,8 +222,10 @@ class OverlayServiceLogic(
      * Only fired when the experimental focusable-overlay preference is enabled.
      */
     fun onOverlayFocusGained() {
+        DebugLog.log("Logic: overlay focus gained; overlayActive=$isOverlayActive")
         if (isOverlayActive) return
         if (!hasOverlayPermission()) {
+            DebugLog.log("Logic: overlay focus gained but overlay permission missing")
             onOverlayPermissionLost()
             return
         }
