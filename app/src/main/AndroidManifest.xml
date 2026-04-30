@@ -87,12 +87,15 @@
                 android:value="Monitors camera hardware availability to show gallery shortcut overlay on Pixel Camera" />
         </service>
 
-        <!-- Boot Receiver -->
+        <!-- Boot Receiver (also handles install/update via MY_PACKAGE_REPLACED) -->
         <receiver
             android:name=".receiver.BootReceiver"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
 
