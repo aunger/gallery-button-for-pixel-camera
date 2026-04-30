@@ -21,6 +21,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.gb4pc.R
 import com.gb4pc.data.PrefsManager
+import com.gb4pc.ui.theme.GB4PCTheme
 import com.gb4pc.util.PermissionHelper
 
 /**
@@ -68,7 +69,7 @@ class SetupActivity : ComponentActivity() {
         if (setupState.isCompleted) return
 
         setContent {
-            MaterialTheme {
+            GB4PCTheme {
                 SetupScreen(
                     currentStep = setupState.currentStep,
                     onGrantClick = { handleGrant(setupState.currentStep) },
