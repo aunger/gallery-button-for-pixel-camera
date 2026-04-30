@@ -90,6 +90,7 @@ fun MainSettingsScreen(
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
+                .windowInsetsPadding(WindowInsets.statusBars)
                 .padding(16.dp)
                 .fillMaxWidth()
         ) {
