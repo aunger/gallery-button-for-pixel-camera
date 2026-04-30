@@ -7,8 +7,11 @@ import com.gb4pc.util.DebugLog
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
 import org.mockito.kotlin.*
+import org.robolectric.RobolectricTestRunner
 
+@RunWith(RobolectricTestRunner::class)
 class ServiceCheckerTest {
 
     private lateinit var context: Context
