@@ -52,4 +52,16 @@ class BootReceiverTest {
         assertFalse(BootReceiverLogic.isBootIntent("com.example.OTHER"))
         assertFalse(BootReceiverLogic.isBootIntent(null))
     }
+
+    @Test
+    fun `isInstallOrUpdateIntent returns true for MY_PACKAGE_REPLACED`() {
+        assertTrue(BootReceiverLogic.isInstallOrUpdateIntent(Intent.ACTION_MY_PACKAGE_REPLACED))
+    }
+
+    @Test
+    fun `isInstallOrUpdateIntent returns false for other actions`() {
+        assertFalse(BootReceiverLogic.isInstallOrUpdateIntent(Intent.ACTION_BOOT_COMPLETED))
+        assertFalse(BootReceiverLogic.isInstallOrUpdateIntent("com.example.OTHER"))
+        assertFalse(BootReceiverLogic.isInstallOrUpdateIntent(null))
+    }
 }
