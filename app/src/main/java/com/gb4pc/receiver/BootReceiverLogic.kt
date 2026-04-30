@@ -5,7 +5,7 @@ import android.content.Intent
 import com.gb4pc.Constants
 
 /**
- * Testable logic for boot receiver decisions (FS-05).
+ * Testable logic for boot receiver decisions (FS-05) and install/update decisions (FS-68).
  */
 object BootReceiverLogic {
     fun shouldStartService(context: Context): Boolean {
@@ -15,5 +15,9 @@ object BootReceiverLogic {
 
     fun isBootIntent(action: String?): Boolean {
         return action == Intent.ACTION_BOOT_COMPLETED
+    }
+
+    fun isInstallOrUpdateIntent(action: String?): Boolean {
+        return action == Intent.ACTION_MY_PACKAGE_REPLACED
     }
 }
