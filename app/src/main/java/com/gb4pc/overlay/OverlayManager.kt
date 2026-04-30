@@ -136,6 +136,11 @@ class OverlayManager(
 
             override fun onWindowFocusChanged(hasFocus: Boolean) {
                 super.onWindowFocusChanged(hasFocus)
+                // Only invoke focus callbacks when the focusable-overlay mode is active.
+                // With FLAG_NOT_FOCUSABLE (default), the window never receives focus, so
+                // onWindowFocusChanged(false) fires immediately after show() — calling
+                // onFocusLost() here would hide the overlay the instant it appears (Issue #66).
+                if (!prefsManager.focusableOverlay) return
                 if (hasFocus) {
                     DebugLog.log("Overlay gained window focus")
                     onFocusGained()
