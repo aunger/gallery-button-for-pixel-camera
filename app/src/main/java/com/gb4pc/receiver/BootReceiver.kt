@@ -15,10 +15,13 @@ class BootReceiver : BroadcastReceiver() {
         if (!BootReceiverLogic.isBootIntent(intent.action)) return
 
         val wasEnabled = BootReceiverLogic.shouldStartService(context)
-        DebugLog.log("Boot completed. Service was enabled: $wasEnabled")
+        DebugLog.log("Boot completed: serviceWasEnabled=$wasEnabled")
 
         if (wasEnabled) {
+            DebugLog.log("Boot: starting overlay service")
             OverlayService.start(context)
+        } else {
+            DebugLog.log("Boot: service not enabled, skipping start")
         }
     }
 }

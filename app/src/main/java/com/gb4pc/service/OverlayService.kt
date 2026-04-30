@@ -67,6 +67,7 @@ class OverlayService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        DebugLog.log("Service onCreate")
         handler = Handler(Looper.getMainLooper())
         cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
         val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
