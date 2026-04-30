@@ -25,4 +25,3 @@ Terminology: In most cases, the *Author* is also referred to as *Programmer*. In
 
 - During the code review process, don't allow the scope of work to increase.
 - Instead, spawn related items in the issue tracker.
-A@@@
