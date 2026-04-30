@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import com.gb4pc.R
 import com.gb4pc.data.PrefsManager
+import com.gb4pc.ui.theme.GB4PCTheme
 import com.gb4pc.util.DebugLog
 
 /**
@@ -45,7 +46,7 @@ class PickerActivity : ComponentActivity() {
         launchAfterPick = intent.getBooleanExtra(EXTRA_LAUNCH_AFTER_PICK, false)
 
         setContent {
-            MaterialTheme {
+            GB4PCTheme {
                 PickerScreen(
                     prefsManager = prefsManager,
                     onAppSelected = { packageName ->

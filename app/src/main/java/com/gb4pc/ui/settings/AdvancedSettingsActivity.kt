@@ -24,6 +24,7 @@ import com.gb4pc.R
 import com.gb4pc.data.AspectRatioUtil
 import com.gb4pc.data.OverlayPosition
 import com.gb4pc.data.PrefsManager
+import com.gb4pc.ui.theme.GB4PCTheme
 import com.gb4pc.util.DebugLog
 import java.text.SimpleDateFormat
 import java.util.*
@@ -35,7 +36,7 @@ class AdvancedSettingsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme {
+            GB4PCTheme {
                 AdvancedSettingsScreen(PrefsManager(this))
             }
         }

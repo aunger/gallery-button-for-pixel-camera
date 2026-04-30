@@ -23,6 +23,7 @@ import com.gb4pc.data.PrefsManager
 import com.gb4pc.service.OverlayService
 import com.gb4pc.ui.picker.PickerActivity
 import com.gb4pc.ui.setup.SetupActivity
+import com.gb4pc.ui.theme.GB4PCTheme
 import com.gb4pc.util.PermissionHelper
 
 class MainActivity : ComponentActivity() {
@@ -50,7 +51,7 @@ class MainActivity : ComponentActivity() {
 
         // setContent called only once here (H2 fix)
         setContent {
-            MaterialTheme {
+            GB4PCTheme {
                 MainSettingsScreen(
                     prefsManager = prefsManager,
                     isPixelCameraInstalled = isPixelCameraInstalled.value,
