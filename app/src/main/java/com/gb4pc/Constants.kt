@@ -4,9 +4,9 @@ object Constants {
     const val PIXEL_CAMERA_PACKAGE = "com.google.android.GoogleCamera"
 
     // Default overlay position (PS-02)
-    const val DEFAULT_X_PERCENT = 13.0f
-    const val DEFAULT_Y_PERCENT = 91.5f
-    const val DEFAULT_SIZE_PERCENT = 11.5f
+    const val DEFAULT_X_PERCENT = 20.0f
+    const val DEFAULT_Y_PERCENT = 69.0f
+    const val DEFAULT_SIZE_PERCENT = 16.0f
 
     // Overlay size bounds
     const val MIN_SIZE_PERCENT = 1.0f
