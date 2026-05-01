@@ -60,4 +60,43 @@ class DebugLogTest {
         assertEquals("second", entries[1].message)
         assertEquals("third", entries[2].message)
     }
+
+    @Test
+    fun `listener is invoked on each log call`() {
+        var callCount = 0
+        DebugLog.listener = { callCount++ }
+        try {
+            DebugLog.log("a")
+            DebugLog.log("b")
+            assertEquals(2, callCount)
+        } finally {
+            DebugLog.listener = null
+        }
+    }
+
+    @Test
+    fun `clear does not invoke the listener`() {
+        var callCount = 0
+        DebugLog.log("before")
+        DebugLog.listener = { callCount++ }
+        try {
+            DebugLog.clear()
+            assertEquals(0, callCount)
+            assertTrue(DebugLog.getEntries().isEmpty())
+        } finally {
+            DebugLog.listener = null
+        }
+    }
+
+    @Test
+    fun `getEntries returns entries in oldest-first order after clear and re-log`() {
+        DebugLog.log("old")
+        DebugLog.clear()
+        DebugLog.log("new1")
+        DebugLog.log("new2")
+        val entries = DebugLog.getEntries()
+        assertEquals(2, entries.size)
+        assertEquals("new1", entries[0].message)
+        assertEquals("new2", entries[1].message)
+    }
 }

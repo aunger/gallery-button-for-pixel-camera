@@ -4,9 +4,10 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
@@ -22,6 +23,9 @@ import java.util.*
 
 /**
  * Dedicated screen for viewing the in-memory debug log (issue #83).
+ *
+ * Entries are displayed oldest-first (newest at the bottom) with auto-scroll
+ * to follow the latest entry. A "Clear log" button wipes the buffer.
  */
 class LogViewerActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -44,7 +48,15 @@ fun LogViewerScreen(onNavigateUp: () -> Unit = {}) {
         onDispose { DebugLog.listener = null }
     }
 
+    val listState = rememberLazyListState()
     val dateFormat = remember { SimpleDateFormat("HH:mm:ss.SSS", Locale.US) }
+
+    // Auto-scroll to the bottom whenever the entry list grows
+    LaunchedEffect(entries.size) {
+        if (entries.isNotEmpty()) {
+            listState.animateScrollToItem(entries.size - 1)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -56,6 +68,14 @@ fun LogViewerScreen(onNavigateUp: () -> Unit = {}) {
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.log_viewer_navigate_up)
                         )
+                    }
+                },
+                actions = {
+                    TextButton(onClick = {
+                        DebugLog.clear()
+                        entries = DebugLog.getEntries()
+                    }) {
+                        Text(stringResource(R.string.log_viewer_clear))
                     }
                 }
             )
@@ -79,13 +99,14 @@ fun LogViewerScreen(onNavigateUp: () -> Unit = {}) {
                     .padding(padding)
                     .fillMaxSize()
             ) {
-                Column(
+                LazyColumn(
+                    state = listState,
                     modifier = Modifier
                         .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
-                        .padding(8.dp)
+                        .padding(horizontal = 8.dp),
+                    contentPadding = PaddingValues(vertical = 8.dp)
                 ) {
-                    for (entry in entries.asReversed()) {
+                    items(entries) { entry ->
                         Text(
                             text = "${dateFormat.format(Date(entry.timestamp))}  ${entry.message}",
                             style = MaterialTheme.typography.bodySmall,

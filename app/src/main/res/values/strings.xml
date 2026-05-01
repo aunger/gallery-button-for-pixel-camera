@@ -60,6 +60,7 @@
     <!-- Log Viewer -->
     <string name="log_viewer_title">Debug Log</string>
     <string name="log_viewer_navigate_up">Back</string>
+    <string name="log_viewer_clear">Clear log</string>
     <string name="log_viewer_empty">No log entries</string>
 
     <!-- Secure Viewer -->
