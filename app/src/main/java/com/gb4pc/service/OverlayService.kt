@@ -53,6 +53,7 @@ class OverlayService : Service() {
     private var thumbnailObserver: ContentObserver? = null
     private var overlayActiveTimestamp: Long = 0L
     private lateinit var mediaChangeDispatcher: MediaChangeDispatcher
+    private lateinit var thumbnailChangeDispatcher: ThumbnailChangeDispatcher
 
     private val cameraCallback = object : CameraManager.AvailabilityCallback() {
         override fun onCameraUnavailable(cameraId: String) {
@@ -87,6 +88,12 @@ class OverlayService : Service() {
             sessionTracker = SessionTracker.instance,
             handler = handler,
             queryLatestMedia = ::queryLatestMedia,
+        )
+
+        thumbnailChangeDispatcher = ThumbnailChangeDispatcher(
+            handler = handler,
+            queryLatestMedia = ::queryLatestMedia,
+            showThumbnail = { uri -> overlayManager.showLatestPhotoThumbnail(uri) },
         )
 
         logic = OverlayServiceLogic(
@@ -268,11 +275,7 @@ class OverlayService : Service() {
         val startMs = overlayActiveTimestamp
         thumbnailObserver = object : ContentObserver(handler) {
             override fun onChange(selfChange: Boolean, uri: Uri?) {
-                val item = queryLatestMedia(startMs)
-                if (item != null) {
-                    overlayManager.showLatestPhotoThumbnail(item.uri)
-                    DebugLog.log("Thumbnail updated: ${item.uri}")
-                }
+                thumbnailChangeDispatcher.onThumbnailChanged(startMs)
             }
         }
         contentResolver.registerContentObserver(
