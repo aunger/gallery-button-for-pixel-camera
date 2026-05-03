@@ -1,5 +1,6 @@
 package com.gb4pc.ui.settings
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -7,7 +8,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -25,9 +25,6 @@ import com.gb4pc.data.AspectRatioUtil
 import com.gb4pc.data.OverlayPosition
 import com.gb4pc.data.PrefsManager
 import com.gb4pc.ui.theme.GB4PCTheme
-import com.gb4pc.util.DebugLog
-import java.text.SimpleDateFormat
-import java.util.*
 
 /**
  * Advanced Settings screen (§6.3, UI-10).
@@ -99,15 +96,6 @@ fun AdvancedSettingsScreen(prefsManager: PrefsManager) {
         }
     }
 
-    // M2 fix: live-updating debug log entries via DebugLog listener
-    var debugEntries by remember { mutableStateOf(DebugLog.getEntries()) }
-    DisposableEffect(Unit) {
-        DebugLog.listener = { debugEntries = DebugLog.getEntries() }
-        onDispose { DebugLog.listener = null }
-    }
-
-    val dateFormat = remember { SimpleDateFormat("HH:mm:ss.SSS", Locale.US) }
-
     Scaffold(
         topBar = {
             TopAppBar(title = { Text(stringResource(R.string.advanced_title)) })
@@ -118,6 +106,7 @@ fun AdvancedSettingsScreen(prefsManager: PrefsManager) {
                 .padding(padding)
                 .padding(16.dp)
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
         ) {
             // UI-10.1: Position sliders with text inputs (M4 fix: persist only on commit/onValueChangeFinished)
             Row(
@@ -280,44 +269,12 @@ fun AdvancedSettingsScreen(prefsManager: PrefsManager) {
                 Text(stringResource(R.string.advanced_reset))
             }
 
-            // UI-10.3: Debug log
-            Text(
-                text = stringResource(R.string.advanced_debug_log),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
+            // UI-10.3: Link to the dedicated log viewer screen (issue #83)
+            OutlinedButton(
+                onClick = { context.startActivity(Intent(context, LogViewerActivity::class.java)) },
+                modifier = Modifier.fillMaxWidth()
             ) {
-                if (debugEntries.isEmpty()) {
-                    Text(
-                        text = "No log entries",
-                        modifier = Modifier.padding(16.dp),
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                } else {
-                    // Column+verticalScroll (not LazyColumn) so SelectionContainer can
-                    // maintain selection state across the full list without items being
-                    // disposed on scroll. 200 short strings have negligible memory cost.
-                    SelectionContainer {
-                        Column(
-                            modifier = Modifier
-                                .verticalScroll(rememberScrollState())
-                                .padding(8.dp)
-                        ) {
-                            for (entry in debugEntries.asReversed()) {
-                                Text(
-                                    text = "${dateFormat.format(Date(entry.timestamp))}  ${entry.message}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    modifier = Modifier.padding(vertical = 2.dp)
-                                )
-                            }
-                        }
-                    }
-                }
+                Text(stringResource(R.string.advanced_view_log))
             }
         }
 

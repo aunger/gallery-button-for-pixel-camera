@@ -34,8 +34,11 @@ object DebugLog {
     }
 
     fun clear() {
+        val snapshot: (() -> Unit)?
         synchronized(lock) {
             buffer.clear()
+            snapshot = listener
         }
+        snapshot?.invoke()
     }
 }

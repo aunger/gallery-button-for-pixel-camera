@@ -63,6 +63,11 @@
             android:name=".ui.settings.AdvancedSettingsActivity"
             android:exported="false" />
 
+        <!-- Log Viewer Activity (issue #83) -->
+        <activity
+            android:name=".ui.settings.LogViewerActivity"
+            android:exported="false" />
+
         <!-- Gallery App Picker Activity (can be launched over lock screen camera) -->
         <activity
             android:name=".ui.picker.PickerActivity"
