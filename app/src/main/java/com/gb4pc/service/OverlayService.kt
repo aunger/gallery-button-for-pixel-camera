@@ -52,6 +52,7 @@ class OverlayService : Service() {
     private var mediaObserver: ContentObserver? = null
     private var thumbnailObserver: ContentObserver? = null
     private var overlayActiveTimestamp: Long = 0L
+    private lateinit var mediaChangeDispatcher: MediaChangeDispatcher
 
     private val cameraCallback = object : CameraManager.AvailabilityCallback() {
         override fun onCameraUnavailable(cameraId: String) {
@@ -81,6 +82,12 @@ class OverlayService : Service() {
         )
         cameraState = CameraState()
         val km = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+
+        mediaChangeDispatcher = MediaChangeDispatcher(
+            sessionTracker = SessionTracker.instance,
+            handler = handler,
+            queryLatestMedia = ::queryLatestMedia,
+        )
 
         logic = OverlayServiceLogic(
             hasUsageStatsPermission = { PermissionHelper.hasUsageStatsPermission(this) },
@@ -231,7 +238,7 @@ class OverlayService : Service() {
         val sessionStartMs = SessionTracker.instance.sessionStartTimestamp
         mediaObserver = object : ContentObserver(handler) {
             override fun onChange(selfChange: Boolean, uri: Uri?) {
-                onMediaChanged(sessionStartMs)
+                mediaChangeDispatcher.onMediaChanged(sessionStartMs)
             }
         }
         contentResolver.registerContentObserver(
@@ -245,40 +252,6 @@ class OverlayService : Service() {
             mediaObserver!!
         )
         DebugLog.log("ContentObserver registered at session start")
-    }
-
-    /**
-     * Called by the media ContentObserver when a change is detected.
-     *
-     * Pixel Camera (and other modern camera apps on API 29+) inserts new photos into
-     * MediaStore with IS_PENDING=1 while the file is being written, then clears the flag
-     * once the write completes. The ContentObserver fires on both state transitions. On the
-     * first fire (IS_PENDING=1) the default query excludes the pending row and returns null.
-     * On the second fire (IS_PENDING cleared) the committed row is found and added to the
-     * session.
-     *
-     * However, on some devices/firmware the second ContentObserver callback for the
-     * IS_PENDING→0 transition is not delivered reliably. To defend against this, we schedule
-     * a single retry [MEDIA_OBSERVER_RETRY_MS] after a null result so we pick up newly
-     * committed rows that the initial query missed.
-     */
-    private fun onMediaChanged(sessionStartMs: Long) {
-        val item = queryLatestMedia(sessionStartMs)
-        if (item != null) {
-            SessionTracker.instance.addMedia(item)
-            DebugLog.log("Media added to session: ${item.uri}")
-        } else {
-            // First onChange may fire while the photo is IS_PENDING; schedule a retry so we
-            // catch it once it has been committed to MediaStore.
-            DebugLog.log("Media query returned null — scheduling retry in ${Constants.MEDIA_OBSERVER_RETRY_MS}ms")
-            handler.postDelayed({
-                val retryItem = queryLatestMedia(sessionStartMs)
-                if (retryItem != null) {
-                    SessionTracker.instance.addMedia(retryItem)
-                    DebugLog.log("Media added to session (retry): ${retryItem.uri}")
-                }
-            }, Constants.MEDIA_OBSERVER_RETRY_MS)
-        }
     }
 
     private fun unregisterMediaObserver() {
