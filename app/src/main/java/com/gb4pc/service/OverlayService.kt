@@ -52,6 +52,8 @@ class OverlayService : Service() {
     private var mediaObserver: ContentObserver? = null
     private var thumbnailObserver: ContentObserver? = null
     private var overlayActiveTimestamp: Long = 0L
+    private lateinit var mediaChangeDispatcher: MediaChangeDispatcher
+    private lateinit var thumbnailChangeDispatcher: ThumbnailChangeDispatcher
 
     private val cameraCallback = object : CameraManager.AvailabilityCallback() {
         override fun onCameraUnavailable(cameraId: String) {
@@ -81,6 +83,18 @@ class OverlayService : Service() {
         )
         cameraState = CameraState()
         val km = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+
+        mediaChangeDispatcher = MediaChangeDispatcher(
+            sessionTracker = SessionTracker.instance,
+            handler = handler,
+            queryLatestMedia = ::queryLatestMedia,
+        )
+
+        thumbnailChangeDispatcher = ThumbnailChangeDispatcher(
+            handler = handler,
+            queryLatestMedia = ::queryLatestMedia,
+            showThumbnail = { uri -> overlayManager.showLatestPhotoThumbnail(uri) },
+        )
 
         logic = OverlayServiceLogic(
             hasUsageStatsPermission = { PermissionHelper.hasUsageStatsPermission(this) },
@@ -231,11 +245,7 @@ class OverlayService : Service() {
         val sessionStartMs = SessionTracker.instance.sessionStartTimestamp
         mediaObserver = object : ContentObserver(handler) {
             override fun onChange(selfChange: Boolean, uri: Uri?) {
-                val item = queryLatestMedia(sessionStartMs)
-                if (item != null) {
-                    SessionTracker.instance.addMedia(item)
-                    DebugLog.log("Media added to session: ${item.uri}")
-                }
+                mediaChangeDispatcher.onMediaChanged(sessionStartMs)
             }
         }
         contentResolver.registerContentObserver(
@@ -265,11 +275,7 @@ class OverlayService : Service() {
         val startMs = overlayActiveTimestamp
         thumbnailObserver = object : ContentObserver(handler) {
             override fun onChange(selfChange: Boolean, uri: Uri?) {
-                val item = queryLatestMedia(startMs)
-                if (item != null) {
-                    overlayManager.showLatestPhotoThumbnail(item.uri)
-                    DebugLog.log("Thumbnail updated: ${item.uri}")
-                }
+                thumbnailChangeDispatcher.onThumbnailChanged(startMs)
             }
         }
         contentResolver.registerContentObserver(
@@ -297,7 +303,10 @@ class OverlayService : Service() {
             MediaStore.MediaColumns.DATE_ADDED,
             MediaStore.MediaColumns.DATE_TAKEN
         )
-        val selectionArgs = arrayOf((sessionStartMs / 1000).toString())
+        // Apply SESSION_TIMESTAMP_TOLERANCE_MS (same tolerance used by SessionTracker.isMediaInSession)
+        // so photos whose DATE_ADDED was rounded to the same second as session start are not missed.
+        val effectiveStartSec = (sessionStartMs - Constants.SESSION_TIMESTAMP_TOLERANCE_MS) / 1000
+        val selectionArgs = arrayOf(effectiveStartSec.toString())
 
         // Query images
         val imageResult = queryMediaStore(

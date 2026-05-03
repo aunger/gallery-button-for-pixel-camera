@@ -100,24 +100,45 @@ class OverlayManager(
         val targetView = overlayView ?: return
         val uri = android.net.Uri.parse(photoUri)
         Thread {
-            try {
-                val bitmap = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                    context.contentResolver.loadThumbnail(uri, android.util.Size(200, 200), null)
-                } else {
-                    context.contentResolver.openInputStream(uri)?.use { stream ->
-                        val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = 4 }
-                        android.graphics.BitmapFactory.decodeStream(stream, null, opts)
-                    }
+            val bitmap = loadThumbnailBitmap(uri)
+            bitmap?.let { bmp ->
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    targetView.setImageBitmap(bmp)
                 }
-                bitmap?.let { bmp ->
-                    android.os.Handler(android.os.Looper.getMainLooper()).post {
-                        targetView.setImageBitmap(bmp)
-                    }
-                }
-            } catch (e: Exception) {
-                DebugLog.log("Failed to load thumbnail: ${e.message}")
             }
         }.start()
+    }
+
+    /**
+     * Loads a thumbnail-sized bitmap for [uri].
+     *
+     * On API 29+, tries [ContentResolver.loadThumbnail] first. This can fail on a locked
+     * device if the thumbnail cache lives in credential-encrypted storage (the photos
+     * themselves on external storage remain accessible). In that case, falls back to
+     * decoding a downsampled copy of the original file via [ContentResolver.openInputStream].
+     *
+     * On pre-API 29, always uses the stream-based path.
+     *
+     * Returns null (and logs) if all attempts fail.
+     */
+    internal fun loadThumbnailBitmap(uri: android.net.Uri): android.graphics.Bitmap? {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            try {
+                return context.contentResolver.loadThumbnail(uri, android.util.Size(200, 200), null)
+            } catch (e: Exception) {
+                DebugLog.log("loadThumbnail failed (locked device?), falling back to stream decode: ${e.message}")
+            }
+        }
+        // Fallback: decode a downsampled version of the original file directly.
+        return try {
+            context.contentResolver.openInputStream(uri)?.use { stream ->
+                val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = 4 }
+                android.graphics.BitmapFactory.decodeStream(stream, null, opts)
+            }
+        } catch (e: Exception) {
+            DebugLog.log("Failed to load thumbnail via stream: ${e.message}")
+            null
+        }
     }
 
     private fun createOverlayView(): ImageView {
