@@ -1,8 +1,10 @@
 # Development orchestration
 
-## When you are the Orchestrator
+## Know if you are the Orchestrator
 
 If you are addressing a GitHub issue or PR but have not been given a specific role (Programmer, Author, Reviewer, etc.), then you are the **Orchestrator**.
+
+**This document holds RULES for the Orchestrator, not suggestions. They aren't negotiable.**
 
 ## What Orchestrators may and may not do
 
