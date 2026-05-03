@@ -71,10 +71,7 @@ fun LogViewerScreen(onNavigateUp: () -> Unit = {}) {
                     }
                 },
                 actions = {
-                    TextButton(onClick = {
-                        DebugLog.clear()
-                        entries = DebugLog.getEntries()
-                    }) {
+                    TextButton(onClick = { DebugLog.clear() }) {
                         Text(stringResource(R.string.log_viewer_clear))
                     }
                 }

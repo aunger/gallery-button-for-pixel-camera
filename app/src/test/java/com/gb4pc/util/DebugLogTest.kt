@@ -75,14 +75,19 @@ class DebugLogTest {
     }
 
     @Test
-    fun `clear does not invoke the listener`() {
+    fun `clear invokes the listener with empty entries`() {
         var callCount = 0
+        var entriesOnClear: List<DebugLog.Entry>? = null
         DebugLog.log("before")
-        DebugLog.listener = { callCount++ }
+        DebugLog.listener = {
+            callCount++
+            entriesOnClear = DebugLog.getEntries()
+        }
         try {
             DebugLog.clear()
-            assertEquals(0, callCount)
-            assertTrue(DebugLog.getEntries().isEmpty())
+            assertEquals(1, callCount)
+            assertNotNull(entriesOnClear)
+            assertTrue(entriesOnClear!!.isEmpty())
         } finally {
             DebugLog.listener = null
         }
