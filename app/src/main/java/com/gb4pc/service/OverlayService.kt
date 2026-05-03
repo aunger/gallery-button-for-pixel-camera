@@ -231,11 +231,7 @@ class OverlayService : Service() {
         val sessionStartMs = SessionTracker.instance.sessionStartTimestamp
         mediaObserver = object : ContentObserver(handler) {
             override fun onChange(selfChange: Boolean, uri: Uri?) {
-                val item = queryLatestMedia(sessionStartMs)
-                if (item != null) {
-                    SessionTracker.instance.addMedia(item)
-                    DebugLog.log("Media added to session: ${item.uri}")
-                }
+                onMediaChanged(sessionStartMs)
             }
         }
         contentResolver.registerContentObserver(
@@ -249,6 +245,40 @@ class OverlayService : Service() {
             mediaObserver!!
         )
         DebugLog.log("ContentObserver registered at session start")
+    }
+
+    /**
+     * Called by the media ContentObserver when a change is detected.
+     *
+     * Pixel Camera (and other modern camera apps on API 29+) inserts new photos into
+     * MediaStore with IS_PENDING=1 while the file is being written, then clears the flag
+     * once the write completes. The ContentObserver fires on both state transitions. On the
+     * first fire (IS_PENDING=1) the default query excludes the pending row and returns null.
+     * On the second fire (IS_PENDING cleared) the committed row is found and added to the
+     * session.
+     *
+     * However, on some devices/firmware the second ContentObserver callback for the
+     * IS_PENDING→0 transition is not delivered reliably. To defend against this, we schedule
+     * a single retry [MEDIA_OBSERVER_RETRY_MS] after a null result so we pick up newly
+     * committed rows that the initial query missed.
+     */
+    private fun onMediaChanged(sessionStartMs: Long) {
+        val item = queryLatestMedia(sessionStartMs)
+        if (item != null) {
+            SessionTracker.instance.addMedia(item)
+            DebugLog.log("Media added to session: ${item.uri}")
+        } else {
+            // First onChange may fire while the photo is IS_PENDING; schedule a retry so we
+            // catch it once it has been committed to MediaStore.
+            DebugLog.log("Media query returned null — scheduling retry in ${Constants.MEDIA_OBSERVER_RETRY_MS}ms")
+            handler.postDelayed({
+                val retryItem = queryLatestMedia(sessionStartMs)
+                if (retryItem != null) {
+                    SessionTracker.instance.addMedia(retryItem)
+                    DebugLog.log("Media added to session (retry): ${retryItem.uri}")
+                }
+            }, Constants.MEDIA_OBSERVER_RETRY_MS)
+        }
     }
 
     private fun unregisterMediaObserver() {
@@ -297,7 +327,10 @@ class OverlayService : Service() {
             MediaStore.MediaColumns.DATE_ADDED,
             MediaStore.MediaColumns.DATE_TAKEN
         )
-        val selectionArgs = arrayOf((sessionStartMs / 1000).toString())
+        // Apply SESSION_TIMESTAMP_TOLERANCE_MS (same tolerance used by SessionTracker.isMediaInSession)
+        // so photos whose DATE_ADDED was rounded to the same second as session start are not missed.
+        val effectiveStartSec = (sessionStartMs - Constants.SESSION_TIMESTAMP_TOLERANCE_MS) / 1000
+        val selectionArgs = arrayOf(effectiveStartSec.toString())
 
         // Query images
         val imageResult = queryMediaStore(

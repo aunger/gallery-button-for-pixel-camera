@@ -44,6 +44,9 @@ object Constants {
     const val SESSION_TIMESTAMP_TOLERANCE_MS = 2000L
     const val MEDIA_RELATIVE_PATH_PREFIX = "DCIM/Camera/"
 
+    // Retry delay when ContentObserver fires before MediaStore commits the new item (IS_PENDING race)
+    const val MEDIA_OBSERVER_RETRY_MS = 500L
+
     // Snackbar undo timeout
     const val UNDO_TIMEOUT_MS = 5000L
 }
