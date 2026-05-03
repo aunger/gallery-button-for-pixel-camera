@@ -51,8 +51,8 @@ fun LogViewerScreen(onNavigateUp: () -> Unit = {}) {
     val listState = rememberLazyListState()
     val dateFormat = remember { SimpleDateFormat("HH:mm:ss.SSS", Locale.US) }
 
-    // Auto-scroll to the bottom whenever the entry list grows
-    LaunchedEffect(entries.size) {
+    // Auto-scroll to the bottom whenever the entry list changes
+    LaunchedEffect(entries) {
         if (entries.isNotEmpty()) {
             listState.animateScrollToItem(entries.size - 1)
         }
