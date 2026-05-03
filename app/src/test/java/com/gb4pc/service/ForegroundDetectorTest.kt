@@ -16,7 +16,7 @@ class ForegroundDetectorTest {
     @Before
     fun setUp() {
         usm = mock()
-        detector = ForegroundDetector(usm)
+        detector = ForegroundDetector(usm, "com.gb4pc")
     }
 
     @Test

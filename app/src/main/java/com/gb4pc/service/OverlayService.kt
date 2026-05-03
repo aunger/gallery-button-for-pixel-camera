@@ -71,7 +71,7 @@ class OverlayService : Service() {
         handler = Handler(Looper.getMainLooper())
         cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
         val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-        foregroundDetector = ForegroundDetector(usm)
+        foregroundDetector = ForegroundDetector(usm, packageName)
         prefsManager = PrefsManager(this)
         overlayManager = OverlayManager(
             context = this,
