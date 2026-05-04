@@ -57,7 +57,12 @@ class OverlayServiceLogic(
     fun onCameraAvailable(cameraId: String) {
         cameraState.setCameraAvailable(cameraId)
         val allAvailable = cameraState.areAllCamerasAvailable()
-        DebugLog.log("Logic: camera $cameraId available; allAvailable=$allAvailable, remaining=${cameraState.getUnavailableCameraIds()}")
+        DebugLog.log("Logic: camera $cameraId available; allAvailable=$allAvailable, remaining=${cameraState.getUnavailableCameraIds()}, overlayActive=$isOverlayActive")
+        // Issue #89: If the overlay is not active there is nothing to deactivate.
+        if (!isOverlayActive) {
+            cancelActivationRetry()
+            return
+        }
         // DT-04/DT-05: Only schedule deactivation when ALL cameras have been released
         if (allAvailable) {
             cancelActivationRetry()
