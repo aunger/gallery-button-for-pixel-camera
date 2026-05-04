@@ -229,8 +229,62 @@ class OverlayServiceLogic(
     fun reset() {
         cancelPendingDeactivation()
         cancelActivationRetry()
+        cancelGalleryLaunchRecheck()
         onUnregisterThumbnailObserver()
         isOverlayActive = false
+    }
+
+    private fun cancelGalleryLaunchRecheck() {
+        galleryLaunchRecheckRunnable?.let {
+            DebugLog.log("Logic: cancelling pending gallery-launch re-check")
+            handler.removeCallbacks(it)
+            galleryLaunchRecheckRunnable = null
+        }
+    }
+
+    // ── Gallery-launch early hide (Issue #91) ───────────────────────────────
+
+    /**
+     * Called immediately after the gallery app is launched via the overlay button (Issue #91).
+     *
+     * Launching the gallery normally closes Pixel Camera. The camera-available event has high
+     * latency, so we check the foreground app proactively:
+     * - If PC is no longer in the foreground → hide the overlay immediately.
+     * - If PC is still in the foreground (e.g. split-screen) → schedule a one-shot re-check
+     *   after [debounceMs]; hide if PC is gone by then.
+     */
+    fun onGalleryLaunched() {
+        if (!isOverlayActive) return
+        DebugLog.log("Logic: gallery launched — checking foreground app (Issue #91)")
+        val pkg = foregroundDetector.getForegroundPackage()
+        if (!ForegroundDetector.isPixelCameraPackage(pkg)) {
+            DebugLog.log("Logic: PC not in foreground after gallery launch — hiding overlay immediately")
+            overlayManager.hide()
+            isOverlayActive = false
+            onOverlayStateChanged(false)
+        } else {
+            DebugLog.log("Logic: PC still in foreground after gallery launch — scheduling re-check in ${debounceMs}ms")
+            scheduleGalleryLaunchRecheck()
+        }
+    }
+
+    private var galleryLaunchRecheckRunnable: Runnable? = null
+
+    private fun scheduleGalleryLaunchRecheck() {
+        galleryLaunchRecheckRunnable?.let { handler.removeCallbacks(it) }
+        val runnable = Runnable {
+            galleryLaunchRecheckRunnable = null
+            if (!isOverlayActive) return@Runnable
+            val pkg = foregroundDetector.getForegroundPackage()
+            DebugLog.log("Logic: gallery-launch re-check fired — foreground=$pkg, overlayActive=$isOverlayActive")
+            if (!ForegroundDetector.isPixelCameraPackage(pkg)) {
+                overlayManager.hide()
+                isOverlayActive = false
+                onOverlayStateChanged(false)
+            }
+        }
+        galleryLaunchRecheckRunnable = runnable
+        handler.postDelayed(runnable, debounceMs)
     }
 
     // ── Focusable-overlay focus callbacks (Issue #55) ────────────────────────
