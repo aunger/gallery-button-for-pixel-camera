@@ -35,6 +35,7 @@ class OverlayServiceLogicTest {
     private var usageAccessLostCount = 0
     private var overlayLostCount = 0
     private var mediaObserverRegistered = false
+    private var thumbnailObserverRegistered = false
 
     // ── Subject under test ──────────────────────────────────────────────────
     private lateinit var logic: OverlayServiceLogic
@@ -53,6 +54,7 @@ class OverlayServiceLogicTest {
         usageAccessLostCount = 0
         overlayLostCount = 0
         mediaObserverRegistered = false
+        thumbnailObserverRegistered = false
 
         logic = OverlayServiceLogic(
             hasUsageStatsPermission = { usageStatsPermission },
@@ -68,6 +70,8 @@ class OverlayServiceLogicTest {
             isKeyguardLocked = { keyguardLocked },
             onRegisterMediaObserver = { mediaObserverRegistered = true },
             onUnregisterMediaObserver = { mediaObserverRegistered = false },
+            onRegisterThumbnailObserver = { thumbnailObserverRegistered = true },
+            onUnregisterThumbnailObserver = { thumbnailObserverRegistered = false },
         )
     }
 
@@ -856,6 +860,84 @@ class OverlayServiceLogicTest {
 
         verify(overlayManager, never()).hide()
         assertTrue("Overlay should remain active when PC is still in foreground", logicWithDebounce.isOverlayActive)
+    }
+
+    /**
+     * Immediate hide on gallery launch must fully tear down: end the secure session and
+     * unregister both the thumbnail and media ContentObservers.  Without this, a session
+     * opened on the lock screen would stay alive after the gallery becomes visible.
+     */
+    @Test
+    fun `issue-91 immediate hide on gallery launch ends session and unregisters observers`() {
+        // Activate the overlay with a live session (device was locked at activation time)
+        keyguardLocked = true
+        cameraState.setCameraUnavailable("0")
+        logic.evaluateForeground()
+        assertTrue("Pre-condition: overlay should be active", logic.isOverlayActive)
+        assertTrue("Pre-condition: thumbnail observer should be registered", thumbnailObserverRegistered)
+        assertTrue("Pre-condition: media observer should be registered", mediaObserverRegistered)
+        whenever(sessionTracker.isSessionActive).thenReturn(true)
+
+        // Gallery launched; PC is gone
+        keyguardLocked = false
+        whenever(foregroundDetector.getForegroundPackage()).thenReturn("com.google.android.apps.photos")
+        logic.onGalleryLaunched()
+
+        assertFalse("Overlay should be hidden", logic.isOverlayActive)
+        assertFalse("Thumbnail observer should be unregistered after gallery-launch hide", thumbnailObserverRegistered)
+        verify(sessionTracker).endSession()
+        assertFalse("Media observer should be unregistered after session ends", mediaObserverRegistered)
+    }
+
+    /**
+     * Deferred recheck hide on gallery launch must also fully tear down: end the secure session
+     * and unregister both ContentObservers — same requirement as the immediate-hide path.
+     */
+    @Test
+    fun `issue-91 deferred recheck hide ends session and unregisters observers`() {
+        var thumbnailRegistered = false
+        var mediaRegistered = false
+        val debounce = 50L
+        val logicWithSession = OverlayServiceLogic(
+            hasUsageStatsPermission = { true },
+            hasOverlayPermission = { true },
+            overlayManager = overlayManager,
+            cameraState = CameraState(),
+            foregroundDetector = foregroundDetector,
+            sessionTracker = sessionTracker,
+            handler = handler,
+            debounceMs = debounce,
+            onUsageAccessLost = {},
+            onOverlayPermissionLost = {},
+            isKeyguardLocked = { true },   // locked so session starts on activation
+            onRegisterMediaObserver = { mediaRegistered = true },
+            onUnregisterMediaObserver = { mediaRegistered = false },
+            onRegisterThumbnailObserver = { thumbnailRegistered = true },
+            onUnregisterThumbnailObserver = { thumbnailRegistered = false },
+        )
+
+        // Activate via lock-screen bypass — starts a session immediately
+        logicWithSession.onCameraUnavailable("0")
+        assertTrue("Pre-condition: overlay active", logicWithSession.isOverlayActive)
+        assertTrue("Pre-condition: thumbnail observer registered", thumbnailRegistered)
+        assertTrue("Pre-condition: media observer registered", mediaRegistered)
+        whenever(sessionTracker.isSessionActive).thenReturn(true)
+
+        // PC is still in foreground at gallery launch → recheck scheduled
+        whenever(foregroundDetector.getForegroundPackage()).thenReturn(Constants.PIXEL_CAMERA_PACKAGE)
+        logicWithSession.onGalleryLaunched()
+        verify(overlayManager, never()).hide()  // not hidden yet
+
+        // Capture the recheck runnable; PC has left by the time it fires
+        val runnableCaptor = argumentCaptor<Runnable>()
+        verify(handler, atLeastOnce()).postDelayed(runnableCaptor.capture(), eq(debounce))
+        whenever(foregroundDetector.getForegroundPackage()).thenReturn("com.google.android.apps.photos")
+        runnableCaptor.lastValue.run()
+
+        assertFalse("Overlay should be hidden after recheck", logicWithSession.isOverlayActive)
+        assertFalse("Thumbnail observer should be unregistered after recheck hide", thumbnailRegistered)
+        verify(sessionTracker).endSession()
+        assertFalse("Media observer should be unregistered after session ends", mediaRegistered)
     }
 
     /**

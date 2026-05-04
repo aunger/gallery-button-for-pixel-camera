@@ -263,16 +263,23 @@ class OverlayServiceLogic(
      * - If PC is no longer in the foreground → hide the overlay immediately.
      * - If PC is still in the foreground (e.g. split-screen) → schedule a one-shot re-check
      *   after [debounceMs]; hide if PC is gone by then.
+     *
+     * Note: on a locked device [getForegroundPackage] returns null (UsageStats does not emit
+     * MOVE_TO_FOREGROUND events while the keyguard is up), so [isPixelCameraPackage] will be
+     * false and we always take the immediate-hide path. This is intentional: the gallery button
+     * is not visible on the lock screen, so if we reach this code the device must have been
+     * unlocked when the button was pressed — hiding immediately is correct.
      */
     fun onGalleryLaunched() {
         if (!isOverlayActive) return
         DebugLog.log("Logic: gallery launched — checking foreground app (Issue #91)")
+        // Cancel any pending deactivation so its runnable cannot fire after we hide here,
+        // which could call hide() a second time or unregister observers on a fresh activation.
+        cancelPendingDeactivation()
         val pkg = foregroundDetector.getForegroundPackage()
         if (!ForegroundDetector.isPixelCameraPackage(pkg)) {
             DebugLog.log("Logic: PC not in foreground after gallery launch — hiding overlay immediately")
-            overlayManager.hide()
-            isOverlayActive = false
-            onOverlayStateChanged(false)
+            hideOverlayAndCleanup()
         } else {
             DebugLog.log("Logic: PC still in foreground after gallery launch — scheduling re-check in ${debounceMs}ms")
             scheduleGalleryLaunchRecheck()
@@ -289,9 +296,7 @@ class OverlayServiceLogic(
             val pkg = foregroundDetector.getForegroundPackage()
             DebugLog.log("Logic: gallery-launch re-check fired — foreground=$pkg, overlayActive=$isOverlayActive")
             if (!ForegroundDetector.isPixelCameraPackage(pkg)) {
-                overlayManager.hide()
-                isOverlayActive = false
-                onOverlayStateChanged(false)
+                hideOverlayAndCleanup()
             }
         }
         galleryLaunchRecheckRunnable = runnable
