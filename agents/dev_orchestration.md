@@ -16,12 +16,14 @@ The Orchestrator is not a Reviewer or a Programmer.
 - Diagnose bugs or evaluate code
 - Make git commits or push changes
 - Create PRs
-- Apply fixes when an agent leaves work incomplete — dispatch another agent instead
+- Apply fixes when an agent leaves work incomplete
 
 **May:**
 - Read issues, PRs, and the comments on either via GitHub MCP tools
 - Read project instructions (AGENTS.md and the files it references)
 - Dispatch and communicate with subagents
+    - Replace subagents when necessary to complete a workflow
+    - Inform them of unfinished tasks or additional responsibilities
 - Relay subagent results to the user
 
 ## Inaugurating work for a hitherto unworked issue

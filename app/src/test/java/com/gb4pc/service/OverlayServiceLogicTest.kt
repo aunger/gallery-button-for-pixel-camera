@@ -398,6 +398,8 @@ class OverlayServiceLogicTest {
     /**
      * If the camera is released while a retry is pending (e.g. a non-Pixel-Camera app
      * briefly opened the camera), the retry should be cancelled so it doesn't fire stale.
+     * Issue #89: the early-exit guard also ensures no deactivation is scheduled in this case
+     * (overlay was never active, so there is nothing to deactivate).
      */
     @Test
     fun `DT-06a pending retry cancelled when camera released before retry fires`() {
@@ -407,10 +409,46 @@ class OverlayServiceLogicTest {
         val runnableCaptor = argumentCaptor<Runnable>()
         verify(handler).postDelayed(runnableCaptor.capture(), eq(Constants.ACTIVATION_RETRY_MS))
 
-        // Camera released — all cameras now available
+        // Camera released before activation completed — overlay still inactive
+        assertFalse("Pre-condition: overlay should not be active", logic.isOverlayActive)
         logic.onCameraAvailable("0")
 
         verify(handler).removeCallbacks(runnableCaptor.firstValue)
+        // Issue #89: no deactivation should be scheduled — overlay was never active
+        verify(handler, never()).postDelayed(any(), eq(0L))
+        verify(handler, never()).postDelayed(any(), eq(Constants.CAMERA_DEBOUNCE_MS))
+    }
+
+    // ── Issue #89: skip deactivation when overlay is already inactive ────────
+
+    /**
+     * When a camera-now-available event arrives and the overlay was never activated,
+     * no deactivation should be scheduled.
+     */
+    @Test
+    fun `issue-89 onCameraAvailable does not schedule deactivation when overlay is inactive`() {
+        // Overlay was never activated — simulate the initial-startup priming case
+        assertFalse("Pre-condition: overlay should not be active", logic.isOverlayActive)
+
+        logic.onCameraAvailable("0")
+
+        verify(handler, never()).postDelayed(any(), any())
+        assertFalse("Overlay should still be inactive", logic.isOverlayActive)
+    }
+
+    /**
+     * When the last camera is released but the overlay is inactive, no deactivation runnable
+     * fires, and overlayManager.hide() is never called.
+     */
+    @Test
+    fun `issue-89 onCameraAvailable when all cameras released and overlay inactive skips deactivation`() {
+        assertFalse("Pre-condition: overlay should not be active", logic.isOverlayActive)
+
+        cameraState.setCameraUnavailable("0")
+        logic.onCameraAvailable("0") // all cameras now available, but overlay was never shown
+
+        verify(handler, never()).postDelayed(any(), any())
+        verify(overlayManager, never()).hide()
     }
 
     // ── Issue #46: foreground-aware deactivation delay ──────────────────────
