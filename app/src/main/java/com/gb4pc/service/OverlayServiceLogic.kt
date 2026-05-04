@@ -92,7 +92,7 @@ class OverlayServiceLogic(
 
         val pkg = foregroundDetector.getForegroundPackage()
         val isPixelCamera = ForegroundDetector.isPixelCameraPackage(pkg)
-        DebugLog.log("Logic: evaluateForeground — foreground=$pkg, isPixelCamera=$isPixelCamera, overlayActive=$isOverlayActive, anyCameraUnavailable=${cameraState.anyCameraUnavailable()}")
+        DebugLog.log("Logic: evaluateForeground — foreground=$pkg, overlayActive=$isOverlayActive, anyCameraUnavailable=${cameraState.anyCameraUnavailable()}")
 
         if (isPixelCamera && !isOverlayActive) {
             cancelActivationRetry()

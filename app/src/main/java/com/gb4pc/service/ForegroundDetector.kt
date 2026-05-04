@@ -27,7 +27,6 @@ class ForegroundDetector(
     fun getForegroundPackage(): String? {
         val endTime = System.currentTimeMillis()
         val beginTime = endTime - Constants.USAGE_STATS_WINDOW_MS
-        DebugLog.log("ForegroundDetector: querying window=${Constants.USAGE_STATS_WINDOW_MS}ms ending at $endTime")
 
         val events = usageStatsManager.queryEvents(beginTime, endTime)
         if (events == null) {
@@ -48,11 +47,9 @@ class ForegroundDetector(
             if (event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND) {
                 if (event.packageName == selfPackage) {
                     skippedSelfEvents++
-                    DebugLog.log("ForegroundDetector: skipping self MOVE_TO_FOREGROUND pkg=${event.packageName} ts=${event.timeStamp} (Issue #80)")
                     continue
                 }
                 foregroundEvents++
-                DebugLog.log("ForegroundDetector: MOVE_TO_FOREGROUND pkg=${event.packageName} ts=${event.timeStamp}")
                 if (event.timeStamp >= latestTimestamp) {
                     latestTimestamp = event.timeStamp
                     latestForegroundPackage = event.packageName
@@ -71,9 +68,7 @@ class ForegroundDetector(
 
     companion object {
         fun isPixelCameraPackage(packageName: String?): Boolean {
-            val result = packageName == Constants.PIXEL_CAMERA_PACKAGE
-            DebugLog.log("ForegroundDetector: isPixelCamera($packageName) = $result")
-            return result
+            return packageName == Constants.PIXEL_CAMERA_PACKAGE
         }
     }
 }
