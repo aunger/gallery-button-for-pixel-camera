@@ -337,6 +337,10 @@ class OverlayServiceLogic(
      * Issue #92: Must re-register the thumbnail observer (via onRegisterThumbnailObserver) so
      * the overlay button thumbnail works correctly after focus is regained, matching the
      * behaviour of showOverlay().
+     *
+     * Issue #92 (lock-screen): mirrors [showOverlay]'s lock-screen path — if the device is
+     * locked when focus is regained, re-start the secure session and re-register the media
+     * observer so newly captured photos update the thumbnail button.
      */
     fun onOverlayFocusGained() {
         DebugLog.log("Logic: overlay focus gained; overlayActive=$isOverlayActive")
@@ -350,5 +354,10 @@ class OverlayServiceLogic(
         isOverlayActive = true
         onOverlayStateChanged(true)
         onRegisterThumbnailObserver()
+        if (isKeyguardLocked()) {
+            DebugLog.log("Logic: overlay focus gained on locked device — starting secure session")
+            sessionTracker.startSession()
+            onRegisterMediaObserver()
+        }
     }
 }

@@ -694,6 +694,36 @@ class OverlayServiceLogicTest {
         assertTrue("Thumbnail observer must be re-registered on focus gained (Issue #92)", thumbnailObserverRegistered)
     }
 
+    /**
+     * Issue #92 (lock-screen): when the device is locked at focus-gained time,
+     * onOverlayFocusGained must mirror showOverlay()'s lock-screen behaviour — start the
+     * secure session and re-register the media observer so newly captured photos update the
+     * thumbnail button.  Without this, a focus-lost/focus-gained cycle on a locked device
+     * would re-show the overlay but leave the media observer absent.
+     */
+    @Test
+    fun `issue-92 onOverlayFocusGained on locked device starts session and registers media observer`() {
+        // Activate via lock-screen bypass, then lose focus (tears down session + observers)
+        keyguardLocked = true
+        cameraState.setCameraUnavailable("0")
+        logic.evaluateForeground()
+        assertTrue("Pre-condition: overlay should be active", logic.isOverlayActive)
+        verify(sessionTracker).startSession()
+        assertTrue("Pre-condition: media observer should be registered", mediaObserverRegistered)
+        whenever(sessionTracker.isSessionActive).thenReturn(true)
+
+        logic.onOverlayFocusLost()
+        assertFalse("Pre-condition: overlay should be hidden after focus loss", logic.isOverlayActive)
+        assertFalse("Pre-condition: media observer should be unregistered after focus loss", mediaObserverRegistered)
+
+        // Regain focus on a still-locked device — session and media observer must be restored
+        logic.onOverlayFocusGained()
+
+        assertTrue("Overlay should be active after focus regained", logic.isOverlayActive)
+        verify(sessionTracker, times(2)).startSession()  // once on activation, once on focus regained
+        assertTrue("Media observer must be re-registered on focus gained while locked (Issue #92)", mediaObserverRegistered)
+    }
+
     // ── Issue #81: lock-screen bypass ───────────────────────────────────────
 
     /**
