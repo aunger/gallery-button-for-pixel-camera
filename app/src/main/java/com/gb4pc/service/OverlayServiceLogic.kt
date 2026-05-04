@@ -97,14 +97,13 @@ class OverlayServiceLogic(
 
         val pkg = foregroundDetector.getForegroundPackage()
         val isPixelCamera = ForegroundDetector.isPixelCameraPackage(pkg)
-        DebugLog.log("Logic: evaluateForeground — foreground=$pkg, isPixelCamera=$isPixelCamera, overlayActive=$isOverlayActive, anyCameraUnavailable=${cameraState.anyCameraUnavailable()}")
+        DebugLog.log("Logic: evaluateForeground — overlayActive=$isOverlayActive, anyCameraUnavailable=${cameraState.anyCameraUnavailable()}")
 
         if (isPixelCamera && !isOverlayActive) {
             cancelActivationRetry()
             showOverlay()
         } else if (!isOverlayActive && cameraState.anyCameraUnavailable()) {
             // UsageStats may not have caught up yet; schedule a retry (DT-06a).
-            DebugLog.log("Logic: Pixel Camera not yet in foreground — scheduling activation retry")
             scheduleActivationRetry()
         }
     }
