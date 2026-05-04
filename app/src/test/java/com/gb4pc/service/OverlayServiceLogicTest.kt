@@ -398,6 +398,8 @@ class OverlayServiceLogicTest {
     /**
      * If the camera is released while a retry is pending (e.g. a non-Pixel-Camera app
      * briefly opened the camera), the retry should be cancelled so it doesn't fire stale.
+     * Issue #89: the early-exit guard also ensures no deactivation is scheduled in this case
+     * (overlay was never active, so there is nothing to deactivate).
      */
     @Test
     fun `DT-06a pending retry cancelled when camera released before retry fires`() {
@@ -407,10 +409,14 @@ class OverlayServiceLogicTest {
         val runnableCaptor = argumentCaptor<Runnable>()
         verify(handler).postDelayed(runnableCaptor.capture(), eq(Constants.ACTIVATION_RETRY_MS))
 
-        // Camera released — all cameras now available
+        // Camera released before activation completed — overlay still inactive
+        assertFalse("Pre-condition: overlay should not be active", logic.isOverlayActive)
         logic.onCameraAvailable("0")
 
         verify(handler).removeCallbacks(runnableCaptor.firstValue)
+        // Issue #89: no deactivation should be scheduled — overlay was never active
+        verify(handler, never()).postDelayed(any(), eq(0L))
+        verify(handler, never()).postDelayed(any(), eq(Constants.CAMERA_DEBOUNCE_MS))
     }
 
     // ── Issue #89: skip deactivation when overlay is already inactive ────────
@@ -443,27 +449,6 @@ class OverlayServiceLogicTest {
 
         verify(handler, never()).postDelayed(any(), any())
         verify(overlayManager, never()).hide()
-    }
-
-    /**
-     * When a camera-now-available event arrives and the overlay is inactive, any pending
-     * activation retry should be cancelled (the camera was released before activation completed).
-     */
-    @Test
-    fun `issue-89 onCameraAvailable when overlay inactive cancels pending activation retry`() {
-        whenever(foregroundDetector.getForegroundPackage()).thenReturn(null)
-        logic.onCameraUnavailable("0") // retry scheduled because foreground not detected
-
-        val runnableCaptor = argumentCaptor<Runnable>()
-        verify(handler).postDelayed(runnableCaptor.capture(), eq(Constants.ACTIVATION_RETRY_MS))
-
-        // Camera released before activation completed — overlay still inactive
-        assertFalse("Pre-condition: overlay should not be active", logic.isOverlayActive)
-        logic.onCameraAvailable("0")
-
-        verify(handler).removeCallbacks(runnableCaptor.firstValue)
-        verify(handler, never()).postDelayed(any(), eq(0L))
-        verify(handler, never()).postDelayed(any(), eq(Constants.CAMERA_DEBOUNCE_MS))
     }
 
     // ── Issue #46: foreground-aware deactivation delay ──────────────────────
