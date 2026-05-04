@@ -11,10 +11,17 @@ import org.mockito.kotlin.*
 /**
  * Unit tests for [MediaChangeDispatcher].
  *
- * Covers the IS_PENDING race: when a photo is first inserted into MediaStore with
- * IS_PENDING=1 the default query returns null; a retry is scheduled so the item is
- * captured once IS_PENDING is cleared. Also verifies that when the item is already
- * committed on the first query no retry is scheduled.
+ * Covers:
+ * - Immediate-hit path: all committed items are added to the session right away.
+ * - Always-retry: a retry is always scheduled after every onChange, not just when the
+ *   query returns empty. This ensures IS_PENDING items that were excluded from the
+ *   initial query are captured once committed.
+ * - Multiple photos: each committed photo since session start is added (not just the
+ *   single most-recent), fixing the case where a new photo's IS_PENDING=1 callback
+ *   finds an older committed photo and skips the retry.
+ * - Cancel-and-reschedule: rapid-fire photos replace any pending retry with a fresh one,
+ *   keeping at most one outstanding runnable at any time.
+ * - sessionStartMs forwarding.
  */
 class MediaChangeDispatcherTest {
 
@@ -22,9 +29,14 @@ class MediaChangeDispatcherTest {
     private lateinit var handler: Handler
     private val retryDelayMs = 500L
 
-    private val sampleItem = MediaItem(
-        uri = "content://media/external/images/media/42",
+    private val item1 = MediaItem(
+        uri = "content://media/external/images/media/1",
         dateTaken = 1_000_000L,
+        isVideo = false
+    )
+    private val item2 = MediaItem(
+        uri = "content://media/external/images/media/2",
+        dateTaken = 2_000_000L,
         isVideo = false
     )
 
@@ -37,55 +49,72 @@ class MediaChangeDispatcherTest {
     // ── Immediate-hit path ──────────────────────────────────────────────────
 
     /**
-     * When the query immediately finds a committed item, it is added to the session
-     * and no retry is scheduled.
+     * When committed items are found immediately, all of them are added to the session.
      */
     @Test
-    fun `onMediaChanged adds item immediately when query succeeds`() {
+    fun `onMediaChanged adds all items immediately when query returns results`() {
         val dispatcher = MediaChangeDispatcher(
             sessionTracker = sessionTracker,
             handler = handler,
-            queryLatestMedia = { sampleItem },
+            queryAllMedia = { listOf(item1, item2) },
             retryDelayMs = retryDelayMs,
         )
 
         dispatcher.onMediaChanged(sessionStartMs = 999_000L)
 
-        verify(sessionTracker).addMedia(sampleItem)
-        verify(handler, never()).postDelayed(any(), any())
+        verify(sessionTracker).addMedia(item1)
+        verify(sessionTracker).addMedia(item2)
     }
 
     /**
-     * The item passed to addMedia is the one returned by the query, not a copy.
+     * Items passed to addMedia are the exact objects returned by the query.
      */
     @Test
-    fun `onMediaChanged passes exact query result to sessionTracker`() {
+    fun `onMediaChanged passes exact query results to sessionTracker`() {
         val captor = argumentCaptor<MediaItem>()
         val dispatcher = MediaChangeDispatcher(
             sessionTracker = sessionTracker,
             handler = handler,
-            queryLatestMedia = { sampleItem },
+            queryAllMedia = { listOf(item1) },
             retryDelayMs = retryDelayMs,
         )
 
         dispatcher.onMediaChanged(sessionStartMs = 0L)
 
         verify(sessionTracker).addMedia(captor.capture())
-        assertEquals(sampleItem.uri, captor.firstValue.uri)
+        assertEquals(item1.uri, captor.firstValue.uri)
     }
 
-    // ── IS_PENDING retry path ───────────────────────────────────────────────
+    // ── Always-retry path ───────────────────────────────────────────────────
 
     /**
-     * When the first query returns null (item is IS_PENDING), a retry runnable is
-     * scheduled via handler.postDelayed with the configured retryDelayMs.
+     * A retry is always scheduled, even when the query returned items immediately.
+     * This ensures IS_PENDING items (invisible on the first query) are captured once
+     * committed.
      */
     @Test
-    fun `onMediaChanged schedules retry when first query returns null`() {
+    fun `onMediaChanged always schedules a retry`() {
         val dispatcher = MediaChangeDispatcher(
             sessionTracker = sessionTracker,
             handler = handler,
-            queryLatestMedia = { null },
+            queryAllMedia = { listOf(item1) },
+            retryDelayMs = retryDelayMs,
+        )
+
+        dispatcher.onMediaChanged(sessionStartMs = 999_000L)
+
+        verify(handler).postDelayed(any(), eq(retryDelayMs))
+    }
+
+    /**
+     * A retry is also scheduled when the query returns empty (IS_PENDING race).
+     */
+    @Test
+    fun `onMediaChanged schedules retry when query returns empty`() {
+        val dispatcher = MediaChangeDispatcher(
+            sessionTracker = sessionTracker,
+            handler = handler,
+            queryAllMedia = { emptyList() },
             retryDelayMs = retryDelayMs,
         )
 
@@ -96,43 +125,15 @@ class MediaChangeDispatcherTest {
     }
 
     /**
-     * When the retry fires and the item has been committed (query returns non-null),
-     * it is added to the session.
+     * When the retry fires and new items are committed, they are added to the session.
      */
     @Test
-    fun `retry runnable adds item when query succeeds on second attempt`() {
+    fun `retry runnable adds items when query succeeds on second attempt`() {
         var callCount = 0
         val dispatcher = MediaChangeDispatcher(
             sessionTracker = sessionTracker,
             handler = handler,
-            queryLatestMedia = { if (callCount++ == 0) null else sampleItem },
-            retryDelayMs = retryDelayMs,
-        )
-
-        dispatcher.onMediaChanged(sessionStartMs = 999_000L)
-
-        // Nothing added yet; a retry was posted
-        verify(sessionTracker, never()).addMedia(any())
-        val runnableCaptor = argumentCaptor<Runnable>()
-        verify(handler).postDelayed(runnableCaptor.capture(), eq(retryDelayMs))
-
-        // Execute the retry runnable
-        runnableCaptor.firstValue.run()
-
-        verify(sessionTracker).addMedia(sampleItem)
-    }
-
-    /**
-     * When the retry fires but the query STILL returns null (photo was deleted or
-     * never committed), nothing is added to the session and no further retry is
-     * scheduled — the retry is strictly one-shot.
-     */
-    @Test
-    fun `retry is one-shot - no further retry when second query also returns null`() {
-        val dispatcher = MediaChangeDispatcher(
-            sessionTracker = sessionTracker,
-            handler = handler,
-            queryLatestMedia = { null },
+            queryAllMedia = { if (callCount++ == 0) emptyList() else listOf(item1) },
             retryDelayMs = retryDelayMs,
         )
 
@@ -144,55 +145,115 @@ class MediaChangeDispatcherTest {
         // Execute the retry runnable
         runnableCaptor.firstValue.run()
 
-        // No item added; no further postDelayed beyond the original one
-        verify(sessionTracker, never()).addMedia(any())
-        verify(handler, times(1)).postDelayed(any(), any())
+        verify(sessionTracker).addMedia(item1)
     }
 
     /**
-     * Two rapid media changes: first fires while item is pending (null result →
-     * retry scheduled), second fires after item is committed (non-null → item added
-     * immediately). The retry still fires but deduplication in SessionTracker
-     * prevents double-adding (by design in addMedia, not tested here since we
-     * use a mock tracker).
+     * When the retry fires and the query still returns empty (item never committed),
+     * nothing is added to the session. No further retry is scheduled.
      */
     @Test
-    fun `two onChange calls for same photo - first schedules retry, second adds immediately`() {
+    fun `retry is one-shot - no further retry when second query also returns empty`() {
+        val dispatcher = MediaChangeDispatcher(
+            sessionTracker = sessionTracker,
+            handler = handler,
+            queryAllMedia = { emptyList() },
+            retryDelayMs = retryDelayMs,
+        )
+
+        dispatcher.onMediaChanged(sessionStartMs = 999_000L)
+
+        val runnableCaptor = argumentCaptor<Runnable>()
+        verify(handler).postDelayed(runnableCaptor.capture(), eq(retryDelayMs))
+
+        // Execute the retry runnable
+        runnableCaptor.firstValue.run()
+
+        verify(sessionTracker, never()).addMedia(any())
+        // Only one postDelayed call (from onMediaChanged, not from the retry itself)
+        verify(handler, times(1)).postDelayed(any(), any())
+    }
+
+    // ── Multiple-photo scenario ─────────────────────────────────────────────
+
+    /**
+     * When Photo2's IS_PENDING=1 onChange fires, Photo1 is already committed.
+     * onMediaChanged returns [item1] immediately and schedules a retry.
+     * The retry fires and finds both item1 and item2 committed — both are added
+     * (dedup in SessionTracker prevents the item1 double-add in practice).
+     */
+    @Test
+    fun `multiple photos - retry captures newly committed photo not found on initial call`() {
+        // First call: only item1 is committed; item2 is still IS_PENDING
+        // Retry: both item1 and item2 are committed
         var callCount = 0
         val dispatcher = MediaChangeDispatcher(
             sessionTracker = sessionTracker,
             handler = handler,
-            queryLatestMedia = { if (callCount++ == 0) null else sampleItem },
+            queryAllMedia = { if (callCount++ == 0) listOf(item1) else listOf(item1, item2) },
             retryDelayMs = retryDelayMs,
         )
 
-        // First change: item is pending
         dispatcher.onMediaChanged(sessionStartMs = 999_000L)
-        verify(handler, times(1)).postDelayed(any(), eq(retryDelayMs))
-        verify(sessionTracker, never()).addMedia(any())
 
-        // Second change: item is now committed
-        dispatcher.onMediaChanged(sessionStartMs = 999_000L)
-        verify(sessionTracker, times(1)).addMedia(sampleItem)
-        // No additional retry posted
-        verify(handler, times(1)).postDelayed(any(), any())
+        // item1 added immediately
+        verify(sessionTracker).addMedia(item1)
+
+        // Retry is scheduled
+        val runnableCaptor = argumentCaptor<Runnable>()
+        verify(handler).postDelayed(runnableCaptor.capture(), eq(retryDelayMs))
+
+        // Execute the retry — item1 and item2 both found (item1 is dedup'd by SessionTracker)
+        runnableCaptor.firstValue.run()
+
+        // item2 is added by retry
+        verify(sessionTracker).addMedia(item2)
     }
 
-    // ── Session start parameter is forwarded correctly ───────────────────────
+    // ── Cancel-and-reschedule ───────────────────────────────────────────────
 
     /**
-     * The sessionStartMs value passed to onMediaChanged is forwarded to the query
-     * lambda on both the initial call and the retry.
+     * When a second onMediaChanged fires before the previous retry runs, the pending retry
+     * is cancelled and a fresh one is scheduled. At most one retry is outstanding at a time.
      */
     @Test
-    fun `sessionStartMs is forwarded to queryLatestMedia on initial call and retry`() {
+    fun `rapid-fire photos cancel previous retry and reschedule fresh one`() {
+        val dispatcher = MediaChangeDispatcher(
+            sessionTracker = sessionTracker,
+            handler = handler,
+            queryAllMedia = { emptyList() },
+            retryDelayMs = retryDelayMs,
+        )
+
+        dispatcher.onMediaChanged(sessionStartMs = 999_000L)
+
+        val runnableCaptor = argumentCaptor<Runnable>()
+        verify(handler).postDelayed(runnableCaptor.capture(), eq(retryDelayMs))
+        val firstRetry = runnableCaptor.firstValue
+
+        // Second onChange fires — should cancel first retry and post a new one
+        dispatcher.onMediaChanged(sessionStartMs = 999_000L)
+
+        verify(handler).removeCallbacks(firstRetry)
+        // Two postDelayed calls total (one per onChange)
+        verify(handler, times(2)).postDelayed(any(), eq(retryDelayMs))
+    }
+
+    // ── sessionStartMs forwarding ───────────────────────────────────────────
+
+    /**
+     * The sessionStartMs passed to onMediaChanged is forwarded to the query lambda on both
+     * the initial call and the retry.
+     */
+    @Test
+    fun `sessionStartMs is forwarded to queryAllMedia on initial call and retry`() {
         val capturedStartMs = mutableListOf<Long>()
         val dispatcher = MediaChangeDispatcher(
             sessionTracker = sessionTracker,
             handler = handler,
-            queryLatestMedia = { startMs ->
+            queryAllMedia = { startMs ->
                 capturedStartMs.add(startMs)
-                null
+                emptyList()
             },
             retryDelayMs = retryDelayMs,
         )

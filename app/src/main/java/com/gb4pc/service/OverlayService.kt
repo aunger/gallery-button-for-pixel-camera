@@ -87,7 +87,7 @@ class OverlayService : Service() {
         mediaChangeDispatcher = MediaChangeDispatcher(
             sessionTracker = SessionTracker.instance,
             handler = handler,
-            queryLatestMedia = ::queryLatestMedia,
+            queryAllMedia = ::queryAllMedia,
         )
 
         thumbnailChangeDispatcher = ThumbnailChangeDispatcher(
@@ -295,8 +295,9 @@ class OverlayService : Service() {
         }
     }
 
-    // H4: Query for latest media item added after session start
-    private fun queryLatestMedia(sessionStartMs: Long): MediaItem? {
+    // H4: Query for all committed media items added after session start.
+    // Used by MediaChangeDispatcher to populate the secure session.
+    private fun queryAllMedia(sessionStartMs: Long): List<MediaItem> {
         val projection = arrayOf(
             MediaStore.MediaColumns._ID,
             MediaStore.MediaColumns.MIME_TYPE,
@@ -308,43 +309,49 @@ class OverlayService : Service() {
         val effectiveStartSec = (sessionStartMs - Constants.SESSION_TIMESTAMP_TOLERANCE_MS) / 1000
         val selectionArgs = arrayOf(effectiveStartSec.toString())
 
-        // Query images
-        val imageResult = queryMediaStore(
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            projection,
-            selectionArgs,
-            isVideo = false
-        )
-        if (imageResult != null) return imageResult
-
-        // Query videos
-        return queryMediaStore(
-            MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-            projection,
-            selectionArgs,
-            isVideo = true
-        )
+        val result = mutableListOf<MediaItem>()
+        result.addAll(queryAllFromMediaStore(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, projection, selectionArgs, isVideo = false))
+        result.addAll(queryAllFromMediaStore(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, projection, selectionArgs, isVideo = true))
+        return result
     }
 
-    private fun queryMediaStore(
+    // H4: Query for the most recent committed media item added after startMs.
+    // Used by ThumbnailChangeDispatcher to update the overlay button.
+    private fun queryLatestMedia(startMs: Long): MediaItem? {
+        val projection = arrayOf(
+            MediaStore.MediaColumns._ID,
+            MediaStore.MediaColumns.MIME_TYPE,
+            MediaStore.MediaColumns.DATE_ADDED,
+            MediaStore.MediaColumns.DATE_TAKEN
+        )
+        val effectiveStartSec = (startMs - Constants.SESSION_TIMESTAMP_TOLERANCE_MS) / 1000
+        val selectionArgs = arrayOf(effectiveStartSec.toString())
+
+        val imageResult = queryAllFromMediaStore(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, projection, selectionArgs, isVideo = false)
+        if (imageResult.isNotEmpty()) return imageResult.first()
+        val videoResult = queryAllFromMediaStore(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, projection, selectionArgs, isVideo = true)
+        return videoResult.firstOrNull()
+    }
+
+    private fun queryAllFromMediaStore(
         contentUri: Uri,
         projection: Array<String>,
         selectionArgs: Array<String>,
         isVideo: Boolean
-    ): MediaItem? {
+    ): List<MediaItem> {
         val selection = "${MediaStore.MediaColumns.DATE_ADDED} >= ?"
         val sortOrder = "${MediaStore.MediaColumns.DATE_ADDED} DESC"
+        val items = mutableListOf<MediaItem>()
         contentResolver.query(contentUri, projection, selection, selectionArgs, sortOrder)?.use { cursor ->
-            if (cursor.moveToFirst()) {
+            while (cursor.moveToNext()) {
                 val id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID))
-                val mime = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE))
                 val dateTakenCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_TAKEN)
                 val dateTaken = if (dateTakenCol >= 0) cursor.getLong(dateTakenCol) else System.currentTimeMillis()
                 val uri = ContentUris.withAppendedId(contentUri, id)
-                return MediaItem(uri.toString(), dateTaken, isVideo)
+                items.add(MediaItem(uri.toString(), dateTaken, isVideo))
             }
         }
-        return null
+        return items
     }
 
     private fun buildNotification(): Notification {

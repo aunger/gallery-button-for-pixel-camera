@@ -69,9 +69,18 @@ class OverlayServiceLogic(
             // Issue #46: If Pixel Camera is no longer in the foreground, skip the debounce delay.
             // The debounce is only needed for transient camera switches (where hardware briefly
             // shows available between switching cameras); for a true app-close we want 0 ms.
-            val pkg = foregroundDetector.getForegroundPackage()
-            val delay = if (ForegroundDetector.isPixelCameraPackage(pkg)) debounceMs else 0L
-            DebugLog.log("Logic: all cameras released; scheduling deactivation delay=${delay}ms (foreground=$pkg)")
+            //
+            // Issue #81: When the device is locked, UsageStats returns null for the foreground
+            // package, so isPixelCameraPackage() would always be false — incorrectly using 0 ms
+            // and prematurely hiding the overlay during a transient camera switch on the lock
+            // screen.  Take the conservative (debounceMs) path whenever the keyguard is locked.
+            val delay = if (isKeyguardLocked()) {
+                debounceMs
+            } else {
+                val pkg = foregroundDetector.getForegroundPackage()
+                if (ForegroundDetector.isPixelCameraPackage(pkg)) debounceMs else 0L
+            }
+            DebugLog.log("Logic: all cameras released; scheduling deactivation delay=${delay}ms (keyguardLocked=${isKeyguardLocked()})")
             scheduleDeactivation(delay)
         }
     }
@@ -81,6 +90,13 @@ class OverlayServiceLogic(
     /**
      * DT-02/DT-03: Check if Pixel Camera is the foreground app and show/hide overlay.
      * DT-06a: If the foreground event hasn't appeared in UsageStats yet (lag), schedule a retry.
+     *
+     * Lock-screen bypass (Issue #81): When the device is locked,
+     * [android.app.usage.UsageStatsManager] does not emit MOVE_TO_FOREGROUND events, so
+     * [ForegroundDetector.getForegroundPackage] always returns null regardless of which app
+     * opened the camera.  On a locked device the camera can only be launched via the lock-screen
+     * camera shortcut — which is always Pixel Camera — so we bypass the UsageStats check and
+     * activate the overlay directly.
      */
     fun evaluateForeground() {
         if (!hasUsageStatsPermission()) {
@@ -92,6 +108,23 @@ class OverlayServiceLogic(
                 onUsageAccessLost()
             }
             cancelActivationRetry()
+            return
+        }
+
+        // Issue #81: UsageStats does not report foreground events while the device is locked.
+        // When locked and the camera is in use, skip the UsageStats lookup entirely:
+        // - If the overlay is not yet active, activate it (the lock-screen camera shortcut can
+        //   only launch Pixel Camera).
+        // - If the overlay is already active, return early so we never call getForegroundPackage()
+        //   on a locked device (it would return null and could cause incorrect side-effects).
+        if (isKeyguardLocked() && cameraState.anyCameraUnavailable()) {
+            if (!isOverlayActive) {
+                DebugLog.log("Logic: evaluateForeground — device locked with camera in use; activating overlay without UsageStats lookup")
+                cancelActivationRetry()
+                showOverlay()
+            } else {
+                DebugLog.log("Logic: evaluateForeground — device locked, overlay already active; skipping UsageStats lookup")
+            }
             return
         }
 
