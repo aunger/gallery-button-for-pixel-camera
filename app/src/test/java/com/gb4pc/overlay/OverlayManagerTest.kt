@@ -1,5 +1,6 @@
 package com.gb4pc.overlay
 
+import com.gb4pc.Constants
 import com.gb4pc.data.OverlayPosition
 import org.junit.Assert.*
 import org.junit.Test
@@ -26,6 +27,44 @@ import org.junit.Test
  *      still holds the Bitmap drawable, NOT a Drawable (i.e. updateIcon() was NOT called).
  */
 class OverlayManagerTest {
+
+    // ── Issue #39: squircle constant ─────────────────────────────────────────
+
+    /**
+     * SQUIRCLE_CORNER_RADIUS_FRACTION must be in the range (0, 0.5] to produce a valid
+     * squircle shape. Values outside this range result in either no visible rounding (≤ 0)
+     * or a full pill/circle shape (> 0.5).
+     *
+     * The chosen value (0.30f, 30%) is documented to match Pixel Camera's rounded-square style.
+     */
+    @Test
+    fun `SQUIRCLE_CORNER_RADIUS_FRACTION is within valid squircle range`() {
+        val fraction = Constants.SQUIRCLE_CORNER_RADIUS_FRACTION
+        assertTrue(
+            "Corner radius fraction must be positive (got $fraction)",
+            fraction > 0f
+        )
+        assertTrue(
+            "Corner radius fraction must be ≤ 0.5 to avoid pill/circle shape (got $fraction)",
+            fraction <= 0.5f
+        )
+    }
+
+    /**
+     * Spot-check: for a 200×200-pixel overlay the squircle corner radius must be exactly
+     * 60 px (200 * 0.30).
+     */
+    @Test
+    fun `squircle corner radius calculation is consistent`() {
+        val viewSize = 200
+        val radius = viewSize * Constants.SQUIRCLE_CORNER_RADIUS_FRACTION
+        assertEquals(
+            "Radius for a 200 px view must equal 60f (200 * 0.30)",
+            60f,
+            radius,
+            0.001f
+        )
+    }
 
     @Test
     fun `calculateOverlaySizePx uses min of width and height`() {
