@@ -563,4 +563,115 @@ class OverlayServiceLogicTest {
         assertFalse(logic.isOverlayActive)
         assertEquals("Overlay-permission-lost notification should fire", 1, overlayLostCount)
     }
+
+    // ── Issue #81: lock-screen bypass ───────────────────────────────────────
+
+    /**
+     * When the device is locked and a camera is in use, evaluateForeground() must activate
+     * the overlay without consulting UsageStats (which does not emit MOVE_TO_FOREGROUND
+     * events while the device is locked).
+     */
+    @Test
+    fun `issue-81 lock-screen bypass activates overlay when device is locked and camera in use`() {
+        keyguardLocked = true
+        cameraState.setCameraUnavailable("0")
+
+        logic.evaluateForeground()
+
+        assertTrue("Overlay should be active via lock-screen bypass", logic.isOverlayActive)
+        verify(overlayManager).show()
+        // UsageStats should NOT be consulted — foregroundDetector must not be called
+        verify(foregroundDetector, never()).getForegroundPackage()
+    }
+
+    /**
+     * The lock-screen bypass starts a secure session immediately, since the device is already
+     * locked when the overlay activates.
+     */
+    @Test
+    fun `issue-81 lock-screen bypass starts secure session immediately`() {
+        keyguardLocked = true
+        cameraState.setCameraUnavailable("0")
+
+        logic.evaluateForeground()
+
+        verify(sessionTracker).startSession()
+        assertTrue("Media observer should be registered", mediaObserverRegistered)
+    }
+
+    /**
+     * The lock-screen bypass is idempotent: a second evaluateForeground() while the overlay
+     * is already active must not activate it a second time.
+     */
+    @Test
+    fun `issue-81 lock-screen bypass is idempotent when overlay is already active`() {
+        keyguardLocked = true
+        cameraState.setCameraUnavailable("0")
+
+        logic.evaluateForeground()
+        assertTrue("Pre-condition: overlay should be active", logic.isOverlayActive)
+
+        logic.evaluateForeground()
+
+        // show() must be called exactly once (not twice)
+        verify(overlayManager, times(1)).show()
+    }
+
+    /**
+     * The lock-screen bypass does NOT fire when the device is unlocked — normal UsageStats
+     * detection applies instead.
+     */
+    @Test
+    fun `issue-81 lock-screen bypass does not fire when device is unlocked`() {
+        keyguardLocked = false
+        whenever(foregroundDetector.getForegroundPackage()).thenReturn(Constants.PIXEL_CAMERA_PACKAGE)
+        cameraState.setCameraUnavailable("0")
+
+        logic.evaluateForeground()
+
+        // Normal path: UsageStats IS consulted
+        verify(foregroundDetector, atLeastOnce()).getForegroundPackage()
+    }
+
+    /**
+     * The lock-screen bypass does NOT fire when the keyguard is locked but no camera is in use.
+     * Without this guard, locking the screen while no camera is active could incorrectly show
+     * the overlay.
+     */
+    @Test
+    fun `issue-81 lock-screen bypass does not fire when no camera is in use`() {
+        keyguardLocked = true
+        // No camera is unavailable — cameraState.anyCameraUnavailable() == false
+
+        logic.evaluateForeground()
+
+        assertFalse("Overlay should not be shown when no camera is in use", logic.isOverlayActive)
+        verify(overlayManager, never()).show()
+    }
+
+    /**
+     * When the lock-screen bypass activates the overlay and the camera is later released,
+     * the deactivation path cleans up correctly (session ended, observer unregistered).
+     */
+    @Test
+    fun `issue-81 deactivation after lock-screen activation ends session and unregisters observer`() {
+        keyguardLocked = true
+        cameraState.setCameraUnavailable("0")
+        logic.evaluateForeground()
+        assertTrue("Pre-condition: overlay should be active", logic.isOverlayActive)
+        whenever(sessionTracker.isSessionActive).thenReturn(true)
+
+        // Camera released
+        logic.onCameraAvailable("0")
+
+        // Capture and run the deactivation runnable
+        val runnableCaptor = argumentCaptor<Runnable>()
+        verify(handler).postDelayed(runnableCaptor.capture(), any())
+        runnableCaptor.firstValue.run()
+
+        verify(overlayManager).hide()
+        assertFalse("Overlay should be inactive after deactivation", logic.isOverlayActive)
+        verify(sessionTracker).endSession()
+        assertFalse("Media observer should be unregistered", mediaObserverRegistered)
+    }
 }
