@@ -18,7 +18,7 @@ import org.robolectric.RobolectricTestRunner
  * accessible — they are stubs with default values under the plain JVM test runner.
  */
 @Suppress("DEPRECATION") // MOVE_TO_FOREGROUND / MOVE_TO_BACKGROUND are deprecated by the SDK
-                          // but are the correct event types for pre-API-29 paths exercised here.
+                          // but are valid event types still exercised in mixed-event tests here.
 @RunWith(RobolectricTestRunner::class)
 class ForegroundDetectorSelfFilterTest {
 
@@ -171,6 +171,77 @@ class ForegroundDetectorSelfFilterTest {
             "Non-foreground events for selfPkg must not interfere with camera detection",
             cameraPkg,
             detector.getForegroundPackage()
+        )
+    }
+
+    // ── ACTIVITY_RESUMED (API 29+): replaces MOVE_TO_FOREGROUND on modern devices ──
+
+    @Test
+    fun `ACTIVITY_RESUMED for camera is detected (Issue #86)`() {
+        // On API 29+ the system emits ACTIVITY_RESUMED instead of MOVE_TO_FOREGROUND.
+        // The detector must recognise it as a foreground event.
+        eventsOf(Triple(cameraPkg, UsageEvents.Event.ACTIVITY_RESUMED, 1000L))
+
+        assertEquals(
+            "ACTIVITY_RESUMED must be recognised as a foreground event (Issue #86)",
+            cameraPkg,
+            detector.getForegroundPackage()
+        )
+    }
+
+    @Test
+    fun `self ACTIVITY_RESUMED is skipped (Issue #86)`() {
+        // GB4PC's own ACTIVITY_RESUMED must be filtered out, same as MOVE_TO_FOREGROUND.
+        eventsOf(Triple(selfPkg, UsageEvents.Event.ACTIVITY_RESUMED, 1000L))
+
+        assertNull(
+            "Self ACTIVITY_RESUMED must be skipped (Issue #86)",
+            detector.getForegroundPackage()
+        )
+    }
+
+    @Test
+    fun `self ACTIVITY_RESUMED does not displace earlier camera ACTIVITY_RESUMED (Issue #86)`() {
+        eventsOf(
+            Triple(cameraPkg, UsageEvents.Event.ACTIVITY_RESUMED, 1000L),
+            Triple(selfPkg,   UsageEvents.Event.ACTIVITY_RESUMED, 2000L),
+        )
+
+        assertEquals(
+            "Camera ACTIVITY_RESUMED must not be displaced by self ACTIVITY_RESUMED (Issue #86)",
+            cameraPkg,
+            detector.getForegroundPackage()
+        )
+    }
+
+    @Test
+    fun `camera ACTIVITY_RESUMED beats older launcher MOVE_TO_FOREGROUND (Issue #86)`() {
+        // Real-world scenario on Android 10+: launcher has an old MOVE_TO_FOREGROUND event
+        // from before the user launched Pixel Camera, which then emits ACTIVITY_RESUMED.
+        eventsOf(
+            Triple("com.android.launcher3", UsageEvents.Event.MOVE_TO_FOREGROUND, 1000L),
+            Triple(cameraPkg,               UsageEvents.Event.ACTIVITY_RESUMED,   2000L),
+        )
+
+        assertEquals(
+            "Camera ACTIVITY_RESUMED (newer) must win over older launcher MOVE_TO_FOREGROUND (Issue #86)",
+            cameraPkg,
+            detector.getForegroundPackage()
+        )
+    }
+
+    @Test
+    fun `launcher MOVE_TO_FOREGROUND alone does not match camera (Issue #86)`() {
+        // If only a launcher MOVE_TO_FOREGROUND event is present (no camera event yet),
+        // isPixelCameraPackage must return false so the retry logic can kick in.
+        eventsOf(
+            Triple("com.android.launcher3", UsageEvents.Event.MOVE_TO_FOREGROUND, 1000L),
+        )
+
+        val pkg = detector.getForegroundPackage()
+        assertFalse(
+            "Launcher MOVE_TO_FOREGROUND must not be detected as Pixel Camera (Issue #86)",
+            ForegroundDetector.isPixelCameraPackage(pkg)
         )
     }
 }
