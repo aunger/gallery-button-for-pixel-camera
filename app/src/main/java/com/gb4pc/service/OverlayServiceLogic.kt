@@ -57,7 +57,12 @@ class OverlayServiceLogic(
     fun onCameraAvailable(cameraId: String) {
         cameraState.setCameraAvailable(cameraId)
         val allAvailable = cameraState.areAllCamerasAvailable()
-        DebugLog.log("Logic: camera $cameraId available; allAvailable=$allAvailable, remaining=${cameraState.getUnavailableCameraIds()}")
+        DebugLog.log("Logic: camera $cameraId available; allAvailable=$allAvailable, remaining=${cameraState.getUnavailableCameraIds()}, overlayActive=$isOverlayActive")
+        // Issue #89: If the overlay is not active there is nothing to deactivate.
+        if (!isOverlayActive) {
+            cancelActivationRetry()
+            return
+        }
         // DT-04/DT-05: Only schedule deactivation when ALL cameras have been released
         if (allAvailable) {
             cancelActivationRetry()
@@ -125,14 +130,13 @@ class OverlayServiceLogic(
 
         val pkg = foregroundDetector.getForegroundPackage()
         val isPixelCamera = ForegroundDetector.isPixelCameraPackage(pkg)
-        DebugLog.log("Logic: evaluateForeground — foreground=$pkg, isPixelCamera=$isPixelCamera, overlayActive=$isOverlayActive, anyCameraUnavailable=${cameraState.anyCameraUnavailable()}")
+        DebugLog.log("Logic: evaluateForeground — overlayActive=$isOverlayActive, anyCameraUnavailable=${cameraState.anyCameraUnavailable()}")
 
         if (isPixelCamera && !isOverlayActive) {
             cancelActivationRetry()
             showOverlay()
         } else if (!isOverlayActive && cameraState.anyCameraUnavailable()) {
             // UsageStats may not have caught up yet; schedule a retry (DT-06a).
-            DebugLog.log("Logic: Pixel Camera not yet in foreground — scheduling activation retry")
             scheduleActivationRetry()
         }
     }
