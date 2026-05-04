@@ -3,6 +3,7 @@ package com.gb4pc.overlay
 import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.Outline
+import android.graphics.drawable.AdaptiveIconDrawable
 import android.graphics.drawable.BitmapDrawable
 import android.view.View
 import android.view.ViewOutlineProvider
@@ -271,6 +272,61 @@ class OverlayManagerRobolectricTest {
 
         // The outline must remain empty (radius == 0 and no rect set).
         assertTrue("Outline must be empty when view has zero dimensions", outline.isEmpty)
+    }
+
+    /**
+     * Issue #39 regression guard: when the gallery package has an AdaptiveIconDrawable, the
+     * overlay must NOT apply the system launcher shape mask (which is circular on Pixel devices).
+     *
+     * Before the fix, getApplicationIcon() was used unconditionally. On API 26+ this returns a
+     * BitmapDrawable with the system shape mask already baked in — a circle on Pixel launchers.
+     * The clipToOutline squircle had no visible effect because the icon content was already a
+     * smaller circle.
+     *
+     * After the fix, when the icon resource is an AdaptiveIconDrawable, it is returned directly
+     * (without any system mask), so the ImageView's squircle clipToOutline is the ONLY shape
+     * applied.
+     *
+     * This test verifies that the drawable on the overlay ImageView is an AdaptiveIconDrawable
+     * (not a pre-masked BitmapDrawable) when the gallery app's icon is adaptive.
+     */
+    @Test
+    fun `gallery icon is loaded as AdaptiveIconDrawable to avoid system circular mask`() {
+        val context: Application = ApplicationProvider.getApplicationContext()
+
+        // Use the app's own package as the "gallery" package under test. Robolectric fully
+        // initialises the host application's resources, so getResourcesForApplication() and
+        // the mipmap/ic_launcher adaptive icon (API 26+, AdaptiveIconDrawable) are available.
+        // This simulates the real-device scenario where getApplicationIcon() would apply the
+        // Pixel launcher's circular mask, whereas our fixed path returns the raw drawable.
+        val selfPackage = context.packageName  // "com.gb4pc"
+
+        val prefsManager: PrefsManager = mock {
+            on { galleryPackage } doReturn selfPackage
+            on { getOverlayPosition(any()) } doReturn OverlayPosition.default()
+            on { focusableOverlay } doReturn false
+        }
+
+        val overlayManager = OverlayManager(context, prefsManager)
+        overlayManager.show()
+
+        val windowManager = context.getSystemService(WindowManager::class.java)
+        val shadowWm = shadowOf(windowManager) as ShadowWindowManagerImpl
+        val overlayView = shadowWm.views[0] as ImageView
+
+        // The drawable must be an AdaptiveIconDrawable — not a BitmapDrawable (which would
+        // indicate the system launcher mask was applied, making the icon a circle).
+        assertFalse(
+            "Issue #39 regression: gallery icon must NOT be a pre-masked BitmapDrawable. " +
+                "getApplicationIcon() applies the system circular mask on Pixel devices; " +
+                "getGalleryIcon() must use the raw AdaptiveIconDrawable instead.",
+            overlayView.drawable is BitmapDrawable
+        )
+        assertTrue(
+            "Issue #39: gallery icon must be an AdaptiveIconDrawable so that the squircle " +
+                "clipToOutline is the only shape applied (no system launcher mask).",
+            overlayView.drawable is AdaptiveIconDrawable
+        )
     }
 
     // ── Issue #81: loadThumbnailBitmap fallback ──────────────────────────────
