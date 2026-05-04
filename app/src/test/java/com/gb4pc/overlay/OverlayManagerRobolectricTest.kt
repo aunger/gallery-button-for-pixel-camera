@@ -20,6 +20,7 @@ import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.mock
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
+import org.robolectric.shadows.ShadowLooper
 import org.robolectric.shadows.ShadowWindowManagerImpl
 
 /**
@@ -216,14 +217,14 @@ class OverlayManagerRobolectricTest {
         val shadowWm = shadowOf(windowManager) as ShadowWindowManagerImpl
         val overlayView = shadowWm.views[0] as ImageView
 
-        // Simulate the thumbnail being loaded onto the view.
-        val testBitmap = Bitmap.createBitmap(10, 10, Bitmap.Config.ARGB_8888)
-        overlayView.setImageBitmap(testBitmap)
-        assertTrue("Sanity: view should now display a BitmapDrawable", overlayView.drawable is BitmapDrawable)
+        // Exercise the public API to trigger a thumbnail load attempt.
+        overlayManager.showLatestPhotoThumbnail("content://com.gb4pc.test/images/1")
+        // Drain the main-looper queue so any Handler.post() from the background thread runs.
+        ShadowLooper.idleMainLooper()
 
         // The squircle clipping must still be configured — it is a property of the view, not
-        // the drawable, so switching the image must not remove it.
-        assertTrue("clipToOutline must remain true after thumbnail is set (Issue #39)", overlayView.clipToOutline)
+        // the drawable, so calling showLatestPhotoThumbnail() must not remove it.
+        assertTrue("clipToOutline must remain true after showLatestPhotoThumbnail() (Issue #39)", overlayView.clipToOutline)
         assertNotSame(
             "squircle outlineProvider must not be replaced when a thumbnail is loaded",
             ViewOutlineProvider.BACKGROUND,

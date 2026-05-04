@@ -52,18 +52,16 @@ class OverlayManagerTest {
 
     /**
      * Spot-check: for a 200×200-pixel overlay the squircle corner radius must be exactly
-     * 200 * SQUIRCLE_CORNER_RADIUS_FRACTION pixels.
+     * 60 px (200 * 0.30).
      */
     @Test
     fun `squircle corner radius calculation is consistent`() {
         val viewSize = 200
-        val expectedRadius = viewSize * Constants.SQUIRCLE_CORNER_RADIUS_FRACTION
-        // Round-trip: the radius computed in OverlayManager's outline provider must match
-        // what the constant specifies.
+        val radius = viewSize * Constants.SQUIRCLE_CORNER_RADIUS_FRACTION
         assertEquals(
-            "Radius for a 200 px view must equal 200 * SQUIRCLE_CORNER_RADIUS_FRACTION",
-            200f * Constants.SQUIRCLE_CORNER_RADIUS_FRACTION,
-            expectedRadius,
+            "Radius for a 200 px view must equal 60f (200 * 0.30)",
+            60f,
+            radius,
             0.001f
         )
     }
