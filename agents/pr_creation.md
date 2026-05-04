@@ -2,8 +2,14 @@
 
 ## One topic per PR
 
-Do not combine unrelated work in a single PR. You may resolve multiple issues with one PR, but **only** if they are both symptoms of the same technical issue.
+Do not combine unrelated work in a single PR. You may resolve multiple issues with one PR, but *only* if they're both symptoms of the same technical issue.
 
-## One branch per PR
+Each PR must originate from its own dedicated branch. If your branch is not clean, fix it now by making a new branch and cherry-picking commits. 
 
-Each PR must originate from its own dedicated branch containing only that topic's commits. A branch shared across unrelated issues will produce a PR that violates the one-topic rule regardless of how the commits are organised. If a session specifies a shared development branch, do not use it as the commit target for multiple issues — follow `inaugurate.md` instead.
+## The PR's Title
+
+The title must name the PR's *solution*. Only name the issue's *problem* if you have space for both.
+
+## The PR's Description
+
+Include the #XYZ issue number of the issue that this PR addresses. If the PR completes the issue, write "Fixes #XYZ". Explain how the changes fix the issue.
