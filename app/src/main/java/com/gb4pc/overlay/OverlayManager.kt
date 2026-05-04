@@ -14,6 +14,7 @@ import android.view.WindowManager
 import android.widget.ImageView
 import android.widget.Toast
 import androidx.core.content.ContextCompat
+import com.gb4pc.Constants
 import com.gb4pc.R
 import com.gb4pc.data.AspectRatioUtil
 import com.gb4pc.data.PrefsManager
@@ -182,7 +183,7 @@ class OverlayManager(
         imageView.outlineProvider = object : android.view.ViewOutlineProvider() {
             override fun getOutline(view: android.view.View, outline: android.graphics.Outline) {
                 if (view.width == 0 || view.height == 0) return
-                val radius = view.width * 0.30f
+                val radius = view.width * Constants.SQUIRCLE_CORNER_RADIUS_FRACTION
                 outline.setRoundRect(0, 0, view.width, view.height, radius)
             }
         }

@@ -49,4 +49,9 @@ object Constants {
 
     // Snackbar undo timeout
     const val UNDO_TIMEOUT_MS = 5000L
+
+    // Overlay button shape (Issue #39)
+    // Corner radius as a fraction of the button's width, producing a squircle shape
+    // (30% matches Pixel Camera's rounded-square style).
+    const val SQUIRCLE_CORNER_RADIUS_FRACTION = 0.30f
 }
