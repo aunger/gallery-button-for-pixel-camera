@@ -179,20 +179,31 @@ class OverlayServiceLogic(
             val allAvailable = cameraState.areAllCamerasAvailable()
             DebugLog.log("Logic: deactivation runnable fired; allCamerasAvailable=$allAvailable, overlayActive=$isOverlayActive")
             if (allAvailable) {
-                overlayManager.hide()
-                isOverlayActive = false
-                onOverlayStateChanged(false)
-                onUnregisterThumbnailObserver()   // unregister thumbnail observer on deactivation
-                if (sessionTracker.isSessionActive) {
-                    DebugLog.log("Logic: ending secure session on overlay deactivation")
-                    sessionTracker.endSession()
-                    onUnregisterMediaObserver()
-                }
+                hideOverlayAndCleanup()
             } else {
                 DebugLog.log("Logic: deactivation skipped — camera still in use")
             }
         }
         handler.postDelayed(deactivateRunnable!!, delayMs)
+    }
+
+    /**
+     * Hides the overlay, marks it inactive, fires [onOverlayStateChanged], unregisters the
+     * thumbnail observer, and ends any active secure session (unregistering the media observer).
+     *
+     * This is the single place responsible for all teardown that must accompany every hide —
+     * used by [scheduleDeactivation], [onGalleryLaunched], and [scheduleGalleryLaunchRecheck].
+     */
+    private fun hideOverlayAndCleanup() {
+        overlayManager.hide()
+        isOverlayActive = false
+        onOverlayStateChanged(false)
+        onUnregisterThumbnailObserver()   // unregister thumbnail observer on deactivation
+        if (sessionTracker.isSessionActive) {
+            DebugLog.log("Logic: ending secure session on overlay deactivation")
+            sessionTracker.endSession()
+            onUnregisterMediaObserver()
+        }
     }
 
     fun cancelPendingDeactivation() {
@@ -233,8 +244,67 @@ class OverlayServiceLogic(
     fun reset() {
         cancelPendingDeactivation()
         cancelActivationRetry()
+        cancelGalleryLaunchRecheck()
         onUnregisterThumbnailObserver()
         isOverlayActive = false
+    }
+
+    private fun cancelGalleryLaunchRecheck() {
+        galleryLaunchRecheckRunnable?.let {
+            DebugLog.log("Logic: cancelling pending gallery-launch re-check")
+            handler.removeCallbacks(it)
+            galleryLaunchRecheckRunnable = null
+        }
+    }
+
+    // ── Gallery-launch early hide (Issue #91) ───────────────────────────────
+
+    /**
+     * Called immediately after the gallery app is launched via the overlay button (Issue #91).
+     *
+     * Launching the gallery normally closes Pixel Camera. The camera-available event has high
+     * latency, so we check the foreground app proactively:
+     * - If PC is no longer in the foreground → hide the overlay immediately.
+     * - If PC is still in the foreground (e.g. split-screen) → schedule a one-shot re-check
+     *   after [debounceMs]; hide if PC is gone by then.
+     *
+     * Note: on a locked device [getForegroundPackage] returns null (UsageStats does not emit
+     * MOVE_TO_FOREGROUND events while the keyguard is up), so [isPixelCameraPackage] will be
+     * false and we always take the immediate-hide path. This is intentional: the gallery button
+     * is not visible on the lock screen, so if we reach this code the device must have been
+     * unlocked when the button was pressed — hiding immediately is correct.
+     */
+    fun onGalleryLaunched() {
+        if (!isOverlayActive) return
+        DebugLog.log("Logic: gallery launched — checking foreground app (Issue #91)")
+        // Cancel any pending deactivation so its runnable cannot fire after we hide here,
+        // which could call hide() a second time or unregister observers on a fresh activation.
+        cancelPendingDeactivation()
+        val pkg = foregroundDetector.getForegroundPackage()
+        if (!ForegroundDetector.isPixelCameraPackage(pkg)) {
+            DebugLog.log("Logic: PC not in foreground after gallery launch — hiding overlay immediately")
+            hideOverlayAndCleanup()
+        } else {
+            DebugLog.log("Logic: PC still in foreground after gallery launch — scheduling re-check in ${debounceMs}ms")
+            scheduleGalleryLaunchRecheck()
+        }
+    }
+
+    private var galleryLaunchRecheckRunnable: Runnable? = null
+
+    private fun scheduleGalleryLaunchRecheck() {
+        galleryLaunchRecheckRunnable?.let { handler.removeCallbacks(it) }
+        val runnable = Runnable {
+            galleryLaunchRecheckRunnable = null
+            if (!isOverlayActive) return@Runnable
+            val pkg = foregroundDetector.getForegroundPackage()
+            DebugLog.log("Logic: gallery-launch re-check fired — foreground=$pkg, overlayActive=$isOverlayActive")
+            if (!ForegroundDetector.isPixelCameraPackage(pkg)) {
+                hideOverlayAndCleanup()
+            }
+        }
+        galleryLaunchRecheckRunnable = runnable
+        handler.postDelayed(runnable, debounceMs)
     }
 
     // ── Focusable-overlay focus callbacks (Issue #55) ────────────────────────
