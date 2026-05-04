@@ -175,20 +175,31 @@ class OverlayServiceLogic(
             val allAvailable = cameraState.areAllCamerasAvailable()
             DebugLog.log("Logic: deactivation runnable fired; allCamerasAvailable=$allAvailable, overlayActive=$isOverlayActive")
             if (allAvailable) {
-                overlayManager.hide()
-                isOverlayActive = false
-                onOverlayStateChanged(false)
-                onUnregisterThumbnailObserver()   // unregister thumbnail observer on deactivation
-                if (sessionTracker.isSessionActive) {
-                    DebugLog.log("Logic: ending secure session on overlay deactivation")
-                    sessionTracker.endSession()
-                    onUnregisterMediaObserver()
-                }
+                hideOverlayAndCleanup()
             } else {
                 DebugLog.log("Logic: deactivation skipped — camera still in use")
             }
         }
         handler.postDelayed(deactivateRunnable!!, delayMs)
+    }
+
+    /**
+     * Hides the overlay, marks it inactive, fires [onOverlayStateChanged], unregisters the
+     * thumbnail observer, and ends any active secure session (unregistering the media observer).
+     *
+     * This is the single place responsible for all teardown that must accompany every hide —
+     * used by [scheduleDeactivation], [onGalleryLaunched], and [scheduleGalleryLaunchRecheck].
+     */
+    private fun hideOverlayAndCleanup() {
+        overlayManager.hide()
+        isOverlayActive = false
+        onOverlayStateChanged(false)
+        onUnregisterThumbnailObserver()   // unregister thumbnail observer on deactivation
+        if (sessionTracker.isSessionActive) {
+            DebugLog.log("Logic: ending secure session on overlay deactivation")
+            sessionTracker.endSession()
+            onUnregisterMediaObserver()
+        }
     }
 
     fun cancelPendingDeactivation() {
