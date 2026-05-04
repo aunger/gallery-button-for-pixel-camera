@@ -40,6 +40,12 @@ class OverlayManager(
      * Only fired when [PrefsManager.focusableOverlay] is true.
      */
     private val onFocusGained: () -> Unit = {},
+    /**
+     * Called immediately after the gallery app is launched via the overlay button (Issue #91).
+     * Allows the service to hide the overlay early when Pixel Camera is no longer in the
+     * foreground, without waiting for the camera-available event.
+     */
+    private val onGalleryLaunched: () -> Unit = {},
 ) {
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private val keyguardManager = context.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
@@ -268,6 +274,7 @@ class OverlayManager(
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(intent)
             DebugLog.log("Launched gallery app: $packageName")
+            onGalleryLaunched()
         }
     }
 
