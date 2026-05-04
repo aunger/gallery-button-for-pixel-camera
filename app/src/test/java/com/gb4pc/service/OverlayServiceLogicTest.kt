@@ -601,7 +601,8 @@ class OverlayServiceLogicTest {
 
     /**
      * The lock-screen bypass is idempotent: a second evaluateForeground() while the overlay
-     * is already active must not activate it a second time.
+     * is already active must not activate it a second time, and must not consult UsageStats
+     * (which returns null on a locked device and could cause incorrect side-effects).
      */
     @Test
     fun `issue-81 lock-screen bypass is idempotent when overlay is already active`() {
@@ -615,6 +616,9 @@ class OverlayServiceLogicTest {
 
         // show() must be called exactly once (not twice)
         verify(overlayManager, times(1)).show()
+        // UsageStats must never be consulted on a locked device — getForegroundPackage() returns
+        // null on lock screen and calling it would be both wrong and misleading.
+        verify(foregroundDetector, never()).getForegroundPackage()
     }
 
     /**
@@ -673,5 +677,45 @@ class OverlayServiceLogicTest {
         assertFalse("Overlay should be inactive after deactivation", logic.isOverlayActive)
         verify(sessionTracker).endSession()
         assertFalse("Media observer should be unregistered", mediaObserverRegistered)
+    }
+
+    /**
+     * On the lock screen, when the camera is released, deactivation must use debounceMs
+     * (not 0 ms). UsageStats returns null on a locked device, so without this guard the
+     * deactivation code would see isPixelCameraPackage=false and use 0 ms — prematurely
+     * hiding the overlay during a transient lens switch.
+     *
+     * This test uses a non-zero debounceMs to distinguish the two delay values.
+     */
+    @Test
+    fun `issue-81 deactivation uses debounceMs on lock screen, not 0ms`() {
+        val debounce = 50L
+        val logicWithDebounce = OverlayServiceLogic(
+            hasUsageStatsPermission = { true },
+            hasOverlayPermission = { true },
+            overlayManager = overlayManager,
+            cameraState = CameraState(),
+            foregroundDetector = foregroundDetector,
+            sessionTracker = sessionTracker,
+            handler = handler,
+            debounceMs = debounce,
+            onUsageAccessLost = {},
+            onOverlayPermissionLost = {},
+            isKeyguardLocked = { true },  // device is locked
+            onRegisterMediaObserver = {},
+            onUnregisterMediaObserver = {},
+        )
+
+        // Activate via lock-screen bypass
+        logicWithDebounce.onCameraUnavailable("0")
+        assertTrue("Pre-condition: overlay should be active via lock-screen bypass", logicWithDebounce.isOverlayActive)
+
+        // Camera released — on lock screen, getForegroundPackage() returns null, so without
+        // the fix the delay would be 0 ms; with the fix it must be debounceMs.
+        logicWithDebounce.onCameraAvailable("0")
+
+        verify(handler).postDelayed(any(), eq(debounce))
+        // UsageStats must not be consulted during deactivation on a locked device
+        verify(foregroundDetector, never()).getForegroundPackage()
     }
 }
