@@ -606,6 +606,94 @@ class OverlayServiceLogicTest {
         assertEquals("Overlay-permission-lost notification should fire", 1, overlayLostCount)
     }
 
+    // ── Issue #92: focusable-overlay teardown correctness ────────────────────
+
+    /**
+     * Issue #92: onOverlayFocusLost must cancel any pending camera-available deactivation
+     * runnable before hiding the overlay. Without this, the deactivation runnable fires after
+     * focus-loss has already hidden the overlay, calling hideOverlayAndCleanup() a second time
+     * — double-firing onOverlayStateChanged and incorrectly unregistering the thumbnail
+     * observer again.
+     */
+    @Test
+    fun `issue-92 onOverlayFocusLost cancels pending deactivation runnable`() {
+        // Activate the overlay
+        whenever(foregroundDetector.getForegroundPackage()).thenReturn(Constants.PIXEL_CAMERA_PACKAGE)
+        logic.showOverlay()
+        assertTrue("Pre-condition: overlay should be active", logic.isOverlayActive)
+
+        // Schedule a deactivation (simulates onCameraAvailable firing just before focus loss)
+        logic.scheduleDeactivation(50L)
+        val runnableCaptor = argumentCaptor<Runnable>()
+        verify(handler).postDelayed(runnableCaptor.capture(), eq(50L))
+
+        // Focus lost — must cancel the pending deactivation
+        logic.onOverlayFocusLost()
+
+        verify(handler).removeCallbacks(runnableCaptor.firstValue)
+        assertFalse("Overlay should be inactive after focus loss", logic.isOverlayActive)
+    }
+
+    /**
+     * Issue #92: onOverlayFocusLost must call hideOverlayAndCleanup() (not a bare hide()) so
+     * the thumbnail observer is unregistered. Without this, when the task switcher covers
+     * Pixel Camera the thumbnail observer leaks until the camera-available deactivation fires.
+     */
+    @Test
+    fun `issue-92 onOverlayFocusLost unregisters thumbnail observer`() {
+        // Activate the overlay — this registers the thumbnail observer
+        whenever(foregroundDetector.getForegroundPackage()).thenReturn(Constants.PIXEL_CAMERA_PACKAGE)
+        logic.showOverlay()
+        assertTrue("Pre-condition: thumbnail observer should be registered", thumbnailObserverRegistered)
+
+        logic.onOverlayFocusLost()
+
+        assertFalse("Thumbnail observer must be unregistered on focus loss (Issue #92)", thumbnailObserverRegistered)
+    }
+
+    /**
+     * Issue #92: onOverlayFocusLost must end an active secure session (via hideOverlayAndCleanup).
+     * If the overlay was activated while the device was locked and the session is still active
+     * when focus is lost, the session and media observer must be torn down.
+     */
+    @Test
+    fun `issue-92 onOverlayFocusLost ends active secure session`() {
+        // Activate via lock-screen bypass — starts a session immediately
+        keyguardLocked = true
+        cameraState.setCameraUnavailable("0")
+        logic.evaluateForeground()
+        assertTrue("Pre-condition: overlay should be active", logic.isOverlayActive)
+        assertTrue("Pre-condition: media observer should be registered", mediaObserverRegistered)
+        whenever(sessionTracker.isSessionActive).thenReturn(true)
+
+        logic.onOverlayFocusLost()
+
+        assertFalse("Overlay should be inactive after focus loss", logic.isOverlayActive)
+        verify(sessionTracker).endSession()
+        assertFalse("Media observer must be unregistered when session ends (Issue #92)", mediaObserverRegistered)
+    }
+
+    /**
+     * Issue #92: onOverlayFocusGained must re-register the thumbnail observer so that
+     * subsequent photo thumbnails are displayed in the overlay button after focus is regained.
+     * The original implementation omitted this call, leaving the observer unregistered until
+     * the next full showOverlay() activation.
+     */
+    @Test
+    fun `issue-92 onOverlayFocusGained re-registers thumbnail observer`() {
+        // Show the overlay (registers thumbnail observer), then lose focus (unregisters it)
+        whenever(foregroundDetector.getForegroundPackage()).thenReturn(Constants.PIXEL_CAMERA_PACKAGE)
+        logic.showOverlay()
+        assertTrue("Pre-condition: thumbnail observer should be registered", thumbnailObserverRegistered)
+
+        logic.onOverlayFocusLost()
+        assertFalse("Thumbnail observer should be unregistered after focus loss", thumbnailObserverRegistered)
+
+        // Regain focus — thumbnail observer must be re-registered
+        logic.onOverlayFocusGained()
+        assertTrue("Thumbnail observer must be re-registered on focus gained (Issue #92)", thumbnailObserverRegistered)
+    }
+
     // ── Issue #81: lock-screen bypass ───────────────────────────────────────
 
     /**
