@@ -314,19 +314,33 @@ class OverlayServiceLogic(
      * Indicates a system surface (task-switcher, notification shade, etc.) has covered the
      * camera app. Hides the overlay so it does not obscure the system surface.
      * Only fired when the experimental focusable-overlay preference is enabled.
+     *
+     * Issue #92: Must cancel any pending camera-available deactivation runnable before hiding,
+     * otherwise the runnable fires after focus-loss hides the overlay and calls
+     * hideOverlayAndCleanup() on an already-hidden overlay — double-firing onOverlayStateChanged
+     * and incorrectly unregistering the thumbnail observer a second time.
+     * Uses hideOverlayAndCleanup() (not a bare hide()) so the thumbnail observer and any active
+     * secure session are torn down correctly on focus loss.
      */
     fun onOverlayFocusLost() {
         DebugLog.log("Logic: overlay focus lost; overlayActive=$isOverlayActive")
         if (!isOverlayActive) return
-        overlayManager.hide()
-        isOverlayActive = false
-        onOverlayStateChanged(false)
+        cancelPendingDeactivation()
+        hideOverlayAndCleanup()
     }
 
     /**
      * Called by [com.gb4pc.overlay.OverlayManager] when the overlay window regains focus.
      * Indicates the camera app is back in the foreground. Re-shows the overlay.
      * Only fired when the experimental focusable-overlay preference is enabled.
+     *
+     * Issue #92: Must re-register the thumbnail observer (via onRegisterThumbnailObserver) so
+     * the overlay button thumbnail works correctly after focus is regained, matching the
+     * behaviour of showOverlay().
+     *
+     * Issue #92 (lock-screen): mirrors [showOverlay]'s lock-screen path — if the device is
+     * locked when focus is regained, re-start the secure session and re-register the media
+     * observer so newly captured photos update the thumbnail button.
      */
     fun onOverlayFocusGained() {
         DebugLog.log("Logic: overlay focus gained; overlayActive=$isOverlayActive")
@@ -339,5 +353,11 @@ class OverlayServiceLogic(
         overlayManager.show()
         isOverlayActive = true
         onOverlayStateChanged(true)
+        onRegisterThumbnailObserver()
+        if (isKeyguardLocked()) {
+            DebugLog.log("Logic: overlay focus gained on locked device — starting secure session")
+            sessionTracker.startSession()
+            onRegisterMediaObserver()
+        }
     }
 }
