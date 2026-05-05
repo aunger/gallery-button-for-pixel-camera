@@ -54,6 +54,7 @@ class OverlayService : Service() {
     private var overlayActiveTimestamp: Long = 0L
     private lateinit var mediaChangeDispatcher: MediaChangeDispatcher
     private lateinit var thumbnailChangeDispatcher: ThumbnailChangeDispatcher
+    private lateinit var mediaPoller: MediaPoller
 
     private val cameraCallback = object : CameraManager.AvailabilityCallback() {
         override fun onCameraUnavailable(cameraId: String) {
@@ -97,6 +98,24 @@ class OverlayService : Service() {
             showThumbnail = { uri -> overlayManager.showLatestPhotoThumbnail(uri) },
         )
 
+        // Issue #81: safety-net poll that runs alongside the session ContentObserver.
+        // The system can suppress ContentObserver dispatch on a locked device, leaving the
+        // overlay stuck on the gallery icon and the secure-viewer filmstrip empty.  Polling
+        // re-uses the existing dispatchers (so retry / dedup / IS_PENDING handling are
+        // identical) and runs only while a secure session is active.
+        mediaPoller = MediaPoller(
+            handler = handler,
+            onPoll = {
+                val sessionStartMs = SessionTracker.instance.sessionStartTimestamp
+                if (SessionTracker.instance.isSessionActive) {
+                    mediaChangeDispatcher.onMediaChanged(sessionStartMs)
+                }
+                if (overlayActiveTimestamp != 0L) {
+                    thumbnailChangeDispatcher.onThumbnailChanged(overlayActiveTimestamp)
+                }
+            },
+        )
+
         logic = OverlayServiceLogic(
             hasUsageStatsPermission = { PermissionHelper.hasUsageStatsPermission(this) },
             hasOverlayPermission = { PermissionHelper.hasOverlayPermission(this) },
@@ -123,6 +142,8 @@ class OverlayService : Service() {
             onUnregisterMediaObserver = ::unregisterMediaObserver,
             onRegisterThumbnailObserver = ::registerThumbnailObserver,
             onUnregisterThumbnailObserver = ::unregisterThumbnailObserver,
+            onStartMediaPoll = { mediaPoller.start() },
+            onStopMediaPoll = { mediaPoller.stop() },
             onOverlayStateChanged = { active -> isOverlayActive = active },
         )
     }
@@ -171,6 +192,7 @@ class OverlayService : Service() {
         unregisterScreenEventReceiver()
         unregisterThumbnailObserver()
         unregisterMediaObserver()
+        mediaPoller.stop()  // Issue #81: belt-and-suspenders alongside logic.reset()
         overlayManager.hide()
         cameraState.reset()
         super.onDestroy()
@@ -226,6 +248,7 @@ class OverlayService : Service() {
         if (logic.isOverlayActive && !SessionTracker.instance.isSessionActive) {
             SessionTracker.instance.startSession()
             registerMediaObserver()
+            mediaPoller.start()  // Issue #81: safety-net poll alongside the observer
             DebugLog.log("Secure camera session started on screen off")
         }
     }
@@ -236,6 +259,7 @@ class OverlayService : Service() {
         if (SessionTracker.instance.isSessionActive) {
             SessionTracker.instance.endSession()
             unregisterMediaObserver()
+            mediaPoller.stop()  // Issue #81: stop safety-net poll on unlock
             DebugLog.log("Secure camera session ended on device unlock")
         }
     }
