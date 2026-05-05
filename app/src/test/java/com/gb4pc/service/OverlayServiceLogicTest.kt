@@ -36,9 +36,6 @@ class OverlayServiceLogicTest {
     private var overlayLostCount = 0
     private var mediaObserverRegistered = false
     private var thumbnailObserverRegistered = false
-    private var mediaPollRunning = false
-    private var mediaPollStartCount = 0
-    private var mediaPollStopCount = 0
 
     // ── Subject under test ──────────────────────────────────────────────────
     private lateinit var logic: OverlayServiceLogic
@@ -58,9 +55,6 @@ class OverlayServiceLogicTest {
         overlayLostCount = 0
         mediaObserverRegistered = false
         thumbnailObserverRegistered = false
-        mediaPollRunning = false
-        mediaPollStartCount = 0
-        mediaPollStopCount = 0
 
         logic = OverlayServiceLogic(
             hasUsageStatsPermission = { usageStatsPermission },
@@ -78,8 +72,6 @@ class OverlayServiceLogicTest {
             onUnregisterMediaObserver = { mediaObserverRegistered = false },
             onRegisterThumbnailObserver = { thumbnailObserverRegistered = true },
             onUnregisterThumbnailObserver = { thumbnailObserverRegistered = false },
-            onStartMediaPoll = { mediaPollRunning = true; mediaPollStartCount++ },
-            onStopMediaPoll = { mediaPollRunning = false; mediaPollStopCount++ },
         )
     }
 
@@ -1152,125 +1144,5 @@ class OverlayServiceLogicTest {
         logicWithDebounce.reset()
 
         verify(handler).removeCallbacks(runnableCaptor.firstValue)
-    }
-
-    // ── Issue #81 v3: media-poll lifecycle tied to media-observer lifecycle ──
-
-    /**
-     * Issue #81 v3: when the lock-screen bypass starts a secure session, the safety-net
-     * media poll must also start.  Without this, ContentObserver dispatch suppression on a
-     * locked device leaves the dispatcher's onChange path unreachable and photos go
-     * undetected.
-     */
-    @Test
-    fun `issue-81 v3 media poll starts when session starts via lock-screen bypass`() {
-        keyguardLocked = true
-        cameraState.setCameraUnavailable("0")
-
-        logic.evaluateForeground()
-
-        assertTrue("Media observer should be registered", mediaObserverRegistered)
-        assertTrue("Media poll must start alongside media observer (Issue #81 v3)", mediaPollRunning)
-        assertEquals(1, mediaPollStartCount)
-    }
-
-    /**
-     * Issue #81 v3: when the secure session ends (camera released, overlay torn down),
-     * the safety-net media poll must stop.
-     */
-    @Test
-    fun `issue-81 v3 media poll stops when session ends on overlay deactivation`() {
-        keyguardLocked = true
-        cameraState.setCameraUnavailable("0")
-        logic.evaluateForeground()
-        assertTrue("Pre-condition: media poll should be running", mediaPollRunning)
-        whenever(sessionTracker.isSessionActive).thenReturn(true)
-
-        logic.onCameraAvailable("0")
-
-        // Capture and run the deactivation runnable
-        val runnableCaptor = argumentCaptor<Runnable>()
-        verify(handler).postDelayed(runnableCaptor.capture(), any())
-        runnableCaptor.firstValue.run()
-
-        assertFalse("Media poll must stop when session ends (Issue #81 v3)", mediaPollRunning)
-        assertEquals(1, mediaPollStopCount)
-    }
-
-    /**
-     * Issue #81 v3: when the showOverlay() path runs while the device is unlocked, no session
-     * starts and the poll therefore must NOT start (it would be wasted work, since the
-     * ContentObserver fires reliably when the screen is on and unlocked).
-     */
-    @Test
-    fun `issue-81 v3 media poll does not start when overlay shown on unlocked device`() {
-        keyguardLocked = false
-        logic.showOverlay()
-
-        assertFalse("Media observer must not be registered when unlocked", mediaObserverRegistered)
-        assertFalse("Media poll must not start when no session exists", mediaPollRunning)
-        assertEquals(0, mediaPollStartCount)
-    }
-
-    /**
-     * Issue #81 v3: focus-gained on a locked device restarts the secure session, so the
-     * safety-net poll must also restart.  Mirrors the existing observer-restart test.
-     */
-    @Test
-    fun `issue-81 v3 media poll restarts on focus gained while locked`() {
-        // Activate via lock-screen bypass
-        keyguardLocked = true
-        cameraState.setCameraUnavailable("0")
-        logic.evaluateForeground()
-        assertTrue("Pre-condition: media poll should be running", mediaPollRunning)
-        whenever(sessionTracker.isSessionActive).thenReturn(true)
-
-        // Focus lost — poll stops alongside session teardown
-        logic.onOverlayFocusLost()
-        assertFalse("Pre-condition: media poll should be stopped after focus loss", mediaPollRunning)
-
-        // Focus regained on still-locked device — poll must restart
-        logic.onOverlayFocusGained()
-
-        assertTrue("Media poll must restart on focus gained while locked (Issue #81 v3)", mediaPollRunning)
-        assertEquals(2, mediaPollStartCount)
-    }
-
-    /**
-     * Issue #81 v3: reset() must stop the poll so a stale runnable cannot survive service
-     * teardown.
-     */
-    @Test
-    fun `issue-81 v3 reset stops media poll`() {
-        keyguardLocked = true
-        cameraState.setCameraUnavailable("0")
-        logic.evaluateForeground()
-        assertTrue("Pre-condition: media poll should be running", mediaPollRunning)
-
-        logic.reset()
-
-        assertFalse("Media poll must stop on reset (Issue #81 v3)", mediaPollRunning)
-        assertEquals(1, mediaPollStopCount)
-    }
-
-    /**
-     * Issue #81 v3: gallery-launched immediate-hide path must stop the poll alongside the
-     * session and observer teardown (parity with the deactivation runnable).
-     */
-    @Test
-    fun `issue-81 v3 gallery-launched immediate hide stops media poll`() {
-        keyguardLocked = true
-        cameraState.setCameraUnavailable("0")
-        logic.evaluateForeground()
-        assertTrue("Pre-condition: media poll should be running", mediaPollRunning)
-        whenever(sessionTracker.isSessionActive).thenReturn(true)
-
-        // Gallery launched; PC is gone — immediate hide path
-        keyguardLocked = false
-        whenever(foregroundDetector.getForegroundPackage()).thenReturn("com.google.android.apps.photos")
-        logic.onGalleryLaunched()
-
-        assertFalse("Media poll must stop on gallery-launched hide (Issue #81 v3)", mediaPollRunning)
-        assertEquals(1, mediaPollStopCount)
     }
 }
