@@ -58,9 +58,11 @@ class ForegroundDetector(
             if (isForegroundEvent) {
                 if (event.packageName == selfPackage) {
                     skippedSelfEvents++
+                    DebugLog.log("ForegroundDetector: skipping self foreground event pkg=${event.packageName} ts=${event.timeStamp} (Issue #80)")
                     continue
                 }
                 foregroundEvents++
+                DebugLog.log("ForegroundDetector: foreground event type=${event.eventType} pkg=${event.packageName} ts=${event.timeStamp}")
                 if (event.timeStamp >= latestTimestamp) {
                     latestTimestamp = event.timeStamp
                     latestForegroundPackage = event.packageName
