@@ -82,7 +82,7 @@ class MediaPoller(
             try {
                 onPoll()
             } catch (e: Exception) {
-                DebugLog.log("MediaPoller.onPoll threw: ${e.stackTraceToString()}")
+                DebugLog.log("MediaPoller.onPoll threw: ${e.message}")
             }
             // Only re-schedule if we are still running.  If [onPoll] (or anything else) called
             // [stop] during this tick, the loop terminates here.
