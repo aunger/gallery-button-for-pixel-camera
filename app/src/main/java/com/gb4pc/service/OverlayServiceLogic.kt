@@ -32,13 +32,6 @@ class OverlayServiceLogic(
     private val onUnregisterMediaObserver: () -> Unit,
     private val onRegisterThumbnailObserver: () -> Unit = {},
     private val onUnregisterThumbnailObserver: () -> Unit = {},
-    /**
-     * Issue #81: starts a periodic safety-net poll for new MediaStore items, paired with the
-     * media-observer lifecycle.  Needed because the system can suppress ContentObserver
-     * dispatch on a locked device.  Default no-op for tests that do not exercise polling.
-     */
-    private val onStartMediaPoll: () -> Unit = {},
-    private val onStopMediaPoll: () -> Unit = {},
     /** Called whenever the overlay visibility changes; default no-op. Used by tests and UI. */
     private val onOverlayStateChanged: (Boolean) -> Unit = {},
 ) {
@@ -171,7 +164,6 @@ class OverlayServiceLogic(
             DebugLog.log("Logic: device locked at activation — starting secure session immediately")
             sessionTracker.startSession()
             onRegisterMediaObserver()
-            onStartMediaPoll()  // Issue #81: safety-net poll alongside the observer
         }
     }
 
@@ -211,7 +203,6 @@ class OverlayServiceLogic(
             DebugLog.log("Logic: ending secure session on overlay deactivation")
             sessionTracker.endSession()
             onUnregisterMediaObserver()
-            onStopMediaPoll()  // Issue #81: stop safety-net poll when session ends
         }
     }
 
@@ -255,7 +246,6 @@ class OverlayServiceLogic(
         cancelActivationRetry()
         cancelGalleryLaunchRecheck()
         onUnregisterThumbnailObserver()
-        onStopMediaPoll()  // Issue #81: stop the safety-net poll on service teardown
         isOverlayActive = false
     }
 
@@ -368,7 +358,6 @@ class OverlayServiceLogic(
             DebugLog.log("Logic: overlay focus gained on locked device — starting secure session")
             sessionTracker.startSession()
             onRegisterMediaObserver()
-            onStartMediaPoll()  // Issue #81: safety-net poll alongside the observer
         }
     }
 }

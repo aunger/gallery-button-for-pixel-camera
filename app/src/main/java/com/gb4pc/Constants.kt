@@ -47,11 +47,6 @@ object Constants {
     // Retry delay when ContentObserver fires before MediaStore commits the new item (IS_PENDING race)
     const val MEDIA_OBSERVER_RETRY_MS = 500L
 
-    // Polling interval for MediaPoller — the safety-net poller that runs alongside the
-    // session ContentObserver so newly captured photos are detected even when the system
-    // suppresses ContentObserver dispatch on a locked device (Issue #81).
-    const val MEDIA_POLL_INTERVAL_MS = 1500L
-
     // Snackbar undo timeout
     const val UNDO_TIMEOUT_MS = 5000L
 
