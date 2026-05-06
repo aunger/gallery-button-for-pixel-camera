@@ -3,9 +3,12 @@ package com.gb4pc.data
 import android.content.Context
 import android.content.SharedPreferences
 import com.gb4pc.Constants
+import org.json.JSONObject
 
 /**
  * Manages all app settings via SharedPreferences (DA-01).
+ *
+ * Overlay positions are serialized as JSON keyed by quantized aspect ratio (DA-02).
  */
 class PrefsManager(context: Context) {
 
@@ -52,7 +55,7 @@ class PrefsManager(context: Context) {
         val positions = loadPositions().toMutableMap()
         positions[aspectRatio] = position
         prefs.edit()
-            .putString(Constants.PREF_OVERLAY_POSITIONS, OverlayPositionStore.toJson(positions))
+            .putString(Constants.PREF_OVERLAY_POSITIONS, positionsToJson(positions))
             .apply()
     }
 
@@ -60,12 +63,44 @@ class PrefsManager(context: Context) {
         val positions = loadPositions().toMutableMap()
         positions.remove(aspectRatio)
         prefs.edit()
-            .putString(Constants.PREF_OVERLAY_POSITIONS, OverlayPositionStore.toJson(positions))
+            .putString(Constants.PREF_OVERLAY_POSITIONS, positionsToJson(positions))
             .apply()
     }
 
     private fun loadPositions(): Map<String, OverlayPosition> {
         val json = prefs.getString(Constants.PREF_OVERLAY_POSITIONS, "") ?: ""
-        return OverlayPositionStore.fromJson(json)
+        return positionsFromJson(json)
+    }
+}
+
+private fun positionsToJson(positions: Map<String, OverlayPosition>): String {
+    val root = JSONObject()
+    for ((ratio, pos) in positions) {
+        val obj = JSONObject().apply {
+            put("x", pos.xPercent.toDouble())
+            put("y", pos.yPercent.toDouble())
+            put("size", pos.sizePercent.toDouble())
+        }
+        root.put(ratio, obj)
+    }
+    return root.toString()
+}
+
+private fun positionsFromJson(json: String): Map<String, OverlayPosition> {
+    if (json.isBlank()) return emptyMap()
+    return try {
+        val root = JSONObject(json)
+        val result = mutableMapOf<String, OverlayPosition>()
+        for (key in root.keys()) {
+            val obj = root.getJSONObject(key)
+            result[key] = OverlayPosition(
+                xPercent = obj.getDouble("x").toFloat(),
+                yPercent = obj.getDouble("y").toFloat(),
+                sizePercent = obj.getDouble("size").toFloat()
+            )
+        }
+        result
+    } catch (e: Exception) {
+        emptyMap()
     }
 }

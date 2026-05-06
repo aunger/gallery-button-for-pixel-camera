@@ -103,6 +103,45 @@ class PrefsManagerTest {
     }
 
     @Test
+    fun `saveOverlayPosition then getOverlayPosition roundtrips multiple ratios`() {
+        // Capture the JSON written to prefs by saveOverlayPosition, then feed it back
+        // through a fresh PrefsManager to verify the full serialize → deserialize loop.
+        val captured = argumentCaptor<String>()
+        prefsManager.saveOverlayPosition("0.45", OverlayPosition(13.0f, 91.5f, 11.5f))
+        verify(editor).putString(eq(Constants.PREF_OVERLAY_POSITIONS), captured.capture())
+        whenever(prefs.getString(eq(Constants.PREF_OVERLAY_POSITIONS), anyOrNull()))
+            .thenReturn(captured.lastValue)
+        prefsManager = PrefsManager(context)
+        prefsManager.saveOverlayPosition("0.56", OverlayPosition(15.0f, 90.0f, 12.0f))
+        verify(editor, times(2)).putString(eq(Constants.PREF_OVERLAY_POSITIONS), captured.capture())
+        whenever(prefs.getString(eq(Constants.PREF_OVERLAY_POSITIONS), anyOrNull()))
+            .thenReturn(captured.lastValue)
+        prefsManager = PrefsManager(context)
+
+        val pos45 = prefsManager.getOverlayPosition("0.45")
+        assertEquals(13.0f, pos45.xPercent, 0.001f)
+        assertEquals(91.5f, pos45.yPercent, 0.001f)
+        assertEquals(11.5f, pos45.sizePercent, 0.001f)
+
+        val pos56 = prefsManager.getOverlayPosition("0.56")
+        assertEquals(15.0f, pos56.xPercent, 0.001f)
+        assertEquals(90.0f, pos56.yPercent, 0.001f)
+        assertEquals(12.0f, pos56.sizePercent, 0.001f)
+    }
+
+    @Test
+    fun `getOverlayPosition returns default when stored json is malformed`() {
+        whenever(prefs.getString(eq(Constants.PREF_OVERLAY_POSITIONS), anyOrNull()))
+            .thenReturn("not json")
+        prefsManager = PrefsManager(context)
+
+        val pos = prefsManager.getOverlayPosition("0.45")
+        assertEquals(Constants.DEFAULT_X_PERCENT, pos.xPercent, 0.001f)
+        assertEquals(Constants.DEFAULT_Y_PERCENT, pos.yPercent, 0.001f)
+        assertEquals(Constants.DEFAULT_SIZE_PERCENT, pos.sizePercent, 0.001f)
+    }
+
+    @Test
     fun `focusableOverlay returns false by default`() {
         assertFalse(prefsManager.focusableOverlay)
     }
