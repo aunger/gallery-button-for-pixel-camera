@@ -23,6 +23,29 @@ import com.gb4pc.ui.picker.PickerActivity
 import com.gb4pc.util.DebugLog
 import com.gb4pc.util.PermissionHelper
 import com.gb4pc.viewer.SecureViewerActivity
+import kotlin.math.min
+import kotlin.math.roundToInt
+
+// ── Overlay-position pixel conversions (PS-01) ──────────────────────────────
+// Pure functions: testable in plain JVM unit tests (see OverlayManagerTest).
+
+/** Overlay edge length in pixels: [sizePercent]% of `min(displayWidth, displayHeight)`. */
+internal fun calculateOverlaySizePx(sizePercent: Float, displayWidth: Int, displayHeight: Int): Int {
+    val minDimension = min(displayWidth, displayHeight)
+    return (minDimension * sizePercent / 100f).roundToInt()
+}
+
+/** Left edge X of an overlay whose centre lies at [xPercent]% of [displayWidth]. */
+internal fun calculateOverlayXPx(xPercent: Float, displayWidth: Int, overlaySize: Int): Int {
+    val centerX = (displayWidth * xPercent / 100f).roundToInt()
+    return centerX - overlaySize / 2
+}
+
+/** Top edge Y of an overlay whose centre lies at [yPercent]% of [displayHeight]. */
+internal fun calculateOverlayYPx(yPercent: Float, displayHeight: Int, overlaySize: Int): Int {
+    val centerY = (displayHeight * yPercent / 100f).roundToInt()
+    return centerY - overlaySize / 2
+}
 
 /**
  * Manages the overlay window that covers Pixel Camera's gallery button (§4).
@@ -347,15 +370,9 @@ class OverlayManager(
         val aspectRatio = AspectRatioUtil.quantize(displayWidth, displayHeight)
         val position = prefsManager.getOverlayPosition(aspectRatio)
 
-        val sizePx = OverlayPositionCalculator.calculateSizePx(
-            position.sizePercent, displayWidth, displayHeight
-        )
-        val xPx = OverlayPositionCalculator.calculateXPx(
-            position.xPercent, displayWidth, sizePx
-        )
-        val yPx = OverlayPositionCalculator.calculateYPx(
-            position.yPercent, displayHeight, sizePx
-        )
+        val sizePx = calculateOverlaySizePx(position.sizePercent, displayWidth, displayHeight)
+        val xPx = calculateOverlayXPx(position.xPercent, displayWidth, sizePx)
+        val yPx = calculateOverlayYPx(position.yPercent, displayHeight, sizePx)
 
         // FLAG_NOT_FOCUSABLE: safe default — overlay never steals input focus.
         // Experimental focusable path: omit FLAG_NOT_FOCUSABLE so the window can receive focus
