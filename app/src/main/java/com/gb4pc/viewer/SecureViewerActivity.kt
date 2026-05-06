@@ -58,20 +58,25 @@ class SecureViewerActivity : ComponentActivity() {
         }
     }
 
-    // C3: Pending URI awaiting delete permission grant
-    private var pendingDeleteUri: String? = null
-
-    // C3: ActivityResultLauncher for MediaStore delete request (API 30+)
+    // C3: ActivityResultLauncher for MediaStore delete request (API 30+ and API 29 recoverable).
+    // The launcher must be constructed before STARTED, so it lives on the activity even
+    // though the per-delete state is owned by [deletionManager].
     private val deleteRequestLauncher: ActivityResultLauncher<IntentSenderRequest> =
         registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
-            val uri = pendingDeleteUri
-            pendingDeleteUri = null
-            if (result.resultCode == RESULT_OK && uri != null) {
-                // Permission granted — retry the delete
-                retryDeleteFromMediaStore(uri)
-            }
-            // If cancelled, the item was already removed from session; nothing more to do.
+            deletionManager.onDeleteRequestResult(result.resultCode == RESULT_OK)
         }
+
+    private val deletionManager: MediaDeletionManager by lazy {
+        MediaDeletionManager(
+            contentResolver = contentResolver,
+            launchDeleteRequest = deleteRequestLauncher::launch,
+            onFailure = {
+                runOnUiThread {
+                    Toast.makeText(this, R.string.viewer_delete_failed, Toast.LENGTH_SHORT).show()
+                }
+            },
+        )
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -211,81 +216,11 @@ class SecureViewerActivity : ComponentActivity() {
                 override fun onDismissed(transientBottomBar: Snackbar?, event: Int) {
                     if (event != DISMISS_EVENT_ACTION) {
                         // Actually delete from MediaStore
-                        deleteFromMediaStore(media.uri)
+                        deletionManager.delete(Uri.parse(media.uri))
                     }
                 }
             })
             .show()
-    }
-
-    // C3: Delete with proper scoped-storage permission handling
-    private fun deleteFromMediaStore(uriString: String) {
-        val uri = Uri.parse(uriString)
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            // API 30+: use createDeleteRequest — shows system dialog for items we don't own
-            try {
-                val pendingIntent = MediaStore.createDeleteRequest(contentResolver, listOf(uri))
-                pendingDeleteUri = uriString
-                deleteRequestLauncher.launch(
-                    IntentSenderRequest.Builder(pendingIntent.intentSender).build()
-                )
-            } catch (e: Exception) {
-                DebugLog.log("Failed to create delete request: ${e.message}")
-                runOnUiThread {
-                    Toast.makeText(this, R.string.viewer_delete_failed, Toast.LENGTH_SHORT).show()
-                }
-            }
-        } else {
-            // API 26–29: attempt direct delete; catch RecoverableSecurityException for items we
-            // don't own (API 29) and launch the associated user-action intent
-            try {
-                val deleted = contentResolver.delete(uri, null, null)
-                if (deleted > 0) {
-                    DebugLog.log("Deleted media: $uriString")
-                } else {
-                    DebugLog.log("Delete returned 0 rows for: $uriString")
-                    runOnUiThread {
-                        Toast.makeText(this, R.string.viewer_delete_failed, Toast.LENGTH_SHORT).show()
-                    }
-                }
-            } catch (e: android.app.RecoverableSecurityException) {
-                // API 29: request permission via the embedded action intent
-                try {
-                    pendingDeleteUri = uriString
-                    deleteRequestLauncher.launch(
-                        IntentSenderRequest.Builder(e.userAction.actionIntent.intentSender).build()
-                    )
-                } catch (inner: Exception) {
-                    DebugLog.log("Could not launch delete permission UI: ${inner.message}")
-                    runOnUiThread {
-                        Toast.makeText(this, R.string.viewer_delete_failed, Toast.LENGTH_SHORT).show()
-                    }
-                }
-            } catch (e: Exception) {
-                DebugLog.log("Failed to delete media: ${e.message}")
-                runOnUiThread {
-                    Toast.makeText(this, R.string.viewer_delete_failed, Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-    }
-
-    // C3: Retry after permission was granted by the system dialog
-    private fun retryDeleteFromMediaStore(uriString: String) {
-        val uri = Uri.parse(uriString)
-        try {
-            val deleted = contentResolver.delete(uri, null, null)
-            if (deleted > 0) {
-                DebugLog.log("Deleted media (retry): $uriString")
-            } else {
-                DebugLog.log("Retry delete returned 0 rows for: $uriString")
-                Toast.makeText(this, R.string.viewer_delete_failed, Toast.LENGTH_SHORT).show()
-            }
-        } catch (e: Exception) {
-            DebugLog.log("Retry delete failed: ${e.message}")
-            Toast.makeText(this, R.string.viewer_delete_failed, Toast.LENGTH_SHORT).show()
-        }
     }
 
     /**
