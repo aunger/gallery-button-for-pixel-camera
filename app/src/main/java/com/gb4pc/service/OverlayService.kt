@@ -85,8 +85,13 @@ class OverlayService : Service() {
         cameraState = CameraState()
         val km = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
 
+        // Capture once so the helper's retryDelayMs and the log strings can't drift if the
+        // constant is ever overridden in tests or via a future settings hook.
+        val mediaRetryDelayMs = Constants.MEDIA_OBSERVER_RETRY_MS
+
         mediaChangeDispatcher = MediaObserverRetry(
             handler = handler,
+            retryDelayMs = mediaRetryDelayMs,
             query = ::queryAllMedia,
             handleResult = { items, isRetry ->
                 items.forEach { item ->
@@ -97,13 +102,14 @@ class OverlayService : Service() {
                     )
                 }
                 if (items.isEmpty() && !isRetry) {
-                    DebugLog.log("Media query returned empty — scheduling retry in ${Constants.MEDIA_OBSERVER_RETRY_MS}ms")
+                    DebugLog.log("Media query returned empty — scheduling retry in ${mediaRetryDelayMs}ms")
                 }
             },
         )
 
         thumbnailChangeDispatcher = MediaObserverRetry(
             handler = handler,
+            retryDelayMs = mediaRetryDelayMs,
             query = ::queryLatestMedia,
             handleResult = { item, isRetry ->
                 if (item != null) {
@@ -113,7 +119,7 @@ class OverlayService : Service() {
                         else "Thumbnail updated: ${item.uri}"
                     )
                 } else if (!isRetry) {
-                    DebugLog.log("Thumbnail query returned null — scheduling retry in ${Constants.MEDIA_OBSERVER_RETRY_MS}ms")
+                    DebugLog.log("Thumbnail query returned null — scheduling retry in ${mediaRetryDelayMs}ms")
                 }
             },
         )
