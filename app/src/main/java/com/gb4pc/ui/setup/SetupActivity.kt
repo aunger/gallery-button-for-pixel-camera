@@ -30,7 +30,24 @@ import com.gb4pc.util.PermissionHelper
 class SetupActivity : ComponentActivity() {
 
     private lateinit var prefsManager: PrefsManager
-    private val setupState = SetupState()
+    private val steps: List<SetupStep> = getSetupSteps()
+    private var currentIndex: Int = 0
+    private var isCompleted: Boolean = false
+
+    private val currentStep: SetupStep get() = steps[currentIndex]
+
+    /**
+     * Advance to the next step, clamping at the last index. When called on the final
+     * step, marks the flow as completed instead of incrementing past the array end.
+     * This preserves the invariant that [currentStep] is always a safe read.
+     */
+    private fun advanceStep() {
+        if (currentIndex < steps.size - 1) {
+            currentIndex++
+        } else {
+            isCompleted = true
+        }
+    }
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -49,16 +66,16 @@ class SetupActivity : ComponentActivity() {
     }
 
     private fun autoAdvanceIfGranted() {
-        while (!setupState.isCompleted && isCurrentStepGranted()) {
-            setupState.advance()
+        while (!isCompleted && isCurrentStepGranted()) {
+            advanceStep()
         }
-        if (setupState.isCompleted) {
+        if (isCompleted) {
             prefsManager.isSetupCompleted = true
             finish()
         }
     }
 
-    private fun isCurrentStepGranted(): Boolean = when (setupState.currentStep) {
+    private fun isCurrentStepGranted(): Boolean = when (currentStep) {
         SetupStep.NOTIFICATION -> PermissionHelper.hasNotificationPermission(this)
         SetupStep.USAGE_ACCESS -> PermissionHelper.hasUsageStatsPermission(this)
         SetupStep.OVERLAY -> PermissionHelper.hasOverlayPermission(this)
@@ -66,16 +83,16 @@ class SetupActivity : ComponentActivity() {
     }
 
     private fun updateUI() {
-        if (setupState.isCompleted) return
+        if (isCompleted) return
 
         setContent {
             GB4PCTheme {
                 SetupScreen(
-                    currentStep = setupState.currentStep,
-                    onGrantClick = { handleGrant(setupState.currentStep) },
+                    currentStep = currentStep,
+                    onGrantClick = { handleGrant(currentStep) },
                     onSkipClick = {
-                        setupState.advance()
-                        if (setupState.isCompleted) {
+                        advanceStep()
+                        if (isCompleted) {
                             prefsManager.isSetupCompleted = true
                             finish()
                         } else {
