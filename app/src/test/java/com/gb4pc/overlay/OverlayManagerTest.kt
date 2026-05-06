@@ -70,7 +70,7 @@ class OverlayManagerTest {
     fun `calculateOverlaySizePx uses min of width and height`() {
         // size% = 11.5, min(1080, 2400) = 1080
         // expected = 1080 * 11.5 / 100 = 124.2
-        val sizePx = OverlayPositionCalculator.calculateSizePx(
+        val sizePx = calculateOverlaySizePx(
             sizePercent = 11.5f,
             displayWidth = 1080,
             displayHeight = 2400
@@ -80,7 +80,7 @@ class OverlayManagerTest {
 
     @Test
     fun `calculateOverlaySizePx with landscape uses min dimension`() {
-        val sizePx = OverlayPositionCalculator.calculateSizePx(
+        val sizePx = calculateOverlaySizePx(
             sizePercent = 10.0f,
             displayWidth = 2400,
             displayHeight = 1080
@@ -91,7 +91,7 @@ class OverlayManagerTest {
 
     @Test
     fun `calculateOverlayXPx positions center of overlay`() {
-        val xPx = OverlayPositionCalculator.calculateXPx(
+        val xPx = calculateOverlayXPx(
             xPercent = 50.0f,
             displayWidth = 1080,
             overlaySize = 100
@@ -102,7 +102,7 @@ class OverlayManagerTest {
 
     @Test
     fun `calculateOverlayYPx positions center of overlay`() {
-        val yPx = OverlayPositionCalculator.calculateYPx(
+        val yPx = calculateOverlayYPx(
             yPercent = 50.0f,
             displayHeight = 2400,
             overlaySize = 100
@@ -113,7 +113,7 @@ class OverlayManagerTest {
 
     @Test
     fun `calculateOverlayXPx at 0 percent`() {
-        val xPx = OverlayPositionCalculator.calculateXPx(
+        val xPx = calculateOverlayXPx(
             xPercent = 0.0f,
             displayWidth = 1080,
             overlaySize = 100
@@ -128,9 +128,9 @@ class OverlayManagerTest {
         val displayWidth = 1080
         val displayHeight = 2400
 
-        val sizePx = OverlayPositionCalculator.calculateSizePx(pos.sizePercent, displayWidth, displayHeight)
-        val xPx = OverlayPositionCalculator.calculateXPx(pos.xPercent, displayWidth, sizePx)
-        val yPx = OverlayPositionCalculator.calculateYPx(pos.yPercent, displayHeight, sizePx)
+        val sizePx = calculateOverlaySizePx(pos.sizePercent, displayWidth, displayHeight)
+        val xPx = calculateOverlayXPx(pos.xPercent, displayWidth, sizePx)
+        val yPx = calculateOverlayYPx(pos.yPercent, displayHeight, sizePx)
 
         // Size: 1080 * 16.0 / 100 = 172.8 → 173
         assertEquals(173, sizePx)
