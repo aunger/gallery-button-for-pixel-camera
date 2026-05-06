@@ -32,9 +32,22 @@ class SetupActivity : ComponentActivity() {
     private lateinit var prefsManager: PrefsManager
     private val steps: List<SetupStep> = getSetupSteps()
     private var currentIndex: Int = 0
+    private var isCompleted: Boolean = false
 
-    private val isCompleted: Boolean get() = currentIndex >= steps.size
     private val currentStep: SetupStep get() = steps[currentIndex]
+
+    /**
+     * Advance to the next step, clamping at the last index. When called on the final
+     * step, marks the flow as completed instead of incrementing past the array end.
+     * This preserves the invariant that [currentStep] is always a safe read.
+     */
+    private fun advanceStep() {
+        if (currentIndex < steps.size - 1) {
+            currentIndex++
+        } else {
+            isCompleted = true
+        }
+    }
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -54,7 +67,7 @@ class SetupActivity : ComponentActivity() {
 
     private fun autoAdvanceIfGranted() {
         while (!isCompleted && isCurrentStepGranted()) {
-            currentIndex++
+            advanceStep()
         }
         if (isCompleted) {
             prefsManager.isSetupCompleted = true
@@ -78,7 +91,7 @@ class SetupActivity : ComponentActivity() {
                     currentStep = currentStep,
                     onGrantClick = { handleGrant(currentStep) },
                     onSkipClick = {
-                        currentIndex++
+                        advanceStep()
                         if (isCompleted) {
                             prefsManager.isSetupCompleted = true
                             finish()
