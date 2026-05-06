@@ -52,8 +52,8 @@ class OverlayService : Service() {
     private var mediaObserver: ContentObserver? = null
     private var thumbnailObserver: ContentObserver? = null
     private var overlayActiveTimestamp: Long = 0L
-    private lateinit var mediaChangeDispatcher: MediaChangeDispatcher
-    private lateinit var thumbnailChangeDispatcher: ThumbnailChangeDispatcher
+    private lateinit var mediaChangeDispatcher: MediaObserverRetry<List<MediaItem>>
+    private lateinit var thumbnailChangeDispatcher: MediaObserverRetry<MediaItem?>
 
     private val cameraCallback = object : CameraManager.AvailabilityCallback() {
         override fun onCameraUnavailable(cameraId: String) {
@@ -85,16 +85,37 @@ class OverlayService : Service() {
         cameraState = CameraState()
         val km = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
 
-        mediaChangeDispatcher = MediaChangeDispatcher(
-            sessionTracker = SessionTracker.instance,
+        mediaChangeDispatcher = MediaObserverRetry(
             handler = handler,
-            queryAllMedia = ::queryAllMedia,
+            query = ::queryAllMedia,
+            handleResult = { items, isRetry ->
+                items.forEach { item ->
+                    SessionTracker.instance.addMedia(item)
+                    DebugLog.log(
+                        if (isRetry) "Media added to session (retry): ${item.uri}"
+                        else "Media added to session: ${item.uri}"
+                    )
+                }
+                if (items.isEmpty() && !isRetry) {
+                    DebugLog.log("Media query returned empty — scheduling retry in ${Constants.MEDIA_OBSERVER_RETRY_MS}ms")
+                }
+            },
         )
 
-        thumbnailChangeDispatcher = ThumbnailChangeDispatcher(
+        thumbnailChangeDispatcher = MediaObserverRetry(
             handler = handler,
-            queryLatestMedia = ::queryLatestMedia,
-            showThumbnail = { uri -> overlayManager.showLatestPhotoThumbnail(uri) },
+            query = ::queryLatestMedia,
+            handleResult = { item, isRetry ->
+                if (item != null) {
+                    overlayManager.showLatestPhotoThumbnail(item.uri)
+                    DebugLog.log(
+                        if (isRetry) "Thumbnail updated (retry): ${item.uri}"
+                        else "Thumbnail updated: ${item.uri}"
+                    )
+                } else if (!isRetry) {
+                    DebugLog.log("Thumbnail query returned null — scheduling retry in ${Constants.MEDIA_OBSERVER_RETRY_MS}ms")
+                }
+            },
         )
 
         logic = OverlayServiceLogic(
@@ -246,7 +267,7 @@ class OverlayService : Service() {
         val sessionStartMs = SessionTracker.instance.sessionStartTimestamp
         mediaObserver = object : ContentObserver(handler) {
             override fun onChange(selfChange: Boolean, uri: Uri?) {
-                mediaChangeDispatcher.onMediaChanged(sessionStartMs)
+                mediaChangeDispatcher.onChange(sessionStartMs)
             }
         }
         contentResolver.registerContentObserver(
@@ -276,7 +297,7 @@ class OverlayService : Service() {
         val startMs = overlayActiveTimestamp
         thumbnailObserver = object : ContentObserver(handler) {
             override fun onChange(selfChange: Boolean, uri: Uri?) {
-                thumbnailChangeDispatcher.onThumbnailChanged(startMs)
+                thumbnailChangeDispatcher.onChange(startMs)
             }
         }
         contentResolver.registerContentObserver(
@@ -297,7 +318,7 @@ class OverlayService : Service() {
     }
 
     // H4: Query for all committed media items added after session start.
-    // Used by MediaChangeDispatcher to populate the secure session.
+    // Used by mediaChangeDispatcher to populate the secure session.
     private fun queryAllMedia(sessionStartMs: Long): List<MediaItem> {
         val projection = arrayOf(
             MediaStore.MediaColumns._ID,
@@ -317,7 +338,7 @@ class OverlayService : Service() {
     }
 
     // H4: Query for the most recent committed media item added after startMs.
-    // Used by ThumbnailChangeDispatcher to update the overlay button.
+    // Used by thumbnailChangeDispatcher to update the overlay button.
     private fun queryLatestMedia(startMs: Long): MediaItem? {
         val projection = arrayOf(
             MediaStore.MediaColumns._ID,
