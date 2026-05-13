@@ -11,7 +11,7 @@
 - The Reviewer may mention positive aspects of the code under review, but must not use many words to do it.
 - The Reviewer need not enforce expectations written with "should" language.
 - **Before approving, wait** for the CI gates (usually builds and tests) to complete. You need not wait if other required changes are outstanding, but do not send final approval unless the PR is **currently green**.
-- **If you must wait, poll** the status every 10 seconds. Do not rely on the flaky CI event hooks. **Update your own status every 10 seconds**, so the Orchestrator doesn't think you're done.
+- **If you must wait, poll** the status every 30 seconds. Do not rely on the flaky CI event hooks. **Update your own status every 30 seconds too**, so the Orchestrator doesn't think you're done.
 - **If the CI gates fail**, report this in your review. Based on the result and your expert evaluation, you may still decide to approve for a false positive.
 
 ## Author / Programmer
