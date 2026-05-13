@@ -193,7 +193,7 @@ jobs:
             com.google.android.GoogleCamera/com.gb4pc.mockcamera.MockCameraActivity
           sleep 2
 
-          # Capture the screen and verify ≥ 90% of the central 200×200 px is #00C853.
+          # Capture the screen and verify >= 90% of the central 200x200 px is #00C853.
           echo "==> Capturing screen..."
           "$ADB" exec-out screencap -p > preflight.png
 
