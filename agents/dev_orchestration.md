@@ -54,7 +54,7 @@ The Orchestrator is not a Reviewer or a Programmer.
 - **One branch per ticket.** Each issue gets its own dedicated branch.  
 - **Dispatch in parallel** for independent issues (unless otherwise instructed). Parallel independent issues must each have their own branch.
 - **Do not pre-diagnose.** Do not include your own analysis of the root cause.
-- **If a system hook or event signals uncommitted work, a test failure, or an error**, **pause 10 seconds**, then evaluate whether the agent is still actively working. If the agent remains active (not idle or waiting for input), **do not intervene**.
+- **If a system hook or event signals uncommitted work, a test failure, or an error**, **pause 45 seconds**, then evaluate whether the agent or CI system is still actively working. If the agent was recently active (not idle or waiting for input), **or** the CI gates are in progress, **do not intervene** and continue waiting.
 - If an agent has failed to complete its work, and shows no sign of continued effort, assign a replacement to finish the job.
 
 ## When to abort
