@@ -12,7 +12,7 @@
             android:name=".LastPhotoActivity"
             android:exported="true">
 
-            <!-- Respond to VIEW intent so GB4PC's overlay can launch it directly. -->
+            <!-- Launcher entry-point so the activity can be started via `am start`. -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
