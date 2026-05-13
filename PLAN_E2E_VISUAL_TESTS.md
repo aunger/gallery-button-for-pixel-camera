@@ -8,7 +8,7 @@ Add a visually-evaluated emulator test suite that verifies GB4PC's overlay butto
 2. Opens the configured gallery app on tap, surfacing the most recent photo (Tests 2a/3a).
 3. Behaves correctly when launched into Android's secure-camera mode from a locked screen (Tests 4a/5a).
 
-Tests 4a and 5a are deliberate **red-light tests for a known regression** — they will fail until the secure-camera overlay path is restored.
+Test 5a is a deliberate **red-light test for a known regression** — it will fail until the secure-camera overlay path is restored. Test 4a passes at baseline regardless of the regression (see Phase 5 for explanation).
 
 ## Color palette
 
@@ -42,17 +42,24 @@ New Gradle module `:testgallery` mirroring `:e2e-mock-camera`'s structure.
 
 The emulator's virtual scene renderer is used to produce a solid-GREEN camera feed, giving the tests a real camera-hardware path without requiring a physical device or the real Pixel Camera app.
 
+### Why the mock camera triggers GB4PC's overlay
+
+`MockCameraActivity` has `applicationId = "com.google.android.GoogleCamera"` (see `e2e-mock-camera/build.gradle.kts`). GB4PC's `ForegroundDetector` compares the `UsageStatsManager` foreground package name against `Constants.PIXEL_CAMERA_PACKAGE = "com.google.android.GoogleCamera"`. When `MockCameraActivity` is in the foreground, this check returns `true` and the overlay activates. No changes to `ForegroundDetector` or `Constants` are needed.
+
 ### Emulator setup
 
-Check in `.github/emulator/green.png` (solid `#00C853`, 1024×1024). In `.github/workflows/build.yml`, after the AVD boots, configure the virtual scene to show green on all four walls:
+Check in `.github/emulator/green.png` (solid `#00C853`, 1024×1024). In `.github/workflows/build.yml`, append `-virtualscene-poster` flags to the **existing emulator launch command** in the "Start emulator" step (these are startup parameters, not post-boot configuration):
 
 ```
-emulator -avd <avd_name> \
+$ANDROID_HOME/emulator/emulator -avd e2e_avd -no-window -no-audio -no-boot-anim \
+  -gpu swiftshader_indirect \
   -virtualscene-poster wall0=.github/emulator/green.png \
   -virtualscene-poster wall1=.github/emulator/green.png \
   -virtualscene-poster wall2=.github/emulator/green.png \
   -virtualscene-poster wall3=.github/emulator/green.png
 ```
+
+**Caveat**: the emulator's virtual-scene camera renderer uses OpenGL internally. Compatibility with `-gpu swiftshader_indirect` (software rendering) is not guaranteed and must be confirmed during implementation. If the virtualscene camera produces no output under swiftshader, fall back to Alternative 1 or 2 (see Appendix A). The two-layer smoke check (below) will surface this failure immediately.
 
 ### MockCameraActivity updates
 
@@ -62,6 +69,7 @@ Extend `MockCameraActivity` to render a real camera preview and support photo ca
 - Add an `ImageReader` alongside the `TextureView` surface so a shutter trigger can capture a frame. The captured JPEG will contain GREEN pixels because the camera feed is GREEN.
 - Keep the existing `CameraDevice.open / close` lifecycle (`onResume` / `onPause`) intact so `CameraManager.AvailabilityCallback` continues to fire identically.
 - Expose a shutter path (broadcast receiver or activity-result handler) that triggers an `ImageReader` capture, writes the result to `MediaStore.Images.Media` with `DATE_TAKEN = System.currentTimeMillis()`, and signals completion once the row is queryable.
+- For Tests 4a/5a (secure-camera mode), declare `android:showWhenLocked="true"` and `android:turnScreenOn="true"` on `MockCameraActivity` in the manifest so it can appear over the lock screen when launched via `STILL_IMAGE_CAMERA_SECURE`. Confirm during implementation that `KeyguardManager.isKeyguardLocked()` remains `true` after this launch sequence — `am start -a android.media.action.STILL_IMAGE_CAMERA_SECURE` dispatched via adb while the screen is locked is not identical to the lock-screen camera shortcut and may behave differently on the emulator.
 
 ### Smoke check
 
@@ -69,7 +77,7 @@ Two-layer verification that the GREEN feed is reaching the camera before any vis
 
 **CI pre-flight** (in `build.yml`, before running the test suite):
 1. Install the mock-camera APK.
-2. `adb shell am start com.gb4pc.mockcamera/.MockCameraActivity`, sleep 2s.
+2. `adb shell am start com.google.android.GoogleCamera/com.gb4pc.mockcamera.MockCameraActivity`, sleep 2s.
 3. `adb exec-out screencap -p > preflight.png`.
 4. Sample the central 200×200 px region and assert ≥90% of pixels match `#00C853` within per-channel tolerance 20 (30-line Python script or ImageMagick invocation checked into `scripts/`).
 5. On failure: upload `preflight.png` as a CI artifact and fail the build with the actual dominant color so the poster path can be debugged.
@@ -188,11 +196,11 @@ Thresholds are tunable post-implementation: the unit tests (next) tell us what m
 `app/src/androidTest/java/com/gb4pc/e2e/E2EFixture.kt` gains:
 
 - `seedGalleryPrefs(pkg: String)` — sets `PrefsManager.galleryPackage = pkg`, `isSetupCompleted = true`, `isServiceEnabled = true`. Other prefs untouched.
-- `clearCameraRoll()` — deletes all rows in `MediaStore.Images.Media`; belt-and-braces `adb shell rm /sdcard/DCIM/Camera/* /sdcard/Pictures/*`; asserts subsequent query returns 0 rows.
-- `captureOnePhoto()` — triggers the mock camera's shutter path (Phase 2); polls `MediaStore` until row count increments or 10s timeout.
-- `tapOverlay()` — reads active `OverlayPosition` from `PrefsManager`, computes pixel coordinates against `WindowMetrics`, calls `UiDevice.click(x, y)`.
+- `clearCameraRoll()` — deletes all rows via `ContentResolver.delete(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, null, null)`; asserts subsequent query returns 0 rows. Note: on API 33+, deleting rows inserted by other packages throws `RecoverableSecurityException`; since the test suite controls all insertions this should not occur, but if it does the fixture should fail loudly rather than silently skip rows.
+- `captureOnePhoto()` — triggers the mock camera's shutter path (Phase 2); polls `MediaStore` until row count increments or 10s timeout. Falls back to `MediaScannerConnection.scanFile` if the row does not appear promptly.
+- `tapOverlay()` — reads active `OverlayPosition` from `PrefsManager`, computes pixel coordinates against `WindowMetrics`, calls `UiDevice.click(x, y)`. Note: if the overlay is not rendered (e.g. blocked in secure-camera mode), this call taps empty screen space and has no effect.
 - `lockScreen()` — `adb shell input keyevent 26`; polls `KeyguardManager.isKeyguardLocked` until true.
-- `launchSecureCamera()` — `am start -a android.media.action.STILL_IMAGE_CAMERA_SECURE`. Does **not** dismiss keyguard — the secure intent is the whole point of Tests 4a/5a.
+- `launchSecureCamera()` — `am start -a android.media.action.STILL_IMAGE_CAMERA_SECURE`, then immediately asserts `KeyguardManager.isKeyguardLocked() == true`. If the assertion fails (i.e. the adb path silently dismissed the keyguard), the fixture throws before any screenshot is taken — a silent keyguard dismissal would make Tests 4a/5a pass for the wrong reason.
 - `pause(ms: Long)` — explicit helper for the spec's "pause 1 second" steps.
 
 `Screenshot.kt` helpers (Phase 3 lib) used here:
@@ -206,22 +214,22 @@ Thresholds are tunable post-implementation: the unit tests (next) tell us what m
 
 Each test fully sets its own state — no order dependence between tests.
 
+Test ordering enforced via `@FixMethodOrder(MethodSorters.NAME_ASCENDING)` (JUnit 4). Method names use the prefix scheme `test0_`, `test1a_`, `test1b_`, `test1c_`, `test2a_`, `test3a_`, `test4a_`, `test5a_` — alphabetic comparison of these prefixes produces the intended numeric order (`'0' < '1' < '2' < … < '5'`, `'a' < 'b' < 'c'`). Serial execution within the class (no parallel) so device state is deterministic.
+
 | # | Test | Per-test setup | Screen capture | Assertion |
 |---|------|----------------|----------------|-----------|
 | 0 | `test0_smokeGreenFeedVisible` | — | launch mock camera, pause 1s, screenshot | `coverage(GREEN) > 70%` in central 60% of screen |
-| 1a | `test1a_overlayShowsBlueAtConfiguredPosition` | seed prefs, clear roll | launch mock camera, pause 1s, screenshot | `mask(BLUE).centroid` within `±sizePercent/2` of `(xPercent, yPercent)` |
+| 1a | `test1a_overlayShowsBlueAtConfiguredPosition` | seed prefs, clear roll | launch mock camera, pause 1s, screenshot | `mask(BLUE).centroid` within icon radius of configured `(xPercent, yPercent)` |
 | 1b | `test1b_overlayBlueIsSquare` | as 1a | as 1a | `requireShape(mask(BLUE), SQUARE)` |
 | 1c | `test1c_overlayOuterIsSquircle` | as 1a | as 1a | `requireShape(union(mask(BLUE), mask(YELLOW)), SQUIRCLE)` |
 | 2a | `test2a_emptyGalleryNoGreenAfterTap` | clear roll | launch, pause 1s, S1, tap overlay, pause 1s, S2 | `coverage(S2, GREEN) < 10%` |
 | 3a | `test3a_populatedGalleryShowsGreenAfterTap` | clear roll, then `captureOnePhoto()` | launch, pause 1s, S1, tap, pause 1s, S2 | `coverage(S2, GREEN) > 40%` |
-| 4a | `test4a_secureCameraLockedEmptyGalleryNoGreen` ⚠ | `lockScreen()`, clear roll | `launchSecureCamera()`, pause 1s, S1, tap, pause 1s, S2 | as 2a |
+| 4a | `test4a_secureCameraLockedEmptyGalleryNoGreen` | clear roll, then `lockScreen()` | `launchSecureCamera()`, pause 1s, S1, tap, pause 1s, S2 | as 2a |
 | 5a | `test5a_secureCameraLockedPopulatedGalleryShowsGreen` ⚠ | `captureOnePhoto()` (before lock), `lockScreen()` | `launchSecureCamera()`, pause 1s, S1, tap, pause 1s, S2 | as 3a |
 
-⚠ = expected to fail at baseline (red-light test for the secure-camera-overlay regression).
+⚠ = expected to fail at baseline (red-light test for the secure-camera-overlay regression). Test 4a does **not** carry this marker: whether the regression is present or not, an empty gallery produces no GREEN after tap, so 4a passes in both states. Test 5a is the meaningful regression signal — it requires the overlay to render and be tappable in secure-camera mode, then verifies the gallery opens and shows the captured GREEN photo.
 
 All tests `saveForArtifact` every screenshot and every binary mask used in classification, so a CI failure ships reviewable PNGs.
-
-Test ordering enforced via `@FixMethodOrder(MethodSorters.NAME_ASCENDING)`. Serial execution within the class (no parallel) so device state is deterministic.
 
 ## Phase 6 — Build & CI wiring
 
@@ -229,10 +237,10 @@ Test ordering enforced via `@FixMethodOrder(MethodSorters.NAME_ASCENDING)`. Seri
 - `app/build.gradle.kts`'s `connectedE2EAndroidTest` task:
     - Build and install `:testgallery` (in addition to `:app` and `:e2e-mock-camera`).
     - Grant `:testgallery` `READ_MEDIA_IMAGES` via `appops`.
-    - Grant `:e2e-mock-camera` `WRITE_EXTERNAL_STORAGE` / `MANAGE_EXTERNAL_STORAGE` as needed for photo capture.
+    - No additional runtime permission is needed for `:e2e-mock-camera` to insert into `MediaStore.Images.Media` — on API 29+, any app may insert its own media via `ContentResolver` without a runtime permission grant.
     - Test package filter `com.gb4pc.e2e` already covers `GalleryButtonVisualE2ETest`; no change there.
 - `.github/workflows/build.yml`:
-    - Boot the AVD with `-virtualscene-poster wall*=.github/emulator/green.png` (all four walls).
+    - Append `-virtualscene-poster` flags to the existing emulator launch command (see Phase 2).
     - Run the CI pre-flight smoke check (see Phase 2) before starting the instrumented test run.
     - Upload `/sdcard/Android/data/com.gb4pc/files/screenshots/` as a CI artifact on failure.
 
@@ -242,7 +250,7 @@ Per `agents/code_edit.md`, split by concern, not by file:
 
 1. `:testgallery` module skeleton + adaptive icon assets.
 2. `LastPhotoActivity` + MediaStore query.
-3. Mock-camera `TextureView` preview, `ImageReader` capture, and shutter path; `.github/emulator/green.png`.
+3. Mock-camera `TextureView` preview, `ImageReader` capture, shutter path, and `showWhenLocked`/`turnScreenOn` manifest flags; `.github/emulator/green.png`.
 4. Visual library (`Screenshot` / `ColorMatch` / `ShapeTemplates` / `ShapeMatcher`) + unit tests for the matcher.
 5. `E2EFixture` extensions (clear roll, capture, tap, lock, secure-camera launch).
 6. `GalleryButtonVisualE2ETest` + gradle task wiring + CI pre-flight script + artifact upload.
@@ -251,32 +259,33 @@ Each commit builds and runs its own tests locally before being committed.
 
 ## Risks and known red lights
 
-- **Tests 4a / 5a fail at baseline**. They are intentional regression markers. Do **not** quarantine, ignore, or skip them — they must remain visible reds until the secure-camera overlay path is fixed in a separate PR.
+- **Test 5a fails at baseline**. It is an intentional regression marker. Do **not** quarantine, ignore, or skip it — it must remain a visible red until the secure-camera overlay path is fixed in a separate PR. Link the tracking issue in the test's `@Test` comment when implementing.
+- **Virtualscene + swiftshader compatibility**. The emulator's virtualscene camera renderer may not produce output when `-gpu swiftshader_indirect` is active. The two-layer smoke check (CI pre-flight + `test0`) will surface this immediately; if it fires, adopt Alternative 1 or 2 from Appendix A.
+- **Secure-camera launch on the emulator**. `am start -a android.media.action.STILL_IMAGE_CAMERA_SECURE` via adb is not the same as triggering the lock-screen camera shortcut. Confirm during implementation that the keyguard stays locked and the activity appears above it. If the emulator does not honor this flow, Tests 4a/5a cannot be run until a workaround is found (e.g. UI Automator gestures to trigger the shortcut).
 - **Anti-aliasing on small icons**. The icon thumbnail is ~170px wide at default size on a 1080p emulator. Edge anti-aliasing eats 1-3px on each side. Mitigations: (a) BLUE square is centered in the icon foreground viewport, so edges are well clear of the squircle mask; (b) `ShapeMatcher`'s scale sweep `±3 px` absorbs this; (c) unit tests use Gaussian-blurred inputs to confirm robustness.
 - **System UI chrome leaking into screenshots**. Status bar / nav bar can include colors close to YELLOW/GREEN on some themes. Mitigation: visual tests inspect only the central 60% of the screen unless otherwise noted; Test 1a uses the configured overlay region.
-- **MediaStore latency**. `captureOnePhoto()` writes to MediaStore but the row may not be queryable instantly. Mitigation: poll up to 10s with 100ms intervals. If this remains flaky, fall back to `MediaScannerConnection.scanFile` to force-publish.
-- **Virtualscene poster reliability**. The `-virtualscene-poster` flag may silently fail across emulator SDK updates. The two-layer smoke check (CI pre-flight + `test0`) will surface this immediately.
+- **MediaStore latency**. `captureOnePhoto()` writes to MediaStore but the row may not be queryable instantly. Mitigation: poll up to 10s with 100ms intervals; fall back to `MediaScannerConnection.scanFile` to force-publish.
 
 ---
 
 ## Appendix A — Alternative GREEN feed approaches
 
-The primary approach (virtualscene posters, Phase 2) uses the emulator's real camera-hardware path, which is the most faithful test of the full stack. Two alternatives are documented here if the poster approach proves unworkable.
+The primary approach (virtualscene posters, Phase 2) uses the emulator's real camera-hardware path, which is the most faithful test of the full stack. Two alternatives are documented here if the poster approach proves unworkable (e.g. swiftshader incompatibility, see Risks above).
 
 ### Alternative 1 — In-app mock (no emulator config)
 
 `MockCameraActivity` renders a solid-GREEN full-bleed `View` instead of a real camera preview. On shutter, it writes a synthetic GREEN JPEG (`Bitmap.createBitmap` filled with `#00C853`, `compress(JPEG, 100)`, `MediaStore.Images.Media.insert`) rather than capturing from the camera session.
 
 **Pros:**
-- Zero emulator configuration — no CI flag changes, no pre-flight check.
-- Deterministic, no dependency on emulator SDK version or virtual-scene rendering.
+- Zero emulator configuration — no CI flag changes, no pre-flight check, no swiftshader risk.
+- Fully deterministic; no dependency on emulator SDK version or virtual-scene rendering.
 - Simpler `MockCameraActivity` (no `TextureView`, no `ImageReader`).
 
 **Cons:**
-- The camera-hardware → camera-preview → capture path is bypassed entirely. The tests verify GB4PC's overlay and gallery integration but not the camera plumbing.
+- The camera-hardware → camera-preview → capture path is bypassed entirely. Tests verify GB4PC's overlay and gallery integration but not the camera plumbing.
 - A regression in the emulator's camera support would go undetected.
 
-To adopt: replace Phase 2 with "render a solid-GREEN `View`, write a synthetic JPEG on shutter"; delete the emulator setup step from Phase 6; delete the CI pre-flight script.
+To adopt: replace Phase 2's emulator setup and `TextureView`/`ImageReader` work with "render a solid-GREEN `View`, write a synthetic JPEG on shutter"; remove the emulator startup flags from Phase 6; delete the CI pre-flight script.
 
 ### Alternative 2 — v4l2loopback virtual webcam
 
@@ -285,24 +294,28 @@ Use a kernel loopback video device to pipe a solid-GREEN image into the emulator
 1. `apt-get install v4l2loopback-dkms ffmpeg` on the CI runner.
 2. `modprobe v4l2loopback devices=1`.
 3. `ffmpeg -loop 1 -i .github/emulator/green.png -f v4l2 /dev/video0 &` to continuously feed frames.
-4. Boot the AVD with `-camera-back webcam0`.
+4. Boot the AVD with `-camera-back webcam0` instead of `-virtualscene-poster`.
 
 **Pros:**
 - Exercises the real camera-hardware path, same as the primary approach.
-- Does not depend on the virtual-scene renderer.
+- Does not depend on the virtual-scene renderer; sidesteps the swiftshader compatibility question.
 
 **Cons:**
-- Requires kernel module (`v4l2loopback`) and `ffmpeg` on the CI runner — additional CI dependencies and potential breakage on runner OS upgrades.
+- Requires kernel module (`v4l2loopback`) and `ffmpeg` on the CI runner — additional dependencies, potential breakage on runner OS upgrades.
 - `modprobe` requires elevated privileges; may not be available on all CI environments.
 - More moving parts than the virtualscene-poster approach.
 
-To adopt: replace the `-virtualscene-poster` flags in Phase 6 with the `v4l2loopback` setup above; keep `MockCameraActivity`'s `TextureView` preview but replace the `ImageReader` with a standard camera-capture session feeding from the webcam device.
+To adopt: replace the `-virtualscene-poster` flags in Phase 6 with the `v4l2loopback` setup above; keep `MockCameraActivity`'s `TextureView` preview and `ImageReader` unchanged.
 
 ---
 
 ## Appendix B — Per-test pseudocode for the trickiest cases
 
 ### Test 1a — BLUE at configured screen position
+
+`OverlayPosition.sizePercent` is a percentage of `min(displayWidth, displayHeight)` (see `OverlayManager.calculateOverlaySizePx`). The tolerance formula below therefore yields half the icon's pixel diameter — i.e., the icon radius — which is the right slack for a centroid-based position check: the centroid of the BLUE region should land within one radius of wherever the overlay is configured to sit.
+
+Confirm during implementation whether `(xPercent, yPercent)` refers to the icon's center or its top-left corner. If it is the top-left corner, shift the expected coordinates by half the icon size: `expectedX += iconRadiusPx`, `expectedY += iconRadiusPx`. Do not widen the tolerance to compensate — that would mask a mis-positioned overlay.
 
 ```kotlin
 seedGalleryPrefs("com.gb4pc.testgallery")
@@ -315,11 +328,12 @@ val blue = ColorMatch.mask(screen, Rgb.BLUE)
 saveForArtifact(screen, "1a-screen.png")
 
 val pos = PrefsManager(context).getOverlayPosition(currentAspectRatio())
+val minDim = minOf(screen.width, screen.height)
+val iconRadiusPx = (pos.sizePercent / 200f) * minDim  // half of icon size in px
 val expectedX = pos.xPercent / 100f * screen.width
 val expectedY = pos.yPercent / 100f * screen.height
-val tolerancePx = (pos.sizePercent / 200f) * minOf(screen.width, screen.height)
 
-assertThat(distance(blue.centroid, PointF(expectedX, expectedY))).isLessThan(tolerancePx)
+assertThat(distance(blue.centroid, PointF(expectedX, expectedY))).isLessThan(iconRadiusPx)
 ```
 
 ### Test 1c — outer silhouette is a squircle
@@ -346,7 +360,7 @@ launchSecureCamera()
 pause(1000)
 val s1 = captureScreen(); saveForArtifact(s1, "5a-s1.png")
 
-tapOverlay()             // expected to be ineffective at baseline
+tapOverlay()             // taps overlay position; no-op at baseline (overlay blocked)
 pause(1000)
 val s2 = captureScreen(); saveForArtifact(s2, "5a-s2.png")
 
