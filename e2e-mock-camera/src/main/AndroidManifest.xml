@@ -4,16 +4,32 @@
     <!-- Camera permission required to open camera hardware (granted via ADB in CI). -->
     <uses-permission android:name="android.permission.CAMERA" />
 
+    <!--
+        Required for MediaStore.Images.Media inserts on API < 29.
+        On API 29+ apps may insert their own media without a runtime grant.
+    -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+
     <application
         android:label="Mock Pixel Camera (E2E)">
 
         <activity
             android:name=".MockCameraActivity"
-            android:exported="true">
+            android:exported="true"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true">
 
             <!-- Respond to the same camera intent the E2E test fires. -->
             <intent-filter>
                 <action android:name="android.media.action.STILL_IMAGE_CAMERA" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+
+            <!-- Secure-camera launch (Tests 4a / 5a). -->
+            <intent-filter>
+                <action android:name="android.media.action.STILL_IMAGE_CAMERA_SECURE" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
 
@@ -24,6 +40,7 @@
             </intent-filter>
 
         </activity>
+
     </application>
 
 </manifest>

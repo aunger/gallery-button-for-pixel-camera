@@ -115,6 +115,10 @@ jobs:
             -avd e2e_avd \
             -no-window -no-audio -no-boot-anim \
             -gpu swiftshader_indirect \
+            -virtualscene-poster wall0=.github/emulator/green.png \
+            -virtualscene-poster wall1=.github/emulator/green.png \
+            -virtualscene-poster wall2=.github/emulator/green.png \
+            -virtualscene-poster wall3=.github/emulator/green.png \
             > /tmp/emulator.log 2>&1 &
           EMUPID=$!
           echo "EMULATOR_PID=$EMUPID" >> $GITHUB_ENV
