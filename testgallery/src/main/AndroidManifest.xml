@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Required to read photos from MediaStore (API 33+). Granted via appops in CI. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+
+    <application
+        android:label="test gallery app"
+        android:icon="@mipmap/ic_launcher">
+
+        <activity
+            android:name=".LastPhotoActivity"
+            android:exported="true">
+
+            <!-- Launcher entry-point so the activity can be started via `am start`. -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+        </activity>
+    </application>
+
+</manifest>
