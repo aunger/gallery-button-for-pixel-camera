@@ -121,8 +121,11 @@ class MockCameraActivity : Activity() {
         super.onResume()
         startCameraThread()
         openCamera()
-        @Suppress("UnspecifiedRegisterReceiverFlag")
-        registerReceiver(shutterReceiver, IntentFilter(ACTION_SHUTTER))
+        registerReceiver(
+            shutterReceiver,
+            IntentFilter(ACTION_SHUTTER),
+            Context.RECEIVER_NOT_EXPORTED,
+        )
     }
 
     /**
