@@ -151,7 +151,7 @@ jobs:
           }
 
           echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Waiting for sys.boot_completed=1..."
-          until [[ "$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]]; do
+          until [[  "$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]]; do
             sleep 5
           done
           echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Boot flag set."
@@ -175,6 +175,39 @@ jobs:
           "$ADB" shell settings put global transition_animation_scale 0
           "$ADB" shell settings put global animator_duration_scale 0
 
+      - name: CI pre-flight — green-feed smoke check
+        run: |
+          ADB="$ANDROID_HOME/platform-tools/adb"
+
+          # Install mock Pixel Camera and grant CAMERA permission before the smoke check.
+          echo "==> Installing mock Pixel Camera for pre-flight check..."
+          "$ADB" install -r \
+            e2e-mock-camera/build/outputs/apk/debug/e2e-mock-camera-debug.apk
+          echo "==> Granting CAMERA permission..."
+          "$ADB" shell pm grant com.google.android.GoogleCamera \
+            android.permission.CAMERA
+
+          # Launch MockCameraActivity so the virtual-scene GREEN feed is on screen.
+          echo "==> Launching MockCameraActivity..."
+          "$ADB" shell am start \
+            com.google.android.GoogleCamera/com.gb4pc.mockcamera.MockCameraActivity
+          sleep 2
+
+          # Capture the screen and verify ≥ 90% of the central 200×200 px is #00C853.
+          echo "==> Capturing screen..."
+          "$ADB" exec-out screencap -p > preflight.png
+
+          echo "==> Running green-feed smoke check..."
+          python3 scripts/check_green_feed.py preflight.png
+
+      - name: Upload preflight screenshot on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: preflight-screenshot
+          path: preflight.png
+          retention-days: 14
+
       - name: Run E2E setup and tests
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
@@ -184,8 +217,8 @@ jobs:
           # script's PC install step is skipped; we install the mock below instead.
           scripts/setup-e2e-emulator.sh --post-boot
 
-          # Install mock Pixel Camera (applicationId = com.google.android.GoogleCamera)
-          # and grant CAMERA permission so it can open the camera hardware.
+          # Mock Pixel Camera is already installed (pre-flight step above).
+          # Re-install is a no-op but ensures latest build is present.
           echo "==> Installing mock Pixel Camera..."
           "$ADB" install -r \
             e2e-mock-camera/build/outputs/apk/debug/e2e-mock-camera-debug.apk
