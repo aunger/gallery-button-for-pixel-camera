@@ -1,0 +1,5 @@
+int drawable ic_launcher_background 0x7f010000
+int drawable ic_launcher_foreground 0x7f010001
+int id photo_view 0x7f020000
+int layout activity_last_photo 0x7f030000
+int mipmap ic_launcher 0x7f040000

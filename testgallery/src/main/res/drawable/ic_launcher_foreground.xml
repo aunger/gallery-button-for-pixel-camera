@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    BLUE (#1565C0) square centered in the 108dp adaptive-icon foreground viewport.
+    Side length = 36dp (~33% of 108dp), centered at (54, 54).
+    Stays well inside the 66dp safe zone so the squircle mask never clips it.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#1565C0"
+        android:pathData="M36,36 L72,36 L72,72 L36,72 Z" />
+</vector>

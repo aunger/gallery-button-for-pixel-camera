@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.gb4pc.testgallery"
+    android:versionCode="1"
+    android:versionName="1.0.test" >
+
+    <uses-sdk
+        android:minSdkVersion="26"
+        android:targetSdkVersion="35" />
+
+    <!-- Required to read photos from MediaStore (API 33+). Granted via appops in CI. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+
+    <application
+        android:debuggable="true"
+        android:extractNativeLibs="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="test gallery app" >
+        <activity
+            android:name="com.gb4pc.testgallery.LastPhotoActivity"
+            android:exported="true" >
+
+            <!-- Respond to VIEW intent so GB4PC's overlay can launch it directly. -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>
