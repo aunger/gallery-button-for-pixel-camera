@@ -29,7 +29,7 @@ class LastPhotoActivity : Activity() {
 
     private fun queryLastPhotoUri(): Uri? {
         val projection = arrayOf(MediaStore.Images.Media._ID)
-        val sortOrder = "${MediaStore.Images.Media.DATE_ADDED} DESC"
+        val sortOrder = "${MediaStore.Images.Media.DATE_ADDED} DESC LIMIT 1"
         contentResolver.query(
             MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
             projection,
