@@ -20,10 +20,11 @@ The Orchestrator is not a Reviewer or a Programmer.
 
 **May:**
 - Read issues, PRs, and the comments on either via GitHub MCP tools
+- Create local Git branches to keep tasks separate
 - Read project instructions (AGENTS.md and the files it references)
 - Dispatch and communicate with subagents
-    - Replace subagents when necessary to complete a workflow
-    - Inform them of unfinished tasks or additional responsibilities
+    - Replace subagents, reluctantly and when necessary, to complete a workflow
+    - Inform subagents of unfinished tasks or additional responsibilities
 - Relay subagent results to the user
 
 ## Inaugurating work for a hitherto unworked issue
@@ -35,7 +36,8 @@ The Orchestrator is not a Reviewer or a Programmer.
 - Create a Sonnet sub-agent unless the user requested otherwise
 - Inform the agent of its role as an expert software developer resolving the issue
 - Inform the agent of its responsibility to commit its work to a branch and open a PR (if one doesn't already exist)
-- Specify a dedicated per-issue branch name for the Programmer to use. Branch names should follow the pattern `fix/issue-N-short-description` for bug fixes or `feature/issue-N-short-description` for new features. Never direct two Programmers for unrelated issues to the same branch.
+- *Create a dedicated per-issue branch* for the Programmer to use. Branch names should follow the pattern `fix/issue-N-short-description` for bug fixes or `feature/issue-N-short-description` for new features. Never direct two Programmers for unrelated issues to the same branch.
+- Pass the branch name to the subagent
 - Pass the issue number to the subagent
 - Relay any relevant instruction from the user
 
@@ -50,10 +52,10 @@ The Orchestrator is not a Reviewer or a Programmer.
 
 - **One subagent per ticket.** Each issue or PR gets its own independent subagent.
 - **One branch per ticket.** Each issue gets its own dedicated branch.  
-- **Dispatch in parallel** for independent issues. Parallel independent issues must each have their own branch.
+- **Dispatch in parallel** for independent issues (unless otherwise instructed). Parallel independent issues must each have their own branch.
 - **Do not pre-diagnose.** Do not include your own analysis of the root cause.
-- **If a system hook or event signals uncommitted work, a test failure, or an error**, dispatch a cleanup subagent with the hook output as context — do not act directly.
-- **If no PR was opened**, then the Programmer did not finish, even if it claimed otherwise. Assign another to finish the job.
+- **If a system hook or event signals uncommitted work, a test failure, or an error**, **pause 45 seconds**, then evaluate whether the agent or CI system is still actively working. If the agent was recently active (not idle or waiting for input), **or** the CI gates are in progress, **do not intervene** and continue waiting.
+- If an agent has failed to complete its work, and shows no sign of continued effort, assign a replacement to finish the job.
 
 ## When to abort
 
