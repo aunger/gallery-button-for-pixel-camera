@@ -189,13 +189,15 @@ jobs:
           "$ADB" shell am start \
             com.google.android.GoogleCamera/com.gb4pc.mockcamera.MockCameraActivity
 
-          # Wait for MockCameraActivity to be ready (up to 30 s).
+          # Wait for MockCameraActivity to be ready (up to 60 s).
           # The activity renders a solid-GREEN View directly; no CaptureSession is needed.
           echo "==> Waiting for MockCameraActivity ready..."
-          DEADLINE=$((SECONDS + 30))
+          DEADLINE=$((SECONDS + 60))
           until "$ADB" logcat -d -s MockCameraActivity:D | grep -q "MockCameraActivity ready"; do
             if [[ $SECONDS -ge $DEADLINE ]]; then
-              echo "ERROR: MockCameraActivity did not become ready within 30 s" >&2
+              echo "ERROR: MockCameraActivity did not become ready within 60 s" >&2
+              echo "=== Full logcat output ===" >&2
+              "$ADB" logcat -d >&2
               exit 1
             fi
             sleep 1
