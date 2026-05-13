@@ -11,7 +11,6 @@ import android.graphics.SurfaceTexture
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
-import android.hardware.camera2.CaptureRequest
 import android.media.Image
 import android.media.ImageReader
 import android.net.Uri
@@ -72,6 +71,9 @@ class MockCameraActivity : Activity() {
     private var imageReader: ImageReader? = null
     private var previewSurface: Surface? = null
 
+    /** Captured on the main thread in [openCamera]; consumed by [startPreviewAndCapture]. */
+    private var pendingSurfaceTexture: SurfaceTexture? = null
+
     private lateinit var textureView: TextureView
 
     // -------------------------------------------------------------------------
@@ -94,7 +96,7 @@ class MockCameraActivity : Activity() {
         override fun onOpened(camera: CameraDevice) {
             Log.d(TAG, "CameraDevice.onOpened: ${camera.id}")
             cameraDevice = camera
-            startPreviewAndCapture(camera)
+            startPreviewAndCapture(camera, pendingSurfaceTexture ?: return)
         }
 
         override fun onDisconnected(camera: CameraDevice) {
@@ -164,6 +166,7 @@ class MockCameraActivity : Activity() {
     }
 
     private fun openCamera(surfaceTexture: SurfaceTexture) {
+        pendingSurfaceTexture = surfaceTexture
         val cm = getSystemService(CAMERA_SERVICE) as CameraManager
         val cameraId = cm.cameraIdList.firstOrNull() ?: run {
             Log.w(TAG, "openCamera: no cameras found")
@@ -179,12 +182,11 @@ class MockCameraActivity : Activity() {
     /**
      * Creates an ImageReader for JPEG capture and starts a preview session that
      * feeds both the TextureView surface and the ImageReader surface.
+     *
+     * [surfaceTexture] must have been captured on the main thread (see [openCamera]).
      */
-    private fun startPreviewAndCapture(camera: CameraDevice) {
-        val st = textureView.surfaceTexture ?: run {
-            Log.w(TAG, "startPreviewAndCapture: SurfaceTexture not available")
-            return
-        }
+    private fun startPreviewAndCapture(camera: CameraDevice, surfaceTexture: SurfaceTexture) {
+        val st = surfaceTexture
         st.setDefaultBufferSize(CAPTURE_WIDTH, CAPTURE_HEIGHT)
         val preview = Surface(st)
         previewSurface = preview
@@ -235,6 +237,7 @@ class MockCameraActivity : Activity() {
         imageReader = null
         previewSurface?.release()
         previewSurface = null
+        pendingSurfaceTexture = null
     }
 
     // -------------------------------------------------------------------------
