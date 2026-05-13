@@ -70,6 +70,9 @@ class MockCameraActivity : Activity() {
 
     private var cameraDevice: CameraDevice? = null
 
+    /** Ensures the "ready" log is emitted at most once per Activity instance. */
+    private var readyLogged = false
+
     // -------------------------------------------------------------------------
     // Shutter broadcast receiver
     // -------------------------------------------------------------------------
@@ -120,7 +123,29 @@ class MockCameraActivity : Activity() {
         openCamera()
         @Suppress("UnspecifiedRegisterReceiverFlag")
         registerReceiver(shutterReceiver, IntentFilter(ACTION_SHUTTER))
-        Log.d(TAG, "MockCameraActivity ready")
+    }
+
+    /**
+     * Emit the "ready" log once the window is fully on screen and has focus.
+     *
+     * Previously this was done via window.decorView.post {} in onResume(), but that
+     * Runnable is queued in HandlerActionQueue when the decor view has no ViewRootImpl
+     * yet (ViewRootImpl is assigned only after onResume() returns in handleResumeActivity).
+     * In practice the Runnable fires during the first ViewRootImpl.performTraversals()
+     * call — BEFORE the Choreographer has actually composed the frame to the display.
+     * As a result, CI's logcat poll detected the "ready" message and immediately ran
+     * screencap, but the green surface hadn't been presented yet, causing the green-feed
+     * check to see a blank/black frame instead of #00C853.
+     *
+     * onWindowFocusChanged(hasFocus=true) is called by the framework only after the window
+     * is visible, laid out, drawn, and composited — guaranteeing the green View is on screen
+     * when CI takes the screenshot.
+     */
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            Log.d(TAG, "MockCameraActivity ready")
+        }
     }
 
     override fun onPause() {
