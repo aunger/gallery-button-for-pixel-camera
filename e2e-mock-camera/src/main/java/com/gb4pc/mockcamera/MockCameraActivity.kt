@@ -143,7 +143,8 @@ class MockCameraActivity : Activity() {
      */
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) {
+        if (hasFocus && !readyLogged) {
+            readyLogged = true
             Log.d(TAG, "MockCameraActivity ready")
         }
     }
