@@ -6,13 +6,9 @@ import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.graphics.ImageFormat
-import android.graphics.SurfaceTexture
-import android.hardware.camera2.CameraCaptureSession
+import android.graphics.Bitmap
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
-import android.media.Image
-import android.media.ImageReader
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -20,8 +16,6 @@ import android.os.HandlerThread
 import android.os.Looper
 import android.provider.MediaStore
 import android.util.Log
-import android.view.Surface
-import android.view.TextureView
 
 /**
  * Mock camera activity for E2E testing.
@@ -31,9 +25,14 @@ import android.view.TextureView
  * onPause   → releases the camera             → fires CameraManager.onCameraAvailable
  *             after the debounce delay         → overlay should disappear.
  *
- * Renders the camera preview (virtual-scene GREEN feed) on a full-bleed TextureView.
- * Supports capture via the ACTION_SHUTTER broadcast: saves a JPEG to MediaStore and
- * broadcasts ACTION_SHUTTER_DONE when the row is queryable.
+ * Renders a solid #00C853 (GREEN) full-bleed View — no real camera preview is shown.
+ * This is intentional (Alternative 1 from the E2E plan): the emulator's virtual-scene
+ * camera renderer is incompatible with -gpu swiftshader_indirect, so we render green
+ * directly in the activity rather than relying on the camera feed.
+ *
+ * Supports capture via the ACTION_SHUTTER broadcast: generates a synthetic GREEN JPEG
+ * (Bitmap.createBitmap filled with #00C853), saves it to MediaStore, and broadcasts
+ * ACTION_SHUTTER_DONE when the row is queryable.
  *
  * Declared with showWhenLocked + turnScreenOn so it can appear over the lock screen
  * when launched via STILL_IMAGE_CAMERA_SECURE for Tests 4a/5a.
@@ -52,12 +51,15 @@ class MockCameraActivity : Activity() {
         /** Intent extra: MediaStore URI of the captured image (Uri, may be absent on error). */
         const val EXTRA_IMAGE_URI = "com.gb4pc.mockcamera.EXTRA_IMAGE_URI"
 
+        /** GREEN color (#00C853) used for the background view and synthetic captures. */
+        private const val GREEN_COLOR = 0xFF00C853.toInt()
+
         private const val CAPTURE_WIDTH = 1920
         private const val CAPTURE_HEIGHT = 1080
     }
 
     // -------------------------------------------------------------------------
-    // Camera / rendering state
+    // Camera state (open/close for CameraManager.AvailabilityCallback)
     // -------------------------------------------------------------------------
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -67,14 +69,6 @@ class MockCameraActivity : Activity() {
     private var cameraHandler: Handler? = null
 
     private var cameraDevice: CameraDevice? = null
-    private var captureSession: CameraCaptureSession? = null
-    private var imageReader: ImageReader? = null
-    private var previewSurface: Surface? = null
-
-    /** Captured on the main thread in [openCamera]; consumed by [startPreviewAndCapture]. */
-    private var pendingSurfaceTexture: SurfaceTexture? = null
-
-    private lateinit var textureView: TextureView
 
     // -------------------------------------------------------------------------
     // Shutter broadcast receiver
@@ -96,7 +90,6 @@ class MockCameraActivity : Activity() {
         override fun onOpened(camera: CameraDevice) {
             Log.d(TAG, "CameraDevice.onOpened: ${camera.id}")
             cameraDevice = camera
-            startPreviewAndCapture(camera, pendingSurfaceTexture ?: return)
         }
 
         override fun onDisconnected(camera: CameraDevice) {
@@ -119,26 +112,15 @@ class MockCameraActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_mock_camera)
-        textureView = findViewById(R.id.preview_texture)
     }
 
     override fun onResume() {
         super.onResume()
         startCameraThread()
-        if (textureView.isAvailable) {
-            openCamera(textureView.surfaceTexture!!)
-        } else {
-            textureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-                override fun onSurfaceTextureAvailable(surface: SurfaceTexture, w: Int, h: Int) {
-                    openCamera(surface)
-                }
-                override fun onSurfaceTextureSizeChanged(s: SurfaceTexture, w: Int, h: Int) {}
-                override fun onSurfaceTextureDestroyed(s: SurfaceTexture): Boolean = true
-                override fun onSurfaceTextureUpdated(s: SurfaceTexture) {}
-            }
-        }
+        openCamera()
         @Suppress("UnspecifiedRegisterReceiverFlag")
         registerReceiver(shutterReceiver, IntentFilter(ACTION_SHUTTER))
+        Log.d(TAG, "MockCameraActivity ready")
     }
 
     override fun onPause() {
@@ -149,7 +131,7 @@ class MockCameraActivity : Activity() {
     }
 
     // -------------------------------------------------------------------------
-    // Camera setup
+    // Camera open / close (only for CameraManager.AvailabilityCallback)
     // -------------------------------------------------------------------------
 
     private fun startCameraThread() {
@@ -165,8 +147,7 @@ class MockCameraActivity : Activity() {
         cameraHandler = null
     }
 
-    private fun openCamera(surfaceTexture: SurfaceTexture) {
-        pendingSurfaceTexture = surfaceTexture
+    private fun openCamera() {
         val cm = getSystemService(CAMERA_SERVICE) as CameraManager
         val cameraId = cm.cameraIdList.firstOrNull() ?: run {
             Log.w(TAG, "openCamera: no cameras found")
@@ -179,106 +160,40 @@ class MockCameraActivity : Activity() {
         }
     }
 
-    /**
-     * Creates an ImageReader for JPEG capture and starts a preview session that
-     * feeds both the TextureView surface and the ImageReader surface.
-     *
-     * [surfaceTexture] must have been captured on the main thread (see [openCamera]).
-     */
-    private fun startPreviewAndCapture(camera: CameraDevice, surfaceTexture: SurfaceTexture) {
-        val st = surfaceTexture
-        st.setDefaultBufferSize(CAPTURE_WIDTH, CAPTURE_HEIGHT)
-        val preview = Surface(st)
-        previewSurface = preview
-
-        val reader = ImageReader.newInstance(
-            CAPTURE_WIDTH, CAPTURE_HEIGHT, ImageFormat.JPEG, /* maxImages= */ 2
-        )
-        imageReader = reader
-
-        val surfaces = listOf(preview, reader.surface)
-
-        @Suppress("DEPRECATION")
-        camera.createCaptureSession(
-            surfaces,
-            object : CameraCaptureSession.StateCallback() {
-                override fun onConfigured(session: CameraCaptureSession) {
-                    Log.d(TAG, "CaptureSession configured")
-                    captureSession = session
-                    startRepeatingPreview(session, camera, preview)
-                }
-
-                override fun onConfigureFailed(session: CameraCaptureSession) {
-                    Log.e(TAG, "CaptureSession configuration failed")
-                }
-            },
-            cameraHandler
-        )
-    }
-
-    private fun startRepeatingPreview(
-        session: CameraCaptureSession,
-        camera: CameraDevice,
-        previewSurface: Surface
-    ) {
-        val request = camera
-            .createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
-            .apply { addTarget(previewSurface) }
-            .build()
-        session.setRepeatingRequest(request, null, cameraHandler)
-    }
-
     private fun closeCamera() {
-        captureSession?.close()
-        captureSession = null
         cameraDevice?.close()
         cameraDevice = null
-        imageReader?.close()
-        imageReader = null
-        previewSurface?.release()
-        previewSurface = null
-        pendingSurfaceTexture = null
     }
 
     // -------------------------------------------------------------------------
-    // Capture / shutter path
+    // Capture / shutter path (synthetic GREEN JPEG)
     // -------------------------------------------------------------------------
 
     /**
-     * Fires a single JPEG capture from the current session. The [ImageReader.OnImageAvailableListener]
-     * writes the result to MediaStore and broadcasts [ACTION_SHUTTER_DONE].
+     * Generates a synthetic GREEN ([GREEN_COLOR]) JPEG, saves it to MediaStore,
+     * and broadcasts [ACTION_SHUTTER_DONE] once the row is queryable.
+     *
+     * The bitmap is created with [Bitmap.createBitmap] filled with [GREEN_COLOR], then
+     * compressed to JPEG. This is the Alternative 1 approach from the E2E plan: a
+     * purely synthetic capture, independent of the emulator's camera hardware.
      */
     private fun triggerCapture() {
-        val session = captureSession
-        val camera = cameraDevice
-        val reader = imageReader
-        if (session == null || camera == null || reader == null) {
-            Log.w(TAG, "triggerCapture: session/camera/reader not ready")
-            return
+        cameraHandler?.post {
+            val bytes = buildGreenJpeg()
+            mainHandler.post { saveJpegToMediaStore(bytes) }
         }
-
-        // Install listener before submitting capture request so we don't miss the callback.
-        reader.setOnImageAvailableListener({ imageReader ->
-            val image = imageReader.acquireLatestImage() ?: return@setOnImageAvailableListener
-            try {
-                saveImageToMediaStore(image)
-            } finally {
-                image.close()
-                // Remove listener until next trigger.
-                imageReader.setOnImageAvailableListener(null, null)
-            }
-        }, cameraHandler)
-
-        val captureRequest = camera
-            .createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
-            .apply { addTarget(reader.surface) }
-            .build()
-        session.capture(captureRequest, null, cameraHandler)
     }
 
-    private fun saveImageToMediaStore(image: Image) {
-        val bytes = jpegBytesFrom(image) ?: return
+    private fun buildGreenJpeg(): ByteArray {
+        val bmp = Bitmap.createBitmap(CAPTURE_WIDTH, CAPTURE_HEIGHT, Bitmap.Config.ARGB_8888)
+        bmp.eraseColor(GREEN_COLOR)
+        val out = java.io.ByteArrayOutputStream()
+        bmp.compress(Bitmap.CompressFormat.JPEG, 100, out)
+        bmp.recycle()
+        return out.toByteArray()
+    }
 
+    private fun saveJpegToMediaStore(bytes: ByteArray) {
         val now = System.currentTimeMillis()
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, "mock_capture_$now.jpg")
@@ -292,7 +207,7 @@ class MockCameraActivity : Activity() {
             MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values
         )
         if (uri == null) {
-            Log.e(TAG, "saveImageToMediaStore: insert returned null URI")
+            Log.e(TAG, "saveJpegToMediaStore: insert returned null URI")
             broadcastShutterDone(null)
             return
         }
@@ -300,22 +215,13 @@ class MockCameraActivity : Activity() {
         try {
             contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
         } catch (e: Exception) {
-            Log.e(TAG, "saveImageToMediaStore: write failed: ${e.message}")
+            Log.e(TAG, "saveJpegToMediaStore: write failed: ${e.message}")
             broadcastShutterDone(null)
             return
         }
 
-        Log.d(TAG, "saveImageToMediaStore: saved $uri")
-        // Poll until row is queryable, then signal.
-        mainHandler.post { pollUntilQueryable(uri) }
-    }
-
-    private fun jpegBytesFrom(image: Image): ByteArray? {
-        val plane = image.planes.firstOrNull() ?: return null
-        val buffer = plane.buffer
-        val bytes = ByteArray(buffer.remaining())
-        buffer.get(bytes)
-        return bytes
+        Log.d(TAG, "saveJpegToMediaStore: saved $uri")
+        pollUntilQueryable(uri)
     }
 
     /**

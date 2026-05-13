@@ -115,10 +115,6 @@ jobs:
             -avd e2e_avd \
             -no-window -no-audio -no-boot-anim \
             -gpu swiftshader_indirect \
-            -virtualscene-poster wall0=.github/emulator/green.png \
-            -virtualscene-poster wall1=.github/emulator/green.png \
-            -virtualscene-poster wall2=.github/emulator/green.png \
-            -virtualscene-poster wall3=.github/emulator/green.png \
             > /tmp/emulator.log 2>&1 &
           EMUPID=$!
           echo "EMULATOR_PID=$EMUPID" >> $GITHUB_ENV
@@ -187,23 +183,24 @@ jobs:
           "$ADB" shell pm grant com.google.android.GoogleCamera \
             android.permission.CAMERA
 
-          # Launch MockCameraActivity so the virtual-scene GREEN feed is on screen.
+          # Launch MockCameraActivity, which renders a solid-GREEN View on screen.
           echo "==> Launching MockCameraActivity..."
           "$ADB" logcat -c
           "$ADB" shell am start \
             com.google.android.GoogleCamera/com.gb4pc.mockcamera.MockCameraActivity
 
-          # Wait for CaptureSession to be configured (up to 30 s).
-          echo "==> Waiting for MockCameraActivity CaptureSession..."
+          # Wait for MockCameraActivity to be ready (up to 30 s).
+          # The activity renders a solid-GREEN View directly; no CaptureSession is needed.
+          echo "==> Waiting for MockCameraActivity ready..."
           DEADLINE=$((SECONDS + 30))
-          until "$ADB" logcat -d -s MockCameraActivity:D | grep -q "CaptureSession configured"; do
+          until "$ADB" logcat -d -s MockCameraActivity:D | grep -q "MockCameraActivity ready"; do
             if [[ $SECONDS -ge $DEADLINE ]]; then
-              echo "ERROR: MockCameraActivity did not configure capture session within 30 s" >&2
+              echo "ERROR: MockCameraActivity did not become ready within 30 s" >&2
               exit 1
             fi
             sleep 1
           done
-          echo "==> CaptureSession configured."
+          echo "==> MockCameraActivity ready."
 
           # Capture the screen and verify >= 90% of the central 200x200 px is #00C853.
           echo "==> Capturing screen..."
