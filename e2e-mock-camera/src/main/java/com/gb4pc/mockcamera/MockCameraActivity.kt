@@ -114,6 +114,13 @@ class MockCameraActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // On API 27+ the manifest android:showWhenLocked / android:turnScreenOn attributes
+        // are advisory hints that some OEM ROMs and the API-35 emulator may ignore.
+        // Calling the programmatic equivalents here guarantees the window is shown over the
+        // lock screen and wakes the display, so onWindowFocusChanged(hasFocus=true) fires
+        // reliably in CI even if the screen turned off between the adb unlock and am start.
+        setShowWhenLocked(true)
+        setTurnScreenOn(true)
         setContentView(R.layout.activity_mock_camera)
     }
 

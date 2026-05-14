@@ -165,8 +165,14 @@ jobs:
           done
           echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Services ready (${SVCWAIT}s after boot flag)."
 
-          # Unlock screen and disable animations now that services are up.
+          # Unlock screen, keep it on, and disable animations now that services are up.
           "$ADB" shell input keyevent 82
+          # Prevent the screen from sleeping while the emulator is "plugged in"
+          # (value 7 = stay on for AC/USB/wireless charging combined).
+          # Without this the screen can time out between the unlock here and the
+          # `am start` in the pre-flight step, preventing onWindowFocusChanged
+          # from ever firing and causing the "MockCameraActivity ready" timeout.
+          "$ADB" shell settings put global stay_on_while_plugged_in 7
           "$ADB" shell settings put global window_animation_scale 0
           "$ADB" shell settings put global transition_animation_scale 0
           "$ADB" shell settings put global animator_duration_scale 0
