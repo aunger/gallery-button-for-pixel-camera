@@ -172,6 +172,7 @@ jobs:
           "$ADB" shell settings put global animator_duration_scale 0
 
       - name: CI pre-flight — green-feed smoke check
+        id: preflight
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
 
@@ -212,7 +213,7 @@ jobs:
           python3 scripts/check_green_feed.py preflight.png
 
       - name: Upload preflight screenshot on failure
-        if: failure()
+        if: steps.preflight.outcome == 'failure'
         uses: actions/upload-artifact@v4
         with:
           name: preflight-screenshot
