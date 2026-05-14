@@ -92,6 +92,20 @@ android {
         enable = true
     }
 
+    // AGP testFixtures for application modules does not wire a Kotlin compilation task,
+    // so KGP never compiles src/testFixtures/java on its own.  Add the testFixtures
+    // Kotlin sources to both test source sets so each variant compiles them directly.
+    // This keeps shared test helpers out of the production APK while making them
+    // visible to both `test` (JVM unit tests) and `androidTest` (instrumented tests).
+    sourceSets {
+        getByName("test") {
+            java.srcDir("src/testFixtures/java")
+        }
+        getByName("androidTest") {
+            java.srcDir("src/testFixtures/java")
+        }
+    }
+
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
@@ -124,10 +138,6 @@ dependencies {
     // Subsampling Scale Image View for pinch-to-zoom
     implementation("com.davemorrissey.labs:subsampling-scale-image-view-androidx:3.10.0")
 
-    // Shared test fixtures (e.g. MaskData)
-    testImplementation(testFixtures(project(":app")))
-    androidTestImplementation(testFixtures(project(":app")))
-
     // Unit testing
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.mockito:mockito-core:5.14.2")
@@ -148,6 +158,15 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
+
+// ── testFixtures Kotlin source wiring ────────────────────────────────────────
+// AGP testFixtures for application modules does not create a Kotlin compilation
+// task, so the Kotlin Gradle Plugin never compiles src/testFixtures/java on its
+// own.  Add the testFixtures Kotlin source to both the unit-test and androidTest
+// source sets so each variant compiles MaskData.kt directly.  This keeps the
+// class out of the production APK while remaining visible to both test variants.
+android.sourceSets.getByName("test").java.srcDir("src/testFixtures/java")
+android.sourceSets.getByName("androidTest").java.srcDir("src/testFixtures/java")
 
 // ── E2E test task ────────────────────────────────────────────────────────────
 // Builds the APKs, installs them on the connected device/emulator, and runs only
