@@ -17,17 +17,20 @@ object Screenshot {
         InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
 
     /**
-     * Saves [bmp] as a lossless PNG to:
-     *   /sdcard/Android/data/com.gb4pc/files/screenshots/<name>
+     * Saves [bmp] as a lossless PNG to the app's external files directory under
+     * a "screenshots" subdirectory. The path is resolved at runtime via the
+     * instrumentation context, which correctly targets the scoped storage directory
+     * owned by the target app's package — avoiding Permission denied errors on
+     * Android 11+ (API 30+) that occur when using a hardcoded /sdcard path.
      *
      * The directory is created if it does not exist. Intended for CI artifact pickup
      * on test failure so failures ship reviewable screenshots.
      */
     fun saveForArtifact(bmp: Bitmap, name: String) {
-        val dir = File("/sdcard/Android/data/com.gb4pc/files/screenshots")
+        val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+        val dir = File(ctx.getExternalFilesDir(null), "screenshots")
         dir.mkdirs()
-        val file = File(dir, name)
-        FileOutputStream(file).use { out ->
+        FileOutputStream(File(dir, name)).use { out ->
             bmp.compress(Bitmap.CompressFormat.PNG, 100, out)
         }
     }
