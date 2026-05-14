@@ -88,6 +88,10 @@ android {
         buildConfig = true
     }
 
+    testFixtures {
+        enable = true
+    }
+
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
@@ -119,6 +123,10 @@ dependencies {
 
     // Subsampling Scale Image View for pinch-to-zoom
     implementation("com.davemorrissey.labs:subsampling-scale-image-view-androidx:3.10.0")
+
+    // Shared test fixtures (e.g. MaskData)
+    testImplementation(testFixtures(project(":app")))
+    androidTestImplementation(testFixtures(project(":app")))
 
     // Unit testing
     testImplementation("junit:junit:4.13.2")
