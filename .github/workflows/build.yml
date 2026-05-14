@@ -173,8 +173,8 @@ jobs:
           # Prevent the screen from sleeping while the emulator is "plugged in"
           # (value 7 = stay on for AC/USB/wireless charging combined).
           # Without this the screen can time out between the unlock here and the
-          # `am start` in the pre-flight step, preventing onWindowFocusChanged
-          # from ever firing and causing the "MockCameraActivity ready" timeout.
+          # `am start` in the pre-flight step, preventing the activity window from
+          # appearing over the lock screen.
           "$ADB" shell settings put global stay_on_while_plugged_in 7
           "$ADB" shell settings put global window_animation_scale 0
           "$ADB" shell settings put global transition_animation_scale 0
