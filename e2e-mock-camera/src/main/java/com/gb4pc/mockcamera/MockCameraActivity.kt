@@ -70,9 +70,6 @@ class MockCameraActivity : Activity() {
 
     private var cameraDevice: CameraDevice? = null
 
-    /** Ensures the "ready" log is emitted at most once per Activity instance. */
-    private var readyLogged = false
-
     // -------------------------------------------------------------------------
     // Shutter broadcast receiver
     // -------------------------------------------------------------------------
@@ -117,8 +114,8 @@ class MockCameraActivity : Activity() {
         // On API 27+ the manifest android:showWhenLocked / android:turnScreenOn attributes
         // are advisory hints that some OEM ROMs and the API-35 emulator may ignore.
         // Calling the programmatic equivalents here guarantees the window is shown over the
-        // lock screen and wakes the display, so onWindowFocusChanged(hasFocus=true) fires
-        // reliably in CI even if the screen turned off between the adb unlock and am start.
+        // lock screen and wakes the display even if the screen turned off between the
+        // adb unlock and am start.
         setShowWhenLocked(true)
         setTurnScreenOn(true)
         setContentView(R.layout.activity_mock_camera)
@@ -133,24 +130,6 @@ class MockCameraActivity : Activity() {
             IntentFilter(ACTION_SHUTTER),
             Context.RECEIVER_NOT_EXPORTED,
         )
-        // Give the View one frame to render before signalling ready.
-        // Using a 1-second delay rather than onWindowFocusChanged so the signal fires
-        // even when the display is off or focus is stolen by another window.
-        Handler(Looper.getMainLooper()).postDelayed({
-            if (!readyLogged) {
-                readyLogged = true
-                Log.d(TAG, "MockCameraActivity ready")
-            }
-        }, 1000)
-    }
-
-    /** Fallback: emit the ready log on focus if the postDelayed hasn't fired yet. */
-    override fun onWindowFocusChanged(hasFocus: Boolean) {
-        super.onWindowFocusChanged(hasFocus)
-        if (hasFocus && !readyLogged) {
-            readyLogged = true
-            Log.d(TAG, "MockCameraActivity ready")
-        }
     }
 
     override fun onPause() {
