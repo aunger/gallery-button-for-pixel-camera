@@ -28,7 +28,10 @@ object Screenshot {
      */
     fun saveForArtifact(bmp: Bitmap, name: String) {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
-        val dir = File(ctx.getExternalFilesDir(null), "screenshots")
+        val externalFilesDir = requireNotNull(ctx.getExternalFilesDir(null)) {
+            "External storage is not available — cannot save screenshot artifact"
+        }
+        val dir = File(externalFilesDir, "screenshots")
         dir.mkdirs()
         FileOutputStream(File(dir, name)).use { out ->
             bmp.compress(Bitmap.CompressFormat.PNG, 100, out)
