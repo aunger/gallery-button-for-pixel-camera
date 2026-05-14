@@ -127,7 +127,7 @@ object ShapeMatcher {
         }
     }
 
-    // ── internal helpers ─────────────────────────────────────────────
+    // ── internal helpers ──────────────────────────────────────────────────────────────────────────────
 
     /**
      * Computes IoU between [candidate] and [template] when the template is offset by

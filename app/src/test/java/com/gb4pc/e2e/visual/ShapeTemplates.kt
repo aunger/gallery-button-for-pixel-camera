@@ -94,7 +94,7 @@ object ShapeTemplates {
         return buildMaskData(bits, w, h, sumX, sumY, count, minX, maxX, minY, maxY)
     }
 
-    // ── internal helpers ─────────────────────────────────────────────────────
+    // ── internal helpers ──────────────────────────────────────────────────────────────────────────────
 
     private fun buildMaskData(
         bits: BooleanArray, w: Int, h: Int,
