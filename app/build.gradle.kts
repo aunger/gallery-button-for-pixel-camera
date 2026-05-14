@@ -88,6 +88,24 @@ android {
         buildConfig = true
     }
 
+    testFixtures {
+        enable = true
+    }
+
+    // AGP testFixtures for application modules does not wire a Kotlin compilation task,
+    // so KGP never compiles src/testFixtures/java on its own.  Add the testFixtures
+    // Kotlin sources to both test source sets so each variant compiles them directly.
+    // This keeps shared test helpers out of the production APK while making them
+    // visible to both `test` (JVM unit tests) and `androidTest` (instrumented tests).
+    sourceSets {
+        getByName("test") {
+            java.srcDir("src/testFixtures/java")
+        }
+        getByName("androidTest") {
+            java.srcDir("src/testFixtures/java")
+        }
+    }
+
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
