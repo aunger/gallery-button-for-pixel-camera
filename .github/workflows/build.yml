@@ -193,34 +193,14 @@ jobs:
           "$ADB" shell pm grant com.google.android.GoogleCamera \
             android.permission.CAMERA
 
-          # Re-wake the screen immediately before launch so the activity window gets
-          # focus even if the screen dozed between the readiness step and here.
-          # KEYCODE_WAKEUP (224) wakes from sleep; KEYCODE_MENU (82) unlocks.
-          "$ADB" shell input keyevent 224
-          "$ADB" shell input keyevent 82
-
-          # Launch MockCameraActivity, which renders a solid-GREEN View on screen.
+          # Launch MockCameraActivity and wait for it to be displayed.
+          # am start -W blocks until the activity is on screen, so no polling needed.
           echo "==> Launching MockCameraActivity..."
-          "$ADB" logcat -c
-          "$ADB" shell am start \
+          "$ADB" shell am start -W -n \
             com.google.android.GoogleCamera/com.gb4pc.mockcamera.MockCameraActivity
 
-          # Wait for MockCameraActivity to be ready (up to 60 s).
-          # The activity renders a solid-GREEN View directly; no CaptureSession is needed.
-          echo "==> Waiting for MockCameraActivity ready..."
-          DEADLINE=$((SECONDS + 60))
-          until "$ADB" logcat -d -s MockCameraActivity:D | grep -q "MockCameraActivity ready"; do
-            if [[ $SECONDS -ge $DEADLINE ]]; then
-              echo "ERROR: MockCameraActivity did not become ready within 60 s" >&2
-              echo "=== Full logcat output ===" >&2
-              "$ADB" logcat -d >&2
-              # Capture screen for the upload-artifact step even though we are about to fail.
-              "$ADB" exec-out screencap -p > preflight.png 2>/dev/null || true
-              exit 1
-            fi
-            sleep 1
-          done
-          echo "==> MockCameraActivity ready."
+          # Give the View 3 seconds to render the green surface.
+          sleep 3
 
           # Capture the screen and verify >= 90% of the central 200x200 px is #00C853.
           echo "==> Capturing screen..."

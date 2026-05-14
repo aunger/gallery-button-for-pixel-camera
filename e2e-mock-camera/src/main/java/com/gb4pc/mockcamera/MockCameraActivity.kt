@@ -133,24 +133,18 @@ class MockCameraActivity : Activity() {
             IntentFilter(ACTION_SHUTTER),
             Context.RECEIVER_NOT_EXPORTED,
         )
+        // Give the View one frame to render before signalling ready.
+        // Using a 1-second delay rather than onWindowFocusChanged so the signal fires
+        // even when the display is off or focus is stolen by another window.
+        Handler(Looper.getMainLooper()).postDelayed({
+            if (!readyLogged) {
+                readyLogged = true
+                Log.d(TAG, "MockCameraActivity ready")
+            }
+        }, 1000)
     }
 
-    /**
-     * Emit the "ready" log once the window is fully on screen and has focus.
-     *
-     * Previously this was done via window.decorView.post {} in onResume(), but that
-     * Runnable is queued in HandlerActionQueue when the decor view has no ViewRootImpl
-     * yet (ViewRootImpl is assigned only after onResume() returns in handleResumeActivity).
-     * In practice the Runnable fires during the first ViewRootImpl.performTraversals()
-     * call — BEFORE the Choreographer has actually composed the frame to the display.
-     * As a result, CI's logcat poll detected the "ready" message and immediately ran
-     * screencap, but the green surface hadn't been presented yet, causing the green-feed
-     * check to see a blank/black frame instead of #00C853.
-     *
-     * onWindowFocusChanged(hasFocus=true) is called by the framework only after the window
-     * is visible, laid out, drawn, and composited — guaranteeing the green View is on screen
-     * when CI takes the screenshot.
-     */
+    /** Fallback: emit the ready log on focus if the postDelayed hasn't fired yet. */
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus && !readyLogged) {
