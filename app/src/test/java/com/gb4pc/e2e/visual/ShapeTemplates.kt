@@ -43,17 +43,23 @@ object ShapeTemplates {
         val rx = w / 2.0; val ry = h / 2.0
         val cx = w / 2.0; val cy = h / 2.0
         var sumX = 0L; var sumY = 0L; var count = 0
+        var minX = Int.MAX_VALUE; var maxX = Int.MIN_VALUE
+        var minY = Int.MAX_VALUE; var maxY = Int.MIN_VALUE
         for (y in 0 until h) {
             for (x in 0 until w) {
                 val nx = (x + 0.5 - cx) / rx
                 val ny = (y + 0.5 - cy) / ry
                 if (nx * nx + ny * ny <= 1.0) {
                     bits[y * w + x] = true
+                    if (x < minX) minX = x
+                    if (x > maxX) maxX = x
+                    if (y < minY) minY = y
+                    if (y > maxY) maxY = y
                     sumX += x; sumY += y; count++
                 }
             }
         }
-        return buildMaskData(bits, w, h, sumX, sumY, count)
+        return buildMaskData(bits, w, h, sumX, sumY, count, minX, maxX, minY, maxY)
     }
 
     /**
@@ -68,6 +74,8 @@ object ShapeTemplates {
         val n = 4.0
         val bits = BooleanArray(w * h)
         var sumX = 0L; var sumY = 0L; var count = 0
+        var minX = Int.MAX_VALUE; var maxX = Int.MIN_VALUE
+        var minY = Int.MAX_VALUE; var maxY = Int.MIN_VALUE
         for (y in 0 until h) {
             for (x in 0 until w) {
                 // Use pixel center for sub-pixel accuracy.
@@ -75,32 +83,25 @@ object ShapeTemplates {
                 val ny = abs((y + 0.5) * 2.0 / h - 1.0)
                 if (nx.pow(n) + ny.pow(n) <= 1.0) {
                     bits[y * w + x] = true
-                    sumX += x; sumY += y; count++
-                }
-            }
-        }
-        return buildMaskData(bits, w, h, sumX, sumY, count)
-    }
-
-    // ── internal helpers ─────────────────────────────────────────────
-
-    private fun buildMaskData(
-        bits: BooleanArray, w: Int, h: Int,
-        sumX: Long, sumY: Long, count: Int
-    ): MaskData {
-        if (count == 0) return MaskData(bits, w, h, 0, 0, 0, 0, 0f, 0f, 0)
-        var minX = Int.MAX_VALUE; var maxX = Int.MIN_VALUE
-        var minY = Int.MAX_VALUE; var maxY = Int.MIN_VALUE
-        for (y in 0 until h) {
-            for (x in 0 until w) {
-                if (bits[y * w + x]) {
                     if (x < minX) minX = x
                     if (x > maxX) maxX = x
                     if (y < minY) minY = y
                     if (y > maxY) maxY = y
+                    sumX += x; sumY += y; count++
                 }
             }
         }
+        return buildMaskData(bits, w, h, sumX, sumY, count, minX, maxX, minY, maxY)
+    }
+
+    // ── internal helpers ─────────────────────────────────────────────────────
+
+    private fun buildMaskData(
+        bits: BooleanArray, w: Int, h: Int,
+        sumX: Long, sumY: Long, count: Int,
+        minX: Int, maxX: Int, minY: Int, maxY: Int
+    ): MaskData {
+        if (count == 0) return MaskData(bits, w, h, 0, 0, 0, 0, 0f, 0f, 0)
         return MaskData(
             bits = bits,
             width = w,
