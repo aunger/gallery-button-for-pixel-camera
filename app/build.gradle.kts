@@ -159,15 +159,6 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
 
-// ── testFixtures Kotlin source wiring ────────────────────────────────────────
-// AGP testFixtures for application modules does not create a Kotlin compilation
-// task, so the Kotlin Gradle Plugin never compiles src/testFixtures/java on its
-// own.  Add the testFixtures Kotlin source to both the unit-test and androidTest
-// source sets so each variant compiles MaskData.kt directly.  This keeps the
-// class out of the production APK while remaining visible to both test variants.
-android.sourceSets.getByName("test").java.srcDir("src/testFixtures/java")
-android.sourceSets.getByName("androidTest").java.srcDir("src/testFixtures/java")
-
 // ── E2E test task ────────────────────────────────────────────────────────────
 // Builds the APKs, installs them on the connected device/emulator, and runs only
 // the com.gb4pc.e2e package (the standard connectedDebugAndroidTest excludes it).
