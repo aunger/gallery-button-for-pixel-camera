@@ -165,7 +165,10 @@ jobs:
           done
           echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Services ready (${SVCWAIT}s after boot flag)."
 
-          # Unlock screen, keep it on, and disable animations now that services are up.
+          # Wake, unlock, keep on, and disable animations now that services are up.
+          # KEYCODE_WAKEUP (224) is more reliable than KEYCODE_MENU (82) for waking
+          # the display from sleep; KEYCODE_MENU then dismisses the lock screen.
+          "$ADB" shell input keyevent 224
           "$ADB" shell input keyevent 82
           # Prevent the screen from sleeping while the emulator is "plugged in"
           # (value 7 = stay on for AC/USB/wireless charging combined).
@@ -190,6 +193,12 @@ jobs:
           "$ADB" shell pm grant com.google.android.GoogleCamera \
             android.permission.CAMERA
 
+          # Re-wake the screen immediately before launch so the activity window gets
+          # focus even if the screen dozed between the readiness step and here.
+          # KEYCODE_WAKEUP (224) wakes from sleep; KEYCODE_MENU (82) unlocks.
+          "$ADB" shell input keyevent 224
+          "$ADB" shell input keyevent 82
+
           # Launch MockCameraActivity, which renders a solid-GREEN View on screen.
           echo "==> Launching MockCameraActivity..."
           "$ADB" logcat -c
@@ -205,6 +214,8 @@ jobs:
               echo "ERROR: MockCameraActivity did not become ready within 60 s" >&2
               echo "=== Full logcat output ===" >&2
               "$ADB" logcat -d >&2
+              # Capture screen for the upload-artifact step even though we are about to fail.
+              "$ADB" exec-out screencap -p > preflight.png 2>/dev/null || true
               exit 1
             fi
             sleep 1
