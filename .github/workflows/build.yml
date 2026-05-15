@@ -226,8 +226,6 @@ jobs:
 
           echo "==> Running green-feed smoke check..."
           if ! python3 scripts/check_green_feed.py preflight.png; then
-            echo "=== pre-flight failed: check_green_feed dominant color ==="
-            python3 -c "from PIL import Image; from collections import Counter; img = Image.open('preflight.png').convert('RGB'); w, h = img.size; cx, cy = w//2, h//2; region = img.crop((cx-100, cy-100, cx+100, cy+100)); pixels = list(region.getdata()); top = Counter(pixels).most_common(3); print('Top 3 colors in center 200x200:', top)" 2>/dev/null || echo "(PIL not available)"
             exit 1
           fi
 

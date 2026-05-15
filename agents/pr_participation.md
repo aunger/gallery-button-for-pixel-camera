@@ -13,6 +13,20 @@
 - **Before approving, wait** for the CI gates (usually builds and tests) to complete. You need not wait if other required changes are outstanding, but do not send final approval unless the PR is **currently green**.
 - **If you must wait, poll** the status every 30 seconds. Do not rely on the flaky CI event hooks. **Update your own status every 30 seconds too**, so the Orchestrator doesn't think you're done.
 - **If the CI gates fail**, report this in your review. Based on the result and your expert evaluation, you may still decide to approve for a false positive.
+- **Do not return before posting your review.** Posting your review is the only valid exit condition. "Waiting for CI" is a loop body, not a final state. After your polling loop completes — whether CI is green, failed, or you hit the poll cap — you must call the review-submission tool before stopping.
+
+  Polling pattern:
+  ```
+  (ReviewText, IsReviewApproval) := <review the diff; form your verdict and review text>
+  repeat up to 20 times:
+    fetch PR status via mcp__github__pull_request_read
+    if all checks SUCCESS or SKIPPED → break
+    if any check FAILURE → break
+    sleep 30 seconds
+  if any check FAILURE:
+    reconsider IsReviewApproval — set to false if the failure is caused by this PR's changes
+  post review unconditionally: mcp__github__pull_request_review_write(ReviewText, IsReviewApproval)
+  ```
 
 ## Author / Programmer
 
