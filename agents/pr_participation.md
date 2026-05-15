@@ -11,7 +11,7 @@
 - The Reviewer may mention positive aspects of the code under review, but must not use many words to do it.
 - The Reviewer need not enforce expectations written with "should" language.
 - **Before approving, wait** for the CI gates (usually builds and tests) to complete. You need not wait if other required changes are outstanding, but do not send final approval unless the PR is **currently green**.
-- **If you must wait, poll** the status every 30 seconds. Do not rely on the flaky CI event hooks. **Update your own status every 30 seconds too**, so the Orchestrator doesn't think you're done.
+- **If you must wait, poll** the status every 30 seconds. Do not rely on the flaky CI event hooks. Note: subagents cannot proactively send mid-task status messages to the Orchestrator — communication from subagent to Orchestrator only happens on completion. The Orchestrator will be notified when you exit; keep your polling loop running and do not exit until your review is posted.
 - **If the CI gates fail**, report this in your review. Based on the result and your expert evaluation, you may still decide to approve for a false positive.
 - **Do not return before posting your review.** Posting your review is the only valid exit condition. "Waiting for CI" is a loop body, not a final state. After your polling loop completes — whether CI is green, failed, or you hit the poll cap — you must call the review-submission tool before stopping.
 

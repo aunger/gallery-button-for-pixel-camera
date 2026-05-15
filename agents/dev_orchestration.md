@@ -55,7 +55,10 @@ The Orchestrator is not a Reviewer or a Programmer.
 - **Dispatch in parallel** for independent issues (unless otherwise instructed). Parallel independent issues must each have their own branch.
 - **Do not pre-diagnose.** Do not include your own analysis of the root cause.
 - **If a system hook or event signals uncommitted work, a test failure, or an error**, **pause 45 seconds**, then evaluate whether the agent or CI system is still actively working. If the agent was recently active (not idle or waiting for input), **or** the CI gates are in progress, **do not intervene** and continue waiting.
-- If an agent has failed to complete its work, and shows no sign of continued effort, assign a replacement to finish the job.
+- **Agent completion and exit are the same event.** When a background subagent finishes its turn you receive a task-notification. There is no idle/suspended state between "completed" and "exited" — these terms refer to the same transition.
+- **If an agent has exited without completing its task**, prefer resuming it over spawning a replacement. Use SendMessage with the original agent's ID to resume it with its full prior context intact — no reconstruction needed. Only spawn a replacement if the original agent's ID is unavailable or resumption fails.
+  - *Caveat — time window:* the backend may only keep a completed agent's session alive for a limited time after exit. Attempt resumption promptly.
+  - *Caveat — ID availability:* background agent IDs are returned at launch but are not persisted across Orchestrator context resets. If the ID is no longer available, fall back to spawning a replacement and reconstructing context from available sources (PR, issue, prior comments).
 
 ## When to abort
 
