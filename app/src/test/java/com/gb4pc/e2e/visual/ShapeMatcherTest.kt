@@ -223,6 +223,27 @@ class ShapeMatcherTest {
 
     // ── anti-aliased / noisy inputs (2% edge dropout) ────────────────────────
 
+    @Test fun `noisy square 64x64 still classifies as SQUARE`() =
+        assertClassifiesAs(
+            "noisy square 64x64",
+            makeNoisy(Shape.SQUARE, 64, 64, noiseFraction = 0.02),
+            Shape.SQUARE
+        )
+
+    @Test fun `noisy circle 64x64 still classifies as CIRCLE`() =
+        assertClassifiesAs(
+            "noisy circle 64x64",
+            makeNoisy(Shape.CIRCLE, 64, 64, noiseFraction = 0.02),
+            Shape.CIRCLE
+        )
+
+    @Test fun `noisy squircle 64x64 still classifies as SQUIRCLE`() =
+        assertClassifiesAs(
+            "noisy squircle 64x64",
+            makeNoisy(Shape.SQUIRCLE, 64, 64, noiseFraction = 0.02),
+            Shape.SQUIRCLE
+        )
+
     @Test fun `noisy square 128x128 still classifies as SQUARE`() =
         assertClassifiesAs(
             "noisy square 128x128",
