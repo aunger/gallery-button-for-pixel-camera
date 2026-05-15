@@ -17,12 +17,15 @@
 
   Polling pattern:
   ```
+  (ReviewText, IsReviewApproval) := <review the diff; form your verdict and review text>
   repeat up to 15 times:
-    fetch PR status
-    if all checks are SUCCESS or SKIPPED → break
-    if any check is FAILURE → break
+    fetch PR status via mcp__github__pull_request_read
+    if all checks SUCCESS or SKIPPED → break
+    if any check FAILURE → break
     sleep 30 seconds
-  → post your review (APPROVE, REQUEST_CHANGES, or COMMENT noting CI still pending)
+  if any check FAILURE:
+    reconsider IsReviewApproval — set to false if the failure is caused by this PR's changes
+  post review unconditionally: mcp__github__pull_request_review_write(ReviewText, IsReviewApproval)
   ```
 
 ## Author / Programmer
