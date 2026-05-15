@@ -3,8 +3,20 @@ name: Build & Test
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'agents/**'
+      - 'AGENTS.md'
+      - 'CLAUDE.md'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'agents/**'
+      - 'AGENTS.md'
+      - 'CLAUDE.md'
 
 permissions:
   contents: read
