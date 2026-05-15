@@ -18,7 +18,7 @@
   Polling pattern:
   ```
   (ReviewText, IsReviewApproval) := <review the diff; form your verdict and review text>
-  repeat up to 15 times:
+  repeat up to 20 times:
     fetch PR status via mcp__github__pull_request_read
     if all checks SUCCESS or SKIPPED → break
     if any check FAILURE → break
