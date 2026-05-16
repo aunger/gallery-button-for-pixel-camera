@@ -242,17 +242,17 @@ jobs:
           "$ADB" shell am start -W -n \
             com.google.android.GoogleCamera/com.gb4pc.mockcamera.MockCameraActivity
 
-          # Give the View 8 seconds to render the green surface.
-          sleep 8
-
-          # Capture the screen and verify >= 90% of the central 200x200 px is #00C853.
-          echo "==> Capturing screen..."
-          "$ADB" exec-out screencap -p > preflight.png
-
-          echo "==> Running green-feed smoke check..."
-          if ! python3 scripts/check_green_feed.py preflight.png; then
-            exit 1
-          fi
+          # Retry loop: capture screen and verify green feed, up to 15 attempts.
+          for attempt in $(seq 1 15); do
+            "$ADB" exec-out screencap -p > preflight.png
+            python3 scripts/check_green_feed.py preflight.png && break
+            if [ "$attempt" -eq 15 ]; then
+              echo "ERROR: pre-flight failed after 15 attempts"
+              exit 1
+            fi
+            echo "Attempt $attempt failed, retrying in 2s..."
+            sleep 2
+          done
 
       - name: Upload preflight screenshot on failure
         if: steps.diff_check.outputs.needs_full_build == 'true' && steps.preflight.outcome == 'failure'
