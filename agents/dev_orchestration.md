@@ -47,6 +47,30 @@ The Orchestrator is not a Reviewer or a Programmer.
 - Inform the agent of its role as an expert software reviewer who ensures high quality code and adherence to development plans
 - Pass the issue number to the subagent
 - Relay any relevant instruction from the user
+- The Reviewer posts its review immediately upon completing its analysis and then exits. **Do not** instruct the Reviewer to poll CI or delay posting — CI checking is handled by the Orchestrator via a CiWatcher agent (see below).
+
+## CI checking after a Reviewer exits (CiWatcher loop)
+
+After the Reviewer exits and delivers its decision, the Orchestrator runs the following loop:
+
+```
+  if Reviewer requested changes → goto newAuthor
+  if Reviewer gave approval:
+    record start_time
+loop:
+    Orchestrator creates a CiWatcher agent (see agents/ci_watcher.md)
+    CiWatcher returns one of: Clear, Blocked, Infra, or Pending
+    if CiWatcher returned Pending:
+      if elapsed time since start_time > 30 minutes → escalate to user; stop
+      goto loop
+    if CiWatcher returned Infra    → escalate to user; stop
+    if CiWatcher returned Blocked  → goto newAuthor
+    if CiWatcher returned Clear    → PR may be merged
+```
+
+- **CiWatcher** is a short-lived agent that polls CI for up to 2.5 minutes and reports back. It does not post to GitHub.
+- The Orchestrator loops (spawning a fresh CiWatcher each iteration) until CI settles or a new Author cycle is needed.
+- Do not subscribe to PR events or delay dispatching the Reviewer while waiting for CI — the CiWatcher loop replaces that pattern.
 
 ## Delegation rules
 
