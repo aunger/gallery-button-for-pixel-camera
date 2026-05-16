@@ -30,8 +30,13 @@ repeat up to 5 times:
   if all runs have status "completed":
     if any run has conclusion "cancelled", "timed_out", "stale", or "startup_failure" → return Infra
     if any run has conclusion "failure" or "action_required" → return Blocked
-    if all runs have conclusion "success", "skipped", or "neutral" → return Clear
-    → return Infra  (unknown conclusion — treat as infrastructure problem, escalate)
+    if all runs have conclusion "success", "skipped", or "neutral":
+      fetch PR via mcp__github__pull_request_read (method: get)
+      if mergeable_state = "clean"    → return Clear
+      if mergeable_state = "unstable" → return Clear   (only non-required checks failing)
+      if mergeable_state = "unknown"  → CI still computing; continue polling
+      otherwise (blocked, behind, dirty, etc.) → return Infra
+    → return Infra  (unknown conclusion — escalate)
   if not the last iteration → run `sleep 30` via the Bash tool
 return Pending
 ```
@@ -42,9 +47,9 @@ CiWatcher delivers exactly one of the following outcomes to the Orchestrator whe
 
 | Outcome   | Meaning                                                  |
 |-----------|----------------------------------------------------------|
-| `Clear`   | All completed runs have conclusion `success`, `skipped`, or `neutral` (explicit whitelist; any unrecognized conclusion escalates as `Infra`).|
+| `Clear`   | All completed runs have conclusion `success`, `skipped`, or `neutral` AND `mergeable_state` is `clean` or `unstable` (explicit whitelist; any unrecognized conclusion escalates as `Infra`).|
 | `Blocked` | Any completed run has conclusion `failure` or `action_required` (code caused the failure).|
-| `Infra`   | Any completed run has conclusion `cancelled`, `timed_out`, `stale`, or `startup_failure`; or any unrecognized conclusion — a CI infrastructure problem unrelated to the PR's code changes; escalate to user.|
+| `Infra`   | Any completed run has conclusion `cancelled`, `timed_out`, `stale`, or `startup_failure`; or any unrecognized conclusion; or `mergeable_state` is `blocked` (a required status check not satisfied by `get_check_runs`, e.g. a legacy commit status) — a CI infrastructure problem unrelated to the PR's code changes; escalate to user.|
 | `Pending` | CI was still running after 2.5 minutes (5 polls × 30 s).|
 
 ## Lifecycle
