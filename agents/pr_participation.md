@@ -10,22 +10,14 @@
 - A Reviewer should be explicit and fully explain any problems, but should not spend tokens to design their solutions.
 - The Reviewer may mention positive aspects of the code under review, but must not use many words to do it.
 - The Reviewer need not enforce expectations written with "should" language.
-- **Before approving, wait** for the CI gates (usually builds and tests) to complete. You need not wait if other required changes are outstanding, but do not send final approval unless the PR is **currently green**.
-- **If you must wait, poll** the status every 30 seconds. Do not rely on the flaky CI event hooks. Note: subagents cannot proactively send mid-task status messages to the Orchestrator — communication from subagent to Orchestrator only happens on completion. The Orchestrator will be notified when you exit; keep your polling loop running and do not exit until your review is posted.
-- **If the CI gates fail**, report this in your review. Based on the result and your expert evaluation, you may still decide to approve for a false positive.
-- **Do not return before posting your review.** Posting your review is the only valid exit condition. "Waiting for CI" is a loop body, not a final state. After your polling loop completes — whether CI is green, failed, or you hit the poll cap — you must call the review-submission tool before stopping.
+- **Do not wait for CI.** Review the diff, form your verdict, and post your review immediately. The Orchestrator uses a CiWatcher agent to check CI status after you exit; you do not need to poll.
+- **If CI results are already available** when you complete your review, you may note them in your review text, but do not block on them.
+- **Do not return before posting your review.** Posting your review is the only valid exit condition. After forming your verdict, call the review-submission tool before stopping.
 
-  Polling pattern:
+  Review pattern:
   ```
   (ReviewText, IsReviewApproval) := <review the diff; form your verdict and review text>
-  repeat up to 20 times:
-    fetch PR status via mcp__github__pull_request_read
-    if all checks SUCCESS or SKIPPED → break
-    if any check FAILURE → break
-    sleep 30 seconds
-  if any check FAILURE:
-    reconsider IsReviewApproval — set to false if the failure is caused by this PR's changes
-  post review unconditionally: mcp__github__pull_request_review_write(ReviewText, IsReviewApproval)
+  post review: mcp__github__pull_request_review_write(ReviewText, IsReviewApproval)
   ```
 
 ## Author / Programmer
