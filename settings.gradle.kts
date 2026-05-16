@@ -18,4 +18,4 @@ dependencyResolutionManagement {
 rootProject.name = "GB4PC"
 include(":app")
 include(":e2e-mock-camera")
-include(":testgallery")
+include(":e2e-mock-gallery")
