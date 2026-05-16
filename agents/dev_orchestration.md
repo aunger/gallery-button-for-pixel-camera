@@ -56,10 +56,13 @@ After the Reviewer exits and delivers its decision, the Orchestrator runs the fo
 ```
   if Reviewer requested changes → goto newAuthor
   if Reviewer gave approval:
+    record start_time
 loop:
     Orchestrator creates a CiWatcher agent (see agents/ci_watcher.md)
     CiWatcher returns one of: Clear, Blocked, or Pending
-    if CiWatcher returned Pending  → goto loop
+    if CiWatcher returned Pending:
+      if elapsed time since start_time > 30 minutes → escalate to user; stop
+      goto loop
     if CiWatcher returned Blocked  → goto newAuthor
     if CiWatcher returned Clear    → PR may be merged
 ```
