@@ -92,7 +92,7 @@ class TestMainAdbRetryLoop(unittest.TestCase):
         try:
             with patch("check_green_feed.subprocess.run") as mock_run, \
                  patch("check_green_feed.time.sleep") as mock_sleep, \
-                 patch("check_green_feed.open", create=True) as mock_open:
+                 patch("builtins.open", create=True) as mock_open:
                 # subprocess.run writes nothing; check_image reads the pre-existing file
                 mock_open.return_value.__enter__ = lambda s: s
                 mock_open.return_value.__exit__ = MagicMock(return_value=False)
