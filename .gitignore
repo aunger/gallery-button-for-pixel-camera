@@ -6,7 +6,7 @@
 /build
 /app/build
 /e2e-mock-camera/build
-/testgallery/build
+/e2e-mock-gallery/build
 /captures
 .externalNativeBuild
 .cxx
