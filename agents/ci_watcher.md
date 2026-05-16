@@ -28,7 +28,8 @@ repeat up to 5 times:
   if total_count = 0 → return Clear  (no CI configured)
   if any run has status "in_progress" or "queued" → CI is active; continue polling
   if all runs have status "completed":
-    if any run has conclusion other than "success" or "skipped" → return Blocked
+    if any run has conclusion "cancelled", "timed_out", or "stale" → return Infra
+    if any run has conclusion "failure", "error", or "action_required" → return Blocked
     → return Clear
   if not the last iteration → run `sleep 30` via the Bash tool
 return Pending
@@ -40,8 +41,9 @@ CiWatcher delivers exactly one of the following outcomes to the Orchestrator whe
 
 | Outcome   | Meaning                                                  |
 |-----------|----------------------------------------------------------|
-| `Clear`   | All completed runs have conclusion `success` or `skipped`.|
-| `Blocked` | Any completed run has a conclusion other than `success` or `skipped` (e.g. `failure`, `error`, `cancelled`, `timed_out`, `action_required`, `neutral`, `stale`).|
+| `Clear`   | All completed runs have conclusion `success`, `skipped`, or `neutral`.|
+| `Blocked` | Any completed run has conclusion `failure`, `error`, or `action_required` (code caused the failure).|
+| `Infra`   | Any completed run has conclusion `cancelled`, `timed_out`, or `stale` — a CI infrastructure problem unrelated to the PR's code changes; escalate to user.|
 | `Pending` | CI was still running after 2.5 minutes (5 polls × 30 s).|
 
 ## Lifecycle
