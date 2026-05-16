@@ -27,7 +27,7 @@ repeat up to 5 times:
   fetch PR status via mcp__github__pull_request_read
   if all checks SUCCESS or SKIPPED → exit and return Clear
   if any check FAILURE        → exit and return Blocked
-  sleep 30 seconds
+  if not the last iteration   → sleep 30 seconds
 exit and return Pending
 ```
 
