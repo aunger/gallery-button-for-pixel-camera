@@ -5,13 +5,19 @@ Samples the central 200x200 px region of the image and asserts that >= 90% of
 pixels match #00C853 (R=0, G=200, B=83) within a per-channel tolerance of 20.
 
 Usage:
+    # Single-shot check against an already-captured image:
     python3 scripts/check_green_feed.py <image.png>
+
+    # Retry loop: capture a fresh screencap via adb on each attempt:
+    python3 scripts/check_green_feed.py --adb <adb-path> <image.png>
 
 Exits 0 on success, non-zero on failure (prints actual dominant color).
 """
 
 import struct
+import subprocess
 import sys
+import time
 import zlib
 
 
@@ -22,6 +28,10 @@ TARGET_B = 83
 TOLERANCE = 20
 REGION_SIZE = 200
 MIN_COVERAGE = 0.90
+
+# Retry-loop settings (used when --adb is passed)
+MAX_ATTEMPTS = 15
+RETRY_DELAY_SECONDS = 2
 
 
 def decode_png_to_rgb(path: str) -> tuple[list[list[tuple[int, int, int]]], int, int]:
@@ -134,12 +144,8 @@ def dominant_color(pixels_region: list[tuple[int, int, int]]) -> tuple[int, int,
     return (avg_r, avg_g, avg_b)
 
 
-def main() -> int:
-    if len(sys.argv) != 2:
-        print(f"Usage: {sys.argv[0]} <image.png>", file=sys.stderr)
-        return 2
-
-    path = sys.argv[1]
+def check_image(path: str) -> int:
+    """Check a single PNG image. Returns 0 on pass, 1 on fail, 2 on error."""
     try:
         pixels, width, height = decode_png_to_rgb(path)
     except (OSError, ValueError) as e:
@@ -184,6 +190,48 @@ def main() -> int:
             f"(R={dom[0]}, G={dom[1]}, B={dom[2]})"
         )
         return 1
+
+
+def main() -> int:
+    args = sys.argv[1:]
+
+    # Parse optional --adb flag
+    adb_path: str | None = None
+    if len(args) >= 2 and args[0] == "--adb":
+        adb_path = args[1]
+        args = args[2:]
+
+    if len(args) != 1:
+        print(
+            f"Usage: {sys.argv[0]} [--adb <adb-path>] <image.png>",
+            file=sys.stderr,
+        )
+        return 2
+
+    path = args[0]
+
+    if adb_path is None:
+        # Single-shot mode: check the provided image directly.
+        return check_image(path)
+
+    # Retry-loop mode: capture a fresh screencap on each attempt.
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        # Sleep first so the display has time to render before the first check
+        # and between retries; the caller has already waited for am start -W.
+        time.sleep(RETRY_DELAY_SECONDS)
+        with open(path, "wb") as out:
+            subprocess.run(
+                [adb_path, "exec-out", "screencap", "-p"],
+                stdout=out,
+                check=False,
+            )
+        result = check_image(path)
+        if result == 0:
+            return 0
+        if attempt < MAX_ATTEMPTS:
+            print(f"Attempt {attempt} failed, retrying...")
+    print(f"ERROR: pre-flight failed after {MAX_ATTEMPTS} attempts")
+    return 1
 
 
 if __name__ == "__main__":
