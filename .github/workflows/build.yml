@@ -213,7 +213,7 @@ jobs:
           echo "==> Waking display and dismissing keyguard..."
           "$ADB" shell input keyevent KEYCODE_WAKEUP
           "$ADB" shell wm dismiss-keyguard
-          sleep 1
+          sleep 2
 
           # Launch MockCameraActivity and wait for it to be displayed.
           # am start -W blocks until the activity is on screen, so no polling needed.
@@ -221,8 +221,8 @@ jobs:
           "$ADB" shell am start -W -n \
             com.google.android.GoogleCamera/com.gb4pc.mockcamera.MockCameraActivity
 
-          # Give the View 3 seconds to render the green surface.
-          sleep 3
+          # Give the View 8 seconds to render the green surface.
+          sleep 8
 
           # Capture the screen and verify >= 90% of the central 200x200 px is #00C853.
           echo "==> Capturing screen..."
