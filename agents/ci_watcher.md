@@ -24,11 +24,14 @@ Poll CI for up to 2.5 minutes (5 polls, 30 seconds apart):
 
 ```
 repeat up to 5 times:
-  fetch PR status via mcp__github__pull_request_read
-  if all checks SUCCESS or SKIPPED → exit and return Clear
-  if any check FAILURE        → exit and return Blocked
-  if not the last iteration   → run `sleep 30` via the Bash tool
-exit and return Pending
+  fetch check runs via mcp__github__pull_request_read (method: get_check_runs)
+  if total_count = 0 → return Clear  (no CI configured)
+  if any run has status "in_progress" or "queued" → CI is active; continue polling
+  if all runs have status "completed":
+    if any run has conclusion "failure" or "error" → return Blocked
+    → return Clear
+  if not the last iteration → run `sleep 30` via the Bash tool
+return Pending
 ```
 
 ## Return values
