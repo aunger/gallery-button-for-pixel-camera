@@ -54,14 +54,14 @@ The Orchestrator is not a Reviewer or a Programmer.
 After the Reviewer exits and delivers its decision, the Orchestrator runs the following loop:
 
 ```
-loop:
+  if Reviewer requested changes → goto newAuthor
   if Reviewer gave approval:
+loop:
     Orchestrator creates a CiWatcher agent (see agents/ci_watcher.md)
     CiWatcher returns one of: Clear, Blocked, or Pending
     if CiWatcher returned Pending  → goto loop
     if CiWatcher returned Blocked  → goto newAuthor
     if CiWatcher returned Clear    → PR may be merged
-  if Reviewer requested changes → goto newAuthor
 ```
 
 - **CiWatcher** is a short-lived agent that polls CI for up to 2.5 minutes and reports back. It does not post to GitHub.
