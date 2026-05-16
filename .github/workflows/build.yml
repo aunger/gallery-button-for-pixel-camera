@@ -42,8 +42,9 @@ jobs:
             # Always build on direct pushes to main (e.g. merge commits).
             echo "has_code_changes=true" >> $GITHUB_OUTPUT
           else
-            git fetch origin ${{ github.base_ref }} --depth=1
-            CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -v '\.md$' || true)
+            BASE_REF="${{ github.base_ref }}"
+            git fetch origin "$BASE_REF" --depth=1
+            CHANGED=$(git diff --name-only "origin/$BASE_REF"...HEAD | grep -v '\.md$' || true)
             echo "has_code_changes=$([ -n "$CHANGED" ] && echo true || echo false)" >> $GITHUB_OUTPUT
           fi
 
