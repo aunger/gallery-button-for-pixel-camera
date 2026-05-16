@@ -35,7 +35,8 @@ repeat up to 5 times:
       if mergeable_state = "clean"    → return Clear
       if mergeable_state = "unstable" → return Clear   (only non-required checks failing)
       if mergeable_state = "unknown"  → CI still computing; continue polling
-      otherwise (blocked, behind, dirty, etc.) → return Infra
+      if mergeable_state = "behind" or "dirty" → return Blocked  (Author must rebase or resolve conflict)
+      otherwise → return Infra  (blocked by unresolved required status check or unknown cause)
     → return Infra  (unknown conclusion — escalate)
   if not the last iteration → run `sleep 30` via the Bash tool
 return Pending
@@ -48,7 +49,7 @@ CiWatcher delivers exactly one of the following outcomes to the Orchestrator whe
 | Outcome   | Meaning                                                  |
 |-----------|----------------------------------------------------------|
 | `Clear`   | All completed runs have conclusion `success`, `skipped`, or `neutral` AND `mergeable_state` is `clean` or `unstable` (explicit whitelist; any unrecognized conclusion escalates as `Infra`).|
-| `Blocked` | Any completed run has conclusion `failure` or `action_required` (code caused the failure).|
+| `Blocked` | Any completed run has conclusion `failure` or `action_required` (code caused the failure); or `mergeable_state` is `behind` (Author must rebase onto base branch) or `dirty` (Author must resolve merge conflict).|
 | `Infra`   | Any completed run has conclusion `cancelled`, `timed_out`, `stale`, or `startup_failure`; or any unrecognized conclusion; or `mergeable_state` is `blocked` (a required status check not satisfied by `get_check_runs`, e.g. a legacy commit status) — a CI infrastructure problem unrelated to the PR's code changes; escalate to user.|
 | `Pending` | CI was still running after 2.5 minutes (5 polls × 30 s).|
 
