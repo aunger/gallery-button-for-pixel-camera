@@ -3,12 +3,8 @@ name: Build & Test
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - '**/*.md'
   pull_request:
     branches: [main]
-    paths-ignore:
-      - '**/*.md'
 
 permissions:
   contents: read
@@ -36,17 +32,34 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Check for non-docs changes
+        id: diff_check
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            # Always build on direct pushes to main (e.g. merge commits).
+            echo "has_code_changes=true" >> $GITHUB_OUTPUT
+          else
+            git fetch origin ${{ github.base_ref }} --depth=1
+            CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -v '\.md$' || true)
+            echo "has_code_changes=$([ -n "$CHANGED" ] && echo true || echo false)" >> $GITHUB_OUTPUT
+          fi
 
       - name: Set up JDK 17
+        if: steps.diff_check.outputs.has_code_changes == 'true'
         uses: actions/setup-java@v5
         with:
           java-version: '17'
           distribution: 'temurin'
 
       - name: Set up Android SDK
+        if: steps.diff_check.outputs.has_code_changes == 'true'
         uses: android-actions/setup-android@v4
 
       - name: Enable KVM
+        if: steps.diff_check.outputs.has_code_changes == 'true'
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | \
             sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -54,6 +67,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       - name: Cache Gradle packages
+        if: steps.diff_check.outputs.has_code_changes == 'true'
         uses: actions/cache@v5
         with:
           path: |
@@ -64,6 +78,7 @@ jobs:
             ${{ runner.os }}-gradle-
 
       - name: Install emulator, system image, and create AVD
+        if: steps.diff_check.outputs.has_code_changes == 'true'
         run: |
           sdkmanager --install \
             "emulator" \
@@ -90,9 +105,11 @@ jobs:
           ANDROID_AVD_HOME="$AVD_HOME" $ANDROID_HOME/emulator/emulator -list-avds
 
       - name: Grant execute permission for gradlew
+        if: steps.diff_check.outputs.has_code_changes == 'true'
         run: chmod +x gradlew
 
       - name: Build and run unit tests
+        if: steps.diff_check.outputs.has_code_changes == 'true'
         env:
           BUILD_NUMBER: ${{ github.run_number }}
         run: >
@@ -100,7 +117,7 @@ jobs:
           testDebugUnitTest -PversionName=dev.${{ github.run_number }} --no-daemon
 
       - name: Upload unit test results
-        if: always()
+        if: always() && steps.diff_check.outputs.has_code_changes == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: unit-test-results
@@ -108,6 +125,7 @@ jobs:
           retention-days: 14
 
       - name: Start emulator
+        if: steps.diff_check.outputs.has_code_changes == 'true'
         run: |
           echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === KVM device:"
           ls -la /dev/kvm || echo "WARNING: /dev/kvm not found"
@@ -138,6 +156,7 @@ jobs:
       # sys.boot_completed is set while binder threads are still saturated;
       # we wait until `settings` actually responds before issuing any commands.
       - name: Wait for emulator service readiness
+        if: steps.diff_check.outputs.has_code_changes == 'true'
         timeout-minutes: 10
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
@@ -185,6 +204,7 @@ jobs:
           "$ADB" shell settings put global animator_duration_scale 0
 
       - name: CI pre-flight — green-feed smoke check
+        if: steps.diff_check.outputs.has_code_changes == 'true'
         id: preflight
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
@@ -234,7 +254,7 @@ jobs:
           fi
 
       - name: Upload preflight screenshot on failure
-        if: steps.preflight.outcome == 'failure'
+        if: steps.diff_check.outputs.has_code_changes == 'true' && steps.preflight.outcome == 'failure'
         uses: actions/upload-artifact@v4
         with:
           name: preflight-screenshot
@@ -242,6 +262,7 @@ jobs:
           retention-days: 14
 
       - name: Run E2E setup and tests
+        if: steps.diff_check.outputs.has_code_changes == 'true'
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
 
@@ -273,13 +294,13 @@ jobs:
           }
 
       - name: Kill emulator
-        if: always()
+        if: always() && steps.diff_check.outputs.has_code_changes == 'true'
         run: |
           $ANDROID_HOME/platform-tools/adb emu kill 2>/dev/null || true
           [[ -n "${EMULATOR_PID:-}" ]] && kill "$EMULATOR_PID" 2>/dev/null || true
 
       - name: Upload E2E test results
-        if: always()
+        if: always() && steps.diff_check.outputs.has_code_changes == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: e2e-test-results
