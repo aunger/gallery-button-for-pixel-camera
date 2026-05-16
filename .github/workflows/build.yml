@@ -243,8 +243,10 @@ jobs:
             com.google.android.GoogleCamera/com.gb4pc.mockcamera.MockCameraActivity
 
           # Retry loop: capture screen and verify green feed, up to 15 attempts.
+          # The screencap uses || true so a transient adb exit code does not
+          # trigger set -e before check_green_feed.py can evaluate the image.
           for attempt in $(seq 1 15); do
-            "$ADB" exec-out screencap -p > preflight.png
+            "$ADB" exec-out screencap -p > preflight.png || true
             python3 scripts/check_green_feed.py preflight.png && break
             if [ "$attempt" -eq 15 ]; then
               echo "ERROR: pre-flight failed after 15 attempts"
