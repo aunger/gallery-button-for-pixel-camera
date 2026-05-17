@@ -177,7 +177,7 @@ def check_image(path: str) -> int:
     coverage = green_count / total
 
     print(
-        f"Green feed check: {green_count}/{total} pixels match #00C853 "
+        f"MockCameraActivity smoke check: {green_count}/{total} pixels match #00C853 "
         f"(tolerance={TOLERANCE}) — coverage={coverage:.1%}"
     )
 

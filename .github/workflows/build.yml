@@ -251,8 +251,8 @@ jobs:
           ADB="$ANDROID_HOME/platform-tools/adb"
 
           chmod +x scripts/setup-e2e-emulator.sh
-          # --post-boot skips AVD creation/boot. No pixel-camera.apkm exists so the
-          # script's PC install step is skipped; we install the mock below instead.
+          # --post-boot skips AVD creation/boot; AVD is already running from the
+          # boot step above. MockCameraActivity (solid-green View) is the camera.
           scripts/setup-e2e-emulator.sh --post-boot
 
           # Mock Pixel Camera is already installed (pre-flight step above).
