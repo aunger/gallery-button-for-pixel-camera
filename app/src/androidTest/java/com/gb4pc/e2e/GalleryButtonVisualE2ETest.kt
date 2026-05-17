@@ -71,16 +71,14 @@ class GalleryButtonVisualE2ETest {
     @Test
     fun test0_smokeGreenFeedVisible() {
         fixture.launchPixelCamera()
-        fixture.pause(1000)
+
+        // Poll up to 15 s for the camera feed to render — a fixed 1 s pause is too short
+        // on a cold-started emulator. waitForGreenCoverage returns the last measured coverage.
+        val coverage = fixture.waitForGreenCoverage(minCoverage = 0.70f, timeoutMs = 15_000L)
 
         val screen = Screenshot.captureScreen()
         Screenshot.saveForArtifact(screen, "0-screen.png")
 
-        // Inspect the central 60% of the screen (excludes status bar / nav bar chrome).
-        val centralRegion = centralRegion(screen, 0.60f)
-        val greenMask = ColorMatch.mask(screen, Rgb.GREEN)
-
-        val coverage = ColorMatch.coverageFraction(greenMask, centralRegion)
         if (coverage <= 0.70f) {
             fail(
                 "test0_smokeGreenFeedVisible: GREEN coverage in central 60% of screen is " +
@@ -107,7 +105,8 @@ class GalleryButtonVisualE2ETest {
         fixture.seedGalleryPrefs(MOCK_GALLERY_PACKAGE)
         fixture.clearCameraRoll()
         fixture.launchPixelCamera()
-        fixture.pause(1000)
+        // Wait for UsageStats-based foreground detection to activate the overlay.
+        fixture.waitForOverlayActive()
 
         val screen = Screenshot.captureScreen()
         val blue = ColorMatch.mask(screen, Rgb.BLUE)
@@ -150,7 +149,8 @@ class GalleryButtonVisualE2ETest {
         fixture.seedGalleryPrefs(MOCK_GALLERY_PACKAGE)
         fixture.clearCameraRoll()
         fixture.launchPixelCamera()
-        fixture.pause(1000)
+        // Wait for UsageStats-based foreground detection to activate the overlay.
+        fixture.waitForOverlayActive()
 
         val screen = Screenshot.captureScreen()
         val blue = ColorMatch.mask(screen, Rgb.BLUE)
@@ -173,7 +173,8 @@ class GalleryButtonVisualE2ETest {
         fixture.seedGalleryPrefs(MOCK_GALLERY_PACKAGE)
         fixture.clearCameraRoll()
         fixture.launchPixelCamera()
-        fixture.pause(1000)
+        // Wait for UsageStats-based foreground detection to activate the overlay.
+        fixture.waitForOverlayActive()
 
         val screen = Screenshot.captureScreen()
         val outer = ColorMatch.union(
@@ -199,7 +200,8 @@ class GalleryButtonVisualE2ETest {
         fixture.seedGalleryPrefs(MOCK_GALLERY_PACKAGE)
         fixture.clearCameraRoll()
         fixture.launchPixelCamera()
-        fixture.pause(1000)
+        // Wait for the overlay to be active before tapping — a fixed 1 s pause is too short.
+        fixture.waitForOverlayActive()
 
         val s1 = Screenshot.captureScreen()
         Screenshot.saveForArtifact(s1, "2a-s1.png")
@@ -233,9 +235,12 @@ class GalleryButtonVisualE2ETest {
     fun test3a_populatedGalleryShowsGreenAfterTap() {
         fixture.seedGalleryPrefs(MOCK_GALLERY_PACKAGE)
         fixture.clearCameraRoll()
-        fixture.captureOnePhoto()
+        // Launch the camera first so MockCameraActivity's BroadcastReceiver is registered
+        // before the ACTION_SHUTTER broadcast is sent — sending it before onResume() means
+        // the receiver is not yet registered and the broadcast is silently dropped.
         fixture.launchPixelCamera()
-        fixture.pause(1000)
+        fixture.waitForOverlayActive()
+        fixture.captureOnePhoto()
 
         val s1 = Screenshot.captureScreen()
         Screenshot.saveForArtifact(s1, "3a-s1.png")
@@ -316,7 +321,14 @@ class GalleryButtonVisualE2ETest {
     fun test5a_secureCameraLockedPopulatedGalleryShowsGreen() {
         fixture.seedGalleryPrefs(MOCK_GALLERY_PACKAGE)
         fixture.clearCameraRoll()
+        // Capture the photo while the camera activity is running — MockCameraActivity's
+        // BroadcastReceiver is only registered in onResume(), so launching the camera first
+        // is required. After capture, return to home and stop the camera before locking.
+        fixture.launchPixelCamera()
+        fixture.waitForOverlayActive()
         fixture.captureOnePhoto()   // GREEN JPEG now in MediaStore
+        fixture.goHome()
+        fixture.stopPixelCamera()
         fixture.lockScreen()
         fixture.launchSecureCamera()
         fixture.pause(1000)
