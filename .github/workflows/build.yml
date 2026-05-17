@@ -242,17 +242,7 @@ jobs:
           "$ADB" shell am start -W -n \
             com.google.android.GoogleCamera/com.gb4pc.mockcamera.MockCameraActivity
 
-          # Give the View 8 seconds to render the green surface.
-          sleep 8
-
-          # Capture the screen and verify >= 90% of the central 200x200 px is #00C853.
-          echo "==> Capturing screen..."
-          "$ADB" exec-out screencap -p > preflight.png
-
-          echo "==> Running green-feed smoke check..."
-          if ! python3 scripts/check_green_feed.py preflight.png; then
-            exit 1
-          fi
+          python3 scripts/check_green_feed.py --adb "$ADB" preflight.png
 
       - name: Upload preflight screenshot on failure
         if: steps.diff_check.outputs.needs_full_build == 'true' && steps.preflight.outcome == 'failure'

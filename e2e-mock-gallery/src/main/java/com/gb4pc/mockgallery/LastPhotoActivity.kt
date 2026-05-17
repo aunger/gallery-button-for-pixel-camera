@@ -1,4 +1,4 @@
-package com.gb4pc.testgallery
+package com.gb4pc.mockgallery
 
 import android.app.Activity
 import android.net.Uri

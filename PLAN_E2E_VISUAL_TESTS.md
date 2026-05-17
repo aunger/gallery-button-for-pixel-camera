@@ -24,11 +24,11 @@ Choices: mutually distinct in all three channels (nearest separation ~25 in one 
 
 ---
 
-## Phase 1 — `:testgallery` module
+## Phase 1 — `:e2e-mock-gallery` module
 
-New Gradle module `:testgallery` mirroring `:e2e-mock-camera`'s structure.
+New Gradle module `:e2e-mock-gallery` mirroring `:e2e-mock-camera`'s structure.
 
-- `applicationId = "com.gb4pc.testgallery"`, label `"test gallery app"`, `minSdk 26`, `compileSdk 35`, `targetSdk 35`, Kotlin.
+- `applicationId = "com.gb4pc.mockgallery"`, label `"test gallery app"`, `minSdk 26`, `compileSdk 35`, `targetSdk 35`, Kotlin.
 - Single activity `LastPhotoActivity`:
     - Queries `MediaStore.Images.Media.EXTERNAL_CONTENT_URI` ordered `DATE_ADDED DESC LIMIT 1`.
     - Full-bleed `ImageView`, `scaleType = "centerCrop"`.
@@ -233,10 +233,10 @@ All tests `saveForArtifact` every screenshot and every binary mask used in class
 
 ## Phase 6 — Build & CI wiring
 
-- `settings.gradle.kts`: `include(":testgallery")`.
+- `settings.gradle.kts`: `include(":e2e-mock-gallery")`.
 - `app/build.gradle.kts`'s `connectedE2EAndroidTest` task:
-    - Build and install `:testgallery` (in addition to `:app` and `:e2e-mock-camera`).
-    - Grant `:testgallery` `READ_MEDIA_IMAGES` via `appops`.
+    - Build and install `:e2e-mock-gallery` (in addition to `:app` and `:e2e-mock-camera`).
+    - Grant `:e2e-mock-gallery` `READ_MEDIA_IMAGES` via `appops`.
     - No additional runtime permission is needed for `:e2e-mock-camera` to insert into `MediaStore.Images.Media` — on API 29+, any app may insert its own media via `ContentResolver` without a runtime permission grant.
     - Test package filter `com.gb4pc.e2e` already covers `GalleryButtonVisualE2ETest`; no change there.
 - `.github/workflows/build.yml`:
@@ -248,7 +248,7 @@ All tests `saveForArtifact` every screenshot and every binary mask used in class
 
 Per `agents/code_edit.md`, split by concern, not by file:
 
-1. `:testgallery` module skeleton + adaptive icon assets.
+1. `:e2e-mock-gallery` module skeleton + adaptive icon assets.
 2. `LastPhotoActivity` + MediaStore query.
 3. Mock-camera `TextureView` preview, `ImageReader` capture, shutter path, and `showWhenLocked`/`turnScreenOn` manifest flags; `.github/emulator/green.png`.
 4. Visual library (`Screenshot` / `ColorMatch` / `ShapeTemplates` / `ShapeMatcher`) + unit tests for the matcher.
@@ -318,7 +318,7 @@ To adopt: replace the `-virtualscene-poster` flags in Phase 6 with the `v4l2loop
 Confirm during implementation whether `(xPercent, yPercent)` refers to the icon's center or its top-left corner. If it is the top-left corner, shift the expected coordinates by half the icon size: `expectedX += iconRadiusPx`, `expectedY += iconRadiusPx`. Do not widen the tolerance to compensate — that would mask a mis-positioned overlay.
 
 ```kotlin
-seedGalleryPrefs("com.gb4pc.testgallery")
+seedGalleryPrefs("com.gb4pc.mockgallery")
 clearCameraRoll()
 launchMockCamera()
 pause(1000)
@@ -352,7 +352,7 @@ ShapeMatcher.requireShape(ColorMatch.crop(outer), Shape.SQUIRCLE)
 ### Test 5a — secure-camera with populated gallery (RED at baseline)
 
 ```kotlin
-seedGalleryPrefs("com.gb4pc.testgallery")
+seedGalleryPrefs("com.gb4pc.mockgallery")
 clearCameraRoll()
 captureOnePhoto()        // green JPEG now in MediaStore
 lockScreen()
