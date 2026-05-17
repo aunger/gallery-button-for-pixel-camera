@@ -263,7 +263,7 @@ The six prescribed concerns were delivered as separate phase PRs, each of which 
 
 | Phase 7 concern | PR(s) | Key commits |
 |---|---|---|
-| 1. `:e2e-mock-gallery` skeleton + adaptive icon assets | #118 | `956a3ea` Add :testgallery module; `98094ee` Rename to :e2e-mock-gallery |
+| 1. `:e2e-mock-gallery` skeleton + adaptive icon assets | #118, #153 | `956a3ea` Add :testgallery module; `98094ee` Rename to :e2e-mock-gallery (#153 — module, `applicationId`, and package renamed from `:testgallery` to `:e2e-mock-gallery`) |
 | 2. `LastPhotoActivity` + MediaStore query | #118 | `956a3ea` (same PR — module skeleton and activity landed together; Concerns 1 and 2 both landed in PR #118, which is an acceptable deviation: they are skeleton-level additions with no behavioral overlap and are trivial to review together in a single PR) |
 | 3. Mock-camera Alternative 1: solid-green `View` (no `TextureView`/`CaptureSession`), synthetic GREEN JPEG written to MediaStore on shutter; `showWhenLocked`/`turnScreenOn` manifest flags; CI pre-flight script (`scripts/check_green_feed.py`) | #119 | `361f1bb` Add mock-camera GREEN feed and CI smoke check |
 | 4. Visual library + `ShapeMatcherTest` unit tests | #120 | `5f33d1c` Add visual-assertion library |
