@@ -3,7 +3,6 @@ package com.gb4pc.e2e
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.PointF
-import android.graphics.Rect
 import android.os.Build
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -358,21 +357,6 @@ class GalleryButtonVisualE2ETest {
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
-
-    /**
-     * Returns a [Rect] covering the central [fraction] of [bmp] on each axis.
-     *
-     * For example, fraction = 0.60 produces a region from 20% to 80% in both x and y,
-     * i.e. the middle 60% of the bitmap area.
-     */
-    private fun centralRegion(bmp: Bitmap, fraction: Float): Rect {
-        val margin = (1f - fraction) / 2f
-        val left   = (bmp.width  * margin).toInt()
-        val top    = (bmp.height * margin).toInt()
-        val right  = (bmp.width  * (1f - margin)).toInt()
-        val bottom = (bmp.height * (1f - margin)).toInt()
-        return Rect(left, top, right, bottom)
-    }
 
     /**
      * Returns the Euclidean distance between two [PointF]s.
