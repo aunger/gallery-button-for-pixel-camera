@@ -15,3 +15,4 @@ e2e/pixel-camera.apk
 e2e/pixel-camera.apkm
 .kotlin/
 .claude/worktrees/
+__pycache__/
