@@ -71,9 +71,9 @@ class GalleryButtonVisualE2ETest {
     fun test0_smokeGreenFeedVisible() {
         fixture.launchPixelCamera()
 
-        // Poll up to 15 s for the camera feed to render — a fixed 1 s pause is too short
+        // Poll up to 30 s for the camera feed to render — a fixed 1 s pause is too short
         // on a cold-started emulator. waitForGreenCoverage returns the last measured coverage.
-        val coverage = fixture.waitForGreenCoverage(minCoverage = 0.70f, timeoutMs = 15_000L)
+        val coverage = fixture.waitForGreenCoverage(minCoverage = 0.70f, timeoutMs = 30_000L)
 
         val screen = Screenshot.captureScreen()
         Screenshot.saveForArtifact(screen, "0-screen.png")
@@ -104,8 +104,10 @@ class GalleryButtonVisualE2ETest {
         fixture.seedGalleryPrefs(MOCK_GALLERY_PACKAGE)
         fixture.clearCameraRoll()
         fixture.launchPixelCamera()
-        // Wait for UsageStats-based foreground detection to activate the overlay.
+        // Wait for UsageStats-based foreground detection to activate the overlay, then
+        // allow one additional frame for the WM to composite the overlay window on screen.
         fixture.waitForOverlayActive()
+        fixture.pause(500)
 
         val screen = Screenshot.captureScreen()
         val blue = ColorMatch.mask(screen, Rgb.BLUE)
@@ -148,8 +150,10 @@ class GalleryButtonVisualE2ETest {
         fixture.seedGalleryPrefs(MOCK_GALLERY_PACKAGE)
         fixture.clearCameraRoll()
         fixture.launchPixelCamera()
-        // Wait for UsageStats-based foreground detection to activate the overlay.
+        // Wait for UsageStats-based foreground detection to activate the overlay, then
+        // allow one additional frame for the WM to composite the overlay window on screen.
         fixture.waitForOverlayActive()
+        fixture.pause(500)
 
         val screen = Screenshot.captureScreen()
         val blue = ColorMatch.mask(screen, Rgb.BLUE)
@@ -172,8 +176,10 @@ class GalleryButtonVisualE2ETest {
         fixture.seedGalleryPrefs(MOCK_GALLERY_PACKAGE)
         fixture.clearCameraRoll()
         fixture.launchPixelCamera()
-        // Wait for UsageStats-based foreground detection to activate the overlay.
+        // Wait for UsageStats-based foreground detection to activate the overlay, then
+        // allow one additional frame for the WM to composite the overlay window on screen.
         fixture.waitForOverlayActive()
+        fixture.pause(500)
 
         val screen = Screenshot.captureScreen()
         val outer = ColorMatch.union(
