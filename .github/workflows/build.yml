@@ -284,6 +284,22 @@ jobs:
             exit 1
           }
 
+      - name: Pull E2E screenshots from emulator
+        if: failure() && steps.diff_check.outputs.needs_full_build == 'true'
+        run: |
+          mkdir -p e2e-screenshots
+          $ANDROID_HOME/platform-tools/adb pull \
+            /sdcard/Android/data/com.gb4pc/files/screenshots/ \
+            e2e-screenshots/ || true
+
+      - name: Upload E2E screenshots on failure
+        if: failure() && steps.diff_check.outputs.needs_full_build == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots-failure
+          path: e2e-screenshots/
+          retention-days: 14
+
       - name: Kill emulator
         if: always() && steps.diff_check.outputs.needs_full_build == 'true'
         run: |
