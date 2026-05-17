@@ -55,6 +55,6 @@ CiWatcher delivers exactly one of the following outcomes to the Orchestrator whe
 
 ## Lifecycle
 
-- Create a Haiku sub-agent.
+- Create a Haiku sub-agent unless the user requested otherwise.
 - CiWatcher exits as soon as it has a definitive outcome or exhausts its poll budget.
 - The Orchestrator interprets the returned outcome and decides next steps (see `dev_orchestration.md`).
