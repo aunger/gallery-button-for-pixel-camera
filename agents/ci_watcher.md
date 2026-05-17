@@ -23,7 +23,7 @@ A *CiWatcher* is a short-lived agent created by the Orchestrator to check whethe
 Poll CI for up to 2.5 minutes (5 polls, 30 seconds apart):
 
 ```
-repeat up to 5 times:
+repeat 5 times (unless broken):
   fetch check runs via mcp__github__pull_request_read (method: get_check_runs)
   if total_count = 0 → return Clear  (no CI configured)
   if any run has status "in_progress" or "queued" → CI is active; continue polling
@@ -38,7 +38,7 @@ repeat up to 5 times:
       if mergeable_state = "behind" or "dirty" → return Blocked  (Author must rebase or resolve conflict)
       otherwise → return Infra  (blocked by unresolved required status check or unknown cause)
     → return Infra  (unknown conclusion — escalate)
-  if not the last iteration → run `sleep 30` via the Bash tool
+  if not the last iteration → run `sleep 30` via the Bash tool in the foreground (set run_in_background: false)
 return Pending
 ```
 
@@ -55,6 +55,6 @@ CiWatcher delivers exactly one of the following outcomes to the Orchestrator whe
 
 ## Lifecycle
 
-- CiWatcher is spawned by the Orchestrator after a Reviewer exits.
+- Create a Haiku sub-agent unless the user requested otherwise.
 - CiWatcher exits as soon as it has a definitive outcome or exhausts its poll budget.
 - The Orchestrator interprets the returned outcome and decides next steps (see `dev_orchestration.md`).
