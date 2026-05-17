@@ -55,6 +55,6 @@ CiWatcher delivers exactly one of the following outcomes to the Orchestrator whe
 
 ## Lifecycle
 
-- CiWatcher is spawned by the Orchestrator after a Reviewer exits.
+- CiWatcher is spawned by the Orchestrator after a Reviewer exits as a Haiku sub-agent.
 - CiWatcher exits as soon as it has a definitive outcome or exhausts its poll budget.
 - The Orchestrator interprets the returned outcome and decides next steps (see `dev_orchestration.md`).
