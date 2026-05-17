@@ -185,6 +185,8 @@ tasks.register("connectedE2EAndroidTest") {
         // which app is in the foreground — without this the overlay never appears.
         exec { commandLine(e2eAdb, "shell", "appops", "set", "com.gb4pc", "GET_USAGE_STATS", "allow") }
         // Install mock Pixel Camera so CameraManager callbacks and UsageStats detection are exercised.
+        // CI also installs this APK explicitly before invoking the task (see build.yml) because
+        // relying solely on this doLast install caused test failures in CI; kept here for local runs.
         exec { commandLine(e2eAdb, "install", "-r", e2eMockCameraApk.get().asFile.absolutePath) }
         exec { commandLine(e2eAdb, "shell", "pm", "grant", "com.google.android.GoogleCamera", "android.permission.CAMERA") }
         // Install mock gallery so tapOverlay() can navigate to it in visual E2E tests.

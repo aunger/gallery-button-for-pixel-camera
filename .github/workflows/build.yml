@@ -255,11 +255,10 @@ jobs:
           # boot step above. MockCameraActivity (solid-green View) is the camera.
           scripts/setup-e2e-emulator.sh --post-boot
 
-          # Install mock Pixel Camera explicitly here so it is present before the
-          # connectedE2EAndroidTest Gradle task runs. The Gradle task also installs
-          # it (for local dev convenience), but in CI we need it on-device before
-          # the task's doLast block executes; relying solely on the task caused
-          # test failures when the installation raced with ADB state setup.
+          # Install mock Pixel Camera before invoking the Gradle task. The Gradle
+          # task's doLast block also installs it (for local dev convenience), but
+          # that install has not proven reliable on its own in CI; this pre-install
+          # is the verified stable path that guarantees mock-camera is on-device.
           echo "==> Installing mock Pixel Camera..."
           "$ADB" install -r \
             e2e-mock-camera/build/outputs/apk/debug/e2e-mock-camera-debug.apk
