@@ -245,7 +245,7 @@ jobs:
           retention-days: 14
 
       - name: Run E2E setup and tests
-        if: steps.diff_check.outputs.needs_full_build == 'true'
+        if: failure() && steps.diff_check.outputs.needs_full_build == 'true'
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
 
