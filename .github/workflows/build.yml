@@ -120,7 +120,7 @@ jobs:
 
       - name: Upload unit test results
         if: always() && steps.diff_check.outputs.needs_full_build == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: unit-test-results
           path: app/build/reports/tests/
@@ -291,6 +291,21 @@ jobs:
           path: app/build/outputs/androidTest-results/
           retention-days: 14
 
+      - name: Pull and upload E2E screenshots on failure
+        if: failure() && steps.diff_check.outputs.needs_full_build == 'true'
+        run: |
+          ADB="$ANDROID_HOME/platform-tools/adb"
+          mkdir -p /tmp/e2e-screenshots
+          "$ADB" pull /sdcard/Android/data/com.gb4pc/files/screenshots/ \
+            /tmp/e2e-screenshots/ || echo "No screenshots to pull (directory may not exist)"
+      - name: Upload E2E screenshots on failure
+        if: failure() && steps.diff_check.outputs.needs_full_build == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-screenshots
+          path: /tmp/e2e-screenshots/
+          retention-days: 14
+
   # Produce a signed release-config APK on every merge to main for easy sideloading.
   # Named gb4pc-dev.<run_number>.apk to distinguish from tagged releases.
   # Waits for the full test suite (unit + E2E) before producing an artifact.
@@ -343,7 +358,7 @@ jobs:
              app/build/outputs/apk/release/gb4pc-dev.${{ github.run_number }}.apk
 
       - name: Upload dev APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: gb4pc-dev.${{ github.run_number }}
           path: app/build/outputs/apk/release/gb4pc-dev.${{ github.run_number }}.apk
