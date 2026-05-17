@@ -165,13 +165,15 @@ val e2eAppApk = layout.buildDirectory
     .file("outputs/apk/debug/app-debug.apk")
 val e2eTestApk = layout.buildDirectory
     .file("outputs/apk/androidTest/debug/app-debug-androidTest.apk")
+val e2eMockGalleryApk = project(":e2e-mock-gallery").layout.buildDirectory
+    .file("outputs/apk/debug/e2e-mock-gallery-debug.apk")
 val e2eXmlDir = layout.buildDirectory
     .dir("outputs/androidTest-results/connected/debug")
 
 tasks.register("connectedE2EAndroidTest") {
     group = "verification"
     description = "Runs E2E instrumented tests (requires device/emulator with Pixel Camera installed)."
-    dependsOn("assembleDebug", "assembleDebugAndroidTest")
+    dependsOn("assembleDebug", "assembleDebugAndroidTest", ":e2e-mock-gallery:assembleDebug")
     doLast {
         // Install app first so permissions can be granted by package name.
         exec { commandLine(e2eAdb, "install", "-r", e2eAppApk.get().asFile.absolutePath) }
@@ -180,6 +182,10 @@ tasks.register("connectedE2EAndroidTest") {
         // GET_USAGE_STATS (= PACKAGE_USAGE_STATS on API 29+) lets ForegroundDetector see
         // which app is in the foreground — without this the overlay never appears.
         exec { commandLine(e2eAdb, "shell", "appops", "set", "com.gb4pc", "GET_USAGE_STATS", "allow") }
+        // Install mock gallery so tapOverlay() can navigate to it in visual E2E tests.
+        exec { commandLine(e2eAdb, "install", "-r", e2eMockGalleryApk.get().asFile.absolutePath) }
+        // READ_MEDIA_IMAGES lets mock gallery query MediaStore for the last captured photo.
+        exec { commandLine(e2eAdb, "shell", "appops", "set", "com.gb4pc.mockgallery", "READ_MEDIA_IMAGES", "allow") }
         exec { commandLine(e2eAdb, "install", "-r", e2eTestApk.get().asFile.absolutePath) }
         // Run E2E tests with -r for machine-parseable per-test status lines.
         // am instrument exits non-zero on test failure but returns 0 on process crash;

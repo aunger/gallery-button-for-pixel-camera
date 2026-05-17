@@ -16,6 +16,9 @@ import androidx.test.uiautomator.UiDevice
 import com.gb4pc.Constants
 import com.gb4pc.data.AspectRatioUtil
 import com.gb4pc.data.PrefsManager
+import com.gb4pc.e2e.visual.ColorMatch
+import com.gb4pc.e2e.visual.Rgb
+import com.gb4pc.e2e.visual.Screenshot
 import com.gb4pc.service.OverlayService
 import org.junit.Assert.assertEquals
 import org.junit.Assert.fail
@@ -52,16 +55,22 @@ class E2EFixture(
     /**
      * Run from `@Before`. Performs all preconditions; tests that pass `setUp()` are
      * guaranteed: Pixel Camera installed, OverlayService running and registered, PC
-     * not currently running.
+     * not currently running, display is on, and overlay is inactive.
      */
     fun setUp() {
         ensurePixelCameraInstalled()
+        // Wake the display so screenshots during tests capture actual UI, not a black screen.
+        uiAutomation.executeShellCommand("input keyevent 224").close()  // KEYCODE_WAKEUP
+        Thread.sleep(300)
         startServiceWithSetupCompleted()
         // Allow the service time to register camera callbacks.
         Thread.sleep(1000)
         // Ensure PC is not running at test start.
         stopPixelCamera()
-        Thread.sleep(500)
+        // Wait for the overlay to deactivate so each test starts from a known inactive state.
+        // This prevents stale isOverlayActive=true from a previous test from causing
+        // waitForOverlayActive() to return immediately with a stale flag.
+        waitForOverlayInactive()
     }
 
     fun launchPixelCamera() {
@@ -236,13 +245,18 @@ class E2EFixture(
     }
 
     /**
-     * Locks the screen by sending the KEYCODE_POWER key event and then waits (up to 5 s) for
-     * [KeyguardManager.isKeyguardLocked] to return true.
+     * Locks the screen by sending KEYCODE_SLEEP (puts display to sleep unconditionally)
+     * and then waits (up to 5 s) for [KeyguardManager.isKeyguardLocked] to return true.
+     *
+     * KEYCODE_SLEEP (223) is preferred over KEYCODE_POWER (26) because KEYCODE_POWER
+     * toggles the display state: if the screen was already off it wakes the device
+     * instead of locking it, causing the keyguard check to fail intermittently. Sending
+     * KEYCODE_SLEEP first ensures the display goes off regardless of its current state.
      *
      * @throws AssertionError if the keyguard does not engage within 5 seconds.
      */
     fun lockScreen() {
-        uiAutomation.executeShellCommand("input keyevent 26").close()
+        uiAutomation.executeShellCommand("input keyevent 223").close()  // KEYCODE_SLEEP
         val locked = waitForCondition(5_000L) {
             (context.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager).isKeyguardLocked
         }
@@ -285,6 +299,89 @@ class E2EFixture(
      */
     fun pause(ms: Long) {
         Thread.sleep(ms)
+    }
+
+    /**
+     * Polls [OverlayService.isOverlayActive] until it returns false or [timeoutMs] elapses.
+     *
+     * Call this after [stopPixelCamera] (or in [setUp]) to guarantee the overlay is inactive
+     * before launching the camera in each test. Without this guard, a stale
+     * [OverlayService.isOverlayActive] == true from a previous test causes
+     * [waitForOverlayActive] to return immediately — before the camera is actually running —
+     * making subsequent screenshot assertions unreliable.
+     *
+     * Tolerates the case where the overlay was never active (returns immediately when already
+     * false). Logs a warning but does not fail if the timeout expires, because some tests
+     * (e.g. test0) intentionally run without activating the overlay.
+     *
+     * @param timeoutMs Maximum wait time; defaults to 5 s (enough for the 500 ms camera
+     *                  debounce plus WM compositing overhead).
+     */
+    fun waitForOverlayInactive(timeoutMs: Long = 5_000L) {
+        waitForCondition(timeoutMs) { !OverlayService.isOverlayActive }
+        // No assertion: it is acceptable if the overlay never became active in the first place.
+    }
+
+    /**
+     * Polls [OverlayService.isOverlayActive] until it returns true or [timeoutMs] elapses.
+     *
+     * Use this after [launchPixelCamera] to wait for the CameraManager → UsageStats →
+     * overlay activation chain to complete before taking screenshots that depend on the
+     * overlay being visible.
+     *
+     * The default timeout is 20 s to accommodate slow CI emulators where camera open
+     * can take ~9 s and UsageStats detection adds up to 1 s more.
+     *
+     * @throws AssertionError if the overlay does not become active within [timeoutMs].
+     */
+    fun waitForOverlayActive(timeoutMs: Long = 20_000L) {
+        val appeared = waitForCondition(timeoutMs) { OverlayService.isOverlayActive }
+        if (!appeared) {
+            fail(
+                "waitForOverlayActive: OverlayService.isOverlayActive did not become true " +
+                    "within ${timeoutMs} ms. Check that the service started, permissions are " +
+                    "granted, and Pixel Camera is in the foreground."
+            )
+        }
+    }
+
+    /**
+     * Polls screenshots until the central 60% of the screen has at least [minCoverage] GREEN
+     * (#00C853) pixels, or [timeoutMs] elapses.
+     *
+     * Mirrors the CI pre-flight retry loop so a slow-starting mock camera does not flake
+     * the smoke test. Returns the final measured coverage regardless of whether the threshold
+     * was reached.
+     *
+     * @param minCoverage  Fraction of the central region that must be GREEN before stopping.
+     * @param timeoutMs    Maximum wait time in milliseconds.
+     * @param intervalMs   Sleep between successive capture attempts.
+     */
+    fun waitForGreenCoverage(
+        minCoverage: Float = 0.70f,
+        timeoutMs: Long = 15_000L,
+        intervalMs: Long = 500L,
+    ): Float {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        var lastCoverage = 0f
+        while (System.currentTimeMillis() < deadline) {
+            val screen = Screenshot.captureScreen()
+            val w = screen.width
+            val h = screen.height
+            val margin = (1f - 0.60f) / 2f
+            val region = android.graphics.Rect(
+                (w * margin).toInt(),
+                (h * margin).toInt(),
+                (w * (1f - margin)).toInt(),
+                (h * (1f - margin)).toInt()
+            )
+            val greenMask = ColorMatch.mask(screen, Rgb.GREEN)
+            val coverage = ColorMatch.coverageFraction(greenMask, region)
+            lastCoverage = coverage
+            if (coverage >= minCoverage) return coverage
+            Thread.sleep(intervalMs)
+        }
+        return lastCoverage
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
