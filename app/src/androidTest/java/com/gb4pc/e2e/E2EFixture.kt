@@ -397,7 +397,7 @@ class E2EFixture(
         return count
     }
 
-    private fun displaySize(): Pair<Int, Int> {
+    internal fun displaySize(): Pair<Int, Int> {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val wm = context.getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
             val bounds = wm.currentWindowMetrics.bounds

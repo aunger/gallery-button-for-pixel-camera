@@ -3,7 +3,6 @@ package com.gb4pc.e2e
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.PointF
-import android.os.Build
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.gb4pc.data.AspectRatioUtil
@@ -116,7 +115,7 @@ class GalleryButtonVisualE2ETest {
         Screenshot.saveForArtifact(screen, "1a-screen.png")
         Screenshot.saveForArtifact(maskToBitmap(blue), "1a-blue-mask.png")
 
-        val (displayWidth, displayHeight) = displaySize()
+        val (displayWidth, displayHeight) = fixture.displaySize()
         val aspectRatio = AspectRatioUtil.quantize(displayWidth, displayHeight)
         val pos = PrefsManager(context).getOverlayPosition(aspectRatio)
 
@@ -409,26 +408,6 @@ class GalleryButtonVisualE2ETest {
             }
         }
         return bmp
-    }
-
-    /**
-     * Returns the display width and height in pixels, using [android.view.WindowMetrics] on
-     * API 30+ and [android.util.DisplayMetrics] on API 26–29.
-     */
-    private fun displaySize(): Pair<Int, Int> {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val wm = context.getSystemService(android.content.Context.WINDOW_SERVICE)
-                as android.view.WindowManager
-            val bounds = wm.currentWindowMetrics.bounds
-            bounds.width() to bounds.height()
-        } else {
-            val wm = context.getSystemService(android.content.Context.WINDOW_SERVICE)
-                as android.view.WindowManager
-            val dm = android.util.DisplayMetrics()
-            @Suppress("DEPRECATION")
-            wm.defaultDisplay.getMetrics(dm)
-            dm.widthPixels to dm.heightPixels
-        }
     }
 
     companion object {
