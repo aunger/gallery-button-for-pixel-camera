@@ -245,7 +245,7 @@ jobs:
           python3 scripts/check_green_feed.py --adb "$ADB" preflight.png
 
       - name: Upload preflight screenshot on failure
-        if: steps.diff_check.outputs.needs_full_build == 'true' && steps.preflight.outcome == 'failure'
+        if: failure() && steps.diff_check.outputs.needs_full_build == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: preflight-screenshot
