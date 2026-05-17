@@ -64,8 +64,10 @@ class GalleryButtonVisualE2ETest {
      * Verifies that the mock camera produces a visually GREEN feed by asserting that the
      * central 60% of the screen is at least 70% covered by GREEN (#00C853) pixels.
      *
-     * This is the first line of defence: if this test fails after the CI pre-flight green-feed
-     * check passed, the bug is in the test harness itself (wrong emulator, wrong APK, etc.).
+     * Under Alternative 1, MockCameraActivity renders a solid-green (#00C853) View — no camera
+     * hardware and no virtualscene poster are required. This is the first line of defence: if
+     * this test fails, either the mock-camera APK is not installed under [MOCK_CAMERA_PACKAGE]
+     * or MockCameraActivity is not in the foreground.
      */
     @Test
     fun test0_smokeGreenFeedVisible() {
@@ -82,8 +84,8 @@ class GalleryButtonVisualE2ETest {
             fail(
                 "test0_smokeGreenFeedVisible: GREEN coverage in central 60% of screen is " +
                     "${coverage * 100f}% — expected > 70%. " +
-                    "Check that the emulator virtualscene poster is configured and " +
-                    "the mock-camera APK is installed under $MOCK_CAMERA_PACKAGE."
+                    "Check that the mock-camera APK is installed under $MOCK_CAMERA_PACKAGE " +
+                    "and MockCameraActivity is in the foreground."
             )
         }
     }
