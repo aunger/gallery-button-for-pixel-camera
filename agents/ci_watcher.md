@@ -38,7 +38,7 @@ repeat 5 times (unless broken):
       if mergeable_state = "behind" or "dirty" → return Blocked  (Author must rebase or resolve conflict)
       otherwise → return Infra  (blocked by unresolved required status check or unknown cause)
     → return Infra  (unknown conclusion — escalate)
-  if not the last iteration → run `sleep 30` via the Bash tool (set run_in_background: false)
+  if not the last iteration → run `sleep 30` via the Bash tool in the foreground (set run_in_background: false)
 return Pending
 ```
 
