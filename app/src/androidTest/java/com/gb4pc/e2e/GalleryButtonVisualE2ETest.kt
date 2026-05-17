@@ -3,7 +3,6 @@ package com.gb4pc.e2e
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.PointF
-import android.os.Build
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.gb4pc.data.AspectRatioUtil
@@ -64,8 +63,10 @@ class GalleryButtonVisualE2ETest {
      * Verifies that the mock camera produces a visually GREEN feed by asserting that the
      * central 60% of the screen is at least 70% covered by GREEN (#00C853) pixels.
      *
-     * This is the first line of defence: if this test fails after the CI pre-flight green-feed
-     * check passed, the bug is in the test harness itself (wrong emulator, wrong APK, etc.).
+     * Under Alternative 1, MockCameraActivity renders a solid-green (#00C853) View — no camera
+     * hardware and no virtualscene poster are required. This is the first line of defence: if
+     * this test fails, either the mock-camera APK is not installed under [MOCK_CAMERA_PACKAGE]
+     * or MockCameraActivity is not in the foreground.
      */
     @Test
     fun test0_smokeGreenFeedVisible() {
@@ -82,8 +83,8 @@ class GalleryButtonVisualE2ETest {
             fail(
                 "test0_smokeGreenFeedVisible: GREEN coverage in central 60% of screen is " +
                     "${coverage * 100f}% — expected > 70%. " +
-                    "Check that the emulator virtualscene poster is configured and " +
-                    "the mock-camera APK is installed under $MOCK_CAMERA_PACKAGE."
+                    "Check that the mock-camera APK is installed under $MOCK_CAMERA_PACKAGE " +
+                    "and MockCameraActivity is in the foreground."
             )
         }
     }
@@ -114,7 +115,7 @@ class GalleryButtonVisualE2ETest {
         Screenshot.saveForArtifact(screen, "1a-screen.png")
         Screenshot.saveForArtifact(maskToBitmap(blue), "1a-blue-mask.png")
 
-        val (displayWidth, displayHeight) = displaySize()
+        val (displayWidth, displayHeight) = fixture.displaySize()
         val aspectRatio = AspectRatioUtil.quantize(displayWidth, displayHeight)
         val pos = PrefsManager(context).getOverlayPosition(aspectRatio)
 
@@ -273,9 +274,28 @@ class GalleryButtonVisualE2ETest {
 
     /**
      * Verifies that tapping the overlay in secure-camera mode (screen locked) with an empty
-     * camera roll does not show GREEN content. Whether or not the overlay renders in
-     * secure-camera mode, an empty gallery produces no GREEN — so this test passes regardless
-     * of the secure-camera-overlay regression tracked in issue #156.
+     * camera roll does not show GREEN content (coverage < 10%).
+     *
+     * **Alternative 1 note — this is a RED-LIGHT test, not a baseline pass.**
+     *
+     * The original plan claimed this test "passes regardless of the regression" because an
+     * empty gallery produces a black empty state → no GREEN. That reasoning assumed the camera
+     * background was black (e.g. real hardware or a virtualscene with a dark scene). Under
+     * Alternative 1, MockCameraActivity's background is solid green (#00C853).
+     *
+     * When the secure-camera overlay regression is present (overlay is blocked / not tappable),
+     * `tapOverlay()` is a no-op and the green MockCameraActivity stays on screen — giving ~100%
+     * GREEN coverage. This means `coverage >= 0.10f` and the assertion FAILS.
+     *
+     * Conversely, once the regression is fixed (overlay renders correctly in secure-camera mode),
+     * the tap succeeds, the gallery opens, and the empty-state screen is black → coverage < 10%
+     * → assertion PASSES.
+     *
+     * The assertion itself (`coverage(GREEN) < 10%`) is correct and produces the right signal:
+     * it fails when the regression is present and MockCameraActivity is green, and passes when
+     * the overlay works and the empty gallery is shown. Do not change the assertion.
+     *
+     * Tracking issue: #156 — same as test5a. Do NOT skip, ignore, or quarantine this test.
      */
     @Test
     fun test4a_secureCameraLockedEmptyGalleryNoGreen() {
@@ -388,26 +408,6 @@ class GalleryButtonVisualE2ETest {
             }
         }
         return bmp
-    }
-
-    /**
-     * Returns the display width and height in pixels, using [android.view.WindowMetrics] on
-     * API 30+ and [android.util.DisplayMetrics] on API 26–29.
-     */
-    private fun displaySize(): Pair<Int, Int> {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val wm = context.getSystemService(android.content.Context.WINDOW_SERVICE)
-                as android.view.WindowManager
-            val bounds = wm.currentWindowMetrics.bounds
-            bounds.width() to bounds.height()
-        } else {
-            val wm = context.getSystemService(android.content.Context.WINDOW_SERVICE)
-                as android.view.WindowManager
-            val dm = android.util.DisplayMetrics()
-            @Suppress("DEPRECATION")
-            wm.defaultDisplay.getMetrics(dm)
-            dm.widthPixels to dm.heightPixels
-        }
     }
 
     companion object {
