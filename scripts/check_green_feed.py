@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""CI pre-flight smoke check: assert a PNG is predominantly #00C853 GREEN.
+"""CI pre-flight smoke check: verifies MockCameraActivity's solid-green View renders correctly.
 
-Samples the central 200x200 px region of the image and asserts that >= 90% of
+Samples the central 200x200 px region of a screencap and asserts that >= 90% of
 pixels match #00C853 (R=0, G=200, B=83) within a per-channel tolerance of 20.
+MockCameraActivity (Alternative 1) fills its window with a solid #00C853 View,
+so a passing check confirms the activity launched and its View is fully visible.
 
 Usage:
     # Single-shot check against an already-captured image:
@@ -180,7 +182,7 @@ def check_image(path: str) -> int:
     )
 
     if coverage >= MIN_COVERAGE:
-        print("PASS: green feed verified.")
+        print("PASS: MockCameraActivity solid-green View verified.")
         return 0
     else:
         dom = dominant_color(region_pixels)

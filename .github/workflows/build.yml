@@ -205,7 +205,7 @@ jobs:
           "$ADB" shell settings put global transition_animation_scale 0
           "$ADB" shell settings put global animator_duration_scale 0
 
-      - name: CI pre-flight — green-feed smoke check
+      - name: CI pre-flight — MockCameraActivity smoke check
         if: steps.diff_check.outputs.needs_full_build == 'true'
         id: preflight
         run: |
