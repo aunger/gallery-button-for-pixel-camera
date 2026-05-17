@@ -95,10 +95,11 @@ class PixelCameraOverlayE2ETest {
         // Launch PC — camera unavailable fires quickly; UsageStats may lag behind.
         fixture.launchPixelCamera()
 
-        // Generous window: ACTIVATION_RETRY_MS (1 s) + 3 s headroom for scheduling overhead on
+        // Generous window: ACTIVATION_RETRY_MS (1 s) + 6 s headroom for scheduling overhead on
         // loaded CI runners. The retry fires at ~1 s; the extra slack avoids flakiness without
-        // defeating the test's purpose (proving the retry fires at all).
-        val timeoutMs = Constants.ACTIVATION_RETRY_MS + 3000L
+        // defeating the test's purpose (proving the retry fires at all). 6 s headroom is used
+        // because CI emulators can take up to 9 s for camera open + UsageStats detection.
+        val timeoutMs = Constants.ACTIVATION_RETRY_MS + 6000L
         val appeared = fixture.waitForCondition(timeoutMs) { OverlayService.isOverlayActive }
         assertTrue(
             "Overlay should appear within ${timeoutMs} ms even when UsageStats lags behind " +
