@@ -32,7 +32,7 @@ REGION_SIZE = 200
 MIN_COVERAGE = 0.90
 
 # Retry-loop settings (used when --adb is passed)
-MAX_ATTEMPTS = 15
+MAX_ATTEMPTS = 30
 RETRY_DELAY_SECONDS = 2
 
 

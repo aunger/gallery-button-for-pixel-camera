@@ -235,10 +235,17 @@ jobs:
           "$ADB" shell am start -W -n \
             com.google.android.GoogleCamera/com.gb4pc.mockcamera.MockCameraActivity
 
+          # Re-wake and re-dismiss keyguard after am start -W: adb install above
+          # can take 10-30 s and the screen may sleep in that window. am start -W
+          # and setTurnScreenOn(true) usually recover, but this is a cheap extra
+          # guarantee that the green view is visible before screencap.
+          "$ADB" shell input keyevent KEYCODE_WAKEUP
+          "$ADB" shell wm dismiss-keyguard
+
           python3 scripts/check_green_feed.py --adb "$ADB" preflight.png
 
       - name: Upload preflight screenshot on failure
-        if: steps.diff_check.outputs.needs_full_build == 'true' && steps.preflight.outcome == 'failure'
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true' && steps.preflight.outcome == 'failure'
         uses: actions/upload-artifact@v7
         with:
           name: preflight-screenshot
