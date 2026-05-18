@@ -82,6 +82,13 @@ class MockCameraActivity : Activity() {
         }
     }
 
+    /**
+     * True only after a successful [registerReceiver]. Tracked so [onPause] does not call
+     * [unregisterReceiver] when registration threw, which would itself throw
+     * `IllegalArgumentException: Receiver not registered` and mask the original error.
+     */
+    private var shutterReceiverRegistered = false
+
     // -------------------------------------------------------------------------
     // CameraDevice state callback
     // -------------------------------------------------------------------------
@@ -130,16 +137,33 @@ class MockCameraActivity : Activity() {
         // On API 33+ RECEIVER_NOT_EXPORTED silently drops cross-UID broadcasts. This APK is
         // installed only on test emulators and ACTION_SHUTTER is a private action string, so
         // exporting the receiver carries no production risk.
-        registerReceiver(
-            shutterReceiver,
-            IntentFilter(ACTION_SHUTTER),
-            Context.RECEIVER_EXPORTED,
-        )
+        //
+        // The registration is wrapped in try/catch because an uncaught exception here would
+        // bubble out of onResume() and crash the activity *after* the window has been
+        // created but *before* the green View has been composed to the surface, leaving
+        // the CI pre-flight smoke check (and the rest of the E2E suite) staring at the
+        // system default window background instead of #00C853. The shutter handshake is
+        // only needed by the capture tests; the smoke check and the
+        // ForegroundDetector/overlay path do not depend on it, so a failed registration
+        // must not prevent the activity from rendering.
+        try {
+            registerReceiver(
+                shutterReceiver,
+                IntentFilter(ACTION_SHUTTER),
+                Context.RECEIVER_EXPORTED,
+            )
+            shutterReceiverRegistered = true
+        } catch (e: RuntimeException) {
+            Log.e(TAG, "onResume: shutter receiver registration failed: ${e.message}", e)
+        }
     }
 
     override fun onPause() {
         super.onPause()
-        unregisterReceiver(shutterReceiver)
+        if (shutterReceiverRegistered) {
+            unregisterReceiver(shutterReceiver)
+            shutterReceiverRegistered = false
+        }
         closeCamera()
         stopCameraThread()
     }
