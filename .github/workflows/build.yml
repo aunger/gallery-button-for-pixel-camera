@@ -292,10 +292,10 @@ jobs:
           }
 
       - name: Run GalleryButtonVisualE2ETest
-        # Disabled: infrastructure bugs tracked in #177 (RECEIVER_NOT_EXPORTED),
-        # #178 (emulator keyguard not engaging), #179 (adaptive-icon colour/shape).
-        # Re-enable (needs_full_build == 'true') once all three are fixed.
-        if: false
+        # Known failures tracked in #177 (RECEIVER_NOT_EXPORTED), #178 (emulator
+        # keyguard not engaging), #179 (adaptive-icon colour/shape). continue-on-error
+        # keeps the job green until those are fixed.
+        if: steps.diff_check.outputs.needs_full_build == 'true'
         continue-on-error: true
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
