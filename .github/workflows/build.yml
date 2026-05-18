@@ -292,9 +292,9 @@ jobs:
           }
 
       - name: Run GalleryButtonVisualE2ETest
-        # Known failures tracked in #177 (RECEIVER_NOT_EXPORTED), #178 (emulator
-        # keyguard not engaging), #179 (adaptive-icon colour/shape). continue-on-error
-        # keeps the job green until those are fixed.
+        # Known failures tracked in #178 (emulator keyguard not engaging) and
+        # #179 (adaptive-icon colour/shape). continue-on-error keeps the job
+        # green until those are fixed.
         if: steps.diff_check.outputs.needs_full_build == 'true'
         continue-on-error: true
         run: |
