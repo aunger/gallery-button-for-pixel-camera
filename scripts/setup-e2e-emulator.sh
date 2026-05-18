@@ -13,9 +13,11 @@
 #   5. Grant SYSTEM_ALERT_WINDOW to GB4PC
 #   6. Disable animations
 #   7. Set lock-screen PIN (so the keyguard actually engages on sleep)
+#   8. Dismiss the keyguard (setting the PIN engages it; leaving it engaged
+#      would block activity launches from non-lockScreen tests)
 #
 # Post-boot setup (CI): the emulator is already running and all system services
-# have been verified ready by the workflow; this script performs steps 4–7 only.
+# have been verified ready by the workflow; this script performs steps 4–8 only.
 # Mock Pixel Camera (e2e-mock-camera) is installed separately by the CI workflow
 # and by the connectedE2EAndroidTest Gradle task.
 #
@@ -157,6 +159,21 @@ echo "==> Disabling animations..."
 echo "==> Setting lock-screen PIN (1234) so keyguard engages on sleep..."
 "$ADB" shell locksettings set-pin 1234 || \
     "$ADB" shell locksettings set-pin --old 1234 1234
+
+# ── Step 8: Dismiss the (now-secure) keyguard ───────────────────────────────
+# Setting a PIN engages the keyguard immediately on API 35, even with the
+# display on. If we leave it engaged here, the next `am start STILL_IMAGE_CAMERA`
+# from a test (e.g. PixelCameraOverlayE2ETest.overlayAppearsWhenViewfinderOpens)
+# is force-removed by WindowManager because the activity is launched under the
+# lock screen — the test then times out waiting for the overlay.
+# Wake the display, request keyguard dismissal, type the PIN, and submit ENTER.
+# The CI workflow's `stay_on_while_plugged_in 7` then keeps the keyguard
+# dismissed until a test explicitly calls KEYCODE_SLEEP (E2EFixture.lockScreen).
+echo "==> Dismissing keyguard so subsequent tests can launch activities..."
+"$ADB" shell input keyevent 224                 # KEYCODE_WAKEUP
+"$ADB" shell wm dismiss-keyguard
+"$ADB" shell input text 1234
+"$ADB" shell input keyevent 66                  # KEYCODE_ENTER
 
 echo ""
 echo "==> E2E emulator setup complete. Run E2E tests with:"
