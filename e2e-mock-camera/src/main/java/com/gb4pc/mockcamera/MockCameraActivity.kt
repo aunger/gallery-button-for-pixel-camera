@@ -125,10 +125,15 @@ class MockCameraActivity : Activity() {
         super.onResume()
         startCameraThread()
         openCamera()
+        // RECEIVER_EXPORTED is required so the E2E test process (com.gb4pc UID) can
+        // deliver ACTION_SHUTTER across UIDs into this activity (com.google.android.GoogleCamera).
+        // On API 33+ RECEIVER_NOT_EXPORTED silently drops cross-UID broadcasts. This APK is
+        // installed only on test emulators and ACTION_SHUTTER is a private action string, so
+        // exporting the receiver carries no production risk.
         registerReceiver(
             shutterReceiver,
             IntentFilter(ACTION_SHUTTER),
-            Context.RECEIVER_NOT_EXPORTED,
+            Context.RECEIVER_EXPORTED,
         )
     }
 
@@ -253,8 +258,10 @@ class MockCameraActivity : Activity() {
     }
 
     private fun broadcastShutterDone(uri: Uri?) {
+        // Intentionally do NOT call setPackage(packageName): the listener is the E2E test
+        // process (com.gb4pc), not this APK. setPackage(com.google.android.GoogleCamera)
+        // would restrict delivery to this package and starve the test's latch receiver.
         val intent = Intent(ACTION_SHUTTER_DONE).apply {
-            setPackage(packageName)
             if (uri != null) putExtra(EXTRA_IMAGE_URI, uri)
         }
         sendBroadcast(intent)
