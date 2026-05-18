@@ -221,7 +221,15 @@ class GalleryButtonVisualE2ETest {
         fixture.clearCameraRoll()
         fixture.launchPixelCamera()
         // Wait for the overlay to be active before tapping — a fixed 1 s pause is too short.
+        // `OverlayService.isOverlayActive` flips synchronously inside `OverlayManager.show()`,
+        // but `windowManager.addView()` only schedules the overlay for the next composition
+        // frame. Without an extra pause, `tapOverlay()` can inject the touch before the
+        // InputDispatcher has registered the overlay window, so the touch is routed to
+        // MockCameraActivity below and the gallery never opens (issue #179). The 500 ms
+        // pause matches the pre-screenshot pause in tests 1a/1b/1c, which is empirically
+        // enough for the WM/InputDispatcher to catch up on the API-35 CI emulator.
         fixture.waitForOverlayActive()
+        fixture.pause(500)
 
         val s1 = Screenshot.captureScreen()
         Screenshot.saveForArtifact(s1, "2a-s1.png")
