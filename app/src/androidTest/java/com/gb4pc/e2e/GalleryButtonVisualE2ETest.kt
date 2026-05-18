@@ -93,12 +93,19 @@ class GalleryButtonVisualE2ETest {
 
     /**
      * Verifies that the gallery icon's BLUE foreground square is centred at the configured
-     * overlay position. The centroid of all BLUE pixels in the screenshot must land within
-     * one icon radius of (xPercent, yPercent).
+     * overlay position. The centroid of all blue-dominant pixels in the screenshot must
+     * land within one icon radius of (xPercent, yPercent).
      *
      * xPercent / yPercent refer to the **centre** of the overlay (confirmed from OverlayManager
      * — it computes `centerX = displayWidth * xPercent / 100f` and subtracts half the icon size
      * to get the left edge). No correction is needed.
+     *
+     * Detection uses [ColorMatch.dominantBlueMask] (blue channel beats red and green by at
+     * least 30) rather than an exact-tolerance match against [Rgb.BLUE]. The adaptive-icon
+     * rendering pipeline (vector → bitmap → ImageView outline clip → screen capture, plus
+     * any launcher-applied tinting on API 33+) shifts the icon foreground far enough from
+     * #1565C0 that a tight per-channel tolerance produced a zero-pixel mask on the CI
+     * emulator (issue #179). Dominance is robust to those shifts because they preserve hue.
      */
     @Test
     fun test1a_overlayShowsBlueAtConfiguredPosition() {
@@ -111,7 +118,7 @@ class GalleryButtonVisualE2ETest {
         fixture.pause(500)
 
         val screen = Screenshot.captureScreen()
-        val blue = ColorMatch.mask(screen, Rgb.BLUE)
+        val blue = ColorMatch.dominantBlueMask(screen)
         Screenshot.saveForArtifact(screen, "1a-screen.png")
         Screenshot.saveForArtifact(maskToBitmap(blue), "1a-blue-mask.png")
 

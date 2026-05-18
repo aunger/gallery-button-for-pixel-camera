@@ -26,10 +26,14 @@ object ColorMatch {
     }
 
     /**
-     * Builds a [BinaryMask] by scanning [bmp] for pixels matching [target] within [tolerance].
+     * Builds a [BinaryMask] by scanning [bmp] using [predicate] to classify each pixel.
      * Computes bbox, centroid, and pixelCount in a single pass.
+     *
+     * This is the underlying primitive used by [mask] (exact-tolerance match) and
+     * [dominantBlueMask] (hue-dominance match). New matchers can be added by passing
+     * a fresh predicate without duplicating the scan / bookkeeping logic.
      */
-    fun mask(bmp: Bitmap, target: Rgb, tolerance: Int = 20): BinaryMask {
+    fun maskWhere(bmp: Bitmap, predicate: (Int) -> Boolean): BinaryMask {
         val w = bmp.width
         val h = bmp.height
         val bits = BooleanArray(w * h)
@@ -41,7 +45,7 @@ object ColorMatch {
         for (y in 0 until h) {
             for (x in 0 until w) {
                 val px = bmp.getPixel(x, y)
-                if (matches(px, target, tolerance)) {
+                if (predicate(px)) {
                     bits[y * w + x] = true
                     if (x < minX) minX = x
                     if (x > maxX) maxX = x
@@ -58,6 +62,39 @@ object ColorMatch {
                        else PointF(sumX.toFloat() / count, sumY.toFloat() / count)
         return BinaryMask(bits, w, h, bbox, centroid, count)
     }
+
+    /**
+     * Builds a [BinaryMask] by scanning [bmp] for pixels matching [target] within [tolerance].
+     */
+    fun mask(bmp: Bitmap, target: Rgb, tolerance: Int = 20): BinaryMask =
+        maskWhere(bmp) { px -> matches(px, target, tolerance) }
+
+    /**
+     * Builds a [BinaryMask] of pixels in [bmp] where blue is the dominant channel —
+     * i.e. the blue channel exceeds both red and green by at least [minAdvantage].
+     *
+     * Use this instead of [mask] with [Rgb.BLUE] when the source pixel is an
+     * AdaptiveIconDrawable foreground rendered through the system: launcher icon
+     * factories and ImageView clip-outline compositing can shift the exact RGB
+     * triple far enough that a tight per-channel tolerance produces a zero-pixel
+     * mask, even though the icon is clearly blue. Dominance is robust to those
+     * shifts because they preserve hue.
+     *
+     * @param minAdvantage  Minimum (B − max(R, G)) gap a pixel must clear, in
+     *                      [0, 255]. 30 is the default: small enough to admit
+     *                      anti-aliased edges where blue still leads, large
+     *                      enough to reject near-neutral mid-grey pixels.
+     */
+    fun dominantBlueMask(bmp: Bitmap, minAdvantage: Int = 30): BinaryMask =
+        maskWhere(bmp) { px -> isBlueDominant(px, minAdvantage) }
+
+    /**
+     * True if [pixel]'s blue channel exceeds both red and green by at least [minAdvantage].
+     * Pure-function helper extracted so it can be unit-tested in plain JVM tests via
+     * [BlueDominance.isBlueDominantArgb].
+     */
+    fun isBlueDominant(pixel: Int, minAdvantage: Int = 30): Boolean =
+        BlueDominance.isBlueDominantArgb(pixel, minAdvantage)
 
     /** Fraction of all pixels in [mask] that are true. */
     fun coverageFraction(mask: BinaryMask): Float {
