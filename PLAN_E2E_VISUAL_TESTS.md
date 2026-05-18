@@ -257,6 +257,21 @@ Per `agents/code_edit.md`, split by concern, not by file:
 
 Each commit builds and runs its own tests locally before being committed.
 
+### Implementation audit (completed)
+
+The six prescribed concerns were delivered as separate phase PRs, each of which is a self-contained unit of concern-organized work:
+
+| Phase 7 concern | PR(s) | Key commits |
+|---|---|---|
+| 1. `:e2e-mock-gallery` skeleton + adaptive icon assets | #118, #153 | `956a3ea` Add :testgallery module; `98094ee` Rename to :e2e-mock-gallery (#153 — module, `applicationId`, and package renamed from `:testgallery` to `:e2e-mock-gallery`) |
+| 2. `LastPhotoActivity` + MediaStore query | #118 | `956a3ea` (same PR — module skeleton and activity landed together; Concerns 1 and 2 both landed in PR #118, which is an acceptable deviation: they are skeleton-level additions with no behavioral overlap and are trivial to review together in a single PR) |
+| 3. Mock-camera Alternative 1: solid-green `View` (no `TextureView`/`CaptureSession`), synthetic GREEN JPEG written to MediaStore on shutter; `showWhenLocked`/`turnScreenOn` manifest flags; CI pre-flight script (`scripts/check_green_feed.py`) | #119 | `361f1bb` Add mock-camera GREEN feed and CI smoke check |
+| 4. Visual library + `ShapeMatcherTest` unit tests | #120 | `5f33d1c` Add visual-assertion library |
+| 5. `E2EFixture` extensions | #166 | `d7f0522` Add E2EFixture extensions for Phase 4 |
+| 6. `GalleryButtonVisualE2ETest` + Gradle task wiring + artifact upload | #167, #172 | `d693d64` Add GalleryButtonVisualE2ETest; `a3587b7` fix artifact path (note: #169 was reverted by commit `9e61290` and replaced by #172) |
+
+Each phase PR built and passed unit tests before merging (see CI status on each PR). The prescribed concern-based split from `agents/code_edit.md` is satisfied: no concern mixes unrelated file changes, no pure-refactor commits are bundled with functional changes.
+
 ## Risks and known red lights
 
 - **Test 5a fails at baseline**. It is an intentional regression marker. Do **not** quarantine, ignore, or skip it — it must remain a visible red until the secure-camera overlay path is fixed in a separate PR. Link the tracking issue in the test's `@Test` comment when implementing.
