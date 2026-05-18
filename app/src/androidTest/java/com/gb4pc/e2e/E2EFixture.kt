@@ -178,7 +178,16 @@ class E2EFixture(
         }
         val filter = IntentFilter(actionShutterDone)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            // RECEIVER_EXPORTED is required so MockCameraActivity (running under the
+            // Pixel Camera UID, com.google.android.GoogleCamera) can deliver
+            // ACTION_SHUTTER_DONE across UIDs back into this test process (com.gb4pc).
+            // On API 33+ RECEIVER_NOT_EXPORTED silently drops cross-UID broadcasts,
+            // which would cause the latch to time out and the test to fall back to
+            // MediaStore/MediaScanner polling — defeating the intent of the
+            // ACTION_SHUTTER_DONE handshake. The receiver is only registered inside
+            // the instrumented E2E test process and ACTION_SHUTTER_DONE is a private
+            // action string, so exporting the receiver carries no production risk.
+            context.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
         } else {
             @Suppress("UnspecifiedRegisterReceiverFlag")
             context.registerReceiver(receiver, filter)
