@@ -165,6 +165,8 @@ val e2eAppApk = layout.buildDirectory
     .file("outputs/apk/debug/app-debug.apk")
 val e2eTestApk = layout.buildDirectory
     .file("outputs/apk/androidTest/debug/app-debug-androidTest.apk")
+val e2eMockCameraApk = project(":e2e-mock-camera").layout.buildDirectory
+    .file("outputs/apk/debug/e2e-mock-camera-debug.apk")
 val e2eMockGalleryApk = project(":e2e-mock-gallery").layout.buildDirectory
     .file("outputs/apk/debug/e2e-mock-gallery-debug.apk")
 val e2eXmlDir = layout.buildDirectory
@@ -173,7 +175,7 @@ val e2eXmlDir = layout.buildDirectory
 tasks.register("connectedE2EAndroidTest") {
     group = "verification"
     description = "Runs E2E instrumented tests (requires device/emulator with Pixel Camera installed)."
-    dependsOn("assembleDebug", "assembleDebugAndroidTest", ":e2e-mock-gallery:assembleDebug")
+    dependsOn("assembleDebug", "assembleDebugAndroidTest", ":e2e-mock-camera:assembleDebug", ":e2e-mock-gallery:assembleDebug")
     doLast {
         // Install app first so permissions can be granted by package name.
         exec { commandLine(e2eAdb, "install", "-r", e2eAppApk.get().asFile.absolutePath) }
@@ -182,6 +184,11 @@ tasks.register("connectedE2EAndroidTest") {
         // GET_USAGE_STATS (= PACKAGE_USAGE_STATS on API 29+) lets ForegroundDetector see
         // which app is in the foreground — without this the overlay never appears.
         exec { commandLine(e2eAdb, "shell", "appops", "set", "com.gb4pc", "GET_USAGE_STATS", "allow") }
+        // Install mock Pixel Camera so CameraManager callbacks and UsageStats detection are exercised.
+        // CI also installs this APK explicitly before invoking the task (see build.yml) because
+        // relying solely on this doLast install caused test failures in CI; kept here for local runs.
+        exec { commandLine(e2eAdb, "install", "-r", e2eMockCameraApk.get().asFile.absolutePath) }
+        exec { commandLine(e2eAdb, "shell", "pm", "grant", "com.google.android.GoogleCamera", "android.permission.CAMERA") }
         // Install mock gallery so tapOverlay() can navigate to it in visual E2E tests.
         exec { commandLine(e2eAdb, "install", "-r", e2eMockGalleryApk.get().asFile.absolutePath) }
         // READ_MEDIA_IMAGES lets mock gallery query MediaStore for the last captured photo.
@@ -190,11 +197,18 @@ tasks.register("connectedE2EAndroidTest") {
         // Run E2E tests with -r for machine-parseable per-test status lines.
         // am instrument exits non-zero on test failure but returns 0 on process crash;
         // capture stdout, write JUnit XML, then fail loudly on crash or test failure.
+        val e2eClass = project.findProperty("e2eClass") as String?
+        val classArgs = if (e2eClass != null)
+            listOf("-e", "class", e2eClass)
+        else
+            listOf("-e", "package", "com.gb4pc.e2e")
+        val xmlSuiteName = e2eClass ?: "com.gb4pc.e2e"
+
         val instrumentOut = ByteArrayOutputStream()
         exec {
             commandLine(
                 e2eAdb, "shell", "am", "instrument", "-r", "-w",
-                "-e", "package", "com.gb4pc.e2e",
+                *classArgs.toTypedArray(),
                 "com.gb4pc.test/androidx.test.runner.AndroidJUnitRunner"
             )
             standardOutput = instrumentOut
@@ -240,9 +254,9 @@ tasks.register("connectedE2EAndroidTest") {
         val xmlOutDir = e2eXmlDir.get().asFile.also { it.mkdirs() }
         val failCount = cases.count { it.code != 0 }
         fun String.esc() = replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
-        File(xmlOutDir, "TEST-com.gb4pc.e2e.xml").writeText(buildString {
+        File(xmlOutDir, "TEST-${xmlSuiteName}.xml").writeText(buildString {
             appendLine("""<?xml version="1.0" encoding="UTF-8"?>""")
-            appendLine("""<testsuite name="com.gb4pc.e2e" tests="${cases.size}" failures="$failCount" errors="0">""")
+            appendLine("""<testsuite name="$xmlSuiteName" tests="${cases.size}" failures="$failCount" errors="0">""")
             for (c in cases) {
                 append("""  <testcase name="${c.name.esc()}" classname="${c.cls.esc()}"""")
                 if (c.code == 0) { appendLine("/>") } else {
