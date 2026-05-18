@@ -172,15 +172,19 @@ class GalleryButtonVisualE2ETest {
         ShapeMatcher.requireShape(croppedBlue.toMaskData(), Shape.SQUARE)
     }
 
-    // ── test1c — Overlay outer silhouette (BLUE ∪ YELLOW) is a squircle ─────
+    // ── test1c — Overlay outer silhouette (BLUE ∪ YELLOW) is a launcher mask ─
 
     /**
      * Verifies that the outer silhouette of the gallery icon (the union of BLUE foreground
-     * and YELLOW background pixels) renders as a squircle, matching Android's adaptive-icon
-     * mask shape.
+     * and YELLOW background pixels) renders as one of Android's adaptive-icon mask shapes:
+     * a SQUIRCLE on Pixel devices or a CIRCLE on the `google_apis` API-35 emulator.
+     *
+     * The OS launcher picks the mask, so the test cannot assume a single shape across
+     * the device matrix and must accept either (issue #179). SQUARE is still rejected —
+     * an adaptive icon should never render as a hard square.
      */
     @Test
-    fun test1c_overlayOuterIsSquircle() {
+    fun test1c_overlayOuterIsAdaptiveIconShape() {
         fixture.seedGalleryPrefs(MOCK_GALLERY_PACKAGE)
         fixture.clearCameraRoll()
         fixture.launchPixelCamera()
@@ -197,7 +201,10 @@ class GalleryButtonVisualE2ETest {
         Screenshot.saveForArtifact(screen, "1c-screen.png")
         Screenshot.saveForArtifact(maskToBitmap(outer), "1c-outer-mask.png")
 
-        ShapeMatcher.requireShape(ColorMatch.crop(outer).toMaskData(), Shape.SQUIRCLE)
+        ShapeMatcher.requireShapeOneOf(
+            ColorMatch.crop(outer).toMaskData(),
+            setOf(Shape.SQUIRCLE, Shape.CIRCLE)
+        )
     }
 
     // ── test2a — Empty gallery: tapping overlay shows no GREEN ───────────────

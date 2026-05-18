@@ -103,6 +103,32 @@ object ShapeMatcher {
         minWinnerIoU: Float = 0.92f,
         minMargin: Float = 0.05f
     ) {
+        requireShapeOneOf(candidate, setOf(expected), minWinnerIoU, minMargin)
+    }
+
+    /**
+     * Asserts that [candidate] classifies as any one of [expected] with sufficient confidence.
+     *
+     * Use this when the system under test legitimately produces different shapes on different
+     * platforms — for example, the Android launcher on the `google_apis` API-35 emulator clips
+     * adaptive icons to a CIRCLE, while Pixel devices use a SQUIRCLE mask, and the gallery
+     * overlay must look like a launcher icon on whichever host it runs on. Issue #179.
+     *
+     * Behaves identically to [requireShape] when [expected] is a single-element set.
+     *
+     * @param minWinnerIoU  Minimum IoU the winning template must achieve (default 0.92).
+     * @param minMargin     Minimum gap between winner IoU and runner-up IoU (default 0.05).
+     *
+     * @throws AssertionError if any gate fails.
+     * @throws IllegalArgumentException if [expected] is empty.
+     */
+    fun requireShapeOneOf(
+        candidate: MaskData,
+        expected: Set<Shape>,
+        minWinnerIoU: Float = 0.92f,
+        minMargin: Float = 0.05f
+    ) {
+        require(expected.isNotEmpty()) { "requireShapeOneOf: expected set must not be empty" }
         val result = classify(candidate)
         val margin = result.winnerIoU - result.runnerUpIoU
 
@@ -119,9 +145,9 @@ object ShapeMatcher {
                 "runnerUp IoU=${result.runnerUpIoU}, expected=$expected)"
             )
         }
-        if (result.winner != expected) {
+        if (result.winner !in expected) {
             throw AssertionError(
-                "Shape identity check failed: winner=${result.winner} != expected=$expected " +
+                "Shape identity check failed: winner=${result.winner} not in expected=$expected " +
                 "(winnerIoU=${result.winnerIoU}, runnerUpIoU=${result.runnerUpIoU})"
             )
         }

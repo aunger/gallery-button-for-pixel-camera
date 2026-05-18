@@ -314,4 +314,51 @@ class ShapeMatcherTest {
 
     @Test fun `blurred squircle 256x256 still classifies as SQUIRCLE`() =
         assertClassifiesAs("blurred squircle 256x256", makeBlurred(Shape.SQUIRCLE, 256, 256), Shape.SQUIRCLE)
+
+    // ── requireShapeOneOf: accepts platform-dependent adaptive-icon masks ────
+
+    /**
+     * Issue #179: the Android launcher on the `google_apis` API-35 emulator clips adaptive
+     * icons to a CIRCLE; Pixel devices use a SQUIRCLE mask. Both are valid outputs for the
+     * gallery overlay's outer silhouette, so the visual E2E test asks for either.
+     */
+    @Test
+    fun `requireShapeOneOf accepts CIRCLE when set is {CIRCLE, SQUIRCLE}`() {
+        ShapeMatcher.requireShapeOneOf(
+            makeNoisy(Shape.CIRCLE, 128, 128),
+            setOf(Shape.CIRCLE, Shape.SQUIRCLE)
+        )
+    }
+
+    @Test
+    fun `requireShapeOneOf accepts SQUIRCLE when set is {CIRCLE, SQUIRCLE}`() {
+        ShapeMatcher.requireShapeOneOf(
+            makeNoisy(Shape.SQUIRCLE, 128, 128),
+            setOf(Shape.CIRCLE, Shape.SQUIRCLE)
+        )
+    }
+
+    @Test(expected = AssertionError::class)
+    fun `requireShapeOneOf rejects SQUARE when set is {CIRCLE, SQUIRCLE}`() {
+        ShapeMatcher.requireShapeOneOf(
+            makeNoisy(Shape.SQUARE, 128, 128),
+            setOf(Shape.CIRCLE, Shape.SQUIRCLE)
+        )
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `requireShapeOneOf rejects an empty expected set`() {
+        ShapeMatcher.requireShapeOneOf(makeNoisy(Shape.SQUARE, 64, 64), emptySet())
+    }
+
+    @Test
+    fun `requireShape delegates to requireShapeOneOf with single-element set`() {
+        // Single-shape behaviour must be preserved — no AssertionError on a matching shape.
+        ShapeMatcher.requireShape(makeNoisy(Shape.CIRCLE, 128, 128), Shape.CIRCLE)
+    }
+
+    @Test(expected = AssertionError::class)
+    fun `requireShape still rejects mismatched single-element shape`() {
+        ShapeMatcher.requireShape(makeNoisy(Shape.CIRCLE, 128, 128), Shape.SQUARE)
+    }
 }
