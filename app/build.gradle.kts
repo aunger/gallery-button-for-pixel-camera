@@ -197,11 +197,18 @@ tasks.register("connectedE2EAndroidTest") {
         // Run E2E tests with -r for machine-parseable per-test status lines.
         // am instrument exits non-zero on test failure but returns 0 on process crash;
         // capture stdout, write JUnit XML, then fail loudly on crash or test failure.
+        val e2eClass = project.findProperty("e2eClass") as String?
+        val classArgs = if (e2eClass != null)
+            listOf("-e", "class", e2eClass)
+        else
+            listOf("-e", "package", "com.gb4pc.e2e")
+        val xmlSuiteName = e2eClass ?: "com.gb4pc.e2e"
+
         val instrumentOut = ByteArrayOutputStream()
         exec {
             commandLine(
                 e2eAdb, "shell", "am", "instrument", "-r", "-w",
-                "-e", "package", "com.gb4pc.e2e",
+                *classArgs.toTypedArray(),
                 "com.gb4pc.test/androidx.test.runner.AndroidJUnitRunner"
             )
             standardOutput = instrumentOut
@@ -247,9 +254,9 @@ tasks.register("connectedE2EAndroidTest") {
         val xmlOutDir = e2eXmlDir.get().asFile.also { it.mkdirs() }
         val failCount = cases.count { it.code != 0 }
         fun String.esc() = replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
-        File(xmlOutDir, "TEST-com.gb4pc.e2e.xml").writeText(buildString {
+        File(xmlOutDir, "TEST-${xmlSuiteName}.xml").writeText(buildString {
             appendLine("""<?xml version="1.0" encoding="UTF-8"?>""")
-            appendLine("""<testsuite name="com.gb4pc.e2e" tests="${cases.size}" failures="$failCount" errors="0">""")
+            appendLine("""<testsuite name="$xmlSuiteName" tests="${cases.size}" failures="$failCount" errors="0">""")
             for (c in cases) {
                 append("""  <testcase name="${c.name.esc()}" classname="${c.cls.esc()}"""")
                 if (c.code == 0) { appendLine("/>") } else {

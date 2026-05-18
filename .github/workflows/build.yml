@@ -252,12 +252,8 @@ jobs:
           path: preflight.png
           retention-days: 14
 
-      - name: Run E2E setup and tests
-        # Disabled: GalleryButtonVisualE2ETest has infrastructure bugs that make
-        # it fail on every run (RECEIVER_NOT_EXPORTED cross-app broadcast,
-        # emulator keyguard not engaging, adaptive-icon colour/shape mismatch).
-        # Change to the needs_full_build condition once those are fixed.
-        if: false
+      - name: Run E2E emulator setup
+        if: steps.diff_check.outputs.needs_full_build == 'true'
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
 
@@ -282,7 +278,29 @@ jobs:
             -a android.media.action.STILL_IMAGE_CAMERA \
             -p com.google.android.GoogleCamera 2>/dev/null || true
 
-          ./gradlew connectedE2EAndroidTest --no-daemon || {
+      - name: Run PixelCameraOverlayE2ETest
+        if: steps.diff_check.outputs.needs_full_build == 'true'
+        run: |
+          ADB="$ANDROID_HOME/platform-tools/adb"
+          ./gradlew connectedE2EAndroidTest \
+            -Pe2eClass=com.gb4pc.e2e.PixelCameraOverlayE2ETest --no-daemon || {
+            echo "=== LOGCAT (last 300 lines) ==="
+            "$ADB" logcat -d | \
+              grep -E "AndroidRuntime|FATAL|Process crashed|com\.gb4pc|OverlayService|MockCamera|CameraService|E/\w" | \
+              tail -300
+            exit 1
+          }
+
+      - name: Run GalleryButtonVisualE2ETest
+        # Disabled: infrastructure bugs tracked in #177 (RECEIVER_NOT_EXPORTED),
+        # #178 (emulator keyguard not engaging), #179 (adaptive-icon colour/shape).
+        # Re-enable (needs_full_build == 'true') once all three are fixed.
+        if: false
+        continue-on-error: true
+        run: |
+          ADB="$ANDROID_HOME/platform-tools/adb"
+          ./gradlew connectedE2EAndroidTest \
+            -Pe2eClass=com.gb4pc.e2e.GalleryButtonVisualE2ETest --no-daemon || {
             echo "=== LOGCAT (last 300 lines) ==="
             "$ADB" logcat -d | \
               grep -E "AndroidRuntime|FATAL|Process crashed|com\.gb4pc|OverlayService|MockCamera|CameraService|E/\w" | \
