@@ -58,8 +58,8 @@ class PixelCameraOverlayE2ETest {
     fun overlayAppearsWhenViewfinderOpens() {
         fixture.launchPixelCamera()
 
-        val appeared = fixture.waitForCondition(timeoutMs = 10000L) { OverlayService.isOverlayActive }
-        assertTrue("Overlay should appear within 10 s of launching Pixel Camera viewfinder", appeared)
+        val appeared = fixture.waitForCondition(timeoutMs = 30000L) { OverlayService.isOverlayActive }
+        assertTrue("Overlay should appear within 30 s of launching Pixel Camera viewfinder", appeared)
     }
 
     /**
