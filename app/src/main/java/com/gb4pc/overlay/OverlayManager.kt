@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.PixelFormat
 import android.graphics.drawable.AdaptiveIconDrawable
+import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.LayerDrawable
 import android.os.Build
@@ -15,7 +16,6 @@ import android.view.WindowManager
 import android.widget.ImageView
 import android.widget.Toast
 import androidx.core.content.ContextCompat
-import com.gb4pc.Constants
 import com.gb4pc.R
 import com.gb4pc.data.AspectRatioUtil
 import com.gb4pc.data.PrefsManager
@@ -134,11 +134,11 @@ class OverlayManager(
             val bitmap = loadThumbnailBitmap(uri)
             bitmap?.let { bmp ->
                 android.os.Handler(android.os.Looper.getMainLooper()).post {
-                    targetView.setImageBitmap(bmp)
-                    // Issue #39: invalidate the outline so clipToOutline re-applies the squircle
-                    // clip after the image changes. Some devices defer clip invalidation until the
-                    // next outline invalidation, causing the old (circular) mask to persist.
-                    targetView.invalidateOutline()
+                    // Issue #188: wrap the bitmap in SquircleDrawable so the thumbnail is
+                    // clipped to the superellipse squircle shape, just like the gallery icon.
+                    targetView.setImageDrawable(
+                        SquircleDrawable(BitmapDrawable(targetView.resources, bmp))
+                    )
                 }
             }
         }.start()
@@ -206,15 +206,9 @@ class OverlayManager(
                 }
             }
         }
-        imageView.scaleType = ImageView.ScaleType.FIT_CENTER
-        imageView.clipToOutline = true
-        imageView.outlineProvider = object : android.view.ViewOutlineProvider() {
-            override fun getOutline(view: android.view.View, outline: android.graphics.Outline) {
-                if (view.width == 0 || view.height == 0) return
-                val radius = view.width * Constants.SQUIRCLE_CORNER_RADIUS_FRACTION
-                outline.setRoundRect(0, 0, view.width, view.height, radius)
-            }
-        }
+        // Issue #188: use FIT_XY so the SquircleDrawable fills the full view bounds,
+        // giving the squircle clip full control over the outer shape.
+        imageView.scaleType = ImageView.ScaleType.FIT_XY
         updateIconDrawable(imageView)
         imageView.setOnClickListener { handleTap() }
         return imageView
@@ -222,28 +216,32 @@ class OverlayManager(
 
     /**
      * WG-01: Extract icon live from PackageManager each time.
-     * WG-02: Load raw AdaptiveIconDrawable so the squircle clip is the only shape applied.
+     * WG-02: Wrap icon in SquircleDrawable so the squircle shape is applied at draw time,
+     *        independent of the device launcher's adaptive-icon mask (Issue #188).
      * AC-04: Show placeholder if gallery app uninstalled.
      */
     private fun updateIconDrawable(imageView: ImageView) {
         val galleryPackage = prefsManager.galleryPackage
         val icon = getGalleryIcon(galleryPackage)
         imageView.setImageDrawable(icon)
-        // Issue #39: ensure the squircle outline clip is applied after the drawable is set.
-        imageView.invalidateOutline()
     }
 
+    /**
+     * Returns a [SquircleDrawable] wrapping the gallery app icon, ensuring the overlay is
+     * squircle-shaped regardless of the device launcher's adaptive-icon mask (Issue #188).
+     *
+     * On [google_apis] API-35 emulators the launcher clips adaptive icons to a circle.
+     * Loading the raw [AdaptiveIconDrawable] resource (Issue #39) is not sufficient because
+     * [AdaptiveIconDrawable.draw] still applies the device's icon mask internally. Wrapping in
+     * [SquircleDrawable] draws the background and foreground layers directly, bypassing that mask.
+     */
     private fun getGalleryIcon(packageName: String?): Drawable {
+        return SquircleDrawable(getRawGalleryIcon(packageName))
+    }
+
+    private fun getRawGalleryIcon(packageName: String?): Drawable {
         if (packageName != null) {
             try {
-                // Issue #39: Load the raw AdaptiveIconDrawable on API 26+ to avoid the system
-                // launcher shape mask (which is a circle on Pixel devices). When
-                // getApplicationIcon() is used, Android applies the device's icon shape mask
-                // automatically and returns a pre-clipped circular bitmap — making clipToOutline
-                // with our squircle outline have no visible effect (the icon content is already a
-                // circle, smaller than the squircle clip). By loading the raw AdaptiveIconDrawable
-                // and setting it directly on the ImageView, the squircle clip from clipToOutline
-                // is the only shape applied, giving the intended rounded-square appearance.
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     val appInfo = context.packageManager.getApplicationInfo(packageName, 0)
                     if (appInfo.icon != 0) {
@@ -255,7 +253,6 @@ class OverlayManager(
                     }
                 }
                 // Pre-API 26 or non-adaptive icon: fall back to getApplicationIcon().
-                // On pre-26 there is no adaptive icon masking, so the icon is not pre-clipped.
                 return context.packageManager.getApplicationIcon(packageName)
             } catch (_: PackageManager.NameNotFoundException) {
                 // Gallery app uninstalled — fall through to warning placeholder (AC-04)

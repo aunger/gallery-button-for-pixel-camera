@@ -2,15 +2,11 @@ package com.gb4pc.overlay
 
 import android.app.Application
 import android.graphics.Bitmap
-import android.graphics.Outline
 import android.graphics.drawable.AdaptiveIconDrawable
 import android.graphics.drawable.BitmapDrawable
-import android.view.View
-import android.view.ViewOutlineProvider
 import android.view.WindowManager
 import android.widget.ImageView
 import androidx.test.core.app.ApplicationProvider
-import com.gb4pc.Constants
 import com.gb4pc.data.OverlayPosition
 import com.gb4pc.data.PrefsManager
 import org.junit.Assert.*
@@ -28,8 +24,10 @@ import org.robolectric.shadows.ShadowWindowManagerImpl
  * Robolectric integration tests for OverlayManager.
  *
  * Covers:
- * - Issue #39: overlay view must use squircle (rounded-rect) clipping for both the gallery
- *   icon state and the photo-thumbnail state.
+ * - Issue #39 / #188: overlay view must use squircle clipping for both the gallery icon state
+ *   and the photo-thumbnail state. Issue #188 replaces the clipToOutline / outline-provider
+ *   approach with a [SquircleDrawable] wrapper so the squircle shape is baked into the drawable,
+ *   independent of the device launcher's adaptive-icon mask.
  * - Issue #45: second show() must not overwrite a thumbnail with the icon.
  * - Issue #66: overlay must remain visible after show() when focusableOverlay is false
  *   (FLAG_NOT_FOCUSABLE windows never receive focus, so onWindowFocusChanged(false) fires
@@ -138,21 +136,18 @@ class OverlayManagerRobolectricTest {
         )
     }
 
-    // ── Issue #39: squircle button shape ─────────────────────────────────────
+    // ── Issues #39 and #188: squircle button shape ────────────────────────────
 
     /**
-     * The overlay ImageView must clip to a rounded rectangle (squircle) rather than
-     * a plain circle or an unclipped rectangle.
+     * The overlay ImageView drawable must be a [SquircleDrawable] when showing the gallery icon.
      *
-     * Verifies:
-     *  - clipToOutline is true
-     *  - outlineProvider is not the default BACKGROUND provider (i.e. a custom one was set)
-     *  - the custom provider populates an Outline whose radius equals
-     *    view.width * SQUIRCLE_CORNER_RADIUS_FRACTION
-     *  - the outline covers the full bounds of the view
+     * Issue #188: the squircle shape is baked into the drawable so it is applied at draw time,
+     * independent of the device launcher's adaptive-icon mask. On the [google_apis] API-35
+     * emulator the launcher clips adaptive icons to a circle — wrapping in [SquircleDrawable]
+     * draws the icon's layers directly, bypassing that mask.
      */
     @Test
-    fun `overlay view is clipped to squircle outline when showing gallery icon`() {
+    fun `overlay view shows gallery icon wrapped in SquircleDrawable`() {
         val context: Application = ApplicationProvider.getApplicationContext()
         val prefsManager: PrefsManager = mock {
             on { galleryPackage } doReturn null
@@ -167,43 +162,22 @@ class OverlayManagerRobolectricTest {
         val shadowWm = shadowOf(windowManager) as ShadowWindowManagerImpl
         val overlayView = shadowWm.views[0] as ImageView
 
-        assertTrue("clipToOutline must be true for squircle clipping (Issue #39)", overlayView.clipToOutline)
-        assertNotSame(
-            "outlineProvider must be a custom squircle provider, not the default BACKGROUND provider",
-            ViewOutlineProvider.BACKGROUND,
-            overlayView.outlineProvider
+        assertTrue(
+            "Issue #188: overlay drawable must be a SquircleDrawable so the squircle shape " +
+                "is independent of the device launcher mask.",
+            overlayView.drawable is SquircleDrawable
         )
-
-        // Force a layout pass so the view has non-zero dimensions, then invoke the provider.
-        val viewWidth = 200
-        val viewHeight = 200
-        overlayView.layout(0, 0, viewWidth, viewHeight)
-
-        val outline = Outline()
-        overlayView.outlineProvider.getOutline(overlayView, outline)
-
-        val expectedRadius = viewWidth * Constants.SQUIRCLE_CORNER_RADIUS_FRACTION
-        assertEquals(
-            "Squircle corner radius must equal view.width * SQUIRCLE_CORNER_RADIUS_FRACTION",
-            expectedRadius,
-            outline.radius,
-            0.001f
-        )
-
-        val bounds = android.graphics.Rect()
-        assertTrue("Outline must describe a rect (not an oval/path)", outline.getRect(bounds))
-        assertEquals("Outline left must be 0", 0, bounds.left)
-        assertEquals("Outline top must be 0", 0, bounds.top)
-        assertEquals("Outline right must equal view width", viewWidth, bounds.right)
-        assertEquals("Outline bottom must equal view height", viewHeight, bounds.bottom)
     }
 
     /**
-     * After switching to a photo thumbnail via showLatestPhotoThumbnail(), the overlay view
-     * must retain the same squircle clip — the thumbnail is shaped just like the icon.
+     * After switching to a photo thumbnail via showLatestPhotoThumbnail(), the overlay must
+     * still use a [SquircleDrawable] — the thumbnail is shaped just like the icon.
+     *
+     * Issue #188: squircle shape is baked into the drawable, so it persists across drawable
+     * changes without relying on clipToOutline or outlineProvider.
      */
     @Test
-    fun `overlay view retains squircle outline after switching to photo thumbnail`() {
+    fun `overlay view shows thumbnail wrapped in SquircleDrawable`() {
         val context: Application = ApplicationProvider.getApplicationContext()
         val prefsManager: PrefsManager = mock {
             on { galleryPackage } doReturn null
@@ -223,82 +197,29 @@ class OverlayManagerRobolectricTest {
         // Drain the main-looper queue so any Handler.post() from the background thread runs.
         ShadowLooper.idleMainLooper()
 
-        // The squircle clipping must still be configured — it is a property of the view, not
-        // the drawable, so calling showLatestPhotoThumbnail() must not remove it.
-        assertTrue("clipToOutline must remain true after showLatestPhotoThumbnail() (Issue #39)", overlayView.clipToOutline)
-        assertNotSame(
-            "squircle outlineProvider must not be replaced when a thumbnail is loaded",
-            ViewOutlineProvider.BACKGROUND,
-            overlayView.outlineProvider
-        )
-
-        overlayView.layout(0, 0, 200, 200)
-        val outline = Outline()
-        overlayView.outlineProvider.getOutline(overlayView, outline)
-
-        val expectedRadius = 200 * Constants.SQUIRCLE_CORNER_RADIUS_FRACTION
-        assertEquals(
-            "Squircle corner radius must still equal view.width * SQUIRCLE_CORNER_RADIUS_FRACTION after thumbnail is set",
-            expectedRadius,
-            outline.radius,
-            0.001f
+        // After showLatestPhotoThumbnail the drawable must still be a SquircleDrawable
+        // (wrapping a BitmapDrawable), not a raw BitmapDrawable.
+        assertTrue(
+            "Issue #188: after showLatestPhotoThumbnail, drawable must still be a SquircleDrawable",
+            overlayView.drawable is SquircleDrawable
         )
     }
 
     /**
-     * The outline provider must be a no-op (not crash, not set anything) when the view
-     * has zero dimensions — e.g. during an early layout pass before the view is measured.
+     * Issue #188 regression guard: when the gallery package has an AdaptiveIconDrawable, the
+     * overlay must use a [SquircleDrawable] wrapping the raw [AdaptiveIconDrawable], so the
+     * squircle shape is applied at draw time regardless of the launcher's icon mask.
+     *
+     * On [google_apis] API-35 the launcher mask is a circle; the [SquircleDrawable] draws the
+     * background and foreground layers directly, bypassing that mask.
      */
     @Test
-    fun `squircle outline provider is a no-op for zero-dimension view`() {
-        val context: Application = ApplicationProvider.getApplicationContext()
-        val prefsManager: PrefsManager = mock {
-            on { galleryPackage } doReturn null
-            on { getOverlayPosition(any()) } doReturn OverlayPosition.default()
-            on { focusableOverlay } doReturn false
-        }
-
-        val overlayManager = OverlayManager(context, prefsManager)
-        overlayManager.show()
-
-        val windowManager = context.getSystemService(WindowManager::class.java)
-        val shadowWm = shadowOf(windowManager) as ShadowWindowManagerImpl
-        val overlayView = shadowWm.views[0] as ImageView
-
-        // Leave the view at its default zero dimensions (no layout() call).
-        val outline = Outline()
-        // Must not throw.
-        overlayView.outlineProvider.getOutline(overlayView, outline)
-
-        // The outline must remain empty (radius == 0 and no rect set).
-        assertTrue("Outline must be empty when view has zero dimensions", outline.isEmpty)
-    }
-
-    /**
-     * Issue #39 regression guard: when the gallery package has an AdaptiveIconDrawable, the
-     * overlay must NOT apply the system launcher shape mask (which is circular on Pixel devices).
-     *
-     * Before the fix, getApplicationIcon() was used unconditionally. On API 26+ this returns a
-     * BitmapDrawable with the system shape mask already baked in — a circle on Pixel launchers.
-     * The clipToOutline squircle had no visible effect because the icon content was already a
-     * smaller circle.
-     *
-     * After the fix, when the icon resource is an AdaptiveIconDrawable, it is returned directly
-     * (without any system mask), so the ImageView's squircle clipToOutline is the ONLY shape
-     * applied.
-     *
-     * This test verifies that the drawable on the overlay ImageView is an AdaptiveIconDrawable
-     * (not a pre-masked BitmapDrawable) when the gallery app's icon is adaptive.
-     */
-    @Test
-    fun `gallery icon is loaded as AdaptiveIconDrawable to avoid system circular mask`() {
+    fun `gallery icon is wrapped in SquircleDrawable containing AdaptiveIconDrawable`() {
         val context: Application = ApplicationProvider.getApplicationContext()
 
         // Use the app's own package as the "gallery" package under test. Robolectric fully
         // initialises the host application's resources, so getResourcesForApplication() and
         // the mipmap/ic_launcher adaptive icon (API 26+, AdaptiveIconDrawable) are available.
-        // This simulates the real-device scenario where getApplicationIcon() would apply the
-        // Pixel launcher's circular mask, whereas our fixed path returns the raw drawable.
         val selfPackage = context.packageName  // "com.gb4pc"
 
         val prefsManager: PrefsManager = mock {
@@ -314,18 +235,20 @@ class OverlayManagerRobolectricTest {
         val shadowWm = shadowOf(windowManager) as ShadowWindowManagerImpl
         val overlayView = shadowWm.views[0] as ImageView
 
-        // The drawable must be an AdaptiveIconDrawable — not a BitmapDrawable (which would
-        // indicate the system launcher mask was applied, making the icon a circle).
+        // The drawable must be a SquircleDrawable (outer squircle clip is guaranteed regardless
+        // of the launcher mask), wrapping a raw AdaptiveIconDrawable (not a pre-masked bitmap).
+        assertTrue(
+            "Issue #188: gallery icon must be wrapped in a SquircleDrawable.",
+            overlayView.drawable is SquircleDrawable
+        )
+        val squircle = overlayView.drawable as SquircleDrawable
         assertFalse(
-            "Issue #39 regression: gallery icon must NOT be a pre-masked BitmapDrawable. " +
-                "getApplicationIcon() applies the system circular mask on Pixel devices; " +
-                "getGalleryIcon() must use the raw AdaptiveIconDrawable instead.",
-            overlayView.drawable is BitmapDrawable
+            "Issue #188: the inner drawable must NOT be a pre-masked BitmapDrawable.",
+            squircle.inner is BitmapDrawable
         )
         assertTrue(
-            "Issue #39: gallery icon must be an AdaptiveIconDrawable so that the squircle " +
-                "clipToOutline is the only shape applied (no system launcher mask).",
-            overlayView.drawable is AdaptiveIconDrawable
+            "Issue #188: the inner drawable must be a raw AdaptiveIconDrawable (no launcher mask).",
+            squircle.inner is AdaptiveIconDrawable
         )
     }
 
