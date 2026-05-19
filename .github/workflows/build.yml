@@ -295,6 +295,7 @@ jobs:
         # Known failures tracked in #178 (emulator keyguard not engaging) and
         # #179 (adaptive-icon colour/shape). continue-on-error keeps the job
         # green until those are fixed.
+        id: run_gallery_visual_e2e
         if: steps.diff_check.outputs.needs_full_build == 'true'
         continue-on-error: true
         run: |
@@ -323,14 +324,14 @@ jobs:
           retention-days: 14
 
       - name: Pull and upload E2E screenshots on failure
-        if: failure() && steps.diff_check.outputs.needs_full_build == 'true'
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true' && (failure() || steps.run_gallery_visual_e2e.outcome == 'failure')
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
           mkdir -p /tmp/e2e-screenshots
           "$ADB" pull /sdcard/Android/data/com.gb4pc/files/screenshots/ \
             /tmp/e2e-screenshots/ || echo "No screenshots to pull (directory may not exist)"
       - name: Upload E2E screenshots on failure
-        if: failure() && steps.diff_check.outputs.needs_full_build == 'true'
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true' && (failure() || steps.run_gallery_visual_e2e.outcome == 'failure')
         uses: actions/upload-artifact@v7
         with:
           name: e2e-screenshots
