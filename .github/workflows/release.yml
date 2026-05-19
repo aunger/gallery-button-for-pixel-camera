@@ -54,7 +54,7 @@ jobs:
       - name: Run unit tests
         env:
           BUILD_NUMBER: ${{ github.run_number }}
-        run: ./gradlew testDebugUnitTest -PversionName=${{ steps.version.outputs.version }} --no-daemon
+        run: ./gradlew testDebugUnitTest -PversionName=${{ steps.version.outputs.version }}
 
       - name: Decode keystore
         run: |
@@ -67,7 +67,7 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           BUILD_NUMBER: ${{ github.run_number }}
-        run: ./gradlew assembleRelease -PversionName=${{ steps.version.outputs.version }} --no-daemon
+        run: ./gradlew assembleRelease -PversionName=${{ steps.version.outputs.version }}
 
       - name: Rename APK
         run: |
