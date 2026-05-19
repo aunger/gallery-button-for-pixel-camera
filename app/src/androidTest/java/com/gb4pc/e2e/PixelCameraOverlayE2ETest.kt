@@ -6,6 +6,7 @@ import com.gb4pc.Constants
 import com.gb4pc.service.OverlayService
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -36,6 +37,9 @@ import org.junit.runner.RunWith
 @E2ETest
 @RunWith(AndroidJUnit4::class)
 class PixelCameraOverlayE2ETest {
+
+    @get:Rule
+    val screenshotOnFailure = FailureScreenshotRule()
 
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val fixture = E2EFixture(
