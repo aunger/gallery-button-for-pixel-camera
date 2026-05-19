@@ -2,7 +2,6 @@ package com.gb4pc.overlay
 
 import android.graphics.Canvas
 import android.graphics.ColorFilter
-import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PixelFormat
 import android.graphics.Rect
@@ -38,9 +37,6 @@ class SquircleDrawable(val inner: Drawable) : Drawable() {
     private val clipPath = Path()
     private var pathWidth = -1
     private var pathHeight = -1
-
-    @Suppress("unused")
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
 
     override fun draw(canvas: Canvas) {
         val b = bounds
@@ -135,9 +131,6 @@ class SquircleDrawable(val inner: Drawable) : Drawable() {
             val rx = cx
             val ry = cy
 
-            var firstX = 0f
-            var firstY = 0f
-
             for (i in 0 until STEPS) {
                 val theta = 2.0 * Math.PI * i / STEPS
                 val cosT = Math.cos(theta)
@@ -147,13 +140,10 @@ class SquircleDrawable(val inner: Drawable) : Drawable() {
                 val py = (cy + ry * Math.signum(sinT) * abs(sinT).pow(EXP)).toFloat()
                 if (i == 0) {
                     path.moveTo(px, py)
-                    firstX = px
-                    firstY = py
                 } else {
                     path.lineTo(px, py)
                 }
             }
-            path.lineTo(firstX, firstY)
             path.close()
         }
     }

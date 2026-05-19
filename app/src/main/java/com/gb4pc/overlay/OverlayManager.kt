@@ -206,9 +206,7 @@ class OverlayManager(
                 }
             }
         }
-        // Issue #188: use FIT_XY so the SquircleDrawable fills the full view bounds,
-        // giving the squircle clip full control over the outer shape.
-        imageView.scaleType = ImageView.ScaleType.FIT_XY
+        imageView.scaleType = ImageView.ScaleType.FIT_CENTER
         updateIconDrawable(imageView)
         imageView.setOnClickListener { handleTap() }
         return imageView
