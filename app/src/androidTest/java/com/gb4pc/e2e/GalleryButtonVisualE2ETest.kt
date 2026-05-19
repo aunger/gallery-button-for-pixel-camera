@@ -17,6 +17,7 @@ import com.gb4pc.e2e.visual.toMaskData
 import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.FixMethodOrder
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.MethodSorters
@@ -46,6 +47,9 @@ import kotlin.math.sqrt
 @RunWith(AndroidJUnit4::class)
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
 class GalleryButtonVisualE2ETest {
+
+    @get:Rule
+    val screenshotOnFailure = FailureScreenshotRule()
 
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
