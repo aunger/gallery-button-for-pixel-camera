@@ -1,5 +1,6 @@
 package com.gb4pc.e2e
 
+import android.util.Log
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.UiDevice
 import org.junit.rules.TestWatcher
@@ -23,14 +24,26 @@ import java.io.File
  * ```
  */
 class FailureScreenshotRule : TestWatcher() {
+
+    companion object {
+        private const val TAG = "FailureScreenshotRule"
+    }
+
     override fun failed(e: Throwable?, description: Description) {
-        val dir = File(
-            InstrumentationRegistry.getInstrumentation().targetContext
-                .getExternalFilesDir(null), "screenshots"
-        )
+        val externalFilesDir = InstrumentationRegistry.getInstrumentation().targetContext
+            .getExternalFilesDir(null)
+        if (externalFilesDir == null) {
+            Log.w(TAG, "External storage unavailable; skipping failure screenshot for ${description.methodName}")
+            return
+        }
+        val dir = File(externalFilesDir, "screenshots")
         dir.mkdirs()
         val className = description.testClass?.simpleName ?: "UnknownClass"
-        UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
-            .takeScreenshot(File(dir, "$className-${description.methodName}-failure.png"))
+        val screenshotFile = File(dir, "$className-${description.methodName}-failure.png")
+        val success = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+            .takeScreenshot(screenshotFile)
+        if (!success) {
+            Log.w(TAG, "Failed to write failure screenshot to ${screenshotFile.absolutePath}")
+        }
     }
 }
