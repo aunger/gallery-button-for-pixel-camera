@@ -148,8 +148,8 @@ class TestMainAdbRetryLoop(unittest.TestCase):
         finally:
             os.unlink(path)
 
-    def test_wakeup_and_dismiss_keyguard_sent_before_each_screencap(self):
-        """KEYCODE_WAKEUP (224) and wm dismiss-keyguard are sent before every screencap,
+    def test_wakeup_and_menu_keyevent_sent_before_each_screencap(self):
+        """KEYCODE_WAKEUP (224) and KEYCODE_MENU (82) are sent before every screencap,
         in that order, with the screencap coming after both in each retry iteration."""
         fd, path = tempfile.mkstemp(suffix=".png")
         os.close(fd)
@@ -169,29 +169,29 @@ class TestMainAdbRetryLoop(unittest.TestCase):
             def is_wakeup(args):
                 return "keyevent" in args and "224" in args
 
-            def is_dismiss_keyguard(args):
-                return "wm" in args and "dismiss-keyguard" in args
+            def is_menu(args):
+                return "keyevent" in args and "82" in args
 
             def is_screencap(args):
                 return "screencap" in args
 
             # Walk the call list and verify that each screencap is immediately
-            # preceded by a dismiss-keyguard call, which is itself preceded by
-            # a wakeup keyevent call.  This confirms the ordering within every
-            # retry iteration, not just the presence of the calls somewhere in
-            # the full list.
+            # preceded by a KEYCODE_MENU (82) call, which is itself preceded by
+            # a KEYCODE_WAKEUP (224) call.  This confirms the ordering within
+            # every retry iteration, not just the presence of the calls somewhere
+            # in the full list.
             screencap_indices = [i for i, a in enumerate(arg_lists) if is_screencap(a)]
             self.assertGreater(len(screencap_indices), 0, "No screencap call found")
 
             for sc_idx in screencap_indices:
                 self.assertGreaterEqual(sc_idx, 2,
-                    "Not enough preceding calls before screencap to fit wakeup + dismiss")
-                dismiss_idx = sc_idx - 1
+                    "Not enough preceding calls before screencap to fit wakeup + menu")
+                menu_idx = sc_idx - 1
                 wakeup_idx = sc_idx - 2
                 self.assertTrue(
-                    is_dismiss_keyguard(arg_lists[dismiss_idx]),
-                    f"Call immediately before screencap (index {dismiss_idx}) is not "
-                    f"wm dismiss-keyguard: {arg_lists[dismiss_idx]}"
+                    is_menu(arg_lists[menu_idx]),
+                    f"Call immediately before screencap (index {menu_idx}) is not "
+                    f"KEYCODE_MENU (82): {arg_lists[menu_idx]}"
                 )
                 self.assertTrue(
                     is_wakeup(arg_lists[wakeup_idx]),
