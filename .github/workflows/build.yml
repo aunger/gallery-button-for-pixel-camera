@@ -105,6 +105,9 @@ jobs:
           echo "==> emulator -list-avds:"
           ANDROID_AVD_HOME="$AVD_HOME" $ANDROID_HOME/emulator/emulator -list-avds
 
+      - name: Run Python script unit tests
+        run: python3 -m unittest discover -s scripts -p "test_*.py" -v
+
       - name: Grant execute permission for gradlew
         if: steps.diff_check.outputs.needs_full_build == 'true'
         run: chmod +x gradlew
