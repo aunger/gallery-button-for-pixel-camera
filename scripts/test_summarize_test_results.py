@@ -57,6 +57,19 @@ MIXED_XML = """\
     </testsuites>
 """
 
+SKIPPED_XML = """\
+    <?xml version="1.0" encoding="UTF-8"?>
+    <testsuite name="com.example.SkipTest" tests="3" failures="0" skipped="1">
+      <testcase name="testPass" classname="com.example.SkipTest"/>
+      <testcase name="testSkip" classname="com.example.SkipTest">
+        <skipped/>
+      </testcase>
+      <testcase name="testFail" classname="com.example.SkipTest">
+        <failure message="AssertionError">Expected true but was false</failure>
+      </testcase>
+    </testsuite>
+"""
+
 
 # ---------------------------------------------------------------------------
 # parse_directory tests
@@ -122,6 +135,29 @@ class TestParseDirectory(unittest.TestCase):
         classes = srt.parse_directory(self.tmpdir)
         # BetaTest has an <error> child — should count as failed
         self.assertFalse(classes["com.example.BetaTest"].passed)
+
+    def test_skipped_element_not_counted_as_pass(self):
+        _write_xml(self.tmpdir, "TEST-skip.xml", SKIPPED_XML)
+        classes = srt.parse_directory(self.tmpdir)
+        cls = classes["com.example.SkipTest"]
+        skipped_cases = [tc for tc in cls.cases if tc.skipped]
+        passed_cases = [tc for tc in cls.cases if tc.passed]
+        failed_cases = [tc for tc in cls.cases if not tc.passed and not tc.skipped]
+        self.assertEqual(len(skipped_cases), 1)
+        self.assertEqual(skipped_cases[0].name, "testSkip")
+        self.assertEqual(len(passed_cases), 1)
+        self.assertEqual(passed_cases[0].name, "testPass")
+        self.assertEqual(len(failed_cases), 1)
+        self.assertEqual(failed_cases[0].name, "testFail")
+
+    def test_skipped_cases_do_not_inflate_pass_count(self):
+        _write_xml(self.tmpdir, "TEST-skip.xml", SKIPPED_XML)
+        classes = srt.parse_directory(self.tmpdir)
+        cls = classes["com.example.SkipTest"]
+        # A skipped test should have skipped=True and passed=False
+        skipped = next(tc for tc in cls.cases if tc.name == "testSkip")
+        self.assertTrue(skipped.skipped)
+        self.assertFalse(skipped.passed)
 
 
 # ---------------------------------------------------------------------------

@@ -29,6 +29,7 @@ from pathlib import Path
 class TestCase:
     name: str
     passed: bool
+    skipped: bool = False
 
 
 @dataclass
@@ -38,7 +39,11 @@ class TestClass:
 
     @property
     def passed(self) -> bool:
-        return all(tc.passed for tc in self.cases)
+        return all(tc.passed or tc.skipped for tc in self.cases)
+
+    @property
+    def any_failed(self) -> bool:
+        return any(not tc.passed and not tc.skipped for tc in self.cases)
 
 
 # ---------------------------------------------------------------------------
@@ -70,12 +75,16 @@ def parse_directory(directory: Path) -> dict[str, TestClass]:
 
             for tc in suite.findall("testcase"):
                 tc_name = tc.get("name", "<unknown>")
+                skipped = tc.find("skipped") is not None
                 failed = (
-                    tc.find("failure") is not None
-                    or tc.find("error") is not None
+                    not skipped
+                    and (
+                        tc.find("failure") is not None
+                        or tc.find("error") is not None
+                    )
                 )
                 classes[class_name].cases.append(
-                    TestCase(name=tc_name, passed=not failed)
+                    TestCase(name=tc_name, passed=not failed and not skipped, skipped=skipped)
                 )
 
     return classes
@@ -100,21 +109,27 @@ def render_suite(label: str, classes: dict[str, TestClass]) -> list[str]:
 
     total_pass = 0
     total_fail = 0
+    total_skip = 0
 
     for cls in classes.values():
-        class_icon = "✅ PASS" if cls.passed else "❌ FAIL"
+        class_icon = "❌ FAIL" if cls.any_failed else "✅ PASS"
         lines.append(f"| {class_icon} | **{cls.name}** |")
         for tc in cls.cases:
-            tc_icon = "✅ PASS" if tc.passed else "❌ FAIL"
-            lines.append(f"| {tc_icon} |     `{tc.name}` |")
-            if tc.passed:
+            if tc.skipped:
+                tc_icon = "⏭ SKIP"
+                total_skip += 1
+            elif tc.passed:
+                tc_icon = "✅ PASS"
                 total_pass += 1
             else:
+                tc_icon = "❌ FAIL"
                 total_fail += 1
+            lines.append(f"| {tc_icon} |     `{tc.name}` |")
 
-    total = total_pass + total_fail
+    total = total_pass + total_fail + total_skip
+    skip_str = f", {total_skip} skipped" if total_skip else ""
     lines.append("")
-    lines.append(f"**Total: {total_pass} passed, {total_fail} failed** ({total} tests)")
+    lines.append(f"**Total: {total_pass} passed, {total_fail} failed{skip_str}** ({total} tests)")
     lines.append("")
     return lines
 
