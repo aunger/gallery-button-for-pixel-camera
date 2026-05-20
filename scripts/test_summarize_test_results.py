@@ -93,7 +93,7 @@ class TestParseDirectory(unittest.TestCase):
         classes = srt.parse_directory(self.tmpdir)
         self.assertIn("com.example.FooTest", classes)
         cls = classes["com.example.FooTest"]
-        self.assertTrue(cls.passed)
+        self.assertFalse(cls.any_failed)
         self.assertEqual(len(cls.cases), 2)
         self.assertTrue(all(tc.passed for tc in cls.cases))
 
@@ -102,7 +102,7 @@ class TestParseDirectory(unittest.TestCase):
         classes = srt.parse_directory(self.tmpdir)
         self.assertIn("com.example.BarTest", classes)
         cls = classes["com.example.BarTest"]
-        self.assertFalse(cls.passed)
+        self.assertTrue(cls.any_failed)
         passed_cases = [tc for tc in cls.cases if tc.passed]
         failed_cases = [tc for tc in cls.cases if not tc.passed]
         self.assertEqual(len(passed_cases), 1)
@@ -114,8 +114,8 @@ class TestParseDirectory(unittest.TestCase):
         classes = srt.parse_directory(self.tmpdir)
         self.assertIn("com.example.AlphaTest", classes)
         self.assertIn("com.example.BetaTest", classes)
-        self.assertTrue(classes["com.example.AlphaTest"].passed)
-        self.assertFalse(classes["com.example.BetaTest"].passed)
+        self.assertFalse(classes["com.example.AlphaTest"].any_failed)
+        self.assertTrue(classes["com.example.BetaTest"].any_failed)
 
     def test_non_xml_files_ignored(self):
         (self.tmpdir / "not-a-test.txt").write_text("ignore me")
@@ -134,7 +134,7 @@ class TestParseDirectory(unittest.TestCase):
         _write_xml(self.tmpdir, "TEST-mixed.xml", MIXED_XML)
         classes = srt.parse_directory(self.tmpdir)
         # BetaTest has an <error> child — should count as failed
-        self.assertFalse(classes["com.example.BetaTest"].passed)
+        self.assertTrue(classes["com.example.BetaTest"].any_failed)
 
     def test_skipped_element_not_counted_as_pass(self):
         _write_xml(self.tmpdir, "TEST-skip.xml", SKIPPED_XML)
@@ -161,28 +161,34 @@ class TestParseDirectory(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# TestClass.passed tests
+# TestClass.any_failed tests
 # ---------------------------------------------------------------------------
 
 class TestTestClass(unittest.TestCase):
 
-    def test_all_pass(self):
+    def test_all_pass_not_any_failed(self):
         cls = srt.TestClass(name="Foo", cases=[
             srt.TestCase("a", True),
             srt.TestCase("b", True),
         ])
-        self.assertTrue(cls.passed)
+        self.assertFalse(cls.any_failed)
 
-    def test_any_fail_means_class_fails(self):
+    def test_one_failure_is_any_failed(self):
         cls = srt.TestClass(name="Foo", cases=[
             srt.TestCase("a", True),
             srt.TestCase("b", False),
         ])
-        self.assertFalse(cls.passed)
+        self.assertTrue(cls.any_failed)
 
-    def test_empty_cases_passes(self):
+    def test_empty_cases_not_any_failed(self):
         cls = srt.TestClass(name="Empty")
-        self.assertTrue(cls.passed)
+        self.assertFalse(cls.any_failed)
+
+    def test_all_skipped_not_any_failed(self):
+        cls = srt.TestClass(name="Skipped", cases=[
+            srt.TestCase("s", False, skipped=True),
+        ])
+        self.assertFalse(cls.any_failed)
 
 
 # ---------------------------------------------------------------------------

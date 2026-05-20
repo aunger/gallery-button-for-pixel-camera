@@ -38,10 +38,6 @@ class TestClass:
     cases: list[TestCase] = field(default_factory=list)
 
     @property
-    def passed(self) -> bool:
-        return all(tc.passed or tc.skipped for tc in self.cases)
-
-    @property
     def any_failed(self) -> bool:
         return any(not tc.passed and not tc.skipped for tc in self.cases)
 
