@@ -148,6 +148,33 @@ class TestMainAdbRetryLoop(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    def test_wakeup_keyevents_sent_before_each_screencap(self):
+        """KEYCODE_WAKEUP (224) and KEYCODE_MENU (82) are sent before every screencap."""
+        fd, path = tempfile.mkstemp(suffix=".png")
+        os.close(fd)
+        try:
+            with patch("check_green_feed.subprocess.run") as mock_run, \
+                 patch("check_green_feed.time.sleep"), \
+                 patch("builtins.open", unittest.mock.mock_open()), \
+                 patch("check_green_feed.check_image", return_value=0):
+                self._run_main(["--adb", "/fake/adb", path])
+            # Inspect the positional-arg lists from each call.
+            arg_lists = [c.args[0] for c in mock_run.call_args_list if c.args]
+            # KEYCODE_WAKEUP (224) must appear in a keyevent call.
+            wakeup_found = any(
+                "keyevent" in args and "224" in args
+                for args in arg_lists
+            )
+            self.assertTrue(wakeup_found, "KEYCODE_WAKEUP (224) not sent before screencap")
+            # KEYCODE_MENU (82) must appear in a keyevent call.
+            menu_found = any(
+                "keyevent" in args and "82" in args
+                for args in arg_lists
+            )
+            self.assertTrue(menu_found, "KEYCODE_MENU (82) not sent before screencap")
+        finally:
+            os.unlink(path)
+
     def test_single_shot_mode_without_adb_flag(self):
         """Without --adb, main calls check_image directly and returns its result."""
         path = _write_png(255, 0, 0)  # red => fail

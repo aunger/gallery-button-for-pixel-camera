@@ -221,6 +221,20 @@ def main() -> int:
         # Sleep first so the display has time to render before the first check
         # and between retries; the caller has already waited for am start -W.
         time.sleep(RETRY_DELAY_SECONDS)
+        # Wake the display and dismiss the keyguard before every screencap.
+        # The screen may dim or the keyguard may re-appear during a long retry
+        # loop (e.g. while the APK was being installed). KEYCODE_WAKEUP (224)
+        # turns the screen on; KEYCODE_MENU (82) dismisses the keyguard when
+        # no PIN is set (which is the case at pre-flight time, before the E2E
+        # setup script installs a PIN).
+        subprocess.run(
+            [adb_path, "shell", "input", "keyevent", "224"],
+            check=False,
+        )
+        subprocess.run(
+            [adb_path, "shell", "input", "keyevent", "82"],
+            check=False,
+        )
         with open(path, "wb") as out:
             subprocess.run(
                 [adb_path, "exec-out", "screencap", "-p"],
