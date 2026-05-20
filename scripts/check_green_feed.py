@@ -224,15 +224,17 @@ def main() -> int:
         # Wake the display and dismiss the keyguard before every screencap.
         # The screen may dim or the keyguard may re-appear during a long retry
         # loop (e.g. while the APK was being installed). KEYCODE_WAKEUP (224)
-        # turns the screen on; KEYCODE_MENU (82) dismisses the keyguard when
-        # no PIN is set (which is the case at pre-flight time, before the E2E
-        # setup script installs a PIN).
+        # turns the screen on on all API levels. `wm dismiss-keyguard` dismisses
+        # the keyguard on API 26+ and is a no-op when no keyguard is present,
+        # so it is safe to call unconditionally (unlike KEYCODE_MENU which is
+        # ineffective on API 26+ and can open the options menu when the activity
+        # is already foregrounded on older releases).
         subprocess.run(
             [adb_path, "shell", "input", "keyevent", "224"],
             check=False,
         )
         subprocess.run(
-            [adb_path, "shell", "input", "keyevent", "82"],
+            [adb_path, "shell", "wm", "dismiss-keyguard"],
             check=False,
         )
         with open(path, "wb") as out:
