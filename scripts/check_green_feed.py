@@ -225,16 +225,18 @@ def main() -> int:
         # The screen may dim or the keyguard may re-appear during a long retry
         # loop (e.g. while the APK was being installed).
         # KEYCODE_WAKEUP (224) turns the screen on on all API levels.
-        # KEYCODE_MENU (82) dismisses the swipe-based lock screen that the
-        # emulator shows before the E2E PIN setup script runs.  It is a no-op
-        # when the screen is already unlocked, so it is safe to call
-        # unconditionally in the pre-flight retry loop.
+        # An upward swipe then dismisses the swipe-based lock screen that the
+        # emulator shows before the E2E PIN setup script runs.  Using a swipe
+        # gesture avoids the side-effect of KEYCODE_MENU (82), which dispatches
+        # KeyEvent.KEYCODE_MENU to a foregrounded activity and can open the
+        # options/overflow menu, obscuring the green view.  When the screen is
+        # already unlocked the swipe is a harmless gesture over the activity.
         subprocess.run(
             [adb_path, "shell", "input", "keyevent", "224"],
             check=False,
         )
         subprocess.run(
-            [adb_path, "shell", "input", "keyevent", "82"],
+            [adb_path, "shell", "input", "swipe", "300", "1000", "300", "300"],
             check=False,
         )
         with open(path, "wb") as out:

@@ -148,8 +148,8 @@ class TestMainAdbRetryLoop(unittest.TestCase):
         finally:
             os.unlink(path)
 
-    def test_wakeup_and_menu_keyevent_sent_before_each_screencap(self):
-        """KEYCODE_WAKEUP (224) and KEYCODE_MENU (82) are sent before every screencap,
+    def test_wakeup_and_swipe_sent_before_each_screencap(self):
+        """KEYCODE_WAKEUP (224) and an upward swipe are sent before every screencap,
         in that order, with the screencap coming after both in each retry iteration."""
         fd, path = tempfile.mkstemp(suffix=".png")
         os.close(fd)
@@ -169,15 +169,15 @@ class TestMainAdbRetryLoop(unittest.TestCase):
             def is_wakeup(args):
                 return "keyevent" in args and "224" in args
 
-            def is_menu(args):
-                return "keyevent" in args and "82" in args
+            def is_swipe(args):
+                return "swipe" in args and "300" in args and "1000" in args
 
             def is_screencap(args):
                 return "screencap" in args
 
             # Walk the call list and verify that each screencap is immediately
-            # preceded by a KEYCODE_MENU (82) call, which is itself preceded by
-            # a KEYCODE_WAKEUP (224) call.  This confirms the ordering within
+            # preceded by a swipe (unlock gesture) call, which is itself preceded
+            # by a KEYCODE_WAKEUP (224) call.  This confirms the ordering within
             # every retry iteration, not just the presence of the calls somewhere
             # in the full list.
             screencap_indices = [i for i, a in enumerate(arg_lists) if is_screencap(a)]
@@ -185,13 +185,13 @@ class TestMainAdbRetryLoop(unittest.TestCase):
 
             for sc_idx in screencap_indices:
                 self.assertGreaterEqual(sc_idx, 2,
-                    "Not enough preceding calls before screencap to fit wakeup + menu")
-                menu_idx = sc_idx - 1
+                    "Not enough preceding calls before screencap to fit wakeup + swipe")
+                swipe_idx = sc_idx - 1
                 wakeup_idx = sc_idx - 2
                 self.assertTrue(
-                    is_menu(arg_lists[menu_idx]),
-                    f"Call immediately before screencap (index {menu_idx}) is not "
-                    f"KEYCODE_MENU (82): {arg_lists[menu_idx]}"
+                    is_swipe(arg_lists[swipe_idx]),
+                    f"Call immediately before screencap (index {swipe_idx}) is not "
+                    f"an upward swipe: {arg_lists[swipe_idx]}"
                 )
                 self.assertTrue(
                     is_wakeup(arg_lists[wakeup_idx]),
