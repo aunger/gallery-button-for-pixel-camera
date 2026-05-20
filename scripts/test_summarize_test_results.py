@@ -255,6 +255,52 @@ class TestRenderSuite(unittest.TestCase):
         )
         self.assertIn("❌ FAIL", class_row)
 
+    def test_skipped_case_shows_skip_icon(self):
+        classes = {
+            "com.example.Foo": srt.TestClass(
+                name="com.example.Foo",
+                cases=[
+                    srt.TestCase("pass1", True, skipped=False),
+                    srt.TestCase("skip1", False, skipped=True),
+                ],
+            )
+        }
+        lines = srt.render_suite("Unit Tests", classes)
+        combined = "\n".join(lines)
+        self.assertIn("⏭ SKIP", combined)
+        self.assertNotIn("❌ FAIL", combined)
+
+    def test_skipped_case_counted_in_totals_not_as_pass(self):
+        classes = {
+            "com.example.Foo": srt.TestClass(
+                name="com.example.Foo",
+                cases=[
+                    srt.TestCase("pass1", True, skipped=False),
+                    srt.TestCase("skip1", False, skipped=True),
+                    srt.TestCase("fail1", False, skipped=False),
+                ],
+            )
+        }
+        lines = srt.render_suite("Unit Tests", classes)
+        combined = "\n".join(lines)
+        self.assertIn("1 passed, 1 failed, 1 skipped", combined)
+        self.assertIn("(3 tests)", combined)
+
+    def test_all_skipped_class_icon_is_pass(self):
+        """A class with only skipped tests and no failures shows ✅ PASS."""
+        classes = {
+            "com.example.AllSkip": srt.TestClass(
+                name="com.example.AllSkip",
+                cases=[srt.TestCase("s1", False, skipped=True)],
+            )
+        }
+        lines = srt.render_suite("Suite", classes)
+        class_row = next(
+            line for line in lines
+            if "com.example.AllSkip" in line and "**" in line
+        )
+        self.assertIn("✅ PASS", class_row)
+
 
 # ---------------------------------------------------------------------------
 # build_markdown tests
