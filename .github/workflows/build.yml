@@ -228,6 +228,7 @@ jobs:
           echo "==> Waking display and dismissing keyguard..."
           "$ADB" shell input keyevent KEYCODE_WAKEUP
           "$ADB" shell input swipe 300 1000 300 300
+          sleep 2
 
           # Launch MockCameraActivity and wait for it to be displayed.
           # am start -W blocks until the activity is on screen, so no polling needed.
@@ -242,6 +243,7 @@ jobs:
           # same swipe unlock to stay consistent.
           "$ADB" shell input keyevent KEYCODE_WAKEUP
           "$ADB" shell input swipe 300 1000 300 300
+          sleep 2
 
           python3 scripts/check_green_feed.py --adb "$ADB" preflight.png
 
