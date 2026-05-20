@@ -344,6 +344,15 @@ jobs:
           path: /tmp/e2e-screenshots/
           retention-days: 14
 
+      - name: Write test-result summary
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        run: |
+          python3 scripts/summarize_test_results.py \
+            app/build/test-results/testDebugUnitTest \
+              --suite-label "Unit Tests" \
+            app/build/outputs/androidTest-results/connected/debug \
+              --suite-label "Instrumented Tests"
+
   # Produce a signed release-config APK on every merge to main for easy sideloading.
   # Named gb4pc-dev.<run_number>.apk to distinguish from tagged releases.
   # Waits for the full test suite (unit + E2E) before producing an artifact.
