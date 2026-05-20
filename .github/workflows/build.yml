@@ -219,15 +219,15 @@ jobs:
           "$ADB" shell pm grant com.google.android.GoogleCamera \
             android.permission.CAMERA
 
-          # Wake the display and dismiss the keyguard before launching the activity.
-          # am start -W waits for the framework to launch the activity, but on an
-          # emulator with screen timeout the keyguard may still be covering the window.
-          # wm dismiss-keyguard (API 26+) removes the keyguard immediately and is more
-          # reliable than a keyevent sequence for this purpose.
+          # Wake the display and dismiss the swipe keyguard before launching the
+          # activity. An upward swipe is used instead of wm dismiss-keyguard or
+          # KEYCODE_MENU: wm dismiss-keyguard did not reliably dismiss the
+          # swipe-type lock screen in CI (all retries returned #E9E8EF), and
+          # KEYCODE_MENU can open the options menu once MockCameraActivity is
+          # foregrounded, obscuring the green view.
           echo "==> Waking display and dismissing keyguard..."
           "$ADB" shell input keyevent KEYCODE_WAKEUP
-          "$ADB" shell wm dismiss-keyguard
-          sleep 2
+          "$ADB" shell input swipe 300 1000 300 300
 
           # Launch MockCameraActivity and wait for it to be displayed.
           # am start -W blocks until the activity is on screen, so no polling needed.
@@ -235,12 +235,13 @@ jobs:
           "$ADB" shell am start -W -n \
             com.google.android.GoogleCamera/com.gb4pc.mockcamera.MockCameraActivity
 
-          # Re-wake and re-dismiss keyguard after am start -W: adb install above
-          # can take 10-30 s and the screen may sleep in that window. am start -W
-          # and setTurnScreenOn(true) usually recover, but this is a cheap extra
-          # guarantee that the green view is visible before screencap.
+          # Re-wake after am start -W: adb install above can take 10-30 s and
+          # the screen may sleep in that window. am start -W and
+          # setTurnScreenOn(true) usually recover, but this is a cheap extra
+          # guarantee that the green view is visible before screencap. Use the
+          # same swipe unlock to stay consistent.
           "$ADB" shell input keyevent KEYCODE_WAKEUP
-          "$ADB" shell wm dismiss-keyguard
+          "$ADB" shell input swipe 300 1000 300 300
 
           python3 scripts/check_green_feed.py --adb "$ADB" preflight.png
 
