@@ -239,6 +239,8 @@ def main() -> int:
             [adb_path, "shell", "input", "swipe", "300", "1000", "300", "300"],
             check=False,
         )
+        # Wait for any swipe animation to settle before capturing the screen.
+        time.sleep(RETRY_DELAY_SECONDS)
         with open(path, "wb") as out:
             subprocess.run(
                 [adb_path, "exec-out", "screencap", "-p"],
