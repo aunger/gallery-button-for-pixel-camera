@@ -67,10 +67,23 @@ echo ""
 echo "=== (b) ANR-detection branch ==="
 
 ANR_KEYEVENT_FILE="$TMPDIR_TESTS/keyevent_sent"
+ANR_WINDOW_CALL_COUNT="$TMPDIR_TESTS/anr_window_call_count"
+echo 0 > "$ANR_WINDOW_CALL_COUNT"
+
 mock_adb_anr="$(make_mock_adb "adb_anr" "
 case \"\$*\" in
   *'dumpsys window windows'*)
-    echo 'Window #0: AppNotRespondingDialog'
+    count=\$(cat '$ANR_WINDOW_CALL_COUNT')
+    count=\$((count + 1))
+    echo \$count > '$ANR_WINDOW_CALL_COUNT'
+    if [[ \$count -le 1 ]]; then
+      echo 'Window #0: AppNotRespondingDialog'
+    else
+      echo 'no anr here'
+    fi
+    ;;
+  *'dumpsys cpuinfo'*)
+    echo '  2% com.google.android.apps.nexuslauncher: launcher'
     ;;
   *'input keyevent KEYCODE_BACK'*)
     touch '$ANR_KEYEVENT_FILE'
@@ -85,9 +98,9 @@ rm -f "$ANR_KEYEVENT_FILE"
 bash "$DISMISS_ANR" --adb "$mock_adb_anr"
 status=$?
 if [[ $status -eq 0 ]]; then
-  pass "script exits 0 when ANR dialog is detected"
+  pass "script exits 0 when ANR dialog is detected and then clears"
 else
-  fail "script exited $status (expected 0) when ANR dialog detected"
+  fail "script exited $status (expected 0) when ANR dialog detected and cleared"
 fi
 
 if [[ -f "$ANR_KEYEVENT_FILE" ]]; then
