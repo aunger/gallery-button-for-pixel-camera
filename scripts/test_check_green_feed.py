@@ -148,6 +148,59 @@ class TestMainAdbRetryLoop(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    def test_wakeup_and_swipe_sent_before_each_screencap(self):
+        """KEYCODE_WAKEUP (224) and an upward swipe are sent before every screencap,
+        in that order, with the screencap coming after both in each retry iteration."""
+        fd, path = tempfile.mkstemp(suffix=".png")
+        os.close(fd)
+        try:
+            # Run two iterations (fail once, then pass) so we can check ordering
+            # across multiple retry cycles.
+            side_effects = [1, 0]
+            with patch("check_green_feed.subprocess.run") as mock_run, \
+                 patch("check_green_feed.time.sleep"), \
+                 patch("builtins.open", unittest.mock.mock_open()), \
+                 patch("check_green_feed.check_image", side_effect=side_effects):
+                self._run_main(["--adb", "/fake/adb", path])
+
+            # Build a flat list of the command argument lists from each call.
+            arg_lists = [c.args[0] for c in mock_run.call_args_list if c.args]
+
+            def is_wakeup(args):
+                return "keyevent" in args and "224" in args
+
+            def is_swipe(args):
+                return "swipe" in args and "300" in args and "1000" in args
+
+            def is_screencap(args):
+                return "screencap" in args
+
+            # Walk the call list and verify that each screencap is immediately
+            # preceded by a swipe (unlock gesture) call, which is itself preceded
+            # by a KEYCODE_WAKEUP (224) call.  This confirms the ordering within
+            # every retry iteration, not just the presence of the calls somewhere
+            # in the full list.
+            screencap_indices = [i for i, a in enumerate(arg_lists) if is_screencap(a)]
+            self.assertGreater(len(screencap_indices), 0, "No screencap call found")
+
+            for sc_idx in screencap_indices:
+                self.assertGreaterEqual(sc_idx, 2,
+                    "Not enough preceding calls before screencap to fit wakeup + swipe")
+                swipe_idx = sc_idx - 1
+                wakeup_idx = sc_idx - 2
+                self.assertTrue(
+                    is_swipe(arg_lists[swipe_idx]),
+                    f"Call immediately before screencap (index {swipe_idx}) is not "
+                    f"an upward swipe: {arg_lists[swipe_idx]}"
+                )
+                self.assertTrue(
+                    is_wakeup(arg_lists[wakeup_idx]),
+                    f"Call two before screencap (index {wakeup_idx}) is not "
+                    f"KEYCODE_WAKEUP (224): {arg_lists[wakeup_idx]}"
+                )
+        finally:
+            os.unlink(path)
+
     def test_single_shot_mode_without_adb_flag(self):
         """Without --adb, main calls check_image directly and returns its result."""
         path = _write_png(255, 0, 0)  # red => fail
