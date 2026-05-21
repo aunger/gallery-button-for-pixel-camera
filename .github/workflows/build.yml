@@ -218,6 +218,10 @@ jobs:
           echo "==> Installing mock Pixel Camera for pre-flight check..."
           "$ADB" install -r \
             e2e-mock-camera/build/outputs/apk/debug/e2e-mock-camera-debug.apk
+          # Adaptive ANR watcher: waits for Pixel Launcher to settle after install (Issue #194)
+          chmod +x scripts/dismiss_anr.sh
+          scripts/dismiss_anr.sh --adb "$ADB" &
+          SETTLE_PID=$!
           echo "==> Granting CAMERA permission..."
           "$ADB" shell pm grant com.google.android.GoogleCamera \
             android.permission.CAMERA
@@ -244,6 +248,8 @@ jobs:
           # guarantee that the green view is visible before screencap.
           "$ADB" shell input keyevent KEYCODE_WAKEUP
           "$ADB" shell wm dismiss-keyguard
+
+          wait "$SETTLE_PID" || true
 
           python3 scripts/check_green_feed.py --adb "$ADB" preflight.png
 
