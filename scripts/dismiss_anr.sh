@@ -55,8 +55,9 @@
     if echo "$window_dump" | grep -q "AppNotRespondingDialog"; then
       echo "[dismiss_anr] ANR dialog detected — sending KEYCODE_BACK to dismiss." >&2
       "$ADB" shell input keyevent KEYCODE_BACK 2>/dev/null || true
+      idle_count=0
       sleep 1
-      exit 0
+      continue
     fi
 
     # 2. Check Pixel Launcher CPU usage.
@@ -77,8 +78,19 @@
     fi
 
     if [[ $idle_count -ge 2 ]]; then
-      echo "[dismiss_anr] Pixel Launcher has settled (idle_count=$idle_count) — exiting." >&2
-      exit 0
+      # Before exiting, confirm no ANR dialog is still on screen.
+      # The dialog does not consume CPU once rendered, so CPU idleness alone is
+      # not a reliable proxy for "no ANR dialog present."
+      window_dump2="$("$ADB" shell dumpsys window windows 2>/dev/null || true)"
+      if echo "$window_dump2" | grep -q "AppNotRespondingDialog"; then
+        echo "[dismiss_anr] ANR dialog present despite Launcher being idle — dismissing." >&2
+        "$ADB" shell input keyevent KEYCODE_BACK 2>/dev/null || true
+        idle_count=0
+        sleep 1
+      else
+        echo "[dismiss_anr] Pixel Launcher has settled (idle_count=$idle_count) — exiting." >&2
+        exit 0
+      fi
     fi
 
     sleep "$POLL_INTERVAL"
