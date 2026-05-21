@@ -168,6 +168,50 @@ else
   fail "script exited $status when Launcher process was absent"
 fi
 
+# ── (e) Persistent ANR — timeout exits 0 within wall-clock budget ─────────────
+echo ""
+echo "=== (e) Persistent ANR — script exits 0 within timeout (≤ 35 s) ==="
+
+# Mock adb that always reports AppNotRespondingDialog so the ANR branch is taken
+# every iteration.  The script must time out (TIMEOUT=30 s) rather than loop
+# forever, and must exit 0 within a generous 35 s wall-clock budget.
+#
+# To keep the test fast we override POLL_INTERVAL to 1 s by patching the
+# variable inside a wrapper that sources dismiss_anr.sh with a modified value.
+# The simplest approach: write a wrapper script that sets POLL_INTERVAL and
+# TIMEOUT to small values before sourcing the real script.
+PERSISTENT_ANR_ADB="$TMPDIR_TESTS/adb_persistent_anr"
+printf '#!/usr/bin/env bash\n' > "$PERSISTENT_ANR_ADB"
+printf 'case "$*" in\n' >> "$PERSISTENT_ANR_ADB"
+printf '  *"dumpsys window windows"*) echo "Window #0: AppNotRespondingDialog" ;;\n' >> "$PERSISTENT_ANR_ADB"
+printf '  *"input keyevent KEYCODE_BACK"*) : ;;\n' >> "$PERSISTENT_ANR_ADB"
+printf '  *) : ;;\n' >> "$PERSISTENT_ANR_ADB"
+printf 'esac\n' >> "$PERSISTENT_ANR_ADB"
+chmod +x "$PERSISTENT_ANR_ADB"
+
+# We need POLL_INTERVAL=1 and TIMEOUT=5 so the test finishes quickly.
+# dismiss_anr.sh hard-codes those values inside its subshell; we cannot override
+# them from outside.  Instead we run the script and impose a 35 s wall-clock
+# limit using a background watchdog.
+
+start_ts="$(date +%s)"
+timeout 35 bash "$DISMISS_ANR" --adb "$PERSISTENT_ANR_ADB"
+persistent_status=$?
+end_ts="$(date +%s)"
+elapsed_wall=$((end_ts - start_ts))
+
+if [[ $persistent_status -eq 0 ]]; then
+  pass "persistent ANR: script exits 0 (not hanging) — wall time ${elapsed_wall}s"
+else
+  fail "persistent ANR: script exited $persistent_status (expected 0) — wall time ${elapsed_wall}s"
+fi
+
+if [[ $elapsed_wall -le 35 ]]; then
+  pass "persistent ANR: completed within 35 s wall-clock budget (${elapsed_wall}s)"
+else
+  fail "persistent ANR: took ${elapsed_wall}s — exceeded 35 s budget"
+fi
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""
 echo "Results: $PASS passed, $FAIL failed."

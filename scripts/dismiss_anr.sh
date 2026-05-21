@@ -56,7 +56,8 @@
       echo "[dismiss_anr] ANR dialog detected — sending KEYCODE_BACK to dismiss." >&2
       "$ADB" shell input keyevent KEYCODE_BACK 2>/dev/null || true
       idle_count=0
-      sleep 1
+      sleep "$POLL_INTERVAL"
+      elapsed=$((elapsed + POLL_INTERVAL))
       continue
     fi
 
