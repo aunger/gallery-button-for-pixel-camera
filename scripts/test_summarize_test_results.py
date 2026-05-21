@@ -368,13 +368,25 @@ class TestParseArgs(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class TestMain(unittest.TestCase):
+    """Integration tests for main().
+
+    setUp clears GITHUB_STEP_SUMMARY from the environment so that calls to
+    srt.main() made without an explicit patch never write to the real CI job
+    summary.  Tests that specifically exercise the summary-file path restore the
+    variable themselves via patch.dict.
+    """
 
     def setUp(self):
         self._tmpdir = tempfile.TemporaryDirectory()
         self.tmpdir = Path(self._tmpdir.name)
+        # Remove GITHUB_STEP_SUMMARY so fixture-driven main() calls do not
+        # pollute the real CI job summary with FooTest/BarTest class names.
+        self._saved_summary = os.environ.pop("GITHUB_STEP_SUMMARY", None)
 
     def tearDown(self):
         self._tmpdir.cleanup()
+        if self._saved_summary is not None:
+            os.environ["GITHUB_STEP_SUMMARY"] = self._saved_summary
 
     def test_exit_0_on_passing_results(self):
         _write_xml(self.tmpdir, "TEST-foo.xml", PASSING_XML)
@@ -402,12 +414,12 @@ class TestMain(unittest.TestCase):
         self.assertIn("Unit Tests", content)
 
     def test_falls_back_to_stdout_when_no_env_var(self):
+        # GITHUB_STEP_SUMMARY is already absent (cleared in setUp); verify that
+        # the script falls back to stdout rather than raising or writing a file.
         _write_xml(self.tmpdir, "TEST-foo.xml", PASSING_XML)
-        env = {k: v for k, v in os.environ.items() if k != "GITHUB_STEP_SUMMARY"}
-        with patch.dict(os.environ, env, clear=True):
-            captured = io.StringIO()
-            with patch("sys.stdout", captured):
-                srt.main([str(self.tmpdir), "--suite-label", "Unit Tests"])
+        captured = io.StringIO()
+        with patch("sys.stdout", captured):
+            srt.main([str(self.tmpdir), "--suite-label", "Unit Tests"])
         output = captured.getvalue()
         self.assertIn("## Test Results", output)
 
@@ -420,6 +432,16 @@ class TestMain(unittest.TestCase):
         content = summary_file.read_text(encoding="utf-8")
         self.assertTrue(content.startswith("existing content"))
         self.assertIn("## Test Results", content)
+
+    def test_main_does_not_write_to_ci_summary_when_no_summary_var(self):
+        """When GITHUB_STEP_SUMMARY is absent, main() must not write any file."""
+        _write_xml(self.tmpdir, "TEST-foo.xml", PASSING_XML)
+        files_before = set(self.tmpdir.iterdir())
+        with patch("sys.stdout", io.StringIO()):
+            srt.main([str(self.tmpdir), "--suite-label", "Unit"])
+        files_after = set(self.tmpdir.iterdir())
+        # Only the XML fixture we wrote should exist; no summary file created.
+        self.assertEqual(files_before, files_after)
 
 
 if __name__ == "__main__":
