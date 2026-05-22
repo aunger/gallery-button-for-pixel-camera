@@ -226,14 +226,14 @@ jobs:
           "$ADB" shell pm grant com.google.android.GoogleCamera \
             android.permission.CAMERA
 
-          # Wake the display and dismiss the keyguard before launching the activity.
-          # am start -W waits for the framework to launch the activity, but on an
-          # emulator with screen timeout the keyguard may still be covering the window.
-          # wm dismiss-keyguard (API 26+) removes the keyguard immediately and is more
-          # reliable than a keyevent sequence for this purpose.
+          # Wake the display and dismiss the swipe keyguard before launching the
+          # activity. An upward swipe is used instead of wm dismiss-keyguard:
+          # wm dismiss-keyguard did not reliably dismiss the swipe-type lock
+          # screen on the API-35 CI emulator (all retries returned #E9E8EF).
+          # sleep 2 lets the swipe animation complete before am start -W fires.
           echo "==> Waking display and dismissing keyguard..."
           "$ADB" shell input keyevent KEYCODE_WAKEUP
-          "$ADB" shell wm dismiss-keyguard
+          "$ADB" shell input swipe 300 1000 300 300
           sleep 2
 
           # Launch MockCameraActivity and wait for it to be displayed.
@@ -242,12 +242,14 @@ jobs:
           "$ADB" shell am start -W -n \
             com.google.android.GoogleCamera/com.gb4pc.mockcamera.MockCameraActivity
 
-          # Re-wake and re-dismiss keyguard after am start -W: adb install above
-          # can take 10-30 s and the screen may sleep in that window. am start -W
-          # and setTurnScreenOn(true) usually recover, but this is a cheap extra
-          # guarantee that the green view is visible before screencap.
+          # Re-wake after am start -W: adb install above can take 10-30 s and
+          # the screen may sleep in that window. am start -W and
+          # setTurnScreenOn(true) usually recover, but this is a cheap extra
+          # guarantee that the green view is visible before screencap. Use the
+          # same swipe unlock to stay consistent.
           "$ADB" shell input keyevent KEYCODE_WAKEUP
-          "$ADB" shell wm dismiss-keyguard
+          "$ADB" shell input swipe 300 1000 300 300
+          sleep 2
 
           wait "$SETTLE_PID" || true
 

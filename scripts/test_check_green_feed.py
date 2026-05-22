@@ -99,7 +99,10 @@ class TestMainAdbRetryLoop(unittest.TestCase):
                 with patch("check_green_feed.check_image", return_value=0) as mock_check:
                     result = self._run_main(["--adb", "/fake/adb", green_png])
             self.assertEqual(result, 0)
-            mock_sleep.assert_called_once_with(cgf.RETRY_DELAY_SECONDS)
+            # Two sleeps per attempt: one at the top of the loop and one between
+            # the swipe and the screencap.
+            self.assertEqual(mock_sleep.call_count, 2)
+            mock_sleep.assert_called_with(cgf.RETRY_DELAY_SECONDS)
             mock_check.assert_called_once_with(green_png)
         finally:
             os.unlink(green_png)
@@ -134,7 +137,8 @@ class TestMainAdbRetryLoop(unittest.TestCase):
             os.unlink(path)
 
     def test_sleep_called_on_every_attempt(self):
-        """Sleep is called MAX_ATTEMPTS times (once per attempt, at the top)."""
+        """Sleep is called twice per attempt: once at the top of the loop and
+        once between the swipe and the screencap, for 2 * MAX_ATTEMPTS total."""
         fd, path = tempfile.mkstemp(suffix=".png")
         os.close(fd)
         try:
@@ -143,8 +147,114 @@ class TestMainAdbRetryLoop(unittest.TestCase):
                  patch("builtins.open", unittest.mock.mock_open()), \
                  patch("check_green_feed.check_image", return_value=1):
                 self._run_main(["--adb", "/fake/adb", path])
-            self.assertEqual(mock_sleep.call_count, cgf.MAX_ATTEMPTS)
+            self.assertEqual(mock_sleep.call_count, 2 * cgf.MAX_ATTEMPTS)
             mock_sleep.assert_called_with(cgf.RETRY_DELAY_SECONDS)
+        finally:
+            os.unlink(path)
+
+    def test_wakeup_and_swipe_sent_before_each_screencap(self):
+        """KEYCODE_WAKEUP (224) and an upward swipe are sent before every screencap,
+        in that order, with the screencap coming after both in each retry iteration."""
+        fd, path = tempfile.mkstemp(suffix=".png")
+        os.close(fd)
+        try:
+            # Run two iterations (fail once, then pass) so we can check ordering
+            # across multiple retry cycles.
+            side_effects = [1, 0]
+            with patch("check_green_feed.subprocess.run") as mock_run, \
+                 patch("check_green_feed.time.sleep"), \
+                 patch("builtins.open", unittest.mock.mock_open()), \
+                 patch("check_green_feed.check_image", side_effect=side_effects):
+                self._run_main(["--adb", "/fake/adb", path])
+
+            # Build a flat list of the command argument lists from each call.
+            arg_lists = [c.args[0] for c in mock_run.call_args_list if c.args]
+
+            def is_wakeup(args):
+                return "keyevent" in args and "224" in args
+
+            def is_swipe(args):
+                return "swipe" in args and "300" in args and "1000" in args
+
+            def is_screencap(args):
+                return "screencap" in args
+
+            # Walk the call list and verify that each screencap is immediately
+            # preceded by a swipe (unlock gesture) call, which is itself preceded
+            # by a KEYCODE_WAKEUP (224) call.  This confirms the ordering within
+            # every retry iteration, not just the presence of the calls somewhere
+            # in the full list.
+            screencap_indices = [i for i, a in enumerate(arg_lists) if is_screencap(a)]
+            self.assertGreater(len(screencap_indices), 0, "No screencap call found")
+
+            for sc_idx in screencap_indices:
+                self.assertGreaterEqual(sc_idx, 2,
+                    "Not enough preceding calls before screencap to fit wakeup + swipe")
+                swipe_idx = sc_idx - 1
+                wakeup_idx = sc_idx - 2
+                self.assertTrue(
+                    is_swipe(arg_lists[swipe_idx]),
+                    f"Call immediately before screencap (index {swipe_idx}) is not "
+                    f"an upward swipe: {arg_lists[swipe_idx]}"
+                )
+                self.assertTrue(
+                    is_wakeup(arg_lists[wakeup_idx]),
+                    f"Call two before screencap (index {wakeup_idx}) is not "
+                    f"KEYCODE_WAKEUP (224): {arg_lists[wakeup_idx]}"
+                )
+        finally:
+            os.unlink(path)
+
+    def test_sleep_between_swipe_and_screencap(self):
+        """A sleep call must appear between the swipe and every screencap so that
+        any swipe animation has settled before the screen is captured."""
+        fd, path = tempfile.mkstemp(suffix=".png")
+        os.close(fd)
+        try:
+            # Two iterations so ordering can be verified across retry cycles.
+            side_effects = [1, 0]
+
+            # Track interleaved calls to both subprocess.run and time.sleep in
+            # the order they actually happen.
+            call_log: list[str] = []
+
+            def fake_run(args, **kwargs):
+                if "swipe" in args and "300" in args and "1000" in args:
+                    call_log.append("swipe")
+                elif "screencap" in args:
+                    call_log.append("screencap")
+                else:
+                    call_log.append("other")
+
+            def fake_sleep(seconds):
+                call_log.append(f"sleep({seconds})")
+
+            with patch("check_green_feed.subprocess.run", side_effect=fake_run), \
+                 patch("check_green_feed.time.sleep", side_effect=fake_sleep), \
+                 patch("builtins.open", unittest.mock.mock_open()), \
+                 patch("check_green_feed.check_image", side_effect=side_effects):
+                self._run_main(["--adb", "/fake/adb", path])
+
+            # Find every screencap in the log and assert that a sleep immediately
+            # precedes it and a swipe immediately precedes that sleep.
+            screencap_positions = [i for i, e in enumerate(call_log) if e == "screencap"]
+            self.assertGreater(len(screencap_positions), 0, "No screencap logged")
+
+            for sc_pos in screencap_positions:
+                self.assertGreaterEqual(sc_pos, 2,
+                    "Not enough preceding log entries before screencap")
+                self.assertIn(
+                    "sleep",
+                    call_log[sc_pos - 1],
+                    f"Entry immediately before screencap (index {sc_pos - 1}) is not "
+                    f"a sleep call: {call_log[sc_pos - 1]}"
+                )
+                self.assertEqual(
+                    call_log[sc_pos - 2],
+                    "swipe",
+                    f"Entry two before screencap (index {sc_pos - 2}) is not "
+                    f"a swipe call: {call_log[sc_pos - 2]}"
+                )
         finally:
             os.unlink(path)
 

@@ -221,6 +221,26 @@ def main() -> int:
         # Sleep first so the display has time to render before the first check
         # and between retries; the caller has already waited for am start -W.
         time.sleep(RETRY_DELAY_SECONDS)
+        # Wake the display and dismiss the keyguard before every screencap.
+        # The screen may dim or the keyguard may re-appear during a long retry
+        # loop (e.g. while the APK was being installed).
+        # KEYCODE_WAKEUP (224) turns the screen on on all API levels.
+        # An upward swipe then dismisses the swipe-based lock screen that the
+        # emulator shows before the E2E PIN setup script runs.  Using a swipe
+        # gesture avoids the side-effect of KEYCODE_MENU (82), which dispatches
+        # KeyEvent.KEYCODE_MENU to a foregrounded activity and can open the
+        # options/overflow menu, obscuring the green view.  When the screen is
+        # already unlocked the swipe is a harmless gesture over the activity.
+        subprocess.run(
+            [adb_path, "shell", "input", "keyevent", "224"],
+            check=False,
+        )
+        subprocess.run(
+            [adb_path, "shell", "input", "swipe", "300", "1000", "300", "300"],
+            check=False,
+        )
+        # Wait for any swipe animation to settle before capturing the screen.
+        time.sleep(RETRY_DELAY_SECONDS)
         with open(path, "wb") as out:
             subprocess.run(
                 [adb_path, "exec-out", "screencap", "-p"],
