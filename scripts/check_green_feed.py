@@ -231,14 +231,37 @@ def main() -> int:
         # KeyEvent.KEYCODE_MENU to a foregrounded activity and can open the
         # options/overflow menu, obscuring the green view.  When the screen is
         # already unlocked the swipe is a harmless gesture over the activity.
-        subprocess.run(
+        input_service_ok = True
+        wakeup_result = subprocess.run(
             [adb_path, "shell", "input", "keyevent", "224"],
             check=False,
+            capture_output=True,
+            text=True,
         )
-        subprocess.run(
+        if wakeup_result.returncode != 0 or "Can't find service" in wakeup_result.stderr:
+            print(
+                f"WARNING: input service unavailable during KEYCODE_WAKEUP "
+                f"(attempt {attempt}); sleeping extra {RETRY_DELAY_SECONDS}s for recovery.",
+                file=sys.stderr,
+            )
+            input_service_ok = False
+            time.sleep(RETRY_DELAY_SECONDS)
+
+        swipe_result = subprocess.run(
             [adb_path, "shell", "input", "swipe", "300", "1000", "300", "300"],
             check=False,
+            capture_output=True,
+            text=True,
         )
+        if swipe_result.returncode != 0 or "Can't find service" in swipe_result.stderr:
+            if input_service_ok:
+                # Only log/sleep here if we haven't already done so for the wakeup.
+                print(
+                    f"WARNING: input service unavailable during swipe "
+                    f"(attempt {attempt}); sleeping extra {RETRY_DELAY_SECONDS}s for recovery.",
+                    file=sys.stderr,
+                )
+                time.sleep(RETRY_DELAY_SECONDS)
         # Wait for any swipe animation to settle before capturing the screen.
         time.sleep(RETRY_DELAY_SECONDS)
         with open(path, "wb") as out:
