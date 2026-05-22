@@ -51,17 +51,42 @@
   # Clear the logcat buffer and start a background stream that sets a flag file
   # the moment an ANR for Pixel Launcher appears in the log.  This costs nothing
   # while no ANR is occurring and fires well before the dialog is rendered.
+  #
+  # Design notes:
+  #   • A `while read` loop (not `grep -m1`) keeps the stream alive so a second
+  #     ANR that fires after the first is dismissed is still caught.
+  #   • `adb logcat` is started as a backgrounded grandchild inside the subshell
+  #     and its PID is written to a temp file so the EXIT trap can kill it
+  #     directly — killing only the subshell PID would leave the grandchild
+  #     running after the script exits.
   "$ADB" logcat -c 2>/dev/null || true
 
   ANR_FLAG="$(mktemp)"
   rm -f "$ANR_FLAG"
 
-  ( "$ADB" logcat ActivityManager:E '*:S' 2>/dev/null \
-      | grep -m1 'ANR in com.google.android.apps.nexuslauncher' > /dev/null \
-    && touch "$ANR_FLAG" ) &
+  ADB_LOGCAT_PID_FILE="$(mktemp)"
+  LOGCAT_FIFO="$(mktemp -u)"
+  mkfifo "$LOGCAT_FIFO"
+
+  # Start adb logcat in the background, feeding a named pipe.
+  "$ADB" logcat ActivityManager:E '*:S' 2>/dev/null > "$LOGCAT_FIFO" &
+  echo $! > "$ADB_LOGCAT_PID_FILE"
+
+  # Consumer subshell: reads from the fifo and touches ANR_FLAG on every match.
+  ( while IFS= read -r line; do
+      case "$line" in
+        *'ANR in com.google.android.apps.nexuslauncher'*)
+          touch "$ANR_FLAG" ;;
+      esac
+    done < "$LOGCAT_FIFO" ) &
   LOGCAT_PID=$!
 
-  trap 'kill "$LOGCAT_PID" 2>/dev/null || true; rm -f "$ANR_FLAG"' EXIT
+  trap '
+    ADB_LOGCAT_PID="$(cat "$ADB_LOGCAT_PID_FILE" 2>/dev/null || true)"
+    kill "$ADB_LOGCAT_PID" 2>/dev/null || true
+    kill "$LOGCAT_PID" 2>/dev/null || true
+    rm -f "$ANR_FLAG" "$ADB_LOGCAT_PID_FILE" "$LOGCAT_FIFO"
+  ' EXIT
 
   # ── Poll loop ────────────────────────────────────────────────────────────────
   POLL_INTERVAL=3

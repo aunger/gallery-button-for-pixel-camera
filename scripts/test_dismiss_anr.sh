@@ -218,6 +218,68 @@ else
   fail "persistent ANR: took ${elapsed_wall}s — exceeded 35 s budget"
 fi
 
+# ── (f) Second-ANR scenario ──────────────────────────────────────────────────
+echo ""
+echo "=== (f) Second ANR after first is dismissed ==="
+
+# The mock logcat emits the first ANR line immediately, then waits long enough
+# for the poll loop to process and dismiss it (SLEEP_AFTER_ANR_DETECTED=1 plus
+# the 3 s POLL_INTERVAL), before emitting the second ANR line.  A 5 s gap is
+# sufficient: it guarantees the first flag has been consumed and cleared before
+# the second ANR is written.  The mock then hangs so the consumer while-read
+# loop stays open.  The mock cpuinfo returns high CPU until KEYCODE_BACK has
+# been sent twice, then returns low CPU so idle_count reaches 2.
+# We verify that KEYCODE_BACK is sent at least twice and the script exits 0.
+
+SECOND_ANR_KEYEVENT_COUNT_FILE="$TMPDIR_TESTS/second_anr_keyevent_count"
+echo 0 > "$SECOND_ANR_KEYEVENT_COUNT_FILE"
+
+mock_adb_second_anr="$(make_mock_adb "adb_second_anr" "
+case \"\$*\" in
+  *'logcat -c'*)
+    exit 0
+    ;;
+  *'logcat'*)
+    echo 'E/ActivityManager: ANR in com.google.android.apps.nexuslauncher'
+    sleep 5
+    echo 'E/ActivityManager: ANR in com.google.android.apps.nexuslauncher'
+    sleep 60
+    ;;
+  *'dumpsys cpuinfo'*)
+    count=\$(cat '$SECOND_ANR_KEYEVENT_COUNT_FILE')
+    if [[ \$count -lt 2 ]]; then
+      echo '  80% com.google.android.apps.nexuslauncher: launcher'
+    else
+      echo '  1% com.google.android.apps.nexuslauncher: launcher'
+    fi
+    ;;
+  *'input keyevent KEYCODE_BACK'*)
+    count=\$(cat '$SECOND_ANR_KEYEVENT_COUNT_FILE')
+    count=\$((count + 1))
+    echo \$count > '$SECOND_ANR_KEYEVENT_COUNT_FILE'
+    ;;
+  *)
+    :
+    ;;
+esac
+")"
+
+SLEEP_AFTER_ANR_DETECTED=1 bash "$DISMISS_ANR" --adb "$mock_adb_second_anr"
+second_anr_status=$?
+
+if [[ $second_anr_status -eq 0 ]]; then
+  pass "second ANR: script exits 0"
+else
+  fail "second ANR: script exited $second_anr_status (expected 0)"
+fi
+
+keyevent_count="$(cat "$SECOND_ANR_KEYEVENT_COUNT_FILE")"
+if [[ $keyevent_count -ge 2 ]]; then
+  pass "second ANR: KEYCODE_BACK sent at least twice (got $keyevent_count)"
+else
+  fail "second ANR: KEYCODE_BACK sent only $keyevent_count time(s) — expected at least 2"
+fi
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""
 echo "Results: $PASS passed, $FAIL failed."
