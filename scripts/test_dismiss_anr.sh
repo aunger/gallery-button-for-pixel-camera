@@ -2,10 +2,11 @@
 # test_dismiss_anr.sh — Shell-based tests for dismiss_anr.sh.
 #
 # Covers:
-#   (a) --adb argument parsing
-#   (b) ANR-detection branch (mock adb that emits AppNotRespondingDialog)
-#   (c) idle-count exit path (mock adb with low Launcher CPU)
-#   (d) timeout path (mock adb that never satisfies either condition)
+#   (a) --adb argument is used for both logcat and shell subcommands
+#   (b) ANR-detection branch: logcat fires → KEYCODE_BACK sent → exits 0
+#   (c) idle-count exit path: logcat hangs, CPU goes idle → exits 0
+#   (d) Absent Launcher process treated as idle → exits 0
+#   (e) Persistent ANR: logcat fires but BACK never clears; 30 s timeout → exits 0
 #
 # Always exits 0 on success, non-zero on failure.
 
@@ -42,11 +43,13 @@ echo ""
 echo "=== (a) --adb argument parsing ==="
 
 # A mock adb that records the path it was invoked from and returns idle output.
+# It must handle logcat subcommands (used by the new design) as well as shell calls.
 ADB_RECORD_FILE="$TMPDIR_TESTS/adb_invoked"
 mock_adb_record="$(make_mock_adb "adb_record" "
 touch '$ADB_RECORD_FILE'
 case \"\$*\" in
-  *'dumpsys window windows'*) echo 'no anr here' ;;
+  *'logcat -c'*)              exit 0 ;;
+  *'logcat'*)                 sleep 60 ;;
   *'dumpsys cpuinfo'*)        echo '  1% com.google.android.apps.nexuslauncher:' ;;
   *'input keyevent'*)         : ;;
   *)                          : ;;
@@ -67,20 +70,16 @@ echo ""
 echo "=== (b) ANR-detection branch ==="
 
 ANR_KEYEVENT_FILE="$TMPDIR_TESTS/keyevent_sent"
-ANR_WINDOW_CALL_COUNT="$TMPDIR_TESTS/anr_window_call_count"
-echo 0 > "$ANR_WINDOW_CALL_COUNT"
 
+# The logcat mock emits the ANR line immediately, then exits.
+# After KEYCODE_BACK is sent, cpuinfo reports low CPU so idle_count reaches 2.
 mock_adb_anr="$(make_mock_adb "adb_anr" "
 case \"\$*\" in
-  *'dumpsys window windows'*)
-    count=\$(cat '$ANR_WINDOW_CALL_COUNT')
-    count=\$((count + 1))
-    echo \$count > '$ANR_WINDOW_CALL_COUNT'
-    if [[ \$count -le 1 ]]; then
-      echo 'Window #0: AppNotRespondingDialog'
-    else
-      echo 'no anr here'
-    fi
+  *'logcat -c'*)
+    exit 0
+    ;;
+  *'logcat'*)
+    echo 'E/ActivityManager: ANR in com.google.android.apps.nexuslauncher'
     ;;
   *'dumpsys cpuinfo'*)
     echo '  2% com.google.android.apps.nexuslauncher: launcher'
@@ -95,7 +94,8 @@ esac
 ")"
 
 rm -f "$ANR_KEYEVENT_FILE"
-bash "$DISMISS_ANR" --adb "$mock_adb_anr"
+# Use SLEEP_AFTER_ANR_DETECTED=1 so the test doesn't spend 7 real seconds waiting.
+SLEEP_AFTER_ANR_DETECTED=1 bash "$DISMISS_ANR" --adb "$mock_adb_anr"
 status=$?
 if [[ $status -eq 0 ]]; then
   pass "script exits 0 when ANR dialog is detected and then clears"
@@ -116,10 +116,14 @@ echo "=== (c) idle-count exit path (Launcher CPU < 5%) ==="
 IDLE_CALL_COUNT_FILE="$TMPDIR_TESTS/idle_call_count"
 echo 0 > "$IDLE_CALL_COUNT_FILE"
 
+# Logcat hangs silently (no ANR); cpuinfo always reports low CPU.
 mock_adb_idle="$(make_mock_adb "adb_idle" "
 case \"\$*\" in
-  *'dumpsys window windows'*)
-    echo 'no anr here'
+  *'logcat -c'*)
+    exit 0
+    ;;
+  *'logcat'*)
+    sleep 60
     ;;
   *'dumpsys cpuinfo'*)
     count=\$(cat '$IDLE_CALL_COUNT_FILE')
@@ -154,9 +158,10 @@ echo "=== (d) Absent Launcher process treated as idle ==="
 
 mock_adb_absent="$(make_mock_adb "adb_absent" "
 case \"\$*\" in
-  *'dumpsys window windows'*) echo 'no anr' ;;
-  *'dumpsys cpuinfo'*)        echo '  3% some.other.process' ;;
-  *)                          : ;;
+  *'logcat -c'*)   exit 0 ;;
+  *'logcat'*)      sleep 60 ;;
+  *'dumpsys cpuinfo'*) echo '  3% some.other.process' ;;
+  *)               : ;;
 esac
 ")"
 
@@ -172,30 +177,31 @@ fi
 echo ""
 echo "=== (e) Persistent ANR — script exits 0 within timeout (≤ 35 s) ==="
 
-# Mock adb that always reports AppNotRespondingDialog so the ANR branch is taken
-# every iteration.  The script must time out (TIMEOUT=30 s) rather than loop
-# forever, and must exit 0 within a generous 35 s wall-clock budget.
-#
-# To keep the test fast we override POLL_INTERVAL to 1 s by patching the
-# variable inside a wrapper that sources dismiss_anr.sh with a modified value.
-# The simplest approach: write a wrapper script that sets POLL_INTERVAL and
-# TIMEOUT to small values before sourcing the real script.
-PERSISTENT_ANR_ADB="$TMPDIR_TESTS/adb_persistent_anr"
-printf '#!/usr/bin/env bash\n' > "$PERSISTENT_ANR_ADB"
-printf 'case "$*" in\n' >> "$PERSISTENT_ANR_ADB"
-printf '  *"dumpsys window windows"*) echo "Window #0: AppNotRespondingDialog" ;;\n' >> "$PERSISTENT_ANR_ADB"
-printf '  *"input keyevent KEYCODE_BACK"*) : ;;\n' >> "$PERSISTENT_ANR_ADB"
-printf '  *) : ;;\n' >> "$PERSISTENT_ANR_ADB"
-printf 'esac\n' >> "$PERSISTENT_ANR_ADB"
-chmod +x "$PERSISTENT_ANR_ADB"
-
-# We need POLL_INTERVAL=1 and TIMEOUT=5 so the test finishes quickly.
-# dismiss_anr.sh hard-codes those values inside its subshell; we cannot override
-# them from outside.  Instead we run the script and impose a 35 s wall-clock
-# limit using a background watchdog.
+# Logcat fires immediately (ANR detected), cpuinfo always reports high CPU so
+# idle_count never reaches 2, and the script must time out after TIMEOUT=30 s.
+# We use SLEEP_AFTER_ANR_DETECTED=1 to avoid spending 7 s waiting for the dialog.
+PERSISTENT_ANR_ADB="$(make_mock_adb "adb_persistent_anr" "
+case \"\$*\" in
+  *'logcat -c'*)
+    exit 0
+    ;;
+  *'logcat'*)
+    echo 'E/ActivityManager: ANR in com.google.android.apps.nexuslauncher'
+    ;;
+  *'dumpsys cpuinfo'*)
+    echo '  80% com.google.android.apps.nexuslauncher: launcher'
+    ;;
+  *'input keyevent KEYCODE_BACK'*)
+    :
+    ;;
+  *)
+    :
+    ;;
+esac
+")"
 
 start_ts="$(date +%s)"
-timeout 35 bash "$DISMISS_ANR" --adb "$PERSISTENT_ANR_ADB"
+SLEEP_AFTER_ANR_DETECTED=1 timeout 35 bash "$DISMISS_ANR" --adb "$PERSISTENT_ANR_ADB"
 persistent_status=$?
 end_ts="$(date +%s)"
 elapsed_wall=$((end_ts - start_ts))
