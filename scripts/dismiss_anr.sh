@@ -127,8 +127,19 @@
     fi
 
     if [[ $idle_count -ge 2 ]]; then
-      echo "[dismiss_anr] Pixel Launcher has settled (idle_count=$idle_count) — exiting." >&2
-      exit 0
+      # Safety check: even if CPU is idle, confirm the ANR dialog is gone.
+      # The logcat trigger can miss the event if the ANR fires before the stream
+      # starts or after the CPU has already settled.  A dumpsys window check here
+      # is the fallback that catches those cases.
+      if "$ADB" shell dumpsys window 2>/dev/null | grep -q "AppNotRespondingDialog"; then
+        echo "[dismiss_anr] CPU idle but ANR dialog still present (dumpsys window) — sending KEYCODE_BACK." >&2
+        "$ADB" shell input keyevent KEYCODE_BACK 2>/dev/null || true
+        idle_count=0
+        # Continue the loop instead of exiting.
+      else
+        echo "[dismiss_anr] Pixel Launcher has settled (idle_count=$idle_count) — exiting." >&2
+        exit 0
+      fi
     fi
 
     sleep "$POLL_INTERVAL"

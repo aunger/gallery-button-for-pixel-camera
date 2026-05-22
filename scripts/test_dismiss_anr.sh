@@ -280,6 +280,76 @@ else
   fail "second ANR: KEYCODE_BACK sent only $keyevent_count time(s) — expected at least 2"
 fi
 
+# ── (g) idle_count=2 but ANR dialog still present (dumpsys window fallback) ───
+echo ""
+echo "=== (g) idle_count=2 but ANR dialog still present — dumpsys window fallback ==="
+
+# Scenario: logcat never fires (CPU settled without logcat trigger), but the ANR
+# dialog is still on screen.  dumpsys window returns AppNotRespondingDialog on the
+# first idle-exit check, KEYCODE_BACK is sent, idle_count resets to 0.  On the
+# second idle-exit check dumpsys window is clean, so the script exits 0.
+# We verify that KEYCODE_BACK was sent exactly once and the script exits 0.
+
+DUMPSYS_WINDOW_CALL_COUNT_FILE="$TMPDIR_TESTS/dumpsys_window_call_count"
+echo 0 > "$DUMPSYS_WINDOW_CALL_COUNT_FILE"
+DUMPSYS_WINDOW_KEYEVENT_FILE="$TMPDIR_TESTS/dumpsys_window_keyevent"
+
+mock_adb_dumpsys_anr="$(make_mock_adb "adb_dumpsys_anr" "
+case \"\$*\" in
+  *'logcat -c'*)
+    exit 0
+    ;;
+  *'logcat'*)
+    # Hang silently — logcat never fires.
+    sleep 60
+    ;;
+  *'dumpsys cpuinfo'*)
+    # Always report low CPU so idle_count increments every iteration.
+    echo '  1% com.google.android.apps.nexuslauncher: launcher'
+    ;;
+  *'dumpsys window'*)
+    count=\$(cat '$DUMPSYS_WINDOW_CALL_COUNT_FILE')
+    count=\$((count + 1))
+    echo \$count > '$DUMPSYS_WINDOW_CALL_COUNT_FILE'
+    if [[ \$count -le 1 ]]; then
+      # First check: dialog still present.
+      echo 'AppNotRespondingDialog'
+    else
+      # Second check: dialog gone.
+      echo 'WindowState idle'
+    fi
+    ;;
+  *'input keyevent KEYCODE_BACK'*)
+    touch '$DUMPSYS_WINDOW_KEYEVENT_FILE'
+    ;;
+  *)
+    :
+    ;;
+esac
+")"
+
+bash "$DISMISS_ANR" --adb "$mock_adb_dumpsys_anr"
+dumpsys_status=$?
+
+if [[ $dumpsys_status -eq 0 ]]; then
+  pass "dumpsys window fallback: script exits 0"
+else
+  fail "dumpsys window fallback: script exited $dumpsys_status (expected 0)"
+fi
+
+if [[ -f "$DUMPSYS_WINDOW_KEYEVENT_FILE" ]]; then
+  pass "dumpsys window fallback: KEYCODE_BACK sent when ANR dialog detected via dumpsys window"
+else
+  fail "dumpsys window fallback: KEYCODE_BACK was NOT sent when ANR dialog was found via dumpsys window"
+fi
+
+dumpsys_call_count="$(cat "$DUMPSYS_WINDOW_CALL_COUNT_FILE")"
+if [[ $dumpsys_call_count -ge 2 ]]; then
+  pass "dumpsys window fallback: dumpsys window was checked more than once (got $dumpsys_call_count) — loop continued after first dialog detection"
+else
+  fail "dumpsys window fallback: dumpsys window checked only $dumpsys_call_count time(s) — loop should have continued"
+fi
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""
 echo "Results: $PASS passed, $FAIL failed."
