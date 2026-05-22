@@ -10,7 +10,7 @@
 - A Reviewer should be explicit and fully explain any problems, but should not spend tokens to design their solutions.
 - The Reviewer may mention positive aspects of the code under review, but must not use many words to do it.
 - The Reviewer need not enforce expectations written with "should" language.
-- **Do not wait for CI.** Review the diff, form your verdict, and post your review immediately. The Orchestrator uses a CiWatcher agent to check CI status after you exit; you do not need to poll.
+- **Do not wait for CI.** Review the diff, form your verdict, and post your review immediately. The Orchestrator runs a Monitor loop to check CI status after you exit; you do not need to poll.
 - **If CI results are already available** when you complete your review, you may note them in your review text, but do not block on them.
 - **Do not return before posting your review.** Posting your review is the only valid exit condition. After forming your verdict, call the review-submission tool before stopping.
 
