@@ -47,30 +47,97 @@ The Orchestrator is not a Reviewer or a Programmer.
 - Inform the agent of its role as an expert software reviewer who ensures high quality code and adherence to development plans
 - Pass the issue number to the subagent
 - Relay any relevant instruction from the user
-- The Reviewer posts its review immediately upon completing its analysis and then exits. **Do not** instruct the Reviewer to poll CI or delay posting — CI checking is handled by the Orchestrator via a CiWatcher agent (see below).
+- The Reviewer posts its review immediately upon completing its analysis and then exits. **Do not** instruct the Reviewer to poll CI or delay posting — CI checking is handled by the Orchestrator via a `Monitor` tool call (see below).
 
-## CI checking after a Reviewer exits (CiWatcher loop)
+## CI checking after a Reviewer exits (Monitor loop)
 
-After the Reviewer exits and delivers its decision, the Orchestrator runs the following loop:
+After the Reviewer exits and delivers its decision, the Orchestrator acts as follows:
 
 ```
   if Reviewer requested changes → goto newAuthor
   if Reviewer gave approval:
-    record start_time
-loop:
-    Orchestrator creates a CiWatcher agent (see agents/ci_watcher.md)
-    CiWatcher returns one of: Clear, Blocked, Infra, or Pending
-    if CiWatcher returned Pending:
-      if elapsed time since start_time > 30 minutes → escalate to user; stop
-      goto loop
-    if CiWatcher returned Infra    → escalate to user; stop
-    if CiWatcher returned Blocked  → goto newAuthor
-    if CiWatcher returned Clear    → PR may be merged
+    Orchestrator launches a Monitor tool call (run_in_background: true, timeout_ms: 1800000)
+    Each stdout line arrives as a task-notification event
+    Act only on lines containing Clear, Blocked, or Infra; ignore in_progress heartbeats
+    if Monitor emits a Blocked line  → goto newAuthor
+    if Monitor emits an Infra line   → escalate to user; stop
+    if Monitor emits a Clear line    → PR may be merged
+    if Monitor times out (30 min)    → escalate to user; stop
 ```
 
-- **CiWatcher** is a short-lived agent that polls CI for up to 2.5 minutes and reports back. It does not post to GitHub.
-- The Orchestrator loops (spawning a fresh CiWatcher each iteration) until CI settles or a new Author cycle is needed.
-- Do not subscribe to PR events or delay dispatching the Reviewer while waiting for CI — the CiWatcher loop replaces that pattern.
+### Monitor bash script
+
+Use the following script verbatim as the `command` for the `Monitor` tool call. Replace `<PR_NUMBER>` with the actual PR number at runtime.
+
+```bash
+OWNER="aunger"
+REPO="gallery-button-for-pixel-camera"
+PR=<PR_NUMBER>
+HEADERS=(-H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json")
+
+while true; do
+  sha=$(curl -s "${HEADERS[@]}" "https://api.github.com/repos/$OWNER/$REPO/pulls/$PR" | \
+    python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('head',{}).get('sha',''))" 2>/dev/null)
+
+  [ -z "$sha" ] && { echo "PR#${PR}: could not fetch SHA"; sleep 30; continue; }
+
+  check_data=$(curl -s "${HEADERS[@]}" \
+    "https://api.github.com/repos/$OWNER/$REPO/commits/$sha/check-runs" 2>/dev/null)
+
+  result=$(echo "$check_data" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+runs=d.get('check_runs',[])
+total=d.get('total_count',0)
+if total==0:
+    print('Clear'); exit()
+statuses=[r['status'] for r in runs]
+conclusions=[r.get('conclusion','') for r in runs if r['status']=='completed']
+if any(s in ('in_progress','queued') for s in statuses):
+    print('in_progress')
+elif all(s=='completed' for s in statuses):
+    if any(c in ('cancelled','timed_out','stale','startup_failure') for c in conclusions): print('Infra')
+    elif any(c in ('failure','action_required') for c in conclusions): print('Blocked')
+    else: print('all_passed')
+else:
+    print('in_progress')
+" 2>/dev/null)
+
+  if [ "$result" = "in_progress" ]; then
+    echo "PR#${PR}: in_progress"
+  elif [ "$result" = "all_passed" ]; then
+    mergeable=$(curl -s "${HEADERS[@]}" "https://api.github.com/repos/$OWNER/$REPO/pulls/$PR" | \
+      python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('mergeable_state','unknown'))" 2>/dev/null)
+    if [ "$mergeable" = "clean" ] || [ "$mergeable" = "unstable" ]; then
+      echo "PR#${PR}: Clear (mergeable_state=$mergeable)"; break
+    elif [ "$mergeable" = "behind" ] || [ "$mergeable" = "dirty" ]; then
+      echo "PR#${PR}: Blocked (mergeable_state=$mergeable)"; break
+    elif [ "$mergeable" = "blocked" ]; then
+      echo "PR#${PR}: Infra (mergeable_state=blocked)"; break
+    else
+      echo "PR#${PR}: all_passed mergeable_state=$mergeable (still computing)"
+    fi
+  elif [ "$result" = "Blocked" ] || [ "$result" = "Infra" ]; then
+    echo "PR#${PR}: $result"; break
+  else
+    echo "PR#${PR}: $result"
+  fi
+
+  sleep 30
+done
+```
+
+### Outcome vocabulary
+
+| Line emitted          | Meaning                                                                                               |
+|-----------------------|-------------------------------------------------------------------------------------------------------|
+| `PR#N: Clear ...`     | All CI checks passed and `mergeable_state` is `clean` or `unstable`; PR may be merged.               |
+| `PR#N: Blocked ...`   | A check failed (`failure`/`action_required`) or `mergeable_state` is `behind`/`dirty`; new Author round needed. |
+| `PR#N: Infra ...`     | A CI infrastructure problem (`cancelled`, `timed_out`, `stale`, `startup_failure`, or `mergeable_state=blocked`); escalate to user. |
+| `PR#N: in_progress`   | CI still running; heartbeat only — no action required.                                                |
+
+- The 30-minute escalation threshold is enforced by `timeout_ms: 1800000` on the Monitor call — no elapsed-time tracking needed.
+- Do not subscribe to PR events or delay dispatching the Reviewer while waiting for CI — the Monitor loop replaces that pattern.
 
 ## Delegation rules
 
