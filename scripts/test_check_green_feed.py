@@ -86,11 +86,19 @@ class TestMainAdbRetryLoop(unittest.TestCase):
         with patch.object(sys, "argv", ["check_green_feed.py"] + extra_argv):
             return cgf.main()
 
+    def _make_ok_run_result(self):
+        """Return a mock CompletedProcess with returncode=0 and empty stderr."""
+        r = MagicMock()
+        r.returncode = 0
+        r.stderr = ""
+        return r
+
     def test_succeeds_on_first_attempt(self):
         """When the image passes on the first try, main exits 0."""
         green_png = _write_png(cgf.TARGET_R, cgf.TARGET_G, cgf.TARGET_B)
         try:
-            with patch("check_green_feed.subprocess.run") as mock_run, \
+            with patch("check_green_feed.subprocess.run",
+                       return_value=self._make_ok_run_result()) as mock_run, \
                  patch("check_green_feed.time.sleep") as mock_sleep, \
                  patch("builtins.open", create=True) as mock_open:
                 # subprocess.run writes nothing; check_image reads the pre-existing file
@@ -113,7 +121,8 @@ class TestMainAdbRetryLoop(unittest.TestCase):
         os.close(fd)
         try:
             side_effects = [1, 1, 0]  # fail, fail, pass
-            with patch("check_green_feed.subprocess.run"), \
+            with patch("check_green_feed.subprocess.run",
+                       return_value=self._make_ok_run_result()), \
                  patch("check_green_feed.time.sleep"), \
                  patch("builtins.open", unittest.mock.mock_open()), \
                  patch("check_green_feed.check_image", side_effect=side_effects):
@@ -127,7 +136,8 @@ class TestMainAdbRetryLoop(unittest.TestCase):
         fd, path = tempfile.mkstemp(suffix=".png")
         os.close(fd)
         try:
-            with patch("check_green_feed.subprocess.run"), \
+            with patch("check_green_feed.subprocess.run",
+                       return_value=self._make_ok_run_result()), \
                  patch("check_green_feed.time.sleep"), \
                  patch("builtins.open", unittest.mock.mock_open()), \
                  patch("check_green_feed.check_image", return_value=1):
@@ -142,7 +152,8 @@ class TestMainAdbRetryLoop(unittest.TestCase):
         fd, path = tempfile.mkstemp(suffix=".png")
         os.close(fd)
         try:
-            with patch("check_green_feed.subprocess.run"), \
+            with patch("check_green_feed.subprocess.run",
+                       return_value=self._make_ok_run_result()), \
                  patch("check_green_feed.time.sleep") as mock_sleep, \
                  patch("builtins.open", unittest.mock.mock_open()), \
                  patch("check_green_feed.check_image", return_value=1):
@@ -161,7 +172,8 @@ class TestMainAdbRetryLoop(unittest.TestCase):
             # Run two iterations (fail once, then pass) so we can check ordering
             # across multiple retry cycles.
             side_effects = [1, 0]
-            with patch("check_green_feed.subprocess.run") as mock_run, \
+            with patch("check_green_feed.subprocess.run",
+                       return_value=self._make_ok_run_result()) as mock_run, \
                  patch("check_green_feed.time.sleep"), \
                  patch("builtins.open", unittest.mock.mock_open()), \
                  patch("check_green_feed.check_image", side_effect=side_effects):
@@ -225,6 +237,10 @@ class TestMainAdbRetryLoop(unittest.TestCase):
                     call_log.append("screencap")
                 else:
                     call_log.append("other")
+                r = MagicMock()
+                r.returncode = 0
+                r.stderr = ""
+                return r
 
             def fake_sleep(seconds):
                 call_log.append(f"sleep({seconds})")
@@ -274,6 +290,164 @@ class TestMainAdbRetryLoop(unittest.TestCase):
     def test_usage_error_with_adb_but_no_image(self):
         result = self._run_main(["--adb", "/fake/adb"])
         self.assertEqual(result, 2)
+
+
+class TestInputServiceFailure(unittest.TestCase):
+    """Tests for the input-service-unavailability handling in the retry loop."""
+
+    def _run_main(self, extra_argv: list[str]) -> int:
+        with patch.object(sys, "argv", ["check_green_feed.py"] + extra_argv):
+            return cgf.main()
+
+    def _make_run_result(self, returncode=0, stderr=""):
+        """Build a mock CompletedProcess-like object."""
+        result = MagicMock()
+        result.returncode = returncode
+        result.stderr = stderr
+        return result
+
+    def test_wakeup_failure_causes_extra_sleep_and_warning(self):
+        """When KEYCODE_WAKEUP fails (non-zero exit), an extra sleep is inserted
+        and a warning is printed to stderr; the screencap still runs."""
+        fd, path = tempfile.mkstemp(suffix=".png")
+        os.close(fd)
+        try:
+            # KEYCODE_WAKEUP fails; swipe succeeds; screencap succeeds.
+            wakeup_fail = self._make_run_result(returncode=1, stderr="")
+            swipe_ok = self._make_run_result(returncode=0, stderr="")
+            screencap_ok = self._make_run_result(returncode=0, stderr="")
+
+            run_side_effects = [wakeup_fail, swipe_ok, screencap_ok]
+
+            sleep_calls: list[float] = []
+
+            def fake_sleep(s):
+                sleep_calls.append(s)
+
+            with patch("check_green_feed.subprocess.run",
+                       side_effect=run_side_effects) as mock_run, \
+                 patch("check_green_feed.time.sleep", side_effect=fake_sleep), \
+                 patch("builtins.open", unittest.mock.mock_open()), \
+                 patch("check_green_feed.check_image", return_value=0), \
+                 patch("sys.stderr", new_callable=io.StringIO) as mock_stderr:
+                result = self._run_main(["--adb", "/fake/adb", path])
+
+            self.assertEqual(result, 0)
+            # Extra sleep must have been inserted (more than the standard 2 per attempt).
+            self.assertGreater(len(sleep_calls), 2,
+                "Expected extra sleep when wakeup fails, but sleep count was not > 2")
+            # A warning must have been written to stderr.
+            warning_output = mock_stderr.getvalue()
+            self.assertIn("WARNING", warning_output)
+            self.assertIn("input service unavailable", warning_output)
+            # Screencap must still have been called.
+            arg_lists = [c.args[0] for c in mock_run.call_args_list if c.args]
+            screencap_calls = [a for a in arg_lists if "screencap" in a]
+            self.assertEqual(len(screencap_calls), 1, "screencap must still run despite wakeup failure")
+        finally:
+            os.unlink(path)
+
+    def test_swipe_failure_causes_extra_sleep_and_warning(self):
+        """When the swipe command stderr contains 'Can't find service', an extra
+        sleep is inserted and a warning is printed; the screencap still runs."""
+        fd, path = tempfile.mkstemp(suffix=".png")
+        os.close(fd)
+        try:
+            wakeup_ok = self._make_run_result(returncode=0, stderr="")
+            swipe_fail = self._make_run_result(
+                returncode=1, stderr="cmd: Can't find service: input"
+            )
+            screencap_ok = self._make_run_result(returncode=0, stderr="")
+
+            run_side_effects = [wakeup_ok, swipe_fail, screencap_ok]
+
+            sleep_calls: list[float] = []
+
+            def fake_sleep(s):
+                sleep_calls.append(s)
+
+            with patch("check_green_feed.subprocess.run",
+                       side_effect=run_side_effects) as mock_run, \
+                 patch("check_green_feed.time.sleep", side_effect=fake_sleep), \
+                 patch("builtins.open", unittest.mock.mock_open()), \
+                 patch("check_green_feed.check_image", return_value=0), \
+                 patch("sys.stderr", new_callable=io.StringIO) as mock_stderr:
+                result = self._run_main(["--adb", "/fake/adb", path])
+
+            self.assertEqual(result, 0)
+            self.assertGreater(len(sleep_calls), 2,
+                "Expected extra sleep when swipe fails, but sleep count was not > 2")
+            warning_output = mock_stderr.getvalue()
+            self.assertIn("WARNING", warning_output)
+            self.assertIn("input service unavailable", warning_output)
+            arg_lists = [c.args[0] for c in mock_run.call_args_list if c.args]
+            screencap_calls = [a for a in arg_lists if "screencap" in a]
+            self.assertEqual(len(screencap_calls), 1, "screencap must still run despite swipe failure")
+        finally:
+            os.unlink(path)
+
+    def test_input_service_failure_does_not_abort_retry_loop(self):
+        """Input service failure on every attempt does not prevent the retry loop
+        from continuing; main eventually returns 1 after MAX_ATTEMPTS."""
+        fd, path = tempfile.mkstemp(suffix=".png")
+        os.close(fd)
+        try:
+            # Every wakeup and swipe fails; screencap always runs.
+            def make_run_result_for(args, **kwargs):
+                cmd = args
+                if "keyevent" in cmd or "swipe" in cmd:
+                    r = MagicMock()
+                    r.returncode = 1
+                    r.stderr = "cmd: Can't find service: input"
+                    return r
+                r = MagicMock()
+                r.returncode = 0
+                r.stderr = ""
+                return r
+
+            screencap_count = [0]
+
+            def counting_run(args, **kwargs):
+                if "screencap" in args:
+                    screencap_count[0] += 1
+                return make_run_result_for(args, **kwargs)
+
+            with patch("check_green_feed.subprocess.run",
+                       side_effect=counting_run), \
+                 patch("check_green_feed.time.sleep"), \
+                 patch("builtins.open", unittest.mock.mock_open()), \
+                 patch("check_green_feed.check_image", return_value=1), \
+                 patch("sys.stderr", new_callable=io.StringIO):
+                result = self._run_main(["--adb", "/fake/adb", path])
+
+            self.assertEqual(result, 1,
+                "main should return 1 when all attempts fail, not abort early")
+            self.assertEqual(screencap_count[0], cgf.MAX_ATTEMPTS,
+                f"screencap should run on every attempt; expected {cgf.MAX_ATTEMPTS}, got {screencap_count[0]}")
+        finally:
+            os.unlink(path)
+
+    def test_no_extra_sleep_when_input_service_succeeds(self):
+        """When both input calls succeed, exactly 2 sleeps occur per attempt
+        (the standard behavior is not regressed)."""
+        fd, path = tempfile.mkstemp(suffix=".png")
+        os.close(fd)
+        try:
+            ok = self._make_run_result(returncode=0, stderr="")
+
+            with patch("check_green_feed.subprocess.run", return_value=ok), \
+                 patch("check_green_feed.time.sleep") as mock_sleep, \
+                 patch("builtins.open", unittest.mock.mock_open()), \
+                 patch("check_green_feed.check_image", return_value=0):
+                result = self._run_main(["--adb", "/fake/adb", path])
+
+            self.assertEqual(result, 0)
+            # Exactly 2 sleeps on the first (successful) attempt: one at the top
+            # of the loop and one between swipe and screencap.
+            self.assertEqual(mock_sleep.call_count, 2,
+                f"Expected 2 sleeps when input service succeeds, got {mock_sleep.call_count}")
+        finally:
+            os.unlink(path)
 
 
 if __name__ == "__main__":
