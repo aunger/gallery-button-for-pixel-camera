@@ -292,8 +292,8 @@ class TestRenderSuite(unittest.TestCase):
         self.assertIn("1 passed, 1 failed, 1 skipped", combined)
         self.assertIn("(3 tests)", combined)
 
-    def test_all_skipped_class_icon_is_pass(self):
-        """A class with only skipped tests and no failures shows ✅ PASS."""
+    def test_all_skipped_class_icon_is_skip(self):
+        """A class with only skipped tests and no failures shows ⏭ SKIP."""
         classes = {
             "com.example.AllSkip": srt.TestClass(
                 name="com.example.AllSkip",
@@ -305,7 +305,8 @@ class TestRenderSuite(unittest.TestCase):
             line for line in lines
             if "com.example.AllSkip" in line and "**" in line
         )
-        self.assertIn("✅ PASS", class_row)
+        self.assertIn("⏭ SKIP", class_row)
+        self.assertNotIn("✅ PASS", class_row)
 
 
 # ---------------------------------------------------------------------------

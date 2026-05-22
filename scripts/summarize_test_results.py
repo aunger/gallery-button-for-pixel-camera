@@ -108,7 +108,13 @@ def render_suite(label: str, classes: dict[str, TestClass]) -> list[str]:
     total_skip = 0
 
     for cls in classes.values():
-        class_icon = "❌ FAIL" if cls.any_failed else "✅ PASS"
+        any_passed = any(tc.passed for tc in cls.cases)
+        if cls.any_failed:
+            class_icon = "❌ FAIL"
+        elif not any_passed:
+            class_icon = "⏭ SKIP"
+        else:
+            class_icon = "✅ PASS"
         lines.append(f"| {class_icon} | **{cls.name}** |")
         for tc in cls.cases:
             if tc.skipped:
