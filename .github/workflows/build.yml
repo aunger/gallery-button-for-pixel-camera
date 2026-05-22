@@ -105,6 +105,9 @@ jobs:
           echo "==> emulator -list-avds:"
           ANDROID_AVD_HOME="$AVD_HOME" $ANDROID_HOME/emulator/emulator -list-avds
 
+      - name: Run Python script unit tests
+        run: python3 -m unittest discover -s scripts -p "test_*.py" -v
+
       - name: Grant execute permission for gradlew
         if: steps.diff_check.outputs.needs_full_build == 'true'
         run: chmod +x gradlew
@@ -349,6 +352,15 @@ jobs:
           name: e2e-screenshots
           path: /tmp/e2e-screenshots/
           retention-days: 14
+
+      - name: Write test-result summary
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        run: |
+          python3 scripts/summarize_test_results.py \
+            app/build/test-results/testDebugUnitTest \
+              --suite-label "Unit Tests" \
+            app/build/outputs/androidTest-results/connected/debug \
+              --suite-label "Instrumented Tests"
 
   # Produce a signed release-config APK on every merge to main for easy sideloading.
   # Named gb4pc-dev.<run_number>.apk to distinguish from tagged releases.
