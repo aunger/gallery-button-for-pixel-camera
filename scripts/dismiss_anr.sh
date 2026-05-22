@@ -131,7 +131,8 @@
       # The logcat trigger can miss the event if the ANR fires before the stream
       # starts or after the CPU has already settled.  A dumpsys window check here
       # is the fallback that catches those cases.
-      if "$ADB" shell dumpsys window 2>/dev/null | grep -q "AppNotRespondingDialog"; then
+      window_dump=$("$ADB" shell dumpsys window 2>/dev/null) || true
+      if echo "$window_dump" | grep -q "AppNotRespondingDialog"; then
         echo "[dismiss_anr] CPU idle but ANR dialog still present (dumpsys window) — sending KEYCODE_BACK." >&2
         "$ADB" shell input keyevent KEYCODE_BACK 2>/dev/null || true
         idle_count=0
