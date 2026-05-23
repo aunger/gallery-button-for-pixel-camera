@@ -117,8 +117,8 @@
       rm -f "$ANR_FLAG"
       echo "[dismiss_anr] $(_ts) Logcat ANR trigger fired — waiting ${SLEEP_AFTER_ANR_DETECTED}s for dialog to render." >&2
       sleep "$SLEEP_AFTER_ANR_DETECTED"
-      echo "[dismiss_anr] $(_ts) Sending KEYCODE_BACK to dismiss ANR dialog." >&2
-      "$ADB" shell input keyevent KEYCODE_BACK 2>/dev/null || true
+      echo "[dismiss_anr] $(_ts) Sending KEYCODE_ENTER to dismiss ANR dialog." >&2
+      "$ADB" shell input keyevent KEYCODE_ENTER 2>/dev/null || true
       idle_count=0
       # Fall through to the CPU check on this same iteration.
     fi
@@ -153,8 +153,8 @@
       # is the fallback that catches those cases.
       window_dump=$("$ADB" shell dumpsys window 2>/dev/null) || true
       if echo "$window_dump" | grep -q "Application Not Responding"; then
-        echo "[dismiss_anr] $(_ts) dumpsys window safety check: ANR dialog found — sending KEYCODE_BACK." >&2
-        "$ADB" shell input keyevent KEYCODE_BACK 2>/dev/null || true
+        echo "[dismiss_anr] $(_ts) dumpsys window safety check: ANR dialog found — sending KEYCODE_ENTER." >&2
+        "$ADB" shell input keyevent KEYCODE_ENTER 2>/dev/null || true
         idle_count=0
         # Continue the loop instead of exiting.
       else
