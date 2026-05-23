@@ -285,7 +285,7 @@ echo ""
 echo "=== (g) idle_count=2 but ANR dialog still present — dumpsys window fallback ==="
 
 # Scenario: logcat never fires (CPU settled without logcat trigger), but the ANR
-# dialog is still on screen.  dumpsys window returns AppNotRespondingDialog on the
+# dialog is still on screen.  dumpsys window returns the ANR window title on the
 # first idle-exit check, KEYCODE_BACK is sent, idle_count resets to 0.  On the
 # second idle-exit check dumpsys window is clean, so the script exits 0.
 # We verify that KEYCODE_BACK was sent exactly once and the script exits 0.
@@ -313,7 +313,7 @@ case \"\$*\" in
     echo \$count > '$DUMPSYS_WINDOW_CALL_COUNT_FILE'
     if [[ \$count -le 1 ]]; then
       # First check: dialog still present.
-      echo 'AppNotRespondingDialog'
+      echo '  mCurrentFocus=Window{... u0 Application Not Responding: com.google.android.apps.nexuslauncher}'
     else
       # Second check: dialog gone.
       echo 'WindowState idle'

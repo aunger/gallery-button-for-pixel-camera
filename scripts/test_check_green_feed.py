@@ -494,9 +494,9 @@ class TestPerRetryAnrDismiss(unittest.TestCase):
         return result
 
     def test_anr_dialog_on_first_attempt_is_dismissed_before_screencap(self):
-        """When dumpsys window reports AppNotRespondingDialog before the first
-        screencap, KEYCODE_BACK is sent and an extra sleep follows.  The screencap
-        still runs and the retry loop continues normally.
+        """When dumpsys window reports 'Application Not Responding' before the
+        first screencap, KEYCODE_BACK is sent and an extra sleep follows.  The
+        screencap still runs and the retry loop continues normally.
 
         _dump_first_failure_diagnostics is patched out so that its own subprocess
         calls do not interfere with the accounting of ANR-check calls.
@@ -505,7 +505,8 @@ class TestPerRetryAnrDismiss(unittest.TestCase):
         os.close(fd)
         try:
             anr_window = self._make_run_result(
-                returncode=0, stdout="AppNotRespondingDialog"
+                returncode=0,
+                stdout="  mCurrentFocus=Window{... u0 Application Not Responding: com.google.android.apps.nexuslauncher}",
             )
             clear_window = self._make_run_result(returncode=0, stdout="WindowState idle")
             keyevent_ok = self._make_run_result(returncode=0)

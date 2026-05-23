@@ -148,13 +148,13 @@
       # starts or after the CPU has already settled.  A dumpsys window check here
       # is the fallback that catches those cases.
       window_dump=$("$ADB" shell dumpsys window 2>/dev/null) || true
-      if echo "$window_dump" | grep -q "AppNotRespondingDialog"; then
-        echo "[dismiss_anr] $(_ts) dumpsys window safety check: AppNotRespondingDialog found — sending KEYCODE_BACK." >&2
+      if echo "$window_dump" | grep -q "Application Not Responding"; then
+        echo "[dismiss_anr] $(_ts) dumpsys window safety check: ANR dialog found — sending KEYCODE_BACK." >&2
         "$ADB" shell input keyevent KEYCODE_BACK 2>/dev/null || true
         idle_count=0
         # Continue the loop instead of exiting.
       else
-        echo "[dismiss_anr] $(_ts) dumpsys window safety check: no AppNotRespondingDialog found." >&2
+        echo "[dismiss_anr] $(_ts) dumpsys window safety check: no ANR dialog found." >&2
         exit 0
       fi
     fi

@@ -167,7 +167,7 @@ def _dismiss_anr_if_present(adb: str) -> None:
             text=True,
             timeout=10,
         )
-        if "AppNotRespondingDialog" in window_dump.stdout:
+        if "Application Not Responding" in window_dump.stdout:
             print(
                 "[check_green_feed] ANR dialog detected before screencap — sending KEYCODE_BACK.",
                 file=sys.stderr,
