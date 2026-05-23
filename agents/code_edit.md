@@ -15,9 +15,8 @@
 ## Test coverage
 
 - New behavior must be accompanied by automated tests.
-- You should not modify the requirements of existing tests. If you must do this, then you must declare it in your commit message and PR text, on its own line.
-- If your change loosened the requirements of a test, you must state each instance of this in your comment message and PR text, on its own line.
-  - For example, *Modified test `pocket_square _is_a_square` to allow circles in addition to squares, because they are more round.*
+- You should not modify the requirements of existing tests, unless necessary. If your change loosened a test's retirements, you must declare each instance of this in your comment message and PR text, on its own line.
+  - For example, *Modified test `pocket_square_is_a_square` to allow circles in addition to squares, because they are more round.*
 - Existing tests must not be deleted or silently disabled to make a change compile.
 
 ## Finish well
