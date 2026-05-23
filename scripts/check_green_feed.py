@@ -35,6 +35,9 @@ MIN_COVERAGE = 0.90
 MAX_ATTEMPTS = 30
 RETRY_DELAY_SECONDS = 2
 
+# Directory for diagnostic screencap saves (relative to cwd, created on demand).
+DIAG_SCREENCAP_DIR = "ci_diag_screencaps"
+
 
 def decode_png_to_rgb(path: str) -> tuple[list[list[tuple[int, int, int]]], int, int]:
     """Decode a PNG file to a 2D list of (r, g, b) tuples."""
@@ -146,6 +149,88 @@ def dominant_color(pixels_region: list[tuple[int, int, int]]) -> tuple[int, int,
     return (avg_r, avg_g, avg_b)
 
 
+def _dump_first_failure_diagnostics(
+    adb: str, screencap_path: str, attempt: int, start_time: float
+) -> None:
+    """Emit diagnostics to stderr on the first retry-loop failure.
+
+    Logs the elapsed time, dumps window focus state and recent ANR events from
+    logcat, and saves the current screencap to a dedicated diagnostics file so CI
+    artifact collectors can retrieve it.  This runs only once (on the first
+    failure) to avoid filling logs with repetitive output on later retries.
+    """
+    elapsed = time.monotonic() - start_time
+    ts = time.strftime("%H:%M:%S")
+    print(
+        f"[check_green_feed] {ts} FIRST FAILURE DIAGNOSTICS "
+        f"(attempt={attempt}, elapsed={elapsed:.1f}s)",
+        file=sys.stderr,
+    )
+
+    # Dump window focus / dialog state — filtered for the most relevant lines.
+    try:
+        window_result = subprocess.run(
+            [adb, "shell", "dumpsys", "window"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        relevant_lines = [
+            line
+            for line in window_result.stdout.splitlines()
+            if any(kw in line for kw in ("Dialog", "Focused", "mCurrentFocus"))
+        ]
+        print(
+            f"[check_green_feed] {ts} dumpsys window (Dialog/Focused/mCurrentFocus lines):",
+            file=sys.stderr,
+        )
+        for line in relevant_lines:
+            print(f"  {line}", file=sys.stderr)
+        if not relevant_lines:
+            print("  (no matching lines)", file=sys.stderr)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[check_green_feed] dumpsys window failed: {exc}", file=sys.stderr)
+
+    # Dump the last 20 lines of recent ActivityManager errors from logcat.
+    try:
+        logcat_result = subprocess.run(
+            [adb, "shell", "logcat", "-d", "-t", "100", "ActivityManager:E", "*:S"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        logcat_lines = logcat_result.stdout.splitlines()[-20:]
+        print(
+            f"[check_green_feed] {ts} logcat ActivityManager:E (last 20 lines):",
+            file=sys.stderr,
+        )
+        for line in logcat_lines:
+            print(f"  {line}", file=sys.stderr)
+        if not logcat_lines:
+            print("  (no output)", file=sys.stderr)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[check_green_feed] logcat dump failed: {exc}", file=sys.stderr)
+
+    # Save the screencap to a dedicated diagnostics file.
+    import os
+
+    os.makedirs(DIAG_SCREENCAP_DIR, exist_ok=True)
+    diag_path = os.path.join(DIAG_SCREENCAP_DIR, f"failure_attempt_{attempt:03d}.png")
+    try:
+        import shutil
+
+        shutil.copy2(screencap_path, diag_path)
+        print(
+            f"[check_green_feed] {ts} Diagnostic screencap saved: {diag_path}",
+            file=sys.stderr,
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(
+            f"[check_green_feed] Failed to save diagnostic screencap: {exc}",
+            file=sys.stderr,
+        )
+
+
 def check_image(path: str) -> int:
     """Check a single PNG image. Returns 0 on pass, 1 on fail, 2 on error."""
     try:
@@ -217,6 +302,8 @@ def main() -> int:
         return check_image(path)
 
     # Retry-loop mode: capture a fresh screencap on each attempt.
+    start_time = time.monotonic()
+    first_failure_diagnosed = False
     for attempt in range(1, MAX_ATTEMPTS + 1):
         # Sleep first so the display has time to render before the first check
         # and between retries; the caller has already waited for am start -W.
@@ -273,6 +360,9 @@ def main() -> int:
         result = check_image(path)
         if result == 0:
             return 0
+        if not first_failure_diagnosed:
+            first_failure_diagnosed = True
+            _dump_first_failure_diagnostics(adb_path, path, attempt, start_time)
         if attempt < MAX_ATTEMPTS:
             print(f"Attempt {attempt} failed, retrying...")
     print(f"ERROR: pre-flight failed after {MAX_ATTEMPTS} attempts")
