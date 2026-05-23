@@ -1,0 +1,768 @@
+Run ADB="$ANDROID_HOME/platform-tools/adb"
+
+
+  ADB="$ANDROID_HOME/platform-tools/adb"
+
+  
+
+  # Install mock Pixel Camera and grant CAMERA permission before the smoke check.
+
+  echo "==> Installing mock Pixel Camera for pre-flight check..."
+
+  "$ADB" install -r \
+
+    e2e-mock-camera/build/outputs/apk/debug/e2e-mock-camera-debug.apk
+
+  # Adaptive ANR watcher: waits for Pixel Launcher to settle after install (Issue #194)
+
+  chmod +x scripts/dismiss_anr.sh
+
+  scripts/dismiss_anr.sh --adb "$ADB" &
+
+  SETTLE_PID=$!
+
+  echo "==> Granting CAMERA permission..."
+
+  "$ADB" shell pm grant com.google.android.GoogleCamera \
+
+    android.permission.CAMERA
+
+  
+
+  # Wake the display and dismiss the swipe keyguard before launching the
+
+  # activity. An upward swipe is used instead of wm dismiss-keyguard:
+
+  # wm dismiss-keyguard did not reliably dismiss the swipe-type lock
+
+  # screen on the API-35 CI emulator (all retries returned #E9E8EF).
+
+  # sleep 2 lets the swipe animation complete before am start -W fires.
+
+  echo "==> Waking display and dismissing keyguard..."
+
+  "$ADB" shell input keyevent KEYCODE_WAKEUP
+
+  "$ADB" shell input swipe 300 1000 300 300
+
+  sleep 2
+
+  
+
+  # Launch MockCameraActivity and wait for it to be displayed.
+
+  # am start -W blocks until the activity is on screen, so no polling needed.
+
+  echo "==> Launching MockCameraActivity..."
+
+  "$ADB" shell am start -W -n \
+
+    com.google.android.GoogleCamera/com.gb4pc.mockcamera.MockCameraActivity
+
+  
+
+  # Re-wake after am start -W: adb install above can take 10-30 s and
+
+  # the screen may sleep in that window. am start -W and
+
+  # setTurnScreenOn(true) usually recover, but this is a cheap extra
+
+  # guarantee that the green view is visible before screencap. Use the
+
+  # same swipe unlock to stay consistent.
+
+  "$ADB" shell input keyevent KEYCODE_WAKEUP
+
+  "$ADB" shell input swipe 300 1000 300 300
+
+  sleep 2
+
+  
+
+  wait "$SETTLE_PID" || true
+
+  
+
+  python3 scripts/check_green_feed.py --adb "$ADB" preflight.png
+
+  shell: /usr/bin/bash -e {0}
+
+  env:
+
+    JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.19-10/x64
+
+    JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.19-10/x64
+
+    ANDROID_HOME: /usr/local/lib/android/sdk
+
+    ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
+    ANDROID_AVD_HOME: /home/runner/.android/avd
+
+    EMULATOR_PID: 3217
+
+==> Installing mock Pixel Camera for pre-flight check...
+
+Performing Streamed Install
+
+Success
+
+==> Granting CAMERA permission...
+
+[dismiss_anr] 10:58:37.195 Script started (adb=/usr/local/lib/android/sdk/platform-tools/adb).
+
+==> Waking display and dismissing keyguard...
+
+[dismiss_anr] 10:58:37.336 Logcat stream started (pid=3552).
+
+[dismiss_anr] 10:58:37.395 [t=0s poll=1] idle_count=1 cpu=(unknown)%
+
+==> Launching MockCameraActivity...
+
+Starting: Intent { cmp=com.google.android.GoogleCamera/com.gb4pc.mockcamera.MockCameraActivity }
+
+[dismiss_anr] 10:58:40.643 [t=3s poll=2] idle_count=2 cpu=(unknown)%
+
+scripts/dismiss_anr.sh: line 151: echo: write error: Broken pipe
+
+[dismiss_anr] 10:58:41.168 dumpsys window safety check: no ANR dialog found.
+
+[dismiss_anr] [10:58:41.176] EXIT trap: cleanup complete (elapsed 3976ms).
+
+[dismiss_anr] [10:58:41.178] Last ActivityManager errors:
+
+Status: ok
+
+LaunchState: COLD
+
+Activity: com.google.android.GoogleCamera/com.gb4pc.mockcamera.MockCameraActivity
+
+TotalTime: 3709
+
+WaitTime: 3831
+
+Complete
+
+[check_green_feed] 10:58:51 ANR dialog detected before screencap — sending KEYCODE_BACK.
+
+[check_green_feed] 10:58:53 ANR dialog still present after KEYCODE_BACK #1.
+
+[check_green_feed] 10:58:55 ANR dialog still present after KEYCODE_BACK #2.
+
+[check_green_feed] 10:58:58 ANR dialog still present after KEYCODE_BACK #3.
+
+[check_green_feed] 10:59:00 ANR dialog still present after KEYCODE_BACK #4.
+
+[check_green_feed] 10:59:02 ANR dialog still present after KEYCODE_BACK #5.
+
+[check_green_feed] 10:59:02 ANR dialog persisted after 5 KEYCODE_BACK sends — proceeding to screencap anyway.
+
+[check_green_feed] 10:59:05 FIRST FAILURE DIAGNOSTICS (attempt=1, elapsed=19.0s)
+
+[check_green_feed] 10:59:05 dumpsys window (Dialog/Focused/mCurrentFocus lines):
+
+        mLastFocusedRootTask=Task{624163f #1 type=home}
+
+    mCurrentFocus=Window{6bb48b2 u0 Application Not Responding: com.google.android.apps.nexuslauncher}
+
+    mFocusedApp=ActivityRecord{8b00be3 u0 com.google.android.GoogleCamera/com.gb4pc.mockcamera.MockCameraActivity t8}
+
+        mLastFocusedRootTask=Task{978d155 #8 type=standard A=10209:com.google.android.GoogleCamera}
+
+      mFocusedWindow=Window{6bb48b2 u0 Application Not Responding: com.google.android.apps.nexuslauncher}
+
+    mTopFocusedDisplayId=0
+
+[check_green_feed] 10:59:05 logcat ActivityManager:E (last 20 lines):
+
+  (no output)
+
+[check_green_feed] 10:59:05 Diagnostic screencap saved: ci_diag_screencaps/failure_attempt_001.png
+
+[check_green_feed] 10:59:10 ANR dialog detected before screencap — sending KEYCODE_BACK.
+
+[check_green_feed] 10:59:12 ANR dialog still present after KEYCODE_BACK #1.
+
+[check_green_feed] 10:59:14 ANR dialog still present after KEYCODE_BACK #2.
+
+[check_green_feed] 10:59:16 ANR dialog still present after KEYCODE_BACK #3.
+
+[check_green_feed] 10:59:18 ANR dialog still present after KEYCODE_BACK #4.
+
+[check_green_feed] 10:59:21 ANR dialog still present after KEYCODE_BACK #5.
+
+[check_green_feed] 10:59:21 ANR dialog persisted after 5 KEYCODE_BACK sends — proceeding to screencap anyway.
+
+[check_green_feed] 10:59:30 ANR dialog detected before screencap — sending KEYCODE_BACK.
+
+[check_green_feed] 10:59:33 ANR dialog still present after KEYCODE_BACK #1.
+
+[check_green_feed] 10:59:35 ANR dialog still present after KEYCODE_BACK #2.
+
+[check_green_feed] 10:59:37 ANR dialog still present after KEYCODE_BACK #3.
+
+[check_green_feed] 10:59:39 ANR dialog still present after KEYCODE_BACK #4.
+
+[check_green_feed] 10:59:41 ANR dialog still present after KEYCODE_BACK #5.
+
+[check_green_feed] 10:59:41 ANR dialog persisted after 5 KEYCODE_BACK sends — proceeding to screencap anyway.
+
+[check_green_feed] 10:59:49 ANR dialog detected before screencap — sending KEYCODE_BACK.
+
+[check_green_feed] 10:59:51 ANR dialog still present after KEYCODE_BACK #1.
+
+[check_green_feed] 10:59:53 ANR dialog still present after KEYCODE_BACK #2.
+
+[check_green_feed] 10:59:55 ANR dialog still present after KEYCODE_BACK #3.
+
+[check_green_feed] 10:59:57 ANR dialog still present after KEYCODE_BACK #4.
+
+[check_green_feed] 10:59:59 ANR dialog still present after KEYCODE_BACK #5.
+
+[check_green_feed] 10:59:59 ANR dialog persisted after 5 KEYCODE_BACK sends — proceeding to screencap anyway.
+
+[check_green_feed] 11:00:06 ANR dialog detected before screencap — sending KEYCODE_BACK.
+
+[check_green_feed] 11:00:08 ANR dialog still present after KEYCODE_BACK #1.
+
+[check_green_feed] 11:00:10 ANR dialog still present after KEYCODE_BACK #2.
+
+[check_green_feed] 11:00:12 ANR dialog still present after KEYCODE_BACK #3.
+
+[check_green_feed] 11:00:14 ANR dialog still present after KEYCODE_BACK #4.
+
+[check_green_feed] 11:00:16 ANR dialog still present after KEYCODE_BACK #5.
+
+[check_green_feed] 11:00:16 ANR dialog persisted after 5 KEYCODE_BACK sends — proceeding to screencap anyway.
+
+[check_green_feed] 11:00:22 ANR dialog detected before screencap — sending KEYCODE_BACK.
+
+[check_green_feed] 11:00:24 ANR dialog still present after KEYCODE_BACK #1.
+
+[check_green_feed] 11:00:26 ANR dialog still present after KEYCODE_BACK #2.
+
+[check_green_feed] 11:00:28 ANR dialog still present after KEYCODE_BACK #3.
+
+[check_green_feed] 11:00:30 ANR dialog still present after KEYCODE_BACK #4.
+
+[check_green_feed] 11:00:32 ANR dialog still present after KEYCODE_BACK #5.
+
+[check_green_feed] 11:00:32 ANR dialog persisted after 5 KEYCODE_BACK sends — proceeding to screencap anyway.
+
+[check_green_feed] 11:00:39 ANR dialog detected before screencap — sending KEYCODE_BACK.
+
+[check_green_feed] 11:00:41 ANR dialog still present after KEYCODE_BACK #1.
+
+[check_green_feed] 11:00:43 ANR dialog still present after KEYCODE_BACK #2.
+
+[check_green_feed] 11:00:45 ANR dialog still present after KEYCODE_BACK #3.
+
+[check_green_feed] 11:00:47 ANR dialog still present after KEYCODE_BACK #4.
+
+[check_green_feed] 11:00:49 ANR dialog still present after KEYCODE_BACK #5.
+
+[check_green_feed] 11:00:49 ANR dialog persisted after 5 KEYCODE_BACK sends — proceeding to screencap anyway.
+
+[check_green_feed] 11:00:55 ANR dialog detected before screencap — sending KEYCODE_BACK.
+
+[check_green_feed] 11:00:57 ANR dialog still present after KEYCODE_BACK #1.
+
+[check_green_feed] 11:00:59 ANR dialog still present after KEYCODE_BACK #2.
+
+[check_green_feed] 11:01:02 ANR dialog still present after KEYCODE_BACK #3.
+
+[check_green_feed] 11:01:04 ANR dialog still present after KEYCODE_BACK #4.
+
+[check_green_feed] 11:01:06 ANR dialog still present after KEYCODE_BACK #5.
+
+[check_green_feed] 11:01:06 ANR dialog persisted after 5 KEYCODE_BACK sends — proceeding to screencap anyway.
+
+[check_green_feed] 11:01:12 ANR dialog detected before screencap — sending KEYCODE_BACK.
+
+[check_green_feed] 11:01:14 ANR dialog still present after KEYCODE_BACK #1.
+
+[check_green_feed] 11:01:16 ANR dialog still present after KEYCODE_BACK #2.
+
+[check_green_feed] 11:01:18 ANR dialog still present after KEYCODE_BACK #3.
+
+[check_green_feed] 11:01:20 ANR dialog still present after KEYCODE_BACK #4.
+
+[check_green_feed] 11:01:22 ANR dialog still present after KEYCODE_BACK #5.
+
+[check_green_feed] 11:01:22 ANR dialog persisted after 5 KEYCODE_BACK sends — proceeding to screencap anyway.
+
+[check_green_feed] 11:01:29 ANR dialog detected before screencap — sending KEYCODE_BACK.
+
+[check_green_feed] 11:01:31 ANR dialog still present after KEYCODE_BACK #1.
+
+[check_green_feed] 11:01:33 ANR dialog still present after KEYCODE_BACK #2.
+
+[check_green_feed] 11:01:35 ANR dialog still present after KEYCODE_BACK #3.
+
+[check_green_feed] 11:01:37 ANR dialog still present after KEYCODE_BACK #4.
+
+[check_green_feed] 11:01:39 ANR dialog still present after KEYCODE_BACK #5.
+
+[check_green_feed] 11:01:39 ANR dialog persisted after 5 KEYCODE_BACK sends — proceeding to screencap anyway.
+
+[check_green_feed] 11:01:45 ANR dialog detected before screencap — sending KEYCODE_BACK.
+
+[check_green_feed] 11:01:47 ANR dialog still present after KEYCODE_BACK #1.
+
+[check_green_feed] 11:01:49 ANR dialog still present after KEYCODE_BACK #2.
+
+[check_green_feed] 11:01:51 ANR dialog still present after KEYCODE_BACK #3.
+
+[check_green_feed] 11:01:53 ANR dialog still present after KEYCODE_BACK #4.
+
+[check_green_feed] 11:01:55 ANR dialog still present after KEYCODE_BACK #5.
+
+[check_green_feed] 11:01:55 ANR dialog persisted after 5 KEYCODE_BACK sends — proceeding to screencap anyway.
+
+[check_green_feed] 11:02:02 ANR dialog detected before screencap — sending KEYCODE_BACK.
+
+[check_green_feed] 11:02:04 ANR dialog still present after KEYCODE_BACK #1.
+
+[check_green_feed] 11:02:06 ANR dialog still present after KEYCODE_BACK #2.
+
+[check_green_feed] 11:02:08 ANR dialog still present after KEYCODE_BACK #3.
+
+[check_green_feed] 11:02:10 ANR dialog still present after KEYCODE_BACK #4.
+
+[check_green_feed] 11:02:12 ANR dialog still present after KEYCODE_BACK #5.
+
+[check_green_feed] 11:02:12 ANR dialog persisted after 5 KEYCODE_BACK sends — proceeding to screencap anyway.
+
+[check_green_feed] 11:02:18 ANR dialog detected before screencap — sending KEYCODE_BACK.
+
+[check_green_feed] 11:02:20 ANR dialog still present after KEYCODE_BACK #1.
+
+[check_green_feed] 11:02:22 ANR dialog still present after KEYCODE_BACK #2.
+
+[check_green_feed] 11:02:24 ANR dialog still present after KEYCODE_BACK #3.
+
+[check_green_feed] 11:02:26 ANR dialog still present after KEYCODE_BACK #4.
+
+[check_green_feed] 11:02:29 ANR dialog still present after KEYCODE_BACK #5.
+
+[check_green_feed] 11:02:29 ANR dialog persisted after 5 KEYCODE_BACK sends — proceeding to screencap anyway.
+
+[check_green_feed] 11:02:35 ANR dialog detected before screencap — sending KEYCODE_BACK.
+
+[check_green_feed] 11:02:37 ANR dialog still present after KEYCODE_BACK #1.
+
+[check_green_feed] 11:02:39 ANR dialog still present after KEYCODE_BACK #2.
+
+[check_green_feed] 11:02:41 ANR dialog still present after KEYCODE_BACK #3.
+
+[check_green_feed] 11:02:43 ANR dialog still present after KEYCODE_BACK #4.
+
+[check_green_feed] 11:02:45 ANR dialog still present after KEYCODE_BACK #5.
+
+[check_green_feed] 11:02:45 ANR dialog persisted after 5 KEYCODE_BACK sends — proceeding to screencap anyway.
+
+[check_green_feed] 11:02:51 ANR dialog detected before screencap — sending KEYCODE_BACK.
+
+[check_green_feed] 11:02:53 ANR dialog still present after KEYCODE_BACK #1.
+
+[check_green_feed] 11:02:56 ANR dialog still present after KEYCODE_BACK #2.
+
+[check_green_feed] 11:02:58 ANR dialog still present after KEYCODE_BACK #3.
+
+[check_green_feed] 11:03:00 ANR dialog still present after KEYCODE_BACK #4.
+
+[check_green_feed] 11:03:02 ANR dialog still present after KEYCODE_BACK #5.
+
+[check_green_feed] 11:03:02 ANR dialog persisted after 5 KEYCODE_BACK sends — proceeding to screencap anyway.
+
+[check_green_feed] 11:03:08 ANR dialog detected before screencap — sending KEYCODE_BACK.
+
+[check_green_feed] 11:03:10 ANR dialog still present after KEYCODE_BACK #1.
+
+[check_green_feed] 11:03:12 ANR dialog still present after KEYCODE_BACK #2.
+
+[check_green_feed] 11:03:14 ANR dialog still present after KEYCODE_BACK #3.
+
+[check_green_feed] 11:03:16 ANR dialog still present after KEYCODE_BACK #4.
+
+[check_green_feed] 11:03:18 ANR dialog still present after KEYCODE_BACK #5.
+
+[check_green_feed] 11:03:18 ANR dialog persisted after 5 KEYCODE_BACK sends — proceeding to screencap anyway.
+
+[check_green_feed] 11:03:25 ANR dialog detected before screencap — sending KEYCODE_BACK.
+
+[check_green_feed] 11:03:27 ANR dialog still present after KEYCODE_BACK #1.
+
+[check_green_feed] 11:03:29 ANR dialog still present after KEYCODE_BACK #2.
+
+[check_green_feed] 11:03:31 ANR dialog still present after KEYCODE_BACK #3.
+
+[check_green_feed] 11:03:33 ANR dialog still present after KEYCODE_BACK #4.
+
+[check_green_feed] 11:03:35 ANR dialog still present after KEYCODE_BACK #5.
+
+[check_green_feed] 11:03:35 ANR dialog persisted after 5 KEYCODE_BACK sends — proceeding to screencap anyway.
+
+[check_green_feed] 11:03:41 ANR dialog detected before screencap — sending KEYCODE_BACK.
+
+[check_green_feed] 11:03:43 ANR dialog still present after KEYCODE_BACK #1.
+
+[check_green_feed] 11:03:45 ANR dialog still present after KEYCODE_BACK #2.
+
+[check_green_feed] 11:03:47 ANR dialog still present after KEYCODE_BACK #3.
+
+[check_green_feed] 11:03:49 ANR dialog still present after KEYCODE_BACK #4.
+
+[check_green_feed] 11:03:51 ANR dialog still present after KEYCODE_BACK #5.
+
+[check_green_feed] 11:03:51 ANR dialog persisted after 5 KEYCODE_BACK sends — proceeding to screencap anyway.
+
+[check_green_feed] 11:03:58 ANR dialog detected before screencap — sending KEYCODE_BACK.
+
+[check_green_feed] 11:04:00 ANR dialog still present after KEYCODE_BACK #1.
+
+[check_green_feed] 11:04:02 ANR dialog still present after KEYCODE_BACK #2.
+
+[check_green_feed] 11:04:04 ANR dialog still present after KEYCODE_BACK #3.
+
+[check_green_feed] 11:04:06 ANR dialog still present after KEYCODE_BACK #4.
+
+[check_green_feed] 11:04:08 ANR dialog still present after KEYCODE_BACK #5.
+
+[check_green_feed] 11:04:08 ANR dialog persisted after 5 KEYCODE_BACK sends — proceeding to screencap anyway.
+
+[check_green_feed] 11:04:14 ANR dialog detected before screencap — sending KEYCODE_BACK.
+
+[check_green_feed] 11:04:16 ANR dialog still present after KEYCODE_BACK #1.
+
+[check_green_feed] 11:04:18 ANR dialog still present after KEYCODE_BACK #2.
+
+[check_green_feed] 11:04:21 ANR dialog still present after KEYCODE_BACK #3.
+
+[check_green_feed] 11:04:23 ANR dialog still present after KEYCODE_BACK #4.
+
+[check_green_feed] 11:04:25 ANR dialog still present after KEYCODE_BACK #5.
+
+[check_green_feed] 11:04:25 ANR dialog persisted after 5 KEYCODE_BACK sends — proceeding to screencap anyway.
+
+[check_green_feed] 11:04:31 ANR dialog detected before screencap — sending KEYCODE_BACK.
+
+[check_green_feed] 11:04:33 ANR dialog still present after KEYCODE_BACK #1.
+
+[check_green_feed] 11:04:35 ANR dialog still present after KEYCODE_BACK #2.
+
+[check_green_feed] 11:04:37 ANR dialog still present after KEYCODE_BACK #3.
+
+[check_green_feed] 11:04:39 ANR dialog still present after KEYCODE_BACK #4.
+
+[check_green_feed] 11:04:41 ANR dialog still present after KEYCODE_BACK #5.
+
+[check_green_feed] 11:04:41 ANR dialog persisted after 5 KEYCODE_BACK sends — proceeding to screencap anyway.
+
+[check_green_feed] 11:04:48 ANR dialog detected before screencap — sending KEYCODE_BACK.
+
+[check_green_feed] 11:04:50 ANR dialog still present after KEYCODE_BACK #1.
+
+[check_green_feed] 11:04:52 ANR dialog still present after KEYCODE_BACK #2.
+
+[check_green_feed] 11:04:54 ANR dialog still present after KEYCODE_BACK #3.
+
+[check_green_feed] 11:04:56 ANR dialog still present after KEYCODE_BACK #4.
+
+[check_green_feed] 11:04:58 ANR dialog still present after KEYCODE_BACK #5.
+
+[check_green_feed] 11:04:58 ANR dialog persisted after 5 KEYCODE_BACK sends — proceeding to screencap anyway.
+
+[check_green_feed] 11:05:04 ANR dialog detected before screencap — sending KEYCODE_BACK.
+
+[check_green_feed] 11:05:06 ANR dialog still present after KEYCODE_BACK #1.
+
+[check_green_feed] 11:05:08 ANR dialog still present after KEYCODE_BACK #2.
+
+[check_green_feed] 11:05:10 ANR dialog still present after KEYCODE_BACK #3.
+
+[check_green_feed] 11:05:12 ANR dialog still present after KEYCODE_BACK #4.
+
+[check_green_feed] 11:05:14 ANR dialog still present after KEYCODE_BACK #5.
+
+[check_green_feed] 11:05:14 ANR dialog persisted after 5 KEYCODE_BACK sends — proceeding to screencap anyway.
+
+[check_green_feed] 11:05:21 ANR dialog detected before screencap — sending KEYCODE_BACK.
+
+[check_green_feed] 11:05:23 ANR dialog still present after KEYCODE_BACK #1.
+
+[check_green_feed] 11:05:25 ANR dialog still present after KEYCODE_BACK #2.
+
+[check_green_feed] 11:05:27 ANR dialog still present after KEYCODE_BACK #3.
+
+[check_green_feed] 11:05:29 ANR dialog still present after KEYCODE_BACK #4.
+
+[check_green_feed] 11:05:31 ANR dialog still present after KEYCODE_BACK #5.
+
+[check_green_feed] 11:05:31 ANR dialog persisted after 5 KEYCODE_BACK sends — proceeding to screencap anyway.
+
+[check_green_feed] 11:05:37 ANR dialog detected before screencap — sending KEYCODE_BACK.
+
+[check_green_feed] 11:05:39 ANR dialog still present after KEYCODE_BACK #1.
+
+[check_green_feed] 11:05:41 ANR dialog still present after KEYCODE_BACK #2.
+
+[check_green_feed] 11:05:43 ANR dialog still present after KEYCODE_BACK #3.
+
+[check_green_feed] 11:05:45 ANR dialog still present after KEYCODE_BACK #4.
+
+[check_green_feed] 11:05:47 ANR dialog still present after KEYCODE_BACK #5.
+
+[check_green_feed] 11:05:47 ANR dialog persisted after 5 KEYCODE_BACK sends — proceeding to screencap anyway.
+
+[check_green_feed] 11:05:54 ANR dialog detected before screencap — sending KEYCODE_BACK.
+
+[check_green_feed] 11:05:56 ANR dialog still present after KEYCODE_BACK #1.
+
+[check_green_feed] 11:05:58 ANR dialog still present after KEYCODE_BACK #2.
+
+[check_green_feed] 11:06:00 ANR dialog still present after KEYCODE_BACK #3.
+
+[check_green_feed] 11:06:02 ANR dialog still present after KEYCODE_BACK #4.
+
+[check_green_feed] 11:06:04 ANR dialog still present after KEYCODE_BACK #5.
+
+[check_green_feed] 11:06:04 ANR dialog persisted after 5 KEYCODE_BACK sends — proceeding to screencap anyway.
+
+[check_green_feed] 11:06:10 ANR dialog detected before screencap — sending KEYCODE_BACK.
+
+[check_green_feed] 11:06:12 ANR dialog still present after KEYCODE_BACK #1.
+
+[check_green_feed] 11:06:14 ANR dialog still present after KEYCODE_BACK #2.
+
+[check_green_feed] 11:06:16 ANR dialog still present after KEYCODE_BACK #3.
+
+[check_green_feed] 11:06:18 ANR dialog still present after KEYCODE_BACK #4.
+
+[check_green_feed] 11:06:21 ANR dialog still present after KEYCODE_BACK #5.
+
+[check_green_feed] 11:06:21 ANR dialog persisted after 5 KEYCODE_BACK sends — proceeding to screencap anyway.
+
+[check_green_feed] 11:06:27 ANR dialog detected before screencap — sending KEYCODE_BACK.
+
+[check_green_feed] 11:06:29 ANR dialog still present after KEYCODE_BACK #1.
+
+[check_green_feed] 11:06:31 ANR dialog still present after KEYCODE_BACK #2.
+
+[check_green_feed] 11:06:33 ANR dialog still present after KEYCODE_BACK #3.
+
+[check_green_feed] 11:06:35 ANR dialog still present after KEYCODE_BACK #4.
+
+[check_green_feed] 11:06:37 ANR dialog still present after KEYCODE_BACK #5.
+
+[check_green_feed] 11:06:37 ANR dialog persisted after 5 KEYCODE_BACK sends — proceeding to screencap anyway.
+
+[check_green_feed] 11:06:43 ANR dialog detected before screencap — sending KEYCODE_BACK.
+
+[check_green_feed] 11:06:45 ANR dialog still present after KEYCODE_BACK #1.
+
+[check_green_feed] 11:06:47 ANR dialog still present after KEYCODE_BACK #2.
+
+[check_green_feed] 11:06:49 ANR dialog still present after KEYCODE_BACK #3.
+
+[check_green_feed] 11:06:52 ANR dialog still present after KEYCODE_BACK #4.
+
+[check_green_feed] 11:06:54 ANR dialog still present after KEYCODE_BACK #5.
+
+[check_green_feed] 11:06:54 ANR dialog persisted after 5 KEYCODE_BACK sends — proceeding to screencap anyway.
+
+[check_green_feed] 11:07:00 ANR dialog detected before screencap — sending KEYCODE_BACK.
+
+[check_green_feed] 11:07:02 ANR dialog still present after KEYCODE_BACK #1.
+
+[check_green_feed] 11:07:04 ANR dialog still present after KEYCODE_BACK #2.
+
+[check_green_feed] 11:07:06 ANR dialog still present after KEYCODE_BACK #3.
+
+[check_green_feed] 11:07:08 ANR dialog still present after KEYCODE_BACK #4.
+
+[check_green_feed] 11:07:10 ANR dialog still present after KEYCODE_BACK #5.
+
+[check_green_feed] 11:07:10 ANR dialog persisted after 5 KEYCODE_BACK sends — proceeding to screencap anyway.
+
+MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) — coverage=0.0%
+
+FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)
+
+Attempt 1 failed, retrying...
+
+MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) — coverage=0.0%
+
+FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)
+
+Attempt 2 failed, retrying...
+
+MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) — coverage=0.0%
+
+FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)
+
+Attempt 3 failed, retrying...
+
+MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) — coverage=0.0%
+
+FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)
+
+Attempt 4 failed, retrying...
+
+MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) — coverage=0.0%
+
+FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)
+
+Attempt 5 failed, retrying...
+
+MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) — coverage=0.0%
+
+FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)
+
+Attempt 6 failed, retrying...
+
+MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) — coverage=0.0%
+
+FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)
+
+Attempt 7 failed, retrying...
+
+MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) — coverage=0.0%
+
+FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)
+
+Attempt 8 failed, retrying...
+
+MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) — coverage=0.0%
+
+FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)
+
+Attempt 9 failed, retrying...
+
+MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) — coverage=0.0%
+
+FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)
+
+Attempt 10 failed, retrying...
+
+MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) — coverage=0.0%
+
+FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)
+
+Attempt 11 failed, retrying...
+
+MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) — coverage=0.0%
+
+FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)
+
+Attempt 12 failed, retrying...
+
+MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) — coverage=0.0%
+
+FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)
+
+Attempt 13 failed, retrying...
+
+MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) — coverage=0.0%
+
+FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)
+
+Attempt 14 failed, retrying...
+
+MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) — coverage=0.0%
+
+FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)
+
+Attempt 15 failed, retrying...
+
+MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) — coverage=0.0%
+
+FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)
+
+Attempt 16 failed, retrying...
+
+MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) — coverage=0.0%
+
+FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)
+
+Attempt 17 failed, retrying...
+
+MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) — coverage=0.0%
+
+FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)
+
+Attempt 18 failed, retrying...
+
+MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) — coverage=0.0%
+
+FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)
+
+Attempt 19 failed, retrying...
+
+MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) — coverage=0.0%
+
+FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)
+
+Attempt 20 failed, retrying...
+
+MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) — coverage=0.0%
+
+FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)
+
+Attempt 21 failed, retrying...
+
+MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) — coverage=0.0%
+
+FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)
+
+Attempt 22 failed, retrying...
+
+MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) — coverage=0.0%
+
+FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)
+
+Attempt 23 failed, retrying...
+
+MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) — coverage=0.0%
+
+FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)
+
+Attempt 24 failed, retrying...
+
+MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) — coverage=0.0%
+
+FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)
+
+Attempt 25 failed, retrying...
+
+MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) — coverage=0.0%
+
+FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)
+
+Attempt 26 failed, retrying...
+
+MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) — coverage=0.0%
+
+FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)
+
+Attempt 27 failed, retrying...
+
+MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) — coverage=0.0%
+
+FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)
+
+Attempt 28 failed, retrying...
+
+MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) — coverage=0.0%
+
+FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)
+
+Attempt 29 failed, retrying...
+
+MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) — coverage=0.0%
+
+FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)
+
+ERROR: pre-flight failed after 30 attempts
+
+Error: Process completed with exit code 1.

@@ -1,0 +1,1617 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2822
+\cocoatextscaling1\cocoaplatform1{\fonttbl\f0\fnil\fcharset0 .AppleSystemUIFontMonospaced-Regular;\f1\fnil\fcharset0 .SFUIMono-Light_YAXS144F062_wght2580000;}
+{\colortbl;\red255\green255\blue255;\red240\green246\blue252;}
+{\*\expandedcolortbl;;\cssrgb\c94118\c96471\c98824;}
+\deftab720
+\pard\pardeftab720\partightenfactor0
+
+\f0\fs24 \cf2 \expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Run ADB="$ANDROID_HOME/platform-tools/adb"\
+\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   
+\f1\b \cf2 \strokec2 ADB="$ANDROID_HOME/platform-tools/adb"
+\f0\b0 \cf2 \strokec2 \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   
+\f1\b \cf2 \strokec2 # Install mock Pixel Camera and grant CAMERA permission before the smoke check.
+\f0\b0 \cf2 \strokec2 \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   
+\f1\b \cf2 \strokec2 echo "==> Installing mock Pixel Camera for pre-flight check..."
+\f0\b0 \cf2 \strokec2 \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   
+\f1\b \cf2 \strokec2 "$ADB" install -r \\
+\f0\b0 \cf2 \strokec2 \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   
+\f1\b \cf2 \strokec2   e2e-mock-camera/build/outputs/apk/debug/e2e-mock-camera-debug.apk
+\f0\b0 \cf2 \strokec2 \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   
+\f1\b \cf2 \strokec2 # Adaptive ANR watcher: waits for Pixel Launcher to settle after install (Issue #194)
+\f0\b0 \cf2 \strokec2 \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   
+\f1\b \cf2 \strokec2 chmod +x scripts/dismiss_anr.sh
+\f0\b0 \cf2 \strokec2 \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   
+\f1\b \cf2 \strokec2 scripts/dismiss_anr.sh --adb "$ADB" &
+\f0\b0 \cf2 \strokec2 \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   
+\f1\b \cf2 \strokec2 SETTLE_PID=$!
+\f0\b0 \cf2 \strokec2 \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   
+\f1\b \cf2 \strokec2 echo "==> Granting CAMERA permission..."
+\f0\b0 \cf2 \strokec2 \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   
+\f1\b \cf2 \strokec2 "$ADB" shell pm grant com.google.android.GoogleCamera \\
+\f0\b0 \cf2 \strokec2 \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   
+\f1\b \cf2 \strokec2   android.permission.CAMERA
+\f0\b0 \cf2 \strokec2 \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   
+\f1\b \cf2 \strokec2 # Wake the display and dismiss the swipe keyguard before launching the
+\f0\b0 \cf2 \strokec2 \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   
+\f1\b \cf2 \strokec2 # activity. An upward swipe is used instead of wm dismiss-keyguard:
+\f0\b0 \cf2 \strokec2 \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   
+\f1\b \cf2 \strokec2 # wm dismiss-keyguard did not reliably dismiss the swipe-type lock
+\f0\b0 \cf2 \strokec2 \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   
+\f1\b \cf2 \strokec2 # screen on the API-35 CI emulator (all retries returned #E9E8EF).
+\f0\b0 \cf2 \strokec2 \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   
+\f1\b \cf2 \strokec2 # sleep 2 lets the swipe animation complete before am start -W fires.
+\f0\b0 \cf2 \strokec2 \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   
+\f1\b \cf2 \strokec2 echo "==> Waking display and dismissing keyguard..."
+\f0\b0 \cf2 \strokec2 \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   
+\f1\b \cf2 \strokec2 "$ADB" shell input keyevent KEYCODE_WAKEUP
+\f0\b0 \cf2 \strokec2 \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   
+\f1\b \cf2 \strokec2 "$ADB" shell input swipe 300 1000 300 300
+\f0\b0 \cf2 \strokec2 \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   
+\f1\b \cf2 \strokec2 sleep 2
+\f0\b0 \cf2 \strokec2 \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   
+\f1\b \cf2 \strokec2 # Launch MockCameraActivity and wait for it to be displayed.
+\f0\b0 \cf2 \strokec2 \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   
+\f1\b \cf2 \strokec2 # am start -W blocks until the activity is on screen, so no polling needed.
+\f0\b0 \cf2 \strokec2 \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   
+\f1\b \cf2 \strokec2 echo "==> Launching MockCameraActivity..."
+\f0\b0 \cf2 \strokec2 \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   
+\f1\b \cf2 \strokec2 "$ADB" shell am start -W -n \\
+\f0\b0 \cf2 \strokec2 \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   
+\f1\b \cf2 \strokec2   com.google.android.GoogleCamera/com.gb4pc.mockcamera.MockCameraActivity
+\f0\b0 \cf2 \strokec2 \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   
+\f1\b \cf2 \strokec2 # Re-wake after am start -W: adb install above can take 10-30 s and
+\f0\b0 \cf2 \strokec2 \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   
+\f1\b \cf2 \strokec2 # the screen may sleep in that window. am start -W and
+\f0\b0 \cf2 \strokec2 \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   
+\f1\b \cf2 \strokec2 # setTurnScreenOn(true) usually recover, but this is a cheap extra
+\f0\b0 \cf2 \strokec2 \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   
+\f1\b \cf2 \strokec2 # guarantee that the green view is visible before screencap. Use the
+\f0\b0 \cf2 \strokec2 \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   
+\f1\b \cf2 \strokec2 # same swipe unlock to stay consistent.
+\f0\b0 \cf2 \strokec2 \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   
+\f1\b \cf2 \strokec2 "$ADB" shell input keyevent KEYCODE_WAKEUP
+\f0\b0 \cf2 \strokec2 \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   
+\f1\b \cf2 \strokec2 "$ADB" shell input swipe 300 1000 300 300
+\f0\b0 \cf2 \strokec2 \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   
+\f1\b \cf2 \strokec2 sleep 2
+\f0\b0 \cf2 \strokec2 \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   
+\f1\b \cf2 \strokec2 wait "$SETTLE_PID" || true
+\f0\b0 \cf2 \strokec2 \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   
+\f1\b \cf2 \strokec2 python3 scripts/check_green_feed.py --adb "$ADB" preflight.png
+\f0\b0 \cf2 \strokec2 \
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   shell: /usr/bin/bash -e \{0\}\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   env:\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2     JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.19-10/x64\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2     JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.19-10/x64\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2     ANDROID_HOME: /usr/local/lib/android/sdk\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2     ANDROID_SDK_ROOT: /usr/local/lib/android/sdk\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2     ANDROID_AVD_HOME: /home/runner/.android/avd\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2     EMULATOR_PID: 3217\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 ==> Installing mock Pixel Camera for pre-flight check...\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 Performing Streamed Install\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 Success\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 ==> Granting CAMERA permission...\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [dismiss_anr] 10:58:37.195 Script started (adb=/usr/local/lib/android/sdk/platform-tools/adb).\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 ==> Waking display and dismissing keyguard...\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [dismiss_anr] 10:58:37.336 Logcat stream started (pid=3552).\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [dismiss_anr] 10:58:37.395 [t=0s poll=1] idle_count=1 cpu=(unknown)%\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 ==> Launching MockCameraActivity...\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 Starting: Intent \{ cmp=com.google.android.GoogleCamera/com.gb4pc.mockcamera.MockCameraActivity \}\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [dismiss_anr] 10:58:40.643 [t=3s poll=2] idle_count=2 cpu=(unknown)%\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 scripts/dismiss_anr.sh: line 151: echo: write error: Broken pipe\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [dismiss_anr] 10:58:41.168 dumpsys window safety check: no ANR dialog found.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [dismiss_anr] [10:58:41.176] EXIT trap: cleanup complete (elapsed 3976ms).\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [dismiss_anr] [10:58:41.178] Last ActivityManager errors:\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 Status: ok\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 LaunchState: COLD\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 Activity: com.google.android.GoogleCamera/com.gb4pc.mockcamera.MockCameraActivity\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 TotalTime: 3709\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 WaitTime: 3831\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 Complete\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 10:58:51 ANR dialog detected before screencap \'97 sending KEYCODE_BACK.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 10:58:53 ANR dialog still present after KEYCODE_BACK #1.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 10:58:55 ANR dialog still present after KEYCODE_BACK #2.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 10:58:58 ANR dialog still present after KEYCODE_BACK #3.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 10:59:00 ANR dialog still present after KEYCODE_BACK #4.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 10:59:02 ANR dialog still present after KEYCODE_BACK #5.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 10:59:02 ANR dialog persisted after 5 KEYCODE_BACK sends \'97 proceeding to screencap anyway.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 10:59:05 FIRST FAILURE DIAGNOSTICS (attempt=1, elapsed=19.0s)\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 10:59:05 dumpsys window (Dialog/Focused/mCurrentFocus lines):\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2         mLastFocusedRootTask=Task\{624163f #1 type=home\}\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2     mCurrentFocus=Window\{6bb48b2 u0 Application Not Responding: com.google.android.apps.nexuslauncher\}\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2     mFocusedApp=ActivityRecord\{8b00be3 u0 com.google.android.GoogleCamera/com.gb4pc.mockcamera.MockCameraActivity t8\}\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2         mLastFocusedRootTask=Task\{978d155 #8 type=standard A=10209:com.google.android.GoogleCamera\}\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2       mFocusedWindow=Window\{6bb48b2 u0 Application Not Responding: com.google.android.apps.nexuslauncher\}\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2     mTopFocusedDisplayId=0\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 10:59:05 logcat ActivityManager:E (last 20 lines):\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2   (no output)\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 10:59:05 Diagnostic screencap saved: ci_diag_screencaps/failure_attempt_001.png\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 10:59:10 ANR dialog detected before screencap \'97 sending KEYCODE_BACK.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 10:59:12 ANR dialog still present after KEYCODE_BACK #1.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 10:59:14 ANR dialog still present after KEYCODE_BACK #2.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 10:59:16 ANR dialog still present after KEYCODE_BACK #3.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 10:59:18 ANR dialog still present after KEYCODE_BACK #4.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 10:59:21 ANR dialog still present after KEYCODE_BACK #5.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 10:59:21 ANR dialog persisted after 5 KEYCODE_BACK sends \'97 proceeding to screencap anyway.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 10:59:30 ANR dialog detected before screencap \'97 sending KEYCODE_BACK.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 10:59:33 ANR dialog still present after KEYCODE_BACK #1.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 10:59:35 ANR dialog still present after KEYCODE_BACK #2.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 10:59:37 ANR dialog still present after KEYCODE_BACK #3.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 10:59:39 ANR dialog still present after KEYCODE_BACK #4.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 10:59:41 ANR dialog still present after KEYCODE_BACK #5.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 10:59:41 ANR dialog persisted after 5 KEYCODE_BACK sends \'97 proceeding to screencap anyway.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 10:59:49 ANR dialog detected before screencap \'97 sending KEYCODE_BACK.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 10:59:51 ANR dialog still present after KEYCODE_BACK #1.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 10:59:53 ANR dialog still present after KEYCODE_BACK #2.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 10:59:55 ANR dialog still present after KEYCODE_BACK #3.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 10:59:57 ANR dialog still present after KEYCODE_BACK #4.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 10:59:59 ANR dialog still present after KEYCODE_BACK #5.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 10:59:59 ANR dialog persisted after 5 KEYCODE_BACK sends \'97 proceeding to screencap anyway.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:00:06 ANR dialog detected before screencap \'97 sending KEYCODE_BACK.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:00:08 ANR dialog still present after KEYCODE_BACK #1.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:00:10 ANR dialog still present after KEYCODE_BACK #2.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:00:12 ANR dialog still present after KEYCODE_BACK #3.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:00:14 ANR dialog still present after KEYCODE_BACK #4.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:00:16 ANR dialog still present after KEYCODE_BACK #5.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:00:16 ANR dialog persisted after 5 KEYCODE_BACK sends \'97 proceeding to screencap anyway.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:00:22 ANR dialog detected before screencap \'97 sending KEYCODE_BACK.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:00:24 ANR dialog still present after KEYCODE_BACK #1.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:00:26 ANR dialog still present after KEYCODE_BACK #2.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:00:28 ANR dialog still present after KEYCODE_BACK #3.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:00:30 ANR dialog still present after KEYCODE_BACK #4.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:00:32 ANR dialog still present after KEYCODE_BACK #5.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:00:32 ANR dialog persisted after 5 KEYCODE_BACK sends \'97 proceeding to screencap anyway.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:00:39 ANR dialog detected before screencap \'97 sending KEYCODE_BACK.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:00:41 ANR dialog still present after KEYCODE_BACK #1.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:00:43 ANR dialog still present after KEYCODE_BACK #2.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:00:45 ANR dialog still present after KEYCODE_BACK #3.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:00:47 ANR dialog still present after KEYCODE_BACK #4.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:00:49 ANR dialog still present after KEYCODE_BACK #5.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:00:49 ANR dialog persisted after 5 KEYCODE_BACK sends \'97 proceeding to screencap anyway.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:00:55 ANR dialog detected before screencap \'97 sending KEYCODE_BACK.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:00:57 ANR dialog still present after KEYCODE_BACK #1.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:00:59 ANR dialog still present after KEYCODE_BACK #2.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:01:02 ANR dialog still present after KEYCODE_BACK #3.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:01:04 ANR dialog still present after KEYCODE_BACK #4.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:01:06 ANR dialog still present after KEYCODE_BACK #5.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:01:06 ANR dialog persisted after 5 KEYCODE_BACK sends \'97 proceeding to screencap anyway.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:01:12 ANR dialog detected before screencap \'97 sending KEYCODE_BACK.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:01:14 ANR dialog still present after KEYCODE_BACK #1.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:01:16 ANR dialog still present after KEYCODE_BACK #2.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:01:18 ANR dialog still present after KEYCODE_BACK #3.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:01:20 ANR dialog still present after KEYCODE_BACK #4.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:01:22 ANR dialog still present after KEYCODE_BACK #5.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:01:22 ANR dialog persisted after 5 KEYCODE_BACK sends \'97 proceeding to screencap anyway.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:01:29 ANR dialog detected before screencap \'97 sending KEYCODE_BACK.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:01:31 ANR dialog still present after KEYCODE_BACK #1.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:01:33 ANR dialog still present after KEYCODE_BACK #2.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:01:35 ANR dialog still present after KEYCODE_BACK #3.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:01:37 ANR dialog still present after KEYCODE_BACK #4.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:01:39 ANR dialog still present after KEYCODE_BACK #5.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:01:39 ANR dialog persisted after 5 KEYCODE_BACK sends \'97 proceeding to screencap anyway.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:01:45 ANR dialog detected before screencap \'97 sending KEYCODE_BACK.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:01:47 ANR dialog still present after KEYCODE_BACK #1.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:01:49 ANR dialog still present after KEYCODE_BACK #2.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:01:51 ANR dialog still present after KEYCODE_BACK #3.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:01:53 ANR dialog still present after KEYCODE_BACK #4.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:01:55 ANR dialog still present after KEYCODE_BACK #5.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:01:55 ANR dialog persisted after 5 KEYCODE_BACK sends \'97 proceeding to screencap anyway.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:02:02 ANR dialog detected before screencap \'97 sending KEYCODE_BACK.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:02:04 ANR dialog still present after KEYCODE_BACK #1.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:02:06 ANR dialog still present after KEYCODE_BACK #2.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:02:08 ANR dialog still present after KEYCODE_BACK #3.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:02:10 ANR dialog still present after KEYCODE_BACK #4.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:02:12 ANR dialog still present after KEYCODE_BACK #5.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:02:12 ANR dialog persisted after 5 KEYCODE_BACK sends \'97 proceeding to screencap anyway.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:02:18 ANR dialog detected before screencap \'97 sending KEYCODE_BACK.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:02:20 ANR dialog still present after KEYCODE_BACK #1.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:02:22 ANR dialog still present after KEYCODE_BACK #2.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:02:24 ANR dialog still present after KEYCODE_BACK #3.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:02:26 ANR dialog still present after KEYCODE_BACK #4.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:02:29 ANR dialog still present after KEYCODE_BACK #5.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:02:29 ANR dialog persisted after 5 KEYCODE_BACK sends \'97 proceeding to screencap anyway.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:02:35 ANR dialog detected before screencap \'97 sending KEYCODE_BACK.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:02:37 ANR dialog still present after KEYCODE_BACK #1.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:02:39 ANR dialog still present after KEYCODE_BACK #2.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:02:41 ANR dialog still present after KEYCODE_BACK #3.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:02:43 ANR dialog still present after KEYCODE_BACK #4.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:02:45 ANR dialog still present after KEYCODE_BACK #5.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:02:45 ANR dialog persisted after 5 KEYCODE_BACK sends \'97 proceeding to screencap anyway.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:02:51 ANR dialog detected before screencap \'97 sending KEYCODE_BACK.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:02:53 ANR dialog still present after KEYCODE_BACK #1.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:02:56 ANR dialog still present after KEYCODE_BACK #2.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:02:58 ANR dialog still present after KEYCODE_BACK #3.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:03:00 ANR dialog still present after KEYCODE_BACK #4.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:03:02 ANR dialog still present after KEYCODE_BACK #5.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:03:02 ANR dialog persisted after 5 KEYCODE_BACK sends \'97 proceeding to screencap anyway.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:03:08 ANR dialog detected before screencap \'97 sending KEYCODE_BACK.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:03:10 ANR dialog still present after KEYCODE_BACK #1.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:03:12 ANR dialog still present after KEYCODE_BACK #2.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:03:14 ANR dialog still present after KEYCODE_BACK #3.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:03:16 ANR dialog still present after KEYCODE_BACK #4.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:03:18 ANR dialog still present after KEYCODE_BACK #5.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:03:18 ANR dialog persisted after 5 KEYCODE_BACK sends \'97 proceeding to screencap anyway.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:03:25 ANR dialog detected before screencap \'97 sending KEYCODE_BACK.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:03:27 ANR dialog still present after KEYCODE_BACK #1.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:03:29 ANR dialog still present after KEYCODE_BACK #2.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:03:31 ANR dialog still present after KEYCODE_BACK #3.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:03:33 ANR dialog still present after KEYCODE_BACK #4.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:03:35 ANR dialog still present after KEYCODE_BACK #5.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:03:35 ANR dialog persisted after 5 KEYCODE_BACK sends \'97 proceeding to screencap anyway.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:03:41 ANR dialog detected before screencap \'97 sending KEYCODE_BACK.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:03:43 ANR dialog still present after KEYCODE_BACK #1.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:03:45 ANR dialog still present after KEYCODE_BACK #2.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:03:47 ANR dialog still present after KEYCODE_BACK #3.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:03:49 ANR dialog still present after KEYCODE_BACK #4.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:03:51 ANR dialog still present after KEYCODE_BACK #5.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:03:51 ANR dialog persisted after 5 KEYCODE_BACK sends \'97 proceeding to screencap anyway.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:03:58 ANR dialog detected before screencap \'97 sending KEYCODE_BACK.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:04:00 ANR dialog still present after KEYCODE_BACK #1.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:04:02 ANR dialog still present after KEYCODE_BACK #2.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:04:04 ANR dialog still present after KEYCODE_BACK #3.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:04:06 ANR dialog still present after KEYCODE_BACK #4.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:04:08 ANR dialog still present after KEYCODE_BACK #5.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:04:08 ANR dialog persisted after 5 KEYCODE_BACK sends \'97 proceeding to screencap anyway.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:04:14 ANR dialog detected before screencap \'97 sending KEYCODE_BACK.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:04:16 ANR dialog still present after KEYCODE_BACK #1.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:04:18 ANR dialog still present after KEYCODE_BACK #2.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:04:21 ANR dialog still present after KEYCODE_BACK #3.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:04:23 ANR dialog still present after KEYCODE_BACK #4.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:04:25 ANR dialog still present after KEYCODE_BACK #5.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:04:25 ANR dialog persisted after 5 KEYCODE_BACK sends \'97 proceeding to screencap anyway.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:04:31 ANR dialog detected before screencap \'97 sending KEYCODE_BACK.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:04:33 ANR dialog still present after KEYCODE_BACK #1.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:04:35 ANR dialog still present after KEYCODE_BACK #2.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:04:37 ANR dialog still present after KEYCODE_BACK #3.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:04:39 ANR dialog still present after KEYCODE_BACK #4.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:04:41 ANR dialog still present after KEYCODE_BACK #5.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:04:41 ANR dialog persisted after 5 KEYCODE_BACK sends \'97 proceeding to screencap anyway.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:04:48 ANR dialog detected before screencap \'97 sending KEYCODE_BACK.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:04:50 ANR dialog still present after KEYCODE_BACK #1.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:04:52 ANR dialog still present after KEYCODE_BACK #2.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:04:54 ANR dialog still present after KEYCODE_BACK #3.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:04:56 ANR dialog still present after KEYCODE_BACK #4.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:04:58 ANR dialog still present after KEYCODE_BACK #5.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:04:58 ANR dialog persisted after 5 KEYCODE_BACK sends \'97 proceeding to screencap anyway.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:05:04 ANR dialog detected before screencap \'97 sending KEYCODE_BACK.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:05:06 ANR dialog still present after KEYCODE_BACK #1.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:05:08 ANR dialog still present after KEYCODE_BACK #2.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:05:10 ANR dialog still present after KEYCODE_BACK #3.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:05:12 ANR dialog still present after KEYCODE_BACK #4.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:05:14 ANR dialog still present after KEYCODE_BACK #5.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:05:14 ANR dialog persisted after 5 KEYCODE_BACK sends \'97 proceeding to screencap anyway.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:05:21 ANR dialog detected before screencap \'97 sending KEYCODE_BACK.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:05:23 ANR dialog still present after KEYCODE_BACK #1.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:05:25 ANR dialog still present after KEYCODE_BACK #2.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:05:27 ANR dialog still present after KEYCODE_BACK #3.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:05:29 ANR dialog still present after KEYCODE_BACK #4.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:05:31 ANR dialog still present after KEYCODE_BACK #5.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:05:31 ANR dialog persisted after 5 KEYCODE_BACK sends \'97 proceeding to screencap anyway.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:05:37 ANR dialog detected before screencap \'97 sending KEYCODE_BACK.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:05:39 ANR dialog still present after KEYCODE_BACK #1.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:05:41 ANR dialog still present after KEYCODE_BACK #2.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:05:43 ANR dialog still present after KEYCODE_BACK #3.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:05:45 ANR dialog still present after KEYCODE_BACK #4.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:05:47 ANR dialog still present after KEYCODE_BACK #5.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:05:47 ANR dialog persisted after 5 KEYCODE_BACK sends \'97 proceeding to screencap anyway.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:05:54 ANR dialog detected before screencap \'97 sending KEYCODE_BACK.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:05:56 ANR dialog still present after KEYCODE_BACK #1.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:05:58 ANR dialog still present after KEYCODE_BACK #2.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:06:00 ANR dialog still present after KEYCODE_BACK #3.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:06:02 ANR dialog still present after KEYCODE_BACK #4.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:06:04 ANR dialog still present after KEYCODE_BACK #5.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:06:04 ANR dialog persisted after 5 KEYCODE_BACK sends \'97 proceeding to screencap anyway.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:06:10 ANR dialog detected before screencap \'97 sending KEYCODE_BACK.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:06:12 ANR dialog still present after KEYCODE_BACK #1.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:06:14 ANR dialog still present after KEYCODE_BACK #2.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:06:16 ANR dialog still present after KEYCODE_BACK #3.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:06:18 ANR dialog still present after KEYCODE_BACK #4.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:06:21 ANR dialog still present after KEYCODE_BACK #5.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:06:21 ANR dialog persisted after 5 KEYCODE_BACK sends \'97 proceeding to screencap anyway.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:06:27 ANR dialog detected before screencap \'97 sending KEYCODE_BACK.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:06:29 ANR dialog still present after KEYCODE_BACK #1.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:06:31 ANR dialog still present after KEYCODE_BACK #2.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:06:33 ANR dialog still present after KEYCODE_BACK #3.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:06:35 ANR dialog still present after KEYCODE_BACK #4.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:06:37 ANR dialog still present after KEYCODE_BACK #5.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:06:37 ANR dialog persisted after 5 KEYCODE_BACK sends \'97 proceeding to screencap anyway.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:06:43 ANR dialog detected before screencap \'97 sending KEYCODE_BACK.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:06:45 ANR dialog still present after KEYCODE_BACK #1.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:06:47 ANR dialog still present after KEYCODE_BACK #2.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:06:49 ANR dialog still present after KEYCODE_BACK #3.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:06:52 ANR dialog still present after KEYCODE_BACK #4.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:06:54 ANR dialog still present after KEYCODE_BACK #5.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:06:54 ANR dialog persisted after 5 KEYCODE_BACK sends \'97 proceeding to screencap anyway.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:07:00 ANR dialog detected before screencap \'97 sending KEYCODE_BACK.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:07:02 ANR dialog still present after KEYCODE_BACK #1.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:07:04 ANR dialog still present after KEYCODE_BACK #2.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:07:06 ANR dialog still present after KEYCODE_BACK #3.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:07:08 ANR dialog still present after KEYCODE_BACK #4.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:07:10 ANR dialog still present after KEYCODE_BACK #5.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 [check_green_feed] 11:07:10 ANR dialog persisted after 5 KEYCODE_BACK sends \'97 proceeding to screencap anyway.\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) \'97 coverage=0.0%\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 Attempt 1 failed, retrying...\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) \'97 coverage=0.0%\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 Attempt 2 failed, retrying...\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) \'97 coverage=0.0%\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 Attempt 3 failed, retrying...\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) \'97 coverage=0.0%\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 Attempt 4 failed, retrying...\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) \'97 coverage=0.0%\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 Attempt 5 failed, retrying...\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) \'97 coverage=0.0%\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 Attempt 6 failed, retrying...\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) \'97 coverage=0.0%\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 Attempt 7 failed, retrying...\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) \'97 coverage=0.0%\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 Attempt 8 failed, retrying...\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) \'97 coverage=0.0%\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 Attempt 9 failed, retrying...\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) \'97 coverage=0.0%\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 Attempt 10 failed, retrying...\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) \'97 coverage=0.0%\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 Attempt 11 failed, retrying...\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) \'97 coverage=0.0%\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 Attempt 12 failed, retrying...\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) \'97 coverage=0.0%\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 Attempt 13 failed, retrying...\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) \'97 coverage=0.0%\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 Attempt 14 failed, retrying...\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) \'97 coverage=0.0%\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 Attempt 15 failed, retrying...\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) \'97 coverage=0.0%\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 Attempt 16 failed, retrying...\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) \'97 coverage=0.0%\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 Attempt 17 failed, retrying...\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) \'97 coverage=0.0%\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 Attempt 18 failed, retrying...\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) \'97 coverage=0.0%\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 Attempt 19 failed, retrying...\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) \'97 coverage=0.0%\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 Attempt 20 failed, retrying...\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) \'97 coverage=0.0%\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 Attempt 21 failed, retrying...\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) \'97 coverage=0.0%\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 Attempt 22 failed, retrying...\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) \'97 coverage=0.0%\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 Attempt 23 failed, retrying...\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) \'97 coverage=0.0%\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 Attempt 24 failed, retrying...\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) \'97 coverage=0.0%\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 Attempt 25 failed, retrying...\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) \'97 coverage=0.0%\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 Attempt 26 failed, retrying...\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) \'97 coverage=0.0%\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 Attempt 27 failed, retrying...\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) \'97 coverage=0.0%\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 Attempt 28 failed, retrying...\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) \'97 coverage=0.0%\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 Attempt 29 failed, retrying...\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 MockCameraActivity smoke check: 0/40000 pixels match #00C853 (tolerance=20) \'97 coverage=0.0%\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 FAIL: coverage 0.0% < 90%. Actual dominant color: #E9E8EF (R=233, G=232, B=239)\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \strokec2 ERROR: pre-flight failed after 30 attempts\
+\pard\pardeftab720\qr\partightenfactor0
+\cf2 \strokec2 \
+\pard\pardeftab720\partightenfactor0
+
+\f1\b \cf2 \strokec2 Error: 
+\f0\b0 \cf2 \strokec2 Process completed with exit code 1.\
+}
