@@ -165,7 +165,12 @@ class TestMainAdbRetryLoop(unittest.TestCase):
 
     def test_wakeup_and_swipe_sent_before_each_screencap(self):
         """KEYCODE_WAKEUP (224) and an upward swipe are sent before every screencap,
-        in that order, with the screencap coming after both in each retry iteration."""
+        in that order, with the screencap coming after both in each retry iteration.
+
+        The per-retry ANR check (dumpsys window) runs between the swipe and the
+        screencap, so the ordering within a single iteration is:
+          wakeup → swipe → [sleep] → dumpsys-window → screencap
+        """
         fd, path = tempfile.mkstemp(suffix=".png")
         os.close(fd)
         try:
@@ -191,27 +196,35 @@ class TestMainAdbRetryLoop(unittest.TestCase):
             def is_screencap(args):
                 return "screencap" in args
 
-            # Walk the call list and verify that each screencap is immediately
-            # preceded by a swipe (unlock gesture) call, which is itself preceded
-            # by a KEYCODE_WAKEUP (224) call.  This confirms the ordering within
-            # every retry iteration, not just the presence of the calls somewhere
-            # in the full list.
+            def is_dumpsys_window(args):
+                return "dumpsys" in args and "window" in args
+
+            # Walk the call list and verify the ordering within every retry
+            # iteration: wakeup precedes swipe, which precedes the screencap
+            # (there is now a dumpsys-window call between swipe and screencap).
             screencap_indices = [i for i, a in enumerate(arg_lists) if is_screencap(a)]
             self.assertGreater(len(screencap_indices), 0, "No screencap call found")
 
             for sc_idx in screencap_indices:
-                self.assertGreaterEqual(sc_idx, 2,
-                    "Not enough preceding calls before screencap to fit wakeup + swipe")
-                swipe_idx = sc_idx - 1
-                wakeup_idx = sc_idx - 2
+                self.assertGreaterEqual(sc_idx, 3,
+                    "Not enough preceding calls before screencap to fit "
+                    "wakeup + swipe + dumpsys-window")
+                dumpsys_idx = sc_idx - 1
+                swipe_idx = sc_idx - 2
+                wakeup_idx = sc_idx - 3
+                self.assertTrue(
+                    is_dumpsys_window(arg_lists[dumpsys_idx]),
+                    f"Call immediately before screencap (index {dumpsys_idx}) is not "
+                    f"a dumpsys window call: {arg_lists[dumpsys_idx]}"
+                )
                 self.assertTrue(
                     is_swipe(arg_lists[swipe_idx]),
-                    f"Call immediately before screencap (index {swipe_idx}) is not "
+                    f"Call two before screencap (index {swipe_idx}) is not "
                     f"an upward swipe: {arg_lists[swipe_idx]}"
                 )
                 self.assertTrue(
                     is_wakeup(arg_lists[wakeup_idx]),
-                    f"Call two before screencap (index {wakeup_idx}) is not "
+                    f"Call three before screencap (index {wakeup_idx}) is not "
                     f"KEYCODE_WAKEUP (224): {arg_lists[wakeup_idx]}"
                 )
         finally:
@@ -219,7 +232,12 @@ class TestMainAdbRetryLoop(unittest.TestCase):
 
     def test_sleep_between_swipe_and_screencap(self):
         """A sleep call must appear between the swipe and every screencap so that
-        any swipe animation has settled before the screen is captured."""
+        any swipe animation has settled before the screen is captured.
+
+        The per-retry ANR check (dumpsys window) runs after the sleep but before
+        the screencap, so the ordering within a single iteration is:
+          swipe → sleep → other(dumpsys-window) → screencap
+        """
         fd, path = tempfile.mkstemp(suffix=".png")
         os.close(fd)
         try:
@@ -251,25 +269,33 @@ class TestMainAdbRetryLoop(unittest.TestCase):
                  patch("check_green_feed.check_image", side_effect=side_effects):
                 self._run_main(["--adb", "/fake/adb", path])
 
-            # Find every screencap in the log and assert that a sleep immediately
-            # precedes it and a swipe immediately precedes that sleep.
+            # Find every screencap in the log and assert the expected ordering:
+            #   swipe → sleep → other(dumpsys-window) → screencap
+            # The per-retry ANR check (dumpsys-window) sits between the sleep and
+            # the screencap, so the sleep is now two positions before screencap.
             screencap_positions = [i for i, e in enumerate(call_log) if e == "screencap"]
             self.assertGreater(len(screencap_positions), 0, "No screencap logged")
 
             for sc_pos in screencap_positions:
-                self.assertGreaterEqual(sc_pos, 2,
+                self.assertGreaterEqual(sc_pos, 3,
                     "Not enough preceding log entries before screencap")
+                self.assertEqual(
+                    call_log[sc_pos - 1],
+                    "other",
+                    f"Entry immediately before screencap (index {sc_pos - 1}) is not "
+                    f"the ANR check (other): {call_log[sc_pos - 1]}"
+                )
                 self.assertIn(
                     "sleep",
-                    call_log[sc_pos - 1],
-                    f"Entry immediately before screencap (index {sc_pos - 1}) is not "
-                    f"a sleep call: {call_log[sc_pos - 1]}"
+                    call_log[sc_pos - 2],
+                    f"Entry two before screencap (index {sc_pos - 2}) is not "
+                    f"a sleep call: {call_log[sc_pos - 2]}"
                 )
                 self.assertEqual(
-                    call_log[sc_pos - 2],
+                    call_log[sc_pos - 3],
                     "swipe",
-                    f"Entry two before screencap (index {sc_pos - 2}) is not "
-                    f"a swipe call: {call_log[sc_pos - 2]}"
+                    f"Entry three before screencap (index {sc_pos - 3}) is not "
+                    f"a swipe call: {call_log[sc_pos - 3]}"
                 )
         finally:
             os.unlink(path)
@@ -312,12 +338,14 @@ class TestInputServiceFailure(unittest.TestCase):
         fd, path = tempfile.mkstemp(suffix=".png")
         os.close(fd)
         try:
-            # KEYCODE_WAKEUP fails; swipe succeeds; screencap succeeds.
+            # KEYCODE_WAKEUP fails; swipe succeeds; dumpsys window (ANR check)
+            # succeeds; screencap succeeds.
             wakeup_fail = self._make_run_result(returncode=1, stderr="")
             swipe_ok = self._make_run_result(returncode=0, stderr="")
+            dumpsys_ok = self._make_run_result(returncode=0, stderr="")
             screencap_ok = self._make_run_result(returncode=0, stderr="")
 
-            run_side_effects = [wakeup_fail, swipe_ok, screencap_ok]
+            run_side_effects = [wakeup_fail, swipe_ok, dumpsys_ok, screencap_ok]
 
             sleep_calls: list[float] = []
 
@@ -357,9 +385,10 @@ class TestInputServiceFailure(unittest.TestCase):
             swipe_fail = self._make_run_result(
                 returncode=1, stderr="cmd: Can't find service: input"
             )
+            dumpsys_ok = self._make_run_result(returncode=0, stderr="")
             screencap_ok = self._make_run_result(returncode=0, stderr="")
 
-            run_side_effects = [wakeup_ok, swipe_fail, screencap_ok]
+            run_side_effects = [wakeup_ok, swipe_fail, dumpsys_ok, screencap_ok]
 
             sleep_calls: list[float] = []
 
@@ -448,6 +477,258 @@ class TestInputServiceFailure(unittest.TestCase):
                 f"Expected 2 sleeps when input service succeeds, got {mock_sleep.call_count}")
         finally:
             os.unlink(path)
+
+
+class TestPerRetryAnrDismiss(unittest.TestCase):
+    """Tests for the per-retry ANR dialog check + dismiss in the retry loop."""
+
+    def _run_main(self, extra_argv: list[str]) -> int:
+        with patch.object(sys, "argv", ["check_green_feed.py"] + extra_argv):
+            return cgf.main()
+
+    def _make_run_result(self, returncode=0, stderr="", stdout=""):
+        result = MagicMock()
+        result.returncode = returncode
+        result.stderr = stderr
+        result.stdout = stdout
+        return result
+
+    def test_anr_dialog_on_first_attempt_is_dismissed_before_screencap(self):
+        """When dumpsys window reports 'Application Not Responding' before the
+        first screencap, KEYCODE_BACK is sent and an extra sleep follows.  After
+        sending KEYCODE_BACK the dismiss function polls dumpsys window again to
+        confirm the dialog is gone before returning.  The screencap still runs
+        and the retry loop continues normally.
+
+        _dump_first_failure_diagnostics is patched out so that its own subprocess
+        calls do not interfere with the accounting of ANR-check calls.
+        """
+        fd, path = tempfile.mkstemp(suffix=".png")
+        os.close(fd)
+        try:
+            anr_window = self._make_run_result(
+                returncode=0,
+                stdout="  mCurrentFocus=Window{... u0 Application Not Responding: com.google.android.apps.nexuslauncher}",
+            )
+            clear_window = self._make_run_result(returncode=0, stdout="WindowState idle")
+            keyevent_ok = self._make_run_result(returncode=0)
+            screencap_ok = self._make_run_result(returncode=0)
+
+            # Attempt 1:
+            #   wakeup → swipe → dumpsys-window(ANR present) →
+            #   KEYCODE_BACK → [sleep] → dumpsys-window(confirm: clear) →
+            #   screencap(fails)
+            # Attempt 2:
+            #   wakeup → swipe → dumpsys-window(detect: clear) → screencap(passes)
+            run_side_effects = [
+                # attempt 1
+                self._make_run_result(),   # wakeup keyevent 224
+                self._make_run_result(),   # swipe
+                anr_window,                # dumpsys window → ANR detected
+                keyevent_ok,               # KEYCODE_BACK dismiss
+                clear_window,              # dumpsys window → confirm dismissed
+                screencap_ok,              # screencap (written to file)
+                # attempt 2
+                self._make_run_result(),   # wakeup keyevent 224
+                self._make_run_result(),   # swipe
+                clear_window,              # dumpsys window → detect: clear
+                screencap_ok,              # screencap (written to file)
+            ]
+
+            keyback_calls: list[list[str]] = []
+            dumpsys_calls: list[list[str]] = []
+
+            def tracking_run(args, **kwargs):
+                if "KEYCODE_BACK" in args:
+                    keyback_calls.append(list(args))
+                if "dumpsys" in args and "window" in args:
+                    dumpsys_calls.append(list(args))
+                return run_side_effects.pop(0)
+
+            sleep_calls: list[float] = []
+
+            with patch("check_green_feed.subprocess.run",
+                       side_effect=tracking_run), \
+                 patch("check_green_feed.time.sleep",
+                       side_effect=lambda s: sleep_calls.append(s)), \
+                 patch("builtins.open", unittest.mock.mock_open()), \
+                 patch("check_green_feed._dump_first_failure_diagnostics"), \
+                 patch("check_green_feed.check_image", side_effect=[1, 0]):
+                result = self._run_main(["--adb", "/fake/adb", path])
+
+            self.assertEqual(result, 0, "main should succeed on the second attempt")
+
+            # Attempt 1 has 2 dumpsys calls (detect + confirm-after-dismiss);
+            # attempt 2 has 1 (detect only, no ANR found).  Total = 3.
+            self.assertEqual(
+                len(dumpsys_calls), 3,
+                f"Expected 3 dumpsys window calls (2 for attempt-1 ANR dismiss + 1 for attempt-2 detect), "
+                f"got {len(dumpsys_calls)}"
+            )
+
+            # KEYCODE_BACK must be sent exactly once (for the first-attempt ANR).
+            keyback_back_calls = [c for c in keyback_calls if "KEYCODE_BACK" in c]
+            self.assertEqual(
+                len(keyback_back_calls), 1,
+                f"Expected 1 KEYCODE_BACK for ANR dismiss, got {len(keyback_back_calls)}"
+            )
+
+            # An extra sleep must follow the KEYCODE_BACK dismiss.
+            # Standard sleeps per attempt: 2 (top-of-loop + swipe-settle).
+            # Attempt 1 also has the ANR dismiss poll sleep → total > 2 * 1 = 2 for
+            # the first attempt, i.e. total sleep count across both attempts > 4.
+            self.assertGreater(
+                len(sleep_calls), 4,
+                f"Expected extra sleep after ANR dismiss; got {len(sleep_calls)} total sleeps"
+            )
+        finally:
+            os.unlink(path)
+
+    def test_no_anr_dialog_means_no_keycode_back(self):
+        """When dumpsys window reports no ANR dialog, KEYCODE_BACK is not sent
+        and the screencap proceeds immediately (no extra sleep)."""
+        fd, path = tempfile.mkstemp(suffix=".png")
+        os.close(fd)
+        try:
+            clear_window = self._make_run_result(returncode=0, stdout="WindowState idle")
+
+            keyback_calls: list = []
+
+            def tracking_run(args, **kwargs):
+                if "KEYCODE_BACK" in args:
+                    keyback_calls.append(args)
+                r = MagicMock()
+                r.returncode = 0
+                r.stderr = ""
+                r.stdout = clear_window.stdout
+                return r
+
+            with patch("check_green_feed.subprocess.run",
+                       side_effect=tracking_run), \
+                 patch("check_green_feed.time.sleep"), \
+                 patch("builtins.open", unittest.mock.mock_open()), \
+                 patch("check_green_feed.check_image", return_value=0):
+                result = self._run_main(["--adb", "/fake/adb", path])
+
+            self.assertEqual(result, 0)
+            self.assertEqual(
+                len(keyback_calls), 0,
+                f"KEYCODE_BACK must not be sent when there is no ANR dialog; "
+                f"got {len(keyback_calls)} call(s)"
+            )
+        finally:
+            os.unlink(path)
+
+    def test_anr_check_runs_before_every_screencap(self):
+        """dumpsys window is called before every screencap attempt, not just the
+        first, so the retry loop remains self-defending throughout.
+
+        _dump_first_failure_diagnostics is patched out so that its own dumpsys
+        window call does not inflate the count for the per-retry ANR check.
+        """
+        fd, path = tempfile.mkstemp(suffix=".png")
+        os.close(fd)
+        try:
+            screencap_count = [0]
+            dumpsys_count = [0]
+
+            def tracking_run(args, **kwargs):
+                if "dumpsys" in args and "window" in args:
+                    dumpsys_count[0] += 1
+                elif "screencap" in args:
+                    screencap_count[0] += 1
+                r = MagicMock()
+                r.returncode = 0
+                r.stderr = ""
+                r.stdout = ""
+                return r
+
+            attempts = 3
+            check_results = [1] * (attempts - 1) + [0]
+
+            with patch("check_green_feed.subprocess.run",
+                       side_effect=tracking_run), \
+                 patch("check_green_feed.time.sleep"), \
+                 patch("builtins.open", unittest.mock.mock_open()), \
+                 patch("check_green_feed._dump_first_failure_diagnostics"), \
+                 patch("check_green_feed.check_image", side_effect=check_results):
+                result = self._run_main(["--adb", "/fake/adb", path])
+
+            self.assertEqual(result, 0)
+            self.assertEqual(
+                screencap_count[0], attempts,
+                f"Expected {attempts} screencaps, got {screencap_count[0]}"
+            )
+            self.assertEqual(
+                dumpsys_count[0], attempts,
+                f"Expected {attempts} dumpsys window calls (one per attempt, "
+                f"from the per-retry ANR check), got {dumpsys_count[0]}"
+            )
+        finally:
+            os.unlink(path)
+
+
+class TestDismissAnrIfPresent(unittest.TestCase):
+    """Unit tests for _dismiss_anr_if_present() called directly."""
+
+    def _make_run_result(self, returncode=0, stderr="", stdout=""):
+        result = MagicMock()
+        result.returncode = returncode
+        result.stderr = stderr
+        result.stdout = stdout
+        return result
+
+    def test_all_retries_exhausted_returns_without_raising(self):
+        """When dumpsys window always reports 'Application Not Responding' the
+        function sends KEYCODE_BACK exactly _ANR_DISMISS_MAX_RETRIES times and
+        then returns (does not raise) so the outer retry loop can keep going.
+        The final log message must mention that the dialog persisted after N retries.
+        """
+        anr_window = self._make_run_result(
+            stdout="Application Not Responding: com.google.android.apps.nexuslauncher"
+        )
+
+        keyback_calls: list[list] = []
+        run_side_effects: list = []
+        # Initial detect: ANR present.
+        run_side_effects.append(anr_window)
+        # For each retry: KEYCODE_BACK + confirm dumpsys (always shows ANR).
+        for _ in range(cgf._ANR_DISMISS_MAX_RETRIES):
+            run_side_effects.append(self._make_run_result())  # KEYCODE_BACK
+            run_side_effects.append(anr_window)               # confirm dumpsys
+
+        def tracking_run(args, **kwargs):
+            if "KEYCODE_BACK" in args:
+                keyback_calls.append(list(args))
+            return run_side_effects.pop(0)
+
+        stderr_buf = io.StringIO()
+        with patch("check_green_feed.subprocess.run", side_effect=tracking_run), \
+             patch("check_green_feed.time.sleep"), \
+             patch("sys.stderr", stderr_buf):
+            # Must return, not raise.
+            cgf._dismiss_anr_if_present("/fake/adb")
+
+        # Exactly _ANR_DISMISS_MAX_RETRIES KEYCODE_BACK calls.
+        self.assertEqual(
+            len(keyback_calls),
+            cgf._ANR_DISMISS_MAX_RETRIES,
+            f"Expected {cgf._ANR_DISMISS_MAX_RETRIES} KEYCODE_BACK sends when all retries "
+            f"are exhausted, got {len(keyback_calls)}"
+        )
+
+        # The exhaustion log line must be present.
+        log_output = stderr_buf.getvalue()
+        self.assertIn(
+            "persisted after",
+            log_output,
+            f"Expected 'persisted after' in stderr log when all retries exhausted; got: {log_output!r}"
+        )
+        self.assertIn(
+            str(cgf._ANR_DISMISS_MAX_RETRIES),
+            log_output,
+            f"Expected retry count {cgf._ANR_DISMISS_MAX_RETRIES} in stderr log; got: {log_output!r}"
+        )
 
 
 if __name__ == "__main__":
