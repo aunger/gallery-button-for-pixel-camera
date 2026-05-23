@@ -16,6 +16,8 @@ Usage:
 Exits 0 on success, non-zero on failure (prints actual dominant color).
 """
 
+import os
+import shutil
 import struct
 import subprocess
 import sys
@@ -248,13 +250,9 @@ def _dump_first_failure_diagnostics(
         print(f"[check_green_feed] logcat dump failed: {exc}", file=sys.stderr)
 
     # Save the screencap to a dedicated diagnostics file.
-    import os
-
     os.makedirs(DIAG_SCREENCAP_DIR, exist_ok=True)
     diag_path = os.path.join(DIAG_SCREENCAP_DIR, f"failure_attempt_{attempt:03d}.png")
     try:
-        import shutil
-
         shutil.copy2(screencap_path, diag_path)
         print(
             f"[check_green_feed] {ts} Diagnostic screencap saved: {diag_path}",

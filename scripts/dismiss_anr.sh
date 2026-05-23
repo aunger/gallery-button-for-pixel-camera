@@ -94,9 +94,9 @@
     kill "$ADB_LOGCAT_PID" 2>/dev/null || true
     kill "$LOGCAT_PID" 2>/dev/null || true
     rm -f "$ANR_FLAG" "$ADB_LOGCAT_PID_FILE" "$LOGCAT_FIFO"
-    echo "[dismiss_anr] '"$(date '+%H:%M:%S.%3N')"' EXIT trap: cleanup complete (elapsed ${_elapsed_ms}ms)." >&2
-    echo "[dismiss_anr] '"$(date '+%H:%M:%S.%3N')"' Last ActivityManager errors:" >&2
-    '"$ADB"' shell logcat -d ActivityManager:E '"'"'*:S'"'"' 2>/dev/null | tail -10 >&2 || true
+    echo "[dismiss_anr] [$(_ts)] EXIT trap: cleanup complete (elapsed ${_elapsed_ms}ms)." >&2
+    echo "[dismiss_anr] [$(_ts)] Last ActivityManager errors:" >&2
+    "$ADB" shell logcat -d ActivityManager:E '"'"'*:S'"'"' 2>/dev/null | tail -10 >&2 || true
   ' EXIT
 
   # ── Poll loop ────────────────────────────────────────────────────────────────
@@ -116,10 +116,8 @@
     if [ -f "$ANR_FLAG" ]; then
       rm -f "$ANR_FLAG"
       echo "[dismiss_anr] $(_ts) Logcat ANR trigger fired — waiting ${SLEEP_AFTER_ANR_DETECTED}s for dialog to render." >&2
-      echo "[dismiss_anr] ANR detected via logcat — waiting ${SLEEP_AFTER_ANR_DETECTED}s for dialog to render." >&2
       sleep "$SLEEP_AFTER_ANR_DETECTED"
       echo "[dismiss_anr] $(_ts) Sending KEYCODE_BACK to dismiss ANR dialog." >&2
-      echo "[dismiss_anr] Sending KEYCODE_BACK to dismiss ANR dialog." >&2
       "$ADB" shell input keyevent KEYCODE_BACK 2>/dev/null || true
       idle_count=0
       # Fall through to the CPU check on this same iteration.
@@ -152,13 +150,11 @@
       window_dump=$("$ADB" shell dumpsys window 2>/dev/null) || true
       if echo "$window_dump" | grep -q "AppNotRespondingDialog"; then
         echo "[dismiss_anr] $(_ts) dumpsys window safety check: AppNotRespondingDialog found — sending KEYCODE_BACK." >&2
-        echo "[dismiss_anr] CPU idle but ANR dialog still present (dumpsys window) — sending KEYCODE_BACK." >&2
         "$ADB" shell input keyevent KEYCODE_BACK 2>/dev/null || true
         idle_count=0
         # Continue the loop instead of exiting.
       else
         echo "[dismiss_anr] $(_ts) dumpsys window safety check: no AppNotRespondingDialog found." >&2
-        echo "[dismiss_anr] Pixel Launcher has settled (idle_count=$idle_count) — exiting." >&2
         exit 0
       fi
     fi
@@ -168,6 +164,5 @@
   done
 
   echo "[dismiss_anr] $(_ts) Timeout after ${TIMEOUT}s — proceeding anyway." >&2
-  echo "[dismiss_anr] Timeout after ${TIMEOUT}s — proceeding anyway." >&2
   exit 0
 ) || true
