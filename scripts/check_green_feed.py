@@ -151,6 +151,10 @@ def dominant_color(pixels_region: list[tuple[int, int, int]]) -> tuple[int, int,
     return (avg_r, avg_g, avg_b)
 
 
+_ANR_DISMISS_MAX_RETRIES = 5
+_ANR_DISMISS_POLL_SECONDS = 2
+
+
 def _dismiss_anr_if_present(adb: str) -> None:
     """Check for the Pixel Launcher ANR dialog and dismiss it if present.
 
@@ -159,6 +163,12 @@ def _dismiss_anr_if_present(adb: str) -> None:
     dialog can appear during or after the `am start -W` call (which takes 3+ s),
     after the watcher has already exited.  By checking here we ensure the retry
     loop is self-defending against late-appearing ANR dialogs.
+
+    After sending KEYCODE_BACK, polls dumpsys window to confirm the dialog has
+    actually disappeared before returning, retrying up to _ANR_DISMISS_MAX_RETRIES
+    times.  This guards against cases where KEYCODE_BACK is dispatched but the
+    dialog does not dismiss immediately (e.g. slow emulator rendering, focus
+    stolen by another window).
     """
     try:
         window_dump = subprocess.run(
@@ -167,11 +177,15 @@ def _dismiss_anr_if_present(adb: str) -> None:
             text=True,
             timeout=10,
         )
-        if "Application Not Responding" in window_dump.stdout:
-            print(
-                "[check_green_feed] ANR dialog detected before screencap — sending KEYCODE_BACK.",
-                file=sys.stderr,
-            )
+        if "Application Not Responding" not in window_dump.stdout:
+            return
+
+        ts = time.strftime("%H:%M:%S")
+        print(
+            f"[check_green_feed] {ts} ANR dialog detected before screencap — sending KEYCODE_BACK.",
+            file=sys.stderr,
+        )
+        for attempt in range(1, _ANR_DISMISS_MAX_RETRIES + 1):
             subprocess.run(
                 [adb, "shell", "input", "keyevent", "KEYCODE_BACK"],
                 check=False,
@@ -179,7 +193,29 @@ def _dismiss_anr_if_present(adb: str) -> None:
                 text=True,
                 timeout=10,
             )
-            time.sleep(RETRY_DELAY_SECONDS)
+            time.sleep(_ANR_DISMISS_POLL_SECONDS)
+            ts = time.strftime("%H:%M:%S")
+            confirm = subprocess.run(
+                [adb, "shell", "dumpsys", "window"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if "Application Not Responding" not in confirm.stdout:
+                print(
+                    f"[check_green_feed] {ts} ANR dialog dismissed after {attempt} KEYCODE_BACK(s).",
+                    file=sys.stderr,
+                )
+                return
+            print(
+                f"[check_green_feed] {ts} ANR dialog still present after KEYCODE_BACK #{attempt}.",
+                file=sys.stderr,
+            )
+        print(
+            f"[check_green_feed] {time.strftime('%H:%M:%S')} ANR dialog persisted after "
+            f"{_ANR_DISMISS_MAX_RETRIES} KEYCODE_BACK sends — proceeding to screencap anyway.",
+            file=sys.stderr,
+        )
     except Exception as exc:  # noqa: BLE001
         print(
             f"[check_green_feed] ANR pre-screencap check failed (ignored): {exc}",

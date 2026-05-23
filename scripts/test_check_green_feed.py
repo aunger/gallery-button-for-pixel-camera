@@ -495,8 +495,10 @@ class TestPerRetryAnrDismiss(unittest.TestCase):
 
     def test_anr_dialog_on_first_attempt_is_dismissed_before_screencap(self):
         """When dumpsys window reports 'Application Not Responding' before the
-        first screencap, KEYCODE_BACK is sent and an extra sleep follows.  The
-        screencap still runs and the retry loop continues normally.
+        first screencap, KEYCODE_BACK is sent and an extra sleep follows.  After
+        sending KEYCODE_BACK the dismiss function polls dumpsys window again to
+        confirm the dialog is gone before returning.  The screencap still runs
+        and the retry loop continues normally.
 
         _dump_first_failure_diagnostics is patched out so that its own subprocess
         calls do not interfere with the accounting of ANR-check calls.
@@ -512,20 +514,24 @@ class TestPerRetryAnrDismiss(unittest.TestCase):
             keyevent_ok = self._make_run_result(returncode=0)
             screencap_ok = self._make_run_result(returncode=0)
 
-            # Attempt 1: wakeup → swipe → dumpsys-window(ANR present) →
-            #             KEYCODE_BACK → [sleep inside dismiss] → screencap(fails)
-            # Attempt 2: wakeup → swipe → dumpsys-window(clear) → screencap(passes)
+            # Attempt 1:
+            #   wakeup → swipe → dumpsys-window(ANR present) →
+            #   KEYCODE_BACK → [sleep] → dumpsys-window(confirm: clear) →
+            #   screencap(fails)
+            # Attempt 2:
+            #   wakeup → swipe → dumpsys-window(detect: clear) → screencap(passes)
             run_side_effects = [
                 # attempt 1
                 self._make_run_result(),   # wakeup keyevent 224
                 self._make_run_result(),   # swipe
-                anr_window,                # dumpsys window → ANR present
+                anr_window,                # dumpsys window → ANR detected
                 keyevent_ok,               # KEYCODE_BACK dismiss
+                clear_window,              # dumpsys window → confirm dismissed
                 screencap_ok,              # screencap (written to file)
                 # attempt 2
                 self._make_run_result(),   # wakeup keyevent 224
                 self._make_run_result(),   # swipe
-                clear_window,              # dumpsys window → clear
+                clear_window,              # dumpsys window → detect: clear
                 screencap_ok,              # screencap (written to file)
             ]
 
@@ -552,10 +558,12 @@ class TestPerRetryAnrDismiss(unittest.TestCase):
 
             self.assertEqual(result, 0, "main should succeed on the second attempt")
 
-            # dumpsys window must be called before every screencap (2 attempts).
+            # Attempt 1 has 2 dumpsys calls (detect + confirm-after-dismiss);
+            # attempt 2 has 1 (detect only, no ANR found).  Total = 3.
             self.assertEqual(
-                len(dumpsys_calls), 2,
-                f"Expected 2 dumpsys window calls (one per attempt), got {len(dumpsys_calls)}"
+                len(dumpsys_calls), 3,
+                f"Expected 3 dumpsys window calls (2 for attempt-1 ANR dismiss + 1 for attempt-2 detect), "
+                f"got {len(dumpsys_calls)}"
             )
 
             # KEYCODE_BACK must be sent exactly once (for the first-attempt ANR).
@@ -567,7 +575,7 @@ class TestPerRetryAnrDismiss(unittest.TestCase):
 
             # An extra sleep must follow the KEYCODE_BACK dismiss.
             # Standard sleeps per attempt: 2 (top-of-loop + swipe-settle).
-            # Attempt 1 also has the ANR dismiss sleep → total > 2 * 1 = 2 for
+            # Attempt 1 also has the ANR dismiss poll sleep → total > 2 * 1 = 2 for
             # the first attempt, i.e. total sleep count across both attempts > 4.
             self.assertGreater(
                 len(sleep_calls), 4,
