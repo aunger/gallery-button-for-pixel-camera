@@ -16,7 +16,7 @@
 - **Do not return before posting your review.** Posting your review is the only valid exit condition. After forming your verdict, call the review-submission tool before stopping.
 
   Review pattern:
-  ```
+  ``` no
   (ReviewText, IsReviewApproval) := <review the diff; form your verdict and review text>
   post review: mcp__github__pull_request_review_write(ReviewText, IsReviewApproval)
   ```
