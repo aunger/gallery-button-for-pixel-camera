@@ -16,6 +16,8 @@ Usage:
 Exits 0 on success, non-zero on failure (prints actual dominant color).
 """
 
+import os
+import shutil
 import struct
 import subprocess
 import sys
@@ -34,6 +36,9 @@ MIN_COVERAGE = 0.90
 # Retry-loop settings (used when --adb is passed)
 MAX_ATTEMPTS = 30
 RETRY_DELAY_SECONDS = 2
+
+# Directory for diagnostic screencap saves (relative to cwd, created on demand).
+DIAG_SCREENCAP_DIR = "ci_diag_screencaps"
 
 
 def decode_png_to_rgb(path: str) -> tuple[list[list[tuple[int, int, int]]], int, int]:
@@ -146,6 +151,161 @@ def dominant_color(pixels_region: list[tuple[int, int, int]]) -> tuple[int, int,
     return (avg_r, avg_g, avg_b)
 
 
+_ANR_DISMISS_MAX_RETRIES = 5
+# Intentionally separate from RETRY_DELAY_SECONDS: this poll interval governs how
+# long to wait between each KEYCODE_BACK send and the subsequent dumpsys window
+# confirmation inside _dismiss_anr_if_present(), while RETRY_DELAY_SECONDS controls
+# the outer green-feed retry loop.  They happen to share the same value today but
+# may diverge if one needs tuning independently of the other.
+_ANR_DISMISS_POLL_SECONDS = 2
+
+
+def _dismiss_anr_if_present(adb: str) -> None:
+    """Check for the Pixel Launcher ANR dialog and dismiss it if present.
+
+    This is a lightweight guard that runs before every screencap in the retry
+    loop.  dismiss_anr.sh exits as soon as Launcher CPU goes idle, but the ANR
+    dialog can appear during or after the `am start -W` call (which takes 3+ s),
+    after the watcher has already exited.  By checking here we ensure the retry
+    loop is self-defending against late-appearing ANR dialogs.
+
+    After sending KEYCODE_BACK, polls dumpsys window to confirm the dialog has
+    actually disappeared before returning, retrying up to _ANR_DISMISS_MAX_RETRIES
+    times.  This guards against cases where KEYCODE_BACK is dispatched but the
+    dialog does not dismiss immediately (e.g. slow emulator rendering, focus
+    stolen by another window).
+    """
+    try:
+        window_dump = subprocess.run(
+            [adb, "shell", "dumpsys", "window"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if "Application Not Responding" not in window_dump.stdout:
+            return
+
+        ts = time.strftime("%H:%M:%S")
+        print(
+            f"[check_green_feed] {ts} ANR dialog detected before screencap — sending KEYCODE_BACK.",
+            file=sys.stderr,
+        )
+        for attempt in range(1, _ANR_DISMISS_MAX_RETRIES + 1):
+            subprocess.run(
+                [adb, "shell", "input", "keyevent", "KEYCODE_BACK"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            time.sleep(_ANR_DISMISS_POLL_SECONDS)
+            ts = time.strftime("%H:%M:%S")
+            confirm = subprocess.run(
+                [adb, "shell", "dumpsys", "window"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if "Application Not Responding" not in confirm.stdout:
+                print(
+                    f"[check_green_feed] {ts} ANR dialog dismissed after {attempt} KEYCODE_BACK(s).",
+                    file=sys.stderr,
+                )
+                return
+            print(
+                f"[check_green_feed] {ts} ANR dialog still present after KEYCODE_BACK #{attempt}.",
+                file=sys.stderr,
+            )
+        print(
+            f"[check_green_feed] {time.strftime('%H:%M:%S')} ANR dialog persisted after "
+            f"{_ANR_DISMISS_MAX_RETRIES} KEYCODE_BACK sends — proceeding to screencap anyway.",
+            file=sys.stderr,
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(
+            f"[check_green_feed] ANR pre-screencap check failed (ignored): {exc}",
+            file=sys.stderr,
+        )
+
+
+def _dump_first_failure_diagnostics(
+    adb: str, screencap_path: str, attempt: int, start_time: float
+) -> None:
+    """Emit diagnostics to stderr on the first retry-loop failure.
+
+    Logs the elapsed time, dumps window focus state and recent ANR events from
+    logcat, and saves the current screencap to a dedicated diagnostics file so CI
+    artifact collectors can retrieve it.  This runs only once (on the first
+    failure) to avoid filling logs with repetitive output on later retries.
+    """
+    elapsed = time.monotonic() - start_time
+    ts = time.strftime("%H:%M:%S")
+    print(
+        f"[check_green_feed] {ts} FIRST FAILURE DIAGNOSTICS "
+        f"(attempt={attempt}, elapsed={elapsed:.1f}s)",
+        file=sys.stderr,
+    )
+
+    # Dump window focus / dialog state — filtered for the most relevant lines.
+    try:
+        window_result = subprocess.run(
+            [adb, "shell", "dumpsys", "window"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        relevant_lines = [
+            line
+            for line in window_result.stdout.splitlines()
+            if any(kw in line for kw in ("Dialog", "Focused", "mCurrentFocus"))
+        ]
+        print(
+            f"[check_green_feed] {ts} dumpsys window (Dialog/Focused/mCurrentFocus lines):",
+            file=sys.stderr,
+        )
+        for line in relevant_lines:
+            print(f"  {line}", file=sys.stderr)
+        if not relevant_lines:
+            print("  (no matching lines)", file=sys.stderr)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[check_green_feed] dumpsys window failed: {exc}", file=sys.stderr)
+
+    # Dump the last 20 lines of recent ActivityManager errors from logcat.
+    try:
+        logcat_result = subprocess.run(
+            [adb, "shell", "logcat", "-d", "-t", "100", "ActivityManager:E", "*:S"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        logcat_lines = logcat_result.stdout.splitlines()[-20:]
+        print(
+            f"[check_green_feed] {ts} logcat ActivityManager:E (last 20 lines):",
+            file=sys.stderr,
+        )
+        for line in logcat_lines:
+            print(f"  {line}", file=sys.stderr)
+        if not logcat_lines:
+            print("  (no output)", file=sys.stderr)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[check_green_feed] logcat dump failed: {exc}", file=sys.stderr)
+
+    # Save the screencap to a dedicated diagnostics file.
+    os.makedirs(DIAG_SCREENCAP_DIR, exist_ok=True)
+    diag_path = os.path.join(DIAG_SCREENCAP_DIR, f"failure_attempt_{attempt:03d}.png")
+    try:
+        shutil.copy2(screencap_path, diag_path)
+        print(
+            f"[check_green_feed] {ts} Diagnostic screencap saved: {diag_path}",
+            file=sys.stderr,
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(
+            f"[check_green_feed] Failed to save diagnostic screencap: {exc}",
+            file=sys.stderr,
+        )
+
+
 def check_image(path: str) -> int:
     """Check a single PNG image. Returns 0 on pass, 1 on fail, 2 on error."""
     try:
@@ -217,6 +377,8 @@ def main() -> int:
         return check_image(path)
 
     # Retry-loop mode: capture a fresh screencap on each attempt.
+    start_time = time.monotonic()
+    first_failure_diagnosed = False
     for attempt in range(1, MAX_ATTEMPTS + 1):
         # Sleep first so the display has time to render before the first check
         # and between retries; the caller has already waited for am start -W.
@@ -264,6 +426,11 @@ def main() -> int:
                 time.sleep(RETRY_DELAY_SECONDS)
         # Wait for any swipe animation to settle before capturing the screen.
         time.sleep(RETRY_DELAY_SECONDS)
+        # Per-retry ANR check: if the Pixel Launcher ANR dialog appeared after
+        # dismiss_anr.sh exited (which can happen because the watcher exits as
+        # soon as CPU goes idle, before am start -W completes), dismiss it now
+        # rather than capturing a screencap that is obscured by the dialog.
+        _dismiss_anr_if_present(adb_path)
         with open(path, "wb") as out:
             subprocess.run(
                 [adb_path, "exec-out", "screencap", "-p"],
@@ -273,6 +440,9 @@ def main() -> int:
         result = check_image(path)
         if result == 0:
             return 0
+        if not first_failure_diagnosed:
+            first_failure_diagnosed = True
+            _dump_first_failure_diagnostics(adb_path, path, attempt, start_time)
         if attempt < MAX_ATTEMPTS:
             print(f"Attempt {attempt} failed, retrying...")
     print(f"ERROR: pre-flight failed after {MAX_ATTEMPTS} attempts")

@@ -29,6 +29,9 @@
 (
   set -euo pipefail
 
+  # ── Timestamp helper ─────────────────────────────────────────────────────────
+  _ts() { date '+%H:%M:%S.%3N'; }
+
   # ── Resolve adb ─────────────────────────────────────────────────────────────
   ADB=""
   while [[ $# -gt 0 ]]; do
@@ -46,6 +49,9 @@
   if [[ -z "$ADB" ]]; then
     ADB="${ANDROID_HOME:-}/platform-tools/adb"
   fi
+
+  SCRIPT_START_TS="$(date +%s%3N)"
+  echo "[dismiss_anr] $(_ts) Script started (adb=$ADB)." >&2
 
   # ── Phase 1: logcat trigger ──────────────────────────────────────────────────
   # Clear the logcat buffer and start a background stream that sets a flag file
@@ -71,6 +77,7 @@
   # Start adb logcat in the background, feeding a named pipe.
   "$ADB" logcat ActivityManager:E '*:S' 2>/dev/null > "$LOGCAT_FIFO" &
   echo $! > "$ADB_LOGCAT_PID_FILE"
+  echo "[dismiss_anr] $(_ts) Logcat stream started (pid=$(cat "$ADB_LOGCAT_PID_FILE"))." >&2
 
   # Consumer subshell: reads from the fifo and touches ANR_FLAG on every match.
   ( while IFS= read -r line; do
@@ -82,10 +89,14 @@
   LOGCAT_PID=$!
 
   trap '
+    _elapsed_ms=$(( $(date +%s%3N) - SCRIPT_START_TS ))
     ADB_LOGCAT_PID="$(cat "$ADB_LOGCAT_PID_FILE" 2>/dev/null || true)"
     kill "$ADB_LOGCAT_PID" 2>/dev/null || true
     kill "$LOGCAT_PID" 2>/dev/null || true
     rm -f "$ANR_FLAG" "$ADB_LOGCAT_PID_FILE" "$LOGCAT_FIFO"
+    echo "[dismiss_anr] [$(_ts)] EXIT trap: cleanup complete (elapsed ${_elapsed_ms}ms)." >&2
+    echo "[dismiss_anr] [$(_ts)] Last ActivityManager errors:" >&2
+    "$ADB" shell logcat -d ActivityManager:E '"'"'*:S'"'"' 2>/dev/null | tail -10 >&2 || true
   ' EXIT
 
   # ── Poll loop ────────────────────────────────────────────────────────────────
@@ -96,14 +107,17 @@
   SLEEP_AFTER_ANR_DETECTED="${SLEEP_AFTER_ANR_DETECTED:-7}"
   elapsed=0
   idle_count=0
+  poll_n=0
 
   while [[ $elapsed -lt $TIMEOUT ]]; do
+    poll_n=$((poll_n + 1))
+
     # Phase 2: if the logcat background job flagged an ANR, dismiss it.
     if [ -f "$ANR_FLAG" ]; then
       rm -f "$ANR_FLAG"
-      echo "[dismiss_anr] ANR detected via logcat — waiting ${SLEEP_AFTER_ANR_DETECTED}s for dialog to render." >&2
+      echo "[dismiss_anr] $(_ts) Logcat ANR trigger fired — waiting ${SLEEP_AFTER_ANR_DETECTED}s for dialog to render." >&2
       sleep "$SLEEP_AFTER_ANR_DETECTED"
-      echo "[dismiss_anr] Sending KEYCODE_BACK to dismiss ANR dialog." >&2
+      echo "[dismiss_anr] $(_ts) Sending KEYCODE_BACK to dismiss ANR dialog." >&2
       "$ADB" shell input keyevent KEYCODE_BACK 2>/dev/null || true
       idle_count=0
       # Fall through to the CPU check on this same iteration.
@@ -116,6 +130,7 @@
     if [[ -z "$launcher_line" ]]; then
       # Launcher process not present — treat as idle.
       idle_count=$((idle_count + 1))
+      echo "[dismiss_anr] $(_ts) [t=${elapsed}s poll=${poll_n}] idle_count=${idle_count} cpu=absent" >&2
     else
       # Extract the leading integer percentage (e.g. "  12% com.google.android.apps...")
       pct="$(echo "$launcher_line" | grep -oE '^[[:space:]]*[0-9]+' | tr -d ' ' || true)"
@@ -124,6 +139,7 @@
       else
         idle_count=0
       fi
+      echo "[dismiss_anr] $(_ts) [t=${elapsed}s poll=${poll_n}] idle_count=${idle_count} cpu=${pct:-(unknown)}%" >&2
     fi
 
     if [[ $idle_count -ge 2 ]]; then
@@ -132,13 +148,13 @@
       # starts or after the CPU has already settled.  A dumpsys window check here
       # is the fallback that catches those cases.
       window_dump=$("$ADB" shell dumpsys window 2>/dev/null) || true
-      if echo "$window_dump" | grep -q "AppNotRespondingDialog"; then
-        echo "[dismiss_anr] CPU idle but ANR dialog still present (dumpsys window) — sending KEYCODE_BACK." >&2
+      if echo "$window_dump" | grep -q "Application Not Responding"; then
+        echo "[dismiss_anr] $(_ts) dumpsys window safety check: ANR dialog found — sending KEYCODE_BACK." >&2
         "$ADB" shell input keyevent KEYCODE_BACK 2>/dev/null || true
         idle_count=0
         # Continue the loop instead of exiting.
       else
-        echo "[dismiss_anr] Pixel Launcher has settled (idle_count=$idle_count) — exiting." >&2
+        echo "[dismiss_anr] $(_ts) dumpsys window safety check: no ANR dialog found." >&2
         exit 0
       fi
     fi
@@ -147,6 +163,6 @@
     elapsed=$((elapsed + POLL_INTERVAL))
   done
 
-  echo "[dismiss_anr] Timeout after ${TIMEOUT}s — proceeding anyway." >&2
+  echo "[dismiss_anr] $(_ts) Timeout after ${TIMEOUT}s — proceeding anyway." >&2
   exit 0
 ) || true
