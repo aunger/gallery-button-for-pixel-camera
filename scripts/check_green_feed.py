@@ -149,6 +149,42 @@ def dominant_color(pixels_region: list[tuple[int, int, int]]) -> tuple[int, int,
     return (avg_r, avg_g, avg_b)
 
 
+def _dismiss_anr_if_present(adb: str) -> None:
+    """Check for the Pixel Launcher ANR dialog and dismiss it if present.
+
+    This is a lightweight guard that runs before every screencap in the retry
+    loop.  dismiss_anr.sh exits as soon as Launcher CPU goes idle, but the ANR
+    dialog can appear during or after the `am start -W` call (which takes 3+ s),
+    after the watcher has already exited.  By checking here we ensure the retry
+    loop is self-defending against late-appearing ANR dialogs.
+    """
+    try:
+        window_dump = subprocess.run(
+            [adb, "shell", "dumpsys", "window"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if "AppNotRespondingDialog" in window_dump.stdout:
+            print(
+                "[check_green_feed] ANR dialog detected before screencap — sending KEYCODE_BACK.",
+                file=sys.stderr,
+            )
+            subprocess.run(
+                [adb, "shell", "input", "keyevent", "KEYCODE_BACK"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            time.sleep(RETRY_DELAY_SECONDS)
+    except Exception as exc:  # noqa: BLE001
+        print(
+            f"[check_green_feed] ANR pre-screencap check failed (ignored): {exc}",
+            file=sys.stderr,
+        )
+
+
 def _dump_first_failure_diagnostics(
     adb: str, screencap_path: str, attempt: int, start_time: float
 ) -> None:
@@ -351,6 +387,11 @@ def main() -> int:
                 time.sleep(RETRY_DELAY_SECONDS)
         # Wait for any swipe animation to settle before capturing the screen.
         time.sleep(RETRY_DELAY_SECONDS)
+        # Per-retry ANR check: if the Pixel Launcher ANR dialog appeared after
+        # dismiss_anr.sh exited (which can happen because the watcher exits as
+        # soon as CPU goes idle, before am start -W completes), dismiss it now
+        # rather than capturing a screencap that is obscured by the dialog.
+        _dismiss_anr_if_present(adb_path)
         with open(path, "wb") as out:
             subprocess.run(
                 [adb_path, "exec-out", "screencap", "-p"],
