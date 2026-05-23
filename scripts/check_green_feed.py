@@ -152,6 +152,11 @@ def dominant_color(pixels_region: list[tuple[int, int, int]]) -> tuple[int, int,
 
 
 _ANR_DISMISS_MAX_RETRIES = 5
+# Intentionally separate from RETRY_DELAY_SECONDS: this poll interval governs how
+# long to wait between each KEYCODE_BACK send and the subsequent dumpsys window
+# confirmation inside _dismiss_anr_if_present(), while RETRY_DELAY_SECONDS controls
+# the outer green-feed retry loop.  They happen to share the same value today but
+# may diverge if one needs tuning independently of the other.
 _ANR_DISMISS_POLL_SECONDS = 2
 
 

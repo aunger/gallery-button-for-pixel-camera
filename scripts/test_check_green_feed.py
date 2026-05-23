@@ -668,5 +668,68 @@ class TestPerRetryAnrDismiss(unittest.TestCase):
             os.unlink(path)
 
 
+class TestDismissAnrIfPresent(unittest.TestCase):
+    """Unit tests for _dismiss_anr_if_present() called directly."""
+
+    def _make_run_result(self, returncode=0, stderr="", stdout=""):
+        result = MagicMock()
+        result.returncode = returncode
+        result.stderr = stderr
+        result.stdout = stdout
+        return result
+
+    def test_all_retries_exhausted_returns_without_raising(self):
+        """When dumpsys window always reports 'Application Not Responding' the
+        function sends KEYCODE_BACK exactly _ANR_DISMISS_MAX_RETRIES times and
+        then returns (does not raise) so the outer retry loop can keep going.
+        The final log message must mention that the dialog persisted after N retries.
+        """
+        anr_window = self._make_run_result(
+            stdout="Application Not Responding: com.google.android.apps.nexuslauncher"
+        )
+
+        keyback_calls: list[list] = []
+        run_side_effects: list = []
+        # Initial detect: ANR present.
+        run_side_effects.append(anr_window)
+        # For each retry: KEYCODE_BACK + confirm dumpsys (always shows ANR).
+        for _ in range(cgf._ANR_DISMISS_MAX_RETRIES):
+            run_side_effects.append(self._make_run_result())  # KEYCODE_BACK
+            run_side_effects.append(anr_window)               # confirm dumpsys
+
+        def tracking_run(args, **kwargs):
+            if "KEYCODE_BACK" in args:
+                keyback_calls.append(list(args))
+            return run_side_effects.pop(0)
+
+        stderr_buf = io.StringIO()
+        with patch("check_green_feed.subprocess.run", side_effect=tracking_run), \
+             patch("check_green_feed.time.sleep"), \
+             patch("sys.stderr", stderr_buf):
+            # Must return, not raise.
+            cgf._dismiss_anr_if_present("/fake/adb")
+
+        # Exactly _ANR_DISMISS_MAX_RETRIES KEYCODE_BACK calls.
+        self.assertEqual(
+            len(keyback_calls),
+            cgf._ANR_DISMISS_MAX_RETRIES,
+            f"Expected {cgf._ANR_DISMISS_MAX_RETRIES} KEYCODE_BACK sends when all retries "
+            f"are exhausted, got {len(keyback_calls)}"
+        )
+
+        # The exhaustion log line must be present.
+        log_output = stderr_buf.getvalue()
+        self.assertIn(
+            "persisted after",
+            log_output,
+            f"Expected 'persisted after' in stderr log when all retries exhausted; got: {log_output!r}"
+        )
+        self.assertIn(
+            str(cgf._ANR_DISMISS_MAX_RETRIES),
+            log_output,
+            f"Expected retry count {cgf._ANR_DISMISS_MAX_RETRIES} in stderr log; got: {log_output!r}"
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
