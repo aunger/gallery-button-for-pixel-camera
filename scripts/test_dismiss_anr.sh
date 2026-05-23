@@ -72,7 +72,7 @@ echo "=== (b) ANR-detection branch ==="
 ANR_KEYEVENT_FILE="$TMPDIR_TESTS/keyevent_sent"
 
 # The logcat mock emits the ANR line immediately, then exits.
-# After KEYCODE_BACK is sent, cpuinfo reports low CPU so idle_count reaches 2.
+# After KEYCODE_ENTER is sent, cpuinfo reports low CPU so idle_count reaches 2.
 mock_adb_anr="$(make_mock_adb "adb_anr" "
 case \"\$*\" in
   *'logcat -c'*)
@@ -84,7 +84,7 @@ case \"\$*\" in
   *'dumpsys cpuinfo'*)
     echo '  2% com.google.android.apps.nexuslauncher: launcher'
     ;;
-  *'input keyevent KEYCODE_BACK'*)
+  *'input keyevent KEYCODE_ENTER'*)
     touch '$ANR_KEYEVENT_FILE'
     ;;
   *)
@@ -104,9 +104,9 @@ else
 fi
 
 if [[ -f "$ANR_KEYEVENT_FILE" ]]; then
-  pass "KEYCODE_BACK keyevent sent to dismiss ANR dialog"
+  pass "KEYCODE_ENTER keyevent sent to dismiss ANR dialog"
 else
-  fail "KEYCODE_BACK keyevent was NOT sent when ANR dialog was detected"
+  fail "KEYCODE_ENTER keyevent was NOT sent when ANR dialog was detected"
 fi
 
 # ── (c) idle-count exit path ──────────────────────────────────────────────────
@@ -191,7 +191,7 @@ case \"\$*\" in
   *'dumpsys cpuinfo'*)
     echo '  80% com.google.android.apps.nexuslauncher: launcher'
     ;;
-  *'input keyevent KEYCODE_BACK'*)
+  *'input keyevent KEYCODE_ENTER'*)
     :
     ;;
   *)
@@ -253,7 +253,7 @@ case \"\$*\" in
       echo '  1% com.google.android.apps.nexuslauncher: launcher'
     fi
     ;;
-  *'input keyevent KEYCODE_BACK'*)
+  *'input keyevent KEYCODE_ENTER'*)
     count=\$(cat '$SECOND_ANR_KEYEVENT_COUNT_FILE')
     count=\$((count + 1))
     echo \$count > '$SECOND_ANR_KEYEVENT_COUNT_FILE'
@@ -275,9 +275,9 @@ fi
 
 keyevent_count="$(cat "$SECOND_ANR_KEYEVENT_COUNT_FILE")"
 if [[ $keyevent_count -ge 2 ]]; then
-  pass "second ANR: KEYCODE_BACK sent at least twice (got $keyevent_count)"
+  pass "second ANR: KEYCODE_ENTER sent at least twice (got $keyevent_count)"
 else
-  fail "second ANR: KEYCODE_BACK sent only $keyevent_count time(s) — expected at least 2"
+  fail "second ANR: KEYCODE_ENTER sent only $keyevent_count time(s) — expected at least 2"
 fi
 
 # ── (g) idle_count=2 but ANR dialog still present (dumpsys window fallback) ───
@@ -319,7 +319,7 @@ case \"\$*\" in
       echo 'WindowState idle'
     fi
     ;;
-  *'input keyevent KEYCODE_BACK'*)
+  *'input keyevent KEYCODE_ENTER'*)
     touch '$DUMPSYS_WINDOW_KEYEVENT_FILE'
     ;;
   *)
@@ -338,9 +338,9 @@ else
 fi
 
 if [[ -f "$DUMPSYS_WINDOW_KEYEVENT_FILE" ]]; then
-  pass "dumpsys window fallback: KEYCODE_BACK sent when ANR dialog detected via dumpsys window"
+  pass "dumpsys window fallback: KEYCODE_ENTER sent when ANR dialog detected via dumpsys window"
 else
-  fail "dumpsys window fallback: KEYCODE_BACK was NOT sent when ANR dialog was found via dumpsys window"
+  fail "dumpsys window fallback: KEYCODE_ENTER was NOT sent when ANR dialog was found via dumpsys window"
 fi
 
 dumpsys_call_count="$(cat "$DUMPSYS_WINDOW_CALL_COUNT_FILE")"
@@ -348,6 +348,68 @@ if [[ $dumpsys_call_count -ge 2 ]]; then
   pass "dumpsys window fallback: dumpsys window was checked more than once (got $dumpsys_call_count) — loop continued after first dialog detection"
 else
   fail "dumpsys window fallback: dumpsys window checked only $dumpsys_call_count time(s) — loop should have continued"
+fi
+
+# ── (h) Unknown CPU reading does not increment idle_count ────────────────────
+echo ""
+echo "=== (h) Unknown CPU reading does not increment idle_count ==="
+
+# Scenario: cpuinfo returns a nexuslauncher line that has no leading integer
+# (the percentage is unparseable, e.g. the line begins with a non-digit).
+# The script should NOT treat this as idle and should NOT exit after two such
+# readings.  Instead it skips those iterations, waiting for a known reading.
+# After two unparseable readings followed by two known-low readings the script
+# exits 0 — confirming that idle_count was not incremented during the unknown
+# readings.
+#
+# To verify the "skip" behaviour we count how many times cpuinfo is polled:
+# if idle_count had been incremented on the unknown readings, the script would
+# exit after 2 polls (2 unknown readings → idle_count=2 → exit).  With the
+# fix, it needs at least 4 polls (2 unknown + 2 known-low) before exiting.
+
+UNKNOWN_CPU_CALL_COUNT_FILE="$TMPDIR_TESTS/unknown_cpu_call_count"
+echo 0 > "$UNKNOWN_CPU_CALL_COUNT_FILE"
+
+mock_adb_unknown_cpu="$(make_mock_adb "adb_unknown_cpu" "
+case \"\$*\" in
+  *'logcat -c'*)
+    exit 0
+    ;;
+  *'logcat'*)
+    sleep 60
+    ;;
+  *'dumpsys cpuinfo'*)
+    count=\$(cat '$UNKNOWN_CPU_CALL_COUNT_FILE')
+    count=\$((count + 1))
+    echo \$count > '$UNKNOWN_CPU_CALL_COUNT_FILE'
+    if [[ \$count -le 2 ]]; then
+      # First two polls: line exists but percentage is not a leading integer.
+      echo '  (unknown) com.google.android.apps.nexuslauncher: launcher'
+    else
+      # Subsequent polls: known low CPU so idle_count increments.
+      echo '  2% com.google.android.apps.nexuslauncher: launcher'
+    fi
+    ;;
+  *)
+    :
+    ;;
+esac
+")"
+
+bash "$DISMISS_ANR" --adb "$mock_adb_unknown_cpu"
+unknown_status=$?
+
+if [[ $unknown_status -eq 0 ]]; then
+  pass "unknown CPU: script exits 0"
+else
+  fail "unknown CPU: script exited $unknown_status (expected 0)"
+fi
+
+unknown_call_count="$(cat "$UNKNOWN_CPU_CALL_COUNT_FILE")"
+if [[ $unknown_call_count -ge 4 ]]; then
+  pass "unknown CPU: cpuinfo polled at least 4 times (unknown readings did not increment idle_count); got $unknown_call_count"
+else
+  fail "unknown CPU: cpuinfo polled only $unknown_call_count time(s) — unknown readings must have incorrectly incremented idle_count (expected >= 4)"
 fi
 
 # ── Summary ──────────────────────────────────────────────────────────────────
