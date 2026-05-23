@@ -134,12 +134,16 @@
     else
       # Extract the leading integer percentage (e.g. "  12% com.google.android.apps...")
       pct="$(echo "$launcher_line" | grep -oE '^[[:space:]]*[0-9]+' | tr -d ' ' || true)"
-      if [[ -z "$pct" ]] || [[ "$pct" -lt 5 ]]; then
+      if [[ -z "$pct" ]]; then
+        # Percentage not parseable — skip this iteration without changing idle_count.
+        echo "[dismiss_anr] $(_ts) [t=${elapsed}s poll=${poll_n}] idle_count=${idle_count} cpu=(unknown)%" >&2
+      elif [[ "$pct" -lt 5 ]]; then
         idle_count=$((idle_count + 1))
+        echo "[dismiss_anr] $(_ts) [t=${elapsed}s poll=${poll_n}] idle_count=${idle_count} cpu=${pct}%" >&2
       else
         idle_count=0
+        echo "[dismiss_anr] $(_ts) [t=${elapsed}s poll=${poll_n}] idle_count=${idle_count} cpu=${pct}%" >&2
       fi
-      echo "[dismiss_anr] $(_ts) [t=${elapsed}s poll=${poll_n}] idle_count=${idle_count} cpu=${pct:-(unknown)}%" >&2
     fi
 
     if [[ $idle_count -ge 2 ]]; then
