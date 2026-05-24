@@ -584,7 +584,7 @@ class TestPerRetryAnrDismiss(unittest.TestCase):
         finally:
             os.unlink(path)
 
-    def test_no_anr_dialog_means_no_keycode_back(self):
+    def test_no_anr_dialog_means_no_dismiss_keyevent(self):
         """When dumpsys window reports no ANR dialog, KEYCODE_ENTER is not sent
         and the screencap proceeds immediately (no extra sleep)."""
         fd, path = tempfile.mkstemp(suffix=".png")
@@ -592,11 +592,11 @@ class TestPerRetryAnrDismiss(unittest.TestCase):
         try:
             clear_window = self._make_run_result(returncode=0, stdout="WindowState idle")
 
-            keyback_calls: list = []
+            dismiss_calls: list = []
 
             def tracking_run(args, **kwargs):
                 if "KEYCODE_ENTER" in args:
-                    keyback_calls.append(args)
+                    dismiss_calls.append(args)
                 r = MagicMock()
                 r.returncode = 0
                 r.stderr = ""
@@ -612,9 +612,9 @@ class TestPerRetryAnrDismiss(unittest.TestCase):
 
             self.assertEqual(result, 0)
             self.assertEqual(
-                len(keyback_calls), 0,
+                len(dismiss_calls), 0,
                 f"KEYCODE_ENTER must not be sent when there is no ANR dialog; "
-                f"got {len(keyback_calls)} call(s)"
+                f"got {len(dismiss_calls)} call(s)"
             )
         finally:
             os.unlink(path)
