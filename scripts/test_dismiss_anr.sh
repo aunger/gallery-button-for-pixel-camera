@@ -253,9 +253,9 @@ echo "=== (f) Second ANR after first is dismissed ==="
 # the 3 s POLL_INTERVAL), before emitting the second ANR line.  A 5 s gap is
 # sufficient: it guarantees the first flag has been consumed and cleared before
 # the second ANR is written.  The mock then hangs so the consumer while-read
-# loop stays open.  The mock cpuinfo returns high CPU until KEYCODE_BACK has
+# loop stays open.  The mock cpuinfo returns high CPU until KEYCODE_ENTER has
 # been sent twice, then returns low CPU so idle_count reaches 2.
-# We verify that KEYCODE_BACK is sent at least twice and the script exits 0.
+# We verify that KEYCODE_ENTER is sent at least twice and the script exits 0.
 
 SECOND_ANR_KEYEVENT_COUNT_FILE="$TMPDIR_TESTS/second_anr_keyevent_count"
 echo 0 > "$SECOND_ANR_KEYEVENT_COUNT_FILE"
