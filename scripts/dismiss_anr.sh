@@ -22,7 +22,11 @@
 #
 # Environment:
 #   SLEEP_AFTER_ANR_DETECTED   Seconds to wait after logcat fires before sending
-#                              KEYCODE_BACK (default: 7). Override in tests.
+#                              KEYCODE_ENTER (default: 7). Override in tests.
+#   LAUNCHER_PACKAGE           Package name of the launcher to watch.
+#                              Default: com.google.android.apps.nexuslauncher
+#                              (matches google_apis emulator images and Pixel devices).
+#                              AOSP images use com.android.launcher3.
 
 # Run the real logic in a subshell with strict error handling.
 # The outer script catches any failure from the subshell and still exits 0.
@@ -79,10 +83,15 @@
   echo $! > "$ADB_LOGCAT_PID_FILE"
   echo "[dismiss_anr] $(_ts) Logcat stream started (pid=$(cat "$ADB_LOGCAT_PID_FILE"))." >&2
 
+  # Launcher package to watch for ANR events and CPU usage.
+  # Default matches google_apis emulator images and Pixel devices.
+  # Override to com.android.launcher3 for AOSP images.
+  LAUNCHER_PACKAGE="${LAUNCHER_PACKAGE:-com.google.android.apps.nexuslauncher}"
+
   # Consumer subshell: reads from the fifo and touches ANR_FLAG on every match.
   ( while IFS= read -r line; do
       case "$line" in
-        *'ANR in com.google.android.apps.nexuslauncher'*)
+        *"ANR in ${LAUNCHER_PACKAGE}"*)
           touch "$ANR_FLAG" ;;
       esac
     done < "$LOGCAT_FIFO" ) &
@@ -123,9 +132,9 @@
       # Fall through to the CPU check on this same iteration.
     fi
 
-    # Phase 3: check Pixel Launcher CPU usage.
+    # Phase 3: check launcher CPU usage.
     cpu_dump="$("$ADB" shell dumpsys cpuinfo 2>/dev/null || true)"
-    launcher_line="$(echo "$cpu_dump" | grep -i "nexuslauncher" | head -1 || true)"
+    launcher_line="$(echo "$cpu_dump" | grep -iF "$LAUNCHER_PACKAGE" | head -1 || true)"
 
     if [[ -z "$launcher_line" ]]; then
       # Launcher process not present — treat as idle.
