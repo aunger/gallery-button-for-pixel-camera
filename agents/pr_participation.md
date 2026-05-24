@@ -21,6 +21,11 @@
   post review: mcp__github__pull_request_review_write(ReviewText, IsReviewApproval)
   ```
 
+- A Reviewer **may** give conditional approval: approval combined with a final instruction the Author must carry out before merging. When doing so:
+  - Clearly separate the approval signal from the instruction so the Orchestrator can parse both.
+  - Phrase it unambiguously, e.g. "Approved, pending [specific change]." or "Approved — please [specific action] before merging."
+  - Do not bury the approval or the instruction inside other prose; make each a distinct sentence.
+
 ## Author / Programmer
 
 Terminology: In most cases, the *Author* is also referred to as *Programmer*. In this document, we use the term *Author* to allow for PRs that don't involve code changes.
