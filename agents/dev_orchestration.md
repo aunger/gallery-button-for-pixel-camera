@@ -49,6 +49,32 @@ The Orchestrator is not a Reviewer or a Programmer.
 - Relay any relevant instruction from the user
 - The Reviewer posts its review immediately upon completing its analysis and then exits. **Do not** instruct the Reviewer to poll CI or delay posting — CI checking is handled by the Orchestrator via a `Monitor` tool call (see below).
 
+## Handling conditional approval
+
+A Reviewer may give **conditional approval**: an approval combined with a specific instruction the Author must carry out before merging. The Reviewer will phrase it unambiguously, e.g. "Approved, pending [specific change]."
+
+**Treat conditional approval as "changes requested"** for workflow purposes. The Author must still act.
+
+```
+  if Reviewer gave conditional approval:
+    route to Author; instruct Author to make only the specific change(s) named
+    after Author commits the targeted change:
+      spawn a Haiku sanity-check agent (model: haiku) with narrowed context:
+        - the Reviewer's specific instruction (verbatim)
+        - the Author's new diff/commit addressing it
+        - nothing else (no full PR diff, no prior review history)
+      prompt the Haiku agent with exactly:
+        "The Reviewer requested [specific change]. The Author responded with
+         [diff]. Did the Author address this and only this?"
+      if Haiku confirms yes  → treat as approved; proceed to CI Monitor loop (do NOT run another full review cycle)
+      if Haiku raises a new concern → escalate to user; stop
+```
+
+**Haiku agent constraints:**
+- Do not give the Haiku agent the full PR diff or review history.
+- The Haiku agent's only question is whether the Author addressed the requested change and nothing else.
+- If the Haiku agent surfaces a concern beyond the scope of the Reviewer's instruction, do not spawn a new review cycle — escalate to the user instead.
+
 ## CI checking after a Reviewer exits (Monitor loop)
 
 After the Reviewer exits and delivers its decision, the Orchestrator acts as follows:
