@@ -65,15 +65,21 @@ A Reviewer may give **conditional approval**: an approval combined with a specif
         - nothing else (no full PR diff, no prior review history)
       prompt the Haiku agent with exactly:
         "The Reviewer requested [specific change]. The Author responded with
-         [diff]. Did the Author address this and only this?"
-      if Haiku confirms yes  → treat as approved; proceed to CI Monitor loop (do NOT run another full review cycle)
-      if Haiku raises a new concern → escalate to user; stop
+         [diff]. Answer one of three ways: (A) the Author fully addressed
+         the requested change and introduced no other concerns; (B) the
+         Author did not address the requested change (incomplete or missing
+         work, no new concerns raised); or (C) the Author's response raises
+         a new concern beyond the scope of the original request."
+      if Haiku answers A → treat as approved; proceed to CI Monitor loop (do NOT run another full review cycle)
+      if Haiku answers B → re-route Author to complete the task; treat as "changes requested" again
+      if Haiku answers C → escalate to user; stop
 ```
 
 **Haiku agent constraints:**
 - Do not give the Haiku agent the full PR diff or review history.
-- The Haiku agent's only question is whether the Author addressed the requested change and nothing else.
-- If the Haiku agent surfaces a concern beyond the scope of the Reviewer's instruction, do not spawn a new review cycle — escalate to the user instead.
+- The Haiku agent must distinguish three outcomes: (A) fully addressed with no new concerns, (B) not addressed (incomplete/missing work), or (C) new concern introduced beyond the original request.
+- If Haiku returns B, re-route the Author to complete the task — do not escalate to the user.
+- If Haiku returns C, do not spawn a new review cycle — escalate to the user instead.
 
 ## CI checking after a Reviewer exits (Monitor loop)
 
