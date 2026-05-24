@@ -23,10 +23,6 @@
 # Environment:
 #   SLEEP_AFTER_ANR_DETECTED   Seconds to wait after logcat fires before sending
 #                              KEYCODE_ENTER (default: 7). Override in tests.
-#   LAUNCHER_PACKAGE           Package name of the launcher to watch.
-#                              Default: com.google.android.apps.nexuslauncher
-#                              (matches google_apis emulator images and Pixel devices).
-#                              AOSP images use com.android.launcher3.
 
 # Run the real logic in a subshell with strict error handling.
 # The outer script catches any failure from the subshell and still exits 0.
@@ -57,6 +53,22 @@
   SCRIPT_START_TS="$(date +%s%3N)"
   echo "[dismiss_anr] $(_ts) Script started (adb=$ADB)." >&2
 
+  # ── Detect the home/launcher package at startup ───────────────────────────────
+  # Try the intent resolution approach first; fall back to pattern matching.
+  LAUNCHER_PKG=""
+  _resolve_out="$("$ADB" shell cmd package resolve-activity --brief \
+      -a android.intent.action.MAIN -c android.intent.category.HOME \
+      2>/dev/null | head -1 || true)"
+  if [[ -n "$_resolve_out" ]] && [[ "$_resolve_out" == */* ]]; then
+    LAUNCHER_PKG="${_resolve_out%%/*}"
+  fi
+
+  if [[ -n "$LAUNCHER_PKG" ]]; then
+    echo "[dismiss_anr] $(_ts) Launcher detected: $LAUNCHER_PKG" >&2
+  else
+    echo "[dismiss_anr] $(_ts) Launcher detection failed — using auto-detected via pattern fallback (pixellauncher|launcher3)." >&2
+  fi
+
   # ── Phase 1: logcat trigger ──────────────────────────────────────────────────
   # Clear the logcat buffer and start a background stream that sets a flag file
   # the moment an ANR for Pixel Launcher appears in the log.  This costs nothing
@@ -83,16 +95,24 @@
   echo $! > "$ADB_LOGCAT_PID_FILE"
   echo "[dismiss_anr] $(_ts) Logcat stream started (pid=$(cat "$ADB_LOGCAT_PID_FILE"))." >&2
 
-  # Launcher package to watch for ANR events and CPU usage.
-  # Default matches google_apis emulator images and Pixel devices.
-  # Override to com.android.launcher3 for AOSP images.
-  LAUNCHER_PACKAGE="${LAUNCHER_PACKAGE:-com.google.android.apps.nexuslauncher}"
-
   # Consumer subshell: reads from the fifo and touches ANR_FLAG on every match.
+  # Uses the detected LAUNCHER_PKG if available, otherwise falls back to a
+  # case-insensitive pattern covering both Pixel and AOSP launchers.
+  _LAUNCHER_PKG_LOCAL="$LAUNCHER_PKG"
   ( while IFS= read -r line; do
       case "$line" in
-        *"ANR in ${LAUNCHER_PACKAGE}"*)
-          touch "$ANR_FLAG" ;;
+        *'ANR in '*)
+          if [[ -n "$_LAUNCHER_PKG_LOCAL" ]]; then
+            case "$line" in
+              *"ANR in $_LAUNCHER_PKG_LOCAL"*) touch "$ANR_FLAG" ;;
+            esac
+          else
+            # Pattern fallback: match pixellauncher or launcher3 (case-insensitive).
+            if echo "$line" | grep -qiE 'ANR in [^ ]*(pixellauncher|launcher3)'; then
+              touch "$ANR_FLAG"
+            fi
+          fi
+          ;;
       esac
     done < "$LOGCAT_FIFO" ) &
   LOGCAT_PID=$!
@@ -132,9 +152,13 @@
       # Fall through to the CPU check on this same iteration.
     fi
 
-    # Phase 3: check launcher CPU usage.
+    # Phase 3: check home launcher CPU usage.
     cpu_dump="$("$ADB" shell dumpsys cpuinfo 2>/dev/null || true)"
-    launcher_line="$(echo "$cpu_dump" | grep -iF "$LAUNCHER_PACKAGE" | head -1 || true)"
+    if [[ -n "$LAUNCHER_PKG" ]]; then
+      launcher_line="$(echo "$cpu_dump" | grep -iF "$LAUNCHER_PKG" | head -1 || true)"
+    else
+      launcher_line="$(echo "$cpu_dump" | grep -iE "pixellauncher|launcher3" | head -1 || true)"
+    fi
 
     if [[ -z "$launcher_line" ]]; then
       # Launcher process not present — treat as idle.
