@@ -7,6 +7,7 @@
 #   (c) idle-count exit path: logcat hangs, CPU goes idle → exits 0
 #   (d) Absent Launcher process treated as idle → exits 0
 #   (e) Persistent ANR: logcat fires but BACK never clears; 30 s timeout → exits 0
+#   (j) Pattern fallback exercises the nexuslauncher arm of nexuslauncher|launcher3
 #
 # Always exits 0 on success, non-zero on failure.
 
@@ -516,6 +517,71 @@ if [[ -f "$FALLBACK_KEYEVENT_FILE" ]]; then
   pass "pattern fallback: KEYCODE_ENTER sent when launcher3 ANR detected via pattern"
 else
   fail "pattern fallback: KEYCODE_ENTER was NOT sent for launcher3 ANR — pattern fallback may be broken"
+fi
+
+# ── (j) Fallback: nexuslauncher arm of pattern ────────────────────────────────
+echo ""
+echo "=== (j) Fallback: nexuslauncher arm exercised via pattern ==="
+
+# Companion to section (i): that test exercises only the launcher3 arm of the
+# "nexuslauncher|launcher3" fallback pattern, so a typo in the nexuslauncher arm
+# (e.g. "pixellauncher|launcher3") would go undetected.  Here we force the
+# pattern fallback again (resolve-activity returns nothing) but emit a
+# nexuslauncher ANR line and report nexuslauncher in cpuinfo.  This MUST fail if
+# the fallback pattern is "pixellauncher|launcher3" and pass if it is
+# "nexuslauncher|launcher3".
+FALLBACK_NEXUS_KEYEVENT_FILE="$TMPDIR_TESTS/fallback_nexus_keyevent"
+FALLBACK_NEXUS_CPUINFO_COUNT_FILE="$TMPDIR_TESTS/fallback_nexus_cpu_count"
+echo 0 > "$FALLBACK_NEXUS_CPUINFO_COUNT_FILE"
+
+mock_adb_fallback_nexus="$(make_mock_adb "adb_fallback_nexus" "
+case \"\$*\" in
+  *'cmd package resolve-activity'*)
+    # Return nothing — forces pattern fallback.
+    exit 0
+    ;;
+  *'logcat -c'*)
+    exit 0
+    ;;
+  *'logcat -d'*)
+    exit 0
+    ;;
+  *'logcat'*)
+    echo 'E/ActivityManager: ANR in com.google.android.apps.nexuslauncher'
+    exec sleep 60
+    ;;
+  *'dumpsys cpuinfo'*)
+    count=\$(cat '$FALLBACK_NEXUS_CPUINFO_COUNT_FILE')
+    count=\$((count + 1))
+    echo \$count > '$FALLBACK_NEXUS_CPUINFO_COUNT_FILE'
+    if [[ \$count -le 2 ]]; then
+      echo '  60% com.google.android.apps.nexuslauncher: launcher'
+    else
+      echo '  1% com.google.android.apps.nexuslauncher: launcher'
+    fi
+    ;;
+  *'input keyevent KEYCODE_ENTER'*)
+    touch '$FALLBACK_NEXUS_KEYEVENT_FILE'
+    ;;
+  *)
+    :
+    ;;
+esac
+")"
+
+SLEEP_AFTER_ANR_DETECTED=1 bash "$DISMISS_ANR" --adb "$mock_adb_fallback_nexus"
+fallback_nexus_status=$?
+
+if [[ $fallback_nexus_status -eq 0 ]]; then
+  pass "nexuslauncher fallback: script exits 0"
+else
+  fail "nexuslauncher fallback: script exited $fallback_nexus_status (expected 0)"
+fi
+
+if [[ -f "$FALLBACK_NEXUS_KEYEVENT_FILE" ]]; then
+  pass "nexuslauncher fallback: KEYCODE_ENTER sent when nexuslauncher ANR detected via pattern"
+else
+  fail "nexuslauncher fallback: KEYCODE_ENTER was NOT sent for nexuslauncher ANR — fallback pattern may be wrong (e.g. pixellauncher typo)"
 fi
 
 # ── Summary ──────────────────────────────────────────────────────────────────
