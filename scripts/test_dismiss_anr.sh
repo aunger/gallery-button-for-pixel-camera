@@ -461,7 +461,7 @@ echo ""
 echo "=== (i) Fallback: launcher detection fails → pattern fallback ==="
 
 # When cmd package resolve-activity returns no output, the script should fall
-# back to grep -iE "pixellauncher|launcher3" for CPU checks and match ANR lines
+# back to grep -iE "nexuslauncher|launcher3" for CPU checks and match ANR lines
 # by pattern in logcat.  We simulate both: logcat emits an ANR for
 # com.android.launcher3, and cpuinfo reports it as busy then idle.
 FALLBACK_KEYEVENT_FILE="$TMPDIR_TESTS/fallback_keyevent"

@@ -66,7 +66,7 @@
   if [[ -n "$LAUNCHER_PKG" ]]; then
     echo "[dismiss_anr] $(_ts) Launcher detected: $LAUNCHER_PKG" >&2
   else
-    echo "[dismiss_anr] $(_ts) Launcher detection failed — using auto-detected via pattern fallback (pixellauncher|launcher3)." >&2
+    echo "[dismiss_anr] $(_ts) Launcher detection failed — using auto-detected via pattern fallback (nexuslauncher|launcher3)." >&2
   fi
 
   # ── Phase 1: logcat trigger ──────────────────────────────────────────────────
@@ -107,8 +107,8 @@
               *"ANR in $_LAUNCHER_PKG_LOCAL"*) touch "$ANR_FLAG" ;;
             esac
           else
-            # Pattern fallback: match pixellauncher or launcher3 (case-insensitive).
-            if echo "$line" | grep -qiE 'ANR in [^ ]*(pixellauncher|launcher3)'; then
+            # Pattern fallback: match nexuslauncher or launcher3 (case-insensitive).
+            if echo "$line" | grep -qiE 'ANR in [^ ]*(nexuslauncher|launcher3)'; then
               touch "$ANR_FLAG"
             fi
           fi
@@ -157,7 +157,7 @@
     if [[ -n "$LAUNCHER_PKG" ]]; then
       launcher_line="$(echo "$cpu_dump" | grep -iF "$LAUNCHER_PKG" | head -1 || true)"
     else
-      launcher_line="$(echo "$cpu_dump" | grep -iE "pixellauncher|launcher3" | head -1 || true)"
+      launcher_line="$(echo "$cpu_dump" | grep -iE "nexuslauncher|launcher3" | head -1 || true)"
     fi
 
     if [[ -z "$launcher_line" ]]; then
