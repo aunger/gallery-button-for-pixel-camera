@@ -102,7 +102,7 @@
   # ── Poll loop ────────────────────────────────────────────────────────────────
   POLL_INTERVAL=3
   TIMEOUT=30
-  # How long to wait after logcat fires before sending KEYCODE_BACK.
+  # How long to wait after logcat fires before sending KEYCODE_ENTER.
   # Override via environment for tests.
   SLEEP_AFTER_ANR_DETECTED="${SLEEP_AFTER_ANR_DETECTED:-7}"
   elapsed=0
@@ -139,9 +139,10 @@
         echo "[dismiss_anr] $(_ts) [t=${elapsed}s poll=${poll_n}] idle_count=${idle_count} cpu=(unknown)%" >&2
       elif [[ "$pct" -lt 5 ]]; then
         idle_count=$((idle_count + 1))
-        echo "[dismiss_anr] $(_ts) [t=${elapsed}s poll=${poll_n}] idle_count=${idle_count} cpu=${pct}%" >&2
       else
         idle_count=0
+      fi
+      if [[ -n "$pct" ]]; then
         echo "[dismiss_anr] $(_ts) [t=${elapsed}s poll=${poll_n}] idle_count=${idle_count} cpu=${pct}%" >&2
       fi
     fi

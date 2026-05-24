@@ -49,7 +49,8 @@ mock_adb_record="$(make_mock_adb "adb_record" "
 touch '$ADB_RECORD_FILE'
 case \"\$*\" in
   *'logcat -c'*)              exit 0 ;;
-  *'logcat'*)                 sleep 60 ;;
+  *'logcat -d'*)              exit 0 ;;
+  *'logcat'*)                 exec sleep 60 ;;
   *'dumpsys cpuinfo'*)        echo '  1% com.google.android.apps.nexuslauncher:' ;;
   *'input keyevent'*)         : ;;
   *)                          : ;;
@@ -76,6 +77,9 @@ ANR_KEYEVENT_FILE="$TMPDIR_TESTS/keyevent_sent"
 mock_adb_anr="$(make_mock_adb "adb_anr" "
 case \"\$*\" in
   *'logcat -c'*)
+    exit 0
+    ;;
+  *'logcat -d'*)
     exit 0
     ;;
   *'logcat'*)
@@ -122,8 +126,11 @@ case \"\$*\" in
   *'logcat -c'*)
     exit 0
     ;;
+  *'logcat -d'*)
+    exit 0
+    ;;
   *'logcat'*)
-    sleep 60
+    exec sleep 60
     ;;
   *'dumpsys cpuinfo'*)
     count=\$(cat '$IDLE_CALL_COUNT_FILE')
@@ -159,7 +166,8 @@ echo "=== (d) Absent Launcher process treated as idle ==="
 mock_adb_absent="$(make_mock_adb "adb_absent" "
 case \"\$*\" in
   *'logcat -c'*)   exit 0 ;;
-  *'logcat'*)      sleep 60 ;;
+  *'logcat -d'*)   exit 0 ;;
+  *'logcat'*)      exec sleep 60 ;;
   *'dumpsys cpuinfo'*) echo '  3% some.other.process' ;;
   *)               : ;;
 esac
@@ -183,6 +191,9 @@ echo "=== (e) Persistent ANR — script exits 0 within timeout (≤ 35 s) ==="
 PERSISTENT_ANR_ADB="$(make_mock_adb "adb_persistent_anr" "
 case \"\$*\" in
   *'logcat -c'*)
+    exit 0
+    ;;
+  *'logcat -d'*)
     exit 0
     ;;
   *'logcat'*)
@@ -239,11 +250,14 @@ case \"\$*\" in
   *'logcat -c'*)
     exit 0
     ;;
+  *'logcat -d'*)
+    exit 0
+    ;;
   *'logcat'*)
     echo 'E/ActivityManager: ANR in com.google.android.apps.nexuslauncher'
     sleep 5
     echo 'E/ActivityManager: ANR in com.google.android.apps.nexuslauncher'
-    sleep 60
+    exec sleep 60
     ;;
   *'dumpsys cpuinfo'*)
     count=\$(cat '$SECOND_ANR_KEYEVENT_COUNT_FILE')
@@ -299,9 +313,12 @@ case \"\$*\" in
   *'logcat -c'*)
     exit 0
     ;;
+  *'logcat -d'*)
+    exit 0
+    ;;
   *'logcat'*)
     # Hang silently — logcat never fires.
-    sleep 60
+    exec sleep 60
     ;;
   *'dumpsys cpuinfo'*)
     # Always report low CPU so idle_count increments every iteration.
@@ -375,8 +392,11 @@ case \"\$*\" in
   *'logcat -c'*)
     exit 0
     ;;
+  *'logcat -d'*)
+    exit 0
+    ;;
   *'logcat'*)
-    sleep 60
+    exec sleep 60
     ;;
   *'dumpsys cpuinfo'*)
     count=\$(cat '$UNKNOWN_CPU_CALL_COUNT_FILE')
