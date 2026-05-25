@@ -130,6 +130,15 @@ class TestParseFailures(unittest.TestCase):
         self.assertEqual(failures[0].class_name, "com.example.BetaTest")
         self.assertEqual(failures[0].method_name, "beta1")
 
+    def test_finds_xml_files_in_subdirectory(self):
+        """Recursive glob finds XML files nested under the given directory."""
+        subdir = self.tmpdir / "app" / "build" / "test-results" / "testDebugUnitTest"
+        subdir.mkdir(parents=True)
+        _write_xml(subdir, "TEST-BarTest.xml", FAILING_XML)
+        failures = ftfi.parse_failures(self.tmpdir, "Unit Tests", "unit-test-results")
+        self.assertEqual(len(failures), 1)
+        self.assertEqual(failures[0].class_name, "com.example.BarTest")
+
     def test_malformed_xml_skipped_with_warning(self):
         (self.tmpdir / "TEST-bad.xml").write_text("<not valid xml <<<", encoding="utf-8")
         result = ftfi.parse_failures(self.tmpdir, "Unit Tests", "unit-test-results")
@@ -558,14 +567,17 @@ class TestMain(unittest.TestCase):
     @patch("file_test_failure_issues.process_failure")
     def test_multiple_suites_processed(self, mock_process):
         """Failures from all suite directories are processed."""
-        dir2 = Path(self._tmpdir.name) / "e2e"
-        dir2.mkdir()
-        _write_xml(self.tmpdir, "TEST-bar.xml", FAILING_XML)
-        _write_xml(dir2, "TEST-baz.xml", ERROR_XML)
-        result = ftfi.main([
-            str(self.tmpdir), "--suite-label", "Unit Tests",
-            str(dir2), "--suite-label", "Instrumented Tests",
-        ])
+        # Use a separate temp directory for dir2 so it is not a subdirectory of
+        # self.tmpdir — the recursive glob would otherwise pick up its XML files
+        # when scanning the first suite directory.
+        with tempfile.TemporaryDirectory() as e2e_tmpdir:
+            dir2 = Path(e2e_tmpdir)
+            _write_xml(self.tmpdir, "TEST-bar.xml", FAILING_XML)
+            _write_xml(dir2, "TEST-baz.xml", ERROR_XML)
+            result = ftfi.main([
+                str(self.tmpdir), "--suite-label", "Unit Tests",
+                str(dir2), "--suite-label", "Instrumented Tests",
+            ])
         self.assertEqual(result, 0)
         self.assertEqual(mock_process.call_count, 2)
 
