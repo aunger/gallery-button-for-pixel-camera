@@ -39,7 +39,7 @@ import org.junit.runner.RunWith
 class PixelCameraOverlayE2ETest {
 
     @get:Rule
-    val screenshotOnFailure = FailureScreenshotRule()
+    val screenshotRule = ScreenshotTestRule()
 
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val fixture = E2EFixture(
