@@ -50,7 +50,7 @@ The Orchestrator is not a Reviewer or a Programmer.
 
 ## Handling conditional approval
 
-A Reviewer may give **conditional approval**: an approval combined with a specific instruction the Author must carry out before merging. The Reviewer will phrase it unambiguously, e.g. "Approved, pending [specific change]."
+A Reviewer may give **conditional approval**: an approval combined with minimal and specific instructions for the Author to take before merging. This is only appropriate when the request is unlikely to be contested. The Reviewer will phrase it unambiguously, e.g. "Approved, pending [specific change]."
 
 **Treat conditional approval as "changes requested"** for workflow purposes. The Author must still act.
 
@@ -71,7 +71,8 @@ A Reviewer may give **conditional approval**: an approval combined with a specif
           >
           > Answer one of three ways: (A) the Author fully addressed the requested change and introduced no other concerns; (B) the Author did not address the requested change (incomplete or missing work, no new concerns raised); or (C) the Author's response raises a new concern beyond the scope of the original request.
       if Haiku answers A → treat as approved; proceed to CI Monitor loop (do NOT run another full review cycle)
-      if Haiku answers B or C → the PR hasn't yet converged; resume the normal cycle by routing to the full-fledged Reviewer.
+      if Haiku answers B → the PR hasn't yet converged; resume the normal cycle by routing to the full-fledged Reviewer.
+      if Haiku answers C → the PR is unstable; stop the PR cycle and escalate to the User.
 ```
 
 **Haiku agent constraints:**
@@ -184,5 +185,6 @@ done
 
 ## When to abort
 
-- **After three rounds** of the Programmer / Reviewer loop not reaching consensus (unless the user gave a different threshold)
+- **After four rounds** of the Programmer / Reviewer loop not reaching consensus (unless the user gave a different threshold)
 - **If the Programmer gives up** or claims the issue cannot be solved as stated
+- **If the Author introduces new ideas after the Reviewer gives conditional approval** or claims the issue cannot be solved as stated
