@@ -1,0 +1,40 @@
+name: File Test Failure Issues
+
+on:
+  workflow_run:
+    workflows: ["Build & Test"]
+    types: [completed]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  file-issues:
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'failure'
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download test result artifacts
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: downloaded-artifacts
+
+      - name: File issues for failed tests
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_RUN_ID: ${{ github.event.workflow_run.id }}
+          WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          WORKFLOW_RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          python3 scripts/file_test_failure_issues.py \
+            downloaded-artifacts/unit-test-results \
+              --suite-label "Unit Tests" \
+            downloaded-artifacts/e2e-test-results \
+              --suite-label "Instrumented Tests"
