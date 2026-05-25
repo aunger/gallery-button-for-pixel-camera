@@ -49,7 +49,7 @@ import kotlin.math.sqrt
 class GalleryButtonVisualE2ETest {
 
     @get:Rule
-    val screenshotOnFailure = FailureScreenshotRule()
+    val screenshotRule = ScreenshotTestRule()
 
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
