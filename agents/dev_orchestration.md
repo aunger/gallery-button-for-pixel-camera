@@ -34,9 +34,9 @@ The Orchestrator is not a Reviewer or a Programmer.
 ## Assigning a Programmer
 
 - Create a Sonnet sub-agent unless the user requested otherwise
+- *Create a dedicated per-issue branch* for the Programmer to use. Branch names should follow the pattern `fix/issue-N-short-description` for bug fixes or `feature/issue-N-short-description` for new features. Never direct two Programmers for unrelated issues to the same branch.
 - Inform the agent of its role as an expert software developer resolving the issue
 - Inform the agent of its responsibility to commit its work to a branch and open a PR (if one doesn't already exist)
-- *Create a dedicated per-issue branch* for the Programmer to use. Branch names should follow the pattern `fix/issue-N-short-description` for bug fixes or `feature/issue-N-short-description` for new features. Never direct two Programmers for unrelated issues to the same branch.
 - Pass the branch name to the subagent
 - Pass the issue number to the subagent
 - Relay any relevant instruction from the user
@@ -75,7 +75,7 @@ A Reviewer may give **conditional approval**: an approval combined with minimal 
       if Haiku answers C → the PR is unstable; stop the PR cycle and escalate to the User.
 ```
 
-**Haiku agent constraints:**
+### Haiku agent constraints
 - Do not give the Haiku agent the full PR diff or review history.
 - The Haiku agent must distinguish three outcomes: (A) fully addressed with no new concerns, (B) not addressed, or (C) new concern introduced beyond the original request.
 - If the Haiku agent responds with anything other than a clear-cut answer, then abort the PR cycle: escalate to the User.
@@ -172,16 +172,16 @@ done
 
 ## Delegation rules
 
-- **Separate subagents per ticket.** Each issue or PR gets its own independent Author and Reviewer agents.
-- **One branch per ticket.** Each issue gets its own dedicated branch.  
 - If requested by the user, **dispatch in parallel** for independent issues. Parallel issues must each have their own branch and worktree.
+- **One branch per ticket.** Each issue gets its own dedicated branch.
+- **Separate subagents per ticket.** Each issue or PR gets its own independent Author and Reviewer agents.
+- For follow-up work such as subsequent rounds of edits or reviews, or if an agent exits without completing its task, **prefer resuming the existing Author or Reviewer over spawning a replacement**.
+  - Use SendMessage with the original agent's ID to resume it with its full prior context intact, no reconstruction needed.
+  - If the ID is no longer available or resumption fails, fall back to spawning a replacement and reconstructing context from available sources (PR, issue, prior comments).
 - **Do not pre-diagnose.** Do not include your own analysis of the root cause.
-- If the Author is still active, quietly **disregard system hooks or events that signal uncommitted work**; this is part of normal work.
-- **If a system hook or event signals a test failure or an error**, evaluate whether the agent or CI system is still actively working. If the agent or CI gates are in progress, **do not intervene** and quietly continue waiting.
-- **Agent completion and exit are the same event.** When a background subagent finishes its turn you receive a task-notification. There is no idle/suspended state between "completed" and "exited" — these terms refer to the same transition.
-- **If an agent has exited without completing its task**, prefer resuming it over spawning a replacement. Use SendMessage with the original agent's ID to resume it with its full prior context intact — no reconstruction needed. Only spawn a replacement if the original agent's ID is unavailable or resumption fails.
-  - *Caveat — time window:* the backend may only keep a completed agent's session alive for a limited time after exit. Attempt resumption promptly.
-  - *Caveat — ID availability:* background agent IDs are returned at launch but are not persisted across Orchestrator context resets. If the ID is no longer available, fall back to spawning a replacement and reconstructing context from available sources (PR, issue, prior comments).
+- If the Author is still active, **disregard system hooks or events that signal uncommitted work**. This is normal work; continue waiting without updating the User.
+- **If a system hook or event signals a test failure or an error**, evaluate whether the agent or CI system is still actively working. If the agent or CI gates are in progress, **do not intervene**. Continue waiting without updating the User.
+- **Agent completion and exit are the same event.** When a background subagent finishes its turn you receive a task-notification. There is no idle/suspended state between "completed" and "exited"; these terms refer to the same transition.
 
 ## When to abort
 
