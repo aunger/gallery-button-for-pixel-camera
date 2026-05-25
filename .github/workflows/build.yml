@@ -347,6 +347,13 @@ jobs:
           path: app/build/outputs/androidTest-results/
           retention-days: 14
 
+      - name: OCR on E2E screenshots
+        if: always() && steps.pull_e2e_screenshots.outcome == 'success'
+        run: |
+          sudo apt-get install -y tesseract-ocr > /dev/null 2>&1
+          chmod +x scripts/ocr_screenshots.sh
+          scripts/ocr_screenshots.sh /tmp/e2e-screenshots
+
       - name: Upload E2E screenshots on failure
         if: always() && steps.pull_e2e_screenshots.outcome == 'success'
         uses: actions/upload-artifact@v7
