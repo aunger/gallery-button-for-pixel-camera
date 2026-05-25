@@ -108,6 +108,13 @@ jobs:
       - name: Run Python script unit tests
         run: python3 -m unittest discover -s scripts -p "test_*.py" -v
 
+      - name: Run shell script unit tests
+        run: |
+          for test_script in scripts/test_*.sh; do
+            echo "==> Running $test_script"
+            bash "$test_script"
+          done
+
       - name: Grant execute permission for gradlew
         if: steps.diff_check.outputs.needs_full_build == 'true'
         run: chmod +x gradlew
@@ -346,6 +353,13 @@ jobs:
           name: e2e-test-results
           path: app/build/outputs/androidTest-results/
           retention-days: 14
+
+      - name: OCR on E2E screenshots
+        if: always() && steps.pull_e2e_screenshots.outcome == 'success'
+        run: |
+          sudo apt-get install -y tesseract-ocr > /dev/null 2>&1
+          chmod +x scripts/ocr_screenshots.sh
+          scripts/ocr_screenshots.sh /tmp/e2e-screenshots
 
       - name: Upload E2E screenshots on failure
         if: always() && steps.pull_e2e_screenshots.outcome == 'success'
