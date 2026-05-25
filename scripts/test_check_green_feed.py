@@ -495,8 +495,8 @@ class TestPerRetryAnrDismiss(unittest.TestCase):
 
     def test_anr_dialog_on_first_attempt_is_dismissed_before_screencap(self):
         """When dumpsys window reports 'Application Not Responding' before the
-        first screencap, KEYCODE_BACK is sent and an extra sleep follows.  After
-        sending KEYCODE_BACK the dismiss function polls dumpsys window again to
+        first screencap, KEYCODE_ENTER is sent and an extra sleep follows.  After
+        sending KEYCODE_ENTER the dismiss function polls dumpsys window again to
         confirm the dialog is gone before returning.  The screencap still runs
         and the retry loop continues normally.
 
@@ -516,7 +516,7 @@ class TestPerRetryAnrDismiss(unittest.TestCase):
 
             # Attempt 1:
             #   wakeup → swipe → dumpsys-window(ANR present) →
-            #   KEYCODE_BACK → [sleep] → dumpsys-window(confirm: clear) →
+            #   KEYCODE_ENTER → [sleep] → dumpsys-window(confirm: clear) →
             #   screencap(fails)
             # Attempt 2:
             #   wakeup → swipe → dumpsys-window(detect: clear) → screencap(passes)
@@ -525,7 +525,7 @@ class TestPerRetryAnrDismiss(unittest.TestCase):
                 self._make_run_result(),   # wakeup keyevent 224
                 self._make_run_result(),   # swipe
                 anr_window,                # dumpsys window → ANR detected
-                keyevent_ok,               # KEYCODE_BACK dismiss
+                keyevent_ok,               # KEYCODE_ENTER dismiss
                 clear_window,              # dumpsys window → confirm dismissed
                 screencap_ok,              # screencap (written to file)
                 # attempt 2
@@ -539,7 +539,7 @@ class TestPerRetryAnrDismiss(unittest.TestCase):
             dumpsys_calls: list[list[str]] = []
 
             def tracking_run(args, **kwargs):
-                if "KEYCODE_BACK" in args:
+                if "KEYCODE_ENTER" in args:
                     keyback_calls.append(list(args))
                 if "dumpsys" in args and "window" in args:
                     dumpsys_calls.append(list(args))
@@ -566,14 +566,14 @@ class TestPerRetryAnrDismiss(unittest.TestCase):
                 f"got {len(dumpsys_calls)}"
             )
 
-            # KEYCODE_BACK must be sent exactly once (for the first-attempt ANR).
-            keyback_back_calls = [c for c in keyback_calls if "KEYCODE_BACK" in c]
+            # KEYCODE_ENTER must be sent exactly once (for the first-attempt ANR).
+            keyback_back_calls = [c for c in keyback_calls if "KEYCODE_ENTER" in c]
             self.assertEqual(
                 len(keyback_back_calls), 1,
-                f"Expected 1 KEYCODE_BACK for ANR dismiss, got {len(keyback_back_calls)}"
+                f"Expected 1 KEYCODE_ENTER for ANR dismiss, got {len(keyback_back_calls)}"
             )
 
-            # An extra sleep must follow the KEYCODE_BACK dismiss.
+            # An extra sleep must follow the KEYCODE_ENTER dismiss.
             # Standard sleeps per attempt: 2 (top-of-loop + swipe-settle).
             # Attempt 1 also has the ANR dismiss poll sleep → total > 2 * 1 = 2 for
             # the first attempt, i.e. total sleep count across both attempts > 4.
@@ -584,19 +584,19 @@ class TestPerRetryAnrDismiss(unittest.TestCase):
         finally:
             os.unlink(path)
 
-    def test_no_anr_dialog_means_no_keycode_back(self):
-        """When dumpsys window reports no ANR dialog, KEYCODE_BACK is not sent
+    def test_no_anr_dialog_means_no_dismiss_keyevent(self):
+        """When dumpsys window reports no ANR dialog, KEYCODE_ENTER is not sent
         and the screencap proceeds immediately (no extra sleep)."""
         fd, path = tempfile.mkstemp(suffix=".png")
         os.close(fd)
         try:
             clear_window = self._make_run_result(returncode=0, stdout="WindowState idle")
 
-            keyback_calls: list = []
+            dismiss_calls: list = []
 
             def tracking_run(args, **kwargs):
-                if "KEYCODE_BACK" in args:
-                    keyback_calls.append(args)
+                if "KEYCODE_ENTER" in args:
+                    dismiss_calls.append(args)
                 r = MagicMock()
                 r.returncode = 0
                 r.stderr = ""
@@ -612,9 +612,9 @@ class TestPerRetryAnrDismiss(unittest.TestCase):
 
             self.assertEqual(result, 0)
             self.assertEqual(
-                len(keyback_calls), 0,
-                f"KEYCODE_BACK must not be sent when there is no ANR dialog; "
-                f"got {len(keyback_calls)} call(s)"
+                len(dismiss_calls), 0,
+                f"KEYCODE_ENTER must not be sent when there is no ANR dialog; "
+                f"got {len(dismiss_calls)} call(s)"
             )
         finally:
             os.unlink(path)
@@ -680,7 +680,7 @@ class TestDismissAnrIfPresent(unittest.TestCase):
 
     def test_all_retries_exhausted_returns_without_raising(self):
         """When dumpsys window always reports 'Application Not Responding' the
-        function sends KEYCODE_BACK exactly _ANR_DISMISS_MAX_RETRIES times and
+        function sends KEYCODE_ENTER exactly _ANR_DISMISS_MAX_RETRIES times and
         then returns (does not raise) so the outer retry loop can keep going.
         The final log message must mention that the dialog persisted after N retries.
         """
@@ -692,13 +692,13 @@ class TestDismissAnrIfPresent(unittest.TestCase):
         run_side_effects: list = []
         # Initial detect: ANR present.
         run_side_effects.append(anr_window)
-        # For each retry: KEYCODE_BACK + confirm dumpsys (always shows ANR).
+        # For each retry: KEYCODE_ENTER + confirm dumpsys (always shows ANR).
         for _ in range(cgf._ANR_DISMISS_MAX_RETRIES):
-            run_side_effects.append(self._make_run_result())  # KEYCODE_BACK
+            run_side_effects.append(self._make_run_result())  # KEYCODE_ENTER
             run_side_effects.append(anr_window)               # confirm dumpsys
 
         def tracking_run(args, **kwargs):
-            if "KEYCODE_BACK" in args:
+            if "KEYCODE_ENTER" in args:
                 keyback_calls.append(list(args))
             return run_side_effects.pop(0)
 
@@ -709,11 +709,11 @@ class TestDismissAnrIfPresent(unittest.TestCase):
             # Must return, not raise.
             cgf._dismiss_anr_if_present("/fake/adb")
 
-        # Exactly _ANR_DISMISS_MAX_RETRIES KEYCODE_BACK calls.
+        # Exactly _ANR_DISMISS_MAX_RETRIES KEYCODE_ENTER calls.
         self.assertEqual(
             len(keyback_calls),
             cgf._ANR_DISMISS_MAX_RETRIES,
-            f"Expected {cgf._ANR_DISMISS_MAX_RETRIES} KEYCODE_BACK sends when all retries "
+            f"Expected {cgf._ANR_DISMISS_MAX_RETRIES} KEYCODE_ENTER sends when all retries "
             f"are exhausted, got {len(keyback_calls)}"
         )
 
@@ -728,6 +728,81 @@ class TestDismissAnrIfPresent(unittest.TestCase):
             str(cgf._ANR_DISMISS_MAX_RETRIES),
             log_output,
             f"Expected retry count {cgf._ANR_DISMISS_MAX_RETRIES} in stderr log; got: {log_output!r}"
+        )
+
+
+class TestDismissAnrUsesKeycodeEnter(unittest.TestCase):
+    """Verify that _dismiss_anr_if_present sends KEYCODE_ENTER, not KEYCODE_BACK."""
+
+    def _make_run_result(self, returncode=0, stderr="", stdout=""):
+        result = MagicMock()
+        result.returncode = returncode
+        result.stderr = stderr
+        result.stdout = stdout
+        return result
+
+    def test_keycode_enter_sent_on_anr_detection(self):
+        """When an ANR dialog is detected, KEYCODE_ENTER is sent (not KEYCODE_BACK)."""
+        anr_window = self._make_run_result(
+            stdout="Application Not Responding: com.google.android.apps.nexuslauncher"
+        )
+        clear_window = self._make_run_result(stdout="WindowState idle")
+
+        enter_calls: list[list] = []
+        back_calls: list[list] = []
+        run_side_effects = [
+            anr_window,    # initial dumpsys window detect
+            self._make_run_result(),  # KEYCODE_ENTER
+            clear_window,  # confirm dumpsys window
+        ]
+
+        def tracking_run(args, **kwargs):
+            if "KEYCODE_ENTER" in args:
+                enter_calls.append(list(args))
+            if "KEYCODE_BACK" in args:
+                back_calls.append(list(args))
+            return run_side_effects.pop(0)
+
+        with patch("check_green_feed.subprocess.run", side_effect=tracking_run), \
+             patch("check_green_feed.time.sleep"):
+            cgf._dismiss_anr_if_present("/fake/adb")
+
+        self.assertEqual(
+            len(enter_calls), 1,
+            f"Expected exactly 1 KEYCODE_ENTER send, got {len(enter_calls)}"
+        )
+        self.assertEqual(
+            len(back_calls), 0,
+            f"KEYCODE_BACK must never be sent; got {len(back_calls)} call(s)"
+        )
+
+    def test_keycode_back_never_sent(self):
+        """KEYCODE_BACK is never sent even across multiple retries."""
+        anr_window = self._make_run_result(
+            stdout="Application Not Responding: com.google.android.apps.nexuslauncher"
+        )
+        clear_window = self._make_run_result(stdout="WindowState idle")
+
+        back_calls: list[list] = []
+        # Detect → one retry cycle → dismissed.
+        run_side_effects = [
+            anr_window,
+            self._make_run_result(),  # KEYCODE_ENTER attempt 1
+            clear_window,
+        ]
+
+        def tracking_run(args, **kwargs):
+            if "KEYCODE_BACK" in args:
+                back_calls.append(list(args))
+            return run_side_effects.pop(0)
+
+        with patch("check_green_feed.subprocess.run", side_effect=tracking_run), \
+             patch("check_green_feed.time.sleep"):
+            cgf._dismiss_anr_if_present("/fake/adb")
+
+        self.assertEqual(
+            len(back_calls), 0,
+            f"KEYCODE_BACK must never be sent; got {len(back_calls)} call(s): {back_calls}"
         )
 
 

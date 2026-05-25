@@ -7,6 +7,7 @@
 #   (c) idle-count exit path: logcat hangs, CPU goes idle → exits 0
 #   (d) Absent Launcher process treated as idle → exits 0
 #   (e) Persistent ANR: logcat fires but BACK never clears; 30 s timeout → exits 0
+#   (j) Pattern fallback exercises the nexuslauncher arm of nexuslauncher|launcher3
 #
 # Always exits 0 on success, non-zero on failure.
 
@@ -48,8 +49,12 @@ ADB_RECORD_FILE="$TMPDIR_TESTS/adb_invoked"
 mock_adb_record="$(make_mock_adb "adb_record" "
 touch '$ADB_RECORD_FILE'
 case \"\$*\" in
+  *'cmd package resolve-activity'*)
+    echo 'com.google.android.apps.nexuslauncher/.NexusLauncherActivity'
+    ;;
   *'logcat -c'*)              exit 0 ;;
-  *'logcat'*)                 sleep 60 ;;
+  *'logcat -d'*)              exit 0 ;;
+  *'logcat'*)                 exec sleep 60 ;;
   *'dumpsys cpuinfo'*)        echo '  1% com.google.android.apps.nexuslauncher:' ;;
   *'input keyevent'*)         : ;;
   *)                          : ;;
@@ -72,10 +77,16 @@ echo "=== (b) ANR-detection branch ==="
 ANR_KEYEVENT_FILE="$TMPDIR_TESTS/keyevent_sent"
 
 # The logcat mock emits the ANR line immediately, then exits.
-# After KEYCODE_BACK is sent, cpuinfo reports low CPU so idle_count reaches 2.
+# After KEYCODE_ENTER is sent, cpuinfo reports low CPU so idle_count reaches 2.
 mock_adb_anr="$(make_mock_adb "adb_anr" "
 case \"\$*\" in
+  *'cmd package resolve-activity'*)
+    echo 'com.google.android.apps.nexuslauncher/.NexusLauncherActivity'
+    ;;
   *'logcat -c'*)
+    exit 0
+    ;;
+  *'logcat -d'*)
     exit 0
     ;;
   *'logcat'*)
@@ -84,7 +95,7 @@ case \"\$*\" in
   *'dumpsys cpuinfo'*)
     echo '  2% com.google.android.apps.nexuslauncher: launcher'
     ;;
-  *'input keyevent KEYCODE_BACK'*)
+  *'input keyevent KEYCODE_ENTER'*)
     touch '$ANR_KEYEVENT_FILE'
     ;;
   *)
@@ -104,9 +115,9 @@ else
 fi
 
 if [[ -f "$ANR_KEYEVENT_FILE" ]]; then
-  pass "KEYCODE_BACK keyevent sent to dismiss ANR dialog"
+  pass "KEYCODE_ENTER keyevent sent to dismiss ANR dialog"
 else
-  fail "KEYCODE_BACK keyevent was NOT sent when ANR dialog was detected"
+  fail "KEYCODE_ENTER keyevent was NOT sent when ANR dialog was detected"
 fi
 
 # ── (c) idle-count exit path ──────────────────────────────────────────────────
@@ -119,11 +130,17 @@ echo 0 > "$IDLE_CALL_COUNT_FILE"
 # Logcat hangs silently (no ANR); cpuinfo always reports low CPU.
 mock_adb_idle="$(make_mock_adb "adb_idle" "
 case \"\$*\" in
+  *'cmd package resolve-activity'*)
+    echo 'com.google.android.apps.nexuslauncher/.NexusLauncherActivity'
+    ;;
   *'logcat -c'*)
     exit 0
     ;;
+  *'logcat -d'*)
+    exit 0
+    ;;
   *'logcat'*)
-    sleep 60
+    exec sleep 60
     ;;
   *'dumpsys cpuinfo'*)
     count=\$(cat '$IDLE_CALL_COUNT_FILE')
@@ -158,8 +175,12 @@ echo "=== (d) Absent Launcher process treated as idle ==="
 
 mock_adb_absent="$(make_mock_adb "adb_absent" "
 case \"\$*\" in
+  *'cmd package resolve-activity'*)
+    echo 'com.google.android.apps.nexuslauncher/.NexusLauncherActivity'
+    ;;
   *'logcat -c'*)   exit 0 ;;
-  *'logcat'*)      sleep 60 ;;
+  *'logcat -d'*)   exit 0 ;;
+  *'logcat'*)      exec sleep 60 ;;
   *'dumpsys cpuinfo'*) echo '  3% some.other.process' ;;
   *)               : ;;
 esac
@@ -182,7 +203,13 @@ echo "=== (e) Persistent ANR — script exits 0 within timeout (≤ 35 s) ==="
 # We use SLEEP_AFTER_ANR_DETECTED=1 to avoid spending 7 s waiting for the dialog.
 PERSISTENT_ANR_ADB="$(make_mock_adb "adb_persistent_anr" "
 case \"\$*\" in
+  *'cmd package resolve-activity'*)
+    echo 'com.google.android.apps.nexuslauncher/.NexusLauncherActivity'
+    ;;
   *'logcat -c'*)
+    exit 0
+    ;;
+  *'logcat -d'*)
     exit 0
     ;;
   *'logcat'*)
@@ -191,7 +218,7 @@ case \"\$*\" in
   *'dumpsys cpuinfo'*)
     echo '  80% com.google.android.apps.nexuslauncher: launcher'
     ;;
-  *'input keyevent KEYCODE_BACK'*)
+  *'input keyevent KEYCODE_ENTER'*)
     :
     ;;
   *)
@@ -227,23 +254,29 @@ echo "=== (f) Second ANR after first is dismissed ==="
 # the 3 s POLL_INTERVAL), before emitting the second ANR line.  A 5 s gap is
 # sufficient: it guarantees the first flag has been consumed and cleared before
 # the second ANR is written.  The mock then hangs so the consumer while-read
-# loop stays open.  The mock cpuinfo returns high CPU until KEYCODE_BACK has
+# loop stays open.  The mock cpuinfo returns high CPU until KEYCODE_ENTER has
 # been sent twice, then returns low CPU so idle_count reaches 2.
-# We verify that KEYCODE_BACK is sent at least twice and the script exits 0.
+# We verify that KEYCODE_ENTER is sent at least twice and the script exits 0.
 
 SECOND_ANR_KEYEVENT_COUNT_FILE="$TMPDIR_TESTS/second_anr_keyevent_count"
 echo 0 > "$SECOND_ANR_KEYEVENT_COUNT_FILE"
 
 mock_adb_second_anr="$(make_mock_adb "adb_second_anr" "
 case \"\$*\" in
+  *'cmd package resolve-activity'*)
+    echo 'com.google.android.apps.nexuslauncher/.NexusLauncherActivity'
+    ;;
   *'logcat -c'*)
+    exit 0
+    ;;
+  *'logcat -d'*)
     exit 0
     ;;
   *'logcat'*)
     echo 'E/ActivityManager: ANR in com.google.android.apps.nexuslauncher'
     sleep 5
     echo 'E/ActivityManager: ANR in com.google.android.apps.nexuslauncher'
-    sleep 60
+    exec sleep 60
     ;;
   *'dumpsys cpuinfo'*)
     count=\$(cat '$SECOND_ANR_KEYEVENT_COUNT_FILE')
@@ -253,7 +286,7 @@ case \"\$*\" in
       echo '  1% com.google.android.apps.nexuslauncher: launcher'
     fi
     ;;
-  *'input keyevent KEYCODE_BACK'*)
+  *'input keyevent KEYCODE_ENTER'*)
     count=\$(cat '$SECOND_ANR_KEYEVENT_COUNT_FILE')
     count=\$((count + 1))
     echo \$count > '$SECOND_ANR_KEYEVENT_COUNT_FILE'
@@ -275,9 +308,9 @@ fi
 
 keyevent_count="$(cat "$SECOND_ANR_KEYEVENT_COUNT_FILE")"
 if [[ $keyevent_count -ge 2 ]]; then
-  pass "second ANR: KEYCODE_BACK sent at least twice (got $keyevent_count)"
+  pass "second ANR: KEYCODE_ENTER sent at least twice (got $keyevent_count)"
 else
-  fail "second ANR: KEYCODE_BACK sent only $keyevent_count time(s) — expected at least 2"
+  fail "second ANR: KEYCODE_ENTER sent only $keyevent_count time(s) — expected at least 2"
 fi
 
 # ── (g) idle_count=2 but ANR dialog still present (dumpsys window fallback) ───
@@ -296,12 +329,18 @@ DUMPSYS_WINDOW_KEYEVENT_FILE="$TMPDIR_TESTS/dumpsys_window_keyevent"
 
 mock_adb_dumpsys_anr="$(make_mock_adb "adb_dumpsys_anr" "
 case \"\$*\" in
+  *'cmd package resolve-activity'*)
+    echo 'com.google.android.apps.nexuslauncher/.NexusLauncherActivity'
+    ;;
   *'logcat -c'*)
+    exit 0
+    ;;
+  *'logcat -d'*)
     exit 0
     ;;
   *'logcat'*)
     # Hang silently — logcat never fires.
-    sleep 60
+    exec sleep 60
     ;;
   *'dumpsys cpuinfo'*)
     # Always report low CPU so idle_count increments every iteration.
@@ -319,7 +358,7 @@ case \"\$*\" in
       echo 'WindowState idle'
     fi
     ;;
-  *'input keyevent KEYCODE_BACK'*)
+  *'input keyevent KEYCODE_ENTER'*)
     touch '$DUMPSYS_WINDOW_KEYEVENT_FILE'
     ;;
   *)
@@ -338,9 +377,9 @@ else
 fi
 
 if [[ -f "$DUMPSYS_WINDOW_KEYEVENT_FILE" ]]; then
-  pass "dumpsys window fallback: KEYCODE_BACK sent when ANR dialog detected via dumpsys window"
+  pass "dumpsys window fallback: KEYCODE_ENTER sent when ANR dialog detected via dumpsys window"
 else
-  fail "dumpsys window fallback: KEYCODE_BACK was NOT sent when ANR dialog was found via dumpsys window"
+  fail "dumpsys window fallback: KEYCODE_ENTER was NOT sent when ANR dialog was found via dumpsys window"
 fi
 
 dumpsys_call_count="$(cat "$DUMPSYS_WINDOW_CALL_COUNT_FILE")"
@@ -348,6 +387,201 @@ if [[ $dumpsys_call_count -ge 2 ]]; then
   pass "dumpsys window fallback: dumpsys window was checked more than once (got $dumpsys_call_count) — loop continued after first dialog detection"
 else
   fail "dumpsys window fallback: dumpsys window checked only $dumpsys_call_count time(s) — loop should have continued"
+fi
+
+# ── (h) Unknown CPU reading does not increment idle_count ────────────────────
+echo ""
+echo "=== (h) Unknown CPU reading does not increment idle_count ==="
+
+# Scenario: cpuinfo returns a nexuslauncher line that has no leading integer
+# (the percentage is unparseable, e.g. the line begins with a non-digit).
+# The script should NOT treat this as idle and should NOT exit after two such
+# readings.  Instead it skips those iterations, waiting for a known reading.
+# After two unparseable readings followed by two known-low readings the script
+# exits 0 — confirming that idle_count was not incremented during the unknown
+# readings.
+#
+# To verify the "skip" behaviour we count how many times cpuinfo is polled:
+# if idle_count had been incremented on the unknown readings, the script would
+# exit after 2 polls (2 unknown readings → idle_count=2 → exit).  With the
+# fix, it needs at least 4 polls (2 unknown + 2 known-low) before exiting.
+
+UNKNOWN_CPU_CALL_COUNT_FILE="$TMPDIR_TESTS/unknown_cpu_call_count"
+echo 0 > "$UNKNOWN_CPU_CALL_COUNT_FILE"
+
+mock_adb_unknown_cpu="$(make_mock_adb "adb_unknown_cpu" "
+case \"\$*\" in
+  *'cmd package resolve-activity'*)
+    echo 'com.google.android.apps.nexuslauncher/.NexusLauncherActivity'
+    ;;
+  *'logcat -c'*)
+    exit 0
+    ;;
+  *'logcat -d'*)
+    exit 0
+    ;;
+  *'logcat'*)
+    exec sleep 60
+    ;;
+  *'dumpsys cpuinfo'*)
+    count=\$(cat '$UNKNOWN_CPU_CALL_COUNT_FILE')
+    count=\$((count + 1))
+    echo \$count > '$UNKNOWN_CPU_CALL_COUNT_FILE'
+    if [[ \$count -le 2 ]]; then
+      # First two polls: line exists but percentage is not a leading integer.
+      echo '  (unknown) com.google.android.apps.nexuslauncher: launcher'
+    else
+      # Subsequent polls: known low CPU so idle_count increments.
+      echo '  2% com.google.android.apps.nexuslauncher: launcher'
+    fi
+    ;;
+  *)
+    :
+    ;;
+esac
+")"
+
+bash "$DISMISS_ANR" --adb "$mock_adb_unknown_cpu"
+unknown_status=$?
+
+if [[ $unknown_status -eq 0 ]]; then
+  pass "unknown CPU: script exits 0"
+else
+  fail "unknown CPU: script exited $unknown_status (expected 0)"
+fi
+
+unknown_call_count="$(cat "$UNKNOWN_CPU_CALL_COUNT_FILE")"
+if [[ $unknown_call_count -ge 4 ]]; then
+  pass "unknown CPU: cpuinfo polled at least 4 times (unknown readings did not increment idle_count); got $unknown_call_count"
+else
+  fail "unknown CPU: cpuinfo polled only $unknown_call_count time(s) — unknown readings must have incorrectly incremented idle_count (expected >= 4)"
+fi
+
+# ── (i) Fallback: cmd package resolve-activity returns nothing ────────────────
+echo ""
+echo "=== (i) Fallback: launcher detection fails → pattern fallback ==="
+
+# When cmd package resolve-activity returns no output, the script should fall
+# back to grep -iE "nexuslauncher|launcher3" for CPU checks and match ANR lines
+# by pattern in logcat.  We simulate both: logcat emits an ANR for
+# com.android.launcher3, and cpuinfo reports it as busy then idle.
+FALLBACK_KEYEVENT_FILE="$TMPDIR_TESTS/fallback_keyevent"
+FALLBACK_CPUINFO_COUNT_FILE="$TMPDIR_TESTS/fallback_cpu_count"
+echo 0 > "$FALLBACK_CPUINFO_COUNT_FILE"
+
+mock_adb_fallback="$(make_mock_adb "adb_fallback" "
+case \"\$*\" in
+  *'cmd package resolve-activity'*)
+    # Return nothing — forces pattern fallback.
+    exit 0
+    ;;
+  *'logcat -c'*)
+    exit 0
+    ;;
+  *'logcat -d'*)
+    exit 0
+    ;;
+  *'logcat'*)
+    echo 'E/ActivityManager: ANR in com.android.launcher3'
+    exec sleep 60
+    ;;
+  *'dumpsys cpuinfo'*)
+    count=\$(cat '$FALLBACK_CPUINFO_COUNT_FILE')
+    count=\$((count + 1))
+    echo \$count > '$FALLBACK_CPUINFO_COUNT_FILE'
+    if [[ \$count -le 2 ]]; then
+      echo '  60% com.android.launcher3: launcher'
+    else
+      echo '  1% com.android.launcher3: launcher'
+    fi
+    ;;
+  *'input keyevent KEYCODE_ENTER'*)
+    touch '$FALLBACK_KEYEVENT_FILE'
+    ;;
+  *)
+    :
+    ;;
+esac
+")"
+
+SLEEP_AFTER_ANR_DETECTED=1 bash "$DISMISS_ANR" --adb "$mock_adb_fallback"
+fallback_status=$?
+
+if [[ $fallback_status -eq 0 ]]; then
+  pass "pattern fallback: script exits 0"
+else
+  fail "pattern fallback: script exited $fallback_status (expected 0)"
+fi
+
+if [[ -f "$FALLBACK_KEYEVENT_FILE" ]]; then
+  pass "pattern fallback: KEYCODE_ENTER sent when launcher3 ANR detected via pattern"
+else
+  fail "pattern fallback: KEYCODE_ENTER was NOT sent for launcher3 ANR — pattern fallback may be broken"
+fi
+
+# ── (j) Fallback: nexuslauncher arm of pattern ────────────────────────────────
+echo ""
+echo "=== (j) Fallback: nexuslauncher arm exercised via pattern ==="
+
+# Companion to section (i): that test exercises only the launcher3 arm of the
+# "nexuslauncher|launcher3" fallback pattern, so a typo in the nexuslauncher arm
+# (e.g. "pixellauncher|launcher3") would go undetected.  Here we force the
+# pattern fallback again (resolve-activity returns nothing) but emit a
+# nexuslauncher ANR line and report nexuslauncher in cpuinfo.  This MUST fail if
+# the fallback pattern is "pixellauncher|launcher3" and pass if it is
+# "nexuslauncher|launcher3".
+FALLBACK_NEXUS_KEYEVENT_FILE="$TMPDIR_TESTS/fallback_nexus_keyevent"
+FALLBACK_NEXUS_CPUINFO_COUNT_FILE="$TMPDIR_TESTS/fallback_nexus_cpu_count"
+echo 0 > "$FALLBACK_NEXUS_CPUINFO_COUNT_FILE"
+
+mock_adb_fallback_nexus="$(make_mock_adb "adb_fallback_nexus" "
+case \"\$*\" in
+  *'cmd package resolve-activity'*)
+    # Return nothing — forces pattern fallback.
+    exit 0
+    ;;
+  *'logcat -c'*)
+    exit 0
+    ;;
+  *'logcat -d'*)
+    exit 0
+    ;;
+  *'logcat'*)
+    echo 'E/ActivityManager: ANR in com.google.android.apps.nexuslauncher'
+    exec sleep 60
+    ;;
+  *'dumpsys cpuinfo'*)
+    count=\$(cat '$FALLBACK_NEXUS_CPUINFO_COUNT_FILE')
+    count=\$((count + 1))
+    echo \$count > '$FALLBACK_NEXUS_CPUINFO_COUNT_FILE'
+    if [[ \$count -le 2 ]]; then
+      echo '  60% com.google.android.apps.nexuslauncher: launcher'
+    else
+      echo '  1% com.google.android.apps.nexuslauncher: launcher'
+    fi
+    ;;
+  *'input keyevent KEYCODE_ENTER'*)
+    touch '$FALLBACK_NEXUS_KEYEVENT_FILE'
+    ;;
+  *)
+    :
+    ;;
+esac
+")"
+
+SLEEP_AFTER_ANR_DETECTED=1 bash "$DISMISS_ANR" --adb "$mock_adb_fallback_nexus"
+fallback_nexus_status=$?
+
+if [[ $fallback_nexus_status -eq 0 ]]; then
+  pass "nexuslauncher fallback: script exits 0"
+else
+  fail "nexuslauncher fallback: script exited $fallback_nexus_status (expected 0)"
+fi
+
+if [[ -f "$FALLBACK_NEXUS_KEYEVENT_FILE" ]]; then
+  pass "nexuslauncher fallback: KEYCODE_ENTER sent when nexuslauncher ANR detected via pattern"
+else
+  fail "nexuslauncher fallback: KEYCODE_ENTER was NOT sent for nexuslauncher ANR — fallback pattern may be wrong (e.g. pixellauncher typo)"
 fi
 
 # ── Summary ──────────────────────────────────────────────────────────────────
