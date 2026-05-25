@@ -34,8 +34,8 @@ import java.io.File
  *
  * On test failure [failed] captures a device screenshot and saves it as
  * `"<ClassName>_<methodName>_failure.png"` in the same directory — the test name is
- * embedded in the filename directly (no reliance on [Screenshot.currentTestPrefix]
- * which is cleared before [failed] is called by JUnit's default watcher order).
+ * embedded in the filename directly. [Screenshot.currentTestPrefix] is still live when
+ * [failed] runs; it is cleared in [finished], which [TestWatcher] calls after [failed].
  *
  * ## Usage
  *
@@ -69,14 +69,12 @@ class ScreenshotTestRule : TestWatcher() {
 
     override fun failed(e: Throwable?, description: Description) {
         val prefix = testPrefix(description)
-        val externalFilesDir = InstrumentationRegistry.getInstrumentation().targetContext
-            .getExternalFilesDir(null)
-        if (externalFilesDir == null) {
+        val dir = try {
+            Screenshot.screenshotDir()
+        } catch (ex: Exception) {
             Log.w(TAG, "External storage unavailable; skipping failure screenshot for ${description.methodName}")
             return
         }
-        val dir = File(externalFilesDir, "screenshots")
-        dir.mkdirs()
         val screenshotFile = File(dir, "${prefix}_failure.png")
         val success = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
             .takeScreenshot(screenshotFile)
