@@ -75,7 +75,7 @@ The goal is to create enough machine-readable signal per failure that an agent c
 ### 8. Custom Python script + GitHub REST API / `gh` CLI
 
 - **What it does:** A new `scripts/file_test_failure_issues.py` following the pattern of `summarize_test_results.py`. Parses the same JUnit XML files, calls `gh issue create` (or the REST API via `GITHUB_TOKEN`) for each failed test case.
-- **Permissions needed:** `issues: write` added to the job's `permissions` block. Targeted, minimal escalation.
+- **Permissions needed:** `issues: write` scoped to a separate `workflow_run`-triggered workflow; the `build-and-test` job keeps its read-only token.
 - **Cost:** Zero. No external service.
 - **Dedup:** Search existing open issues by label + test name before creating; append a comment if a match is found within a configurable window.
 - **Flakiness suppression:** `--skip-flaky` flag takes a list of known-flaky class names.
@@ -83,18 +83,43 @@ The goal is to create enough machine-readable signal per failure that an agent c
 
 ---
 
-## Security: `issues: write` on PR workflows
+## Security: `issues: write` — two-workflow architecture (decided)
 
-Adding `issues: write` to a CI job is safe for this repo because:
+**Decision:** `issues: write` is scoped to a dedicated second workflow (`.github/workflows/file-test-failure-issues.yml`), not added to the `build-and-test` job. The `build-and-test` job's permissions are unchanged and remain read-only.
 
-- The repo has no external contributors with write access.
-- `issues: write` does not grant access to secrets or code.
-- The dangerous pattern (secrets leakage via fork PRs) requires `pull_request_target` + code checkout from the fork head — not applicable here.
-- GitHub's own docs show `issues: write` in push-triggered workflows as an expected, supported pattern.
+### Why a separate workflow?
 
-The workflow's current `permissions: contents: read` at the workflow level must be supplemented with `issues: write` at the `build-and-test` job level. This follows the principle of least privilege (scoped to one job, not the whole workflow).
+The `build-and-test` job runs third-party Gradle plugins, code from PR contributors, and other less-trusted inputs. Keeping it on a read-only token limits the blast radius of a supply-chain compromise or malicious PR. A separate `workflow_run`-triggered workflow runs exclusively in the base-repo context with a real token, performing issue writes only after the build has already completed and exited.
 
-**Sources:** <https://docs.github.com/en/actions/security-guides/automatic-token-authentication>, <https://securitylab.github.com/resources/github-actions-preventing-pwn-requests/>
+This is GitHub's recommended security pattern for privileged write operations in CI — see:
+- [GitHub Docs: `workflow_run` event](https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#workflow_run)
+- [GitHub Security Lab: Securely handling fork PRs (`workflow_run` for privileged operations)](https://securitylab.github.com/resources/github-actions-preventing-pwn-requests/)
+
+### Permissions layout
+
+```yaml
+# .github/workflows/file-test-failure-issues.yml (new)
+permissions:
+  issues: write
+  contents: read
+
+# .github/workflows/build.yml (unchanged)
+# permissions: contents: read  ← no issues: write added here
+```
+
+### Bonus: fork PRs covered
+
+Because the `workflow_run` workflow always runs in the base-repo context, failures from fork-PR contributions also result in filed issues. An inline step in `build-and-test` would receive a restricted read-only token for fork PRs and could not call the Issues API.
+
+### Development ergonomics caveat
+
+A `workflow_run` workflow **always executes the version on the default branch (`main`)**, not the triggering PR's branch. This is a deliberate GitHub security feature: a PR cannot alter the privileged filing workflow to capture the token before merging. Practical consequence: `file-test-failure-issues.yml` and `scripts/file_test_failure_issues.py` must be merged to `main` to take effect — edits on a feature branch will not run, even if the build on that branch fails.
+
+### Tradeoff
+
+Two workflows + artifact upload/download plumbing + the default-branch constraint is more complex than a single inline step. The owner has chosen this approach to keep `issues: write` out of the build job entirely. See #208 for the full design.
+
+**Sources:** <https://docs.github.com/en/actions/security-guides/automatic-token-authentication>, <https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#workflow_run>, <https://securitylab.github.com/resources/github-actions-preventing-pwn-requests/>
 
 ---
 
