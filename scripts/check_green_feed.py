@@ -187,12 +187,12 @@ def _dismiss_anr_if_present(adb: str) -> None:
 
         ts = time.strftime("%H:%M:%S")
         print(
-            f"[check_green_feed] {ts} ANR dialog detected before screencap — sending KEYCODE_BACK.",
+            f"[check_green_feed] {ts} ANR dialog detected before screencap — sending KEYCODE_ENTER.",
             file=sys.stderr,
         )
         for attempt in range(1, _ANR_DISMISS_MAX_RETRIES + 1):
             subprocess.run(
-                [adb, "shell", "input", "keyevent", "KEYCODE_BACK"],
+                [adb, "shell", "input", "keyevent", "KEYCODE_ENTER"],
                 check=False,
                 capture_output=True,
                 text=True,
@@ -208,17 +208,17 @@ def _dismiss_anr_if_present(adb: str) -> None:
             )
             if "Application Not Responding" not in confirm.stdout:
                 print(
-                    f"[check_green_feed] {ts} ANR dialog dismissed after {attempt} KEYCODE_BACK(s).",
+                    f"[check_green_feed] {ts} ANR dialog dismissed after {attempt} KEYCODE_ENTER(s).",
                     file=sys.stderr,
                 )
                 return
             print(
-                f"[check_green_feed] {ts} ANR dialog still present after KEYCODE_BACK #{attempt}.",
+                f"[check_green_feed] {ts} ANR dialog still present after KEYCODE_ENTER #{attempt}.",
                 file=sys.stderr,
             )
         print(
             f"[check_green_feed] {time.strftime('%H:%M:%S')} ANR dialog persisted after "
-            f"{_ANR_DISMISS_MAX_RETRIES} KEYCODE_BACK sends — proceeding to screencap anyway.",
+            f"{_ANR_DISMISS_MAX_RETRIES} KEYCODE_ENTER sends — proceeding to screencap anyway.",
             file=sys.stderr,
         )
     except Exception as exc:  # noqa: BLE001
