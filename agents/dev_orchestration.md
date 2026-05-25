@@ -47,7 +47,38 @@ The Orchestrator is not a Reviewer or a Programmer.
 - Inform the agent of its role as an expert software reviewer who ensures high quality code and adherence to development plans
 - Pass the issue number to the subagent
 - Relay any relevant instruction from the user
-- The Reviewer posts its review immediately upon completing its analysis and then exits. **Do not** instruct the Reviewer to poll CI or delay posting — CI checking is handled by the Orchestrator via a `Monitor` tool call (see below).
+
+## Handling conditional approval
+
+A Reviewer may give **conditional approval**: an approval combined with minimal and specific instructions for the Author to take before merging. This is only appropriate when the request is unlikely to be contested. The Reviewer will phrase it unambiguously, e.g. "Approved, pending [specific change]."
+
+**Treat conditional approval as "changes requested"** for workflow purposes. The Author must still act.
+
+```
+  if Reviewer gave conditional approval:
+    route to Author to consider the specific change(s) named
+    after Author commits the targeted change:
+      spawn a Haiku sanity-check agent (model: haiku) with narrowed context:
+        - the Reviewer's specific instruction (verbatim)
+        - the Author's new diff/commit addressing it
+        - nothing else (no full PR diff, no prior review history)
+      prompt the Haiku agent with exactly:
+          > The Reviewer requested
+          > [specific change]
+          > 
+          > The Author responded with
+          > [diff]
+          >
+          > Answer one of three ways: (A) the Author fully addressed the requested change and introduced no other concerns; (B) the Author did not address the requested change (incomplete or missing work, no new concerns raised); or (C) the Author's response raises a new concern beyond the scope of the original request.
+      if Haiku answers A → treat as approved; proceed to CI Monitor loop (do NOT run another full review cycle)
+      if Haiku answers B → the PR hasn't yet converged; resume the normal cycle by routing to the full-fledged Reviewer.
+      if Haiku answers C → the PR is unstable; stop the PR cycle and escalate to the User.
+```
+
+**Haiku agent constraints:**
+- Do not give the Haiku agent the full PR diff or review history.
+- The Haiku agent must distinguish three outcomes: (A) fully addressed with no new concerns, (B) not addressed, or (C) new concern introduced beyond the original request.
+- If the Haiku agent responds with anything other than a clear-cut answer, then abort the PR cycle: escalate to the User.
 
 ## CI checking after a Reviewer exits (Monitor loop)
 
@@ -137,15 +168,16 @@ done
 | `PR#N: in_progress`   | CI still running; heartbeat only — no action required.                                                |
 
 - The 30-minute escalation threshold is enforced by `timeout_ms: 1800000` on the Monitor call — no elapsed-time tracking needed.
-- Do not subscribe to PR events or delay dispatching the Reviewer while waiting for CI — the Monitor loop replaces that pattern.
+- Do not subscribe to PR events or delay dispatching the Reviewer while waiting for CI; the Monitor loop replaces that pattern.
 
 ## Delegation rules
 
-- **One subagent per ticket.** Each issue or PR gets its own independent subagent.
+- **Separate subagents per ticket.** Each issue or PR gets its own independent Author and Reviewer agents.
 - **One branch per ticket.** Each issue gets its own dedicated branch.  
-- **Dispatch in parallel** for independent issues (unless otherwise instructed). Parallel independent issues must each have their own branch.
+- If requested by the user, **dispatch in parallel** for independent issues. Parallel issues must each have their own branch and worktree.
 - **Do not pre-diagnose.** Do not include your own analysis of the root cause.
-- **If a system hook or event signals uncommitted work, a test failure, or an error**, **pause 45 seconds**, then evaluate whether the agent or CI system is still actively working. If the agent was recently active (not idle or waiting for input), **or** the CI gates are in progress, **do not intervene** and continue waiting.
+- If the Author is still active, quietly **disregard system hooks or events that signal uncommitted work**; this is part of normal work.
+- **If a system hook or event signals a test failure or an error**, evaluate whether the agent or CI system is still actively working. If the agent or CI gates are in progress, **do not intervene** and quietly continue waiting.
 - **Agent completion and exit are the same event.** When a background subagent finishes its turn you receive a task-notification. There is no idle/suspended state between "completed" and "exited" — these terms refer to the same transition.
 - **If an agent has exited without completing its task**, prefer resuming it over spawning a replacement. Use SendMessage with the original agent's ID to resume it with its full prior context intact — no reconstruction needed. Only spawn a replacement if the original agent's ID is unavailable or resumption fails.
   - *Caveat — time window:* the backend may only keep a completed agent's session alive for a limited time after exit. Attempt resumption promptly.
@@ -153,6 +185,8 @@ done
 
 ## When to abort
 
-- **After three rounds** of the Programmer / Reviewer loop not reaching consensus (unless the user gave a different threshold)
+Stop the automated cycle and escalate to the User in these cases:
+
+- **After four rounds** of the Programmer / Reviewer loop not reaching consensus (unless the user gave a different threshold)
 - **If the Programmer gives up** or claims the issue cannot be solved as stated
-- **If the Reviewer** agrees the PR may be merged
+- **If the Author introduces new ideas after the Reviewer gives conditional approval**. That is, if the "sanity check" Haiku agent does not answer A or B.
