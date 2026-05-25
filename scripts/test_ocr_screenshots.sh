@@ -138,13 +138,14 @@ PATH="$MOCK_C:$PATH" GITHUB_STEP_SUMMARY="$SUMMARY_C" \
   bash "$OCR_SCRIPT" "$SCDIR_C"
 
 OCR_ROW_C="$(grep 'long\.png' "$SUMMARY_C" || true)"
-# The preview should be truncated to 80 chars of the OCR text.
+# The preview should be truncated to exactly 80 chars of the OCR text.
+# Input is 100 X's; after cut -c1-80 the summary row must contain exactly 80 X's.
 PREVIEW_LEN="$(echo "$OCR_ROW_C" | grep -oE 'X+' | tr -d '\n' | wc -c | tr -d ' ')"
 
-if [[ "$PREVIEW_LEN" -le 80 ]]; then
-  pass "OCR preview is truncated to at most 80 chars (got ${PREVIEW_LEN})"
+if [[ "$PREVIEW_LEN" -eq 80 ]]; then
+  pass "OCR preview is truncated to exactly 80 chars (got ${PREVIEW_LEN})"
 else
-  fail "OCR preview was not truncated: got ${PREVIEW_LEN} chars of X (expected ≤ 80)"
+  fail "OCR preview was not truncated to 80 chars: got ${PREVIEW_LEN} X chars (expected 80)"
 fi
 
 # ── (d) No PNGs in directory ────────────────────────────────────────────────────
