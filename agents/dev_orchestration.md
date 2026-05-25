@@ -175,6 +175,7 @@ done
 - If requested by the user, **dispatch in parallel** for independent issues. Parallel issues must each have their own branch and worktree.
 - **One branch per ticket.** Each issue gets its own dedicated branch.
 - **Separate subagents per ticket.** Each issue or PR gets its own independent Author and Reviewer agents.
+- **Report subagent timing.** When dispatching a subagent, include the current UTC time in your message to the user (e.g. "Dispatching Programmer — 14:32 UTC"). When a subagent completes, include the time again in the completion summary.
 - For follow-up work such as subsequent rounds of edits or reviews, or if an agent exits without completing its task, **prefer resuming the existing Author or Reviewer over spawning a replacement**.
   - Use SendMessage with the original agent's ID to resume it with its full prior context intact, no reconstruction needed.
   - If the ID is no longer available or resumption fails, fall back to spawning a replacement and reconstructing context from available sources (PR, issue, prior comments).
