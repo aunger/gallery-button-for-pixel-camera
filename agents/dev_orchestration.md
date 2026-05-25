@@ -175,15 +175,13 @@ done
 - If requested by the user, **dispatch in parallel** for independent issues. Parallel issues must each have their own branch and worktree.
 - **One branch per ticket.** Each issue gets its own dedicated branch.
 - **Separate subagents per ticket.** Each issue or PR gets its own independent Author and Reviewer agents.
-- For follow-up work, such as subsequent rounds of edits or reviews, **prefer resuming the existing Author or Reviewer over spawning a replacement**.
+- For follow-up work, such as subsequent rounds of edits or reviews, or an agent has exited without completing its task, **prefer resuming the existing Author or Reviewer over spawning a replacement**.
   - Use SendMessage with the original agent's ID to resume it with its full prior context intact, no reconstruction needed.
+  - If the ID is no longer available, fall back to spawning a replacement and reconstructing context from available sources (PR, issue, prior comments).
 - **Do not pre-diagnose.** Do not include your own analysis of the root cause.
 - If the Author is still active, **disregard system hooks or events that signal uncommitted work**. This is normal work; continue waiting without updating the User.
 - **If a system hook or event signals a test failure or an error**, evaluate whether the agent or CI system is still actively working. If the agent or CI gates are in progress, **do not intervene**. Continue waiting without updating the User.
 - **Agent completion and exit are the same event.** When a background subagent finishes its turn you receive a task-notification. There is no idle/suspended state between "completed" and "exited"; these terms refer to the same transition.
-- **If an agent has exited without completing its task**, prefer resuming it over spawning a replacement. Use SendMessage with the original agent's ID to resume it with its full prior context intact. Spawn a replacement if the original agent's ID is unavailable or resumption fails.
-  - *Caveat — time window:* the backend may only keep a completed agent's session alive for a limited time after exit. Attempt resumption promptly.
-  - *Caveat — ID availability:* background agent IDs are returned at launch but are not persisted across Orchestrator context resets. If the ID is no longer available, fall back to spawning a replacement and reconstructing context from available sources (PR, issue, prior comments).
 
 ## When to abort
 
