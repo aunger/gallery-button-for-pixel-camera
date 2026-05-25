@@ -78,7 +78,7 @@ A Reviewer may give **conditional approval**: an approval combined with minimal 
 **Haiku agent constraints:**
 - Do not give the Haiku agent the full PR diff or review history.
 - The Haiku agent must distinguish three outcomes: (A) fully addressed with no new concerns, (B) not addressed, or (C) new concern introduced beyond the original request.
-- If the Haiku agent responds with anything other than a clear-cut A, then return to the normal PR cycle: next invoke the full Reviewer.
+- If the Haiku agent responds with anything other than a clear-cut answer, then abort the PR cycle: escalate to the User.
 
 ## CI checking after a Reviewer exits (Monitor loop)
 
@@ -185,6 +185,8 @@ done
 
 ## When to abort
 
+Stop the automated cycle and escalate to the User in these cases:
+
 - **After four rounds** of the Programmer / Reviewer loop not reaching consensus (unless the user gave a different threshold)
 - **If the Programmer gives up** or claims the issue cannot be solved as stated
-- **If the Author introduces new ideas after the Reviewer gives conditional approval** or claims the issue cannot be solved as stated
+- **If the Author introduces new ideas after the Reviewer gives conditional approval**. That is, if the "sanity check" Haiku agent does not answer A or B.
