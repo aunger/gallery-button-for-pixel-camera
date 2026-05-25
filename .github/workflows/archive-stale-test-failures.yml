@@ -1,0 +1,22 @@
+name: Archive Stale Test-Failure Issues
+
+on:
+  schedule:
+    - cron: '0 4 * * *'   # daily at 04:00 UTC
+
+permissions:
+  issues: write
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Archive stale test-failure issues
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          STALE_DAYS: '21'
+        run: python3 scripts/archive_stale_test_failures.py
