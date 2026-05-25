@@ -334,6 +334,12 @@ class TestFindOcrText(unittest.TestCase):
         result = ftfi._find_ocr_text(self.tmpdir, "com.example.Foo", "testBar")
         self.assertEqual(result, "trimmed")
 
+    def test_does_not_match_when_prefix_is_substring_of_another_test(self):
+        """Foo_testBar should NOT match Foo_testBarBaz.ocr.txt (startswith, not contains)."""
+        (self.tmpdir / "Foo_testBarBaz_001.ocr.txt").write_text("wrong match", encoding="utf-8")
+        result = ftfi._find_ocr_text(self.tmpdir, "com.example.Foo", "testBar")
+        self.assertIsNone(result)
+
 
 # ---------------------------------------------------------------------------
 # Duplicate suppression tests

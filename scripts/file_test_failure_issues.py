@@ -126,7 +126,7 @@ def _find_ocr_text(directory: Path, class_name: str, method_name: str) -> str | 
     short_class = class_name.split(".")[-1]
     prefix = f"{short_class}_{method_name}"
     for ocr_path in directory.glob("*.ocr.txt"):
-        if ocr_path.stem.startswith(prefix) or prefix in ocr_path.stem:
+        if ocr_path.stem == prefix or ocr_path.stem.startswith(prefix + "_"):
             try:
                 return ocr_path.read_text(encoding="utf-8").strip()
             except OSError:
