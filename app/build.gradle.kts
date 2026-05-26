@@ -24,6 +24,25 @@ val buildNumber: Int = when {
     else -> error("BUILD_NUMBER env var is set but not a valid integer: '$envBuildNumber'")
 }
 
+// ── Test-result marker helpers ────────────────────────────────────────────────
+// Shared by the unit-test listener (tasks.withType<Test>) and the E2E parser.
+// Produces the stable ##GB4PC_TEST## line format consumed by the CI Monitor.
+
+/** JSON-escapes a string value (no surrounding quotes). */
+fun jsonEscape(s: String): String = s
+    .replace("\\", "\\\\")
+    .replace("\"", "\\\"")
+    .replace("\n", "\\n")
+    .replace("\r", "\\r")
+    .replace("\t", "\\t")
+
+/** Returns the first ≤10 stack frames of [ex] as a single newline-separated string. */
+fun buildTrace(ex: Throwable): String {
+    val frames = ex.stackTrace.take(10).joinToString("\n") { "\tat $it" }
+    val header = ex.toString()
+    return if (frames.isEmpty()) header else "$header\n$frames"
+}
+
 android {
     namespace = "com.gb4pc"
     compileSdk = 35
@@ -103,6 +122,29 @@ android {
         unitTests {
             isIncludeAndroidResources = true
             isReturnDefaultValues = true
+            all { testTask ->
+                testTask.addTestListener(object : TestListener {
+                    override fun beforeSuite(suite: TestDescriptor) {}
+                    override fun afterSuite(suite: TestDescriptor, result: TestResult) {}
+                    override fun beforeTest(test: TestDescriptor) {}
+                    override fun afterTest(test: TestDescriptor, result: TestResult) {
+                        val outcome = when (result.resultType) {
+                            TestResult.ResultType.SUCCESS -> "PASS"
+                            TestResult.ResultType.FAILURE -> "FAIL"
+                            TestResult.ResultType.SKIPPED -> "SKIP"
+                        }
+                        val suite = test.className ?: ""
+                        val name = test.name
+                        val ms = result.endTime - result.startTime
+                        val ex = result.exception
+                        val msg = if (ex != null) jsonEscape(ex.message ?: ex.javaClass.name) else ""
+                        val trace = if (ex != null) jsonEscape(buildTrace(ex)) else ""
+                        println(
+                            """##GB4PC_TEST## {"suite":"${jsonEscape(suite)}","name":"${jsonEscape(name)}","outcome":"$outcome","ms":$ms,"msg":"$msg","trace":"$trace"}"""
+                        )
+                    }
+                })
+            }
         }
     }
 }
@@ -244,7 +286,26 @@ tasks.register("connectedE2EAndroidTest") {
                     inStack = false
                     val code = line.removePrefix("INSTRUMENTATION_STATUS_CODE:").trim().toIntOrNull() ?: 0
                     if (curName.isNotEmpty()) {
-                        if (code != 1) cases += TestCase(curClass, curName, code, curStack.toString())
+                        if (code != 1) {
+                            cases += TestCase(curClass, curName, code, curStack.toString())
+                            // Emit per-test marker immediately so the CI log is the source of truth.
+                            val outcome = when (code) {
+                                0 -> "PASS"
+                                -3 -> "SKIP"
+                                else -> "FAIL"
+                            }
+                            val stackStr = curStack.toString()
+                            val msg = if (code != 0 && code != -3)
+                                jsonEscape(stackStr.lines().firstOrNull().orEmpty().take(200))
+                            else ""
+                            val trace = if (code != 0 && code != -3) {
+                                val frames = stackStr.lines().take(10).joinToString("\\n")
+                                jsonEscape(frames)
+                            } else ""
+                            println(
+                                """##GB4PC_TEST## {"suite":"${jsonEscape(curClass)}","name":"${jsonEscape(curName)}","outcome":"$outcome","ms":0,"msg":"$msg","trace":"$trace"}"""
+                            )
+                        }
                         curStack = StringBuilder()  // always reset so stale stack can't leak into the next test
                     }
                 }
