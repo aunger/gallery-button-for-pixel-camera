@@ -408,6 +408,8 @@ jobs:
           GITHUB_SERVER_URL: ${{ github.server_url }}
           GITHUB_RUN_ID: ${{ github.run_id }}
           WORKFLOW_RUN_SHA: ${{ github.sha }}
+          WORKFLOW_RUN_BRANCH: ${{ github.head_ref || github.ref_name }}
+          WORKFLOW_RUN_PR_URL: ${{ github.event.pull_request.html_url }}
         run: |
           python3 scripts/file_test_failure_issues.py \
             downloaded-artifacts/unit-test-results \
