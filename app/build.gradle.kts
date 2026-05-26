@@ -299,7 +299,7 @@ tasks.register("connectedE2EAndroidTest") {
                                 jsonEscape(stackStr.lines().firstOrNull().orEmpty().take(200))
                             else ""
                             val trace = if (code != 0 && code != -3) {
-                                val frames = stackStr.lines().take(10).joinToString("\\n")
+                                val frames = stackStr.lines().take(10).joinToString("\n")
                                 jsonEscape(frames)
                             } else ""
                             println(
