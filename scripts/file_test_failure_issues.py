@@ -145,6 +145,7 @@ def make_issue_body(
     github_repository: str,
     github_run_id: str,
     workflow_run_branch: str,
+    pr_url: str = "",
 ) -> str:
     """Build the Markdown body for a test-failure issue."""
     ts_str = timestamp.strftime("%Y-%m-%d %H:%M UTC")
@@ -172,6 +173,7 @@ def make_issue_body(
         ocr_section = f"\n### OCR text from screenshot\n\n```\n{ocr_text}\n```\n"
 
     branch_info = f"`{workflow_run_branch}`" if workflow_run_branch else "_unknown_"
+    pr_line = f"- [PR]({pr_url})\n" if pr_url else ""
 
     body = f"""\
 ## Test Failure
@@ -187,9 +189,7 @@ def make_issue_body(
 
 ### Failure message
 
-```
 {failure.failure_message}
-```
 
 ### Stack trace
 
@@ -201,7 +201,7 @@ def make_issue_body(
 
 - [CI run]({run_url})
 - [Test artifact: {failure.artifact_name}]({artifact_url})
-{ocr_section}
+{pr_line}{ocr_section}
 ---
 _Filed automatically by CI on failure of `{failure.class_name}.{failure.method_name}`._
 """
@@ -314,6 +314,7 @@ def process_failure(
     github_server_url: str,
     github_run_id: str,
     workflow_run_branch: str,
+    pr_url: str = "",
 ) -> None:
     """File or update a GitHub issue for a single test failure."""
     title = make_issue_title(failure.class_name, failure.method_name)
@@ -326,6 +327,7 @@ def process_failure(
         github_repository=repository,
         github_run_id=github_run_id,
         workflow_run_branch=workflow_run_branch,
+        pr_url=pr_url,
     )
 
     existing = find_existing_issue(token, repository, failure.class_name, failure.method_name)
@@ -425,6 +427,7 @@ def main(argv: list[str] | None = None) -> int:
     github_run_id = os.environ.get("GITHUB_RUN_ID", "")
     sha = os.environ.get("WORKFLOW_RUN_SHA", "")
     workflow_run_branch = os.environ.get("WORKFLOW_RUN_BRANCH", "")
+    pr_url = os.environ.get("WORKFLOW_RUN_PR_URL", "")
 
     if not token:
         print("Warning: GITHUB_TOKEN not set — skipping issue filing.", file=sys.stderr)
@@ -469,6 +472,7 @@ def main(argv: list[str] | None = None) -> int:
                     github_server_url=github_server_url,
                     github_run_id=github_run_id,
                     workflow_run_branch=workflow_run_branch,
+                    pr_url=pr_url,
                 )
             except Exception as exc:  # noqa: BLE001
                 print(

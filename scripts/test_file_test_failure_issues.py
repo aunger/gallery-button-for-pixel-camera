@@ -304,6 +304,36 @@ class TestMakeIssueBody(unittest.TestCase):
         body = self._make_body()
         self.assertNotIn("OCR text from screenshot", body)
 
+    def test_pr_link_present_when_pr_url_provided(self):
+        body = self._make_body(pr_url="https://github.com/owner/repo/pull/42")
+        self.assertIn("https://github.com/owner/repo/pull/42", body)
+        self.assertIn("[PR]", body)
+
+    def test_pr_link_absent_when_pr_url_empty(self):
+        body = self._make_body(pr_url="")
+        self.assertNotIn("[PR]", body)
+
+    def test_failure_message_not_in_fenced_code_block(self):
+        """Failure message must not be wrapped in a fenced code block (causes horizontal scroll)."""
+        body = self._make_body()
+        # Find the failure message section
+        msg_idx = body.index("### Failure message")
+        stack_idx = body.index("### Stack trace")
+        failure_section = body[msg_idx:stack_idx]
+        # The failure message text must be present
+        self.assertIn("AssertionError: Expected true", failure_section)
+        # But it must NOT appear inside a fenced code block
+        self.assertNotIn("```", failure_section)
+
+    def test_stack_trace_still_in_fenced_code_block(self):
+        """Stack trace must remain in a fenced code block."""
+        body = self._make_body()
+        stack_idx = body.index("### Stack trace")
+        links_idx = body.index("### Links")
+        stack_section = body[stack_idx:links_idx]
+        self.assertIn("```", stack_section)
+        self.assertIn("BarTest.java:42", stack_section)
+
 
 # ---------------------------------------------------------------------------
 # _find_ocr_text tests
