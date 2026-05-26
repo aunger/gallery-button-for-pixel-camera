@@ -163,34 +163,28 @@ class TestMakeIssueTitle(unittest.TestCase):
     def test_format_matches_spec(self):
         title = ftfi.make_issue_title(
             "PrefsManagerTest", "readDefaultReturnsNull",
-            _FIXED_TS, "a1b2c3d",
         )
-        self.assertEqual(
-            title,
-            "[Test Failure] PrefsManagerTest.readDefaultReturnsNull @ 260525-0629-a1b2c3d",
-        )
+        self.assertEqual(title, "[PrefsManagerTest] readDefaultReturnsNull")
 
-    def test_sha_truncated_to_7_chars(self):
+    def test_strips_package_prefix(self):
         title = ftfi.make_issue_title(
-            "com.example.Foo", "testBar",
-            _FIXED_TS, _FIXED_SHA,
+            "com.gb4pc.e2e.PixelCameraOverlayE2ETest", "overlayAppearsWhenViewfinderOpens",
         )
-        # Only first 7 chars of _FIXED_SHA = "a1b2c3d"
-        self.assertIn("a1b2c3d", title)
-        self.assertNotIn(_FIXED_SHA[7:], title)
+        self.assertEqual(title, "[PixelCameraOverlayE2ETest] overlayAppearsWhenViewfinderOpens")
 
-    def test_empty_sha_uses_unknown(self):
-        title = ftfi.make_issue_title("Foo", "bar", _FIXED_TS, "")
-        self.assertIn("unknown", title)
+    def test_no_package_prefix_unaffected(self):
+        title = ftfi.make_issue_title("MyClass", "myMethod")
+        self.assertEqual(title, "[MyClass] myMethod")
 
-    def test_timestamp_format(self):
-        # 2026-05-25 06:29 UTC → yyMMdd-hhmm = 260525-0629
-        title = ftfi.make_issue_title("Foo", "bar", _FIXED_TS, "abc1234")
-        self.assertIn("260525-0629", title)
+    def test_does_not_contain_timestamp_or_sha(self):
+        title = ftfi.make_issue_title("com.example.Foo", "testBar")
+        # No date stamp or SHA fragment should appear
+        self.assertNotIn("@", title)
+        self.assertNotIn("260525", title)
 
-    def test_includes_class_and_method(self):
-        title = ftfi.make_issue_title("MyClass", "myMethod", _FIXED_TS, "abc1234")
-        self.assertIn("MyClass.myMethod", title)
+    def test_does_not_contain_test_failure_prefix(self):
+        title = ftfi.make_issue_title("Foo", "bar")
+        self.assertNotIn("Test Failure", title)
 
 
 # ---------------------------------------------------------------------------

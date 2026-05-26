@@ -110,14 +110,16 @@ def parse_failures(directory: Path, suite_label: str, artifact_name: str) -> lis
 _STACK_TRACE_LIMIT = 2000
 
 
-def make_issue_title(class_name: str, method_name: str, timestamp: datetime, sha: str) -> str:
+def make_issue_title(class_name: str, method_name: str) -> str:
     """Return the issue title string.
 
-    Format: [Test Failure] <ClassName>.<methodName> @ <yyMMdd-hhmm>-<gitsha7>
+    Format: [<SimpleClassName>] <methodName>
+
+    The simple class name is the last component of the fully-qualified name
+    (e.g. "com.gb4pc.e2e.PixelCameraOverlayE2ETest" → "PixelCameraOverlayE2ETest").
     """
-    ts = timestamp.strftime("%y%m%d-%H%M")
-    short_sha = sha[:7] if sha else "unknown"
-    return f"[Test Failure] {class_name}.{method_name} @ {ts}-{short_sha}"
+    simple_class = class_name.split(".")[-1]
+    return f"[{simple_class}] {method_name}"
 
 
 def _find_ocr_text(directory: Path, class_name: str, method_name: str) -> str | None:
@@ -235,7 +237,8 @@ def find_existing_issue(
         print("  Error: 'requests' library not available.", file=sys.stderr)
         return None
 
-    query = f'repo:{repository} is:issue is:open label:test-failure "{class_name}.{method_name}" in:title'
+    simple_class = class_name.split(".")[-1]
+    query = f'repo:{repository} is:issue is:open label:test-failure "[{simple_class}] {method_name}" in:title'
     url = "https://api.github.com/search/issues"
     try:
         resp = requests.get(
@@ -313,7 +316,7 @@ def process_failure(
     workflow_run_branch: str,
 ) -> None:
     """File or update a GitHub issue for a single test failure."""
-    title = make_issue_title(failure.class_name, failure.method_name, timestamp, sha)
+    title = make_issue_title(failure.class_name, failure.method_name)
     body = make_issue_body(
         failure=failure,
         directory=directory,
