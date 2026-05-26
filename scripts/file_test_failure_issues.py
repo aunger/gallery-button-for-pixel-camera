@@ -330,6 +330,9 @@ def process_failure(
         pr_url=pr_url,
     )
 
+    short_sha = sha[:7] if sha else "unknown"
+    ts_str = timestamp.strftime("%Y-%m-%d %H:%M UTC")
+
     existing = find_existing_issue(token, repository, failure.class_name, failure.method_name)
     if existing is not None:
         print(
@@ -337,7 +340,7 @@ def process_failure(
             f"{failure.class_name}.{failure.method_name}",
             file=sys.stderr,
         )
-        comment_body = f"### Recurrence detected\n\n{body}"
+        comment_body = f"### Failed on {short_sha} @ {ts_str}\n\n{body}"
         add_issue_comment(token, repository, existing, comment_body)
     else:
         issue_num = create_issue(token, repository, title, body)

@@ -506,6 +506,11 @@ class TestProcessFailure(unittest.TestCase):
         mock_create.assert_not_called()
         # Comment is posted to the existing issue number
         self.assertEqual(mock_comment.call_args[0][2], 55)
+        # Comment body header uses "Failed on <sha> @ <timestamp>" format
+        comment_body = mock_comment.call_args[0][3]
+        self.assertIn("### Failed on", comment_body)
+        self.assertIn(_FIXED_SHA[:7], comment_body)
+        self.assertIn("2026-05-25", comment_body)
 
     @patch("file_test_failure_issues.add_issue_comment")
     @patch("file_test_failure_issues.create_issue")
