@@ -89,7 +89,7 @@ After the Reviewer exits and delivers its decision, the Orchestrator acts as fol
   if Reviewer gave approval:
     Orchestrator launches a Monitor tool call (run_in_background: true, timeout_ms: 1800000)
     Each stdout line arrives as a task-notification event
-    Act only on lines containing Clear, Blocked, or Infra. Relay in_progress lines to the user as brief status updates (the script throttles these down, emitting one in_progress heartbeat every few minutes).
+    Act only on lines containing Clear, Blocked, or Infra. Relay in_progress lines to the user as brief status updates (the script suppresses these unless no other output has been emitted for over 120 seconds).
     if Monitor emits a Blocked line  → goto newAuthor
     if Monitor emits an Infra line   → escalate to user; stop
     if Monitor emits a Clear line    → PR may be merged
@@ -105,13 +105,13 @@ OWNER="aunger"
 REPO="gallery-button-for-pixel-camera"
 PR=<PR_NUMBER>
 HEADERS=(-H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json")
-iter=0
+last_output_ts=$(date +%s)
 
 while true; do
   sha=$(curl -s "${HEADERS[@]}" "https://api.github.com/repos/$OWNER/$REPO/pulls/$PR" | \
     python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('head',{}).get('sha',''))" 2>/dev/null)
 
-  [ -z "$sha" ] && { echo "PR#${PR}: could not fetch SHA"; sleep 30; continue; }
+  [ -z "$sha" ] && { echo "PR#${PR}: could not fetch SHA"; last_output_ts=$(date +%s); sleep 30; continue; }
 
   check_data=$(curl -s "${HEADERS[@]}" \
     "https://api.github.com/repos/$OWNER/$REPO/commits/$sha/check-runs" 2>/dev/null)
@@ -135,9 +135,12 @@ else:
     print('in_progress')
 " 2>/dev/null)
 
-  iter=$((iter + 1))
   if [ "$result" = "in_progress" ]; then
-    [ $((iter % 5)) -eq 0 ] && echo "PR#${PR}: in_progress"
+    now=$(date +%s)
+    if [ $((now - last_output_ts)) -gt 120 ]; then
+      echo "PR#${PR}: in_progress"
+      last_output_ts=$now
+    fi
   elif [ "$result" = "all_passed" ]; then
     mergeable=$(curl -s "${HEADERS[@]}" "https://api.github.com/repos/$OWNER/$REPO/pulls/$PR" | \
       python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('mergeable_state','unknown'))" 2>/dev/null)
@@ -149,11 +152,13 @@ else:
       echo "PR#${PR}: Infra (mergeable_state=blocked)"; break
     else
       echo "PR#${PR}: all_passed mergeable_state=$mergeable (still computing)"
+      last_output_ts=$(date +%s)
     fi
   elif [ "$result" = "Blocked" ] || [ "$result" = "Infra" ]; then
     echo "PR#${PR}: $result"; break
   else
     echo "PR#${PR}: $result"
+    last_output_ts=$(date +%s)
   fi
 
   sleep 30
@@ -167,7 +172,7 @@ done
 | `PR#N: Clear ...`     | All CI checks passed and `mergeable_state` is `clean` or `unstable`; PR may be merged.               |
 | `PR#N: Blocked ...`   | A check failed (`failure`/`action_required`) or `mergeable_state` is `behind`/`dirty`; new Author round needed. |
 | `PR#N: Infra ...`     | A CI infrastructure problem (`cancelled`, `timed_out`, `stale`, `startup_failure`, or `mergeable_state=blocked`); escalate to user. |
-| `PR#N: in_progress`   | CI still running; emitted every few minutes; relay to user as a brief status update.                  |
+| `PR#N: in_progress`   | CI still running; emitted only after >120 s of silence (no other output); relay to user as a brief status update. |
 
 - The 30-minute escalation threshold is enforced by `timeout_ms: 1800000` on the Monitor call — no elapsed-time tracking needed.
 - Do not subscribe to PR events or delay dispatching the Reviewer while waiting for CI; the Monitor loop replaces that pattern.
