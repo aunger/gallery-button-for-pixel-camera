@@ -89,7 +89,7 @@ After the Reviewer exits and delivers its decision, the Orchestrator acts as fol
   if Reviewer gave approval:
     Orchestrator launches a Monitor tool call (run_in_background: true, timeout_ms: 1800000)
     Each stdout line arrives as a task-notification event
-    Act only on lines containing Clear, Blocked, or Infra; ignore in_progress heartbeats
+    Act only on lines containing Clear, Blocked, or Infra. Relay in_progress lines to the user as brief status updates (the script throttles these down, emitting one in_progress heartbeat every few minutes).
     if Monitor emits a Blocked line  → goto newAuthor
     if Monitor emits an Infra line   → escalate to user; stop
     if Monitor emits a Clear line    → PR may be merged
@@ -105,6 +105,7 @@ OWNER="aunger"
 REPO="gallery-button-for-pixel-camera"
 PR=<PR_NUMBER>
 HEADERS=(-H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json")
+iter=0
 
 while true; do
   sha=$(curl -s "${HEADERS[@]}" "https://api.github.com/repos/$OWNER/$REPO/pulls/$PR" | \
@@ -134,8 +135,9 @@ else:
     print('in_progress')
 " 2>/dev/null)
 
+  iter=$((iter + 1))
   if [ "$result" = "in_progress" ]; then
-    echo "PR#${PR}: in_progress"
+    [ $((iter % 5)) -eq 0 ] && echo "PR#${PR}: in_progress"
   elif [ "$result" = "all_passed" ]; then
     mergeable=$(curl -s "${HEADERS[@]}" "https://api.github.com/repos/$OWNER/$REPO/pulls/$PR" | \
       python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('mergeable_state','unknown'))" 2>/dev/null)
@@ -165,7 +167,7 @@ done
 | `PR#N: Clear ...`     | All CI checks passed and `mergeable_state` is `clean` or `unstable`; PR may be merged.               |
 | `PR#N: Blocked ...`   | A check failed (`failure`/`action_required`) or `mergeable_state` is `behind`/`dirty`; new Author round needed. |
 | `PR#N: Infra ...`     | A CI infrastructure problem (`cancelled`, `timed_out`, `stale`, `startup_failure`, or `mergeable_state=blocked`); escalate to user. |
-| `PR#N: in_progress`   | CI still running; heartbeat only — no action required.                                                |
+| `PR#N: in_progress`   | CI still running; emitted every few minutes; relay to user as a brief status update.                  |
 
 - The 30-minute escalation threshold is enforced by `timeout_ms: 1800000` on the Monitor call — no elapsed-time tracking needed.
 - Do not subscribe to PR events or delay dispatching the Reviewer while waiting for CI; the Monitor loop replaces that pattern.
@@ -175,7 +177,7 @@ done
 - If requested by the user, **dispatch in parallel** for independent issues. Parallel issues must each have their own branch and worktree.
 - **One branch per ticket.** Each issue gets its own dedicated branch.
 - **Separate subagents per ticket.** Each issue or PR gets its own independent Author and Reviewer agents.
-- **Report subagent timing.** When dispatching a subagent, include the current UTC time in your message to the user (e.g. "Dispatching Programmer — 14:32 UTC"). When a subagent completes, include the time again in the completion summary.
+- **Report subagent timing.** Use the Bash tool to run `date -u` immediately before dispatching each subagent, and again immediately after it returns. Report both times to the user.
 - For follow-up work such as subsequent rounds of edits or reviews, or if an agent exits without completing its task, **prefer resuming the existing Author or Reviewer over spawning a replacement**.
   - Use SendMessage with the original agent's ID to resume it with its full prior context intact, no reconstruction needed.
   - If the ID is no longer available or resumption fails, fall back to spawning a replacement and reconstructing context from available sources (PR, issue, prior comments).
