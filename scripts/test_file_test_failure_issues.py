@@ -383,12 +383,20 @@ class TestFindOcrText(unittest.TestCase):
 class TestFindExistingIssue(unittest.TestCase):
 
     @patch("file_test_failure_issues.requests")
-    def test_returns_issue_number_when_found(self, mock_requests):
+    def test_returns_issue_number_and_state_when_found_open(self, mock_requests):
         mock_resp = MagicMock()
-        mock_resp.json.return_value = {"items": [{"number": 42}]}
+        mock_resp.json.return_value = {"items": [{"number": 42, "state": "open"}]}
         mock_requests.get.return_value = mock_resp
         result = ftfi.find_existing_issue("token", "owner/repo", "FooTest", "testBar")
-        self.assertEqual(result, 42)
+        self.assertEqual(result, (42, "open"))
+
+    @patch("file_test_failure_issues.requests")
+    def test_returns_issue_number_and_state_when_found_closed(self, mock_requests):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"items": [{"number": 7, "state": "closed"}]}
+        mock_requests.get.return_value = mock_resp
+        result = ftfi.find_existing_issue("token", "owner/repo", "FooTest", "testBar")
+        self.assertEqual(result, (7, "closed"))
 
     @patch("file_test_failure_issues.requests")
     def test_returns_none_when_not_found(self, mock_requests):
@@ -465,6 +473,35 @@ class TestAddIssueComment(unittest.TestCase):
         self.assertFalse(result)
 
 
+class TestReopenIssue(unittest.TestCase):
+
+    @patch("file_test_failure_issues.requests")
+    def test_returns_true_on_success(self, mock_requests):
+        mock_resp = MagicMock()
+        mock_requests.patch.return_value = mock_resp
+        result = ftfi.reopen_issue("token", "owner/repo", 42)
+        self.assertTrue(result)
+
+    @patch("file_test_failure_issues.requests")
+    def test_sends_state_open(self, mock_requests):
+        mock_resp = MagicMock()
+        mock_requests.patch.return_value = mock_resp
+        ftfi.reopen_issue("token", "owner/repo", 42)
+        call_kwargs = mock_requests.patch.call_args
+        self.assertEqual(call_kwargs[1]["json"], {"state": "open"})
+
+    @patch("file_test_failure_issues.requests")
+    def test_returns_false_on_api_error(self, mock_requests):
+        mock_requests.patch.side_effect = Exception("server error")
+        result = ftfi.reopen_issue("token", "owner/repo", 42)
+        self.assertFalse(result)
+
+    def test_returns_false_when_requests_unavailable(self):
+        with patch.object(ftfi, "requests", None):
+            result = ftfi.reopen_issue("token", "owner/repo", 42)
+        self.assertFalse(result)
+
+
 # ---------------------------------------------------------------------------
 # process_failure tests (duplicate suppression)
 # ---------------------------------------------------------------------------
@@ -486,13 +523,7 @@ class TestProcessFailure(unittest.TestCase):
     def tearDown(self):
         self._tmpdir.cleanup()
 
-    @patch("file_test_failure_issues.add_issue_comment")
-    @patch("file_test_failure_issues.create_issue")
-    @patch("file_test_failure_issues.find_existing_issue")
-    def test_comments_on_existing_issue_instead_of_creating(
-        self, mock_find, mock_create, mock_comment
-    ):
-        mock_find.return_value = 55  # existing issue found
+    def _call_process_failure(self):
         ftfi.process_failure(
             failure=self.failure,
             directory=self.tmpdir,
@@ -505,6 +536,15 @@ class TestProcessFailure(unittest.TestCase):
             workflow_run_branch="main",
             pr_url="",
         )
+
+    @patch("file_test_failure_issues.add_issue_comment")
+    @patch("file_test_failure_issues.create_issue")
+    @patch("file_test_failure_issues.find_existing_issue")
+    def test_comments_on_existing_open_issue_instead_of_creating(
+        self, mock_find, mock_create, mock_comment
+    ):
+        mock_find.return_value = (55, "open")  # existing open issue found
+        self._call_process_failure()
         mock_comment.assert_called_once()
         mock_create.assert_not_called()
         # Comment is posted to the existing issue number
@@ -523,20 +563,34 @@ class TestProcessFailure(unittest.TestCase):
     ):
         mock_find.return_value = None  # no existing issue
         mock_create.return_value = 77
-        ftfi.process_failure(
-            failure=self.failure,
-            directory=self.tmpdir,
-            token="tok",
-            repository="owner/repo",
-            timestamp=_FIXED_TS,
-            sha=_FIXED_SHA,
-            github_server_url="https://github.com",
-            github_run_id="1",
-            workflow_run_branch="main",
-            pr_url="",
-        )
+        self._call_process_failure()
         mock_create.assert_called_once()
         mock_comment.assert_not_called()
+
+    @patch("file_test_failure_issues.reopen_issue")
+    @patch("file_test_failure_issues.add_issue_comment")
+    @patch("file_test_failure_issues.create_issue")
+    @patch("file_test_failure_issues.find_existing_issue")
+    def test_reopens_closed_issue_before_commenting(
+        self, mock_find, mock_create, mock_comment, mock_reopen
+    ):
+        mock_find.return_value = (88, "closed")  # existing closed issue
+        self._call_process_failure()
+        mock_reopen.assert_called_once_with("tok", "owner/repo", 88)
+        mock_comment.assert_called_once()
+        mock_create.assert_not_called()
+
+    @patch("file_test_failure_issues.reopen_issue")
+    @patch("file_test_failure_issues.add_issue_comment")
+    @patch("file_test_failure_issues.create_issue")
+    @patch("file_test_failure_issues.find_existing_issue")
+    def test_does_not_reopen_open_issue(
+        self, mock_find, mock_create, mock_comment, mock_reopen
+    ):
+        mock_find.return_value = (55, "open")  # already open
+        self._call_process_failure()
+        mock_reopen.assert_not_called()
+        mock_comment.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
