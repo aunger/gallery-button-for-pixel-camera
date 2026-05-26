@@ -110,14 +110,16 @@ def parse_failures(directory: Path, suite_label: str, artifact_name: str) -> lis
 _STACK_TRACE_LIMIT = 2000
 
 
-def make_issue_title(class_name: str, method_name: str, timestamp: datetime, sha: str) -> str:
+def make_issue_title(class_name: str, method_name: str) -> str:
     """Return the issue title string.
 
-    Format: [Test Failure] <ClassName>.<methodName> @ <yyMMdd-hhmm>-<gitsha7>
+    Format: [<SimpleClassName>] <methodName>
+
+    The simple class name is the last component of the fully-qualified name
+    (e.g. "com.gb4pc.e2e.PixelCameraOverlayE2ETest" → "PixelCameraOverlayE2ETest").
     """
-    ts = timestamp.strftime("%y%m%d-%H%M")
-    short_sha = sha[:7] if sha else "unknown"
-    return f"[Test Failure] {class_name}.{method_name} @ {ts}-{short_sha}"
+    simple_class = class_name.split(".")[-1]
+    return f"[{simple_class}] {method_name}"
 
 
 def _find_ocr_text(directory: Path, class_name: str, method_name: str) -> str | None:
@@ -143,6 +145,7 @@ def make_issue_body(
     github_repository: str,
     github_run_id: str,
     workflow_run_branch: str,
+    pr_url: str,
 ) -> str:
     """Build the Markdown body for a test-failure issue."""
     ts_str = timestamp.strftime("%Y-%m-%d %H:%M UTC")
@@ -170,6 +173,7 @@ def make_issue_body(
         ocr_section = f"\n### OCR text from screenshot\n\n```\n{ocr_text}\n```\n"
 
     branch_info = f"`{workflow_run_branch}`" if workflow_run_branch else "_unknown_"
+    pr_info = f"[PR]({pr_url})" if pr_url else "_unknown_"
 
     body = f"""\
 ## Test Failure
@@ -185,9 +189,7 @@ def make_issue_body(
 
 ### Failure message
 
-```
 {failure.failure_message}
-```
 
 ### Stack trace
 
@@ -199,6 +201,7 @@ def make_issue_body(
 
 - [CI run]({run_url})
 - [Test artifact: {failure.artifact_name}]({artifact_url})
+- {pr_info}
 {ocr_section}
 ---
 _Filed automatically by CI on failure of `{failure.class_name}.{failure.method_name}`._
@@ -235,7 +238,8 @@ def find_existing_issue(
         print("  Error: 'requests' library not available.", file=sys.stderr)
         return None
 
-    query = f'repo:{repository} is:issue is:open label:test-failure "{class_name}.{method_name}" in:title'
+    simple_class = class_name.split(".")[-1]
+    query = f'repo:{repository} is:issue label:test-failure "[{simple_class}] {method_name}" in:title'
     url = "https://api.github.com/search/issues"
     try:
         resp = requests.get(
@@ -311,9 +315,10 @@ def process_failure(
     github_server_url: str,
     github_run_id: str,
     workflow_run_branch: str,
+    pr_url: str,
 ) -> None:
     """File or update a GitHub issue for a single test failure."""
-    title = make_issue_title(failure.class_name, failure.method_name, timestamp, sha)
+    title = make_issue_title(failure.class_name, failure.method_name)
     body = make_issue_body(
         failure=failure,
         directory=directory,
@@ -323,7 +328,11 @@ def process_failure(
         github_repository=repository,
         github_run_id=github_run_id,
         workflow_run_branch=workflow_run_branch,
+        pr_url=pr_url,
     )
+
+    short_sha = sha[:7] if sha else "unknown"
+    ts_str = timestamp.strftime("%Y-%m-%d %H:%M UTC")
 
     existing = find_existing_issue(token, repository, failure.class_name, failure.method_name)
     if existing is not None:
@@ -332,7 +341,7 @@ def process_failure(
             f"{failure.class_name}.{failure.method_name}",
             file=sys.stderr,
         )
-        comment_body = f"### Recurrence detected\n\n{body}"
+        comment_body = f"### Failed on {short_sha} @ {ts_str}\n\n{body}"
         add_issue_comment(token, repository, existing, comment_body)
     else:
         issue_num = create_issue(token, repository, title, body)
@@ -422,6 +431,7 @@ def main(argv: list[str] | None = None) -> int:
     github_run_id = os.environ.get("GITHUB_RUN_ID", "")
     sha = os.environ.get("WORKFLOW_RUN_SHA", "")
     workflow_run_branch = os.environ.get("WORKFLOW_RUN_BRANCH", "")
+    pr_url = os.environ.get("WORKFLOW_RUN_PR_URL", "")
 
     if not token:
         print("Warning: GITHUB_TOKEN not set — skipping issue filing.", file=sys.stderr)
@@ -466,6 +476,7 @@ def main(argv: list[str] | None = None) -> int:
                     github_server_url=github_server_url,
                     github_run_id=github_run_id,
                     workflow_run_branch=workflow_run_branch,
+                    pr_url=pr_url,
                 )
             except Exception as exc:  # noqa: BLE001
                 print(
