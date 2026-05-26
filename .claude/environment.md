@@ -23,6 +23,7 @@ script for implementation details — each step is commented.
 | `ANDROID_HOME`     | `/home/user/android-sdk`     | hook + `~/.bashrc`| Required by Gradle Android plugin and `adb`                  |
 | `JAVA_TOOL_OPTIONS`| *(modified, not replaced)*   | hook + `~/.bashrc`| Strips `*.google.com` from `nonProxyHosts` — see script §0   |
 | `PATH`             | `+$ANDROID_HOME/…`           | hook + `~/.bashrc`| Adds `sdkmanager`, `adb` to path                            |
+| `GITHUB_TOKEN`     | *(session-scoped JWT)*       | container         | Use with `curl` to query the GitHub REST API                 |
 
 `~/.bashrc` carries the same fixes for interactive terminal sessions.
 The proxy credentials in `JAVA_TOOL_OPTIONS` are a session-scoped JWT injected
@@ -42,11 +43,7 @@ by the container — never hard-code them.
 
 ---
 
-## GitHub API access
-
-`$GITHUB_TOKEN` is available in the environment. Use it to query the GitHub REST API directly with `curl`.
-
-### Read GitHub Actions job logs
+## Read GitHub Actions job logs
 
 ```bash
 # List jobs for a workflow run (to get job IDs):
