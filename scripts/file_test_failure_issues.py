@@ -57,7 +57,7 @@ def parse_failures(directory: Path, suite_label: str, artifact_name: str) -> lis
     """Return one FailedTest for every failing test case found in *directory*."""
     failures: list[FailedTest] = []
 
-    xml_files = sorted(directory.glob("TEST-*.xml"))
+    xml_files = sorted(directory.glob("**/TEST-*.xml"))
     for xml_path in xml_files:
         try:
             tree = ET.parse(xml_path)

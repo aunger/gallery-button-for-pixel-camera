@@ -133,7 +133,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: unit-test-results
-          path: app/build/reports/tests/
+          path: |
+            app/build/test-results/testDebugUnitTest/
+            app/build/reports/tests/
           retention-days: 14
 
       - name: Start emulator
@@ -297,8 +299,7 @@ jobs:
             -p com.google.android.GoogleCamera 2>/dev/null || true
 
       - name: Run PixelCameraOverlayE2ETest
-        # Known flakiness tracked in #186 (overlay not visible within 10 s on
-        # loaded CI emulators). continue-on-error keeps the job green until fixed.
+        # Failures auto-tracked as issues. continue-on-error lets subsequent steps run even on failure.
         id: run_overlay_e2e
         if: steps.diff_check.outputs.needs_full_build == 'true'
         continue-on-error: true
@@ -314,9 +315,7 @@ jobs:
           }
 
       - name: Run GalleryButtonVisualE2ETest
-        # Known failures tracked in #178 (emulator keyguard not engaging) and
-        # #179 (adaptive-icon colour/shape). continue-on-error keeps the job
-        # green until those are fixed.
+        # Failures auto-tracked as issues. continue-on-error lets subsequent steps run even on failure.
         id: run_gallery_e2e
         if: steps.diff_check.outputs.needs_full_build == 'true'
         continue-on-error: true
@@ -376,6 +375,44 @@ jobs:
             app/build/test-results/testDebugUnitTest \
               --suite-label "Unit Tests" \
             app/build/outputs/androidTest-results/connected/debug \
+              --suite-label "Instrumented Tests"
+
+  file-issues:
+    needs: [build-and-test]
+    runs-on: ubuntu-latest
+    if: always() && needs.build-and-test.result != 'cancelled'
+    permissions:
+      issues: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download unit test results
+        uses: actions/download-artifact@v7
+        with:
+          name: unit-test-results
+          path: downloaded-artifacts/unit-test-results
+        continue-on-error: true
+
+      - name: Download E2E test results
+        uses: actions/download-artifact@v7
+        with:
+          name: e2e-test-results
+          path: downloaded-artifacts/e2e-test-results
+        continue-on-error: true
+
+      - name: File issues for failed tests
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          WORKFLOW_RUN_SHA: ${{ github.sha }}
+        run: |
+          python3 scripts/file_test_failure_issues.py \
+            downloaded-artifacts/unit-test-results \
+              --suite-label "Unit Tests" \
+            downloaded-artifacts/e2e-test-results \
               --suite-label "Instrumented Tests"
 
   # Produce a signed release-config APK on every merge to main for easy sideloading.
