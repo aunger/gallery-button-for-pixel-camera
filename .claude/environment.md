@@ -39,3 +39,23 @@ by the container — never hard-code them.
 | `Failed to find package 'platform-tools'` | sdkmanager can't fetch repo manifest | Same root cause as above |
 | `Failed to install … licences have not been accepted` | Missing `$ANDROID_HOME/licenses/` files | Hook §2b writes them; or run `sdkmanager --licenses` |
 | Build picks up wrong SDK | `ANDROID_HOME` unset or wrong | Check `local.properties` and `ANDROID_HOME` |
+
+---
+
+## GitHub API access
+
+`$GITHUB_TOKEN` is available in the environment. Use it to query the GitHub REST API directly with `curl`.
+
+### Read GitHub Actions job logs
+
+```bash
+# List jobs for a workflow run (to get job IDs):
+curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+  -H "Accept: application/vnd.github+json" \
+  "https://api.github.com/repos/aunger/gallery-button-for-pixel-camera/actions/runs/{run_id}/jobs"
+
+# Fetch the log for a specific job:
+curl -s -L -H "Authorization: Bearer $GITHUB_TOKEN" \
+  -H "Accept: application/vnd.github+json" \
+  "https://api.github.com/repos/aunger/gallery-button-for-pixel-camera/actions/jobs/{job_id}/logs"
+```
