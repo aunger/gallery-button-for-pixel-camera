@@ -229,16 +229,19 @@ def find_existing_issue(
     repository: str,
     class_name: str,
     method_name: str,
-) -> int | None:
-    """Search open issues for an existing failure report.
+) -> tuple[int, str] | None:
+    """Search open and closed issues for an existing failure report.
 
-    Returns the issue number if found, else None.
+    Returns a (issue_number, state) tuple if found, else None.
+    *state* is the string returned by the GitHub API, e.g. ``"open"`` or
+    ``"closed"``.
     """
     if requests is None:
         print("  Error: 'requests' library not available.", file=sys.stderr)
         return None
 
     simple_class = class_name.split(".")[-1]
+    # Omit is:open / is:closed so both states are searched.
     query = f'repo:{repository} is:issue label:test-failure "[{simple_class}] {method_name}" in:title'
     url = "https://api.github.com/search/issues"
     try:
@@ -252,7 +255,7 @@ def find_existing_issue(
         data = resp.json()
         items = data.get("items", [])
         if items:
-            return items[0]["number"]
+            return (items[0]["number"], items[0]["state"])
     except Exception as exc:  # noqa: BLE001
         print(f"  Warning: issue search failed: {exc}", file=sys.stderr)
     return None
@@ -301,6 +304,31 @@ def add_issue_comment(
     return False
 
 
+def reopen_issue(
+    token: str,
+    repository: str,
+    issue_number: int,
+) -> bool:
+    """Re-open a closed GitHub issue.  Returns True on success."""
+    if requests is None:
+        print("  Error: 'requests' library not available.", file=sys.stderr)
+        return False
+
+    url = f"https://api.github.com/repos/{repository}/issues/{issue_number}"
+    try:
+        resp = requests.patch(
+            url,
+            headers=_github_headers(token),
+            json={"state": "open"},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return True
+    except Exception as exc:  # noqa: BLE001
+        print(f"  Warning: failed to reopen issue #{issue_number}: {exc}", file=sys.stderr)
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Core logic
 # ---------------------------------------------------------------------------
@@ -334,13 +362,16 @@ def process_failure(
     short_sha = sha[:7] if sha else "unknown"
     ts_str = timestamp.strftime("%Y-%m-%d %H:%M UTC")
 
-    existing = find_existing_issue(token, repository, failure.class_name, failure.method_name)
-    if existing is not None:
+    found = find_existing_issue(token, repository, failure.class_name, failure.method_name)
+    if found is not None:
+        existing, state = found
         print(
             f"  Duplicate found: #{existing} — appending comment for "
             f"{failure.class_name}.{failure.method_name}",
             file=sys.stderr,
         )
+        if state == "closed":
+            reopen_issue(token, repository, existing)
         comment_body = f"### Failed on {short_sha} @ {ts_str}\n\n{body}"
         add_issue_comment(token, repository, existing, comment_body)
     else:
