@@ -238,7 +238,7 @@ def find_existing_issue(
         return None
 
     simple_class = class_name.split(".")[-1]
-    query = f'repo:{repository} is:issue is:open label:test-failure "[{simple_class}] {method_name}" in:title'
+    query = f'repo:{repository} is:issue label:test-failure "[{simple_class}] {method_name}" in:title'
     url = "https://api.github.com/search/issues"
     try:
         resp = requests.get(
