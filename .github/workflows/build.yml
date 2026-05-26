@@ -309,7 +309,7 @@ jobs:
             -Pe2eClass=com.gb4pc.e2e.PixelCameraOverlayE2ETest || {
             echo "=== LOGCAT (last 300 lines) ==="
             "$ADB" logcat -d | \
-              grep -E "AndroidRuntime|FATAL|Process crashed|com\.gb4pc|OverlayService|MockCamera|CameraService|E/\w" | \
+              bash scripts/filter_logcat.sh | \
               tail -300
             exit 1
           }
@@ -325,7 +325,7 @@ jobs:
             -Pe2eClass=com.gb4pc.e2e.GalleryButtonVisualE2ETest || {
             echo "=== LOGCAT (last 300 lines) ==="
             "$ADB" logcat -d | \
-              grep -E "AndroidRuntime|FATAL|Process crashed|com\.gb4pc|OverlayService|MockCamera|CameraService|E/\w" | \
+              bash scripts/filter_logcat.sh | \
               tail -300
             exit 1
           }
