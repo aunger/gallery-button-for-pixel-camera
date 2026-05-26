@@ -412,11 +412,6 @@ class TestFindExistingIssue(unittest.TestCase):
         result = ftfi.find_existing_issue("token", "owner/repo", "FooTest", "testBar")
         self.assertIsNone(result)
 
-    def test_returns_none_when_requests_unavailable(self):
-        with patch.object(ftfi, "requests", None):
-            result = ftfi.find_existing_issue("token", "owner/repo", "FooTest", "testBar")
-        self.assertIsNone(result)
-
 
 class TestCreateIssue(unittest.TestCase):
 
@@ -432,11 +427,6 @@ class TestCreateIssue(unittest.TestCase):
     def test_returns_none_on_api_error(self, mock_requests):
         mock_requests.post.side_effect = Exception("server error")
         result = ftfi.create_issue("token", "owner/repo", "Title", "Body")
-        self.assertIsNone(result)
-
-    def test_returns_none_when_requests_unavailable(self):
-        with patch.object(ftfi, "requests", None):
-            result = ftfi.create_issue("token", "owner/repo", "Title", "Body")
         self.assertIsNone(result)
 
     @patch("file_test_failure_issues.requests")
@@ -467,11 +457,6 @@ class TestAddIssueComment(unittest.TestCase):
         result = ftfi.add_issue_comment("token", "owner/repo", 42, "Comment body")
         self.assertFalse(result)
 
-    def test_returns_false_when_requests_unavailable(self):
-        with patch.object(ftfi, "requests", None):
-            result = ftfi.add_issue_comment("token", "owner/repo", 42, "Comment body")
-        self.assertFalse(result)
-
 
 class TestReopenIssue(unittest.TestCase):
 
@@ -494,11 +479,6 @@ class TestReopenIssue(unittest.TestCase):
     def test_returns_false_on_api_error(self, mock_requests):
         mock_requests.patch.side_effect = Exception("server error")
         result = ftfi.reopen_issue("token", "owner/repo", 42)
-        self.assertFalse(result)
-
-    def test_returns_false_when_requests_unavailable(self):
-        with patch.object(ftfi, "requests", None):
-            result = ftfi.reopen_issue("token", "owner/repo", 42)
         self.assertFalse(result)
 
 

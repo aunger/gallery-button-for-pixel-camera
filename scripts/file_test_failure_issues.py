@@ -29,10 +29,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-try:
-    import requests
-except ImportError:
-    requests = None  # type: ignore[assignment]
+import requests
 
 
 # ---------------------------------------------------------------------------
@@ -236,10 +233,6 @@ def find_existing_issue(
     *state* is the string returned by the GitHub API, e.g. ``"open"`` or
     ``"closed"``.
     """
-    if requests is None:
-        print("  Error: 'requests' library not available.", file=sys.stderr)
-        return None
-
     simple_class = class_name.split(".")[-1]
     # Omit is:open / is:closed so both states are searched.
     query = f'repo:{repository} is:issue label:test-failure "[{simple_class}] {method_name}" in:title'
@@ -268,10 +261,6 @@ def create_issue(
     body: str,
 ) -> int | None:
     """Create a new GitHub issue.  Returns the issue number or None on failure."""
-    if requests is None:
-        print("  Error: 'requests' library not available.", file=sys.stderr)
-        return None
-
     url = f"https://api.github.com/repos/{repository}/issues"
     payload = {"title": title, "body": body, "labels": LABELS}
     try:
@@ -290,10 +279,6 @@ def add_issue_comment(
     body: str,
 ) -> bool:
     """Append a comment to an existing issue.  Returns True on success."""
-    if requests is None:
-        print("  Error: 'requests' library not available.", file=sys.stderr)
-        return False
-
     url = f"https://api.github.com/repos/{repository}/issues/{issue_number}/comments"
     try:
         resp = requests.post(url, headers=_github_headers(token), json={"body": body}, timeout=30)
@@ -310,10 +295,6 @@ def reopen_issue(
     issue_number: int,
 ) -> bool:
     """Re-open a closed GitHub issue.  Returns True on success."""
-    if requests is None:
-        print("  Error: 'requests' library not available.", file=sys.stderr)
-        return False
-
     url = f"https://api.github.com/repos/{repository}/issues/{issue_number}"
     try:
         resp = requests.patch(
