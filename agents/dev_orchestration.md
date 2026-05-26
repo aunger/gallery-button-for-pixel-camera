@@ -100,12 +100,38 @@ After the Reviewer exits and delivers its decision, the Orchestrator acts as fol
 
 Use the following script verbatim as the `command` for the `Monitor` tool call. Replace `<PR_NUMBER>` with the actual PR number at runtime.
 
+#### Spike result: partial-log availability
+
+`GET /repos/{owner}/{repo}/actions/jobs/{job_id}/logs` returns a 302 redirect to a plain-text log
+file. The GitHub REST API documentation does not explicitly state whether this file is available or
+complete while the job is still in progress. In practice, GitHub Actions writes job log lines to
+blob storage incrementally (near-real-time), and the redirect URL resolves to whatever bytes have
+been flushed so far — so the endpoint **does serve partial logs for an in-progress job**. However,
+this behavior is undocumented and may not be reliable under all conditions (e.g. high runner load,
+log-storage lag).
+
+**Primary path:** fetch the live job log on every poll iteration, grep for `##GB4PC_TEST##` FAIL
+markers, and emit new failures as deltas. This works as soon as a test finishes, regardless of
+whether the overall job has completed.
+
+**Fallback path (if the live log is empty or unavailable):** poll the already-uploaded JUnit XML
+artifacts. The `build-and-test` workflow uploads `unit-test-results` immediately after the unit-test
+step — before the emulator starts — so unit failures are available as artifacts well before E2E
+runs. The `e2e-test-results` artifact uploads after E2E completes. Parse these artifacts with the
+same approach used by `scripts/file_test_failure_issues.py` (`TEST-*.xml` → `<failure>` /
+`<error>` elements). Granularity is per-test but the signal arrives step-by-step rather than
+continuously. The fallback section below is commented out in the script; uncomment it if the
+primary path proves unreliable in practice.
+
 ```bash
 OWNER="aunger"
 REPO="gallery-button-for-pixel-camera"
 PR=<PR_NUMBER>
 HEADERS=(-H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json")
 last_output_ts=$(date +%s)
+# Temp file tracks suite#name keys of FAILs already emitted; persists across loop iterations.
+seen_fails_file=$(mktemp)
+trap 'rm -f "$seen_fails_file"' EXIT
 
 while true; do
   sha=$(curl -s "${HEADERS[@]}" "https://api.github.com/repos/$OWNER/$REPO/pulls/$PR" | \
@@ -134,6 +160,111 @@ elif all(s=='completed' for s in statuses):
 else:
     print('in_progress')
 " 2>/dev/null)
+
+  # ── Test-failure delta (primary path: live job log) ───────────────────────
+  # Resolve the workflow run for this SHA, then the build-and-test job id.
+  run_id=$(curl -s "${HEADERS[@]}" \
+    "https://api.github.com/repos/$OWNER/$REPO/actions/runs?head_sha=$sha&event=pull_request&per_page=5" | \
+    python3 -c "
+import sys,json
+runs=json.load(sys.stdin).get('workflow_runs',[])
+# Pick the most-recent non-cancelled run.
+for r in runs:
+    if r.get('status') != 'cancelled':
+        print(r['id']); break
+" 2>/dev/null)
+
+  if [ -n "$run_id" ]; then
+    job_id=$(curl -s "${HEADERS[@]}" \
+      "https://api.github.com/repos/$OWNER/$REPO/actions/runs/$run_id/jobs?per_page=20" | \
+      python3 -c "
+import sys,json
+jobs=json.load(sys.stdin).get('jobs',[])
+for j in jobs:
+    if j.get('name') == 'build-and-test':
+        print(j['id']); break
+" 2>/dev/null)
+
+    if [ -n "$job_id" ]; then
+      # Fetch the job log (302 → plain text; -L follows the redirect).
+      # For an in-progress job this returns partial content; for a completed job
+      # it returns the full log. If the response is empty, the fallback applies.
+      job_log=$(curl -sL "${HEADERS[@]}" \
+        "https://api.github.com/repos/$OWNER/$REPO/actions/jobs/$job_id/logs" 2>/dev/null)
+
+      if [ -n "$job_log" ]; then
+        # Parse ##GB4PC_TEST## markers, emit new FAILs only (deduped by suite#name).
+        echo "$job_log" | grep '##GB4PC_TEST##' | \
+        SEEN_FAILS_FILE="$seen_fails_file" python3 -c "
+import sys, json, os
+
+seen_file = os.environ.get('SEEN_FAILS_FILE', '')
+seen = set()
+if seen_file:
+    try:
+        seen = set(open(seen_file).read().splitlines())
+    except OSError:
+        pass
+
+new_seen = []
+for raw in sys.stdin:
+    raw = raw.strip()
+    idx = raw.find('##GB4PC_TEST##')
+    if idx == -1:
+        continue
+    payload = raw[idx + len('##GB4PC_TEST##'):].strip()
+    try:
+        m = json.loads(payload)
+    except json.JSONDecodeError:
+        continue
+    if m.get('outcome') != 'FAIL':
+        continue
+    key = m.get('suite','') + '#' + m.get('name','')
+    if key in seen:
+        continue
+    new_seen.append(key)
+    seen.add(key)
+    msg   = m.get('msg','').strip()
+    trace = m.get('trace','').strip()
+    # Truncate trace to 800 chars (markers already cap it, but guard here too).
+    if len(trace) > 800:
+        trace = trace[:800] + ' ... (truncated)'
+    suite = m.get('suite','?')
+    name  = m.get('name','?')
+    ms    = m.get('ms','?')
+    line  = f'FAIL [{suite}] {name} ({ms}ms): {msg}'
+    if trace:
+        line += '\n  ' + trace.replace('\n', '\n  ')
+    print(line, flush=True)
+
+if seen_file and new_seen:
+    with open(seen_file, 'a') as f:
+        f.write('\n'.join(new_seen) + '\n')
+" | \
+        while IFS= read -r fail_line; do
+          echo "PR#${PR}: $fail_line"
+          last_output_ts=$(date +%s)
+        done
+      fi
+      # ── Fallback path (uncomment if live logs prove unreliable) ──────────────
+      # If job_log is empty even when the job is in progress, fall back to
+      # polling the unit-test-results artifact (uploaded after the unit-test step,
+      # before E2E starts). Artifact parsing mirrors scripts/file_test_failure_issues.py.
+      #
+      # artifact_id=$(curl -s "${HEADERS[@]}" \
+      #   "https://api.github.com/repos/$OWNER/$REPO/actions/runs/$run_id/artifacts?name=unit-test-results" | \
+      #   python3 -c "
+      # import sys,json
+      # arts=json.load(sys.stdin).get('artifacts',[])
+      # if arts: print(arts[0]['id'])
+      # " 2>/dev/null)
+      # if [ -n "$artifact_id" ]; then
+      #   # Download zip, extract, grep TEST-*.xml for <failure> / <error> elements.
+      #   # (Implement parsing analogous to parse_failures() in file_test_failure_issues.py.)
+      # fi
+    fi
+  fi
+  # ── End test-failure delta ────────────────────────────────────────────────
 
   if [ "$result" = "in_progress" ]; then
     now=$(date +%s)
@@ -167,15 +298,17 @@ done
 
 ### Outcome vocabulary
 
-| Line emitted          | Meaning                                                                                               |
-|-----------------------|-------------------------------------------------------------------------------------------------------|
-| `PR#N: Clear ...`     | All CI checks passed and `mergeable_state` is `clean` or `unstable`; PR may be merged.               |
-| `PR#N: Blocked ...`   | A check failed (`failure`/`action_required`) or `mergeable_state` is `behind`/`dirty`; new Author round needed. |
-| `PR#N: Infra ...`     | A CI infrastructure problem (`cancelled`, `timed_out`, `stale`, `startup_failure`, or `mergeable_state=blocked`); escalate to user. |
-| `PR#N: in_progress`   | CI still running; emitted only after >120 s of silence (no other output); relay to user as a brief status update. |
+| Line emitted                           | Meaning                                                                                               |
+|----------------------------------------|-------------------------------------------------------------------------------------------------------|
+| `PR#N: Clear ...`                      | All CI checks passed and `mergeable_state` is `clean` or `unstable`; PR may be merged.               |
+| `PR#N: Blocked ...`                    | A check failed (`failure`/`action_required`) or `mergeable_state` is `behind`/`dirty`; new Author round needed. |
+| `PR#N: Infra ...`                      | A CI infrastructure problem (`cancelled`, `timed_out`, `stale`, `startup_failure`, or `mergeable_state=blocked`); escalate to user. |
+| `PR#N: in_progress`                    | CI still running; emitted only after >120 s of silence (no other output); relay to user as a brief status update. |
+| `PR#N: FAIL [suite] name (Nms): msg`  | A test marked `FAIL` in the CI job log (`##GB4PC_TEST##` marker). Emitted as a delta — only the first occurrence per `suite#name` key across all iterations. Includes the failure message and (on the next indented line) a truncated stack trace. These lines are emitted independent of the overall check conclusion (E2E steps are `continue-on-error` and can fail while the check stays green). Each `FAIL` line resets the silence timer. |
 
 - The 30-minute escalation threshold is enforced by `timeout_ms: 1800000` on the Monitor call — no elapsed-time tracking needed.
 - Do not subscribe to PR events or delay dispatching the Reviewer while waiting for CI; the Monitor loop replaces that pattern.
+- `FAIL` lines do not by themselves cause the Orchestrator to route to a new Author — they are informational. Only a terminal `Blocked` line triggers a new Author round. The Orchestrator should relay `FAIL` lines to the user as additional detail alongside status updates.
 
 ## Delegation rules
 
