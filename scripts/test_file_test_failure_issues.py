@@ -218,6 +218,7 @@ class TestMakeIssueBody(unittest.TestCase):
             github_repository="aunger/gallery-button-for-pixel-camera",
             github_run_id="12345",
             workflow_run_branch="main",
+            pr_url="",
         )
         defaults.update(kwargs)
         return ftfi.make_issue_body(**defaults)
@@ -309,9 +310,10 @@ class TestMakeIssueBody(unittest.TestCase):
         self.assertIn("https://github.com/owner/repo/pull/42", body)
         self.assertIn("[PR]", body)
 
-    def test_pr_link_absent_when_pr_url_empty(self):
+    def test_pr_shows_unknown_when_pr_url_empty(self):
         body = self._make_body(pr_url="")
         self.assertNotIn("[PR]", body)
+        self.assertIn("_unknown_", body)
 
     def test_failure_message_not_in_fenced_code_block(self):
         """Failure message must not be wrapped in a fenced code block (causes horizontal scroll)."""
@@ -501,6 +503,7 @@ class TestProcessFailure(unittest.TestCase):
             github_server_url="https://github.com",
             github_run_id="1",
             workflow_run_branch="main",
+            pr_url="",
         )
         mock_comment.assert_called_once()
         mock_create.assert_not_called()
@@ -530,6 +533,7 @@ class TestProcessFailure(unittest.TestCase):
             github_server_url="https://github.com",
             github_run_id="1",
             workflow_run_branch="main",
+            pr_url="",
         )
         mock_create.assert_called_once()
         mock_comment.assert_not_called()

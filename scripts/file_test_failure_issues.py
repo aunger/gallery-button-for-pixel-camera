@@ -145,7 +145,7 @@ def make_issue_body(
     github_repository: str,
     github_run_id: str,
     workflow_run_branch: str,
-    pr_url: str = "",
+    pr_url: str,
 ) -> str:
     """Build the Markdown body for a test-failure issue."""
     ts_str = timestamp.strftime("%Y-%m-%d %H:%M UTC")
@@ -173,7 +173,7 @@ def make_issue_body(
         ocr_section = f"\n### OCR text from screenshot\n\n```\n{ocr_text}\n```\n"
 
     branch_info = f"`{workflow_run_branch}`" if workflow_run_branch else "_unknown_"
-    pr_line = f"- [PR]({pr_url})\n" if pr_url else ""
+    pr_info = f"[PR]({pr_url})" if pr_url else "_unknown_"
 
     body = f"""\
 ## Test Failure
@@ -201,7 +201,8 @@ def make_issue_body(
 
 - [CI run]({run_url})
 - [Test artifact: {failure.artifact_name}]({artifact_url})
-{pr_line}{ocr_section}
+- {pr_info}
+{ocr_section}
 ---
 _Filed automatically by CI on failure of `{failure.class_name}.{failure.method_name}`._
 """
@@ -314,7 +315,7 @@ def process_failure(
     github_server_url: str,
     github_run_id: str,
     workflow_run_branch: str,
-    pr_url: str = "",
+    pr_url: str,
 ) -> None:
     """File or update a GitHub issue for a single test failure."""
     title = make_issue_title(failure.class_name, failure.method_name)
