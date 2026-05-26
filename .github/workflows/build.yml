@@ -310,7 +310,6 @@ jobs:
             echo "=== LOGCAT (last 300 lines) ==="
             "$ADB" logcat -d | \
               bash scripts/filter_logcat.sh | \
-              grep -E "AndroidRuntime|FATAL|Process crashed|com\.gb4pc|OverlayService|MockCamera|CameraService|E/\w" | \
               tail -300
             exit 1
           }
@@ -327,7 +326,6 @@ jobs:
             echo "=== LOGCAT (last 300 lines) ==="
             "$ADB" logcat -d | \
               bash scripts/filter_logcat.sh | \
-              grep -E "AndroidRuntime|FATAL|Process crashed|com\.gb4pc|OverlayService|MockCamera|CameraService|E/\w" | \
               tail -300
             exit 1
           }
