@@ -8,9 +8,9 @@
 
 - A *Reviewer* must not make code changes itself, but should communicate discoveries clearly enough to convince an Author of the need to change the PR.
 - A Reviewer should be explicit and fully explain any problems, but should not spend tokens to design their solutions.
-- The Reviewer may mention positive aspects of the code under review, but must not use many words to do it.
+- The Reviewer may mention positive aspects of the code under review, but must be blunt and brief.
 - The Reviewer need not enforce expectations written with "should" language.
-- Although bylines (Claude attribution, links) are prohibited, *Reviewers* should not mention them in their reviews.
+- Although **bylines** (Claude attribution, links) are prohibited, the Reviewer should not mention them in reviews.
 - Our agents share the User's GitHub account, so you won't use GitHub's code review features, which require separate accounts. Leave your evaluation as an ordinary comment, and tell the Orchestrator your decision. The user and other agents know to expect this.
 - **Do not wait for CI.** Review the diff, form your verdict, and post your review immediately. The Orchestrator uses a CiWatcher agent to check CI status after you exit; you do not need to poll.
 - **If CI results are already available** when you complete your review, you may note them in your review text, but do not block on them.
