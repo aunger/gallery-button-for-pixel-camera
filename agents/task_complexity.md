@@ -31,9 +31,9 @@ Score each dimension 1–3, sum them, and map the total to a tier.
 
 Apply one complexity label per issue before dispatching to an agent:
 
-- `complexity haiku` — score 6–8
-- `complexity sonnet` — score 9–13
-- `complexity opus` — score 14–18
+- `c-haiku` — score 6–8
+- `c-sonnet` — score 9–13
+- `c-opus` — score 14–18
 
 ## Project-specific notes
 
