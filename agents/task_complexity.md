@@ -29,11 +29,9 @@ Score each dimension 1–3, sum them, and map the total to a tier.
 
 ## GitHub labels
 
-Apply one complexity label per issue before dispatching to an agent:
-
-- `c-haiku` — score 6–8
-- `c-sonnet` — score 9–13
-- `c-opus` — score 14–18
+- `c-haiku` Haiku
+- `c-sonnet` Sonnet
+- `c-opus` Opus
 
 ## Project-specific notes
 
