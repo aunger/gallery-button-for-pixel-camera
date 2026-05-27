@@ -24,70 +24,26 @@ fail() { echo "  FAIL: $1"; FAIL=$((FAIL + 1)); }
 TMPDIR_TESTS="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR_TESTS"' EXIT
 
-# ── Step-parser helper ────────────────────────────────────────────────────────
+# ── Parser helpers ────────────────────────────────────────────────────────────
 #
-# The Signal 1 python3 snippet from ci_monitor.sh reads jobs JSON from stdin,
-# uses $SEEN env var pointing to a dedup-state file, and prints step deltas.
-# We invoke it directly here to test its logic in isolation.
+# Both parsers are invoked via the hidden subcommands in ci_monitor.sh so that
+# tests exercise the real parser code, not a copy.
 
-STEP_PARSER_CODE='
-import sys,json,os
-seen_f=os.environ["SEEN"]
-seen=set(open(seen_f).read().split()) if os.path.getsize(seen_f) else set()
-new=[]; out=[]
-for j in json.load(sys.stdin).get("jobs",[]):
-    if j.get("name")!="build-and-test": continue
-    for s in j.get("steps",[]):
-        if s.get("status")!="completed": continue
-        num=str(s.get("number"))
-        if num in seen: continue
-        new.append(num)
-        name=s.get("name","?"); concl=s.get("conclusion") or "?"
-        if name=="Build and run unit tests" or "E2ETest" in name or concl in ("failure","cancelled","timed_out","action_required"):
-            out.append("step \"%s\" -> %s" % (name, concl))
-if new: open(seen_f,"a").write("\n".join(new)+"\n")
-print("\n".join(out))
-'
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CI_MONITOR="$SCRIPT_DIR/ci_monitor.sh"
 
 run_step_parser() {
   # Usage: run_step_parser <jobs-json-file> <seen-file>
   local json_file="$1"
   local seen_file="$2"
-  SEEN="$seen_file" python3 -c "$STEP_PARSER_CODE" < "$json_file" 2>/dev/null
+  bash "$CI_MONITOR" __parse-steps "$seen_file" < "$json_file" 2>/dev/null
 }
-
-# ── Fail-parser helper ────────────────────────────────────────────────────────
-#
-# The Signal 2 python3 snippet reads ndjson from stdin, uses $SEEN_FAILS env
-# var pointing to a dedup-state file, and prints FAIL entries.
-
-FAIL_PARSER_CODE='
-import sys,json,os
-seen_f=os.environ["SEEN_FAILS"]
-seen=set(open(seen_f).read().splitlines()) if os.path.getsize(seen_f) else set()
-new=[]
-for raw in sys.stdin:
-    i=raw.find("##GB4PC_TEST##")
-    if i==-1: continue
-    try: m=json.loads(raw[i+len("##GB4PC_TEST##"):].strip())
-    except Exception: continue
-    if m.get("outcome")!="FAIL": continue
-    key=m.get("suite","")+"#"+m.get("name","")
-    if key in seen: continue
-    seen.add(key); new.append(key)
-    msg=(m.get("msg") or "").strip(); tr=(m.get("trace") or "").strip()
-    if len(tr)>800: tr=tr[:800]+" ...(truncated)"
-    line="FAIL [%s] %s: %s" % (m.get("suite","?"), m.get("name","?"), msg)
-    if tr: line+="\n  "+tr.replace("\n","\n  ")
-    print(line)
-if new: open(seen_f,"a").write("\n".join(new)+"\n")
-'
 
 run_fail_parser() {
   # Usage: run_fail_parser <ndjson-file> <seen-fails-file>
   local ndjson_file="$1"
   local seen_fails_file="$2"
-  SEEN_FAILS="$seen_fails_file" python3 -c "$FAIL_PARSER_CODE" < "$ndjson_file" 2>/dev/null
+  bash "$CI_MONITOR" __parse-fails "$seen_fails_file" < "$ndjson_file" 2>/dev/null
 }
 
 # ── Fixture: all-success build-and-test jobs JSON ────────────────────────────
