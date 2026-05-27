@@ -87,9 +87,10 @@ After the Reviewer exits and delivers its decision, the Orchestrator acts as fol
 ```
   if Reviewer requested changes → goto newAuthor
   if Reviewer gave approval:
-    Orchestrator launches a Monitor tool call (run_in_background: true, timeout_ms: 1800000)
+    Orchestrator launches a Monitor tool call running `bash scripts/ci_monitor.sh <PR_NUMBER>` from the repo root (run_in_background: true, timeout_ms: 1800000)
     Each stdout line arrives as a task-notification event
-    Act only on lines containing Clear, Blocked, or Infra. Relay in_progress lines to the user as brief status updates (the script suppresses these unless no other output has been emitted for over 120 seconds).
+    Act only on the terminal lines Clear, Blocked, or Infra. Relay in_progress lines to the user as brief status updates (the script suppresses these unless no other output has been emitted for over 120 seconds).
+    Relay `step "..." -> ...` and `FAIL [...] ...` lines to the user as informational test-result deltas; they do NOT end the loop or start a new Author round.
     if Monitor emits a Blocked line  → goto newAuthor
     if Monitor emits an Infra line   → escalate to user; stop
     if Monitor emits a Clear line    → PR may be merged
@@ -98,72 +99,13 @@ After the Reviewer exits and delivers its decision, the Orchestrator acts as fol
 
 ### Monitor bash script
 
-Use the following script verbatim as the `command` for the `Monitor` tool call. Replace `<PR_NUMBER>` with the actual PR number at runtime.
+The poll loop lives in [`scripts/ci_monitor.sh`](../scripts/ci_monitor.sh). Run it from the repo root, passing the PR number as the sole argument, as the `command` for the `Monitor` tool call:
 
 ```bash
-OWNER="aunger"
-REPO="gallery-button-for-pixel-camera"
-PR=<PR_NUMBER>
-HEADERS=(-H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json")
-last_output_ts=$(date +%s)
-
-while true; do
-  sha=$(curl -s "${HEADERS[@]}" "https://api.github.com/repos/$OWNER/$REPO/pulls/$PR" | \
-    python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('head',{}).get('sha',''))" 2>/dev/null)
-
-  [ -z "$sha" ] && { echo "PR#${PR}: could not fetch SHA"; last_output_ts=$(date +%s); sleep 30; continue; }
-
-  check_data=$(curl -s "${HEADERS[@]}" \
-    "https://api.github.com/repos/$OWNER/$REPO/commits/$sha/check-runs" 2>/dev/null)
-
-  result=$(echo "$check_data" | python3 -c "
-import sys,json
-d=json.load(sys.stdin)
-runs=d.get('check_runs',[])
-total=d.get('total_count',0)
-if total==0:
-    print('Clear'); exit()
-statuses=[r['status'] for r in runs]
-conclusions=[r.get('conclusion','') for r in runs if r['status']=='completed']
-if any(s in ('in_progress','queued') for s in statuses):
-    print('in_progress')
-elif all(s=='completed' for s in statuses):
-    if any(c in ('cancelled','timed_out','stale','startup_failure') for c in conclusions): print('Infra')
-    elif any(c in ('failure','action_required') for c in conclusions): print('Blocked')
-    else: print('all_passed')
-else:
-    print('in_progress')
-" 2>/dev/null)
-
-  if [ "$result" = "in_progress" ]; then
-    now=$(date +%s)
-    if [ $((now - last_output_ts)) -gt 120 ]; then
-      echo "PR#${PR}: in_progress"
-      last_output_ts=$now
-    fi
-  elif [ "$result" = "all_passed" ]; then
-    mergeable=$(curl -s "${HEADERS[@]}" "https://api.github.com/repos/$OWNER/$REPO/pulls/$PR" | \
-      python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('mergeable_state','unknown'))" 2>/dev/null)
-    if [ "$mergeable" = "clean" ] || [ "$mergeable" = "unstable" ]; then
-      echo "PR#${PR}: Clear (mergeable_state=$mergeable)"; break
-    elif [ "$mergeable" = "behind" ] || [ "$mergeable" = "dirty" ]; then
-      echo "PR#${PR}: Blocked (mergeable_state=$mergeable)"; break
-    elif [ "$mergeable" = "blocked" ]; then
-      echo "PR#${PR}: Infra (mergeable_state=blocked)"; break
-    else
-      echo "PR#${PR}: all_passed mergeable_state=$mergeable (still computing)"
-      last_output_ts=$(date +%s)
-    fi
-  elif [ "$result" = "Blocked" ] || [ "$result" = "Infra" ]; then
-    echo "PR#${PR}: $result"; break
-  else
-    echo "PR#${PR}: $result"
-    last_output_ts=$(date +%s)
-  fi
-
-  sleep 30
-done
+bash scripts/ci_monitor.sh <PR_NUMBER>
 ```
+
+`OWNER`/`REPO` default to this repo at the top of the script, and it reads `$GITHUB_TOKEN` from the environment. The script deliberately omits `set -e` so transient REST/parse failures cannot kill the resilient poll loop; the 30-minute escalation threshold is enforced by `timeout_ms: 1800000` on the Monitor call, not inside the script. Each stdout line is the interface (see the outcome vocabulary below): terminal lines (`Clear`/`Blocked`/`Infra`) end the loop, while informational lines keep it alive.
 
 ### Outcome vocabulary
 
@@ -173,7 +115,11 @@ done
 | `PR#N: Blocked ...`   | A check failed (`failure`/`action_required`) or `mergeable_state` is `behind`/`dirty`; new Author round needed. |
 | `PR#N: Infra ...`     | A CI infrastructure problem (`cancelled`, `timed_out`, `stale`, `startup_failure`, or `mergeable_state=blocked`); escalate to user. |
 | `PR#N: in_progress`   | CI still running; emitted only after >120 s of silence (no other output); relay to user as a brief status update. |
+| `PR#N: step "..." -> ...` | A `build-and-test` step reached a conclusion: one of the three named test steps (`Build and run unit tests`, `Run *E2ETest`), or any genuine step failure. **Informational** — surfaces *which group* finished/failed and when; never ends the loop. |
+| `PR#N: FAIL [suite] name: ...` | A per-test failure (message + truncated trace) parsed from a `testresults-<group>` artifact, possibly followed by indented trace lines. **Informational** — surfaces even when the check stays green via `continue-on-error`; never ends the loop. |
 
+- `step`/`FAIL` lines are **informational test-result deltas**, not terminal outcomes: relay them to the user but do not start a new Author round. Only a `Blocked` line does that.
+- The Monitor reads results at **step granularity** from two polled REST signals — per-step `conclusion` (`/actions/runs/{id}/jobs`) and the `testresults-<group>` artifacts (`/actions/runs/{id}/artifacts`). It deliberately does **not** scrape the in-progress job log: `GET /actions/jobs/{job_id}/logs` returns 404 until the job completes, so markers are not readable mid-run that way.
 - The 30-minute escalation threshold is enforced by `timeout_ms: 1800000` on the Monitor call — no elapsed-time tracking needed.
 - Do not subscribe to PR events or delay dispatching the Reviewer while waiting for CI; the Monitor loop replaces that pattern.
 
