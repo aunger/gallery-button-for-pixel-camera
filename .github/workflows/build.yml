@@ -123,10 +123,13 @@ jobs:
         if: steps.diff_check.outputs.needs_full_build == 'true'
         env:
           BUILD_NUMBER: ${{ github.run_number }}
-        run: >
-          ./gradlew assembleDebug assembleDebugAndroidTest :e2e-mock-camera:assembleDebug
-          :e2e-mock-gallery:assembleDebug
-          testDebugUnitTest -PversionName=dev.${{ github.run_number }}
+        run: |
+          mkdir -p results
+          set -o pipefail
+          ./gradlew assembleDebug assembleDebugAndroidTest :e2e-mock-camera:assembleDebug \
+            :e2e-mock-gallery:assembleDebug \
+            testDebugUnitTest -PversionName=dev.${{ github.run_number }} \
+            | tee >(grep '^##GB4PC_TEST##' > results/unit.ndjson)
 
       - name: Upload unit test results
         if: always() && steps.diff_check.outputs.needs_full_build == 'true'
@@ -136,6 +139,14 @@ jobs:
           path: |
             app/build/test-results/testDebugUnitTest/
             app/build/reports/tests/
+          retention-days: 14
+
+      - name: Upload unit test markers
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: testresults-unit
+          path: results/unit.ndjson
           retention-days: 14
 
       - name: Start emulator
@@ -305,14 +316,25 @@ jobs:
         continue-on-error: true
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
+          mkdir -p results
+          set -o pipefail
           ./gradlew connectedE2EAndroidTest \
-            -Pe2eClass=com.gb4pc.e2e.PixelCameraOverlayE2ETest || {
+            -Pe2eClass=com.gb4pc.e2e.PixelCameraOverlayE2ETest \
+            | tee >(grep '^##GB4PC_TEST##' > results/e2e-overlay.ndjson) || {
             echo "=== LOGCAT (last 300 lines) ==="
             "$ADB" logcat -d | \
               bash scripts/filter_logcat.sh | \
               tail -300
             exit 1
           }
+
+      - name: Upload overlay E2E markers
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: testresults-e2e-overlay
+          path: results/e2e-overlay.ndjson
+          retention-days: 14
 
       - name: Run GalleryButtonVisualE2ETest
         # Failures auto-tracked as issues. continue-on-error lets subsequent steps run even on failure.
@@ -321,14 +343,25 @@ jobs:
         continue-on-error: true
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
+          mkdir -p results
+          set -o pipefail
           ./gradlew connectedE2EAndroidTest \
-            -Pe2eClass=com.gb4pc.e2e.GalleryButtonVisualE2ETest || {
+            -Pe2eClass=com.gb4pc.e2e.GalleryButtonVisualE2ETest \
+            | tee >(grep '^##GB4PC_TEST##' > results/e2e-gallery.ndjson) || {
             echo "=== LOGCAT (last 300 lines) ==="
             "$ADB" logcat -d | \
               bash scripts/filter_logcat.sh | \
               tail -300
             exit 1
           }
+
+      - name: Upload gallery E2E markers
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: testresults-e2e-gallery
+          path: results/e2e-gallery.ndjson
+          retention-days: 14
 
       - name: Pull and upload E2E screenshots on failure
         id: pull_e2e_screenshots
