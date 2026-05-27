@@ -31,6 +31,65 @@
 # python exit inside a pipeline cannot abort the loop. The 30-minute escalation
 # threshold is enforced by `timeout_ms` on the Monitor call, not here.
 
+# ── Hidden subcommands (used by tests and the loop below) ─────────────────────
+# These expose the two Python parsers as callable entry points so that
+# test_ci_monitor.sh exercises the real parser code, not a copy.
+#
+#   ci_monitor.sh __parse-steps <seen-file>
+#     Read jobs JSON from stdin; emit step-delta lines; update <seen-file>.
+#
+#   ci_monitor.sh __parse-fails <seen-fails-file>
+#     Read ndjson from stdin; emit FAIL lines; update <seen-fails-file>.
+
+if [ "${1:-}" = "__parse-steps" ]; then
+  SEEN="$2" python3 -c "
+import sys,json,os
+seen_f=os.environ['SEEN']
+seen=set(open(seen_f).read().split()) if os.path.getsize(seen_f) else set()
+new=[]; out=[]
+for j in json.load(sys.stdin).get('jobs',[]):
+    if j.get('name')!='build-and-test': continue
+    for s in j.get('steps',[]):
+        if s.get('status')!='completed': continue
+        num=str(s.get('number'))
+        if num in seen: continue
+        new.append(num)
+        name=s.get('name','?'); concl=s.get('conclusion') or '?'
+        if name=='Build and run unit tests' or 'E2ETest' in name or concl in ('failure','cancelled','timed_out','action_required'):
+            out.append('step \"%s\" -> %s' % (name, concl))
+if new: open(seen_f,'a').write('\n'.join(new)+'\n')
+print('\n'.join(out))
+"
+  exit
+fi
+
+if [ "${1:-}" = "__parse-fails" ]; then
+  SEEN_FAILS="$2" python3 -c "
+import sys,json,os
+seen_f=os.environ['SEEN_FAILS']
+seen=set(open(seen_f).read().splitlines()) if os.path.getsize(seen_f) else set()
+new=[]
+for raw in sys.stdin:
+    i=raw.find('##GB4PC_TEST##')
+    if i==-1: continue
+    try: m=json.loads(raw[i+len('##GB4PC_TEST##'):].strip())
+    except Exception: continue
+    if m.get('outcome')!='FAIL': continue
+    key=m.get('suite','')+'#'+m.get('name','')
+    if key in seen: continue
+    seen.add(key); new.append(key)
+    msg=(m.get('msg') or '').strip(); tr=(m.get('trace') or '').strip()
+    if len(tr)>800: tr=tr[:800]+' ...(truncated)'
+    line='FAIL [%s] %s: %s' % (m.get('suite','?'), m.get('name','?'), msg)
+    if tr: line+='\n  '+tr.replace('\n','\n  ')
+    print(line)
+if new: open(seen_f,'a').write('\n'.join(new)+'\n')
+"
+  exit
+fi
+
+# ── Main poll loop ─────────────────────────────────────────────────────────────
+
 OWNER="aunger"
 REPO="gallery-button-for-pixel-camera"
 PR="$1"
@@ -97,24 +156,7 @@ for r in json.load(sys.stdin).get('workflow_runs',[]):
     # number. Gives the live "which group finished/failed, and when" signal.
     steps_out=$(curl -s "${HEADERS[@]}" \
       "https://api.github.com/repos/$OWNER/$REPO/actions/runs/$run_id/jobs?per_page=30" | \
-      SEEN="$seen_steps" python3 -c "
-import sys,json,os
-seen_f=os.environ['SEEN']
-seen=set(open(seen_f).read().split()) if os.path.getsize(seen_f) else set()
-new=[]; out=[]
-for j in json.load(sys.stdin).get('jobs',[]):
-    if j.get('name')!='build-and-test': continue
-    for s in j.get('steps',[]):
-        if s.get('status')!='completed': continue
-        num=str(s.get('number'))
-        if num in seen: continue
-        new.append(num)
-        name=s.get('name','?'); concl=s.get('conclusion') or '?'
-        if name=='Build and run unit tests' or 'E2ETest' in name or concl in ('failure','cancelled','timed_out','action_required'):
-            out.append('step \"%s\" -> %s' % (name, concl))
-if new: open(seen_f,'a').write('\n'.join(new)+'\n')
-print('\n'.join(out))
-" 2>/dev/null)
+      bash "$0" __parse-steps "$seen_steps" 2>/dev/null)
     emit_block "$steps_out"
 
     # Signal 2 — per-test FAIL detail from the testresults-<group> artifacts the
@@ -138,27 +180,8 @@ for a in json.load(sys.stdin).get('artifacts',[]):
       if curl -sL "${HEADERS[@]}" \
            "https://api.github.com/repos/$OWNER/$REPO/actions/artifacts/$aid/zip" -o "$tmp/a.zip" \
          && unzip -qo "$tmp/a.zip" -d "$tmp" 2>/dev/null; then
-        fails_out=$(find "$tmp" -name '*.ndjson' -exec cat {} + 2>/dev/null | SEEN_FAILS="$seen_fails" python3 -c "
-import sys,json,os
-seen_f=os.environ['SEEN_FAILS']
-seen=set(open(seen_f).read().splitlines()) if os.path.getsize(seen_f) else set()
-new=[]
-for raw in sys.stdin:
-    i=raw.find('##GB4PC_TEST##')
-    if i==-1: continue
-    try: m=json.loads(raw[i+len('##GB4PC_TEST##'):].strip())
-    except Exception: continue
-    if m.get('outcome')!='FAIL': continue
-    key=m.get('suite','')+'#'+m.get('name','')
-    if key in seen: continue
-    seen.add(key); new.append(key)
-    msg=(m.get('msg') or '').strip(); tr=(m.get('trace') or '').strip()
-    if len(tr)>800: tr=tr[:800]+' ...(truncated)'
-    line='FAIL [%s] %s: %s' % (m.get('suite','?'), m.get('name','?'), msg)
-    if tr: line+='\n  '+tr.replace('\n','\n  ')
-    print(line)
-if new: open(seen_f,'a').write('\n'.join(new)+'\n')
-")
+        fails_out=$(find "$tmp" -name '*.ndjson' -exec cat {} + 2>/dev/null | \
+          bash "$0" __parse-fails "$seen_fails")
         emit_block "$fails_out"
         echo "$aid" >> "$seen_arts"
       fi
