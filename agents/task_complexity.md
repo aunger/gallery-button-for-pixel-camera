@@ -41,15 +41,11 @@ Same dimensions and tier ranges, with:
 
 ## GitHub labels
 
-Author complexity:
-- `c-a-haiku` Haiku
-- `c-a-sonnet` Sonnet
-- `c-a-opus` Opus
-
-Reviewer complexity:
-- `c-r-haiku` Haiku
-- `c-r-sonnet` Sonnet
-- `c-r-opus` Opus
+| Tier | Author | Reviewer |
+|------|--------|----------|
+| Haiku | `c-a-haiku` | `c-r-haiku` |
+| Sonnet | `c-a-sonnet` | `c-r-sonnet` |
+| Opus | `c-a-opus` | `c-r-opus` |
 
 ## General notes
 
@@ -64,11 +60,11 @@ Scores are listed as: task type / ambiguity / context / domain / reasoning / inv
 
 **#254 / PR #269 — Add reviewer rule: don't mention bylines** (Author: 6, Reviewer: 6)
 Single `agents/` file, exact wording provided, no reasoning required.
-1 / 1 / 1 / 1 / 1 / 1
+Author: 1 / 1 / 1 / 1 / 1 / 1 — Reviewer: 1 / 1 / 1 / 1 / 1 / 1
 
 **#250 / PR #251 — Make `requests` import hard** (Author: 6, Reviewer: 6)
 Remove a soft-import guard in one Python file; change fully specified.
-1 / 1 / 1 / 1 / 1 / 1
+Author: 1 / 1 / 1 / 1 / 1 / 1 — Reviewer: 1 / 1 / 1 / 1 / 1 / 1
 
 **#246 / PR #247 — Re-open closed issues when CI detects recurrence** (Author: 8, Reviewer: 7)
 Two-step Python change (search API + reopen call) but fully specified and self-contained.
@@ -77,7 +73,7 @@ Author: 2 / 1 / 1 / 1 / 2 / 1 — Reviewer: 2 / 1 / 1 / 1 / 1 / 1 (investigation
 ### Tier 2 — Sonnet (9–13)
 
 **#237 / PR #238 — Auto-filed issue format fixes** (Author: 9, Reviewer: 8 → Haiku)
-Four sub-tasks across a Python script and a workflow YAML, but each is well-specified. Reviewer applies floor: Haiku is Sonnet − 1, so Haiku is the minimum.
+Four sub-tasks across a Python script and a workflow YAML, but each is well-specified. Reviewer score of 8 is at the floor (Author tier − 1), so Haiku applies.
 Author: 2 / 1 / 2 / 1 / 2 / 1 — Reviewer: 2 / 1 / 2 / 1 / 1 / 1
 
 **#257 / PR #262 — Emit per-test markers in Gradle** (Author: 10, Reviewer: 10)
