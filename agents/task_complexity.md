@@ -41,7 +41,7 @@ Same dimensions and tier ranges, with:
 
 ## GitHub labels
 
-| Tier | Author | Reviewer |
+| Model | Author | Reviewer |
 |------|--------|----------|
 | Haiku | `c-a-haiku` | `c-r-haiku` |
 | Sonnet | `c-a-sonnet` | `c-r-sonnet` |
