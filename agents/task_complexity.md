@@ -41,9 +41,15 @@ Same dimensions and tier ranges, with:
 
 ## GitHub labels
 
-- `c-haiku` Haiku
-- `c-sonnet` Sonnet
-- `c-opus` Opus
+Author complexity:
+- `c-a-haiku` Haiku
+- `c-a-sonnet` Sonnet
+- `c-a-opus` Opus
+
+Reviewer complexity:
+- `c-r-haiku` Haiku
+- `c-r-sonnet` Sonnet
+- `c-r-opus` Opus
 
 ## General notes
 
