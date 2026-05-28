@@ -37,7 +37,7 @@ Same dimensions and tier ranges, with:
 - **Investigation** ≤ 2
 - **Context breadth** ≤ Author's score
 
-**Floor**: Reviewer tier ≥ impl tier − 1
+**Floor**: Reviewer tier ≥ Author tier − 1
 
 ## GitHub labels
 
@@ -45,10 +45,10 @@ Same dimensions and tier ranges, with:
 - `c-sonnet` Sonnet
 - `c-opus` Opus
 
-## Project-specific notes
+## General notes
 
-- Any issue that touches `.github/workflows/build.yml` or `app/build.gradle.kts` should score **domain depth ≥ 2**, because GitHub Actions quirks (trigger types, `continue-on-error` propagation, artifact availability timing) and the Gradle/Android build system routinely introduce hidden complexity.
-- Issues limited to editing files under `agents/` with exact wording provided typically score **6** (all 1s) — Haiku territory.
+- Build system and CI configuration files (Makefiles, Dockerfiles, workflow YAMLs, Gradle scripts, etc.) should score **domain depth ≥ 2** — these systems have undocumented interactions and hidden complexity that is easy to underestimate.
+- Tasks limited to editing plain text or documents (policies, instructions, docs) with exact content provided typically score **6** (all 1s) — Haiku territory.
 
 ## Calibration examples
 
@@ -56,38 +56,38 @@ Scores are listed as: task type / ambiguity / context / domain / reasoning / inv
 
 ### Tier 1 — Haiku (6–8)
 
-**#254 / PR #269 — Add reviewer rule: don't mention bylines** (impl: 6, review: 6)
+**#254 / PR #269 — Add reviewer rule: don't mention bylines** (Author: 6, Reviewer: 6)
 Single `agents/` file, exact wording provided, no reasoning required.
 1 / 1 / 1 / 1 / 1 / 1
 
-**#250 / PR #251 — Make `requests` import hard** (impl: 6, review: 6)
+**#250 / PR #251 — Make `requests` import hard** (Author: 6, Reviewer: 6)
 Remove a soft-import guard in one Python file; change fully specified.
 1 / 1 / 1 / 1 / 1 / 1
 
-**#246 / PR #247 — Re-open closed issues when CI detects recurrence** (impl: 8, review: 7)
+**#246 / PR #247 — Re-open closed issues when CI detects recurrence** (Author: 8, Reviewer: 7)
 Two-step Python change (search API + reopen call) but fully specified and self-contained.
-Impl: 2 / 1 / 1 / 1 / 2 / 1 — Review: 2 / 1 / 1 / 1 / 1 / 1
+Author: 2 / 1 / 1 / 1 / 2 / 1 — Reviewer: 2 / 1 / 1 / 1 / 1 / 1 (investigation drops; reasoning is lighter once the code is written)
 
 ### Tier 2 — Sonnet (9–13)
 
-**#237 / PR #238 — Auto-filed issue format fixes** (impl: 9, review: 8 → Haiku)
-Four sub-tasks across a Python script and a workflow YAML, but each is well-specified.
-Impl: 2 / 1 / 2 / 1 / 2 / 1 — Review: 2 / 1 / 2 / 1 / 1 / 1
+**#237 / PR #238 — Auto-filed issue format fixes** (Author: 9, Reviewer: 8 → Haiku)
+Four sub-tasks across a Python script and a workflow YAML, but each is well-specified. Reviewer applies floor: Haiku is Sonnet − 1, so Haiku is the minimum.
+Author: 2 / 1 / 2 / 1 / 2 / 1 — Reviewer: 2 / 1 / 2 / 1 / 1 / 1
 
-**#257 / PR #262 — Emit per-test markers in Gradle** (impl: 10, review: 10)
-New Gradle test listener + E2E marker emission; requires Kotlin DSL knowledge.
-Impl: 2 / 1 / 2 / 2 / 2 / 1 — Review: 2 / 1 / 2 / 2 / 2 / 1
+**#257 / PR #262 — Emit per-test markers in Gradle** (Author: 10, Reviewer: 10)
+New Gradle test listener + E2E marker emission; requires Kotlin DSL knowledge. Reviewer needs equal domain depth to evaluate correctness of the listener hook and JSON escaping.
+Author: 2 / 1 / 2 / 2 / 2 / 1 — Reviewer: 2 / 1 / 2 / 2 / 2 / 1
 
-**#225 / PR #226 — Issue filer workflow not triggered** (impl: 11, review: 10)
+**#225 / PR #226 — Issue filer workflow not triggered** (Author: 11, Reviewer: 10)
 Root cause diagnosis required; involves `workflow_run` trigger semantics and permission model.
-Impl: 2 / 2 / 2 / 2 / 2 / 1 — Review: 2 / 1 / 2 / 2 / 2 / 1
+Author: 2 / 2 / 2 / 2 / 2 / 1 — Reviewer: 2 / 1 / 2 / 2 / 2 / 1 (ambiguity drops once implementation is written)
 
 ### Tier 3 — Opus (14–18)
 
-**#258 / PR #271 — Stream per-test CI signals + extract monitor script** (impl: 17, review: 14)
-Two new parser systems, shell test infrastructure, cross-cutting changes; required empirical testing of partial-log API availability.
-Impl: 3 / 2 / 3 / 3 / 3 / 3 — Review: 3 / 2 / 3 / 3 / 2 / 2
+**#258 / PR #271 — Stream per-test CI signals + extract monitor script** (Author: 17, Reviewer: 14)
+Two new parser systems, shell test infrastructure, cross-cutting changes; required empirical testing of partial-log API availability. Investigation drops from 3 to 2 for review; reasoning chain also lighter.
+Author: 3 / 2 / 3 / 3 / 3 / 3 — Reviewer: 3 / 2 / 3 / 3 / 2 / 2
 
-**#236 — CI monitor should surface failing tests (design)** (impl: 18, review: 16)
-Full system design with competing approaches; undocumented API behavior; 5-file implementation plan.
-Impl: 3 / 3 / 3 / 3 / 3 / 3 — Review: 3 / 2 / 3 / 3 / 3 / 2
+**#236 — CI monitor should surface failing tests (design)** (Author: 18, Reviewer: 16)
+Full system design with competing approaches; undocumented API behavior; 5-file implementation plan. Investigation and ambiguity both drop for review.
+Author: 3 / 3 / 3 / 3 / 3 / 3 — Reviewer: 3 / 2 / 3 / 3 / 3 / 2
