@@ -18,14 +18,6 @@ Route tasks to the right model tier. Score the six dimensions below, sum them, a
 | **Reasoning chain** | Single step, pattern match | Multi-step, some tradeoffs | Long chain, competing concerns, novel reasoning |
 | **Investigation** | Approach clear from the issue; at most a standard docs lookup | Some unknowns, resolvable via code inspection or documentation | Requires empirical investigation — undocumented API behavior, platform quirks that must be tested to understand |
 
-## Scoring → tier
-
-| Total | Tier | Model |
-|-------|------|-------|
-| 6–8 | 1 | Haiku |
-| 9–13 | 2 | Sonnet |
-| 14–18 | 3 | Opus |
-
 ## Author leveling
 
 Score **context breadth** on what a thorough resolution requires, not just the files named in the issue.
@@ -38,6 +30,14 @@ Same dimensions and tier ranges, with:
 - **Context breadth** ≤ Author's score
 
 **Floor**: Reviewer tier ≥ Author tier − 1
+
+## Scoring → tier
+
+| Total | Tier | Model |
+|-------|------|-------|
+| 6–8 | 1 | Haiku |
+| 9–13 | 2 | Sonnet |
+| 14–18 | 3 | Opus |
 
 ## GitHub labels
 
