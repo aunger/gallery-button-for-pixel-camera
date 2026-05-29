@@ -153,13 +153,15 @@ def parse_run_id(runs_json):
 def parse_new_artifacts(artifacts_json, seen):
     """Return [(id, name)] for new, unexpired testresults-* artifacts.
 
-    `seen` is a set of already-downloaded artifact ids (mutated in place).
+    `seen` is a set of already-downloaded artifact ids (read-only here). The
+    caller is responsible for adding an id to `seen` only after the artifact has
+    been successfully downloaded and parsed, so a transient download failure
+    leaves the artifact unseen and eligible for retry on the next poll.
     """
     out = []
     for a in artifacts_json.get("artifacts", []):
         n = a.get("name", "")
         if n.startswith("testresults-") and not a.get("expired") and str(a["id"]) not in seen:
-            seen.add(str(a["id"]))
             out.append((str(a["id"]), n))
     return out
 
@@ -289,6 +291,11 @@ def main(argv):
                     except (zipfile.BadZipFile, OSError):
                         continue
                     emit_block(parse_fails(lines, seen_fails))
+                    # Only mark the artifact seen after a successful download
+                    # and parse, mirroring the bash script's "add after a
+                    # successful curl && unzip" behavior. A transient failure
+                    # above hits `continue` and leaves the id unseen for retry.
+                    seen_arts.add(aid)
         # ----------------------------------------------------------------------
 
         if result == "in_progress":
