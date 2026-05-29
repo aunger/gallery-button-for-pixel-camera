@@ -179,10 +179,28 @@ def extract_ndjson_lines(zip_bytes):
 # ── HTTP (stdlib urllib) ────────────────────────────────────────────────────────
 
 
+def _err_detail(e):
+    """Return a concise, human-readable cause string for a request exception.
+
+    HTTPError carries an HTTP status and reason ("HTTP 403: Forbidden");
+    other URLError/OSError instances expose their underlying reason
+    ("URLError: [Errno -2] Name or service not known").
+    """
+    if isinstance(e, urllib.error.HTTPError):
+        return "HTTP %s: %s" % (e.code, e.reason)
+    reason = getattr(e, "reason", None)
+    if reason is not None:
+        return "%s: %s" % (type(e).__name__, reason)
+    return "%s: %s" % (type(e).__name__, e)
+
+
 def _request(url, token, raw=False):
     """Perform an authenticated GET. Returns parsed JSON (or raw bytes if raw).
 
     Returns None on any HTTP/URL/JSON error so the poll loop can survive blips.
+    The actual error is logged to stderr (not stdout, which is the event
+    interface) so the operator can see *why* a poll failed — rate limit, auth
+    failure, network timeout, bad URL — instead of a bare "no data this poll".
     """
     req = urllib.request.Request(url)
     req.add_header("Authorization", "Bearer %s" % token)
@@ -190,13 +208,17 @@ def _request(url, token, raw=False):
     try:
         with urllib.request.urlopen(req) as resp:
             data = resp.read()
-    except (urllib.error.URLError, OSError):
+    except (urllib.error.URLError, OSError) as e:
+        sys.stderr.write("request failed (%s): %s\n" % (url, _err_detail(e)))
+        sys.stderr.flush()
         return None
     if raw:
         return data
     try:
         return json.loads(data)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError) as e:
+        sys.stderr.write("response parse failed (%s): %s\n" % (url, e))
+        sys.stderr.flush()
         return None
 
 
