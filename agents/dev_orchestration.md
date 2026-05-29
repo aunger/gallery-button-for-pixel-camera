@@ -104,8 +104,39 @@ After the Reviewer exits and delivers its decision, the Orchestrator acts as fol
     Relay `step "..." -> ...` and `FAIL [...] ...` lines to the user as informational test-result deltas; they do NOT end the loop or start a new Author round.
     if Monitor emits a Blocked line  → goto newAuthor
     if Monitor emits an Infra line   → escalate to user; stop
-    if Monitor emits a Clear line    → PR may be merged
+    if Monitor emits a Clear line    → goto surfaceVerificationTests
     if Monitor times out (30 min)    → escalate to user; stop
+
+  surfaceVerificationTests:
+    // Step: Surface unautomated verification tests
+    // Triggered after Reviewer approval AND CI clears (Monitor emits Clear).
+    // Workflow: ask → plan → review → execute
+    1. Scan the issue description, PR description, and all comments on both for
+       verification steps, acceptance criteria, or manual test instructions that
+       are NOT already covered by automated tests.
+    2. If none are found, exit this step → PR may be merged.
+    3. Add the `verification needed` label to the PR and/or issue where
+       outstanding steps were found.
+    4. Show the user the list of outstanding unautomated verification steps
+       (via AskUserQuestion).
+    5. Ask the user: "Do you want to run these tests manually, or have an agent
+       plan automation for them?"
+    6. If the user chooses manual testing or no automation → exit this step; PR may be merged when manual testing is complete.
+    7. Spawn a fresh sub-agent (no prior conversation context) with this briefing:
+         - The list of unautomated verification steps (from step 1)
+         - A pointer to the existing test infrastructure (test directories,
+           CI config, test framework in use)
+         - Instructions: produce a concrete automation plan — describe what to
+           automate and how, but do NOT implement anything yet.
+       The sub-agent must receive no other context from this conversation.
+    8. Reviewer check: Spawn a Reviewer agent to evaluate the automation plan
+       produced in step 7. The Reviewer approves or requests changes to the plan.
+       If changes are requested, route back to the planning sub-agent (step 7)
+       with the Reviewer's feedback. Repeat until the plan is approved.
+    9. Execute: Once the automation plan is approved by the Reviewer, dispatch
+       an Author agent to implement the automation. Follow the normal
+       Author → Reviewer → CI Monitor cycle for the resulting changes.
+    → PR may be merged after the automation Author's work clears CI.
 ```
 
 ### Monitor bash script
