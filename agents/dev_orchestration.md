@@ -31,17 +31,9 @@ The Orchestrator is not a Reviewer or a Programmer.
 
 - See `inaugurate.md` for the full protocol when starting fresh work.
 
-## Model selection
-
-For each sub-agent role, use the first rule that applies:
-
-1. **User-specified**: the user named a model for this role — use it.
-2. **Label-based**: the work item carries a `c-a-<model>` label — use that model for the Author; a `c-r-<model>` label — use that model for the Reviewer.
-3. **Default**: Sonnet.
-
 ## Assigning a Programmer
 
-- Create a sub-agent at the Author model (see Model selection above)
+- Create a Sonnet sub-agent unless the user requested otherwise
 - *Create a dedicated per-issue branch* for the Programmer to use. Branch names should follow the pattern `fix/issue-N-short-description` for bug fixes or `feature/issue-N-short-description` for new features. Never direct two Programmers for unrelated issues to the same branch.
 - Inform the agent of its role as an expert software developer resolving the issue
 - Inform the agent of its responsibility to commit its work to a branch and open a PR (if one doesn't already exist)
@@ -51,7 +43,7 @@ For each sub-agent role, use the first rule that applies:
 
 ## Assigning a Reviewer
 
-- Create a sub-agent at the Reviewer model (see Model selection above)
+- Create a Sonnet sub-agent unless the user requested otherwise
 - Inform the agent of its role as an expert software reviewer who ensures high quality code and adherence to development plans
 - Pass the issue number to the subagent
 - Relay any relevant instruction from the user
