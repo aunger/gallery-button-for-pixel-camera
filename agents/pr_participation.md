@@ -24,6 +24,7 @@
 
 - A Reviewer **may** give conditional approval: an approval combined with minimal and specific instructions for the Author to take before merging.
   - This is only appropriate when the request is unlikely to be contested.
+  - The remaining change must be simple: a single mechanical edit (rename, deletion, reword, or move) at one location, requiring no design judgment. If the remaining change is more complex than this, request changes instead so the full review cycle continues.
   - Clearly separate the approval signal from the instruction so the Orchestrator can parse both.
   - Phrase it unambiguously, e.g. "Approved, pending [specific change]." or "Approved — please [specific action] before merging."
   - Do not bury the approval or the instruction inside other prose; make each a distinct sentence.

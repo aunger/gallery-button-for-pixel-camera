@@ -64,23 +64,26 @@ A Reviewer may give **conditional approval**: an approval combined with minimal 
 
 ```
   if Reviewer gave conditional approval:
-    route to Author to consider the specific change(s) named
-    after Author commits the targeted change:
-      spawn a Haiku sanity-check agent (model: haiku) with narrowed context:
-        - the Reviewer's specific instruction (verbatim)
-        - the Author's new diff/commit addressing it
-        - nothing else (no full PR diff, no prior review history)
-      prompt the Haiku agent with exactly:
-          > The Reviewer requested
-          > [specific change]
-          > 
-          > The Author responded with
-          > [diff]
-          >
-          > Answer one of three ways: (A) the Author fully addressed the requested change and introduced no other concerns; (B) the Author did not address the requested change (incomplete or missing work, no new concerns raised); or (C) the Author's response raises a new concern beyond the scope of the original request.
-      if Haiku answers A → treat as approved; proceed to CI Monitor loop (do NOT run another full review cycle)
-      if Haiku answers B → the PR hasn't yet converged; resume the normal cycle by routing to the full-fledged Reviewer.
-      if Haiku answers C → the PR is unstable; stop the PR cycle and escalate to the User.
+    if the requested change involves multiple locations, design choices, or non-trivial logic:
+      treat as "changes requested"; route to Author, then dispatch a full-fledged Reviewer — do NOT use the Haiku shortcut
+    else:
+      route to Author to consider the specific change(s) named
+      after Author commits the targeted change:
+        spawn a Haiku sanity-check agent (model: haiku) with narrowed context:
+          - the Reviewer's specific instruction (verbatim)
+          - the Author's new diff/commit addressing it
+          - nothing else (no full PR diff, no prior review history)
+        prompt the Haiku agent with exactly:
+            > The Reviewer requested
+            > [specific change]
+            > 
+            > The Author responded with
+            > [diff]
+            >
+            > Answer one of three ways: (A) the Author fully addressed the requested change and introduced no other concerns; (B) the Author did not address the requested change (incomplete or missing work, no new concerns raised); or (C) the Author's response raises a new concern beyond the scope of the original request.
+        if Haiku answers A → treat as approved; proceed to CI Monitor loop (do NOT run another full review cycle)
+        if Haiku answers B → the PR hasn't yet converged; resume the normal cycle by routing to the full-fledged Reviewer.
+        if Haiku answers C → the PR is unstable; stop the PR cycle and escalate to the User.
 ```
 
 ### Haiku agent constraints
