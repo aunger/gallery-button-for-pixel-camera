@@ -418,7 +418,7 @@ jobs:
       issues: write
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download unit test results
         uses: actions/download-artifact@v7
