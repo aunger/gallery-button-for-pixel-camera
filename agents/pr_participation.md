@@ -35,6 +35,7 @@ Terminology: In most cases, the *Author* is also referred to as *Programmer*. In
 
 - An *Author* should consider review comments with a degree of skepticism, and should not instantly or automatically accede to a Reviewer's opinion. If the Author becomes convinced of the need to change the PR, then it should do so. Otherwise, it should enter a debate with the Reviewer.
 - The Author should reply to Reviewer comments to provide justification for refusing a Reviewer's requested changes.
+- When a Reviewer requests a change that is out of scope for the current PR, the Author should decline to make it here, file a new issue to track it, and cite the issue number in their reply to the Reviewer.
 
 ## Code review cycles should be overseen by an Orchestrator.
 
@@ -57,4 +58,4 @@ Do not append any Claude attribution byline, session URL, or footer.
 ## Scope
 
 - During the code review process, don't allow the scope of work to increase.
-- Instead, spawn related items in the issue tracker.
+- The Author is responsible for filing new issues to track out-of-scope requests raised during review.
