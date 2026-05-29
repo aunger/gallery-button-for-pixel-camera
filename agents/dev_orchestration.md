@@ -98,7 +98,7 @@ After the Reviewer exits and delivers its decision, the Orchestrator acts as fol
 ```
   if Reviewer requested changes → goto newAuthor
   if Reviewer gave approval:
-    Orchestrator launches a Monitor tool call running `bash scripts/ci_monitor.sh <PR_NUMBER>` from the repo root (run_in_background: true, timeout_ms: 1800000)
+    Orchestrator launches a Monitor tool call running `python3 scripts/ci_monitor.py <PR_NUMBER>` from the repo root (run_in_background: true, timeout_ms: 1800000)
     Each stdout line arrives as a task-notification event
     Act only on the terminal lines Clear, Blocked, or Infra. Relay in_progress lines to the user as brief status updates (the script suppresses these unless no other output has been emitted for over 120 seconds).
     Relay `step "..." -> ...` and `FAIL [...] ...` lines to the user as informational test-result deltas; they do NOT end the loop or start a new Author round.
@@ -136,15 +136,15 @@ After the Reviewer exits and delivers its decision, the Orchestrator acts as fol
       → PR may be merged after the automation Author's work clears CI.
 ```
 
-### Monitor bash script
+### Monitor script
 
-The poll loop lives in [`scripts/ci_monitor.sh`](../scripts/ci_monitor.sh). Run it from the repo root, passing the PR number as the sole argument, as the `command` for the `Monitor` tool call:
+The poll loop lives in [`scripts/ci_monitor.py`](../scripts/ci_monitor.py). Run it from the repo root, passing the PR number as the sole argument, as the `command` for the `Monitor` tool call:
 
 ```bash
-bash scripts/ci_monitor.sh <PR_NUMBER>
+python3 scripts/ci_monitor.py <PR_NUMBER>
 ```
 
-`OWNER`/`REPO` default to this repo at the top of the script, and it reads `$GITHUB_TOKEN` from the environment. The script deliberately omits `set -e` so transient REST/parse failures cannot kill the resilient poll loop; the 30-minute escalation threshold is enforced by `timeout_ms: 1800000` on the Monitor call, not inside the script. Each stdout line is the interface (see the outcome vocabulary below): terminal lines (`Clear`/`Blocked`/`Infra`) end the loop, while informational lines keep it alive.
+`OWNER`/`REPO` default to this repo at the top of the script, and it reads `$GITHUB_TOKEN` from the environment. The script catches transient REST/parse failures per call so they cannot kill the resilient poll loop; the 30-minute escalation threshold is enforced by `timeout_ms: 1800000` on the Monitor call, not inside the script. Each stdout line is the interface (see the outcome vocabulary below): terminal lines (`Clear`/`Blocked`/`Infra`) end the loop, while informational lines keep it alive.
 
 ### Outcome vocabulary
 
