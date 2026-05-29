@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """test_ci_monitor.py — Tests for ci_monitor.py.
 
-Ports the 19 cases from the former test_ci_monitor.sh, calling the parser
-functions directly (no subprocess shims). Plus a mocked-HTTP smoke test that
-exercises the request helper without touching the network.
+Calls the parser functions directly (no subprocess shims). Plus a mocked-HTTP
+smoke test that exercises the request helper without touching the network.
 
 Covers:
   (a) Signal 1 step parser: all-success build-and-test emits exactly the 3 test-step lines

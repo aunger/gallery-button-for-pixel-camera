@@ -7,10 +7,10 @@ interface: terminal outcome lines end the loop, while informational lines
 (in_progress heartbeat, per-step deltas, per-test FAILs) keep it alive.
 
 Usage:
-    python3 scripts/ci_monitor.py <PR_NUMBER>
+    python3 scripts/ci_monitor.py --pr <PR_NUMBER>
 
 Arguments:
-    <PR_NUMBER>   The pull request number to monitor (required).
+    --pr <PR_NUMBER>   The pull request number to monitor (required).
 
 Environment:
     GITHUB_TOKEN  GitHub token used for the REST calls (required).
@@ -23,13 +23,13 @@ Outcome vocabulary (one terminal line ends the loop):
     PR#N: step "..." -> ...    A build-and-test step reached a conclusion (informational).
     PR#N: FAIL [suite] name: ...   A per-test failure from a testresults artifact (informational).
 
-NOTE on error handling: like the bash predecessor, the poll loop must survive
-transient REST/parse failures. HTTP and JSON errors are caught per-call and
-treated as "no data this poll" rather than aborting the resilient loop. The
-30-minute escalation threshold is enforced by `timeout_ms` on the Monitor call,
-not here.
+NOTE on error handling: the poll loop must survive transient REST/parse
+failures. HTTP and JSON errors are caught per-call and treated as "no data this
+poll" rather than aborting the resilient loop. The 30-minute escalation
+threshold is enforced by `timeout_ms` on the Monitor call, not here.
 """
 
+import argparse
 import io
 import json
 import os
@@ -47,7 +47,6 @@ TEST_MARKER = "##GB4PC_TEST##"
 
 
 # ── Parsers ───────────────────────────────────────────────────────────────────
-# These are the two real parsers exercised directly by test_ci_monitor.py.
 
 
 def parse_steps(jobs_json, seen):
@@ -198,9 +197,6 @@ def _request(url, token, raw=False):
     """Perform an authenticated GET. Returns parsed JSON (or raw bytes if raw).
 
     Returns None on any HTTP/URL/JSON error so the poll loop can survive blips.
-    The actual error is logged to stderr (not stdout, which is the event
-    interface) so the operator can see *why* a poll failed — rate limit, auth
-    failure, network timeout, bad URL — instead of a bare "no data this poll".
     """
     req = urllib.request.Request(url)
     req.add_header("Authorization", "Bearer %s" % token)
@@ -226,17 +222,20 @@ def _request(url, token, raw=False):
 
 
 def main(argv):
-    if len(argv) < 2:
-        sys.stderr.write("usage: ci_monitor.py <PR_NUMBER>\n")
-        return 2
-    pr = argv[1]
+    parser = argparse.ArgumentParser(
+        prog="ci_monitor.py",
+        description="Poll a PR's CI and stream a terminal outcome plus per-test signals.",
+    )
+    parser.add_argument(
+        "--pr", required=True, metavar="PR_NUMBER", help="The pull request number to monitor."
+    )
+    args = parser.parse_args(argv[1:])
+    pr = args.pr
     token = os.environ.get("GITHUB_TOKEN", "")
 
     last_output_ts = time.time()
 
-    # In-memory dedup state for the streamed test-result signals. (No temp files:
-    # a single process shares state directly, so the bash mktemp/trap dance and
-    # its cleanup are unnecessary.)
+    # In-memory dedup state for the streamed test-result signals.
     seen_steps = set()
     seen_arts = set()
     seen_fails = set()
@@ -313,10 +312,9 @@ def main(argv):
                     except (zipfile.BadZipFile, OSError):
                         continue
                     emit_block(parse_fails(lines, seen_fails))
-                    # Only mark the artifact seen after a successful download
-                    # and parse, mirroring the bash script's "add after a
-                    # successful curl && unzip" behavior. A transient failure
-                    # above hits `continue` and leaves the id unseen for retry.
+                    # Mark the artifact seen only after a successful download
+                    # and parse: a transient failure above hits `continue` and
+                    # leaves the id unseen, so it is retried on the next poll.
                     seen_arts.add(aid)
         # ----------------------------------------------------------------------
 
