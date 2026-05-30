@@ -52,7 +52,7 @@ success-looking response (`{"id":"…","url":"…"}`) but **does not change any 
 The MCP tool appears to filter out empty arrays before building the API request body,
 so the `labels` field is never sent and all existing labels remain.
 
-**Evidence (empirically verified):**
+**Evidence (empirically verified 2026-05):**
 - `labels: ["planning needed"]` → correctly replaces ALL labels with just that one
   (REPLACE semantics — "for ai to do" was removed in the same call). Non-empty arrays work.
 - `labels: []` → no change; all labels remain. Confirmed by a follow-up `get_labels` read.
@@ -72,21 +72,22 @@ no signal about what actually changed. **Always follow a write with a confirming
 
 ### "Token expired" errors on write operations
 
-Write operations (`add_issue_comment`, `issue_write`, etc.) occasionally fail with:
+Write operations (`add_issue_comment`, `issue_write`, etc.) occasionally fail with the following error while reads on the same resource succeed:
 
 ```
 MCP server "github" requires re-authorization (token expired)
 ```
 
-…while reads on the same resource succeed. The `GITHUB_TOKEN` is a session-scoped JWT
+#### Possible interpretation and possible workaround
+The `GITHUB_TOKEN` is a session-scoped JWT
 (short-lived). The JWT can expire mid-session; reads appear to use a cached or
 lower-privilege path that still succeeds, while writes require a fresh token. A
 successful read call appears to trigger a background JWT refresh that unblocks
 subsequent writes.
 
-**Workaround (not guaranteed — appears to work):** if writes fail with this error,
-try performing any `issue_read` first, then immediately retry the write. Do not
-interpret the error as a "no blind writes" enforcement — it is genuine token expiry.
+Possible workaround (not guaranteed, appears to work):
+If writes fail with this error, try performing any `issue_read` first, then immediately retry the write.
+Do not interpret the error as a "no blind writes" enforcement.
 
 ---
 
