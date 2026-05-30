@@ -19,6 +19,9 @@ Covers:
   (l) Gap C: fetch_pr_with_retry() retry/backoff and _retry_after_seconds() header parsing
   (m) main(): staggered step-then-FAIL emitted once each before terminal, heartbeat suppressed
   (n) main(): quiet passing PR emits two adjacent heartbeats then a single Clear terminal
+  (o) Gap D: real subprocess prints its own PID and SIGTERM to that PID stops it
+  (p) #258 fidelity: a real-shaped testresults-* artifact zip drives step+FAIL through main()
+  (q) #259 real clock: heartbeat fires only after real >SILENCE_SECONDS silence; output resets it
 
 No network calls required; no GITHUB_TOKEN needed.
 Always exits 0 on success, non-zero on failure.
@@ -28,7 +31,12 @@ import collections
 import io
 import json
 import os
+import re
+import signal
+import subprocess
 import sys
+import threading
+import time
 import unittest.mock
 import urllib.error
 import zipfile
@@ -814,6 +822,271 @@ check(len(req_n) == 0,
       "all 61 mocked requests consumed (terminal poll includes mpr fetch)",
       "request deque not drained; %d entries left" % len(req_n))
 check(rc_n == 0, "main() returned 0", "main() returned %r" % rc_n)
+
+
+# ── (o) Gap D: real subprocess advertises its PID and dies on SIGTERM ──────────
+print("\n=== (o) Gap D: ci_monitor.py prints its real PID and stops on SIGTERM ===")
+
+# The issue's Gap D viability check ("the script's $$ equals the real, killable
+# PID, and kill -TERM is delivered") was carried as a manual step. Automate it:
+# spawn the real script as a child process, read the advisory PID line, send
+# SIGTERM to that exact PID, and confirm the process exits via the signal. A
+# bogus token + the unreachable real API_BASE means the loop never gets past the
+# SHA fetch, so it stays alive (sleeping) until we signal it — no network needed.
+_MONITOR_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ci_monitor.py")
+_proc = subprocess.Popen(
+    [sys.executable, _MONITOR_PATH, "--pr", "1"],
+    stdout=subprocess.PIPE,
+    stderr=subprocess.DEVNULL,
+    env={**os.environ, "GITHUB_TOKEN": "not-a-real-token"},
+    text=True,
+)
+
+
+def _read_pid_line(proc, holder):
+    holder["line"] = proc.stdout.readline()
+
+
+_holder = {"line": ""}
+_t = threading.Thread(target=_read_pid_line, args=(_proc, _holder))
+_t.start()
+_t.join(timeout=10)
+
+advisory = _holder.get("line", "")
+_m = re.search(r"monitor PID (\d+)", advisory)
+check(_m is not None,
+      "subprocess emits a 'monitor PID <n>' advisory line at startup",
+      "no PID advisory line; got %r" % advisory)
+check("SIGTERM" in advisory,
+      "advisory names SIGTERM as the stop signal",
+      "advisory does not mention SIGTERM; got %r" % advisory)
+
+printed_pid = int(_m.group(1)) if _m else -1
+check(printed_pid == _proc.pid,
+      "printed PID equals the real, killable subprocess PID",
+      "printed PID %r != real PID %r" % (printed_pid, _proc.pid))
+
+# Send SIGTERM to the advertised PID and confirm the process actually stops.
+try:
+    os.kill(_proc.pid, signal.SIGTERM)
+except OSError as e:  # pragma: no cover - only if the process already vanished
+    _fail("could not deliver SIGTERM to PID %d: %s" % (_proc.pid, e))
+
+try:
+    _rc = _proc.wait(timeout=10)
+    check(_rc != 0,
+          "SIGTERM to the advertised PID stops the monitor (non-zero exit)",
+          "process exited 0 unexpectedly (rc=%r)" % _rc)
+    # On a default-disposition SIGTERM, Popen reports the negative signal number.
+    check(_rc == -signal.SIGTERM,
+          "process terminated by SIGTERM (rc == -SIGTERM)",
+          "expected rc == %d; got %r" % (-signal.SIGTERM, _rc))
+except subprocess.TimeoutExpired:
+    _proc.kill()
+    _proc.wait(timeout=10)
+    _fail("subprocess did not exit within 10s of SIGTERM")
+
+
+# ── (p) #258 fidelity: a real-shaped artifact zip drives step + FAIL ───────────
+print("\n=== (p) #258 fidelity: real-shaped testresults-unit artifact -> step + FAIL via main() ===")
+
+# Groups (i)/(m) prove the signal logic with a hand-rolled zip whose entry is
+# named 'testresults.ndjson'. This group closes the live-verification gap from
+# #258 by reproducing the artifact exactly as build.yml emits it:
+#   - `... | tee >(grep '^##GB4PC_TEST##' > results/unit.ndjson)` writes only
+#     marker-prefixed lines into results/unit.ndjson.
+#   - `upload-artifact` with `path: results/unit.ndjson` zips it under the
+#     basename entry 'unit.ndjson' inside an artifact named 'testresults-unit'.
+# Driving main() through that exact shape confirms extract_ndjson_lines (which
+# matches *.ndjson) and parse_fails read a genuine pipeline artifact, with the
+# step delta and FAIL both emitted before the terminal and deduped across polls.
+REAL_UNIT_NDJSON = [
+    '##GB4PC_TEST## {"suite":"com.gb4pc.unit.GalleryButtonTest","name":"renders_icon","outcome":"FAIL","ms":7,"msg":"java.lang.AssertionError: icon not tinted","trace":"java.lang.AssertionError: icon not tinted\\n\\tat org.junit.Assert.fail(Assert.java:89)\\n\\tat com.gb4pc.unit.GalleryButtonTest.renders_icon(GalleryButtonTest.kt:58)"}',
+    '##GB4PC_TEST## {"suite":"com.gb4pc.unit.GalleryButtonTest","name":"reads_pref","outcome":"PASS","ms":2,"msg":"","trace":""}',
+]
+_buf = io.BytesIO()
+with zipfile.ZipFile(_buf, "w", zipfile.ZIP_DEFLATED) as _zf:
+    # Basename entry, exactly as actions/upload-artifact stores a single-file path.
+    _zf.writestr("unit.ndjson", "\n".join(REAL_UNIT_NDJSON))
+REAL_UNIT_ZIP = _buf.getvalue()
+
+PR_P = {"head": {"sha": "deadc0de"}}
+CHECK_IP_P = {"total_count": 1, "check_runs": [{"status": "in_progress", "conclusion": None}]}
+CHECK_BL_P = {"total_count": 1, "check_runs": [{"status": "completed", "conclusion": "failure"}]}
+RUNS_P = {"workflow_runs": [{"id": 4242, "status": "in_progress"}]}
+JOBS_UNIT_FAIL_P = {
+    "jobs": [
+        {
+            "name": "build-and-test",
+            "steps": [
+                {"number": 1, "name": "Set up job", "status": "completed", "conclusion": "success"},
+                {"number": 4, "name": "Build and run unit tests", "status": "completed", "conclusion": "failure"},
+            ],
+        }
+    ]
+}
+# The artifact name mirrors build.yml's 'testresults-unit'; parse_new_artifacts
+# keys on the 'testresults-' prefix and id, so the real name is exercised.
+ARTS_REAL_UNIT_P = {"artifacts": [{"id": 4243, "name": "testresults-unit", "expired": False}]}
+
+# Poll 1 (5): step delta, artifact not yet present. Poll 2 (6): step seen,
+# artifact appears -> real-shaped zip downloaded -> FAIL emitted. Poll 3 (5):
+# terminal Blocked, artifact already seen so no zip call. 5 + 6 + 5 = 16.
+side_effects_p = collections.deque([
+    PR_P, CHECK_IP_P, RUNS_P, JOBS_UNIT_FAIL_P, {"artifacts": []},
+    PR_P, CHECK_IP_P, RUNS_P, JOBS_UNIT_FAIL_P, ARTS_REAL_UNIT_P, REAL_UNIT_ZIP,
+    PR_P, CHECK_BL_P, RUNS_P, JOBS_UNIT_FAIL_P, ARTS_REAL_UNIT_P,
+])
+
+
+def fake_request_p(url, token, raw=False):
+    return side_effects_p.popleft()
+
+
+buf_p = io.StringIO()
+with unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_p), \
+        unittest.mock.patch.object(ci_monitor.time, "time", return_value=2000.0), \
+        unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None), \
+        unittest.mock.patch("sys.stdout", new=buf_p):
+    rc_p = ci_monitor.main(["ci_monitor.py", "--pr", "258"])
+
+out_p = buf_p.getvalue()
+lines_p = out_p.splitlines()
+step_line_p = 'PR#258: step "Build and run unit tests" -> failure'
+fail_line_p = "PR#258: FAIL [com.gb4pc.unit.GalleryButtonTest] renders_icon: java.lang.AssertionError: icon not tinted"
+blocked_line_p = "PR#258: Blocked"
+
+check(lines_p.count(step_line_p) == 1,
+      "step failure line emitted exactly once from real-shaped pipeline",
+      "step line count != 1; output: %r" % out_p)
+check(lines_p.count(fail_line_p) == 1,
+      "FAIL line parsed once from the 'unit.ndjson' artifact entry",
+      "FAIL line count != 1; output: %r" % out_p)
+check(any(ln.startswith("PR#258:   ") for ln in lines_p),
+      "FAIL carries an indented trace line from the real artifact",
+      "indented trace missing; output: %r" % out_p)
+check(
+    step_line_p in lines_p and fail_line_p in lines_p and blocked_line_p in lines_p
+    and lines_p.index(step_line_p) < lines_p.index(fail_line_p) < lines_p.index(blocked_line_p),
+    "ordering: step, then FAIL, then terminal Blocked — both signals before the job concludes",
+    "ordering wrong; lines: %r" % lines_p)
+check(len(side_effects_p) == 0,
+      "all 16 mocked requests consumed (zip only on poll 2)",
+      "request deque not drained; %d entries left" % len(side_effects_p))
+check(rc_p == 0, "main() returned 0", "main() returned %r" % rc_p)
+
+
+# ── (q) #259 real clock: heartbeat honors real wall-clock silence window ───────
+print("\n=== (q) #259 real clock: in_progress fires only after real >SILENCE_SECONDS, output resets it ===")
+
+# Groups (j)/(n) prove the >SILENCE_SECONDS logic with a *fabricated* clock,
+# which cannot show the heartbeat is wired to real wall time. This group closes
+# the #259 live-verification gap by exercising the genuine path: the real
+# time.time() (deliberately NOT patched) gates the heartbeat, with
+# SILENCE_SECONDS shrunk to a tiny window so the run is fast.
+#
+# To stay deterministic under CI timing jitter, every quiet poll sleeps a real
+# interval comfortably larger than the window (SLEEP_Q >> WINDOW_Q). So each
+# quiet poll *always* crosses the silence window and emits a heartbeat — there is
+# no "is 0.24s > 0.30s?" boundary race. The reset property is then proven by a
+# poll that emits a step delta: emit_block() sets last_output_ts to real now, and
+# the in_progress gate re-reads now immediately after, so now - last_output_ts is
+# ~0 (< window) and that poll emits its step but suppresses the heartbeat. A
+# heartbeat on a quiet poll, none on the step poll, and a heartbeat again after
+# proves real-time suppression and that an emitted line resets the real timer.
+WINDOW_Q = 0.05   # silence window (s); real elapsed time gates the heartbeat
+SLEEP_Q = 0.25    # per-poll real sleep, comfortably > WINDOW_Q so each quiet poll crosses it
+
+PR_Q = {"head": {"sha": "ab1eca11"}}
+CHECK_IP_Q = {"total_count": 1, "check_runs": [{"status": "in_progress", "conclusion": None}]}
+CHECK_BL_Q = {"total_count": 1, "check_runs": [{"status": "completed", "conclusion": "failure"}]}
+RUNS_Q = {"workflow_runs": [{"id": 31337, "status": "in_progress"}]}
+JOBS_EMPTY_Q = {"jobs": [{"name": "build-and-test", "steps": []}]}
+JOBS_STEP_Q = {
+    "jobs": [
+        {
+            "name": "build-and-test",
+            "steps": [
+                {"number": 4, "name": "Build and run unit tests", "status": "completed", "conclusion": "success"},
+            ],
+        }
+    ]
+}
+ARTS_EMPTY_Q = {"artifacts": []}
+
+# 5 polls (each: pulls, check-runs, runs, jobs, artifacts; then a real sleep).
+# main() reads last_output_ts = time.time() at startup, BEFORE poll 1, and each
+# poll's silence check runs before that poll's own sleep — so a heartbeat needs a
+# prior quiet sleep to have elapsed:
+#   poll 1: quiet; now ~= startup (no sleep yet), diff ~0 -> NO heartbeat
+#   poll 2: quiet; one SLEEP_Q elapsed (> window)         -> heartbeat #1, resets timer
+#   poll 3: emits a step delta -> resets the real timer    -> NO heartbeat this poll
+#   poll 4: quiet; one SLEEP_Q elapsed since the step      -> heartbeat #2, resets timer
+#   poll 5: Blocked terminal
+JOBS_SCHEDULE_Q = [JOBS_EMPTY_Q, JOBS_EMPTY_Q, JOBS_STEP_Q, JOBS_EMPTY_Q, JOBS_EMPTY_Q]
+CHECK_SCHEDULE_Q = [CHECK_IP_Q, CHECK_IP_Q, CHECK_IP_Q, CHECK_IP_Q, CHECK_BL_Q]
+
+req_q = collections.deque()
+for n in range(5):
+    req_q.append(PR_Q)
+    req_q.append(CHECK_SCHEDULE_Q[n])
+    req_q.append(RUNS_Q)
+    req_q.append(JOBS_SCHEDULE_Q[n])
+    req_q.append(ARTS_EMPTY_Q)
+
+
+def fake_request_q(url, token, raw=False):
+    return req_q.popleft()
+
+
+# Capture the genuine time.sleep before patching: ci_monitor.time is the same
+# module object as this module's `time`, so patching ci_monitor.time.sleep also
+# rebinds time.sleep — calling time.sleep here would re-enter the mock and recurse.
+_REAL_SLEEP = time.sleep
+
+
+def real_sleep_q(_secs):
+    # Ignore the script's 30s cadence; sleep a small real interval so the real
+    # time.time() advances past WINDOW_Q and the wall-clock gate is exercised.
+    _REAL_SLEEP(SLEEP_Q)
+
+
+buf_q = io.StringIO()
+with unittest.mock.patch.object(ci_monitor, "SILENCE_SECONDS", WINDOW_Q), \
+        unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_q), \
+        unittest.mock.patch.object(ci_monitor.time, "sleep", side_effect=real_sleep_q), \
+        unittest.mock.patch("sys.stdout", new=buf_q):
+    # time.time() is intentionally NOT patched: the real clock gates the heartbeat.
+    rc_q = ci_monitor.main(["ci_monitor.py", "--pr", "259"])
+
+out_q = buf_q.getvalue()
+lines_q = out_q.splitlines()
+ip_line_q = "PR#259: in_progress"
+step_line_q = 'PR#259: step "Build and run unit tests" -> success'
+blocked_line_q = "PR#259: Blocked"
+
+check(lines_q.count(ip_line_q) == 2,
+      "exactly two real-clock heartbeats emitted (got %d)" % lines_q.count(ip_line_q),
+      "in_progress count != 2 under real clock; output: %r" % out_q)
+check(lines_q.count(step_line_q) == 1,
+      "the step delta is emitted exactly once",
+      "step line count != 1; output: %r" % out_q)
+# The step poll emits its delta but no heartbeat (the emission reset the real
+# timer to ~now, so the same poll's in_progress gate sees ~0 < window). Exactly
+# two heartbeats with the step strictly between them proves the real-time reset:
+# without the reset, the step poll would also emit a heartbeat (3 total).
+ip_idx_q = [k for k, ln in enumerate(lines_q) if ln == ip_line_q]
+step_idx_q = lines_q.index(step_line_q) if step_line_q in lines_q else -1
+check(len(ip_idx_q) == 2 and step_idx_q != -1 and ip_idx_q[0] < step_idx_q < ip_idx_q[1],
+      "an emitted step line resets the real-time silence timer (no heartbeat on the step poll)",
+      "step did not reset the real-time timer; lines: %r" % lines_q)
+check(lines_q.count(blocked_line_q) == 1 and lines_q[-1] == blocked_line_q,
+      "Blocked terminal emitted once as the final line",
+      "terminal Blocked wrong; output: %r" % out_q)
+check(len(req_q) == 0,
+      "all real-clock poll requests consumed",
+      "request deque not drained; %d entries left" % len(req_q))
+check(rc_q == 0, "main() returned 0", "main() returned %r" % rc_q)
 
 
 # ── Summary ────────────────────────────────────────────────────────────────────
