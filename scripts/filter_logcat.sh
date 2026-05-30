@@ -15,7 +15,7 @@
 #
 # Usage:
 #   adb logcat -d | scripts/filter_logcat.sh
-#   adb logcat -d | scripts/filter_logcat.sh | tail -300
+#   SINCE=$(adb shell date +'%m-%d %H:%M:%S.000') && adb logcat -d -T "$SINCE" | scripts/filter_logcat.sh
 #
 # Examples of elided patterns:
 #   data:image/jpeg;base64,/9j/4AAQ...    →  data:image/jpeg;base64,[elided]
