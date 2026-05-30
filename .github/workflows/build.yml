@@ -318,13 +318,13 @@ jobs:
           ADB="$ANDROID_HOME/platform-tools/adb"
           mkdir -p results
           set -o pipefail
+          LOGCAT_SINCE=$("$ADB" shell date +'%m-%d %H:%M:%S.000')
           ./gradlew connectedE2EAndroidTest \
             -Pe2eClass=com.gb4pc.e2e.PixelCameraOverlayE2ETest \
             | tee >(grep '^##GB4PC_TEST##' > results/e2e-overlay.ndjson) || {
-            echo "=== LOGCAT (last 300 lines) ==="
-            "$ADB" logcat -d | \
-              bash scripts/filter_logcat.sh | \
-              tail -300
+            echo "=== LOGCAT (since test start) ==="
+            "$ADB" logcat -d -T "$LOGCAT_SINCE" | \
+              bash scripts/filter_logcat.sh
             exit 1
           }
 
@@ -345,13 +345,13 @@ jobs:
           ADB="$ANDROID_HOME/platform-tools/adb"
           mkdir -p results
           set -o pipefail
+          LOGCAT_SINCE=$("$ADB" shell date +'%m-%d %H:%M:%S.000')
           ./gradlew connectedE2EAndroidTest \
             -Pe2eClass=com.gb4pc.e2e.GalleryButtonVisualE2ETest \
             | tee >(grep '^##GB4PC_TEST##' > results/e2e-gallery.ndjson) || {
-            echo "=== LOGCAT (last 300 lines) ==="
-            "$ADB" logcat -d | \
-              bash scripts/filter_logcat.sh | \
-              tail -300
+            echo "=== LOGCAT (since test start) ==="
+            "$ADB" logcat -d -T "$LOGCAT_SINCE" | \
+              bash scripts/filter_logcat.sh
             exit 1
           }
 
