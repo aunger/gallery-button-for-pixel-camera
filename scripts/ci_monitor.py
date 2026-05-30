@@ -45,6 +45,11 @@ API_BASE = "https://api.github.com"
 
 TEST_MARKER = "##GB4PC_TEST##"
 
+# Suppress repeated informational lines (in_progress heartbeat, "could not fetch
+# SHA", "still computing") until this many seconds have elapsed with no output of
+# any kind, so a quiet poll loop stays quiet. Every emitted line resets the timer.
+SILENCE_SECONDS = 120
+
 
 # ── Parsers ───────────────────────────────────────────────────────────────────
 
@@ -341,7 +346,7 @@ def main(argv):
             # Throttle the noise: only surface the failure after >120s of
             # silence, matching the in_progress heartbeat suppression.
             now = time.time()
-            if now - last_output_ts > 120:
+            if now - last_output_ts > SILENCE_SECONDS:
                 print("PR#%s: could not fetch SHA" % pr)
                 sys.stdout.flush()
                 last_output_ts = now
@@ -414,7 +419,7 @@ def main(argv):
 
         if result == "in_progress":
             now = time.time()
-            if now - last_output_ts > 120:
+            if now - last_output_ts > SILENCE_SECONDS:
                 print("PR#%s: in_progress" % pr)
                 sys.stdout.flush()
                 last_output_ts = now
@@ -441,7 +446,7 @@ def main(argv):
                 # Gap B — throttle "still computing" to >120s of silence, just
                 # like the in_progress heartbeat, so it does not print every poll.
                 now = time.time()
-                if now - last_output_ts > 120:
+                if now - last_output_ts > SILENCE_SECONDS:
                     print(
                         "PR#%s: all_passed mergeable_state=%s (still computing)"
                         % (pr, mergeable)
