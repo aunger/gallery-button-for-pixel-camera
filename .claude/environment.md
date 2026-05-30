@@ -23,7 +23,7 @@ script for implementation details — each step is commented.
 | `ANDROID_HOME`     | `/home/user/android-sdk`     | hook + `~/.bashrc`| Required by Gradle Android plugin and `adb`                  |
 | `JAVA_TOOL_OPTIONS`| *(modified, not replaced)*   | hook + `~/.bashrc`| Strips `*.google.com` from `nonProxyHosts` — see script §0   |
 | `PATH`             | `+$ANDROID_HOME/…`           | hook + `~/.bashrc`| Adds `sdkmanager`, `adb` to path                            |
-| `GITHUB_TOKEN`     | *(session-scoped JWT)*       | container         | Use with `curl` to query the GitHub REST API                 |
+| `GITHUB_TOKEN`     | *(session-scoped JWT)*       | container         | Read-only for the GitHub Issues/PR API (write attempts return 403). Useful for reading Actions job logs (see below). |
 
 `~/.bashrc` carries the same fixes for interactive terminal sessions.
 The proxy credentials in `JAVA_TOOL_OPTIONS` are a session-scoped JWT injected
@@ -59,7 +59,9 @@ so the `labels` field is never sent and all existing labels remain.
 
 **Implication:** There is no way to remove *all* labels from an issue using
 `mcp__github__issue_write` alone. To drop N−1 labels, set `labels` to the one label
-you want to keep. The last remaining label cannot be removed via this tool.
+you want to keep. The last remaining label cannot be removed via this tool, and the
+`GITHUB_TOKEN` environment variable also cannot help — it is read-only for the Issues
+API (write attempts return 403).
 
 ### Always verify writes with a follow-up read
 
