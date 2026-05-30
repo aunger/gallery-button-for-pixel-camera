@@ -58,14 +58,14 @@ For each sub-agent role, use the first rule that applies:
 - Inform the agent of its responsibility to commit its work to a branch and open a PR (if one doesn't already exist)
 - Pass the branch name to the subagent
 - Pass the issue number to the subagent
-- Relay any relevant instruction from the user
+- Relay relevant instruction from the user, *verbatim*
 
 ## Assigning a Reviewer
 
 - Create a sub-agent at the Reviewer model (see Model selection above)
 - Inform the agent of its role as an expert software reviewer who ensures high quality code and adherence to development plans
 - Pass the issue number to the subagent
-- Relay any relevant instruction from the user
+- Relay relevant instruction from the user, *verbatim*
 
 ## Author disagreement
 
