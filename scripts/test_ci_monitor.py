@@ -15,6 +15,8 @@ Covers:
   (h) Mocked HTTP: _request returns parsed JSON without touching the network
   (i) main(): failing unit test signals (step failure + FAIL) emit once before terminal
   (j) main(): in_progress heartbeat fires after >120s and resets on emission
+  (k) Gap A: parse_pr_terminal() maps merged/closed/open + main() terminates on merged
+  (l) Gap C: fetch_pr_with_retry() retry/backoff and _retry_after_seconds() header parsing
 
 No network calls required; no GITHUB_TOKEN needed.
 Always exits 0 on success, non-zero on failure.
@@ -26,6 +28,7 @@ import json
 import os
 import sys
 import unittest.mock
+import urllib.error
 import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -401,6 +404,214 @@ check(len(req_j) == 0,
       "all mocked requests consumed (65 entries drained)",
       "request deque not drained; %d entries left" % len(req_j))
 check(rc_j == 0, "main() returned 0", "main() returned %r" % rc_j)
+
+
+# ── (k) Gap A: closed/merged PR termination ────────────────────────────────────
+print("\n=== (k) Gap A: parse_pr_terminal maps merged/closed/open ===")
+
+check(ci_monitor.parse_pr_terminal({"merged": True, "state": "closed"}) == "Merged",
+      "parse_pr_terminal returns 'Merged' when merged is true",
+      "expected 'Merged'; got %r" % ci_monitor.parse_pr_terminal({"merged": True, "state": "closed"}))
+check(ci_monitor.parse_pr_terminal({"merged": False, "state": "closed"}) == "Closed",
+      "parse_pr_terminal returns 'Closed' when state is closed (not merged)",
+      "expected 'Closed'; got %r" % ci_monitor.parse_pr_terminal({"merged": False, "state": "closed"}))
+check(ci_monitor.parse_pr_terminal({"merged": False, "state": "open"}) == "",
+      "parse_pr_terminal returns '' when PR is open",
+      "expected ''; got %r" % ci_monitor.parse_pr_terminal({"merged": False, "state": "open"}))
+
+# Integration: iteration 1 is in_progress, iteration 2 the PR is merged. The
+# terminal check runs right after the SHA fetch (before check-runs), so on
+# iteration 2 main() emits 'PR#N: Merged' and breaks without issuing the
+# check-runs/runs/jobs/artifacts calls. Per-iteration request order is:
+#   pulls (sha), check-runs, runs, jobs, artifacts, [zip per new artifact].
+# Iteration 1 (open + in_progress, empty artifacts) issues 5 requests; iteration
+# 2 short-circuits after the single pulls fetch. 5 + 1 = 6 entries, drained.
+print("\n=== (k) main(): merged PR emits terminal 'Merged' and exits cleanly ===")
+
+PR_OPEN_K = {"head": {"sha": "feedface"}, "merged": False, "state": "open"}
+PR_MERGED_K = {"head": {"sha": "feedface"}, "merged": True, "state": "closed"}
+CHECK_IP_K = {"total_count": 1, "check_runs": [{"status": "in_progress", "conclusion": None}]}
+RUNS_K = {"workflow_runs": [{"id": 888, "status": "in_progress"}]}
+JOBS_EMPTY_K = {"jobs": [{"name": "build-and-test", "steps": []}]}
+ARTS_EMPTY_K = {"artifacts": []}
+
+side_effects_k = collections.deque([
+    # iteration 1 — open, in_progress (no heartbeat: clock frozen at start)
+    PR_OPEN_K,        # pulls -> sha, terminal == ''
+    CHECK_IP_K,       # check-runs -> in_progress
+    RUNS_K,           # runs -> run_id
+    JOBS_EMPTY_K,     # jobs -> nothing
+    ARTS_EMPTY_K,     # artifacts -> nothing
+    # iteration 2 — merged: terminal short-circuit before check-runs
+    PR_MERGED_K,      # pulls -> sha, terminal == 'Merged' -> break
+])
+
+
+def fake_request_k(url, token, raw=False):
+    return side_effects_k.popleft()
+
+
+buf_k = io.StringIO()
+with unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_k), \
+        unittest.mock.patch.object(ci_monitor.time, "time", return_value=1000.0), \
+        unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None), \
+        unittest.mock.patch("sys.stdout", new=buf_k):
+    rc_k = ci_monitor.main(["ci_monitor.py", "--pr", "290"])
+
+out_k = buf_k.getvalue()
+lines_k = out_k.splitlines()
+merged_line_k = "PR#290: Merged"
+check(lines_k.count(merged_line_k) == 1,
+      "Merged terminal line emitted exactly once",
+      "Merged terminal line count != 1; output: %r" % out_k)
+check(not any("still computing" in ln for ln in lines_k),
+      "no 'still computing' spin while terminating on merged",
+      "unexpected 'still computing' line; output: %r" % out_k)
+check(len(side_effects_k) == 0,
+      "all 6 mocked requests consumed (merged short-circuits iteration 2)",
+      "request deque not drained; %d entries left" % len(side_effects_k))
+check(rc_k == 0, "main() returned 0 after merged terminal", "main() returned %r" % rc_k)
+
+
+# ── (l) Gap C: SHA-fetch retry/backoff ─────────────────────────────────────────
+print("\n=== (l) Gap C: _retry_after_seconds parses rate-limit headers ===")
+
+
+class _FakeHTTPError(urllib.error.HTTPError):
+    """An HTTPError with controllable code and headers, no real response body."""
+
+    def __init__(self, code, headers):
+        # Bypass HTTPError.__init__'s fp/url plumbing; set just what we read.
+        # _retry_after_seconds only inspects .code and .headers.
+        self.code = code
+        self.headers = headers
+
+
+# Retry-After header (delta seconds).
+ra = ci_monitor._retry_after_seconds(_FakeHTTPError(429, {"Retry-After": "42"}), 1000.0)
+check(ra == 42, "Retry-After header parsed as 42s",
+      "expected 42; got %r" % ra)
+
+# X-RateLimit-Reset header (Unix timestamp -> delta from now).
+xr = ci_monitor._retry_after_seconds(
+    _FakeHTTPError(403, {"X-RateLimit-Reset": "1100"}), 1000.0)
+check(xr == 100, "X-RateLimit-Reset parsed as (reset - now) = 100s",
+      "expected 100; got %r" % xr)
+
+# Clamp to 300s ceiling (huge reset far in the future).
+clamp = ci_monitor._retry_after_seconds(
+    _FakeHTTPError(403, {"X-RateLimit-Reset": "100000"}), 1000.0)
+check(clamp == 300, "huge backoff clamped to 300s max",
+      "expected 300; got %r" % clamp)
+
+# Non-rate-limit status returns None (no backoff hint).
+none_status = ci_monitor._retry_after_seconds(
+    _FakeHTTPError(500, {"Retry-After": "10"}), 1000.0)
+check(none_status is None, "non-403/429 status yields no hint (None)",
+      "expected None; got %r" % none_status)
+
+# Rate-limit status but no usable header returns None.
+none_hdr = ci_monitor._retry_after_seconds(_FakeHTTPError(429, {}), 1000.0)
+check(none_hdr is None, "rate-limit status without headers yields None",
+      "expected None; got %r" % none_hdr)
+
+# Invalid Retry-After value falls through to None (no X-RateLimit-Reset).
+bad_ra = ci_monitor._retry_after_seconds(
+    _FakeHTTPError(429, {"Retry-After": "soon"}), 1000.0)
+check(bad_ra is None, "non-numeric Retry-After yields None",
+      "expected None; got %r" % bad_ra)
+
+print("\n=== (l) fetch_pr_with_retry: first-try success, retry-then-success, all-fail ===")
+
+PR_RETRY = {"head": {"sha": "0ddba11"}}
+
+# Success on the first try: one _request call, no sleep.
+calls_first = {"n": 0}
+
+
+def req_first(url, token, raw=False):
+    calls_first["n"] += 1
+    return PR_RETRY
+
+
+with unittest.mock.patch.object(ci_monitor, "_request", side_effect=req_first), \
+        unittest.mock.patch.object(ci_monitor.time, "sleep", side_effect=AssertionError("should not sleep")), \
+        unittest.mock.patch.object(ci_monitor.time, "time", return_value=1000.0):
+    got_first = ci_monitor.fetch_pr_with_retry("290", "tok")
+check(got_first == PR_RETRY and calls_first["n"] == 1,
+      "fetch_pr_with_retry succeeds on first try with no sleep",
+      "first-try fetch wrong; got %r after %d calls" % (got_first, calls_first["n"]))
+
+# Transient URLError twice, then success. Backoff sleeps recorded.
+err = urllib.error.URLError("temporary blip")
+retry_results = collections.deque([None, None, PR_RETRY])
+slept = []
+
+
+def req_retry(url, token, raw=False):
+    r = retry_results.popleft()
+    # Emulate _request recording the last transient error on failure.
+    ci_monitor._request.last_error = None if r is not None else err
+    return r
+
+
+with unittest.mock.patch.object(ci_monitor, "_request", side_effect=req_retry), \
+        unittest.mock.patch.object(ci_monitor.time, "sleep", side_effect=slept.append), \
+        unittest.mock.patch.object(ci_monitor.time, "time", return_value=1000.0):
+    got_retry = ci_monitor.fetch_pr_with_retry("290", "tok", attempts=3, base_delay=2)
+check(got_retry == PR_RETRY,
+      "fetch_pr_with_retry retries transient failures and eventually succeeds",
+      "retry-then-success wrong; got %r" % got_retry)
+check(slept == [2, 4],
+      "exponential backoff sleeps were 2s then 4s before success",
+      "backoff schedule wrong; slept %r" % slept)
+check(len(retry_results) == 0, "all retry responses consumed",
+      "retry deque not drained; %d left" % len(retry_results))
+
+# Every attempt fails -> returns None after `attempts` tries, sleeps attempts-1 times.
+fail_calls = {"n": 0}
+slept_fail = []
+
+
+def req_allfail(url, token, raw=False):
+    fail_calls["n"] += 1
+    ci_monitor._request.last_error = err
+    return None
+
+
+with unittest.mock.patch.object(ci_monitor, "_request", side_effect=req_allfail), \
+        unittest.mock.patch.object(ci_monitor.time, "sleep", side_effect=slept_fail.append), \
+        unittest.mock.patch.object(ci_monitor.time, "time", return_value=1000.0):
+    got_fail = ci_monitor.fetch_pr_with_retry("290", "tok", attempts=3, base_delay=2)
+check(got_fail is None,
+      "fetch_pr_with_retry returns None when every attempt fails",
+      "expected None; got %r" % got_fail)
+check(fail_calls["n"] == 3,
+      "fetch_pr_with_retry made exactly `attempts` (3) requests",
+      "expected 3 requests; got %d" % fail_calls["n"])
+check(slept_fail == [2, 4],
+      "slept between the 3 failed attempts (2s, 4s), not after the last",
+      "fail backoff schedule wrong; slept %r" % slept_fail)
+
+# Rate-limit hint overrides exponential backoff: 403 with Retry-After=7.
+rl_err = _FakeHTTPError(429, {"Retry-After": "7"})
+rl_results = collections.deque([None, PR_RETRY])
+slept_rl = []
+
+
+def req_ratelimit(url, token, raw=False):
+    r = rl_results.popleft()
+    ci_monitor._request.last_error = None if r is not None else rl_err
+    return r
+
+
+with unittest.mock.patch.object(ci_monitor, "_request", side_effect=req_ratelimit), \
+        unittest.mock.patch.object(ci_monitor.time, "sleep", side_effect=slept_rl.append), \
+        unittest.mock.patch.object(ci_monitor.time, "time", return_value=1000.0):
+    got_rl = ci_monitor.fetch_pr_with_retry("290", "tok", attempts=3, base_delay=2)
+check(got_rl == PR_RETRY and slept_rl == [7],
+      "rate-limit Retry-After hint (7s) honored over exponential backoff",
+      "rate-limit backoff wrong; got %r, slept %r" % (got_rl, slept_rl))
 
 
 # ── Summary ────────────────────────────────────────────────────────────────────

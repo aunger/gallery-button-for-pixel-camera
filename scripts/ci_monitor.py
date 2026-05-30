@@ -119,6 +119,22 @@ def parse_pr_sha(pr_json):
     return pr_json.get("head", {}).get("sha", "")
 
 
+def parse_pr_terminal(pr_json):
+    """Map a /pulls/{n} response to a terminal line for a done PR, or '' if open.
+
+    GitHub leaves `mergeable_state` at "unknown" indefinitely once a PR is
+    closed or merged, which would otherwise spin the poll loop until timeout.
+    Returns 'Merged' when the PR was merged, 'Closed' when it was closed without
+    merging, or '' when the PR is still open and should keep being polled. A
+    response missing both fields (e.g. a minimal mock) is treated as open.
+    """
+    if pr_json.get("merged"):
+        return "Merged"
+    if pr_json.get("state") == "closed":
+        return "Closed"
+    return ""
+
+
 def parse_check_result(check_json):
     """Map a /commits/{sha}/check-runs response to an overall result token.
 
@@ -193,11 +209,43 @@ def _err_detail(e):
     return "%s: %s" % (type(e).__name__, e)
 
 
+def _retry_after_seconds(e, now):
+    """Return how long to back off (seconds) for a rate-limited HTTPError.
+
+    On HTTP 403/429 GitHub advertises when to retry via either a `Retry-After`
+    header (delta seconds) or an `X-RateLimit-Reset` header (Unix timestamp).
+    Returns that delay clamped to a sane ceiling, or None when the error is not
+    a recognized rate-limit response or carries no usable hint.
+    """
+    if not isinstance(e, urllib.error.HTTPError) or e.code not in (403, 429):
+        return None
+    headers = getattr(e, "headers", None)
+    if headers is None:
+        return None
+    retry_after = headers.get("Retry-After")
+    if retry_after:
+        try:
+            return min(max(int(retry_after), 0), 300)
+        except (ValueError, TypeError):
+            pass
+    reset = headers.get("X-RateLimit-Reset")
+    if reset:
+        try:
+            return min(max(int(reset) - int(now), 0), 300)
+        except (ValueError, TypeError):
+            pass
+    return None
+
+
 def _request(url, token, raw=False):
     """Perform an authenticated GET. Returns parsed JSON (or raw bytes if raw).
 
     Returns None on any HTTP/URL/JSON error so the poll loop can survive blips.
+    On an HTTP error the originating HTTPError is recorded on the function as
+    `_request.last_error` so callers that retry (e.g. the SHA fetch) can inspect
+    rate-limit headers; it is cleared to None on a successful request.
     """
+    _request.last_error = None
     req = urllib.request.Request(url)
     req.add_header("Authorization", "Bearer %s" % token)
     req.add_header("Accept", "application/vnd.github+json")
@@ -205,6 +253,7 @@ def _request(url, token, raw=False):
         with urllib.request.urlopen(req) as resp:
             data = resp.read()
     except (urllib.error.URLError, OSError) as e:
+        _request.last_error = e
         sys.stderr.write("request failed (%s): %s\n" % (url, _err_detail(e)))
         sys.stderr.flush()
         return None
@@ -216,6 +265,31 @@ def _request(url, token, raw=False):
         sys.stderr.write("response parse failed (%s): %s\n" % (url, e))
         sys.stderr.flush()
         return None
+
+
+_request.last_error = None
+
+
+def fetch_pr_with_retry(pr, token, attempts=3, base_delay=2):
+    """Fetch /pulls/{n} with bounded exponential backoff and rate-limit handling.
+
+    Tries up to `attempts` times. Between failed tries it sleeps with exponential
+    backoff (base_delay, 2x, 4x, ...), unless the failure is a rate-limit
+    response (HTTP 403/429) advertising a `Retry-After` or `X-RateLimit-Reset`
+    hint, in which case it honors that delay instead. Returns the parsed JSON on
+    success, or None if every attempt fails (the caller then handles the
+    throttled "could not fetch SHA" line).
+    """
+    url = "%s/repos/%s/%s/pulls/%s" % (API_BASE, OWNER, REPO, pr)
+    for attempt in range(attempts):
+        pr_json = _request(url, token)
+        if pr_json is not None:
+            return pr_json
+        if attempt == attempts - 1:
+            break
+        hint = _retry_after_seconds(_request.last_error, time.time())
+        time.sleep(hint if hint is not None else base_delay * (2 ** attempt))
+    return None
 
 
 # ── Main poll loop ────────────────────────────────────────────────────────────
@@ -251,16 +325,36 @@ def main(argv):
         sys.stdout.flush()
         last_output_ts = time.time()
 
+    # Gap D — advertise our PID so the Orchestrator can stop us out-of-band
+    # (e.g. `kill -TERM <PID>`) if the Monitor tool's TaskStop is unavailable.
+    print("monitor PID %d — if TaskStop is unavailable, send SIGTERM to this PID to stop me" % os.getpid())
+    sys.stdout.flush()
+
     while True:
-        pr_json = _request("%s/repos/%s/%s/pulls/%s" % (API_BASE, OWNER, REPO, pr), token)
+        # Gap C — retry the SHA fetch with backoff and rate-limit awareness
+        # instead of a flat 30s retry, so transient blips and 403/429 throttles
+        # are handled without hammering the API.
+        pr_json = fetch_pr_with_retry(pr, token)
         sha = parse_pr_sha(pr_json) if pr_json else ""
 
         if not sha:
-            print("PR#%s: could not fetch SHA" % pr)
-            sys.stdout.flush()
-            last_output_ts = time.time()
+            # Throttle the noise: only surface the failure after >120s of
+            # silence, matching the in_progress heartbeat suppression.
+            now = time.time()
+            if now - last_output_ts > 120:
+                print("PR#%s: could not fetch SHA" % pr)
+                sys.stdout.flush()
+                last_output_ts = now
             time.sleep(30)
             continue
+
+        # Gap A — a closed or merged PR leaves mergeable_state "unknown"
+        # forever; emit a terminal line and stop instead of spinning.
+        terminal = parse_pr_terminal(pr_json)
+        if terminal:
+            print("PR#%s: %s" % (pr, terminal))
+            sys.stdout.flush()
+            break
 
         check_json = _request(
             "%s/repos/%s/%s/commits/%s/check-runs" % (API_BASE, OWNER, REPO, sha), token
@@ -344,12 +438,16 @@ def main(argv):
                 sys.stdout.flush()
                 break
             else:
-                print(
-                    "PR#%s: all_passed mergeable_state=%s (still computing)"
-                    % (pr, mergeable)
-                )
-                sys.stdout.flush()
-                last_output_ts = time.time()
+                # Gap B — throttle "still computing" to >120s of silence, just
+                # like the in_progress heartbeat, so it does not print every poll.
+                now = time.time()
+                if now - last_output_ts > 120:
+                    print(
+                        "PR#%s: all_passed mergeable_state=%s (still computing)"
+                        % (pr, mergeable)
+                    )
+                    sys.stdout.flush()
+                    last_output_ts = now
         elif result in ("Blocked", "Infra"):
             print("PR#%s: %s" % (pr, result))
             sys.stdout.flush()
