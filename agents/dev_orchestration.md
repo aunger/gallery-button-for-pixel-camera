@@ -69,13 +69,13 @@ For each sub-agent role, use the first rule that applies:
 
 ## Author disagreement
 
-If the Author disagrees with a review point, they should make their case in PR comments rather than acquiescing. The Orchestrator relays the exchange verbatim; the Reviewer may then revise or hold their position.
+If the Author disagrees with a review point, they should make their case in PR comments rather than acquiescing.
 
-## Handling conditional approval
+## Conditional approval
 
-A Reviewer may give **conditional approval**: an approval combined with minimal and specific instructions for the Author to take before merging. This is only appropriate when the request is unlikely to be contested. The Reviewer will phrase it unambiguously, e.g. "Approved, pending [specific change]."
+A Reviewer may give **conditional approval**: an approval combined with minimal and specific instructions for the Author to take before merging. The Reviewer will phrase it unambiguously, e.g. "Approved, pending [specific change]."
 
-**Treat conditional approval as "changes requested"** for workflow purposes. The Author must still act.
+**Conditional approval still requires agent follow-up.** See the workflow below.
 
 ```
   if Reviewer gave conditional approval:
