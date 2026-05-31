@@ -318,7 +318,7 @@ jobs:
           ADB="$ANDROID_HOME/platform-tools/adb"
           mkdir -p results
           set -o pipefail
-          LOGCAT_SINCE=$("$ADB" shell date +'%m-%d %H:%M:%S.000')
+          LOGCAT_SINCE=$("$ADB" shell "date '+%m-%d %H:%M:%S.000'" | tr -d '\r')
           ./gradlew connectedE2EAndroidTest \
             -Pe2eClass=com.gb4pc.e2e.PixelCameraOverlayE2ETest \
             | tee >(grep '^##GB4PC_TEST##' > results/e2e-overlay.ndjson) || {
@@ -345,7 +345,7 @@ jobs:
           ADB="$ANDROID_HOME/platform-tools/adb"
           mkdir -p results
           set -o pipefail
-          LOGCAT_SINCE=$("$ADB" shell date +'%m-%d %H:%M:%S.000')
+          LOGCAT_SINCE=$("$ADB" shell "date '+%m-%d %H:%M:%S.000'" | tr -d '\r')
           ./gradlew connectedE2EAndroidTest \
             -Pe2eClass=com.gb4pc.e2e.GalleryButtonVisualE2ETest \
             | tee >(grep '^##GB4PC_TEST##' > results/e2e-gallery.ndjson) || {
