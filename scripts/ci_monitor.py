@@ -7,10 +7,21 @@ interface: terminal outcome lines end the loop, while informational lines
 (in_progress heartbeat, per-step deltas, per-test FAILs) keep it alive.
 
 Usage:
-    python3 scripts/ci_monitor.py --pr <PR_NUMBER>
+    python3 scripts/ci_monitor.py --pr <PR_NUMBER> [filter flags]
 
 Arguments:
     --pr <PR_NUMBER>   The pull request number to monitor (required).
+
+Per-outcome filter flags (each outcome is independent):
+    --include-fail [PATTERN]   Report FAIL markers, optionally regex-filtered on name.
+                               Default: all FAIL markers reported.
+    --no-include-fail          Suppress all FAIL markers.
+    --include-skip [PATTERN]   Report SKIP markers, optionally regex-filtered on name.
+                               Default: all SKIP markers reported.
+    --no-include-skip          Suppress all SKIP markers.
+    --include-pass [PATTERN]   Report PASS markers, optionally regex-filtered on name.
+                               Default: no PASS markers reported.
+    --no-include-pass          Suppress all PASS markers (explicit form of default).
 
 Environment:
     GITHUB_TOKEN  GitHub token used for the REST calls (required).
@@ -22,6 +33,8 @@ Outcome vocabulary (one terminal line ends the loop):
     PR#N: in_progress    CI still running; emitted only after >120 s of silence.
     PR#N: step "..." -> ...    A build-and-test step reached a conclusion (informational).
     PR#N: FAIL [suite] name: ...   A per-test failure from a testresults artifact (informational).
+    PR#N: PASS [suite] name: ...   A per-test pass (informational; emitted only when --include-pass used).
+    PR#N: SKIP [suite] name: ...   A per-test skip (informational; suppressed only with --no-include-skip).
 
 NOTE on error handling: the poll loop must survive transient REST/parse
 failures. HTTP and JSON errors are caught per-call and treated as "no data this
@@ -85,14 +98,28 @@ def parse_steps(jobs_json, seen):
     return out
 
 
-def parse_fails(lines, seen):
-    """Emit FAIL lines from ##GB4PC_TEST## ndjson markers.
+def parse_fails(lines, seen, outcome_filters=None):
+    """Emit FAIL/PASS/SKIP lines from ##GB4PC_TEST## ndjson markers.
 
     `lines` is an iterable of raw text lines; `seen` is a set of already-reported
-    suite#name keys (mutated in place). Returns a list of FAIL lines, each
+    suite#name#outcome keys (mutated in place). Returns a list of output lines, each
     possibly carrying an indented (truncated) trace. Deduped across calls by
-    suite#name.
+    suite#name#outcome.
+
+    `outcome_filters` is a dict mapping outcome names ('FAIL', 'PASS', 'SKIP') to
+    (enabled, pattern) tuples, where `enabled` is a bool and `pattern` is either
+    None (match all) or a regex string (match only markers whose `name` matches).
+    Default behavior (outcome_filters=None): report all FAIL, all SKIP, no PASS.
     """
+    import re as _re
+
+    if outcome_filters is None:
+        outcome_filters = {
+            "FAIL": (True, None),
+            "SKIP": (True, None),
+            "PASS": (False, None),
+        }
+
     out = []
     for raw in lines:
         i = raw.find(TEST_MARKER)
@@ -102,9 +129,17 @@ def parse_fails(lines, seen):
             m = json.loads(raw[i + len(TEST_MARKER):].strip())
         except Exception:
             continue
-        if m.get("outcome") != "FAIL":
+        outcome = m.get("outcome", "")
+        if outcome not in outcome_filters:
             continue
-        key = m.get("suite", "") + "#" + m.get("name", "")
+        enabled, pattern = outcome_filters[outcome]
+        if not enabled:
+            continue
+        # Pattern is matched against the marker's `name` field.
+        name = m.get("name", "")
+        if pattern is not None and not _re.search(pattern, name):
+            continue
+        key = m.get("suite", "") + "#" + name + "#" + outcome
         if key in seen:
             continue
         seen.add(key)
@@ -112,7 +147,7 @@ def parse_fails(lines, seen):
         tr = (m.get("trace") or "").strip()
         if len(tr) > 800:
             tr = tr[:800] + " ...(truncated)"
-        line = "FAIL [%s] %s: %s" % (m.get("suite", "?"), m.get("name", "?"), msg)
+        line = "%s [%s] %s: %s" % (outcome, m.get("suite", "?"), name or "?", msg)
         if tr:
             line += "\n  " + tr.replace("\n", "\n  ")
         out.append(line)
@@ -300,6 +335,34 @@ def fetch_pr_with_retry(pr, token, attempts=3, base_delay=2):
 # ── Main poll loop ────────────────────────────────────────────────────────────
 
 
+def _parse_outcome_filters(args):
+    """Build an outcome_filters dict from parsed CLI args.
+
+    Each outcome has an independent pair of flags:
+      --include-fail [pattern] / --no-include-fail
+      --include-skip [pattern] / --no-include-skip
+      --include-pass [pattern] / --no-include-pass
+
+    Returns a dict: {'FAIL': (enabled, pattern), 'SKIP': (enabled, pattern),
+                     'PASS': (enabled, pattern)}.
+    Defaults: FAIL all, SKIP all, PASS none.
+    """
+    def _outcome(no_flag, include_flag, default_enabled):
+        if no_flag:
+            return (False, None)
+        if include_flag is None:
+            # flag was not provided at all — use default
+            return (default_enabled, None)
+        # flag was provided; include_flag is either '' (no pattern) or a pattern string
+        return (True, include_flag if include_flag != "" else None)
+
+    return {
+        "FAIL": _outcome(args.no_include_fail, args.include_fail, True),
+        "SKIP": _outcome(args.no_include_skip, args.include_skip, True),
+        "PASS": _outcome(args.no_include_pass, args.include_pass, False),
+    }
+
+
 def main(argv):
     parser = argparse.ArgumentParser(
         prog="ci_monitor.py",
@@ -308,9 +371,31 @@ def main(argv):
     parser.add_argument(
         "--pr", required=True, metavar="PR_NUMBER", help="The pull request number to monitor."
     )
+
+    # Per-outcome filter flags. Each outcome has an --include-* (optional regex)
+    # and a --no-include-* suppressor. Defaults: all FAIL, all SKIP, no PASS.
+    for outcome in ("fail", "skip", "pass"):
+        parser.add_argument(
+            "--include-%s" % outcome,
+            dest="include_%s" % outcome,
+            metavar="PATTERN",
+            nargs="?",
+            default=None,   # sentinel: flag not supplied
+            const="",       # supplied with no argument: match all
+            help="Include %s markers, optionally filtered by regex on name." % outcome.upper(),
+        )
+        parser.add_argument(
+            "--no-include-%s" % outcome,
+            dest="no_include_%s" % outcome,
+            action="store_true",
+            default=False,
+            help="Suppress all %s markers." % outcome.upper(),
+        )
+
     args = parser.parse_args(argv[1:])
     pr = args.pr
     token = os.environ.get("GITHUB_TOKEN", "")
+    outcome_filters = _parse_outcome_filters(args)
 
     last_output_ts = time.time()
 
@@ -410,7 +495,7 @@ def main(argv):
                         lines = list(extract_ndjson_lines(zip_bytes))
                     except (zipfile.BadZipFile, OSError):
                         continue
-                    emit_block(parse_fails(lines, seen_fails))
+                    emit_block(parse_fails(lines, seen_fails, outcome_filters))
                     # Mark the artifact seen only after a successful download
                     # and parse: a transient failure above hits `continue` and
                     # leaves the id unseen, so it is retried on the next poll.

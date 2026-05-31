@@ -1089,6 +1089,328 @@ check(len(req_q) == 0,
 check(rc_q == 0, "main() returned 0", "main() returned %r" % rc_q)
 
 
+# ── (r) #260 outcome filters: parse_fails with explicit outcome_filters ────────
+print("\n=== (r) #260 outcome filters: parse_fails obeys outcome_filters for FAIL/PASS/SKIP ===")
+
+FILTER_NDJSON = [
+    '##GB4PC_TEST## {"suite":"com.gb4pc.unit.FooTest","name":"test_fail","outcome":"FAIL","ms":1,"msg":"boom","trace":""}',
+    '##GB4PC_TEST## {"suite":"com.gb4pc.unit.FooTest","name":"test_pass","outcome":"PASS","ms":2,"msg":"","trace":""}',
+    '##GB4PC_TEST## {"suite":"com.gb4pc.unit.FooTest","name":"test_skip","outcome":"SKIP","ms":0,"msg":"","trace":""}',
+    '##GB4PC_TEST## {"suite":"com.gb4pc.unit.BarTest","name":"test_fail_bar","outcome":"FAIL","ms":3,"msg":"kaboom","trace":""}',
+    '##GB4PC_TEST## {"suite":"com.gb4pc.unit.BarTest","name":"test_pass_bar","outcome":"PASS","ms":4,"msg":"","trace":""}',
+    '##GB4PC_TEST## {"suite":"com.gb4pc.unit.BarTest","name":"test_skip_bar","outcome":"SKIP","ms":0,"msg":"","trace":""}',
+]
+
+# Default behavior: all FAIL, all SKIP, no PASS
+out_r_default = ci_monitor.parse_fails(FILTER_NDJSON, set())
+out_r_default_str = "\n".join(out_r_default)
+check("FAIL [com.gb4pc.unit.FooTest] test_fail:" in out_r_default_str,
+      "default: FAIL marker emitted", "default: FAIL marker missing; output: %r" % out_r_default)
+check("FAIL [com.gb4pc.unit.BarTest] test_fail_bar:" in out_r_default_str,
+      "default: FAIL marker for BarTest emitted", "default: BarTest FAIL missing; output: %r" % out_r_default)
+check("SKIP [com.gb4pc.unit.FooTest] test_skip:" in out_r_default_str,
+      "default: SKIP marker emitted", "default: SKIP marker missing; output: %r" % out_r_default)
+check("SKIP [com.gb4pc.unit.BarTest] test_skip_bar:" in out_r_default_str,
+      "default: SKIP marker for BarTest emitted", "default: BarTest SKIP missing; output: %r" % out_r_default)
+check("PASS" not in out_r_default_str,
+      "default: no PASS markers emitted", "default: unexpected PASS in output: %r" % out_r_default)
+
+# --no-include-fail: suppress all FAIL
+out_r_nofail = ci_monitor.parse_fails(
+    FILTER_NDJSON, set(),
+    outcome_filters={"FAIL": (False, None), "SKIP": (True, None), "PASS": (False, None)},
+)
+out_r_nofail_str = "\n".join(out_r_nofail)
+check("FAIL" not in out_r_nofail_str,
+      "--no-include-fail: no FAIL emitted", "--no-include-fail: FAIL in output: %r" % out_r_nofail)
+check("SKIP [com.gb4pc.unit.FooTest] test_skip:" in out_r_nofail_str,
+      "--no-include-fail: SKIP still emitted", "--no-include-fail: SKIP missing; output: %r" % out_r_nofail)
+
+# --no-include-skip: suppress all SKIP
+out_r_noskip = ci_monitor.parse_fails(
+    FILTER_NDJSON, set(),
+    outcome_filters={"FAIL": (True, None), "SKIP": (False, None), "PASS": (False, None)},
+)
+out_r_noskip_str = "\n".join(out_r_noskip)
+check("SKIP" not in out_r_noskip_str,
+      "--no-include-skip: no SKIP emitted", "--no-include-skip: SKIP in output: %r" % out_r_noskip)
+check("FAIL [com.gb4pc.unit.FooTest] test_fail:" in out_r_noskip_str,
+      "--no-include-skip: FAIL still emitted", "--no-include-skip: FAIL missing; output: %r" % out_r_noskip)
+
+# --include-pass '' (no pattern): all PASS markers emitted
+out_r_allpass = ci_monitor.parse_fails(
+    FILTER_NDJSON, set(),
+    outcome_filters={"FAIL": (True, None), "SKIP": (True, None), "PASS": (True, None)},
+)
+out_r_allpass_str = "\n".join(out_r_allpass)
+check("PASS [com.gb4pc.unit.FooTest] test_pass:" in out_r_allpass_str,
+      "--include-pass: PASS marker emitted", "--include-pass: PASS missing; output: %r" % out_r_allpass)
+check("PASS [com.gb4pc.unit.BarTest] test_pass_bar:" in out_r_allpass_str,
+      "--include-pass: PASS marker for BarTest emitted", "--include-pass: BarTest PASS missing; output: %r" % out_r_allpass)
+
+# --include-pass with a pattern: only matching passes emitted
+out_r_patpass = ci_monitor.parse_fails(
+    FILTER_NDJSON, set(),
+    outcome_filters={"FAIL": (False, None), "SKIP": (False, None), "PASS": (True, "test_pass$")},
+)
+out_r_patpass_str = "\n".join(out_r_patpass)
+check("PASS [com.gb4pc.unit.FooTest] test_pass:" in out_r_patpass_str,
+      "--include-pass with pattern: matching PASS emitted",
+      "--include-pass pattern: matching PASS missing; output: %r" % out_r_patpass)
+check("PASS [com.gb4pc.unit.BarTest] test_pass_bar:" not in out_r_patpass_str,
+      "--include-pass with pattern: non-matching PASS suppressed",
+      "--include-pass pattern: non-matching PASS leaked; output: %r" % out_r_patpass)
+
+# --include-fail with a pattern: only matching FAIL emitted
+out_r_patfail = ci_monitor.parse_fails(
+    FILTER_NDJSON, set(),
+    outcome_filters={"FAIL": (True, "test_fail$"), "SKIP": (False, None), "PASS": (False, None)},
+)
+out_r_patfail_str = "\n".join(out_r_patfail)
+check("FAIL [com.gb4pc.unit.FooTest] test_fail:" in out_r_patfail_str,
+      "--include-fail with pattern: matching FAIL emitted",
+      "--include-fail pattern: matching FAIL missing; output: %r" % out_r_patfail)
+check("FAIL [com.gb4pc.unit.BarTest] test_fail_bar:" not in out_r_patfail_str,
+      "--include-fail with pattern: non-matching FAIL suppressed",
+      "--include-fail pattern: non-matching FAIL leaked; output: %r" % out_r_patfail)
+
+# --include-skip with a pattern: only matching SKIP emitted
+out_r_patskip = ci_monitor.parse_fails(
+    FILTER_NDJSON, set(),
+    outcome_filters={"FAIL": (False, None), "SKIP": (True, "test_skip$"), "PASS": (False, None)},
+)
+out_r_patskip_str = "\n".join(out_r_patskip)
+check("SKIP [com.gb4pc.unit.FooTest] test_skip:" in out_r_patskip_str,
+      "--include-skip with pattern: matching SKIP emitted",
+      "--include-skip pattern: matching SKIP missing; output: %r" % out_r_patskip)
+check("SKIP [com.gb4pc.unit.BarTest] test_skip_bar:" not in out_r_patskip_str,
+      "--include-skip with pattern: non-matching SKIP suppressed",
+      "--include-skip pattern: non-matching SKIP leaked; output: %r" % out_r_patskip)
+
+# SKIP stays labeled SKIP, never relabeled as PASS (even with --include-pass '')
+out_r_labelcheck = ci_monitor.parse_fails(
+    FILTER_NDJSON, set(),
+    outcome_filters={"FAIL": (False, None), "SKIP": (True, None), "PASS": (True, None)},
+)
+out_r_labelcheck_str = "\n".join(out_r_labelcheck)
+check(all(not ln.startswith("PASS") for ln in out_r_labelcheck_str.splitlines()
+          if "test_skip" in ln),
+      "SKIP marker is never relabeled as PASS",
+      "SKIP was relabeled as PASS; output: %r" % out_r_labelcheck)
+check(any(ln.startswith("SKIP") for ln in out_r_labelcheck_str.splitlines()),
+      "SKIP outcome retains SKIP label in output",
+      "SKIP label missing; output: %r" % out_r_labelcheck)
+
+# ── (s) #260 CLI flags: _parse_outcome_filters and main() respect filter flags ─
+print("\n=== (s) #260 CLI flags: _parse_outcome_filters and main() pass filter flags through ===")
+
+# _parse_outcome_filters: defaults (no flags)
+import argparse as _argparse
+
+def _make_args(**kw):
+    """Build a namespace with the six flag attributes, defaulting to 'not supplied'."""
+    defaults = {
+        "include_fail": None, "no_include_fail": False,
+        "include_skip": None, "no_include_skip": False,
+        "include_pass": None, "no_include_pass": False,
+    }
+    defaults.update(kw)
+    return _argparse.Namespace(**defaults)
+
+# Defaults: all FAIL, all SKIP, no PASS
+filters_default = ci_monitor._parse_outcome_filters(_make_args())
+check(filters_default["FAIL"] == (True, None),
+      "_parse_outcome_filters default FAIL=(True,None)",
+      "_parse_outcome_filters FAIL default wrong; got %r" % (filters_default["FAIL"],))
+check(filters_default["SKIP"] == (True, None),
+      "_parse_outcome_filters default SKIP=(True,None)",
+      "_parse_outcome_filters SKIP default wrong; got %r" % (filters_default["SKIP"],))
+check(filters_default["PASS"] == (False, None),
+      "_parse_outcome_filters default PASS=(False,None)",
+      "_parse_outcome_filters PASS default wrong; got %r" % (filters_default["PASS"],))
+
+# --no-include-fail
+filters_nofail = ci_monitor._parse_outcome_filters(_make_args(no_include_fail=True))
+check(filters_nofail["FAIL"] == (False, None),
+      "_parse_outcome_filters --no-include-fail -> FAIL=(False,None)",
+      "_parse_outcome_filters --no-include-fail wrong; got %r" % (filters_nofail["FAIL"],))
+
+# --no-include-skip
+filters_noskip = ci_monitor._parse_outcome_filters(_make_args(no_include_skip=True))
+check(filters_noskip["SKIP"] == (False, None),
+      "_parse_outcome_filters --no-include-skip -> SKIP=(False,None)",
+      "_parse_outcome_filters --no-include-skip wrong; got %r" % (filters_noskip["SKIP"],))
+
+# --no-include-pass (explicit form of default)
+filters_nopass = ci_monitor._parse_outcome_filters(_make_args(no_include_pass=True))
+check(filters_nopass["PASS"] == (False, None),
+      "_parse_outcome_filters --no-include-pass -> PASS=(False,None)",
+      "_parse_outcome_filters --no-include-pass wrong; got %r" % (filters_nopass["PASS"],))
+
+# --include-pass '' (const, no pattern -> match all)
+filters_allpass = ci_monitor._parse_outcome_filters(_make_args(include_pass=""))
+check(filters_allpass["PASS"] == (True, None),
+      "_parse_outcome_filters --include-pass '' -> PASS=(True,None)",
+      "_parse_outcome_filters --include-pass '' wrong; got %r" % (filters_allpass["PASS"],))
+
+# --include-pass 'MyTest' (pattern)
+filters_patpass = ci_monitor._parse_outcome_filters(_make_args(include_pass="MyTest"))
+check(filters_patpass["PASS"] == (True, "MyTest"),
+      "_parse_outcome_filters --include-pass 'MyTest' -> PASS=(True,'MyTest')",
+      "_parse_outcome_filters --include-pass pattern wrong; got %r" % (filters_patpass["PASS"],))
+
+# --include-fail '' (supplied with no pattern -> match all)
+filters_allfail = ci_monitor._parse_outcome_filters(_make_args(include_fail=""))
+check(filters_allfail["FAIL"] == (True, None),
+      "_parse_outcome_filters --include-fail '' -> FAIL=(True,None)",
+      "_parse_outcome_filters --include-fail '' wrong; got %r" % (filters_allfail["FAIL"],))
+
+# --include-fail 'Foo' (pattern)
+filters_patfail = ci_monitor._parse_outcome_filters(_make_args(include_fail="Foo"))
+check(filters_patfail["FAIL"] == (True, "Foo"),
+      "_parse_outcome_filters --include-fail 'Foo' -> FAIL=(True,'Foo')",
+      "_parse_outcome_filters --include-fail pattern wrong; got %r" % (filters_patfail["FAIL"],))
+
+# main() with --include-pass '' emits PASS lines, not just FAIL/SKIP
+# Reuse side-effect fixtures from earlier: two polls, in_progress then Blocked.
+# The artifact contains one FAIL, one PASS, one SKIP. We expect FAIL+PASS+SKIP all
+# emitted (since --include-pass '' is supplied), but only once each.
+FILTER_NDJSON_MIXED = [
+    '##GB4PC_TEST## {"suite":"com.gb4pc.unit.MixTest","name":"test_fail","outcome":"FAIL","ms":1,"msg":"oops","trace":""}',
+    '##GB4PC_TEST## {"suite":"com.gb4pc.unit.MixTest","name":"test_pass","outcome":"PASS","ms":2,"msg":"","trace":""}',
+    '##GB4PC_TEST## {"suite":"com.gb4pc.unit.MixTest","name":"test_skip","outcome":"SKIP","ms":0,"msg":"","trace":""}',
+]
+ZIP_MIXED = make_zip_ndjson(FILTER_NDJSON_MIXED)
+
+PR_S = {"head": {"sha": "5ce5c0de"}}
+CHECK_IP_S = {"total_count": 1, "check_runs": [{"status": "in_progress", "conclusion": None}]}
+CHECK_BL_S = {"total_count": 1, "check_runs": [{"status": "completed", "conclusion": "failure"}]}
+RUNS_S = {"workflow_runs": [{"id": 1111, "status": "in_progress"}]}
+JOBS_EMPTY_S = {"jobs": [{"name": "build-and-test", "steps": []}]}
+ARTS_MIX_S = {"artifacts": [{"id": 2222, "name": "testresults-mix", "expired": False}]}
+
+# Poll 1 (6): artifact available, zip downloaded; poll 2 (5): terminal Blocked.
+side_effects_s = collections.deque([
+    PR_S, CHECK_IP_S, RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S, ZIP_MIXED,
+    PR_S, CHECK_BL_S, RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S,
+])
+
+
+def fake_request_s(url, token, raw=False):
+    return side_effects_s.popleft()
+
+
+buf_s = io.StringIO()
+with unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_s), \
+        unittest.mock.patch.object(ci_monitor.time, "time", return_value=3000.0), \
+        unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None), \
+        unittest.mock.patch("sys.stdout", new=buf_s):
+    rc_s = ci_monitor.main(["ci_monitor.py", "--pr", "260", "--include-pass", ""])
+
+out_s = buf_s.getvalue()
+lines_s = out_s.splitlines()
+check("PR#260: FAIL [com.gb4pc.unit.MixTest] test_fail: oops" in lines_s,
+      "main() --include-pass '': FAIL line emitted",
+      "main() --include-pass '': FAIL missing; output: %r" % out_s)
+check(any("PR#260: PASS [com.gb4pc.unit.MixTest] test_pass:" in ln for ln in lines_s),
+      "main() --include-pass '': PASS line emitted",
+      "main() --include-pass '': PASS missing; output: %r" % out_s)
+check(any("PR#260: SKIP [com.gb4pc.unit.MixTest] test_skip:" in ln for ln in lines_s),
+      "main() --include-pass '': SKIP line emitted and stays labeled SKIP",
+      "main() --include-pass '': SKIP missing or mislabeled; output: %r" % out_s)
+check(len(side_effects_s) == 0,
+      "main() --include-pass '': all 11 mocked requests consumed",
+      "request deque not drained; %d entries left" % len(side_effects_s))
+check(rc_s == 0, "main() --include-pass '' returned 0", "main() returned %r" % rc_s)
+
+# main() with no flags: FAIL+SKIP emitted, no PASS
+side_effects_s2 = collections.deque([
+    PR_S, CHECK_IP_S, RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S, ZIP_MIXED,
+    PR_S, CHECK_BL_S, RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S,
+])
+
+
+def fake_request_s2(url, token, raw=False):
+    return side_effects_s2.popleft()
+
+
+buf_s2 = io.StringIO()
+with unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_s2), \
+        unittest.mock.patch.object(ci_monitor.time, "time", return_value=3000.0), \
+        unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None), \
+        unittest.mock.patch("sys.stdout", new=buf_s2):
+    rc_s2 = ci_monitor.main(["ci_monitor.py", "--pr", "260"])
+
+out_s2 = buf_s2.getvalue()
+lines_s2 = out_s2.splitlines()
+check(any("FAIL [com.gb4pc.unit.MixTest] test_fail:" in ln for ln in lines_s2),
+      "main() no flags: FAIL emitted",
+      "main() no flags: FAIL missing; output: %r" % out_s2)
+check(any("SKIP [com.gb4pc.unit.MixTest] test_skip:" in ln for ln in lines_s2),
+      "main() no flags: SKIP emitted",
+      "main() no flags: SKIP missing; output: %r" % out_s2)
+check(not any("PASS" in ln for ln in lines_s2 if not ln.startswith("monitor PID")),
+      "main() no flags: no PASS emitted",
+      "main() no flags: unexpected PASS; output: %r" % out_s2)
+check(len(side_effects_s2) == 0,
+      "main() no flags: all 11 mocked requests consumed",
+      "request deque not drained; %d entries left" % len(side_effects_s2))
+
+# main() with --no-include-fail: only SKIP emitted (no FAIL, no PASS)
+side_effects_s3 = collections.deque([
+    PR_S, CHECK_IP_S, RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S, ZIP_MIXED,
+    PR_S, CHECK_BL_S, RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S,
+])
+
+
+def fake_request_s3(url, token, raw=False):
+    return side_effects_s3.popleft()
+
+
+buf_s3 = io.StringIO()
+with unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_s3), \
+        unittest.mock.patch.object(ci_monitor.time, "time", return_value=3000.0), \
+        unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None), \
+        unittest.mock.patch("sys.stdout", new=buf_s3):
+    rc_s3 = ci_monitor.main(["ci_monitor.py", "--pr", "260", "--no-include-fail"])
+
+out_s3 = buf_s3.getvalue()
+lines_s3 = out_s3.splitlines()
+check(not any("FAIL" in ln for ln in lines_s3 if "PR#260:" in ln),
+      "main() --no-include-fail: no FAIL emitted",
+      "main() --no-include-fail: FAIL leaked; output: %r" % out_s3)
+check(any("SKIP [com.gb4pc.unit.MixTest] test_skip:" in ln for ln in lines_s3),
+      "main() --no-include-fail: SKIP still emitted",
+      "main() --no-include-fail: SKIP missing; output: %r" % out_s3)
+
+# main() with --no-include-skip: only FAIL emitted (no SKIP, no PASS)
+side_effects_s4 = collections.deque([
+    PR_S, CHECK_IP_S, RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S, ZIP_MIXED,
+    PR_S, CHECK_BL_S, RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S,
+])
+
+
+def fake_request_s4(url, token, raw=False):
+    return side_effects_s4.popleft()
+
+
+buf_s4 = io.StringIO()
+with unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_s4), \
+        unittest.mock.patch.object(ci_monitor.time, "time", return_value=3000.0), \
+        unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None), \
+        unittest.mock.patch("sys.stdout", new=buf_s4):
+    rc_s4 = ci_monitor.main(["ci_monitor.py", "--pr", "260", "--no-include-skip"])
+
+out_s4 = buf_s4.getvalue()
+lines_s4 = out_s4.splitlines()
+check(not any("SKIP" in ln for ln in lines_s4 if "PR#260:" in ln),
+      "main() --no-include-skip: no SKIP emitted",
+      "main() --no-include-skip: SKIP leaked; output: %r" % out_s4)
+check(any("FAIL [com.gb4pc.unit.MixTest] test_fail:" in ln for ln in lines_s4),
+      "main() --no-include-skip: FAIL still emitted",
+      "main() --no-include-skip: FAIL missing; output: %r" % out_s4)
+
+
 # ── Summary ────────────────────────────────────────────────────────────────────
 print("\nResults: %d passed, %d failed." % (PASS, FAIL))
 if FAIL > 0:
