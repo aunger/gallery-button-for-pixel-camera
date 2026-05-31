@@ -363,8 +363,23 @@ def _parse_outcome_filters(args):
     }
 
 
+class _DocstringParser(argparse.ArgumentParser):
+    """ArgumentParser that prints the module docstring for --help/-h."""
+
+    def print_help(self, file=None):
+        if file is None:
+            file = sys.stdout
+        file.write(__doc__)
+        file.write("\n")
+        file.flush()
+
+    def error(self, message):
+        sys.stderr.write("%s: error: %s\nUse --help for usage information.\n" % (self.prog, message))
+        sys.exit(2)
+
+
 def main(argv):
-    parser = argparse.ArgumentParser(
+    parser = _DocstringParser(
         prog="ci_monitor.py",
         description="Poll a PR's CI and stream a terminal outcome plus per-test signals.",
     )
