@@ -1,0 +1,81 @@
+name: Simulate pre-flight failure
+
+# Manually-triggered regression check for issue #255: when a pre-flight failure
+# implicitly skips the test phase, the test-result summary must report SKIPPED
+# rather than a misleading "all green" / "no test results found" outcome.
+#
+# This workflow reproduces production's *implicit* skip mechanism: a failed
+# preflight step puts the job into a failed state, which skips all subsequent
+# non-`always()` steps (the same mechanism by which build.yml's test steps are
+# skipped). It does NOT use an explicit `if` guard on the test steps.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  simulate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      # Fails the job (no continue-on-error), so every subsequent step that is
+      # not marked `if: always()` is implicitly skipped.
+      - name: Pre-flight check
+        id: preflight
+        run: exit 1
+
+      # The three simulated test steps below carry NO `if` guard. They are
+      # implicitly skipped because the job is already in a failed state. This
+      # mirrors build.yml, whose real test steps are gated only on
+      # `needs_full_build`, not on the preflight outcome.
+      - name: Run instrumented tests
+        id: run_instrumented
+        run: echo "instrumented tests ran"
+
+      - name: Run PixelCameraOverlayE2ETest
+        id: run_overlay_e2e
+        run: echo "overlay e2e ran"
+
+      - name: Run GalleryButtonVisualE2ETest
+        id: run_gallery_e2e
+        run: echo "gallery e2e ran"
+
+      # DRIFT NOTE: the summarize_test_results.py invocation below is a copy of
+      # build.yml's "Write test-result summary" step and must be kept in sync
+      # with it (e.g. if a fourth suite is added, or the E2E outcome expression
+      # changes). It is pointed at guaranteed-absent result directories so the
+      # summary reflects the skipped outcomes, and its output is tee'd to
+      # /tmp/summary.md for the assertion step to read.
+      - name: Write test-result summary
+        if: always()
+        run: |
+          env -u GITHUB_STEP_SUMMARY python3 scripts/summarize_test_results.py \
+            /nonexistent/unit \
+              --suite-label "Unit Tests" \
+            /nonexistent/instrumented \
+              --suite-label "Instrumented Tests" \
+              --outcome "${{ steps.run_instrumented.outcome }}" \
+            /nonexistent/e2e \
+              --suite-label "E2E Tests" \
+              --outcome "${{ (steps.run_overlay_e2e.outcome == 'skipped' && steps.run_gallery_e2e.outcome == 'skipped') && 'skipped' || ((steps.run_overlay_e2e.outcome == 'failure' || steps.run_gallery_e2e.outcome == 'failure') && 'failure' || 'success') }}" \
+            | tee /tmp/summary.md
+
+      - name: Assert summary reports SKIPPED, not green
+        if: always()
+        run: |
+          echo "=== Captured summary ==="
+          cat /tmp/summary.md
+          echo "========================"
+          if ! grep -qF "⏭ SKIPPED" /tmp/summary.md; then
+            echo "FAIL: summary did not report '⏭ SKIPPED' for the skipped test phase."
+            exit 1
+          fi
+          if sed -n '/### Instrumented Tests/,$p' /tmp/summary.md | grep -qF "_No test results found._"; then
+            echo "FAIL: summary contains misleading '_No test results found._'."
+            exit 1
+          fi
+          echo "PASS: summary correctly reports the skipped test phase as SKIPPED."
