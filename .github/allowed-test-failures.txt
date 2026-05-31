@@ -16,4 +16,15 @@
 # Blank lines and lines starting with `#` are ignored; trailing inline `#`
 # comments are stripped.
 #
-# (No tests are currently allowlisted.)
+# These tests are red on main today; `continue-on-error` hid them before
+# issue #309 removed it.  Each already has a tracking issue and must be
+# removed from this list as it is fixed.
+
+com.gb4pc.ui.MainActivityRedirectTest#mainScreen_showsPixelCameraMissingCard_whenNotInstalled   # issue #303
+com.gb4pc.ui.MainActivityRedirectTest#setupScreen_showsGrantButton                              # issue #304
+com.gb4pc.ui.MainActivityRedirectTest#pickerScreen_loadsApps_andShowsSettingsApp                # issue #305
+
+com.gb4pc.e2e.GalleryButtonVisualE2ETest#test1a_overlayShowsBlueAtConfiguredPosition            # issue #229
+com.gb4pc.e2e.GalleryButtonVisualE2ETest#test2a_emptyGalleryNoGreenAfterTap                     # issue #230
+com.gb4pc.e2e.GalleryButtonVisualE2ETest#test3a_populatedGalleryShowsGreenAfterTap              # issue #231
+com.gb4pc.e2e.GalleryButtonVisualE2ETest#test5a_secureCameraLockedPopulatedGalleryShowsGreen    # issue #232
