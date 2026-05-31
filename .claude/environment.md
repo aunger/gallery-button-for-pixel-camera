@@ -23,7 +23,7 @@ script for implementation details — each step is commented.
 | `ANDROID_HOME`     | `/home/user/android-sdk`     | hook + `~/.bashrc`| Required by Gradle Android plugin and `adb`                  |
 | `JAVA_TOOL_OPTIONS`| *(modified, not replaced)*   | hook + `~/.bashrc`| Strips `*.google.com` from `nonProxyHosts` — see script §0   |
 | `PATH`             | `+$ANDROID_HOME/…`           | hook + `~/.bashrc`| Adds `sdkmanager`, `adb` to path                            |
-| `GITHUB_TOKEN`     | *(session-scoped JWT)*       | container         | Use with `curl` to query the GitHub REST API. Read-only for the issues/PR API (write attempts return 403). Useful for reading Actions job logs (see below). |
+| `GITHUB_TOKEN`     | *(fine-grained PAT)*         | container         | Use with `curl` to query the GitHub REST API                 |
 
 `~/.bashrc` carries the same fixes for interactive terminal sessions.
 The proxy credentials in `JAVA_TOOL_OPTIONS` are a session-scoped JWT injected
@@ -52,7 +52,7 @@ success-looking response (`{"id":"…","url":"…"}`) but **does not change any 
 The MCP tool appears to filter out empty arrays before building the API request body,
 so the `labels` field is never sent and all existing labels remain.
 
-**Evidence (empirically verified):**
+**Evidence (empirically verified 2026-05):**
 - `labels: ["planning needed"]` → correctly replaces ALL labels with just that one
   (REPLACE semantics — "for ai to do" was removed in the same call). Non-empty arrays work.
 - `labels: []` → no change; all labels remain. Confirmed by a follow-up `get_labels` read.
@@ -70,23 +70,25 @@ regardless of whether the underlying change was applied. The stripped response g
 no signal about what actually changed. **Always follow a write with a confirming
 `issue_read`** (e.g. `method: "get_labels"`) before reporting success.
 
-### "Token expired" errors on write operations
+### GitHub MCP "requires re-authorization (token expired)" on write
 
-Write operations (`add_issue_comment`, `issue_write`, etc.) occasionally fail with:
+Write operations (`add_issue_comment`, `issue_write`, etc.) occasionally fail with the following error while reads on the same resource succeed:
 
 ```
 MCP server "github" requires re-authorization (token expired)
 ```
 
-…while reads on the same resource succeed. The `GITHUB_TOKEN` is a session-scoped JWT
-(short-lived). The JWT can expire mid-session; reads appear to use a cached or
-lower-privilege path that still succeeds, while writes require a fresh token. A
-successful read call appears to trigger a background JWT refresh that unblocks
-subsequent writes.
+#### Possible workaround (not guaranteed, appears to work)
+If writes fail with this error, try performing any `issue_read` first, then immediately retry the write.
+Do not interpret this as "no blind writes" enforcement.
 
-**Workaround:** if writes fail with this error, perform any `issue_read` first, then
-immediately retry the write. Do not interpret the error as a "no blind writes"
-enforcement — it is genuine token expiry.
+#### Observations
+`$GITHUB_TOKEN` is a fine-grained PAT (`github_pat_...` format), not a JWT.
+It is stable across sessions and does not change mid-session or after MCP reads/writes.
+The "token expired" error therefore **does not refer to `GITHUB_TOKEN` expiring**.
+The MCP server manages its own internal credentials separately from this environment variable.
+The mechanism is unknown, but reads appear to succeed via a cached path while writes require a live MCP session token.
+A successful read call appears to unblock subsequent writes.
 
 ---
 
