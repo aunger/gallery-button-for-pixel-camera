@@ -310,11 +310,21 @@ jobs:
             -p com.google.android.GoogleCamera 2>/dev/null || true
 
       - name: Run instrumented tests
-        # Failures auto-tracked as issues. continue-on-error lets subsequent steps run even on failure.
+        # We deliberately do NOT use `continue-on-error` here (see issue #309):
+        # it swallowed *every* error, including non-test breakage, so CI went
+        # green while real failures hid. Instead we record this step's real exit
+        # status as an output and let later steps run; the final
+        # "Gate on test failures" step is the single authority on pass/fail,
+        # consulting both the JUnit XML and this recorded outcome against the
+        # red-to-green allowlist (.github/allowed-test-failures.txt).
         id: run_instrumented
         if: steps.diff_check.outputs.needs_full_build == 'true'
-        continue-on-error: true
-        run: ./gradlew connectedDebugAndroidTest
+        run: |
+          if ./gradlew connectedDebugAndroidTest; then
+            echo "outcome=success" >> "$GITHUB_OUTPUT"
+          else
+            echo "outcome=failure" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Copy instrumented test results
         if: steps.diff_check.outputs.needs_full_build == 'true'
@@ -325,23 +335,25 @@ jobs:
             app/build/outputs/androidTest-results/instrumented/
 
       - name: Run PixelCameraOverlayE2ETest
-        # Failures auto-tracked as issues. continue-on-error lets subsequent steps run even on failure.
+        # No `continue-on-error` (issue #309): record the real outcome and defer
+        # the pass/fail verdict to the "Gate on test failures" step.
         id: run_overlay_e2e
         if: steps.diff_check.outputs.needs_full_build == 'true'
-        continue-on-error: true
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
           mkdir -p results
           set -o pipefail
           LOGCAT_SINCE=$("$ADB" shell "date '+%m-%d %H:%M:%S.000'" | tr -d '\r')
-          ./gradlew connectedE2EAndroidTest \
+          if ./gradlew connectedE2EAndroidTest \
             -Pe2eClass=com.gb4pc.e2e.PixelCameraOverlayE2ETest \
-            | tee >(grep '^##GB4PC_TEST##' > results/e2e-overlay.ndjson) || {
+            | tee >(grep '^##GB4PC_TEST##' > results/e2e-overlay.ndjson); then
+            echo "outcome=success" >> "$GITHUB_OUTPUT"
+          else
+            echo "outcome=failure" >> "$GITHUB_OUTPUT"
             echo "=== LOGCAT (since test start) ==="
             "$ADB" logcat -d -T "$LOGCAT_SINCE" | \
               bash scripts/filter_logcat.sh
-            exit 1
-          }
+          fi
 
       - name: Upload overlay E2E markers
         if: always() && steps.diff_check.outputs.needs_full_build == 'true'
@@ -352,23 +364,25 @@ jobs:
           retention-days: 14
 
       - name: Run GalleryButtonVisualE2ETest
-        # Failures auto-tracked as issues. continue-on-error lets subsequent steps run even on failure.
+        # No `continue-on-error` (issue #309): record the real outcome and defer
+        # the pass/fail verdict to the "Gate on test failures" step.
         id: run_gallery_e2e
         if: steps.diff_check.outputs.needs_full_build == 'true'
-        continue-on-error: true
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
           mkdir -p results
           set -o pipefail
           LOGCAT_SINCE=$("$ADB" shell "date '+%m-%d %H:%M:%S.000'" | tr -d '\r')
-          ./gradlew connectedE2EAndroidTest \
+          if ./gradlew connectedE2EAndroidTest \
             -Pe2eClass=com.gb4pc.e2e.GalleryButtonVisualE2ETest \
-            | tee >(grep '^##GB4PC_TEST##' > results/e2e-gallery.ndjson) || {
+            | tee >(grep '^##GB4PC_TEST##' > results/e2e-gallery.ndjson); then
+            echo "outcome=success" >> "$GITHUB_OUTPUT"
+          else
+            echo "outcome=failure" >> "$GITHUB_OUTPUT"
             echo "=== LOGCAT (since test start) ==="
             "$ADB" logcat -d -T "$LOGCAT_SINCE" | \
               bash scripts/filter_logcat.sh
-            exit 1
-          }
+          fi
 
       - name: Upload gallery E2E markers
         if: always() && steps.diff_check.outputs.needs_full_build == 'true'
@@ -393,7 +407,7 @@ jobs:
 
       - name: Pull and upload E2E screenshots on failure
         id: pull_e2e_screenshots
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true' && (steps.run_overlay_e2e.outcome == 'failure' || steps.run_gallery_e2e.outcome == 'failure')
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true' && (steps.run_overlay_e2e.outputs.outcome == 'failure' || steps.run_gallery_e2e.outputs.outcome == 'failure')
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
           mkdir -p /tmp/e2e-screenshots
@@ -447,6 +461,28 @@ jobs:
               --suite-label "Instrumented Tests" \
             app/build/outputs/androidTest-results/e2e \
               --suite-label "E2E Tests"
+
+      # Single authority on whether the test phase passed (issue #309). Replaces
+      # the old blanket `continue-on-error` on the test steps: any failing test
+      # fails the build EXCEPT those named in .github/allowed-test-failures.txt
+      # (a temporary red-to-green allowlist). The --outcome flags carry each test
+      # step's real exit status, so a step that broke without writing a failing
+      # test result (e.g. the `date` breakage in #307) is reported as an
+      # infrastructure failure and still fails the build. This runs last so it
+      # cannot suppress artifact upload, the summary, or issue filing.
+      - name: Gate on test failures
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        run: |
+          python3 scripts/check_allowed_failures.py \
+            --allowlist .github/allowed-test-failures.txt \
+            app/build/test-results/testDebugUnitTest \
+              --suite-label "Unit Tests" \
+            app/build/outputs/androidTest-results/instrumented \
+              --suite-label "Instrumented Tests" \
+              --outcome "${{ steps.run_instrumented.outputs.outcome }}" \
+            app/build/outputs/androidTest-results/e2e \
+              --suite-label "E2E Tests" \
+              --outcome "${{ (steps.run_overlay_e2e.outputs.outcome == 'failure' || steps.run_gallery_e2e.outputs.outcome == 'failure') && 'failure' || 'success' }}"
 
   file-issues:
     needs: [build-and-test]

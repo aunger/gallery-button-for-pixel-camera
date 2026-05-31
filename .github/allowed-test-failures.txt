@@ -1,0 +1,30 @@
+# Tests allowed to fail without failing CI.
+#
+# This file is the replacement for the old `continue-on-error: true` on the
+# test steps in build.yml (see issue #309).  `continue-on-error` swallowed
+# every error, including real infrastructure breakage, so the build went
+# green even when something genuinely broke.  Now any failing test fails the
+# build, EXCEPT tests listed here.
+#
+# Use this list only as a temporary measure during a deliberate red-to-green
+# effort, and remove entries as the tests are fixed.
+#
+# Format (one entry per line):
+#   com.gb4pc.e2e.SomeTest#someMethod    # tolerate one method
+#   com.gb4pc.e2e.SomeTest               # tolerate the whole class
+#
+# Blank lines and lines starting with `#` are ignored; trailing inline `#`
+# comments are stripped.
+#
+# These tests are red on main today; `continue-on-error` hid them before
+# issue #309 removed it.  Each already has a tracking issue and must be
+# removed from this list as it is fixed.
+
+com.gb4pc.ui.MainActivityRedirectTest#mainScreen_showsPixelCameraMissingCard_whenNotInstalled   # issue #303
+com.gb4pc.ui.MainActivityRedirectTest#setupScreen_showsGrantButton                              # issue #304
+com.gb4pc.ui.MainActivityRedirectTest#pickerScreen_loadsApps_andShowsSettingsApp                # issue #305
+
+com.gb4pc.e2e.GalleryButtonVisualE2ETest#test1a_overlayShowsBlueAtConfiguredPosition            # issue #229
+com.gb4pc.e2e.GalleryButtonVisualE2ETest#test2a_emptyGalleryNoGreenAfterTap                     # issue #230
+com.gb4pc.e2e.GalleryButtonVisualE2ETest#test3a_populatedGalleryShowsGreenAfterTap              # issue #231
+com.gb4pc.e2e.GalleryButtonVisualE2ETest#test5a_secureCameraLockedPopulatedGalleryShowsGreen    # issue #232
