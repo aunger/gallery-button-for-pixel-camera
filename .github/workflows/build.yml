@@ -318,6 +318,7 @@ jobs:
 
       - name: Copy standard instrumented test results
         if: steps.diff_check.outputs.needs_full_build == 'true'
+        continue-on-error: true
         run: |
           mkdir -p app/build/outputs/androidTest-results/standard
           cp -r app/build/outputs/androidTest-results/connected/debug/. \
