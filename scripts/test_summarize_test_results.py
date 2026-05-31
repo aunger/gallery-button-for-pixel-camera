@@ -308,6 +308,35 @@ class TestRenderSuite(unittest.TestCase):
         self.assertIn("⏭ SKIP", class_row)
         self.assertNotIn("✅ PASS", class_row)
 
+    def test_skipped_flag_empty_suite_shows_skipped_note(self):
+        """When skipped=True and no XML results, shows ⏭ Skipped note."""
+        lines = srt.render_suite("Instrumented Tests", {}, skipped=True)
+        combined = "\n".join(lines)
+        self.assertIn("⏭ Skipped", combined)
+        self.assertNotIn("No test results found", combined)
+        self.assertNotIn("| Status |", combined)
+
+    def test_skipped_flag_false_empty_suite_shows_no_results_note(self):
+        """When skipped=False and no XML results, shows 'No test results found'."""
+        lines = srt.render_suite("Unit Tests", {}, skipped=False)
+        combined = "\n".join(lines)
+        self.assertIn("No test results found", combined)
+        self.assertNotIn("⏭ Skipped", combined)
+
+    def test_skipped_flag_with_results_still_renders_normally(self):
+        """Even when skipped=True, if XML results exist they are rendered normally."""
+        classes = {
+            "com.example.Foo": srt.TestClass(
+                name="com.example.Foo",
+                cases=[srt.TestCase("testA", True)],
+            )
+        }
+        lines = srt.render_suite("Unit Tests", classes, skipped=True)
+        combined = "\n".join(lines)
+        # Results present: should render normally, not show the skipped note
+        self.assertIn("✅ PASS", combined)
+        self.assertNotIn("⏭ Skipped (tests did not run)", combined)
+
 
 # ---------------------------------------------------------------------------
 # build_markdown tests
@@ -321,8 +350,8 @@ class TestBuildMarkdown(unittest.TestCase):
 
     def test_multiple_suites_appear_in_order(self):
         suite_data = [
-            ("Unit Tests", {}),
-            ("Instrumented Tests", {}),
+            ("Unit Tests", {}, False),
+            ("Instrumented Tests", {}, False),
         ]
         md = srt.build_markdown(suite_data)
         unit_pos = md.index("Unit Tests")
@@ -337,18 +366,19 @@ class TestBuildMarkdown(unittest.TestCase):
 class TestParseArgs(unittest.TestCase):
 
     def test_single_pair(self):
-        pairs = srt.parse_args(["path/to/unit", "--suite-label", "Unit Tests"])
-        self.assertEqual(len(pairs), 1)
-        self.assertEqual(pairs[0][0], Path("path/to/unit"))
-        self.assertEqual(pairs[0][1], "Unit Tests")
+        triples = srt.parse_args(["path/to/unit", "--suite-label", "Unit Tests"])
+        self.assertEqual(len(triples), 1)
+        self.assertEqual(triples[0][0], Path("path/to/unit"))
+        self.assertEqual(triples[0][1], "Unit Tests")
+        self.assertFalse(triples[0][2])
 
     def test_two_pairs(self):
-        pairs = srt.parse_args([
+        triples = srt.parse_args([
             "dir1", "--suite-label", "Label1",
             "dir2", "--suite-label", "Label2",
         ])
-        self.assertEqual(len(pairs), 2)
-        self.assertEqual(pairs[1][1], "Label2")
+        self.assertEqual(len(triples), 2)
+        self.assertEqual(triples[1][1], "Label2")
 
     def test_missing_suite_label_flag_raises(self):
         with self.assertRaises(SystemExit):
@@ -362,6 +392,25 @@ class TestParseArgs(unittest.TestCase):
         # directory without --suite-label following
         with self.assertRaises(SystemExit):
             srt.parse_args(["dir1"])
+
+    def test_skipped_flag_sets_suite_skipped_true(self):
+        triples = srt.parse_args([
+            "dir1", "--suite-label", "E2E Tests", "--skipped",
+        ])
+        self.assertEqual(len(triples), 1)
+        self.assertTrue(triples[0][2])
+
+    def test_skipped_flag_only_applies_to_its_suite(self):
+        triples = srt.parse_args([
+            "dir1", "--suite-label", "Unit Tests",
+            "dir2", "--suite-label", "E2E Tests", "--skipped",
+        ])
+        self.assertFalse(triples[0][2], "Unit Tests should not be skipped")
+        self.assertTrue(triples[1][2], "E2E Tests should be skipped")
+
+    def test_no_skipped_flag_defaults_to_false(self):
+        triples = srt.parse_args(["dir1", "--suite-label", "Unit Tests"])
+        self.assertFalse(triples[0][2])
 
 
 # ---------------------------------------------------------------------------
@@ -443,6 +492,26 @@ class TestMain(unittest.TestCase):
         files_after = set(self.tmpdir.iterdir())
         # Only the XML fixture we wrote should exist; no summary file created.
         self.assertEqual(files_before, files_after)
+
+    def test_skipped_flag_empty_dir_shows_skipped_in_output(self):
+        """--skipped with no XML results produces 'Skipped' text, not 'No test results found'."""
+        missing = self.tmpdir / "nonexistent"
+        captured = io.StringIO()
+        with patch("sys.stdout", captured):
+            srt.main([str(missing), "--suite-label", "Instrumented Tests", "--skipped"])
+        output = captured.getvalue()
+        self.assertIn("⏭ Skipped", output)
+        self.assertNotIn("No test results found", output)
+
+    def test_skipped_flag_absent_empty_dir_shows_no_results(self):
+        """Without --skipped, a missing directory shows 'No test results found'."""
+        missing = self.tmpdir / "nonexistent"
+        captured = io.StringIO()
+        with patch("sys.stdout", captured):
+            srt.main([str(missing), "--suite-label", "Instrumented Tests"])
+        output = captured.getvalue()
+        self.assertIn("No test results found", output)
+        self.assertNotIn("⏭ Skipped (tests did not run)", output)
 
 
 if __name__ == "__main__":

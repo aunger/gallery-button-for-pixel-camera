@@ -8,9 +8,13 @@ back to stdout when the env var is not set).
 Usage:
     python3 scripts/summarize_test_results.py \\
         path/to/unit-results       --suite-label "Unit Tests" \\
-        path/to/e2e-results        --suite-label "Instrumented Tests"
+        path/to/e2e-results        --suite-label "Instrumented Tests" [--skipped]
 
 Each directory path must be immediately followed by --suite-label <name>.
+The optional --skipped flag (after --suite-label <name>) marks the suite as
+skipped: when no XML results are present the summary shows "⏭ Skipped" rather
+than "No test results found."  Use this when a pre-flight step failure caused
+tests to be skipped entirely.
 Exit code is always 0 (display only; failures are surfaced by earlier steps).
 """
 
@@ -90,13 +94,26 @@ def parse_directory(directory: Path) -> dict[str, TestClass]:
 # Markdown rendering
 # ---------------------------------------------------------------------------
 
-def render_suite(label: str, classes: dict[str, TestClass]) -> list[str]:
-    """Render one suite as Markdown lines (header + table rows + totals)."""
+def render_suite(
+    label: str,
+    classes: dict[str, TestClass],
+    *,
+    skipped: bool = False,
+) -> list[str]:
+    """Render one suite as Markdown lines (header + table rows + totals).
+
+    When *skipped* is True and no XML results were found, the suite is shown
+    as "⏭ Skipped (tests did not run)" instead of "No test results found."
+    This is used when a pre-flight step failure caused tests to be skipped.
+    """
     lines: list[str] = []
     lines.append(f"### {label}")
 
     if not classes:
-        lines.append("_No test results found._")
+        if skipped:
+            lines.append("_⏭ Skipped (tests did not run)_")
+        else:
+            lines.append("_No test results found._")
         lines.append("")
         return lines
 
@@ -136,11 +153,13 @@ def render_suite(label: str, classes: dict[str, TestClass]) -> list[str]:
     return lines
 
 
-def build_markdown(suite_data: list[tuple[str, dict[str, TestClass]]]) -> str:
+def build_markdown(
+    suite_data: list[tuple[str, dict[str, TestClass], bool]],
+) -> str:
     """Build the full Markdown document for all suites."""
     lines: list[str] = ["## Test Results", ""]
-    for label, classes in suite_data:
-        lines.extend(render_suite(label, classes))
+    for label, classes, skipped in suite_data:
+        lines.extend(render_suite(label, classes, skipped=skipped))
     return "\n".join(lines)
 
 
@@ -150,14 +169,20 @@ def build_markdown(suite_data: list[tuple[str, dict[str, TestClass]]]) -> str:
 
 _USAGE = (
     "usage: summarize_test_results.py "
-    "<dir> --suite-label <name> [<dir> --suite-label <name> ...]"
+    "<dir> --suite-label <name> [--skipped] [<dir> --suite-label <name> [--skipped] ...]"
 )
 
 
-def parse_args(argv: list[str]) -> list[tuple[Path, str]]:
-    """Parse argv into a list of (directory, label) pairs.
+def parse_args(argv: list[str]) -> list[tuple[Path, str, bool]]:
+    """Parse argv into a list of (directory, label, skipped) triples.
 
-    Expected pattern: <dir> --suite-label <name> [<dir> --suite-label <name> ...]
+    Expected pattern:
+        <dir> --suite-label <name> [--skipped]
+        [<dir> --suite-label <name> [--skipped] ...]
+
+    The optional --skipped flag marks a suite as skipped so the summary shows
+    "⏭ Skipped (tests did not run)" rather than "No test results found" when
+    no XML results are present.
 
     Raises SystemExit(2) on bad input (matching argparse convention).
     """
@@ -166,7 +191,7 @@ def parse_args(argv: list[str]) -> list[tuple[Path, str]]:
         print(_USAGE)
         raise SystemExit(0)
 
-    pairs: list[tuple[Path, str]] = []
+    triples: list[tuple[Path, str, bool]] = []
     tokens = list(argv)
     i = 0
     while i < len(tokens):
@@ -186,17 +211,22 @@ def parse_args(argv: list[str]) -> list[tuple[Path, str]]:
                 file=sys.stderr,
             )
             raise SystemExit(2)
-        pairs.append((Path(directory), label))
         i += 3
+        # Consume optional --skipped flag for this suite.
+        suite_skipped = False
+        if i < len(tokens) and tokens[i] == "--skipped":
+            suite_skipped = True
+            i += 1
+        triples.append((Path(directory), label, suite_skipped))
 
-    if not pairs:
+    if not triples:
         print(
             f"error: at least one <directory> --suite-label <name> pair is required\n{_USAGE}",
             file=sys.stderr,
         )
         raise SystemExit(2)
 
-    return pairs
+    return triples
 
 
 # ---------------------------------------------------------------------------
@@ -207,23 +237,23 @@ def main(argv: list[str] | None = None) -> int:
     if argv is None:
         argv = sys.argv[1:]
 
-    pairs = parse_args(argv)
+    triples = parse_args(argv)
 
-    suite_data: list[tuple[str, dict[str, TestClass]]] = []
-    for directory, label in pairs:
+    suite_data: list[tuple[str, dict[str, TestClass], bool]] = []
+    for directory, label, suite_skipped in triples:
         if not directory.exists():
             print(
                 f"Note: result directory not found, skipping: {directory}",
                 file=sys.stderr,
             )
-            suite_data.append((label, {}))
+            suite_data.append((label, {}, suite_skipped))
             continue
         if not directory.is_dir():
             print(
                 f"Note: path is not a directory, skipping: {directory}",
                 file=sys.stderr,
             )
-            suite_data.append((label, {}))
+            suite_data.append((label, {}, suite_skipped))
             continue
 
         classes = parse_directory(directory)
@@ -232,7 +262,7 @@ def main(argv: list[str] | None = None) -> int:
                 f"Note: no TEST-*.xml files found in {directory}",
                 file=sys.stderr,
             )
-        suite_data.append((label, classes))
+        suite_data.append((label, classes, suite_skipped))
 
     markdown = build_markdown(suite_data)
 
