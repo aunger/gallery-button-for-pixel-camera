@@ -378,6 +378,19 @@ jobs:
           path: results/e2e-gallery.ndjson
           retention-days: 14
 
+      - name: Copy E2E test results
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        continue-on-error: true
+        run: |
+          # The E2E Gradle task writes TEST-com.gb4pc.e2e.*.xml into the shared
+          # connected/debug directory (alongside the earlier standard results).
+          # Snapshot only the E2E XML into a dedicated directory so the summary
+          # and issue-filing pipelines see E2E results without the standard ones
+          # mixed in.
+          mkdir -p app/build/outputs/androidTest-results/e2e
+          cp -r app/build/outputs/androidTest-results/connected/debug/TEST-com.gb4pc.e2e.*.xml \
+            app/build/outputs/androidTest-results/e2e/
+
       - name: Pull and upload E2E screenshots on failure
         id: pull_e2e_screenshots
         if: always() && steps.diff_check.outputs.needs_full_build == 'true' && (steps.run_overlay_e2e.outcome == 'failure' || steps.run_gallery_e2e.outcome == 'failure')
@@ -406,7 +419,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: e2e-test-results
-          path: app/build/outputs/androidTest-results/connected/
+          path: app/build/outputs/androidTest-results/e2e/
           retention-days: 14
 
       - name: OCR on E2E screenshots
@@ -431,7 +444,9 @@ jobs:
             app/build/test-results/testDebugUnitTest \
               --suite-label "Unit Tests" \
             app/build/outputs/androidTest-results/standard \
-              --suite-label "Standard Instrumented Tests"
+              --suite-label "Standard Instrumented Tests" \
+            app/build/outputs/androidTest-results/e2e \
+              --suite-label "E2E Tests"
 
   file-issues:
     needs: [build-and-test]
