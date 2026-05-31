@@ -421,6 +421,8 @@ def _artifact_name_for_label(label: str) -> str:
     label_lower = label.lower()
     if "unit" in label_lower:
         return "unit-test-results"
+    if "standard" in label_lower:          # must precede the e2e/instrumented branch
+        return "instrumented-test-results"
     if "instrumented" in label_lower or "e2e" in label_lower:
         return "e2e-test-results"
     return label.lower().replace(" ", "-")

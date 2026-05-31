@@ -699,6 +699,18 @@ class TestArtifactNameForLabel(unittest.TestCase):
     def test_e2e_label_maps_to_e2e(self):
         self.assertEqual(ftfi._artifact_name_for_label("E2E Tests"), "e2e-test-results")
 
+    def test_standard_instrumented_label_maps_to_instrumented_test_results(self):
+        self.assertEqual(
+            ftfi._artifact_name_for_label("Standard Instrumented Tests"),
+            "instrumented-test-results",
+        )
+
+    def test_standard_branch_precedes_instrumented_branch(self):
+        """'Standard Instrumented Tests' must map to instrumented-test-results, not e2e."""
+        result = ftfi._artifact_name_for_label("Standard Instrumented Tests")
+        self.assertNotEqual(result, "e2e-test-results")
+        self.assertEqual(result, "instrumented-test-results")
+
     def test_unknown_label_slugified(self):
         self.assertEqual(
             ftfi._artifact_name_for_label("My Custom Suite"), "my-custom-suite"
