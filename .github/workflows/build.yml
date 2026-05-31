@@ -309,6 +309,20 @@ jobs:
             -a android.media.action.STILL_IMAGE_CAMERA \
             -p com.google.android.GoogleCamera 2>/dev/null || true
 
+      - name: Run standard instrumented tests
+        # Failures auto-tracked as issues. continue-on-error lets subsequent steps run even on failure.
+        id: run_instrumented
+        if: steps.diff_check.outputs.needs_full_build == 'true'
+        continue-on-error: true
+        run: ./gradlew connectedDebugAndroidTest
+
+      - name: Copy standard instrumented test results
+        if: steps.diff_check.outputs.needs_full_build == 'true'
+        run: |
+          mkdir -p app/build/outputs/androidTest-results/standard
+          cp -r app/build/outputs/androidTest-results/connected/debug/. \
+            app/build/outputs/androidTest-results/standard/
+
       - name: Run PixelCameraOverlayE2ETest
         # Failures auto-tracked as issues. continue-on-error lets subsequent steps run even on failure.
         id: run_overlay_e2e
@@ -378,12 +392,20 @@ jobs:
           $ANDROID_HOME/platform-tools/adb emu kill 2>/dev/null || true
           [[ -n "${EMULATOR_PID:-}" ]] && kill "$EMULATOR_PID" 2>/dev/null || true
 
+      - name: Upload standard instrumented test results
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: instrumented-test-results
+          path: app/build/outputs/androidTest-results/standard/
+          retention-days: 14
+
       - name: Upload E2E test results
         if: always() && steps.diff_check.outputs.needs_full_build == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: e2e-test-results
-          path: app/build/outputs/androidTest-results/
+          path: app/build/outputs/androidTest-results/connected/
           retention-days: 14
 
       - name: OCR on E2E screenshots
@@ -408,7 +430,9 @@ jobs:
             app/build/test-results/testDebugUnitTest \
               --suite-label "Unit Tests" \
             app/build/outputs/androidTest-results/connected/debug \
-              --suite-label "Instrumented Tests"
+              --suite-label "Instrumented Tests" \
+            app/build/outputs/androidTest-results/standard \
+              --suite-label "Standard Instrumented Tests"
 
   file-issues:
     needs: [build-and-test]
@@ -434,6 +458,13 @@ jobs:
           path: downloaded-artifacts/e2e-test-results
         continue-on-error: true
 
+      - name: Download standard instrumented test results
+        uses: actions/download-artifact@v7
+        with:
+          name: instrumented-test-results
+          path: downloaded-artifacts/instrumented-test-results
+        continue-on-error: true
+
       - name: File issues for failed tests
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -448,7 +479,9 @@ jobs:
             downloaded-artifacts/unit-test-results \
               --suite-label "Unit Tests" \
             downloaded-artifacts/e2e-test-results \
-              --suite-label "Instrumented Tests"
+              --suite-label "Instrumented Tests" \
+            downloaded-artifacts/instrumented-test-results \
+              --suite-label "Standard Instrumented Tests"
 
   # Produce a signed release-config APK on every merge to main for easy sideloading.
   # Named gb4pc-dev.<run_number>.apk to distinguish from tagged releases.
