@@ -1,57 +1,54 @@
 # CI Architecture
 
-## Non-Failing CI Design
+## Failing CI with an explicit red-to-green allowlist
 
-The CI pipeline in this repository is intentionally configured to **not fail the overall build** when tests fail. This is a deliberate temporary decision while test fixes are landing incrementally.
+The CI pipeline fails the build when a test fails.
+The only exception is a small, explicit allowlist of tests that are permitted to stay red during a deliberate red-to-green effort.
 
-### Why Non-Failing?
+This replaced the previous `continue-on-error: true` design (issue #309).
+`continue-on-error` swallowed *every* error, including non-test breakage (for example the broken `date` invocation in issue #307), so the build went green while genuine failures hid.
 
-During periods of active test stabilization:
-- Test failures should not block check-ins or code merges
-- All contributors should be able to land fixes incrementally
-- Failed tests are automatically filed as GitHub issues for tracking and prioritization
-- The pipeline continues to produce artifacts (APKs, screenshots, logcat) to support debugging
+### Why an allowlist instead of `continue-on-error`?
 
-This allows the development velocity to remain high while test suites are being stabilized.
+During periods of active test stabilization we still want to let a few known-red tests stay red without blocking unrelated work.
+The allowlist does that narrowly:
 
-### How It Works
+- A genuine, unexpected test failure fails the build, giving real signal.
+- Infrastructure or tooling breakage that aborts a test step (no test result written) fails the build.
+- Only the specific tests named in the allowlist are tolerated, and only temporarily.
+- Failed tests are still filed as GitHub issues, and the pipeline still produces artifacts (APKs, screenshots, logcat) for debugging.
 
-The build pipeline uses `continue-on-error: true` on test steps that can fail:
+### How it works
 
-1. **Unit tests and compile steps** run normally and fail the build if they encounter errors (fast feedback loop)
-2. **E2E tests** (PixelCameraOverlayE2ETest, GalleryButtonVisualE2ETest) use `continue-on-error: true`:
-   - Tests run to completion even if they fail
-   - Failures are captured in artifacts (screenshots, logcat, test reports)
-   - The build does not fail or block the PR
-3. **Issue filing** (`.github/workflows/build.yml` `file-issues` job):
-   - Automatically files issues for each failed test
-   - Tracks recurring failures by re-opening closed issues
-   - Provides visibility into test health
+1. **Unit tests and compile steps** run normally and fail the build on error (fast feedback loop).
+2. **Instrumented and E2E test steps** do not use `continue-on-error`.
+   Each records its real exit status as a step output and lets later steps run, so results, artifacts, and issue filing are never skipped.
+3. **The `Gate on test failures` step** is the single authority on pass/fail.
+   It runs `scripts/check_allowed_failures.py` over the JUnit XML for each suite:
+   - Any failing test fails the build, unless that test is named in `.github/allowed-test-failures.txt`.
+   - Each test step's recorded outcome is passed via `--outcome`.
+     A step that reported `failure` without writing any failing test result is treated as an infrastructure failure and still fails the build.
+4. **Issue filing** (`file-issues` job) continues to file and re-open issues for failed tests.
 
-### When Returning to Failing CI
+### Allowing a test to fail temporarily
 
-This non-failing architecture should be **removed only when**:
-- The test suite is stable (all critical tests passing consistently)
-- The team has decided fixes have landed and are ready to enforce CI gates
-- A deliberate decision is made to restore strict CI checks
+Add an entry to `.github/allowed-test-failures.txt`:
 
-**Do not "fix" this back to failing CI without explicit team consensus.**
+```
+com.gb4pc.e2e.GalleryButtonVisualE2ETest#someMethod   # tolerate one method
+com.gb4pc.e2e.GalleryButtonVisualE2ETest              # tolerate the whole class
+```
 
-To restore failing CI:
-1. Remove `continue-on-error: true` from the E2E test steps in `.github/workflows/build.yml`
-2. Update this document to reflect the change and the date it took effect
-3. Ensure all tests are passing before merging (the new failures will become blockers)
+Blank lines and `#` comment lines are ignored.
+A `#` glued to the preceding token is the class/method separator and is preserved; an inline comment must be preceded by whitespace.
 
-### Related Files
+Remove entries as the tests are fixed.
+An empty allowlist means no failure is tolerated, which is the steady state.
 
-- `.github/workflows/build.yml` — Contains the actual CI configuration
-- `scripts/file_test_failure_issues.py` — Auto-files issues for failed tests
-- `.github/workflows/archive-stale-test-failures.yml` — Archives test failure issues when tests pass
+### Related files
 
-### For Future Contributors and Agents
-
-If you are reviewing CI behavior or making changes:
-- This non-failing design is intentional and temporary
-- Do not re-introduce failing gates without consulting the team
-- If you believe tests are stable enough to fail CI, raise the question in an issue first
-- Understand that test failures should result in issues, not build failures, during this phase
+- `.github/workflows/build.yml` — the CI configuration, including the `Gate on test failures` step.
+- `.github/allowed-test-failures.txt` — the red-to-green allowlist.
+- `scripts/check_allowed_failures.py` — the gate script (unit-tested in `scripts/test_check_allowed_failures.py`).
+- `scripts/file_test_failure_issues.py` — auto-files issues for failed tests.
+- `.github/workflows/archive-stale-test-failures.yml` — archives test failure issues when tests pass.
