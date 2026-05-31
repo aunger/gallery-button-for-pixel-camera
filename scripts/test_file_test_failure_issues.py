@@ -689,25 +689,21 @@ class TestArtifactNameForLabel(unittest.TestCase):
     def test_unit_label_maps_to_unit_test_results(self):
         self.assertEqual(ftfi._artifact_name_for_label("Unit Tests"), "unit-test-results")
 
-    def test_instrumented_label_maps_to_e2e(self):
+    def test_instrumented_label_maps_to_instrumented_test_results(self):
         self.assertEqual(
-            ftfi._artifact_name_for_label("Instrumented Tests"), "e2e-test-results"
-        )
-
-    def test_e2e_label_maps_to_e2e(self):
-        self.assertEqual(ftfi._artifact_name_for_label("E2E Tests"), "e2e-test-results")
-
-    def test_standard_instrumented_label_maps_to_instrumented_test_results(self):
-        self.assertEqual(
-            ftfi._artifact_name_for_label("Standard Instrumented Tests"),
+            ftfi._artifact_name_for_label("Instrumented Tests"),
             "instrumented-test-results",
         )
 
-    def test_standard_branch_precedes_instrumented_branch(self):
-        """'Standard Instrumented Tests' must map to instrumented-test-results, not e2e."""
-        result = ftfi._artifact_name_for_label("Standard Instrumented Tests")
-        self.assertNotEqual(result, "e2e-test-results")
-        self.assertEqual(result, "instrumented-test-results")
+    def test_e2e_label_maps_to_e2e_test_results(self):
+        self.assertEqual(ftfi._artifact_name_for_label("E2E Tests"), "e2e-test-results")
+
+    def test_instrumented_and_e2e_map_to_distinct_artifacts(self):
+        """The two instrumented suites must not collide on one artifact name."""
+        self.assertNotEqual(
+            ftfi._artifact_name_for_label("Instrumented Tests"),
+            ftfi._artifact_name_for_label("E2E Tests"),
+        )
 
     def test_unknown_label_slugified(self):
         self.assertEqual(

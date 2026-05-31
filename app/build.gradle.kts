@@ -55,7 +55,7 @@ android {
         versionName = findProperty("versionName") as String? ?: "dev"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        // Exclude E2E tests from the standard instrumented-test run.
+        // Exclude E2E tests from the instrumented-test run.
         // E2E tests live in com.gb4pc.e2e and require a device with Pixel Camera installed.
         // Run them separately with: ./gradlew connectedE2EAndroidTest
         testInstrumentationRunnerArguments["notPackage"] = "com.gb4pc.e2e"

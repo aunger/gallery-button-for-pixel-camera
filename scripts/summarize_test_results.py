@@ -7,8 +7,9 @@ back to stdout when the env var is not set).
 
 Usage:
     python3 scripts/summarize_test_results.py \\
-        path/to/unit-results       --suite-label "Unit Tests" \\
-        path/to/e2e-results        --suite-label "Instrumented Tests"
+        path/to/unit-results          --suite-label "Unit Tests" \\
+        path/to/instrumented-results  --suite-label "Instrumented Tests" \\
+        path/to/e2e-results           --suite-label "E2E Tests"
 
 Each directory path must be immediately followed by --suite-label <name>.
 Exit code is always 0 (display only; failures are surfaced by earlier steps).
