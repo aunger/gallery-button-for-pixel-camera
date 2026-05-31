@@ -437,9 +437,7 @@ class TestCreateIssue(unittest.TestCase):
         ftfi.create_issue("token", "owner/repo", "Title", "Body")
         call_kwargs = mock_requests.post.call_args
         payload = call_kwargs[1]["json"]
-        self.assertIn("test-failure", payload["labels"])
-        self.assertIn("ci", payload["labels"])
-        self.assertIn("for ai to do", payload["labels"])
+        self.assertEqual(["test-failure"], payload["labels"])
 
 
 class TestAddIssueComment(unittest.TestCase):
