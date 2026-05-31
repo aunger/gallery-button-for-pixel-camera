@@ -309,6 +309,21 @@ jobs:
             -a android.media.action.STILL_IMAGE_CAMERA \
             -p com.google.android.GoogleCamera 2>/dev/null || true
 
+      - name: Run instrumented tests
+        # Failures auto-tracked as issues. continue-on-error lets subsequent steps run even on failure.
+        id: run_instrumented
+        if: steps.diff_check.outputs.needs_full_build == 'true'
+        continue-on-error: true
+        run: ./gradlew connectedDebugAndroidTest
+
+      - name: Copy instrumented test results
+        if: steps.diff_check.outputs.needs_full_build == 'true'
+        continue-on-error: true
+        run: |
+          mkdir -p app/build/outputs/androidTest-results/instrumented
+          cp -r app/build/outputs/androidTest-results/connected/debug/. \
+            app/build/outputs/androidTest-results/instrumented/
+
       - name: Run PixelCameraOverlayE2ETest
         # Failures auto-tracked as issues. continue-on-error lets subsequent steps run even on failure.
         id: run_overlay_e2e
@@ -363,6 +378,19 @@ jobs:
           path: results/e2e-gallery.ndjson
           retention-days: 14
 
+      - name: Copy E2E test results
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        continue-on-error: true
+        run: |
+          # The E2E Gradle task writes TEST-com.gb4pc.e2e.*.xml into the shared
+          # connected/debug directory (alongside the earlier instrumented results).
+          # Snapshot only the E2E XML into a dedicated directory so the summary
+          # and issue-filing pipelines see E2E results without the instrumented
+          # ones mixed in.
+          mkdir -p app/build/outputs/androidTest-results/e2e
+          cp -r app/build/outputs/androidTest-results/connected/debug/TEST-com.gb4pc.e2e.*.xml \
+            app/build/outputs/androidTest-results/e2e/
+
       - name: Pull and upload E2E screenshots on failure
         id: pull_e2e_screenshots
         if: always() && steps.diff_check.outputs.needs_full_build == 'true' && (steps.run_overlay_e2e.outcome == 'failure' || steps.run_gallery_e2e.outcome == 'failure')
@@ -378,12 +406,20 @@ jobs:
           $ANDROID_HOME/platform-tools/adb emu kill 2>/dev/null || true
           [[ -n "${EMULATOR_PID:-}" ]] && kill "$EMULATOR_PID" 2>/dev/null || true
 
+      - name: Upload instrumented test results
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: instrumented-test-results
+          path: app/build/outputs/androidTest-results/instrumented/
+          retention-days: 14
+
       - name: Upload E2E test results
         if: always() && steps.diff_check.outputs.needs_full_build == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: e2e-test-results
-          path: app/build/outputs/androidTest-results/
+          path: app/build/outputs/androidTest-results/e2e/
           retention-days: 14
 
       - name: OCR on E2E screenshots
@@ -407,8 +443,10 @@ jobs:
           python3 scripts/summarize_test_results.py \
             app/build/test-results/testDebugUnitTest \
               --suite-label "Unit Tests" \
-            app/build/outputs/androidTest-results/connected/debug \
-              --suite-label "Instrumented Tests"
+            app/build/outputs/androidTest-results/instrumented \
+              --suite-label "Instrumented Tests" \
+            app/build/outputs/androidTest-results/e2e \
+              --suite-label "E2E Tests"
 
   file-issues:
     needs: [build-and-test]
@@ -434,6 +472,13 @@ jobs:
           path: downloaded-artifacts/e2e-test-results
         continue-on-error: true
 
+      - name: Download instrumented test results
+        uses: actions/download-artifact@v7
+        with:
+          name: instrumented-test-results
+          path: downloaded-artifacts/instrumented-test-results
+        continue-on-error: true
+
       - name: File issues for failed tests
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -447,8 +492,10 @@ jobs:
           python3 scripts/file_test_failure_issues.py \
             downloaded-artifacts/unit-test-results \
               --suite-label "Unit Tests" \
+            downloaded-artifacts/instrumented-test-results \
+              --suite-label "Instrumented Tests" \
             downloaded-artifacts/e2e-test-results \
-              --suite-label "Instrumented Tests"
+              --suite-label "E2E Tests"
 
   # Produce a signed release-config APK on every merge to main for easy sideloading.
   # Named gb4pc-dev.<run_number>.apk to distinguish from tagged releases.

@@ -6,8 +6,9 @@ comments on) a GitHub issue for every failing test case.
 
 Usage:
     python3 scripts/file_test_failure_issues.py \\
-        path/to/unit-results       --suite-label "Unit Tests" \\
-        path/to/e2e-results        --suite-label "Instrumented Tests"
+        path/to/unit-results          --suite-label "Unit Tests" \\
+        path/to/instrumented-results  --suite-label "Instrumented Tests" \\
+        path/to/e2e-results           --suite-label "E2E Tests"
 
 Each directory path must be immediately followed by --suite-label <name>.
 Exit code is always 0 — API failures are logged but do not fail the CI run.
@@ -416,14 +417,24 @@ def parse_args(argv: list[str]) -> list[tuple[Path, str]]:
     return pairs
 
 
+# Canonical suite label -> upload-artifact name. Each suite has exactly one
+# label, one artifact, and one results folder, all named consistently:
+#   "Unit Tests"         -> unit-test-results         (folder: testDebugUnitTest)
+#   "Instrumented Tests" -> instrumented-test-results (folder: androidTest-results/instrumented)
+#   "E2E Tests"          -> e2e-test-results          (folder: androidTest-results/e2e)
+_ARTIFACT_NAME_BY_LABEL = {
+    "Unit Tests": "unit-test-results",
+    "Instrumented Tests": "instrumented-test-results",
+    "E2E Tests": "e2e-test-results",
+}
+
+
 def _artifact_name_for_label(label: str) -> str:
-    """Derive the artifact name from the suite label."""
-    label_lower = label.lower()
-    if "unit" in label_lower:
-        return "unit-test-results"
-    if "instrumented" in label_lower or "e2e" in label_lower:
-        return "e2e-test-results"
-    return label.lower().replace(" ", "-")
+    """Derive the artifact name from the suite label.
+
+    Falls back to a slug of the label for any unrecognized suite.
+    """
+    return _ARTIFACT_NAME_BY_LABEL.get(label, label.lower().replace(" ", "-"))
 
 
 # ---------------------------------------------------------------------------
