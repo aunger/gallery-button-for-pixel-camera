@@ -153,27 +153,20 @@ def dominant_color(pixels_region: list[tuple[int, int, int]]) -> tuple[int, int,
 
 _ANR_DISMISS_MAX_RETRIES = 5
 # Intentionally separate from RETRY_DELAY_SECONDS: this poll interval governs how
-# long to wait between each KEYCODE_BACK send and the subsequent dumpsys window
+# long to wait between each KEYCODE_ENTER send and the subsequent dumpsys window
 # confirmation inside _dismiss_anr_if_present(), while RETRY_DELAY_SECONDS controls
 # the outer green-feed retry loop.  They happen to share the same value today but
 # may diverge if one needs tuning independently of the other.
 _ANR_DISMISS_POLL_SECONDS = 2
 
 
-def _dismiss_anr_if_present(adb: str) -> None:
-    """Check for the Pixel Launcher ANR dialog and dismiss it if present.
+def _window_has_anr(adb: str) -> bool | None:
+    """Return True/False if an ANR dialog is present, or None if undetermined.
 
-    This is a lightweight guard that runs before every screencap in the retry
-    loop.  dismiss_anr.sh exits as soon as Launcher CPU goes idle, but the ANR
-    dialog can appear during or after the `am start -W` call (which takes 3+ s),
-    after the watcher has already exited.  By checking here we ensure the retry
-    loop is self-defending against late-appearing ANR dialogs.
-
-    After sending KEYCODE_BACK, polls dumpsys window to confirm the dialog has
-    actually disappeared before returning, retrying up to _ANR_DISMISS_MAX_RETRIES
-    times.  This guards against cases where KEYCODE_BACK is dispatched but the
-    dialog does not dismiss immediately (e.g. slow emulator rendering, focus
-    stolen by another window).
+    Runs `dumpsys window` with a timeout.  A timeout or any other adb error
+    returns None so callers can distinguish "no ANR" (False) from "could not
+    tell" (None) — on a wedged emulator the dumpsys call itself times out, and
+    treating that as "no ANR" would skip dismissal entirely (Issue #256).
     """
     try:
         window_dump = subprocess.run(
@@ -182,50 +175,76 @@ def _dismiss_anr_if_present(adb: str) -> None:
             text=True,
             timeout=10,
         )
-        if "Application Not Responding" not in window_dump.stdout:
-            return
+    except Exception:  # noqa: BLE001
+        return None
+    return "Application Not Responding" in window_dump.stdout
 
-        ts = time.strftime("%H:%M:%S")
-        print(
-            f"[check_green_feed] {ts} ANR dialog detected before screencap — sending KEYCODE_ENTER.",
-            file=sys.stderr,
+
+def _send_keycode_enter(adb: str) -> None:
+    """Send KEYCODE_ENTER to dismiss the focused ANR-dialog button.
+
+    A timeout or adb error is swallowed: when the emulator is overloaded the
+    `input` service can be transiently unavailable, but the ANR dialog dismiss
+    loop must keep retrying rather than aborting on the first failed send
+    (Issue #256).
+    """
+    try:
+        subprocess.run(
+            [adb, "shell", "input", "keyevent", "KEYCODE_ENTER"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
-        for attempt in range(1, _ANR_DISMISS_MAX_RETRIES + 1):
-            subprocess.run(
-                [adb, "shell", "input", "keyevent", "KEYCODE_ENTER"],
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            time.sleep(_ANR_DISMISS_POLL_SECONDS)
-            ts = time.strftime("%H:%M:%S")
-            confirm = subprocess.run(
-                [adb, "shell", "dumpsys", "window"],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            if "Application Not Responding" not in confirm.stdout:
-                print(
-                    f"[check_green_feed] {ts} ANR dialog dismissed after {attempt} KEYCODE_ENTER(s).",
-                    file=sys.stderr,
-                )
-                return
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _dismiss_anr_if_present(adb: str) -> None:
+    """Check for an ANR dialog and dismiss it if present.
+
+    This is a lightweight guard that runs before every screencap in the retry
+    loop.  dismiss_anr.sh exits as soon as Launcher CPU goes idle, but an ANR
+    dialog can appear during or after the `am start -W` call (which takes 3+ s),
+    after the watcher has already exited.  The dialog is not always the
+    launcher's — on an overloaded emulator SystemUI itself can ANR (Issue #256) —
+    so this matches any "Application Not Responding" window.
+
+    After sending KEYCODE_ENTER, polls dumpsys window to confirm the dialog has
+    actually disappeared before returning, retrying up to _ANR_DISMISS_MAX_RETRIES
+    times.  Each adb call is individually timeout-tolerant: when the emulator is
+    wedged, a single `input`/`dumpsys` command can time out, but that must not
+    abort the whole dismiss routine — the loop keeps retrying so a late-clearing
+    dialog still gets dismissed (Issue #256).
+    """
+    if _window_has_anr(adb) is not True:
+        # No ANR detected (False) or could not tell (None): nothing to dismiss.
+        return
+
+    ts = time.strftime("%H:%M:%S")
+    print(
+        f"[check_green_feed] {ts} ANR dialog detected before screencap — sending KEYCODE_ENTER.",
+        file=sys.stderr,
+    )
+    for attempt in range(1, _ANR_DISMISS_MAX_RETRIES + 1):
+        _send_keycode_enter(adb)
+        time.sleep(_ANR_DISMISS_POLL_SECONDS)
+        ts = time.strftime("%H:%M:%S")
+        if _window_has_anr(adb) is False:
             print(
-                f"[check_green_feed] {ts} ANR dialog still present after KEYCODE_ENTER #{attempt}.",
+                f"[check_green_feed] {ts} ANR dialog dismissed after {attempt} KEYCODE_ENTER(s).",
                 file=sys.stderr,
             )
+            return
         print(
-            f"[check_green_feed] {time.strftime('%H:%M:%S')} ANR dialog persisted after "
-            f"{_ANR_DISMISS_MAX_RETRIES} KEYCODE_ENTER sends — proceeding to screencap anyway.",
+            f"[check_green_feed] {ts} ANR dialog still present or undetermined after KEYCODE_ENTER #{attempt}.",
             file=sys.stderr,
         )
-    except Exception as exc:  # noqa: BLE001
-        print(
-            f"[check_green_feed] ANR pre-screencap check failed (ignored): {exc}",
-            file=sys.stderr,
-        )
+    print(
+        f"[check_green_feed] {time.strftime('%H:%M:%S')} ANR dialog persisted after "
+        f"{_ANR_DISMISS_MAX_RETRIES} KEYCODE_ENTER sends — proceeding to screencap anyway.",
+        file=sys.stderr,
+    )
 
 
 def _dump_first_failure_diagnostics(

@@ -217,7 +217,7 @@ def _github_headers(token: str) -> dict[str, str]:
     }
 
 
-LABELS = ["test-failure", "ci", "for ai to do"]
+LABELS = ["test-failure"]
 
 
 def find_existing_issue(
