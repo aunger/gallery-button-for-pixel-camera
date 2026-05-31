@@ -83,7 +83,7 @@ If writes fail with this error, try performing any `issue_read` first, then imme
 Do not interpret this as "no blind writes" enforcement.
 
 #### Observations
-`$GITHUB_TOKEN` is a fine-grained PAT (`github_pat_... ` format), not a JWT.
+`$GITHUB_TOKEN` is a fine-grained PAT (`github_pat_...` format), not a JWT.
 It is stable across sessions and does not change mid-session or after MCP reads/writes.
 The "token expired" error therefore **does not refer to `GITHUB_TOKEN` expiring**.
 The MCP server manages its own internal credentials separately from this environment variable.
