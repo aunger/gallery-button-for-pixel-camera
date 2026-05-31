@@ -1,3 +1,9 @@
+---
+paths:
+  - "**/*.{md,markdown}"
+  - "**/*.{kt,java,sh,py}"
+  - "**/*.*"
+---
 # Prose style and typographical standards
 
 The following rules apply to prose in documents, code comments, and text output.
