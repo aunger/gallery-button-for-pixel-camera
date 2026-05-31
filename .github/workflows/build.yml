@@ -430,8 +430,6 @@ jobs:
           python3 scripts/summarize_test_results.py \
             app/build/test-results/testDebugUnitTest \
               --suite-label "Unit Tests" \
-            app/build/outputs/androidTest-results/connected/debug \
-              --suite-label "Instrumented Tests" \
             app/build/outputs/androidTest-results/standard \
               --suite-label "Standard Instrumented Tests"
 
