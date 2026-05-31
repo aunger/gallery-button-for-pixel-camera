@@ -4,6 +4,7 @@
 import io
 import os
 import struct
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -729,6 +730,108 @@ class TestDismissAnrIfPresent(unittest.TestCase):
             log_output,
             f"Expected retry count {cgf._ANR_DISMISS_MAX_RETRIES} in stderr log; got: {log_output!r}"
         )
+
+
+    def test_timeout_during_dismiss_does_not_abort_loop(self):
+        """A subprocess timeout on a KEYCODE_ENTER send or a confirm dumpsys must
+        not abort the dismiss routine (Issue #256).  When the emulator is wedged,
+        the `input`/`dumpsys` commands can time out transiently; the loop must
+        keep retrying so that once the service recovers the dialog is dismissed.
+
+        Here the initial detect finds an ANR.  The first ENTER send and its
+        confirm dumpsys both raise TimeoutExpired (emulator wedged), the second
+        ENTER lands but the dialog is still up, and on the third cycle the confirm
+        dumpsys reports the dialog gone.  The function must send ENTER 3 times and
+        return cleanly (not abort after the first timeout).
+        """
+        anr_window = self._make_run_result(
+            stdout="Application Not Responding: com.android.systemui"
+        )
+        clear_window = self._make_run_result(stdout="WindowState idle")
+        timeout_exc = subprocess.TimeoutExpired(cmd=["adb"], timeout=10)
+
+        enter_calls: list[list] = []
+        # Sequence of subprocess.run results/exceptions, in call order:
+        #   detect(ANR) → ENTER#1(timeout) → confirm#1(timeout) →
+        #   ENTER#2(ok)  → confirm#2(ANR) → ENTER#3(ok) → confirm#3(clear)
+        run_side_effects: list = [
+            anr_window,                 # initial detect
+            timeout_exc,                # ENTER #1 → times out
+            timeout_exc,                # confirm #1 → times out (treated as None)
+            self._make_run_result(),    # ENTER #2
+            anr_window,                 # confirm #2 → still present
+            self._make_run_result(),    # ENTER #3
+            clear_window,               # confirm #3 → dismissed
+        ]
+
+        def tracking_run(args, **kwargs):
+            if "KEYCODE_ENTER" in args:
+                enter_calls.append(list(args))
+            effect = run_side_effects.pop(0)
+            if isinstance(effect, Exception):
+                raise effect
+            return effect
+
+        stderr_buf = io.StringIO()
+        with patch("check_green_feed.subprocess.run", side_effect=tracking_run), \
+             patch("check_green_feed.time.sleep"), \
+             patch("sys.stderr", stderr_buf):
+            # Must not raise.
+            cgf._dismiss_anr_if_present("/fake/adb")
+
+        self.assertEqual(
+            len(enter_calls), 3,
+            f"Expected the loop to keep retrying through timeouts and send "
+            f"KEYCODE_ENTER 3 times, got {len(enter_calls)}"
+        )
+        self.assertIn("dismissed after 3", stderr_buf.getvalue())
+
+    def test_initial_detect_timeout_returns_without_sending_enter(self):
+        """When the initial dumpsys-window detect times out, the result is
+        undetermined (None) and the function returns without sending KEYCODE_ENTER
+        — it does not raise (Issue #256)."""
+        timeout_exc = subprocess.TimeoutExpired(cmd=["adb"], timeout=10)
+        enter_calls: list[list] = []
+
+        def tracking_run(args, **kwargs):
+            if "KEYCODE_ENTER" in args:
+                enter_calls.append(list(args))
+            raise timeout_exc
+
+        with patch("check_green_feed.subprocess.run", side_effect=tracking_run), \
+             patch("check_green_feed.time.sleep"):
+            cgf._dismiss_anr_if_present("/fake/adb")
+
+        self.assertEqual(
+            len(enter_calls), 0,
+            "KEYCODE_ENTER must not be sent when the ANR state is undetermined",
+        )
+
+    def test_systemui_anr_is_dismissed(self):
+        """A SystemUI ANR (not just the launcher's) is detected and dismissed
+        (Issue #256: the failing run's ANR was com.android.systemui)."""
+        systemui_anr = self._make_run_result(
+            stdout="mCurrentFocus=Window{x u0 Application Not Responding: com.android.systemui}"
+        )
+        clear_window = self._make_run_result(stdout="WindowState idle")
+        enter_calls: list[list] = []
+        run_side_effects = [
+            systemui_anr,              # detect
+            self._make_run_result(),   # ENTER #1
+            clear_window,              # confirm cleared
+        ]
+
+        def tracking_run(args, **kwargs):
+            if "KEYCODE_ENTER" in args:
+                enter_calls.append(list(args))
+            return run_side_effects.pop(0)
+
+        with patch("check_green_feed.subprocess.run", side_effect=tracking_run), \
+             patch("check_green_feed.time.sleep"):
+            cgf._dismiss_anr_if_present("/fake/adb")
+
+        self.assertEqual(len(enter_calls), 1,
+                         "SystemUI ANR must be dismissed with one KEYCODE_ENTER")
 
 
 class TestDismissAnrUsesKeycodeEnter(unittest.TestCase):
