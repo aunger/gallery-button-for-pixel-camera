@@ -404,11 +404,18 @@ jobs:
       - name: Write test-result summary
         if: always() && steps.diff_check.outputs.needs_full_build == 'true'
         run: |
+          # When the pre-flight check did not succeed, E2E tests were skipped
+          # entirely. Pass --skipped for those suites so the summary shows them
+          # as "⏭ Skipped" rather than the misleading "No test results found."
+          SKIPPED_FLAG=""
+          if [[ "${{ steps.preflight.outcome }}" != "success" ]]; then
+            SKIPPED_FLAG="--skipped"
+          fi
           python3 scripts/summarize_test_results.py \
             app/build/test-results/testDebugUnitTest \
               --suite-label "Unit Tests" \
             app/build/outputs/androidTest-results/connected/debug \
-              --suite-label "Instrumented Tests"
+              --suite-label "Instrumented Tests" $SKIPPED_FLAG
 
   file-issues:
     needs: [build-and-test]
