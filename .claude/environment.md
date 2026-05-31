@@ -23,7 +23,7 @@ script for implementation details — each step is commented.
 | `ANDROID_HOME`     | `/home/user/android-sdk`     | hook + `~/.bashrc`| Required by Gradle Android plugin and `adb`                  |
 | `JAVA_TOOL_OPTIONS`| *(modified, not replaced)*   | hook + `~/.bashrc`| Strips `*.google.com` from `nonProxyHosts` — see script §0   |
 | `PATH`             | `+$ANDROID_HOME/…`           | hook + `~/.bashrc`| Adds `sdkmanager`, `adb` to path                            |
-| `GITHUB_TOKEN`     | *(session-scoped JWT)*       | container         | Use with `curl` to query the GitHub REST API                 |
+| `GITHUB_TOKEN`     | *(fine-grained PAT)*         | container         | Use with `curl` to query the GitHub REST API                 |
 
 `~/.bashrc` carries the same fixes for interactive terminal sessions.
 The proxy credentials in `JAVA_TOOL_OPTIONS` are a session-scoped JWT injected
@@ -78,11 +78,13 @@ Write operations (`add_issue_comment`, `issue_write`, etc.) occasionally fail wi
 MCP server "github" requires re-authorization (token expired)
 ```
 
-#### Possible interpretation and possible workaround
-The `GITHUB_TOKEN` is a session-scoped JWT
-(short-lived). The JWT can expire mid-session; reads appear to use a cached or
-lower-privilege path that still succeeds, while writes require a fresh token. A
-successful read call appears to trigger a background JWT refresh that unblocks
+#### What is known
+`GITHUB_TOKEN` is a fine-grained PAT (`github_pat_…` format), not a JWT. Its SHA-256
+hash is stable across sessions and does not change mid-session or after MCP reads/writes.
+The "token expired" error therefore does **not** refer to `GITHUB_TOKEN` expiring. The
+MCP server manages its own internal credentials separately from this environment
+variable. The exact mechanism is unknown, but reads appear to succeed via a cached path
+while writes require a live MCP session token. A successful read call appears to unblock
 subsequent writes.
 
 Possible workaround (not guaranteed, appears to work):
