@@ -237,7 +237,7 @@ def _dismiss_anr_if_present(adb: str) -> None:
             )
             return
         print(
-            f"[check_green_feed] {ts} ANR dialog still present after KEYCODE_ENTER #{attempt}.",
+            f"[check_green_feed] {ts} ANR dialog still present or undetermined after KEYCODE_ENTER #{attempt}.",
             file=sys.stderr,
         )
     print(
