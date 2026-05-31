@@ -70,7 +70,7 @@ regardless of whether the underlying change was applied. The stripped response g
 no signal about what actually changed. **Always follow a write with a confirming
 `issue_read`** (e.g. `method: "get_labels"`) before reporting success.
 
-### "Token expired" errors on write operations
+### GitHub MCP "requires re-authorization (token expired)" on write
 
 Write operations (`add_issue_comment`, `issue_write`, etc.) occasionally fail with the following error while reads on the same resource succeed:
 
@@ -78,18 +78,17 @@ Write operations (`add_issue_comment`, `issue_write`, etc.) occasionally fail wi
 MCP server "github" requires re-authorization (token expired)
 ```
 
-#### What is known
-`GITHUB_TOKEN` is a fine-grained PAT (`github_pat_…` format), not a JWT. Its SHA-256
-hash is stable across sessions and does not change mid-session or after MCP reads/writes.
-The "token expired" error therefore does **not** refer to `GITHUB_TOKEN` expiring. The
-MCP server manages its own internal credentials separately from this environment
-variable. The exact mechanism is unknown, but reads appear to succeed via a cached path
-while writes require a live MCP session token. A successful read call appears to unblock
-subsequent writes.
-
-Possible workaround (not guaranteed, appears to work):
+#### Possible workaround (not guaranteed, appears to work)
 If writes fail with this error, try performing any `issue_read` first, then immediately retry the write.
-Do not interpret the error as a "no blind writes" enforcement.
+Do not interpret this as "no blind writes" enforcement.
+
+#### Observations
+`$GITHUB_TOKEN` is a fine-grained PAT (`github_pat_... ` format), not a JWT.
+It is stable across sessions and does not change mid-session or after MCP reads/writes.
+The "token expired" error therefore **does not refer to `GITHUB_TOKEN` expiring**.
+The MCP server manages its own internal credentials separately from this environment variable.
+The mechanism is unknown, but reads appear to succeed via a cached path while writes require a live MCP session token.
+A successful read call appears to unblock subsequent writes.
 
 ---
 
