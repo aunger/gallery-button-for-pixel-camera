@@ -1,0 +1,11 @@
+{
+  "name": "orchestrate",
+  "description": "Drives a GitHub issue or PR through the GB4PC Author/Reviewer/CI development-orchestration workflow. Provides the /orchestrate skill, the orchestrator/author/reviewer/ci-watcher agents, the CI Watcher poller, and the orchestration rules.",
+  "version": "0.1.0",
+  "author": {
+    "name": "GB4PC"
+  },
+  "skills": ["./"],
+  "agents": ["./agents/"],
+  "hooks": "./hooks/hooks.json"
+}
