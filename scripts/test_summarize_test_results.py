@@ -203,6 +203,23 @@ class TestRenderSuite(unittest.TestCase):
         self.assertIn("No test results found", combined)
         self.assertNotIn("| Status |", combined)
 
+    def test_empty_suite_skipped_outcome_shows_skipped(self):
+        """When the producing step was skipped, an empty suite reads as skipped."""
+        lines = srt.render_suite("Instrumented Tests", {}, outcome="skipped")
+        combined = "\n".join(lines)
+        self.assertIn("SKIPPED", combined.upper())
+        self.assertNotIn("No test results found", combined)
+        # It must never read as if the suite passed.
+        self.assertNotIn("PASS", combined.upper())
+        self.assertNotIn("| Status |", combined)
+
+    def test_empty_suite_failure_outcome_keeps_no_results_note(self):
+        """A non-skipped outcome with no results still shows the plain note."""
+        lines = srt.render_suite("Unit Tests", {}, outcome="failure")
+        combined = "\n".join(lines)
+        self.assertIn("No test results found", combined)
+        self.assertNotIn("SKIPPED", combined.upper())
+
     def test_passing_class_shows_green(self):
         classes = {
             "com.example.Foo": srt.TestClass(
@@ -321,13 +338,21 @@ class TestBuildMarkdown(unittest.TestCase):
 
     def test_multiple_suites_appear_in_order(self):
         suite_data = [
-            ("Unit Tests", {}),
-            ("Instrumented Tests", {}),
+            ("Unit Tests", {}, ""),
+            ("Instrumented Tests", {}, ""),
         ]
         md = srt.build_markdown(suite_data)
         unit_pos = md.index("Unit Tests")
         instrumented_pos = md.index("Instrumented Tests")
         self.assertLess(unit_pos, instrumented_pos)
+
+    def test_skipped_suite_renders_skipped_not_green(self):
+        """A skipped step with no results must read as skipped, never as passing."""
+        suite_data = [("Instrumented Tests", {}, "skipped")]
+        md = srt.build_markdown(suite_data)
+        self.assertIn("SKIPPED", md.upper())
+        self.assertNotIn("PASS", md.upper())
+        self.assertNotIn("No test results found", md)
 
 
 # ---------------------------------------------------------------------------
@@ -337,18 +362,19 @@ class TestBuildMarkdown(unittest.TestCase):
 class TestParseArgs(unittest.TestCase):
 
     def test_single_pair(self):
-        pairs = srt.parse_args(["path/to/unit", "--suite-label", "Unit Tests"])
-        self.assertEqual(len(pairs), 1)
-        self.assertEqual(pairs[0][0], Path("path/to/unit"))
-        self.assertEqual(pairs[0][1], "Unit Tests")
+        specs = srt.parse_args(["path/to/unit", "--suite-label", "Unit Tests"])
+        self.assertEqual(len(specs), 1)
+        self.assertEqual(specs[0].directory, Path("path/to/unit"))
+        self.assertEqual(specs[0].label, "Unit Tests")
+        self.assertEqual(specs[0].outcome, "")
 
     def test_two_pairs(self):
-        pairs = srt.parse_args([
+        specs = srt.parse_args([
             "dir1", "--suite-label", "Label1",
             "dir2", "--suite-label", "Label2",
         ])
-        self.assertEqual(len(pairs), 2)
-        self.assertEqual(pairs[1][1], "Label2")
+        self.assertEqual(len(specs), 2)
+        self.assertEqual(specs[1].label, "Label2")
 
     def test_missing_suite_label_flag_raises(self):
         with self.assertRaises(SystemExit):
@@ -362,6 +388,26 @@ class TestParseArgs(unittest.TestCase):
         # directory without --suite-label following
         with self.assertRaises(SystemExit):
             srt.parse_args(["dir1"])
+
+    def test_outcome_parsed_when_present(self):
+        specs = srt.parse_args([
+            "dir1", "--suite-label", "Label1", "--outcome", "skipped",
+        ])
+        self.assertEqual(len(specs), 1)
+        self.assertEqual(specs[0].outcome, "skipped")
+
+    def test_outcome_optional_between_suites(self):
+        specs = srt.parse_args([
+            "dir1", "--suite-label", "Label1", "--outcome", "failure",
+            "dir2", "--suite-label", "Label2",
+        ])
+        self.assertEqual(len(specs), 2)
+        self.assertEqual(specs[0].outcome, "failure")
+        self.assertEqual(specs[1].outcome, "")
+
+    def test_outcome_without_value_raises(self):
+        with self.assertRaises(SystemExit):
+            srt.parse_args(["dir1", "--suite-label", "Label1", "--outcome"])
 
 
 # ---------------------------------------------------------------------------
@@ -404,6 +450,25 @@ class TestMain(unittest.TestCase):
         missing = self.tmpdir / "nonexistent"
         result = srt.main([str(missing), "--suite-label", "Unit"])
         self.assertEqual(result, 0)
+
+    def test_skipped_step_renders_skipped_not_green(self):
+        """End to end: a skipped test step (no XML) reports skipped, not green.
+
+        Reproduces issue #255: a pre-flight failure skips the test phase, the
+        result directory is absent, and the summary previously read as if the
+        suite had run.  With --outcome skipped it must read as skipped.
+        """
+        missing = self.tmpdir / "nonexistent"
+        captured = io.StringIO()
+        with patch("sys.stdout", captured):
+            result = srt.main([
+                str(missing), "--suite-label", "Instrumented Tests",
+                "--outcome", "skipped",
+            ])
+        self.assertEqual(result, 0)
+        output = captured.getvalue()
+        self.assertIn("SKIPPED", output.upper())
+        self.assertNotIn("PASS", output.upper())
 
     def test_writes_to_github_step_summary(self):
         _write_xml(self.tmpdir, "TEST-foo.xml", PASSING_XML)

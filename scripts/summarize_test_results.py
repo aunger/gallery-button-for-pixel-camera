@@ -8,10 +8,16 @@ back to stdout when the env var is not set).
 Usage:
     python3 scripts/summarize_test_results.py \\
         path/to/unit-results          --suite-label "Unit Tests" \\
-        path/to/instrumented-results  --suite-label "Instrumented Tests" \\
-        path/to/e2e-results           --suite-label "E2E Tests"
+        path/to/instrumented-results  --suite-label "Instrumented Tests" --outcome failure \\
+        path/to/e2e-results           --suite-label "E2E Tests"        --outcome skipped
 
-Each directory path must be immediately followed by --suite-label <name>.
+Each directory path must be immediately followed by --suite-label <name>, with
+an optional trailing --outcome <value> carrying the GitHub Actions step outcome
+for the step that produced those results.  When a step was skipped (for example
+because a CI pre-flight failure skipped the whole test phase) it leaves no JUnit
+XML behind; reporting that empty suite as "no results" reads as if nothing was
+wrong, so the outcome lets the summary render it as skipped instead.
+
 Exit code is always 0 (display only; failures are surfaced by earlier steps).
 """
 
@@ -41,6 +47,19 @@ class TestClass:
     @property
     def any_failed(self) -> bool:
         return any(not tc.passed and not tc.skipped for tc in self.cases)
+
+
+@dataclass(frozen=True)
+class SuiteSpec:
+    """One test suite to summarize: where its results live and how its step fared."""
+    directory: Path
+    label: str
+    # The GitHub Actions step ``outcome`` for the step that produced these
+    # results (``success``, ``failure``, ``skipped`` or empty/unknown). When a
+    # step is ``skipped`` (e.g. a CI pre-flight failure skipped the whole test
+    # phase) it writes no JUnit XML, so the suite is rendered as skipped rather
+    # than as an empty/green "no results" suite. Empty means "outcome unknown".
+    outcome: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -91,13 +110,25 @@ def parse_directory(directory: Path) -> dict[str, TestClass]:
 # Markdown rendering
 # ---------------------------------------------------------------------------
 
-def render_suite(label: str, classes: dict[str, TestClass]) -> list[str]:
-    """Render one suite as Markdown lines (header + table rows + totals)."""
+def render_suite(label: str, classes: dict[str, TestClass], outcome: str = "") -> list[str]:
+    """Render one suite as Markdown lines (header + table rows + totals).
+
+    *outcome* is the GitHub Actions step outcome for the step that produced
+    these results.  When it is ``skipped`` and there are no results, the suite
+    is rendered as skipped rather than as an empty "no results" suite, so a
+    skipped test phase (e.g. after a pre-flight failure) never reads as green.
+    """
     lines: list[str] = []
     lines.append(f"### {label}")
 
     if not classes:
-        lines.append("_No test results found._")
+        if outcome == "skipped":
+            lines.append(
+                "⏭ SKIPPED -- the test step did not run "
+                "(e.g. a pre-flight failure skipped the test phase)."
+            )
+        else:
+            lines.append("_No test results found._")
         lines.append("")
         return lines
 
@@ -137,11 +168,15 @@ def render_suite(label: str, classes: dict[str, TestClass]) -> list[str]:
     return lines
 
 
-def build_markdown(suite_data: list[tuple[str, dict[str, TestClass]]]) -> str:
-    """Build the full Markdown document for all suites."""
+def build_markdown(suite_data: list[tuple[str, dict[str, TestClass], str]]) -> str:
+    """Build the full Markdown document for all suites.
+
+    Each suite tuple is ``(label, classes, outcome)`` where *outcome* is the
+    GitHub Actions step outcome (empty when unknown).
+    """
     lines: list[str] = ["## Test Results", ""]
-    for label, classes in suite_data:
-        lines.extend(render_suite(label, classes))
+    for label, classes, outcome in suite_data:
+        lines.extend(render_suite(label, classes, outcome))
     return "\n".join(lines)
 
 
@@ -151,14 +186,16 @@ def build_markdown(suite_data: list[tuple[str, dict[str, TestClass]]]) -> str:
 
 _USAGE = (
     "usage: summarize_test_results.py "
-    "<dir> --suite-label <name> [<dir> --suite-label <name> ...]"
+    "<dir> --suite-label <name> [--outcome <value>] "
+    "[<dir> --suite-label <name> [--outcome <value>] ...]"
 )
 
 
-def parse_args(argv: list[str]) -> list[tuple[Path, str]]:
-    """Parse argv into a list of (directory, label) pairs.
+def parse_args(argv: list[str]) -> list[SuiteSpec]:
+    """Parse argv into a list of SuiteSpec.
 
-    Expected pattern: <dir> --suite-label <name> [<dir> --suite-label <name> ...]
+    Each suite is ``<dir> --suite-label <name>`` with an optional trailing
+    ``--outcome <value>`` carrying the GitHub Actions step outcome.
 
     Raises SystemExit(2) on bad input (matching argparse convention).
     """
@@ -167,37 +204,42 @@ def parse_args(argv: list[str]) -> list[tuple[Path, str]]:
         print(_USAGE)
         raise SystemExit(0)
 
-    pairs: list[tuple[Path, str]] = []
+    specs: list[SuiteSpec] = []
     tokens = list(argv)
     i = 0
     while i < len(tokens):
         directory = tokens[i]
         # We need tokens[i], tokens[i+1], and tokens[i+2] to all be present.
-        if i + 3 > len(tokens):
+        if i + 3 > len(tokens) or tokens[i + 1] != "--suite-label":
             print(
                 f"error: expected --suite-label <name> after '{directory}'\n{_USAGE}",
                 file=sys.stderr,
             )
             raise SystemExit(2)
-        flag = tokens[i + 1]
         label = tokens[i + 2]
-        if flag != "--suite-label":
-            print(
-                f"error: expected --suite-label after '{directory}', got '{flag}'\n{_USAGE}",
-                file=sys.stderr,
-            )
-            raise SystemExit(2)
-        pairs.append((Path(directory), label))
         i += 3
 
-    if not pairs:
+        outcome = ""
+        if i < len(tokens) and tokens[i] == "--outcome":
+            if i + 1 >= len(tokens):
+                print(
+                    f"error: --outcome requires a value (suite '{label}')\n{_USAGE}",
+                    file=sys.stderr,
+                )
+                raise SystemExit(2)
+            outcome = tokens[i + 1]
+            i += 2
+
+        specs.append(SuiteSpec(Path(directory), label, outcome))
+
+    if not specs:
         print(
-            f"error: at least one <directory> --suite-label <name> pair is required\n{_USAGE}",
+            f"error: at least one <directory> --suite-label <name> spec is required\n{_USAGE}",
             file=sys.stderr,
         )
         raise SystemExit(2)
 
-    return pairs
+    return specs
 
 
 # ---------------------------------------------------------------------------
@@ -208,23 +250,24 @@ def main(argv: list[str] | None = None) -> int:
     if argv is None:
         argv = sys.argv[1:]
 
-    pairs = parse_args(argv)
+    specs = parse_args(argv)
 
-    suite_data: list[tuple[str, dict[str, TestClass]]] = []
-    for directory, label in pairs:
+    suite_data: list[tuple[str, dict[str, TestClass], str]] = []
+    for spec in specs:
+        directory = spec.directory
         if not directory.exists():
             print(
                 f"Note: result directory not found, skipping: {directory}",
                 file=sys.stderr,
             )
-            suite_data.append((label, {}))
+            suite_data.append((spec.label, {}, spec.outcome))
             continue
         if not directory.is_dir():
             print(
                 f"Note: path is not a directory, skipping: {directory}",
                 file=sys.stderr,
             )
-            suite_data.append((label, {}))
+            suite_data.append((spec.label, {}, spec.outcome))
             continue
 
         classes = parse_directory(directory)
@@ -233,7 +276,7 @@ def main(argv: list[str] | None = None) -> int:
                 f"Note: no TEST-*.xml files found in {directory}",
                 file=sys.stderr,
             )
-        suite_data.append((label, classes))
+        suite_data.append((spec.label, classes, spec.outcome))
 
     markdown = build_markdown(suite_data)
 
