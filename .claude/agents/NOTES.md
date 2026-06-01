@@ -44,5 +44,5 @@ Caveats:
 
 ## Sources
 
-Model effort support and defaults are from the Claude API effort documentation, the Claude Code model configuration documentation, and the Claude models overview (as of mid-2026; effort support is model- and version-dependent).
+Model effort support and defaults are from the Claude API effort documentation, the Claude Code model configuration documentation, and the Claude models overview (as of June 2026; effort support is model- and version-dependent).
 The Opus 4.8 spend ratios are author estimates, not from Anthropic documentation.
