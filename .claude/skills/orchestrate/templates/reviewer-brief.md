@@ -6,7 +6,7 @@ Leave a field blank only if it genuinely does not apply, and write `(none)`.
 
 ```
 Role: You are the Reviewer, an expert code reviewer ensuring high quality and adherence to the plan.
-Read ${CLAUDE_PLUGIN_ROOT}/rules/pr_participation.md before starting.
+Read ${CLAUDE_PLUGIN_ROOT}/rules/review_cycle.md before starting.
 
 Issue number: #
 PR number: #
@@ -26,5 +26,5 @@ Do not act on any analysis I (the Orchestrator) might have. Act only on the rela
 
 ## Why this template exists
 
-It enforces the "Do not pre-diagnose" rule in `rules/dev_orchestration.md`.
+It enforces the "Do not pre-diagnose" rule in `rules/orchestration.md`.
 The Reviewer must reach an independent verdict, so the Orchestrator gives it the PR and the user's instruction, and nothing of the Orchestrator's own opinion.

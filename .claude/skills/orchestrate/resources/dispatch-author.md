@@ -2,7 +2,7 @@
 
 Read this when the issue is ready for implementation work.
 
-The binding rules are in the "Assigning a Programmer" section of `rules/dev_orchestration.md`.
+The binding rules are in the "Assigning a Programmer" section of `rules/orchestration.md`.
 This resource adds only the mechanics specific to the skill.
 
 ## Steps
@@ -14,7 +14,7 @@ This resource adds only the mechanics specific to the skill.
 
 ## Resuming instead of replacing
 
-For follow-up rounds, prefer resuming the existing Author over spawning a replacement, per the Delegation rules in `rules/dev_orchestration.md`.
+For follow-up rounds, prefer resuming the existing Author over spawning a replacement, per the Delegation rules in `rules/orchestration.md`.
 When you resume, you still route through the template so the new instruction is scoped and free of your own diagnosis.
 
 ## Timing
@@ -24,7 +24,7 @@ For convenience, `${CLAUDE_PLUGIN_ROOT}/scripts/dispatch_timer.py mark` prints a
 
 ## Delegation rules (summary)
 
-The full Delegation rules are in `rules/dev_orchestration.md`. The ones you are most likely to need mid-dispatch:
+The full Delegation rules are in `rules/orchestration.md`. The ones you are most likely to need mid-dispatch:
 
 - **Resume, do not replace.** For follow-up rounds (or if an agent exits with work unfinished), resume the existing Author with `SendMessage` addressed to that agent's ID, which preserves its full prior context. Only if the ID is unavailable or resumption fails do you spawn a replacement and reconstruct context from the PR, issue, and prior comments.
 - **One branch per ticket; separate sub-agents per ticket.** Never point two unrelated issues at the same branch or the same Author.

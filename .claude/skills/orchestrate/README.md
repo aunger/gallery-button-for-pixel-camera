@@ -44,12 +44,12 @@ agents/                     Discrete agent definitions (frontmatter + system pro
   author.md
   reviewer.md
   ci-watcher.md
-rules/                      The binding workflow and conduct rules (moved out of /agents).
-  dev_orchestration.md
-  inaugurate.md
-  pr_participation.md
-  pr_creation.md
-  code_edit.md
+rules/                      The binding workflow and conduct rules, reorganized by audience.
+  orchestration.md          Orchestrator role, dispatch, conditional approval, delegation, abort.
+  ci_monitor.md             CI Monitor loop, poller interface, outcome vocabulary (split from orchestration).
+  inaugurate.md             Fresh-start protocol for an unworked issue.
+  review_cycle.md           Reviewer and Author conduct during the review cycle.
+  authoring.md              Author rules: code edits, commit hygiene, tests, and PR creation.
   task_complexity.md        Model-tier rubric (rough draft; not yet in use).
 resources/                  Progressive-revelation prose, one per phase.
   intake.md
@@ -78,6 +78,19 @@ tests/                      Unit tests for the scripts and hooks.
 ```
 
 ## Design notes
+
+### Rules are organized by audience, not by their old `/agents` filenames
+
+The six documents that used to live in the repo's `/agents` folder were
+reorganized for the plugin rather than dumped in verbatim. `code_edit.md` and
+`pr_creation.md`, which both addressed the Author, were combined into
+`authoring.md`. `pr_participation.md` was renamed `review_cycle.md` to name what
+it governs. `dev_orchestration.md` became `orchestration.md`, and its
+self-contained CI Monitor section (the loop, the poller's flag interface, and
+the line-by-line outcome vocabulary) was split into `ci_monitor.md` because that
+is the reference the `ci-watcher` agent and the Phase 4 resource navigate to
+directly. The result is one file per audience or concern, so an agent reads only
+the document its role needs.
 
 ### The CI Watcher lives in the plugin
 

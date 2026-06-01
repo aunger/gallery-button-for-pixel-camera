@@ -1,6 +1,6 @@
 # Resource: Model selection
 
-A summary of the Model selection rules in `rules/dev_orchestration.md`. The linked section governs.
+A summary of the Model selection rules in `rules/orchestration.md`. The linked section governs.
 
 Use the first rule that applies, per role:
 

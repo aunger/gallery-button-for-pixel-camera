@@ -2,7 +2,7 @@
 
 Read this after the Reviewer approves (or conditional approval has been resolved to an approval).
 
-The binding rules are in the "CI checking after a Reviewer exits (Monitor loop)" section of `rules/dev_orchestration.md`, including the full outcome vocabulary and per-test filter flags.
+The binding rules are in `rules/ci_monitor.md`, including the full outcome vocabulary and per-test filter flags.
 This resource adds only the mechanics specific to the skill.
 
 ## The poller
@@ -28,11 +28,11 @@ Relay `in_progress`, `step`, `FAIL`, `SKIP`, and `PASS` lines to the user as inf
 
 ## Targeted validation
 
-To confirm a task-relevant test actually ran and passed (not silently skipped), pass `--include-pass 'YourTestName'`. See the per-test filter table in `rules/dev_orchestration.md`.
+To confirm a task-relevant test actually ran and passed (not silently skipped), pass `--include-pass 'YourTestName'`. See the per-test filter table in `rules/ci_monitor.md`.
 
 ## Post-clear verification workflow
 
-Triggered only after Reviewer approval **and** a `Clear` line. The shape is: ask, then plan, then review, then execute. The binding version is the numbered procedure in the "CI checking after a Reviewer exits" section of `rules/dev_orchestration.md`; this is the routing summary.
+Triggered only after Reviewer approval **and** a `Clear` line. The shape is: ask, then plan, then review, then execute. The binding version is the numbered procedure in the "CI checking after a Reviewer exits" section of `rules/ci_monitor.md`; the full nine steps are reproduced here.
 
 1. Scan the issue description, the PR description, and all comments on both for verification steps, acceptance criteria, or manual test instructions that are **not** already covered by automated tests.
 2. If none are found, the PR may be merged; you are done.

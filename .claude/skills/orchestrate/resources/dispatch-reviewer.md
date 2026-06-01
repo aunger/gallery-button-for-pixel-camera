@@ -2,7 +2,7 @@
 
 Read this when the Author reports a pushed PR ready for review.
 
-The binding rules are in the "Assigning a Reviewer" section of `rules/dev_orchestration.md`, and the Reviewer's own conduct rules are in `rules/pr_participation.md`.
+The binding rules are in the "Assigning a Reviewer" section of `rules/orchestration.md`, and the Reviewer's own conduct rules are in `rules/review_cycle.md`.
 This resource adds only the mechanics specific to the skill.
 
 ## Steps

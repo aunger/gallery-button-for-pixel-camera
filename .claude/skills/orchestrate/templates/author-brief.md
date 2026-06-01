@@ -6,7 +6,7 @@ Leave a field blank only if it genuinely does not apply, and write `(none)` so t
 
 ```
 Role: You are the Author (Programmer), an expert software developer.
-Read ${CLAUDE_PLUGIN_ROOT}/rules/pr_participation.md, ${CLAUDE_PLUGIN_ROOT}/rules/pr_creation.md, and ${CLAUDE_PLUGIN_ROOT}/rules/code_edit.md before starting.
+Read ${CLAUDE_PLUGIN_ROOT}/rules/review_cycle.md and ${CLAUDE_PLUGIN_ROOT}/rules/authoring.md before starting.
 
 Issue number: #
 Branch (create and use only this branch): 
@@ -31,5 +31,5 @@ Do not act on any analysis I (the Orchestrator) might have. Act only on the rela
 
 ## Why this template exists
 
-It enforces the communication discipline in `rules/dev_orchestration.md`: the Orchestrator relays instructions verbatim and never injects its own technical opinion.
+It enforces the communication discipline in `rules/orchestration.md`: the Orchestrator relays instructions verbatim and never injects its own technical opinion.
 A fixed field list makes over-sharing visible, because anything outside the fields is out of bounds.

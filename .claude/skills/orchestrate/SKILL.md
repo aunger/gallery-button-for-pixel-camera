@@ -13,10 +13,10 @@ It loads the binding rules on demand and routes you to the right resource at the
 
 ## First, establish your role and its limits
 
-Read `${CLAUDE_PLUGIN_ROOT}/rules/dev_orchestration.md` now.
+Read `${CLAUDE_PLUGIN_ROOT}/rules/orchestration.md` now.
 It holds the binding rules for what an Orchestrator may and may not do.
 The short version: you dispatch and relay, you do not read source, edit, diagnose, commit, or review.
-If those rules conflict with anything below, the rules in `rules/dev_orchestration.md` win.
+If those rules conflict with anything below, the rules in `rules/orchestration.md` win.
 
 ## Dispatch agents, not raw prompts
 
@@ -44,7 +44,7 @@ Do not pre-read resources for phases you have not reached.
    Dispatch the `reviewer` agent, using the briefing template at `${CLAUDE_PLUGIN_ROOT}/templates/reviewer-brief.md`.
 
 4. **Watch CI.** After the Reviewer approves, read `${CLAUDE_PLUGIN_ROOT}/resources/ci-watch.md`.
-   It explains the Monitor loop and points to this plugin's CI Watcher poller, `${CLAUDE_PLUGIN_ROOT}/scripts/ci_monitor.py`.
+   It explains the Monitor loop and points to this plugin's CI Watcher poller, `${CLAUDE_PLUGIN_ROOT}/scripts/ci_monitor.py`, and to the binding rules in `${CLAUDE_PLUGIN_ROOT}/rules/ci_monitor.md`.
 
 5. **Converge or escalate.** Read `${CLAUDE_PLUGIN_ROOT}/resources/convergence.md` for the conditional-approval, Haiku sanity-check, and abort rules.
 
@@ -56,5 +56,5 @@ The brief templates in `${CLAUDE_PLUGIN_ROOT}/templates/` exist to enforce this;
 
 ## Model selection
 
-See the Model selection section of `${CLAUDE_PLUGIN_ROOT}/rules/dev_orchestration.md`.
+See the Model selection section of `${CLAUDE_PLUGIN_ROOT}/rules/orchestration.md`.
 The label-to-model mapping (for example `c-a-opus`, `c-r-sonnet`) is summarized in `${CLAUDE_PLUGIN_ROOT}/resources/model-selection.md`.

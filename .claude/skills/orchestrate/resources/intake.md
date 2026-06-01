@@ -15,7 +15,7 @@ Read this when you are starting the workflow and need to decide whether work alr
 
 ## Multiple issues at once
 
-If the user asks you to orchestrate more than one independent issue, you may **dispatch in parallel** (per the Delegation rules in `rules/dev_orchestration.md` and the Parallel dispatch section of `rules/inaugurate.md`).
+If the user asks you to orchestrate more than one independent issue, you may **dispatch in parallel** (per the Delegation rules in `rules/orchestration.md` and the Parallel dispatch section of `rules/inaugurate.md`).
 Each parallel issue must have its **own distinct branch and worktree** and its **own independent Author and Reviewer**.
 Verify the branch names differ before sending the parallel dispatch; never point two unrelated issues at the same branch.
 

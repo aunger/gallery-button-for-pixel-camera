@@ -2,7 +2,7 @@
 
 Read this to route a Reviewer verdict and to know when to stop.
 
-The binding rules are the "Conditional approval", "Author disagreement", and "When to abort" sections of `rules/dev_orchestration.md`.
+The binding rules are the "Conditional approval", "Author disagreement", and "When to abort" sections of `rules/orchestration.md`.
 This resource is a routing summary; the linked sections govern.
 
 ## Routing a verdict
@@ -13,7 +13,7 @@ This resource is a routing summary; the linked sections govern.
 
 ## Author disagreement is normal, not a stall
 
-The Author is permitted to disagree with a review point and make its case in PR comments rather than acquiescing (see the "Author disagreement" section of `rules/dev_orchestration.md`).
+The Author is permitted to disagree with a review point and make its case in PR comments rather than acquiescing (see the "Author disagreement" section of `rules/orchestration.md`).
 When this happens during a cycle, do not treat it as a stall or a failure to converge. Relay the exchange between Author and Reviewer verbatim and let the cycle continue.
 It counts toward the abort threshold only as one of the normal Author/Reviewer rounds (see "When to abort" below).
 

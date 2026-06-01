@@ -14,7 +14,7 @@ location-independent.
 
 A `PreToolUse` guard that reads the hook JSON object on stdin and reminds the
 Orchestrator not to edit, write, or commit files itself, nor read source through
-the shell (per `rules/dev_orchestration.md`). It is advisory by default (prints
+the shell (per `rules/orchestration.md`). It is advisory by default (prints
 to stderr, exits 0). Set `ORCHESTRATE_GUARD_BLOCK=1` to make it a hard block
 (exit 2) for the forbidden tools `Edit`, `Write`, and `NotebookEdit`. The Bash
 source-reading advisory never hard-blocks, because its heuristic can have false

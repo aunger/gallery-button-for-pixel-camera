@@ -2,7 +2,7 @@
 # ci_monitor.sh — Poll a PR's CI and stream a terminal outcome plus per-test signals.
 #
 # Superseded by ci_monitor.py (the plugin's live CI Watcher); kept for reference.
-# Invoked by the Orchestrator's Monitor tool call (see rules/dev_orchestration.md).
+# Invoked by the Orchestrator's Monitor tool call (see rules/ci_monitor.md).
 # Each stdout line is consumed as a task-notification event, so output is the
 # interface: terminal outcome lines end the loop, while informational lines
 # (in_progress heartbeat, per-step deltas, per-test FAILs) keep it alive.

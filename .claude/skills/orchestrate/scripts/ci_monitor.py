@@ -2,7 +2,7 @@
 """ci_monitor.py — Poll a PR's CI and stream a terminal outcome plus per-test signals.
 
 Invoked by the Orchestrator's Monitor tool call (see the CI Watcher rules in
-this plugin's rules/dev_orchestration.md). Each stdout line is consumed as a
+this plugin's rules/ci_monitor.md). Each stdout line is consumed as a
 task-notification event, so output is the interface: terminal outcome lines end
 the loop, while informational lines (in_progress heartbeat, per-step deltas,
 per-test FAILs) keep it alive.
