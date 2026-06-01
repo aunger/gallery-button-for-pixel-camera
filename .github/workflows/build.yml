@@ -115,6 +115,18 @@ jobs:
             bash "$test_script"
           done
 
+      - name: Run orchestrate skill Python tests
+        run: |
+          python3 -m unittest discover \
+            -s .claude/skills/orchestrate/tests -p "test_*.py" -v
+
+      - name: Run orchestrate skill shell tests
+        run: |
+          for test_script in .claude/skills/orchestrate/tests/test_*.sh; do
+            echo "==> Running $test_script"
+            bash "$test_script"
+          done
+
       - name: Grant execute permission for gradlew
         if: steps.diff_check.outputs.needs_full_build == 'true'
         run: chmod +x gradlew

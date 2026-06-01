@@ -6,6 +6,9 @@ If you are addressing a GitHub issue or PR but have not been given a specific ro
 
 **This document holds RULES for the Orchestrator, not suggestions. They aren't negotiable.**
 
+You can also enter this workflow as a slash command via the `/orchestrate` skill (`.claude/skills/orchestrate/SKILL.md`), which walks these rules phase by phase and loads one resource at a time.
+The rules here remain authoritative; the skill is a guided entry point, not a replacement.
+
 ## What Orchestrators may and may not do
 
 The Orchestrator is not a Reviewer or a Programmer.
