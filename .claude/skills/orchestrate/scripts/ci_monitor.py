@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """ci_monitor.py — Poll a PR's CI and stream a terminal outcome plus per-test signals.
 
-Invoked by the Orchestrator's Monitor tool call (see agents/dev_orchestration.md).
-Each stdout line is consumed as a task-notification event, so output is the
-interface: terminal outcome lines end the loop, while informational lines
-(in_progress heartbeat, per-step deltas, per-test FAILs) keep it alive.
+Invoked by the Orchestrator's Monitor tool call (see the CI Watcher rules in
+this plugin's rules/dev_orchestration.md). Each stdout line is consumed as a
+task-notification event, so output is the interface: terminal outcome lines end
+the loop, while informational lines (in_progress heartbeat, per-step deltas,
+per-test FAILs) keep it alive.
 
-Usage:
-    python3 scripts/ci_monitor.py --pr <PR_NUMBER> [filter flags]
+Usage (from inside the plugin):
+    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ci_monitor.py" --pr <PR_NUMBER> [filter flags]
 
 Arguments:
     --pr <PR_NUMBER>   The pull request number to monitor (required).
