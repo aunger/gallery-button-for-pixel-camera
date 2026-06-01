@@ -59,7 +59,7 @@ Scores are listed as: task type / ambiguity / context / domain / reasoning / inv
 ### Tier 1 — Haiku (6–8)
 
 **#254 / PR #269 — Add reviewer rule: don't mention bylines** (Author: 6, Reviewer: 6)
-Single `agents/` file, exact wording provided, no reasoning required.
+Single `rules/` file, exact wording provided, no reasoning required.
 Author: 1 / 1 / 1 / 1 / 1 / 1 — Reviewer: 1 / 1 / 1 / 1 / 1 / 1
 
 **#250 / PR #251 — Make `requests` import hard** (Author: 6, Reviewer: 6)
