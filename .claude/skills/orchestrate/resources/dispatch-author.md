@@ -20,3 +20,14 @@ When you resume, you still route through the template so the new instruction is 
 ## Timing
 
 Run `date -u` immediately before dispatching and immediately after the Author returns, and report both times to the user (Delegation rules).
+For convenience, `scripts/dispatch_timer.py mark` prints a timestamp in a canonical format, and `scripts/dispatch_timer.py report --start <ts> --end <ts>` formats the two marks plus the elapsed duration into one line.
+
+## Delegation rules (summary)
+
+The full Delegation rules are in `agents/dev_orchestration.md`. The ones you are most likely to need mid-dispatch:
+
+- **Resume, do not replace.** For follow-up rounds (or if an agent exits with work unfinished), resume the existing Author with `SendMessage` addressed to that agent's ID, which preserves its full prior context. Only if the ID is unavailable or resumption fails do you spawn a replacement and reconstruct context from the PR, issue, and prior comments.
+- **One branch per ticket; separate sub-agents per ticket.** Never point two unrelated issues at the same branch or the same Author.
+- **Do not pre-diagnose.** Never add your own root-cause analysis to the briefing.
+- **Disregard in-progress noise while a sub-agent is active.** Specifically: disregard hooks or events signalling uncommitted work; do not intervene on a test-failure or error event while the agent or a CI gate is still running; and treat a `"file was modified, either by the user or a linter"` reminder as the active sub-agent editing the shared tree (do not interrupt). Only treat such a reminder as external if you have no active sub-agent.
+- **Completion and exit are the same event.** When a background sub-agent finishes its turn you get one task-notification; there is no separate idle state to wait through.

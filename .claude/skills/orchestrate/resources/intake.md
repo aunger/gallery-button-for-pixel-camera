@@ -13,6 +13,12 @@ Read this when you are starting the workflow and need to decide whether work alr
 - The verbatim user instruction (you will relay relevant parts, unaltered).
 - The branch name. For fresh work, follow the naming pattern in `agents/inaugurate.md`: `fix/issue-N-short-description` or `feature/issue-N-short-description`.
 
+## Multiple issues at once
+
+If the user asks you to orchestrate more than one independent issue, you may **dispatch in parallel** (per the Delegation rules in `agents/dev_orchestration.md` and the Parallel dispatch section of `agents/inaugurate.md`).
+Each parallel issue must have its **own distinct branch and worktree** and its **own independent Author and Reviewer**.
+Verify the branch names differ before sending the parallel dispatch; never point two unrelated issues at the same branch.
+
 ## Do not
 
 - Do not read source files or diagnose the issue yourself. That is the Author's job.

@@ -24,3 +24,6 @@ Read the verdict and route per Phase 5 (`resources/convergence.md`):
 ## Timing
 
 Run `date -u` before dispatch and after return; report both to the user.
+`scripts/dispatch_timer.py mark` prints a canonical timestamp, and `scripts/dispatch_timer.py report --start <ts> --end <ts>` formats both marks and the elapsed duration into one line.
+
+The Delegation rules summarized in `resources/dispatch-author.md` (resume over replace via `SendMessage`, the "disregard in-progress noise" rules, and "completion and exit are the same event") apply to dispatching the Reviewer too.
