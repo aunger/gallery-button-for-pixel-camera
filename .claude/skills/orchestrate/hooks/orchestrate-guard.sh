@@ -3,7 +3,7 @@
 #
 # Purpose: enforce the Orchestrator boundary just in time. The Orchestrator
 # may dispatch and relay, but may not read source, edit files, commit, or push
-# (see agents/dev_orchestration.md, "What Orchestrators may and may not do").
+# (see rules/dev_orchestration.md, "What Orchestrators may and may not do").
 # This hook surfaces a reminder when such a tool is about to run while the
 # orchestrate workflow is active. It is advisory by default: it prints guidance
 # to stderr and exits 0 so the human-in-the-loop decides. Set
@@ -23,7 +23,7 @@
 # Bash is handled separately. The rules forbid the Orchestrator from reading
 # source files even via the shell ("Read source files (Read, Bash cat/grep,
 # etc.)"), but the Orchestrator legitimately runs other Bash commands (date -u,
-# dispatch_timer.py, ci_watch.sh, git branch). We therefore cannot treat Bash
+# dispatch_timer.py, ci_monitor.py, git branch). We therefore cannot treat Bash
 # itself as forbidden. Instead we inspect the command string and emit an
 # advisory only when it looks like source-file reading. Because that heuristic
 # can have false positives, a Bash advisory NEVER hard-blocks, even when
@@ -96,7 +96,7 @@ main() {
     case " $FORBIDDEN " in
         *" $tool "*)
             printf '[orchestrate-guard] Orchestrator boundary: "%s" edits or writes files.\n' "$tool" >&2
-            printf '[orchestrate-guard] Per agents/dev_orchestration.md, dispatch an Author to do this; do not edit, commit, or push yourself.\n' >&2
+            printf '[orchestrate-guard] Per rules/dev_orchestration.md, dispatch an Author to do this; do not edit, commit, or push yourself.\n' >&2
             if [ "${ORCHESTRATE_GUARD_BLOCK:-0}" = "1" ]; then
                 exit 2
             fi
@@ -111,7 +111,7 @@ main() {
         command="$(printf '%s' "$payload" | extract_bash_command)"
         if [ -n "$command" ] && bash_reads_source "$command"; then
             printf '[orchestrate-guard] Orchestrator boundary: this Bash command looks like it reads source files.\n' >&2
-            printf '[orchestrate-guard] Per agents/dev_orchestration.md, the Orchestrator does not read source (Read, Bash cat/grep, etc.); dispatch an Author or Reviewer instead.\n' >&2
+            printf '[orchestrate-guard] Per rules/dev_orchestration.md, the Orchestrator does not read source (Read, Bash cat/grep, etc.); dispatch an Author or Reviewer instead.\n' >&2
         fi
         exit 0
     fi

@@ -2,7 +2,7 @@
 
 Read this when the Author reports a pushed PR ready for review.
 
-The binding rules are in the "Assigning a Reviewer" section of `agents/dev_orchestration.md`, and the Reviewer's own conduct rules are in `agents/pr_participation.md`.
+The binding rules are in the "Assigning a Reviewer" section of `rules/dev_orchestration.md`, and the Reviewer's own conduct rules are in `rules/pr_participation.md`.
 This resource adds only the mechanics specific to the skill.
 
 ## Steps
@@ -24,6 +24,6 @@ Read the verdict and route per Phase 5 (`resources/convergence.md`):
 ## Timing
 
 Run `date -u` before dispatch and after return; report both to the user.
-`scripts/dispatch_timer.py mark` prints a canonical timestamp, and `scripts/dispatch_timer.py report --start <ts> --end <ts>` formats both marks and the elapsed duration into one line.
+`${CLAUDE_PLUGIN_ROOT}/scripts/dispatch_timer.py mark` prints a canonical timestamp, and `${CLAUDE_PLUGIN_ROOT}/scripts/dispatch_timer.py report --start <ts> --end <ts>` formats both marks and the elapsed duration into one line.
 
 The Delegation rules summarized in `resources/dispatch-author.md` (resume over replace via `SendMessage`, the "disregard in-progress noise" rules, and "completion and exit are the same event") apply to dispatching the Reviewer too.

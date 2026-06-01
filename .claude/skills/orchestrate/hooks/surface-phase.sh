@@ -22,7 +22,16 @@
 
 set -u
 
-SKILL_ROOT="${ORCHESTRATE_SKILL_ROOT:-.claude/skills/orchestrate}"
+# Resolve the plugin root. Precedence: explicit test override, then the
+# CLAUDE_PLUGIN_ROOT the harness exports when this runs as a plugin hook, then
+# the script's own location (hooks/.. = plugin root).
+if [ -n "${ORCHESTRATE_SKILL_ROOT:-}" ]; then
+    SKILL_ROOT="$ORCHESTRATE_SKILL_ROOT"
+elif [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
+    SKILL_ROOT="$CLAUDE_PLUGIN_ROOT"
+else
+    SKILL_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+fi
 
 phase_resource() {
     case "$1" in

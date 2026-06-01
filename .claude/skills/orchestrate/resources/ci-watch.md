@@ -2,16 +2,16 @@
 
 Read this after the Reviewer approves (or conditional approval has been resolved to an approval).
 
-The binding rules are in the "CI checking after a Reviewer exits (Monitor loop)" section of `agents/dev_orchestration.md`, including the full outcome vocabulary and per-test filter flags.
+The binding rules are in the "CI checking after a Reviewer exits (Monitor loop)" section of `rules/dev_orchestration.md`, including the full outcome vocabulary and per-test filter flags.
 This resource adds only the mechanics specific to the skill.
 
 ## The poller
 
-The canonical poll loop lives at `scripts/ci_monitor.py` (repo root, not inside the skill, so that both the slash-command flow and the standalone `agents/` flow share one tested implementation).
-Run it from the repo root via a Monitor tool call:
+The CI Watcher poll loop ships inside this plugin at `${CLAUDE_PLUGIN_ROOT}/scripts/ci_monitor.py`.
+Prefer dispatching the `ci-watcher` agent (it already knows how to run this); if you run it directly, launch it via a Monitor tool call:
 
 ```bash
-python3 scripts/ci_monitor.py --pr <PR_NUMBER>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ci_monitor.py" --pr <PR_NUMBER>
 ```
 
 Launch it with `run_in_background: true` and `timeout_ms: 1800000` (the 30-minute escalation threshold is enforced by the timeout, not inside the script).
@@ -28,11 +28,11 @@ Relay `in_progress`, `step`, `FAIL`, `SKIP`, and `PASS` lines to the user as inf
 
 ## Targeted validation
 
-To confirm a task-relevant test actually ran and passed (not silently skipped), pass `--include-pass 'YourTestName'`. See the per-test filter table in `agents/dev_orchestration.md`.
+To confirm a task-relevant test actually ran and passed (not silently skipped), pass `--include-pass 'YourTestName'`. See the per-test filter table in `rules/dev_orchestration.md`.
 
 ## Post-clear verification workflow
 
-Triggered only after Reviewer approval **and** a `Clear` line. The shape is: ask, then plan, then review, then execute. The binding version is the numbered procedure in the "CI checking after a Reviewer exits" section of `agents/dev_orchestration.md`; this is the routing summary.
+Triggered only after Reviewer approval **and** a `Clear` line. The shape is: ask, then plan, then review, then execute. The binding version is the numbered procedure in the "CI checking after a Reviewer exits" section of `rules/dev_orchestration.md`; this is the routing summary.
 
 1. Scan the issue description, the PR description, and all comments on both for verification steps, acceptance criteria, or manual test instructions that are **not** already covered by automated tests.
 2. If none are found, the PR may be merged; you are done.

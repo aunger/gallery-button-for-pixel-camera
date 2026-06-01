@@ -1,6 +1,6 @@
 # Resource: Model selection
 
-A summary of the Model selection rules in `agents/dev_orchestration.md`. The linked section governs.
+A summary of the Model selection rules in `rules/dev_orchestration.md`. The linked section governs.
 
 Use the first rule that applies, per role:
 
@@ -22,4 +22,4 @@ Use the first rule that applies, per role:
 ## Reviewer floor
 
 The Reviewer tier is at least the Author tier minus 1.
-The full complexity rubric is in `agents/task_complexity.md` (marked draft; apply only when in use).
+The full complexity rubric is in `rules/task_complexity.md` (marked draft; apply only when in use).

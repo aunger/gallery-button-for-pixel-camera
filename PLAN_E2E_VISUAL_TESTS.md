@@ -246,7 +246,7 @@ All tests `saveForArtifact` every screenshot and every binary mask used in class
 
 ## Phase 7 — Commit organization
 
-Per `agents/code_edit.md`, split by concern, not by file:
+Per `.claude/skills/orchestrate/rules/code_edit.md`, split by concern, not by file:
 
 1. `:e2e-mock-gallery` module skeleton + adaptive icon assets.
 2. `LastPhotoActivity` + MediaStore query.
@@ -270,7 +270,7 @@ The six prescribed concerns were delivered as separate phase PRs, each of which 
 | 5. `E2EFixture` extensions | #166 | `d7f0522` Add E2EFixture extensions for Phase 4 |
 | 6. `GalleryButtonVisualE2ETest` + Gradle task wiring + artifact upload | #167, #172 | `d693d64` Add GalleryButtonVisualE2ETest; `a3587b7` fix artifact path (note: #169 was reverted by commit `9e61290` and replaced by #172) |
 
-Each phase PR built and passed unit tests before merging (see CI status on each PR). The prescribed concern-based split from `agents/code_edit.md` is satisfied: no concern mixes unrelated file changes, no pure-refactor commits are bundled with functional changes.
+Each phase PR built and passed unit tests before merging (see CI status on each PR). The prescribed concern-based split from `.claude/skills/orchestrate/rules/code_edit.md` is satisfied: no concern mixes unrelated file changes, no pure-refactor commits are bundled with functional changes.
 
 ## Risks and known red lights
 

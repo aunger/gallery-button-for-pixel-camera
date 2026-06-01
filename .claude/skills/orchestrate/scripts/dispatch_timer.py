@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""dispatch_timer.py--Report sub-agent dispatch timing for the /orchestrate skill.
+"""dispatch_timer.py--Report sub-agent dispatch timing for the orchestrate plugin.
 
-The Delegation rules in agents/dev_orchestration.md require the Orchestrator to
+The Delegation rules in this plugin's rules/dev_orchestration.md require the Orchestrator to
 record `date -u` immediately before dispatching a sub-agent and immediately
 after it returns, then report both times and the elapsed duration to the user.
 
