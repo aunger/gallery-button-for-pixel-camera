@@ -4,3 +4,4 @@
 - If participating in a PR or review (as Author, Reviewer, or Orchestrator), read `./agents/pr_participation.md`.
 - If creating a PR, read `./agents/pr_creation.md`.
 - If editing code, read `./agents/code_edit.md`.
+- If scanning for or planning automation of unautomated verification steps, read `./agents/verification_planning.md`.
