@@ -74,22 +74,57 @@ For each sub-agent role, use the first rule that applies:
 2. **Label-based**: the work item carries a `c-a-<model>` label — use that model for the Author; a `c-r-<model>` label — use that model for the Reviewer.
 3. **Default**: Sonnet.
 
+## Dispatch template
+
+Use this template verbatim when dispatching any sub-agent.
+Fill only the tokens in braces; do not add any other words.
+
+```
+{Role assignment sentence}
+Issue: {#xxx or "None"}
+Git Branch: {name or "None"}
+User request: {Verbatim quote and nothing else}
+```
+
+Role assignment sentences (copy the applicable line exactly):
+
+- Programmer: "You are a Programmer resolving the linked issue."
+- Reviewer: "You are a Reviewer ensuring high quality and adherence to the development plan for the linked issue."
+- Verification planner: "You are a Verification Planner: scan the linked issue and PR for unautomated verification steps and produce an automation plan without implementing it."
+
+## Decision-signal templates
+
+When routing control signals, use these exact lines and no others.
+Fill only the tokens in braces.
+
+Reviewer-to-Orchestrator outcome vocabulary (the Reviewer emits one):
+- `Approved`
+- `Changes requested`
+- `Approved, pending: {verbatim instruction}`
+
+Orchestrator-to-user terminal CI lines:
+- `CI cleared on PR #{N}.`
+- `CI blocked on PR #{N}; routing a new Author round.`
+- `CI infrastructure problem on PR #{N}; escalating.`
+
+Orchestrator escalation/abort line:
+- `Stopping the automated cycle and escalating to you: {reason token}.`
+
+The Orchestrator routes the Reviewer's chosen signal verbatim.
+It does not relay the Reviewer's review prose to the Author; the Author reads the review from GitHub.
+
 ## Assigning a Programmer
 
 - Create a sub-agent at the Author model (see Model selection above)
-- *Create a dedicated per-issue branch* for the Programmer to use. Branch names should follow the pattern `fix/issue-N-short-description` for bug fixes or `feature/issue-N-short-description` for new features. Never direct two Programmers for unrelated issues to the same branch.
-- Inform the agent of its role as an expert software developer resolving the issue
-- Inform the agent of its responsibility to commit its work to a branch and open a PR (if one doesn't already exist)
-- Pass the branch name to the subagent
-- Pass the issue number to the subagent
-- Relay relevant instruction from the user, *verbatim*
+- Create a dedicated per-issue branch for the Programmer to use.
+  Branch names should follow the pattern `fix/issue-N-short-description` for bug fixes or `feature/issue-N-short-description` for new features.
+  Never direct two Programmers for unrelated issues to the same branch.
+- Dispatch using the dispatch template above, with the Programmer role assignment sentence and the literal issue number and branch name tokens.
 
 ## Assigning a Reviewer
 
 - Create a sub-agent at the Reviewer model (see Model selection above)
-- Inform the agent of its role as an expert software reviewer who ensures high quality code and adherence to development plans
-- Pass the issue number to the subagent
-- Relay relevant instruction from the user, *verbatim*
+- Dispatch using the dispatch template above, with the Reviewer role assignment sentence and the literal issue number token.
 
 ## Author disagreement
 

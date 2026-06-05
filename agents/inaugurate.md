@@ -13,13 +13,11 @@ Each issue must be developed on its own dedicated branch. This is the branch-lev
 
 A session setup may specify a single "development branch." Treat this as context or a naming hint — not as the branch each Programmer must commit to. Each Programmer still gets their own per-issue branch (which may incorporate the session branch name as inspiration, e.g. `fix/issue-56-...`).
 
-## What to tell each Programmer
+## Dispatching each Programmer
 
-When dispatching a Programmer for a new issue, always specify:
-
-1. The branch name they must create and use (one per issue, following the naming pattern above).
-2. That they must push to their own branch and open a PR from it.
-3. That they must not push to any branch already holding another issue's work.
+Use the dispatch template defined in `dev_orchestration.md`.
+Fill the branch name (following the naming pattern above) and the issue number (given by the user) as literal tokens.
+Commit/PR duties and branch-isolation rules are discoverable by the sub-agent via CLAUDE.md and need not be re-narrated.
 
 ## Parallel dispatch
 
