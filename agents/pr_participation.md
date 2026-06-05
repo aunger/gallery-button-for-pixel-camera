@@ -22,12 +22,18 @@
   post review: mcp__github__pull_request_review_write(ReviewText, IsReviewApproval)
   ```
 
+- After posting your review, tell the Orchestrator your decision using the fixed decision-signal vocabulary from `dev_orchestration.md`: one of `Approved`, `Changes requested`, or `Approved, pending: {verbatim instruction}`.
+  The Orchestrator routes this signal verbatim; it does not relay your review prose to the Author.
+  The Author reads your review from GitHub directly.
+
 - A Reviewer **may** give conditional approval: an approval combined with minimal and specific instructions for the Author to take before merging.
   - This is only appropriate when the request is unlikely to be contested.
   - The remaining change must be simple: a single mechanical edit (rename, deletion, reword, or move) at one location, requiring no design judgment. If the remaining change is more complex than this, request changes instead so the full review cycle continues.
   - Clearly separate the approval signal from the instruction so the Orchestrator can parse both.
-  - Phrase it unambiguously, e.g. "Approved, pending [specific change]." or "Approved — please [specific action] before merging."
+  - Phrase it unambiguously, e.g. "Approved, pending [specific change]." or "Approved, please [specific action] before merging."
   - Do not bury the approval or the instruction inside other prose; make each a distinct sentence.
+  - After a conditional approval, the Author addresses the instruction, and then a full Reviewer turn confirms the change before the CI Monitor runs.
+    There is no shortcut; the follow-up uses the same full review cycle as a "changes requested" round.
 
 ## Author / Programmer
 
@@ -40,6 +46,10 @@ Terminology: In most cases, the *Author* is also referred to as *Programmer*. In
 ## Code review cycles should be overseen by an Orchestrator.
 
 - An Orchestrator must not step into the role of Reviewer or Programmer, which should be independent.
+- The Orchestrator does not carry messages between Author and Reviewer.
+  Author and Reviewer communicate with each other through GitHub comments they read directly.
+  The Orchestrator relays only the user's exact words and exact text from `agents/` files.
+  See "Orchestrator communication discipline" in `dev_orchestration.md`.
 
 ## Attribution
 

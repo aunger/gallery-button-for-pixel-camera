@@ -130,50 +130,17 @@ It does not relay the Reviewer's review prose to the Author; the Author reads th
 
 If the Author disagrees with a review point, they should make their case in PR comments rather than acquiescing.
 
-## Conditional approval
-
-A Reviewer may give **conditional approval**: an approval combined with minimal and specific instructions for the Author to take before merging. The Reviewer will phrase it unambiguously, e.g. "Approved, pending [specific change]."
-
-**Conditional approval still requires agent follow-up.** See the workflow below.
-
-```
-  if Reviewer gave conditional approval:
-    if the requested change involves multiple locations, design choices, or non-trivial logic:
-      treat as "changes requested"; route to Author, then dispatch a full-fledged Reviewer — do NOT use the Haiku shortcut
-    else:
-      route to Author to consider the specific change(s) named
-      after Author commits the targeted change:
-        spawn a Haiku sanity-check agent (model: haiku) with narrowed context:
-          - the Reviewer's specific instruction (verbatim)
-          - the Author's new diff/commit addressing it
-          - nothing else (no full PR diff, no prior review history)
-        prompt the Haiku agent with exactly:
-            > The Reviewer requested
-            > [specific change]
-            > 
-            > The Author responded with
-            > [diff]
-            >
-            > Answer one of three ways: (A) the Author fully addressed the requested change and introduced no other concerns; (B) the Author did not address the requested change (incomplete or missing work, no new concerns raised); or (C) the Author's response raises a new concern beyond the scope of the original request.
-        if Haiku answers A → treat as approved; proceed to CI Monitor loop (do NOT run another full review cycle)
-        if Haiku answers B → the PR hasn't yet converged; resume the normal cycle by routing to the full-fledged Reviewer.
-        if Haiku answers C → the PR is unstable; stop the PR cycle and escalate to the User.
-```
-
-### Haiku agent constraints
-- Do not give the Haiku agent the full PR diff or review history.
-- The Haiku agent must distinguish three outcomes: (A) fully addressed with no new concerns, (B) not addressed, or (C) new concern introduced beyond the original request.
-- If the Haiku agent responds with anything other than a clear-cut answer, then abort the PR cycle: escalate to the User.
-
 ## CI checking after a Reviewer exits (Monitor loop)
 
-After the Reviewer exits and delivers its decision, the Orchestrator acts as follows:
+After the Reviewer exits and delivers its decision, the Orchestrator acts as follows.
+Monitor output lines are relayed to the user verbatim; this is user-facing status reporting and is not governed by the say-nothing rule (which covers sub-agent messages only).
 
 ```
   if Reviewer requested changes → goto newAuthor
-  if Reviewer gave approval:
+  if Reviewer gave conditional approval → route to Author (dispatch template); then goto newReviewer (full Reviewer turn, same as changes-requested)
+  if Reviewer gave full approval:
     Orchestrator launches a Monitor tool call running `python3 scripts/ci_monitor.py --pr <PR_NUMBER>` from the repo root (run_in_background: true, timeout_ms: 1800000)
-    Each stdout line arrives as a task-notification event
+    Each stdout line arrives as a task-notification event; relay each line to the user verbatim.
     Act only on the terminal lines Clear, Blocked, or Infra. Relay in_progress lines to the user as brief status updates (the script suppresses these unless no other output has been emitted for over 120 seconds).
     Relay `step "..." -> ...` and `FAIL [...] ...` lines to the user as informational test-result deltas; they do NOT end the loop or start a new Author round.
     if Monitor emits a Blocked line  → goto newAuthor
@@ -182,32 +149,15 @@ After the Reviewer exits and delivers its decision, the Orchestrator acts as fol
     if Monitor emits a Clear line:
       // Step: Surface unautomated verification tests
       // Triggered after Reviewer approval AND CI clears (Monitor emits Clear).
-      // Workflow: ask → plan → review → execute
-      1. Scan the issue description, PR description, and all comments on both for
-         verification steps, acceptance criteria, or manual test instructions that
-         are NOT already covered by automated tests.
-      2. If none are found → PR may be merged.
-      3. Add the `verification needed` label to the PR and/or issue where
-         outstanding steps were found.
-      4. Show the user the list of outstanding unautomated verification steps.
-      5. Ask the user: "Do you want to run these tests manually, or have an agent
-         plan automation for them?"
-      6. If the user chooses manual testing or no automation → this automated orchestration is complete; PR may be merged when manual testing is complete.
-      7. Spawn a fresh sub-agent (no prior conversation context) with this briefing:
-           - The list of unautomated verification steps (from step 1)
-           - A pointer to the existing test infrastructure (test directories,
-             CI config, test framework in use)
-           - Instructions: produce a concrete automation plan — describe what to
-             automate and how, but do NOT implement anything yet.
-         The sub-agent must receive no other context from this conversation.
-      8. Reviewer check: Spawn a Reviewer agent to evaluate the automation plan
-         produced in step 7. The Reviewer approves or requests changes to the plan.
-         If changes are requested, route back to the planning sub-agent (step 7)
-         with the Reviewer's feedback. Repeat until the plan is approved.
-      9. Execute: Once the automation plan is approved by the Reviewer, dispatch
-         an Author agent to implement the automation. Follow the normal
-         Author → Reviewer → CI Monitor cycle for the resulting changes.
-      → PR may be merged after the automation Author's work clears CI.
+      // Dispatch the verification planner (see verification_planning.md).
+      // The Orchestrator does not scan the issue or PR itself.
+      Dispatch a Verification Planner sub-agent using the dispatch template.
+      Relay the user's choice (manual testing or automation) to the planner verbatim.
+      If the user opts for automation and the planner produces a plan:
+        Dispatch a Reviewer to evaluate the plan; follow the normal Reviewer loop.
+        Once the plan is approved, dispatch an Author to implement it.
+        Follow the normal Author -> Reviewer -> CI Monitor cycle for the resulting changes.
+      → PR may be merged after the automation Author's work clears CI (or immediately if the user opts for manual testing or no automation).
 ```
 
 ### Monitor script
@@ -270,7 +220,7 @@ This emits a `PASS` line when the matching test passes and a `SKIP` line if it w
 - For follow-up work such as subsequent rounds of edits or reviews, or if an agent exits without completing its task, **prefer resuming the existing Author or Reviewer over spawning a replacement**.
   - Use SendMessage with the original agent's ID to resume it with its full prior context intact, no reconstruction needed.
   - If the ID is no longer available or resumption fails, fall back to spawning a replacement and reconstructing context from available sources (PR, issue, prior comments).
-- **Do not pre-diagnose.** Do not include your own analysis of the root cause.
+- **Do not pre-diagnose.** Do not include your own analysis of the root cause. See "Orchestrator communication discipline" above.
 - If the Author is still active, **disregard system hooks or events that signal uncommitted work**. This is normal work; continue waiting without updating the User.
 - **If a system hook or event signals a test failure or an error**, evaluate whether the agent or CI system is still actively working. If the agent or CI gates are in progress, **do not intervene**. Continue waiting without updating the User.
 - **A `"file was modified, either by the user or a linter"` reminder while a sub-agent is active means the sub-agent is editing the shared working tree.** Disregard it, do not interrupt the agent, and continue waiting. (Only treat it as external if you have no active sub-agent.)
@@ -282,4 +232,3 @@ Stop the automated cycle and escalate to the User in these cases:
 
 - **After four rounds** of the Programmer / Reviewer loop not reaching consensus (unless the user gave a different threshold)
 - **If the Programmer gives up** or claims the issue cannot be solved as stated
-- **If the Author introduces new ideas after the Reviewer gives conditional approval**. That is, if the "sanity check" Haiku agent does not answer A or B.
