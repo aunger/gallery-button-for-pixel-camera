@@ -8,12 +8,15 @@
 
 - A *Reviewer* must not make code changes itself, but should communicate discoveries clearly enough to convince an Author of the need to change the PR.
 - A Reviewer should be explicit and fully explain any problems, but should not spend tokens to design their solutions.
-- The Reviewer may mention positive aspects of the code under review, but must be blunt and brief.
+- The Reviewer must not hold back.
+  The Reviewer may be the only one equipped to notice inconsistencies and inaccuracies.
+  Even small errors can cause misunderstandings down the road, so don't skip "nits".
 - The Reviewer need not enforce expectations written with "should" language.
-- Although **bylines** (Claude attribution, links) are prohibited, the Reviewer should not mention them in reviews.
+- Although **bylines** (Claude attribution, links) are prohibited, the Reviewer must not mention them in reviews.
+- The Reviewer may mention positive aspects of the code under review, but must be blunt and brief.
 - Our agents share the User's GitHub account, so you won't use GitHub's code review features, which require separate accounts. Leave your evaluation as an ordinary comment, and tell the Orchestrator your decision. The user and other agents know to expect this.
-- **Do not wait for CI.** Review the diff, form your verdict, and post your review immediately. The Orchestrator uses a CiWatcher agent to check CI status after you exit; you do not need to poll.
 - **If CI results are already available** when you complete your review, you may note them in your review text, but do not block on them.
+  The Orchestrator runs the CI Monitor script after you exit; you do not need to poll.
 - **Do not return before posting your review.** Posting your review is the only valid exit condition. After forming your verdict, call the review-submission tool before stopping.
 
   Review pattern:
@@ -22,12 +25,13 @@
   post review: mcp__github__pull_request_review_write(ReviewText, IsReviewApproval)
   ```
 
-- A Reviewer **may** give conditional approval: an approval combined with minimal and specific instructions for the Author to take before merging.
-  - This is only appropriate when the request is unlikely to be contested.
-  - The remaining change must be simple: a single mechanical edit (rename, deletion, reword, or move) at one location, requiring no design judgment. If the remaining change is more complex than this, request changes instead so the full review cycle continues.
-  - Clearly separate the approval signal from the instruction so the Orchestrator can parse both.
-  - Phrase it unambiguously, e.g. "Approved, pending [specific change]." or "Approved — please [specific action] before merging."
-  - Do not bury the approval or the instruction inside other prose; make each a distinct sentence.
+- After posting your review, tell the Orchestrator your decision using the fixed decision-signal vocabulary from `dev_orchestration.md`: one of `LGTM` or `Changes requested`.
+  The Orchestrator routes this signal verbatim; it does not relay your review prose to the Author.
+  The Author reads your review from GitHub directly.
+
+- Your verdict is binary: either the PR is good to merge (`LGTM`) or it needs more work (`Changes requested`).
+  There is no middle option.
+  If you want any change made before merge, request changes so the full review cycle continues.
 
 ## Author / Programmer
 
@@ -40,6 +44,10 @@ Terminology: In most cases, the *Author* is also referred to as *Programmer*. In
 ## Code review cycles should be overseen by an Orchestrator.
 
 - An Orchestrator must not step into the role of Reviewer or Programmer, which should be independent.
+- The Orchestrator does not carry messages between Author and Reviewer.
+  Author and Reviewer communicate with each other through GitHub comments they read directly.
+  The Orchestrator relays only the user's exact words and exact text from `agents/` files.
+  See "Orchestrator communication discipline" in `dev_orchestration.md`.
 
 ## Attribution
 

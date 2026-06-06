@@ -106,9 +106,11 @@ jobs:
           ANDROID_AVD_HOME="$AVD_HOME" $ANDROID_HOME/emulator/emulator -list-avds
 
       - name: Run Python script unit tests
+        if: steps.diff_check.outputs.needs_full_build == 'true'
         run: python3 -m unittest discover -s scripts -p "test_*.py" -v
 
       - name: Run shell script unit tests
+        if: steps.diff_check.outputs.needs_full_build == 'true'
         run: |
           for test_script in scripts/test_*.sh; do
             echo "==> Running $test_script"
