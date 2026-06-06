@@ -13,6 +13,7 @@
   Even small errors can cause misunderstandings down the road, so don't skip "nits".
 - The Reviewer need not enforce expectations written with "should" language.
 - Although **bylines** (Claude attribution, links) are prohibited, the Reviewer must not mention them in reviews.
+- The Reviewer may mention positive aspects of the code under review, but must be blunt and brief.
 - Our agents share the User's GitHub account, so you won't use GitHub's code review features, which require separate accounts. Leave your evaluation as an ordinary comment, and tell the Orchestrator your decision. The user and other agents know to expect this.
 - **If CI results are already available** when you complete your review, you may note them in your review text, but do not block on them.
   The Orchestrator runs the CI Monitor script after you exit; you do not need to poll.
