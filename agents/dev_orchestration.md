@@ -90,7 +90,7 @@ Role assignment sentences (copy the applicable line exactly):
 
 - Programmer: "You are a Programmer resolving the linked issue."
 - Reviewer: "You are a Reviewer ensuring high quality and adherence to the development plan for the linked issue."
-- Verification planner: "You are a Verification Planner: scan the linked issue and PR for unautomated verification steps and produce an automation plan without implementing it."
+- Verification planner: "You are a Verification Planner: scan the linked issue and PR for unautomated verification steps and out-of-repo reviewer requests, surface everything outstanding in a Before merging checklist, and produce an automation plan for the verification steps without implementing it."
 
 ## Decision-signal templates
 
@@ -147,9 +147,10 @@ Monitor output lines are relayed to the user verbatim; this is user-facing statu
     if Monitor emits an Infra line   → escalate to user; stop
     if Monitor times out (30 min)    → escalate to user; stop
     if Monitor emits a Clear line:
-      // Step: Surface unautomated verification tests
+      // Step: Surface the Before merging checklist
       // Triggered after Reviewer approval AND CI clears (Monitor emits Clear).
-      // Dispatch the verification planner (see verification_planning.md).
+      // Dispatch the verification planner (see verification_planning.md). It surfaces both
+      // unautomated verification steps and out-of-repo reviewer requests (e.g. an issue to file).
       // The Orchestrator does not scan the issue or PR itself.
       Dispatch a Verification Planner sub-agent using the dispatch template.
       Relay the user's choice (manual testing or automation) to the planner verbatim.
@@ -157,7 +158,8 @@ Monitor output lines are relayed to the user verbatim; this is user-facing statu
         Dispatch a Reviewer to evaluate the plan; follow the normal Reviewer loop.
         Once the plan is approved, dispatch an Author to implement it.
         Follow the normal Author -> Reviewer -> CI Monitor cycle for the resulting changes.
-      → PR may be merged after the automation Author's work clears CI (or immediately if the user opts for manual testing or no automation).
+      → PR may be merged once the Before merging checklist is cleared: the automation Author's work clears CI
+        (or manual testing is complete), and every out-of-repo reviewer request has been completed.
 ```
 
 ### Monitor script
