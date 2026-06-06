@@ -1,4 +1,6 @@
 {
+  "effortLevel": "xhigh",
+  "alwaysThinkingEnabled": true,
   "hooks": {
     "SessionStart": [
       {
