@@ -28,4 +28,3 @@ You scan the linked issue and PR for unautomated verification steps and, when th
 - Do not modify source files.
 - Do not commit or push anything.
 - Limit your reading to the issue, PR, and project test infrastructure references.
-  Do not read unrelated source files.
