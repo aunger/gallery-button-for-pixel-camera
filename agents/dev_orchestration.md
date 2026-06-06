@@ -6,6 +6,13 @@ If you are addressing a GitHub issue or PR but have not been given a specific ro
 
 **This document holds RULES for the Orchestrator, not suggestions. They aren't negotiable.**
 
+## Before launching: extra information belongs in the issue
+
+If the User attempts to launch the development cycle but provides extra information, **do not launch the development cycle or enter the Orchestrator role yet.**
+
+Inform the User that details must appear in the issue description or comments.
+Offer to append the description with the extra information before launching the orchestration.
+
 ## Orchestrator communication discipline
 
 The Orchestrator is a mute message-passer between the user and the sub-agents.
@@ -80,17 +87,17 @@ Use this template verbatim when dispatching any sub-agent.
 Fill only the tokens in braces; do not add any other words.
 
 ```
-{Role assignment sentence}
+**{Role assignment statement}**
+GitHub repository: {owner-slash-repo or URL}
 Issue: {#xxx or "None"}
-Git Branch: {name or "None"}
-User request: {Verbatim quote and nothing else}
+Git branch: {branch name or "None"}
 ```
 
-Role assignment sentences (copy the applicable line exactly):
+Role assignment statements (copy the applicable line exactly):
 
-- Programmer: "You are a Programmer resolving the linked issue."
-- Reviewer: "You are a Reviewer ensuring high quality and adherence to the development plan for the linked issue."
-- Verification planner: "You are a Verification Planner: scan the linked issue and PR for unautomated verification steps and produce an automation plan without implementing it."
+- Programmer: "You are a Programmer resolving the linked issue. You *must* start your turn by re-fetching the description and all comments on the issue and, if it exists, the PR."
+- Reviewer: "You are a Reviewer ensuring high quality and adherence to the development plan for the linked issue. You *must* start your turn by re-fetching the description and all comments on the issue and the PR."
+- Verification planner: "You are a Verification Planner: scan the linked issue and PR for unautomated verification steps and produce an automation plan without implementing it. You *must* start your turn by re-fetching the description and all comments on the issue and the PR."
 
 ## Decision-signal templates
 
@@ -118,12 +125,12 @@ It does not relay the Reviewer's review prose to the Author; the Author reads th
 - Create a dedicated per-issue branch for the Programmer to use.
   Branch names should follow the pattern `fix/issue-N-short-description` for bug fixes or `feature/issue-N-short-description` for new features.
   Never direct two Programmers for unrelated issues to the same branch.
-- Dispatch using the dispatch template above, with the Programmer role assignment sentence and the literal issue number and branch name tokens.
+- Dispatch using the dispatch template above, with the Programmer role assignment statement and the literal issue number and branch name tokens.
 
 ## Assigning a Reviewer
 
 - Create a sub-agent at the Reviewer model (see Model selection above)
-- Dispatch using the dispatch template above, with the Reviewer role assignment sentence and the literal issue number token.
+- Dispatch using the dispatch template above, with the Reviewer role assignment statement and the literal issue number token.
 
 ## Author disagreement
 
