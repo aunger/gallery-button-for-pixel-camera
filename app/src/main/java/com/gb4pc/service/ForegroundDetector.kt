@@ -46,8 +46,9 @@ class ForegroundDetector(
         var totalEvents = 0
         var foregroundEvents = 0
         var skippedSelfEvents = 0
-        // Tracks all distinct foreground packages seen in this window, in order of first appearance.
-        val allForegroundPackages = mutableListOf<String>()
+        // Tracks all distinct foreground packages seen in this window, in order of first appearance
+        // (Issue #324). LinkedHashSet gives O(1) deduplication while preserving insertion order.
+        val allForegroundPackages = LinkedHashSet<String>()
 
         while (events.hasNextEvent()) {
             events.getNextEvent(event)
@@ -65,9 +66,7 @@ class ForegroundDetector(
                 }
                 foregroundEvents++
                 DebugLog.log("ForegroundDetector: foreground event type=${event.eventType} pkg=${event.packageName} ts=${event.timeStamp}")
-                if (!allForegroundPackages.contains(event.packageName)) {
-                    allForegroundPackages.add(event.packageName)
-                }
+                allForegroundPackages.add(event.packageName)
                 if (event.timeStamp >= latestTimestamp) {
                     latestTimestamp = event.timeStamp
                     latestForegroundPackage = event.packageName
