@@ -95,9 +95,9 @@ Git branch: {branch name or "None"}
 
 Role assignment statements (copy the applicable line exactly):
 
-- Programmer: "You are a Programmer resolving the linked issue. You *must* start your turn by re-fetching the description and all comments on the issue and, if it exists, the PR."
-- Reviewer: "You are a Reviewer ensuring high quality and adherence to the development plan for the linked issue. You *must* start your turn by re-fetching the description and all comments on the issue and the PR."
-- Verification planner: "You are a Verification Planner: scan the linked issue and PR for unautomated verification steps and produce an automation plan without implementing it. You *must* start your turn by re-fetching the description and all comments on the issue and the PR."
+- Programmer: "You are a Programmer resolving the linked issue. You *must* start your turn by re-fetching the description and all comments on the issue and, if it exists, on the PR."
+- Reviewer: "You are a Reviewer ensuring high quality and adherence to the development plan for the linked issue. You *must* start your turn by re-fetching the description and all comments on the issue and on the PR."
+- Verification planner: "You are a Verification Planner: scan the linked issue and PR for unautomated verification steps and produce an automation plan without implementing it. You *must* start your turn by re-fetching the description and all comments on the issue and on the PR."
 
 ## Decision-signal templates
 
