@@ -98,9 +98,8 @@ When routing control signals, use these exact lines and no others.
 Fill only the tokens in braces.
 
 Reviewer-to-Orchestrator outcome vocabulary (the Reviewer emits one):
-- `Approved`
+- `LGTM`
 - `Changes requested`
-- `Approved, pending: {verbatim instruction}`
 
 Orchestrator-to-user terminal CI lines:
 - `CI cleared on PR #{N}.`
@@ -137,8 +136,7 @@ Monitor output lines are relayed to the user verbatim; this is user-facing statu
 
 ```
   if Reviewer requested changes → goto newAuthor
-  if Reviewer gave conditional approval → route to Author (dispatch template); then goto newReviewer (full Reviewer turn, same as changes-requested)
-  if Reviewer gave full approval:
+  if Reviewer gave LGTM:
     Orchestrator launches a Monitor tool call running `python3 scripts/ci_monitor.py --pr <PR_NUMBER>` from the repo root (run_in_background: true, timeout_ms: 1800000)
     Each stdout line arrives as a task-notification event; relay each line to the user verbatim.
     Act only on the terminal lines Clear, Blocked, or Infra. Relay in_progress lines to the user as brief status updates (the script suppresses these unless no other output has been emitted for over 120 seconds).
