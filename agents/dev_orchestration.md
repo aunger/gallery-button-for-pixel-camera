@@ -145,7 +145,8 @@ Monitor output lines are relayed to the user verbatim; this is user-facing statu
     if Monitor emits an Infra line   → escalate to user; stop
     if Monitor times out (30 min)    → escalate to user; stop
     if Monitor emits a Clear line:
-      // Step: Surface unautomated verification tests
+      // Step: Surface outstanding before-merging requirements
+      //   (unautomated verification tests and changes outside the repo, such as an issue that needs to be filed)
       // Triggered after Reviewer approval AND CI clears (Monitor emits Clear).
       // Dispatch the verification planner (see verification_planning.md).
       // The Orchestrator does not scan the issue or PR itself.
@@ -155,7 +156,7 @@ Monitor output lines are relayed to the user verbatim; this is user-facing statu
         Dispatch a Reviewer to evaluate the plan; follow the normal Reviewer loop.
         Once the plan is approved, dispatch an Author to implement it.
         Follow the normal Author -> Reviewer -> CI Monitor cycle for the resulting changes.
-      → PR may be merged after the automation Author's work clears CI (or immediately if the user opts for manual testing or no automation).
+      → PR may be merged once every item on the planner's before-merging list is resolved: after the automation Author's work clears CI (or immediately if the user opts for manual testing or no automation), and after any changes outside the repo have been performed.
 ```
 
 ### Monitor script
