@@ -110,14 +110,14 @@ def parse_directory(directory: Path) -> dict[str, TestClass]:
 # Markdown rendering
 # ---------------------------------------------------------------------------
 
-def render_class(cls: "TestClass") -> tuple[list[str], str, int, int, int]:
+def render_class(cls: "TestClass") -> tuple[list[str], int, int, int]:
     """Render one class as a collapsible ``<details>`` block.
 
-    Returns ``(lines, class_icon, pass_count, fail_count, skip_count)``.
+    Returns ``(lines, pass_count, fail_count, skip_count)``.
 
     Classes that fully succeeded start collapsed; classes with any failures
     start expanded (``<details open>``), so attention is drawn to them without
-    the User needing to click through every class.
+    the user needing to click through every class.
     """
     any_passed = any(tc.passed for tc in cls.cases)
     if cls.any_failed:
@@ -154,7 +154,7 @@ def render_class(cls: "TestClass") -> tuple[list[str], str, int, int, int]:
     lines.append("")
     lines.append("</details>")
     lines.append("")
-    return lines, class_icon, pass_count, fail_count, skip_count
+    return lines, pass_count, fail_count, skip_count
 
 
 def render_suite(label: str, classes: dict[str, TestClass], outcome: str = "") -> list[str]:
@@ -184,7 +184,7 @@ def render_suite(label: str, classes: dict[str, TestClass], outcome: str = "") -
     total_skip = 0
 
     for cls in classes.values():
-        class_lines, _class_icon, pass_count, fail_count, skip_count = render_class(cls)
+        class_lines, pass_count, fail_count, skip_count = render_class(cls)
         lines.extend(class_lines)
         total_pass += pass_count
         total_fail += fail_count
