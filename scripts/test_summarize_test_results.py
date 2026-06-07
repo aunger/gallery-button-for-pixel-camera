@@ -271,12 +271,12 @@ class TestRenderSuite(unittest.TestCase):
         }
         lines = srt.render_suite("Suite", classes)
         combined = "\n".join(lines)
-        # The class row must contain FAIL
-        class_row = next(
+        # The class summary line must contain FAIL
+        summary_line = next(
             line for line in lines
-            if "com.example.Mixed" in line and "**" in line
+            if "com.example.Mixed" in line and "<summary>" in line
         )
-        self.assertIn("❌ FAIL", class_row)
+        self.assertIn("❌ FAIL", summary_line)
 
     def test_skipped_case_shows_skip_icon(self):
         classes = {
@@ -318,12 +318,71 @@ class TestRenderSuite(unittest.TestCase):
             )
         }
         lines = srt.render_suite("Suite", classes)
-        class_row = next(
+        summary_line = next(
             line for line in lines
-            if "com.example.AllSkip" in line and "**" in line
+            if "com.example.AllSkip" in line and "<summary>" in line
         )
-        self.assertIn("⏭ SKIP", class_row)
-        self.assertNotIn("✅ PASS", class_row)
+        self.assertIn("⏭ SKIP", summary_line)
+        self.assertNotIn("✅ PASS", summary_line)
+
+    def test_passing_class_renders_as_collapsed_details(self):
+        """A class that fully passed starts collapsed (no ``open`` attribute)."""
+        classes = {
+            "com.example.Foo": srt.TestClass(
+                name="com.example.Foo",
+                cases=[srt.TestCase("testA", True), srt.TestCase("testB", True)],
+            )
+        }
+        lines = srt.render_suite("Unit Tests", classes)
+        combined = "\n".join(lines)
+        self.assertIn("<details>", combined)
+        self.assertNotIn("<details open>", combined)
+        self.assertIn("<summary>✅ PASS <strong>com.example.Foo</strong></summary>", combined)
+
+    def test_failing_class_renders_as_expanded_details(self):
+        """A class with any failure starts expanded (``<details open>``)."""
+        classes = {
+            "com.example.Bar": srt.TestClass(
+                name="com.example.Bar",
+                cases=[srt.TestCase("testA", True), srt.TestCase("testB", False)],
+            )
+        }
+        lines = srt.render_suite("Unit Tests", classes)
+        combined = "\n".join(lines)
+        self.assertIn("<details open>", combined)
+        self.assertIn("<summary>❌ FAIL <strong>com.example.Bar</strong></summary>", combined)
+
+    def test_all_skipped_class_renders_as_collapsed_details(self):
+        """A class with only skipped tests (no failures) starts collapsed."""
+        classes = {
+            "com.example.Skippy": srt.TestClass(
+                name="com.example.Skippy",
+                cases=[srt.TestCase("s1", False, skipped=True)],
+            )
+        }
+        lines = srt.render_suite("Unit Tests", classes)
+        combined = "\n".join(lines)
+        self.assertIn("<details>", combined)
+        self.assertNotIn("<details open>", combined)
+
+    def test_each_class_gets_its_own_details_block(self):
+        """Multiple classes each render as independent collapsible blocks."""
+        classes = {
+            "com.example.Alpha": srt.TestClass(
+                name="com.example.Alpha",
+                cases=[srt.TestCase("a1", True)],
+            ),
+            "com.example.Beta": srt.TestClass(
+                name="com.example.Beta",
+                cases=[srt.TestCase("b1", False)],
+            ),
+        }
+        lines = srt.render_suite("Suite", classes)
+        combined = "\n".join(lines)
+        self.assertEqual(combined.count("<details"), 2)
+        self.assertEqual(combined.count("</details>"), 2)
+        self.assertEqual(combined.count("<details open>"), 1)
+        self.assertEqual(combined.count("<details>"), 1)
 
 
 # ---------------------------------------------------------------------------
