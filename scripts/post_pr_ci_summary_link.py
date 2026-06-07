@@ -27,6 +27,12 @@ Environment:
     GITHUB_RUN_ID         Workflow run ID.
     GITHUB_RUN_ATTEMPT    Run attempt number (disambiguates re-runs).
     WORKFLOW_RUN_PR_URL   The triggering PR's html_url (empty on a plain push).
+    SUMMARY_WRITTEN       "true" when build-and-test actually wrote the
+                          pass/fail summary (its needs_full_build output).
+                          Docs-only PRs skip that step, so the job's
+                          "Summary" section has nothing to link to, and the
+                          comment says so instead of posting a misleading
+                          link.
     JOB_NAME              Name of the job whose summary to link (default
                           "build-and-test").
 
@@ -91,12 +97,18 @@ def find_job_id(
     return str(candidates[0]["id"])
 
 
-def build_comment_body(summary_url: str) -> str:
-    return (
-        f"{MARKER}\n"
-        f"### CI test summary\n\n"
-        f"[View the build-and-test summary for this PR's latest run]({summary_url}).\n"
-    )
+def build_comment_body(summary_url: str, summary_written: bool) -> str:
+    if summary_written:
+        link_text = "View the build-and-test summary for this PR"
+    else:
+        link_text = "View this PR's build-and-test run"
+    body = f"{MARKER}\n### CI test summary\n\n[{link_text}]({summary_url}).\n"
+    if not summary_written:
+        body += (
+            "\n(This PR did not need a full build, so no pass/fail summary "
+            "was written; the link above goes to the run itself.)\n"
+        )
+    return body
 
 
 def find_existing_comment(token: str, repository: str, pr_number: str) -> int | None:
@@ -152,6 +164,7 @@ def main(argv: list[str] | None = None) -> int:
     run_id = os.environ.get("GITHUB_RUN_ID", "")
     run_attempt = os.environ.get("GITHUB_RUN_ATTEMPT", "")
     pr_url = os.environ.get("WORKFLOW_RUN_PR_URL", "")
+    summary_written = os.environ.get("SUMMARY_WRITTEN", "") == "true"
     job_name = os.environ.get("JOB_NAME", DEFAULT_JOB_NAME)
 
     if not token or not repository:
@@ -169,11 +182,17 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Note: could not parse PR number from '{pr_url}'--skipping.", file=sys.stderr)
         return 0
 
-    job_id = find_job_id(token, repository, run_id, run_attempt, job_name)
     run_url = f"{server_url}/{repository}/actions/runs/{run_id}"
-    summary_url = f"{run_url}#summary-{job_id}" if job_id else run_url
+    if summary_written:
+        job_id = find_job_id(token, repository, run_id, run_attempt, job_name)
+        summary_url = f"{run_url}#summary-{job_id}" if job_id else run_url
+    else:
+        # No summary was written for this run (for example, a docs-only PR
+        # skips the heavy build/test steps); link to the bare run instead of
+        # an anchor that has nothing meaningful behind it.
+        summary_url = run_url
 
-    body = build_comment_body(summary_url)
+    body = build_comment_body(summary_url, summary_written)
     if upsert_comment(token, repository, pr_number, body):
         print(f"Posted CI summary link to PR #{pr_number}: {summary_url}")
     return 0

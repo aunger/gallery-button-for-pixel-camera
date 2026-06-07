@@ -38,10 +38,19 @@ class TestPrNumberFromUrl(unittest.TestCase):
 
 class TestBuildCommentBody(unittest.TestCase):
 
-    def test_includes_marker_and_link(self):
-        body = link.build_comment_body("https://example.com/run#summary-1")
+    def test_includes_marker_and_link_when_summary_written(self):
+        body = link.build_comment_body("https://example.com/run#summary-1", True)
         self.assertIn(link.MARKER, body)
         self.assertIn("https://example.com/run#summary-1", body)
+        self.assertIn("View the build-and-test summary for this PR", body)
+
+    def test_notes_missing_summary_when_not_written(self):
+        body = link.build_comment_body("https://example.com/run", False)
+        self.assertIn(link.MARKER, body)
+        self.assertIn("https://example.com/run", body)
+        # Should not claim there is a pass/fail summary to view.
+        self.assertNotIn("build-and-test summary", body)
+        self.assertIn("did not need a full build", body)
 
 
 # ---------------------------------------------------------------------------
@@ -185,6 +194,7 @@ class TestMain(unittest.TestCase):
             "GITHUB_RUN_ID": "999",
             "GITHUB_RUN_ATTEMPT": "1",
             "WORKFLOW_RUN_PR_URL": "https://github.com/owner/repo/pull/42",
+            "SUMMARY_WRITTEN": "true",
         }
         env.update(overrides)
         return env
@@ -209,6 +219,36 @@ class TestMain(unittest.TestCase):
         body = mock_upsert.call_args[0][3]
         self.assertIn("https://github.com/owner/repo/actions/runs/999", body)
         self.assertNotIn("#summary-", body)
+
+    @patch("post_pr_ci_summary_link.upsert_comment")
+    @patch("post_pr_ci_summary_link.find_job_id")
+    def test_links_to_bare_run_and_explains_when_summary_not_written(
+        self, mock_find_job, mock_upsert
+    ):
+        """Docs-only PRs skip the summary step; do not claim one exists."""
+        mock_upsert.return_value = True
+        with patch.dict(os.environ, self._env(SUMMARY_WRITTEN="false"), clear=True):
+            self.assertEqual(link.main([]), 0)
+        body = mock_upsert.call_args[0][3]
+        self.assertIn("https://github.com/owner/repo/actions/runs/999", body)
+        self.assertNotIn("#summary-", body)
+        self.assertNotIn("build-and-test summary", body)
+        self.assertIn("did not need a full build", body)
+        # The job-ID lookup is unnecessary work when there's no summary to
+        # link to anyway.
+        mock_find_job.assert_not_called()
+
+    @patch("post_pr_ci_summary_link.upsert_comment")
+    @patch("post_pr_ci_summary_link.find_job_id")
+    def test_treats_missing_summary_written_as_false(self, mock_find_job, mock_upsert):
+        mock_upsert.return_value = True
+        env = self._env()
+        del env["SUMMARY_WRITTEN"]
+        with patch.dict(os.environ, env, clear=True):
+            self.assertEqual(link.main([]), 0)
+        body = mock_upsert.call_args[0][3]
+        self.assertNotIn("#summary-", body)
+        mock_find_job.assert_not_called()
 
     @patch("post_pr_ci_summary_link.upsert_comment")
     def test_skips_when_not_a_pull_request_run(self, mock_upsert):
