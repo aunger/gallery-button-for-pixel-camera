@@ -110,8 +110,55 @@ def parse_directory(directory: Path) -> dict[str, TestClass]:
 # Markdown rendering
 # ---------------------------------------------------------------------------
 
+def render_class(cls: "TestClass") -> tuple[list[str], int, int, int]:
+    """Render one class as a collapsible ``<details>`` block.
+
+    Returns ``(lines, pass_count, fail_count, skip_count)``.
+
+    Classes that fully succeeded start collapsed; classes with any failures
+    start expanded (``<details open>``), so attention is drawn to them without
+    the user needing to click through every class.
+    """
+    any_passed = any(tc.passed for tc in cls.cases)
+    if cls.any_failed:
+        class_icon = "❌ FAIL"
+    elif not any_passed:
+        class_icon = "⏭ SKIP"
+    else:
+        class_icon = "✅ PASS"
+
+    open_attr = " open" if cls.any_failed else ""
+
+    lines: list[str] = []
+    lines.append(f"<details{open_attr}>")
+    lines.append(f"<summary>{class_icon} <strong>{cls.name}</strong></summary>")
+    lines.append("")
+    lines.append("| Status | Test |")
+    lines.append("|--------|------|")
+
+    pass_count = 0
+    fail_count = 0
+    skip_count = 0
+    for tc in cls.cases:
+        if tc.skipped:
+            tc_icon = "⏭ SKIP"
+            skip_count += 1
+        elif tc.passed:
+            tc_icon = "✅ PASS"
+            pass_count += 1
+        else:
+            tc_icon = "❌ FAIL"
+            fail_count += 1
+        lines.append(f"| {tc_icon} | `{tc.name}` |")
+
+    lines.append("")
+    lines.append("</details>")
+    lines.append("")
+    return lines, pass_count, fail_count, skip_count
+
+
 def render_suite(label: str, classes: dict[str, TestClass], outcome: str = "") -> list[str]:
-    """Render one suite as Markdown lines (header + table rows + totals).
+    """Render one suite as Markdown lines (header + collapsible class blocks + totals).
 
     *outcome* is the GitHub Actions step outcome for the step that produced
     these results.  When it is ``skipped`` and there are no results, the suite
@@ -132,33 +179,16 @@ def render_suite(label: str, classes: dict[str, TestClass], outcome: str = "") -
         lines.append("")
         return lines
 
-    lines.append("| Status | Suite / Test |")
-    lines.append("|--------|--------------|")
-
     total_pass = 0
     total_fail = 0
     total_skip = 0
 
     for cls in classes.values():
-        any_passed = any(tc.passed for tc in cls.cases)
-        if cls.any_failed:
-            class_icon = "❌ FAIL"
-        elif not any_passed:
-            class_icon = "⏭ SKIP"
-        else:
-            class_icon = "✅ PASS"
-        lines.append(f"| {class_icon} | **{cls.name}** |")
-        for tc in cls.cases:
-            if tc.skipped:
-                tc_icon = "⏭ SKIP"
-                total_skip += 1
-            elif tc.passed:
-                tc_icon = "✅ PASS"
-                total_pass += 1
-            else:
-                tc_icon = "❌ FAIL"
-                total_fail += 1
-            lines.append(f"| {tc_icon} |     `{tc.name}` |")
+        class_lines, pass_count, fail_count, skip_count = render_class(cls)
+        lines.extend(class_lines)
+        total_pass += pass_count
+        total_fail += fail_count
+        total_skip += skip_count
 
     total = total_pass + total_fail + total_skip
     skip_str = f", {total_skip} skipped" if total_skip else ""
