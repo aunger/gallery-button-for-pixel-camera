@@ -30,6 +30,12 @@ jobs:
     # ubuntu-latest has KVM hardware acceleration (available since April 2024).
     runs-on: ubuntu-latest
 
+    outputs:
+      # Surfaced so link-pr-to-ci-summary (issue #331) can tell whether the
+      # "Write test-result summary" step actually ran--on docs-only PRs it is
+      # skipped, and the job's "Summary" section has nothing to link to.
+      needs_full_build: ${{ steps.diff_check.outputs.needs_full_build }}
+
     steps:
       - uses: actions/checkout@v6
         with:
@@ -536,6 +542,38 @@ jobs:
               --suite-label "Instrumented Tests" \
             downloaded-artifacts/e2e-test-results \
               --suite-label "E2E Tests"
+
+  # Surface the build-and-test job's pass/fail summary directly on the PR
+  # (issue #331): post or update a sticky comment linking to the job's
+  # "Summary" section, e.g. .../actions/runs/<run_id>#summary-<job_id>.
+  # Reviewers can then jump straight to the test summary instead of hunting
+  # through the Checks tab. Runs regardless of build outcome so the link is
+  # always available, including on red builds.
+  #
+  # Docs-only PRs skip the "Write test-result summary" step entirely (see
+  # needs_full_build), so the job's "Summary" section has nothing to link to;
+  # SUMMARY_WRITTEN tells the script to say so rather than post a misleading
+  # link.
+  link-pr-to-ci-summary:
+    needs: [build-and-test]
+    runs-on: ubuntu-latest
+    if: always() && github.event_name == 'pull_request' && needs.build-and-test.result != 'cancelled'
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Post CI summary link on PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          WORKFLOW_RUN_PR_URL: ${{ github.event.pull_request.html_url }}
+          SUMMARY_WRITTEN: ${{ needs.build-and-test.outputs.needs_full_build }}
+        run: python3 scripts/post_pr_ci_summary_link.py
 
   # Produce a signed release-config APK on every merge to main for easy sideloading.
   # Named gb4pc-dev.<run_number>.apk to distinguish from tagged releases.
