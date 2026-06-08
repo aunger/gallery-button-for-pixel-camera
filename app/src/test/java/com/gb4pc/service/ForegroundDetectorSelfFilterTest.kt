@@ -2,6 +2,7 @@ package com.gb4pc.service
 
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
+import com.gb4pc.util.DebugLog
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
@@ -33,6 +34,7 @@ class ForegroundDetectorSelfFilterTest {
     fun setUp() {
         usm = mock()
         detector = ForegroundDetector(usm, selfPkg)
+        DebugLog.clear()
     }
 
     /**
@@ -242,6 +244,86 @@ class ForegroundDetectorSelfFilterTest {
         assertFalse(
             "Launcher MOVE_TO_FOREGROUND must not be detected as Pixel Camera (Issue #86)",
             ForegroundDetector.isPixelCameraPackage(pkg)
+        )
+    }
+
+    // ── Issue #324: summary log must list all FG apps, not just the top one ──
+
+    @Test
+    fun `summary log includes all FG apps when multiple packages appear (Issue #324)`() {
+        // Three distinct packages appear in the window; the summary log must list all of them.
+        eventsOf(
+            Triple("com.android.launcher3", UsageEvents.Event.MOVE_TO_FOREGROUND, 1000L),
+            Triple(otherPkg,                UsageEvents.Event.MOVE_TO_FOREGROUND, 2000L),
+            Triple(cameraPkg,               UsageEvents.Event.MOVE_TO_FOREGROUND, 3000L),
+        )
+
+        detector.getForegroundPackage()
+
+        val summaryLine = DebugLog.getEntries()
+            .map { it.message }
+            .last { it.startsWith("ForegroundDetector: foreground=") }
+        assertTrue(
+            "Summary log must include 'all FG apps=' with the full package list (Issue #324). Got: $summaryLine",
+            summaryLine.contains("all FG apps=")
+        )
+        assertTrue(
+            "Summary log must include launcher package. Got: $summaryLine",
+            summaryLine.contains("com.android.launcher3")
+        )
+        assertTrue(
+            "Summary log must include otherPkg. Got: $summaryLine",
+            summaryLine.contains(otherPkg)
+        )
+        assertTrue(
+            "Summary log must include cameraPkg. Got: $summaryLine",
+            summaryLine.contains(cameraPkg)
+        )
+    }
+
+    @Test
+    fun `summary log all FG apps excludes self package (Issue #324)`() {
+        // When selfPkg appears among events, it must not appear in the all FG apps list.
+        eventsOf(
+            Triple(cameraPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 1000L),
+            Triple(selfPkg,   UsageEvents.Event.MOVE_TO_FOREGROUND, 2000L),
+        )
+
+        detector.getForegroundPackage()
+
+        val summaryLine = DebugLog.getEntries()
+            .map { it.message }
+            .last { it.startsWith("ForegroundDetector: foreground=") }
+        assertTrue(
+            "Summary log must contain 'all FG apps='. Got: $summaryLine",
+            summaryLine.contains("all FG apps=")
+        )
+        assertFalse(
+            "Self package must not appear in the all FG apps list (Issue #324). Got: $summaryLine",
+            summaryLine.contains(selfPkg)
+        )
+        assertTrue(
+            "Camera package must appear in the all FG apps list. Got: $summaryLine",
+            summaryLine.contains(cameraPkg)
+        )
+    }
+
+    @Test
+    fun `summary log all FG apps shows single package when only one foreground app (Issue #324)`() {
+        eventsOf(Triple(cameraPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 1000L))
+
+        detector.getForegroundPackage()
+
+        val summaryLine = DebugLog.getEntries()
+            .map { it.message }
+            .last { it.startsWith("ForegroundDetector: foreground=") }
+        assertTrue(
+            "Summary log must contain 'all FG apps=' even with a single package. Got: $summaryLine",
+            summaryLine.contains("all FG apps=")
+        )
+        assertTrue(
+            "Single foreground package must appear in the list. Got: $summaryLine",
+            summaryLine.contains(cameraPkg)
         )
     }
 }
