@@ -158,7 +158,7 @@ Monitor output lines are relayed to the user verbatim; this is user-facing statu
       // Dispatch the verification planner (see verification_planning.md).
       // The Orchestrator does not scan the issue or PR itself.
       Dispatch a Verification Planner sub-agent using the dispatch template.
-      The Orchestrator does not need a manual-vs-automation choice in hand before this dispatch: the planner first assembles and presents the before-merging list, then solicits that choice from the user itself (see verification_planning.md step 3d).
+      The planner assembles and presents the before-merging list, then solicits a choice from User: Will User perform manual validation, or should the planner plan an approach to automate the lost items?
       Once the user responds, relay the user's choice (manual testing or automation) to the planner verbatim, so it can proceed per its own instructions.
       If the user opts for automation and the planner produces a plan:
         Dispatch a Reviewer to evaluate the plan; follow the normal Reviewer loop.
