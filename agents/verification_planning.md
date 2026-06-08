@@ -32,21 +32,20 @@ You file one tracking issue per item (see **What to do**) so that each requireme
    b. In the issue description, include a URL to the particular PR comment that called for this requirement.
       (If the requirement came from the PR or issue description itself rather than a comment, link to that description instead.)
    c. Record that the new issue **blocks** the PR, using GitHub's issue-dependencies feature.
-      GitHub exposes this through the REST API, so use a `gh api` call (or an equivalent dependency tool if one is available to you) to add the relationship.
+      GitHub exposes this through the REST API.
+      The `gh` CLI is not installed in the sandbox, so call the REST endpoint with `curl` and `$GITHUB_TOKEN`, the same way `scripts/ci_monitor.sh` does (`-H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json"`).
       To mark the PR as blocked by the new issue:
-      `gh api repos/{owner}/{repo}/issues/{number}/dependencies/blocked_by -F issue_id={new issue's id}`,
-      where `{number}` is the current PR number and `{new issue's id}` is the new issue's internal id (the `id` field, not its number; obtain it from the issue-creation response or `gh api repos/{owner}/{repo}/issues/{new issue number}`).
-      Use `-F` (not `-f`) so the id is sent as a JSON integer, as the API requires, rather than a string.
-      If the PR number is not accepted for an issue-dependency relationship, fall back to blocking the **parent issue** the PR resolves (the issue this PR fixes) instead:
-      `gh api repos/{owner}/{repo}/issues/{parent issue number}/dependencies/blocked_by -F issue_id={new issue's id}`.
+      `curl -sX POST -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/{owner}/{repo}/issues/{number}/dependencies/blocked_by -d '{"issue_id": {new issue's id}}'`,
+      where `{number}` is the current PR number and `{new issue's id}` is the new issue's internal id (the `id` field, not its number; obtain it from the issue-creation response, or by reading the issue through the same API).
+      Send the id as a bare JSON integer in the request body (not a quoted string), as the API requires.
+      If the PR number is not accepted for an issue-dependency relationship, fall back to blocking the **parent issue** the PR resolves (the issue this PR fixes) instead, by sending the same request to `.../issues/{parent issue number}/dependencies/blocked_by`.
       Only if neither call succeeds, state the blocking relationship in plain text in the new issue's description (for example, "Blocks PR #{number}") so it is not lost, and skip the formal link without failing.
    d. Make the new issue a **sub-issue** of the PR, using GitHub's sub-issues feature.
-      GitHub exposes this through the REST API, so use a `gh api` call (or an equivalent sub-issue tool if one is available to you):
-      `gh api repos/{owner}/{repo}/issues/{number}/sub_issues -F sub_issue_id={new issue's id}`,
+      GitHub exposes this through the REST API; call it with `curl` and `$GITHUB_TOKEN` as in step 3c (the `gh` CLI is not installed):
+      `curl -sX POST -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/{owner}/{repo}/issues/{number}/sub_issues -d '{"sub_issue_id": {new issue's id}}'`,
       where `{number}` is the current PR number and `{new issue's id}` is the new issue's internal id (not its number).
-      Use `-F` (not `-f`) so the id is sent as a JSON integer, as the API requires, rather than a string.
-      If the PR number is not accepted for a sub-issue relationship, fall back to making the new issue a sub-issue of the **parent issue** the PR resolves instead:
-      `gh api repos/{owner}/{repo}/issues/{parent issue number}/sub_issues -F sub_issue_id={new issue's id}`.
+      Send the id as a bare JSON integer in the request body (not a quoted string), as the API requires.
+      If the PR number is not accepted for a sub-issue relationship, fall back to making the new issue a sub-issue of the **parent issue** the PR resolves instead, by sending the same request to `.../issues/{parent issue number}/sub_issues`.
       If neither call succeeds, skip this link without failing.
 4. Report the *before merging* list to the Orchestrator and exit.
    The PR may be merged once every one of these filed issues is resolved.
