@@ -24,7 +24,6 @@ com.gb4pc.ui.MainActivityRedirectTest#mainScreen_showsPixelCameraMissingCard_whe
 com.gb4pc.ui.MainActivityRedirectTest#setupScreen_showsGrantButton                              # issue #304
 com.gb4pc.ui.MainActivityRedirectTest#pickerScreen_loadsApps_andShowsSettingsApp                # issue #305
 
-com.gb4pc.e2e.GalleryButtonVisualE2ETest#test0_smokeGreenFeedVisible                            # issue #336
 com.gb4pc.e2e.GalleryButtonVisualE2ETest#test1a_overlayShowsBlueAtConfiguredPosition            # issue #229
 com.gb4pc.e2e.GalleryButtonVisualE2ETest#test2a_emptyGalleryNoGreenAfterTap                     # issue #230
 com.gb4pc.e2e.GalleryButtonVisualE2ETest#test3a_populatedGalleryShowsGreenAfterTap              # issue #231
