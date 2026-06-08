@@ -59,9 +59,9 @@ class E2EFixture(
      */
     fun setUp() {
         ensurePixelCameraInstalled()
-        // Wake the display so screenshots during tests capture actual UI, not a black screen.
-        uiAutomation.executeShellCommand("input keyevent 224").close()  // KEYCODE_WAKEUP
-        Thread.sleep(300)
+        // Wake the display and dismiss the swipe keyguard so screenshots during tests
+        // capture actual UI, not a black screen or the gray (#E9E8EF) lock screen.
+        wakeAndDismissKeyguard()
         startServiceWithSetupCompleted()
         // Allow the service time to register camera callbacks.
         Thread.sleep(1000)
@@ -74,9 +74,36 @@ class E2EFixture(
     }
 
     fun launchPixelCamera() {
+        // Wake and dismiss the swipe keyguard first. STILL_IMAGE_CAMERA is a non-secure
+        // launch, so if the keyguard is up the activity starts behind it and screenshots
+        // capture the gray (#E9E8EF) lock screen instead of the green camera View--the
+        // root cause of the test0 smoke flake (issue #235). The screen can re-sleep or
+        // re-lock between setUp() and a later test's launch (and between CI steps), so the
+        // dismissal must run on every launch, not only once in setUp().
+        wakeAndDismissKeyguard()
         uiAutomation.executeShellCommand(
             "am start -a android.media.action.STILL_IMAGE_CAMERA -p $pcPackage"
         ).close()
+    }
+
+    /**
+     * Wakes the display and dismisses the emulator's swipe-style lock screen.
+     *
+     * Sends KEYCODE_WAKEUP (224) to turn the screen on regardless of API level, then performs
+     * an upward swipe to dismiss the swipe keyguard the CI emulator shows after boot or after
+     * the display sleeps. This mirrors the CI pre-flight smoke check (`build.yml`), which uses
+     * the same wake + swipe sequence; `wm dismiss-keyguard` did not reliably dismiss the
+     * swipe-type lock screen on the API-35 CI emulator. When the screen is already unlocked the
+     * swipe is a harmless gesture over the foreground activity.
+     *
+     * An upward swipe is preferred over KEYCODE_MENU (82): KEYCODE_MENU can open a foreground
+     * activity's options/overflow menu, obscuring the camera View.
+     */
+    fun wakeAndDismissKeyguard() {
+        uiAutomation.executeShellCommand("input keyevent 224").close()  // KEYCODE_WAKEUP
+        Thread.sleep(300)
+        uiAutomation.executeShellCommand("input swipe 300 1000 300 300").close()
+        Thread.sleep(300)
     }
 
     fun goHome() {
