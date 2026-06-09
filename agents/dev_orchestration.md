@@ -230,6 +230,20 @@ This emits a `PASS` line when the matching test passes and a `SKIP` line if it w
 - **A `"file was modified, either by the user or a linter"` reminder while a sub-agent is active means the sub-agent is editing the shared working tree.** Disregard it, do not interrupt the agent, and continue waiting. (Only treat it as external if you have no active sub-agent.)
 - **Agent completion and exit are the same event.** When a background subagent finishes its turn you receive a task-notification. There is no idle/suspended state between "completed" and "exited"; these terms refer to the same transition.
 
+## No sleep loops needed
+
+Orchestrators do not need explicit `sleep`-based keep-alive loops while waiting on sub-agents or CI.
+
+- **Sub-agent completion** delivers a task-notification event that wakes the Orchestrator the moment the agent finishes.
+No polling or manual check-ins are needed between dispatch and that notification.
+- **The CI Monitor** (`scripts/ci_monitor.py`) emits a steady stream of step/status events throughout a CI run, which keeps the session alive across runs lasting 20 minutes or more.
+
+Dispatch the sub-agent or start the Monitor tool call, then simply wait.
+The notification or Monitor event will arrive; no artificial delay is required.
+
+Note: this guidance is based on observed behavior and may need revisiting if a future session encounters a long silent gap between CI Monitor events that causes a stall.
+That would be useful counter-evidence to capture in the issue tracker.
+
 ## When to abort
 
 Stop the automated cycle and escalate to the User in these cases:
