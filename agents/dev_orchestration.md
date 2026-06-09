@@ -235,7 +235,7 @@ This emits a `PASS` line when the matching test passes and a `SKIP` line if it w
 Orchestrators do not need explicit `sleep`-based keep-alive loops while waiting on sub-agents or CI.
 
 - **Sub-agent completion** delivers a task-notification event that wakes the Orchestrator the moment the agent finishes.
-No polling or manual check-ins are needed between dispatch and that notification.
+  No polling or manual check-ins are needed between dispatch and that notification.
 - **The CI Monitor** (`scripts/ci_monitor.py`) emits a steady stream of step/status events throughout a CI run, which keeps the session alive across runs lasting 20 minutes or more.
 
 Dispatch the sub-agent or start the Monitor tool call, then simply wait.
