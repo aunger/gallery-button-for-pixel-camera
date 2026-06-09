@@ -1,0 +1,39 @@
+name: Strip Claude session-URL bylines
+
+# Fires when GitHub content is created or edited that might carry a
+# Claude session-URL byline (e.g. https://claude.ai/code/session_...).
+# When a byline is found it is removed in place via the GitHub REST API
+# so reviewers never need to catch it manually.
+#
+# The `if: github.actor != 'github-actions[bot]'` guard on every job
+# prevents the bot's own edits from re-triggering the workflow.
+
+on:
+  issues:
+    types: [opened, edited]
+  issue_comment:
+    types: [created, edited]
+  pull_request:
+    types: [opened, edited]
+  pull_request_review_comment:
+    types: [created, edited]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  strip-bylines:
+    runs-on: ubuntu-latest
+    if: github.actor != 'github-actions[bot]'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Strip session-URL bylines
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
+        run: python3 scripts/strip_session_bylines.py
