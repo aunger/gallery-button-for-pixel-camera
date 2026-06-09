@@ -222,10 +222,13 @@ jobs:
           echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Services ready (${SVCWAIT}s after boot flag)."
 
           # Wake, unlock, keep on, and disable animations now that services are up.
-          # KEYCODE_WAKEUP (224) is more reliable than KEYCODE_MENU (82) for waking
-          # the display from sleep; KEYCODE_MENU then dismisses the lock screen.
+          # Use the same wake + upward-swipe sequence as the pre-flight step and
+          # E2EFixture.wakeAndDismissKeyguard(): KEYCODE_MENU (82) could not reliably
+          # dismiss the swipe-type lock screen on the API-35 CI emulator (issue #341).
           "$ADB" shell input keyevent 224
-          "$ADB" shell input keyevent 82
+          sleep 1
+          "$ADB" shell input swipe 300 1000 300 300
+          sleep 1
           # Prevent the screen from sleeping while the emulator is "plugged in"
           # (value 7 = stay on for AC/USB/wireless charging combined).
           # Without this the screen can time out between the unlock here and the
@@ -328,6 +331,15 @@ jobs:
         id: run_instrumented
         if: steps.diff_check.outputs.needs_full_build == 'true'
         run: |
+          ADB="$ANDROID_HOME/platform-tools/adb"
+          # Wake and dismiss the swipe keyguard before starting the test suite.
+          # The E2E setup (including mock-camera install) can take 10-30 s, and the
+          # screen may sleep or re-lock in that window. This mirrors
+          # E2EFixture.wakeAndDismissKeyguard() (issue #344 / #341).
+          "$ADB" shell input keyevent 224
+          sleep 1
+          "$ADB" shell input swipe 300 1000 300 300
+          sleep 1
           if ./gradlew connectedDebugAndroidTest; then
             echo "outcome=success" >> "$GITHUB_OUTPUT"
           else
@@ -349,6 +361,14 @@ jobs:
         if: steps.diff_check.outputs.needs_full_build == 'true'
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
+          # Wake and dismiss the swipe keyguard before starting the test suite.
+          # The instrumented tests can run for several minutes, and the screen may
+          # sleep or re-lock before this step starts. This mirrors
+          # E2EFixture.wakeAndDismissKeyguard() (issue #344 / #341).
+          "$ADB" shell input keyevent 224
+          sleep 1
+          "$ADB" shell input swipe 300 1000 300 300
+          sleep 1
           mkdir -p results
           set -o pipefail
           LOGCAT_SINCE=$("$ADB" shell "date '+%m-%d %H:%M:%S.000'" | tr -d '\r')
@@ -378,6 +398,14 @@ jobs:
         if: steps.diff_check.outputs.needs_full_build == 'true'
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
+          # Wake and dismiss the swipe keyguard before starting the test suite.
+          # The previous E2E suite (PixelCameraOverlayE2ETest) can run for several
+          # minutes, and the screen may sleep or re-lock before this step starts.
+          # This mirrors E2EFixture.wakeAndDismissKeyguard() (issue #344 / #341).
+          "$ADB" shell input keyevent 224
+          sleep 1
+          "$ADB" shell input swipe 300 1000 300 300
+          sleep 1
           mkdir -p results
           set -o pipefail
           LOGCAT_SINCE=$("$ADB" shell "date '+%m-%d %H:%M:%S.000'" | tr -d '\r')
