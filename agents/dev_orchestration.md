@@ -97,7 +97,7 @@ Role assignment statements (copy the applicable line exactly):
 
 - Programmer: "You are a Programmer resolving the linked issue. You *must* start your turn by re-fetching the description and all comments on the issue and, if it exists, on the PR."
 - Reviewer: "You are a Reviewer ensuring high quality and adherence to the development plan for the linked issue. You *must* start your turn by re-fetching the description and all comments on the issue and on the PR."
-- Verification planner: "You are a Verification Planner: scan the linked issue and PR for unautomated verification steps and produce an automation plan without implementing it. You *must* start your turn by re-fetching the description and all comments on the issue and on the PR."
+- Verification planner: "You are a Verification Planner: scan the linked issue and PR for outstanding before-merging requirements and file a tracking issue, linked to the PR, for each one. You *must* start your turn by re-fetching the description and all comments on the issue and on the PR."
 
 ## Decision-signal templates
 
@@ -158,15 +158,10 @@ Monitor output lines are relayed to the user verbatim; this is user-facing statu
       // Dispatch the verification planner (see verification_planning.md).
       // The Orchestrator does not scan the issue or PR itself.
       Dispatch a Verification Planner sub-agent using the dispatch template.
-      The planner assembles the before-merging list, then presents it with a question: Will User perform manual validation, or should the planner plan an approach to automate the lost items?
-      If the Planner reports *no work remains*, then this *before-merging requirements* process is complete, and the Orchestrator should exit this step.
-      Relay any information and questions to the User.
-      Once the user responds, relay the user's choice(s) about the pending work to the planner verbatim, so it can proceed per its own instructions.
-      If the user opts for automation and the planner produces a plan:
-        Dispatch a Reviewer to evaluate the plan; follow the normal Reviewer loop.
-        Once the plan is approved, dispatch an Author to implement it.
-        Follow the normal Author -> Reviewer -> CI Monitor cycle for the resulting changes.
-      → PR may be merged once every item on the planner's before-merging list is resolved: after the automation Author's work clears CI (or immediately if the user opts for manual testing or no automation), and after any changes outside the repo have been performed.
+      The planner assembles the before-merging list and, for each item, files a tracking issue linked to the PR (see verification_planning.md). It does not consult the user.
+      If the Planner reports its before-merging list is empty, then this *before-merging requirements* process is complete, and the Orchestrator should exit this step.
+      Otherwise, relay the planner's reported before-merging list to the user verbatim.
+      → PR may be merged once every issue the planner filed for its before-merging list is resolved.
 ```
 
 ### Monitor script
