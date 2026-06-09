@@ -1,0 +1,194 @@
+#!/usr/bin/env python3
+"""strip_session_bylines.py--Remove Claude session-URL bylines from GitHub content.
+
+Scans a piece of text for Claude session-URL bylines of the form:
+
+    \nhttps://claude.ai/code/session_<token>
+
+and strips each occurrence (including the leading newline) so the surrounding
+text reads cleanly.  If the content is unchanged after stripping, the caller
+should skip the PATCH call.
+
+This module is invoked by the strip-session-bylines GitHub Actions workflow,
+which handles four event types:
+
+  - issues [opened, edited]                      -- issue body
+  - issue_comment [created, edited]              -- comments on issues and PRs
+  - pull_request [opened, edited, synchronize]   -- PR body
+  - pull_request_review_comment [created, edited]-- PR diff-line comments
+
+Usage (from the workflow shell step):
+    python3 scripts/strip_session_bylines.py
+
+Environment variables (set by the workflow):
+    GITHUB_TOKEN          GitHub token with issues:write and pull-requests:write.
+    GITHUB_REPOSITORY     "owner/repo".
+    GITHUB_EVENT_NAME     One of: issues, issue_comment, pull_request,
+                          pull_request_review_comment.
+    GITHUB_EVENT_PATH     Path to the JSON file with the full event payload.
+
+Exit code is always 0 so a missing/failed strip never breaks the caller.
+"""
+
+import json
+import os
+import re
+import sys
+
+import requests
+
+# Regex strips every occurrence of a leading newline + claude.ai session URL.
+# The pattern is anchored to a newline so it removes the entire "line" that
+# the byline would otherwise occupy.
+_BYLINE_RE = re.compile(r"\nhttps://claude\.ai/code/session_\S+")
+
+
+def strip_bylines(text: str) -> str:
+    """Return *text* with all Claude session-URL bylines removed."""
+    return _BYLINE_RE.sub("", text)
+
+
+def _github_headers(token: str) -> dict[str, str]:
+    return {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+
+def _patch(token: str, url: str, body: str) -> bool:
+    """PATCH *url* with {"body": body}; return True on success."""
+    try:
+        resp = requests.patch(
+            url,
+            headers=_github_headers(token),
+            json={"body": body},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return True
+    except Exception as exc:  # noqa: BLE001
+        print(f"Warning: PATCH {url} failed: {exc}", file=sys.stderr)
+        return False
+
+
+def handle_issue(token: str, repository: str, payload: dict) -> bool:
+    """Strip bylines from an issue body.  Returns True if a PATCH was issued."""
+    issue = payload.get("issue", {})
+    number = issue.get("number")
+    body = issue.get("body") or ""
+
+    stripped = strip_bylines(body)
+    if stripped == body:
+        print(f"Issue #{number}: no bylines found, skipping.")
+        return False
+
+    url = f"https://api.github.com/repos/{repository}/issues/{number}"
+    ok = _patch(token, url, stripped)
+    if ok:
+        print(f"Issue #{number}: bylines stripped.")
+    return ok
+
+
+def handle_issue_comment(token: str, repository: str, payload: dict) -> bool:
+    """Strip bylines from an issue/PR comment.  Returns True if a PATCH was issued."""
+    comment = payload.get("comment", {})
+    comment_id = comment.get("id")
+    body = comment.get("body") or ""
+
+    stripped = strip_bylines(body)
+    if stripped == body:
+        print(f"Comment #{comment_id}: no bylines found, skipping.")
+        return False
+
+    url = f"https://api.github.com/repos/{repository}/issues/comments/{comment_id}"
+    ok = _patch(token, url, stripped)
+    if ok:
+        print(f"Comment #{comment_id}: bylines stripped.")
+    return ok
+
+
+def handle_pull_request(token: str, repository: str, payload: dict) -> bool:
+    """Strip bylines from a PR body.  Returns True if a PATCH was issued."""
+    pr = payload.get("pull_request", {})
+    number = pr.get("number")
+    body = pr.get("body") or ""
+
+    stripped = strip_bylines(body)
+    if stripped == body:
+        print(f"PR #{number}: no bylines found, skipping.")
+        return False
+
+    url = f"https://api.github.com/repos/{repository}/pulls/{number}"
+    ok = _patch(token, url, stripped)
+    if ok:
+        print(f"PR #{number}: bylines stripped.")
+    return ok
+
+
+def handle_pull_request_review_comment(token: str, repository: str, payload: dict) -> bool:
+    """Strip bylines from a PR review comment.  Returns True if a PATCH was issued."""
+    comment = payload.get("comment", {})
+    comment_id = comment.get("id")
+    body = comment.get("body") or ""
+
+    stripped = strip_bylines(body)
+    if stripped == body:
+        print(f"Review comment #{comment_id}: no bylines found, skipping.")
+        return False
+
+    url = f"https://api.github.com/repos/{repository}/pulls/comments/{comment_id}"
+    ok = _patch(token, url, stripped)
+    if ok:
+        print(f"Review comment #{comment_id}: bylines stripped.")
+    return ok
+
+
+_HANDLER_NAMES = {
+    "issues": "handle_issue",
+    "issue_comment": "handle_issue_comment",
+    "pull_request": "handle_pull_request",
+    "pull_request_review_comment": "handle_pull_request_review_comment",
+}
+
+
+def main(argv: list[str] | None = None) -> int:
+    del argv  # No CLI arguments; configuration is entirely from the environment.
+
+    token = os.environ.get("GITHUB_TOKEN", "")
+    repository = os.environ.get("GITHUB_REPOSITORY", "")
+    event_name = os.environ.get("GITHUB_EVENT_NAME", "")
+    event_path = os.environ.get("GITHUB_EVENT_PATH", "")
+
+    if not token:
+        print("GITHUB_TOKEN not set--skipping.", file=sys.stderr)
+        return 0
+    if not repository:
+        print("GITHUB_REPOSITORY not set--skipping.", file=sys.stderr)
+        return 0
+    if not event_name:
+        print("GITHUB_EVENT_NAME not set--skipping.", file=sys.stderr)
+        return 0
+    if not event_path:
+        print("GITHUB_EVENT_PATH not set--skipping.", file=sys.stderr)
+        return 0
+
+    handler_name = _HANDLER_NAMES.get(event_name)
+    if handler_name is None:
+        print(f"Unsupported event '{event_name}'--skipping.", file=sys.stderr)
+        return 0
+    handler = sys.modules[__name__].__dict__[handler_name]
+
+    try:
+        with open(event_path, encoding="utf-8") as fh:
+            payload = json.load(fh)
+    except Exception as exc:  # noqa: BLE001
+        print(f"Warning: could not read event payload at '{event_path}': {exc}", file=sys.stderr)
+        return 0
+
+    handler(token, repository, payload)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
