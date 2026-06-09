@@ -90,7 +90,7 @@ jobs:
         env:
           BUILD_NUMBER: ${{ github.run_number }}
         run: |
-          ./gradlew assembleDebug -PversionName=codeql.${{ github.run_number }}
+          ./gradlew assembleDebug -PversionName=codeql.$BUILD_NUMBER
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
