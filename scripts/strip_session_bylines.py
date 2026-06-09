@@ -19,7 +19,7 @@ which handles four event types:
 
   - issues [opened, edited]                      -- issue body
   - issue_comment [created, edited]              -- comments on issues and PRs
-  - pull_request [opened, edited, synchronize]   -- PR body
+  - pull_request [opened, edited]                 -- PR body
   - pull_request_review_comment [created, edited]-- PR diff-line comments
 
 Usage (from the workflow shell step):
@@ -196,7 +196,7 @@ def main(argv: list[str] | None = None) -> int:
     if handler_name is None:
         print(f"Unsupported event '{event_name}'--skipping.", file=sys.stderr)
         return 0
-    handler = sys.modules[__name__].__dict__[handler_name]
+    handler = globals()[handler_name]
 
     try:
         with open(event_path, encoding="utf-8") as fh:
