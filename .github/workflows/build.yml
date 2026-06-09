@@ -225,10 +225,11 @@ jobs:
           # Use the same wake + upward-swipe sequence as the pre-flight step and
           # E2EFixture.wakeAndDismissKeyguard(): KEYCODE_MENU (82) could not reliably
           # dismiss the swipe-type lock screen on the API-35 CI emulator (issue #341).
-          "$ADB" shell input keyevent 224
-          sleep 1
+          # sleep 2 lets the swipe animation complete before subsequent commands fire
+          # (same reasoning as the pre-flight step's post-swipe sleep 2).
+          "$ADB" shell input keyevent KEYCODE_WAKEUP
           "$ADB" shell input swipe 300 1000 300 300
-          sleep 1
+          sleep 2
           # Prevent the screen from sleeping while the emulator is "plugged in"
           # (value 7 = stay on for AC/USB/wireless charging combined).
           # Without this the screen can time out between the unlock here and the
@@ -336,10 +337,11 @@ jobs:
           # The E2E setup (including mock-camera install) can take 10-30 s, and the
           # screen may sleep or re-lock in that window. This mirrors
           # E2EFixture.wakeAndDismissKeyguard() (issue #344 / #341).
-          "$ADB" shell input keyevent 224
-          sleep 1
+          # sleep 2 lets the swipe animation complete before Gradle's am start fires
+          # (same reasoning as the pre-flight step's post-swipe sleep 2).
+          "$ADB" shell input keyevent KEYCODE_WAKEUP
           "$ADB" shell input swipe 300 1000 300 300
-          sleep 1
+          sleep 2
           if ./gradlew connectedDebugAndroidTest; then
             echo "outcome=success" >> "$GITHUB_OUTPUT"
           else
@@ -365,10 +367,11 @@ jobs:
           # The instrumented tests can run for several minutes, and the screen may
           # sleep or re-lock before this step starts. This mirrors
           # E2EFixture.wakeAndDismissKeyguard() (issue #344 / #341).
-          "$ADB" shell input keyevent 224
-          sleep 1
+          # sleep 2 lets the swipe animation complete before Gradle's am start fires
+          # (same reasoning as the pre-flight step's post-swipe sleep 2).
+          "$ADB" shell input keyevent KEYCODE_WAKEUP
           "$ADB" shell input swipe 300 1000 300 300
-          sleep 1
+          sleep 2
           mkdir -p results
           set -o pipefail
           LOGCAT_SINCE=$("$ADB" shell "date '+%m-%d %H:%M:%S.000'" | tr -d '\r')
@@ -402,10 +405,11 @@ jobs:
           # The previous E2E suite (PixelCameraOverlayE2ETest) can run for several
           # minutes, and the screen may sleep or re-lock before this step starts.
           # This mirrors E2EFixture.wakeAndDismissKeyguard() (issue #344 / #341).
-          "$ADB" shell input keyevent 224
-          sleep 1
+          # sleep 2 lets the swipe animation complete before Gradle's am start fires
+          # (same reasoning as the pre-flight step's post-swipe sleep 2).
+          "$ADB" shell input keyevent KEYCODE_WAKEUP
           "$ADB" shell input swipe 300 1000 300 300
-          sleep 1
+          sleep 2
           mkdir -p results
           set -o pipefail
           LOGCAT_SINCE=$("$ADB" shell "date '+%m-%d %H:%M:%S.000'" | tr -d '\r')
