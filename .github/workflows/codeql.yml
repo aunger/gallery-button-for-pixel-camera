@@ -51,6 +51,7 @@ jobs:
     if: needs.detect-changes.outputs.kotlin == 'true'
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       security-events: write
 
     steps:
@@ -101,6 +102,7 @@ jobs:
     if: needs.detect-changes.outputs.python == 'true'
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       security-events: write
 
     steps:
