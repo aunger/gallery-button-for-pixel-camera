@@ -232,17 +232,11 @@ This emits a `PASS` line when the matching test passes and a `SKIP` line if it w
 
 ## No sleep loops needed
 
-Orchestrators do not need explicit `sleep`-based keep-alive loops while waiting on sub-agents or CI.
+Orchestrators do not need `sleep`-based keep-alive loops while waiting on sub-agents or CI.
+Task-notification events (sub-agent completion) and Monitor events (CI status) keep the session alive on their own.
+Dispatch and wait; do not add artificial delays.
 
-- **Sub-agent completion** delivers a task-notification event that wakes the Orchestrator the moment the agent finishes.
-  No polling or manual check-ins are needed between dispatch and that notification.
-- **The CI Monitor** (`scripts/ci_monitor.py`) emits a steady stream of step/status events throughout a CI run, which keeps the session alive across runs lasting 20 minutes or more.
-
-Dispatch the sub-agent or start the Monitor tool call, then simply wait.
-The notification or Monitor event will arrive; no artificial delay is required.
-
-Note: this guidance is based on observed behavior and may need revisiting if a future session encounters a long silent gap between CI Monitor events that causes a stall.
-That would be useful counter-evidence to capture in the issue tracker.
+If a session ever stalls with no such event for an extended period, file a bug describing the gap rather than adding a sleep loop to work around it.
 
 ## When to abort
 
