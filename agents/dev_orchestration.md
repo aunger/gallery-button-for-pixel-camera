@@ -230,6 +230,14 @@ This emits a `PASS` line when the matching test passes and a `SKIP` line if it w
 - **A `"file was modified, either by the user or a linter"` reminder while a sub-agent is active means the sub-agent is editing the shared working tree.** Disregard it, do not interrupt the agent, and continue waiting. (Only treat it as external if you have no active sub-agent.)
 - **Agent completion and exit are the same event.** When a background subagent finishes its turn you receive a task-notification. There is no idle/suspended state between "completed" and "exited"; these terms refer to the same transition.
 
+## No sleep loops needed
+
+Orchestrators do not need `sleep`-based keep-alive loops while waiting on sub-agents or CI.
+Task-notification events (sub-agent completion) and Monitor events (CI status) keep the session alive on their own.
+Dispatch and wait; do not add artificial delays.
+
+If a session ever stalls with no such event for an extended period, file a bug describing the gap rather than adding a sleep loop to work around it.
+
 ## When to abort
 
 Stop the automated cycle and escalate to the User in these cases:
