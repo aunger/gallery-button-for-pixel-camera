@@ -1,0 +1,146 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Run weekly on Monday at 08:00 UTC to catch newly-published queries.
+    - cron: '0 8 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  # Detect which languages have changed so language-specific CodeQL jobs can
+  # skip themselves when no relevant files are modified.
+  # On push to main or a scheduled run, all languages are always scanned.
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      kotlin: ${{ steps.check.outputs.kotlin }}
+      python: ${{ steps.check.outputs.python }}
+      actions: ${{ steps.check.outputs.actions }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Detect language changes
+        id: check
+        run: |
+          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
+            # Always scan on push to main and on scheduled runs.
+            echo "kotlin=true" >> $GITHUB_OUTPUT
+            echo "python=true" >> $GITHUB_OUTPUT
+            echo "actions=true" >> $GITHUB_OUTPUT
+          else
+            BASE_REF="${{ github.base_ref }}"
+            git fetch origin "$BASE_REF" --depth=1
+
+            CHANGED=$(git diff --name-only "origin/$BASE_REF"...HEAD)
+
+            KOTLIN_CHANGED=$(echo "$CHANGED" | grep -E '\.(kt|kts|java)$' || true)
+            echo "kotlin=$([ -n "$KOTLIN_CHANGED" ] && echo true || echo false)" >> $GITHUB_OUTPUT
+
+            PYTHON_CHANGED=$(echo "$CHANGED" | grep -E '\.py$' || true)
+            echo "python=$([ -n "$PYTHON_CHANGED" ] && echo true || echo false)" >> $GITHUB_OUTPUT
+
+            ACTIONS_CHANGED=$(echo "$CHANGED" | grep -E '^\.github/(workflows|actions)/' || true)
+            echo "actions=$([ -n "$ACTIONS_CHANGED" ] && echo true || echo false)" >> $GITHUB_OUTPUT
+          fi
+
+  analyze-kotlin:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.kotlin == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: java-kotlin
+          # Use the default query suite. To add extra queries, uncomment:
+          # queries: security-extended
+
+      - name: Build for CodeQL
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: |
+          ./gradlew assembleDebug -PversionName=codeql.$BUILD_NUMBER
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: kotlin
+
+  analyze-python:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: python
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: python
+
+  analyze-actions:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.actions == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: actions
+          build-mode: none
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: actions
