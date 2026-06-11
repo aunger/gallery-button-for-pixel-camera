@@ -144,3 +144,71 @@ jobs:
         uses: github/codeql-action/analyze@v4
         with:
           category: actions
+
+  # A language whose analyze job is skipped still needs code-scanning results
+  # for its category, or the PR is stuck forever on "Code scanning is waiting
+  # for results from CodeQL" and cannot merge (issue #358). For each skipped
+  # category, upload an empty (zero-result) CodeQL SARIF run so code scanning
+  # reports a result for that category on this commit. Always runs so it can
+  # report whichever subset of categories was skipped.
+  report-skipped:
+    needs: [detect-changes, analyze-kotlin, analyze-python, analyze-actions]
+    if: always() && needs.detect-changes.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build empty SARIF for skipped categories
+        env:
+          KOTLIN: ${{ needs.detect-changes.outputs.kotlin }}
+          PYTHON: ${{ needs.detect-changes.outputs.python }}
+          ACTIONS: ${{ needs.detect-changes.outputs.actions }}
+        run: |
+          # Emit one empty CodeQL run per skipped category. A category maps to a
+          # run's automationDetails.id, so code scanning records a separate
+          # result for each. The runs array must be non-empty to upload, but
+          # each run may carry zero results.
+          runs=""
+          add_run() {
+            local category="$1"
+            runs="${runs:+$runs,}$(cat <<JSON
+          {
+            "tool": { "driver": { "name": "CodeQL", "rules": [] } },
+            "automationDetails": { "id": "$category/" },
+            "results": [],
+            "columnKind": "utf16CodeUnits"
+          }
+          JSON
+          )"
+          }
+
+          [ "$KOTLIN" != "true" ] && add_run kotlin
+          [ "$PYTHON" != "true" ] && add_run python
+          [ "$ACTIONS" != "true" ] && add_run actions
+
+          if [ -z "$runs" ]; then
+            echo "All categories were analyzed; nothing to report."
+            echo "upload=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          cat > empty.sarif <<JSON
+          {
+            "\$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+            "version": "2.1.0",
+            "runs": [ $runs ]
+          }
+          JSON
+
+          python3 -c "import json,sys; json.load(open('empty.sarif'))"
+          echo "upload=true" >> "$GITHUB_OUTPUT"
+        id: build
+
+      - name: Upload empty CodeQL results for skipped categories
+        if: steps.build.outputs.upload == 'true'
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: empty.sarif
