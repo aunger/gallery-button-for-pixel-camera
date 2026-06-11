@@ -52,6 +52,15 @@ class E2EFixture(
 ) {
     private val pcPackage = Constants.PIXEL_CAMERA_PACKAGE
 
+    companion object {
+        // Issue #233: bounded relaunch for the first-launch teardown race in launchPixelCamera().
+        // Up to LAUNCH_ATTEMPTS launches, each given LAUNCH_VERIFY_MS to activate the overlay
+        // before re-issuing. 3 x 5 s = 15 s worst case, comfortably under the 30 s assertion in
+        // overlayAppearsWhenViewfinderOpens (and the 20 s default in waitForOverlayActive).
+        private const val LAUNCH_ATTEMPTS = 3
+        private const val LAUNCH_VERIFY_MS = 5_000L
+    }
+
     /**
      * Run from `@Before`. Performs all preconditions; tests that pass `setUp()` are
      * guaranteed: Pixel Camera installed, OverlayService running and registered, PC
@@ -81,9 +90,33 @@ class E2EFixture(
         // re-lock between setUp() and a later test's launch (and between CI steps), so the
         // dismissal must run on every launch, not only once in setUp().
         wakeAndDismissKeyguard()
-        uiAutomation.executeShellCommand(
-            "am start -a android.media.action.STILL_IMAGE_CAMERA -p $pcPackage"
-        ).close()
+
+        // Issue #233: On the API-35 CI emulator the *first* STILL_IMAGE_CAMERA launch of a
+        // suite is frequently torn down inside its own OPEN window-transition before the
+        // activity reaches onResume(). WindowManager force-removes the just-created
+        // ActivityRecord ("Force removing ActivityRecord{... MockCameraActivity}" / "Attempted
+        // to add application window with unknown token ... Aborting"), so MockCameraActivity
+        // never calls openCamera(), CameraManager.AvailabilityCallback.onCameraUnavailable
+        // never fires, and the overlay never activates -- the test then times out at 30 s.
+        // A re-issued `am start` after the transition has settled reliably brings the activity
+        // up (every non-first launch in CI opens the camera within ~30 ms), so retry the launch
+        // until the overlay activates, which is the observable proof the camera reached
+        // onResume() and opened. The retry is bounded so a genuinely broken launch still fails
+        // the caller's own activation assertion rather than hanging.
+        repeat(LAUNCH_ATTEMPTS) { attempt ->
+            uiAutomation.executeShellCommand(
+                "am start -a android.media.action.STILL_IMAGE_CAMERA -p $pcPackage"
+            ).close()
+            // Give this launch its own short window to reach onResume() and activate the
+            // overlay before deciding whether to re-issue. The sum across attempts stays well
+            // under each caller's activation timeout.
+            if (waitForCondition(LAUNCH_VERIFY_MS) { OverlayService.isOverlayActive }) return
+            if (attempt < LAUNCH_ATTEMPTS - 1) {
+                // The previous launch was torn down before the camera opened. Re-dismiss the
+                // keyguard (the screen can re-sleep between attempts) and try again.
+                wakeAndDismissKeyguard()
+            }
+        }
     }
 
     /**
