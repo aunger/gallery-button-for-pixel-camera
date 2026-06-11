@@ -92,6 +92,22 @@ def _patch(token: str, url: str, body: str) -> bool:
         return False
 
 
+def _put(token: str, url: str, body: str) -> bool:
+    """PUT *url* with {"body": body}; return True on success."""
+    try:
+        resp = requests.put(
+            url,
+            headers=_github_headers(token),
+            json={"body": body},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return True
+    except Exception as exc:  # noqa: BLE001
+        print(f"Warning: PUT {url} failed: {exc}", file=sys.stderr)
+        return False
+
+
 def handle_issue(token: str, repository: str, payload: dict) -> bool:
     """Strip bylines from an issue body.  Returns True if a PATCH was issued."""
     issue = payload.get("issue", {})
@@ -165,7 +181,7 @@ def handle_pull_request_review_comment(token: str, repository: str, payload: dic
 
 
 def handle_pull_request_review(token: str, repository: str, payload: dict) -> bool:
-    """Strip bylines from a PR review body.  Returns True if a PATCH was issued."""
+    """Strip bylines from a PR review body.  Returns True if a PUT was issued."""
     review = payload.get("review", {})
     pr = payload.get("pull_request", {})
     review_id = review.get("id")
@@ -178,7 +194,7 @@ def handle_pull_request_review(token: str, repository: str, payload: dict) -> bo
         return False
 
     url = f"https://api.github.com/repos/{repository}/pulls/{pr_number}/reviews/{review_id}"
-    ok = _patch(token, url, stripped)
+    ok = _put(token, url, stripped)
     if ok:
         print(f"Review #{review_id}: bylines stripped.")
     return ok
