@@ -20,7 +20,7 @@ which handles five event types:
   - issues [opened, edited]                      -- issue body
   - issue_comment [created, edited]              -- comments on issues and PRs
   - pull_request [opened, edited]                 -- PR body
-  - pull_request_review_comment [created, edited]-- PR diff-line comments
+  - pull_request_review_comment [created, edited] -- PR diff-line comments
   - pull_request_review [submitted]              -- PR review body
 
 Usage (from the workflow shell step):
