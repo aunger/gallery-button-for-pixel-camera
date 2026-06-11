@@ -55,8 +55,11 @@ class E2EFixture(
     companion object {
         // Issue #233: bounded relaunch for the first-launch teardown race in launchPixelCamera().
         // Up to LAUNCH_ATTEMPTS launches, each given LAUNCH_VERIFY_MS to activate the overlay
-        // before re-issuing. 3 x 5 s = 15 s worst case, comfortably under the 30 s assertion in
-        // overlayAppearsWhenViewfinderOpens (and the 20 s default in waitForOverlayActive).
+        // before re-issuing. The launch attempts are 3 x 5 s = 15 s worst case. A genuinely
+        // broken launch returns from launchPixelCamera() after that budget (the baseline wait
+        // below only consumes time when a prior overlay is still active, which is itself a
+        // separate failure and not the healthy path), leaving the 30 s assertion in
+        // overlayAppearsWhenViewfinderOpens to fail the test rather than hang.
         private const val LAUNCH_ATTEMPTS = 3
         private const val LAUNCH_VERIFY_MS = 5_000L
     }
@@ -103,6 +106,15 @@ class E2EFixture(
         // until the overlay activates, which is the observable proof the camera reached
         // onResume() and opened. The retry is bounded so a genuinely broken launch still fails
         // the caller's own activation assertion rather than hanging.
+        //
+        // The activation check below treats isOverlayActive becoming true as proof that *this*
+        // launch reached onResume(). That proof is only sound from a known-inactive baseline: if
+        // a previous test's overlay is still active when launchPixelCamera() is called (setUp()'s
+        // waitForOverlayInactive() and the mid-test goHome()/stopPixelCamera() flows do not assert
+        // deactivation), waitForCondition would read the stale true on its first poll and return
+        // before this launch's `am start` had any effect. Wait for a clean inactive baseline first
+        // so each attempt observes a genuine false -> true transition. Bounded so it cannot hang.
+        waitForCondition(LAUNCH_VERIFY_MS) { !OverlayService.isOverlayActive }
         repeat(LAUNCH_ATTEMPTS) { attempt ->
             uiAutomation.executeShellCommand(
                 "am start -a android.media.action.STILL_IMAGE_CAMERA -p $pcPackage"
