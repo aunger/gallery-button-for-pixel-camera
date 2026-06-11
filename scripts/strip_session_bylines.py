@@ -15,12 +15,13 @@ If the content is unchanged after stripping, the caller should skip the
 PATCH call.
 
 This module is invoked by the strip-session-bylines GitHub Actions workflow,
-which handles four event types:
+which handles five event types:
 
-  - issues [opened, edited]                      -- issue body
-  - issue_comment [created, edited]              -- comments on issues and PRs
+  - issues [opened, edited]                       -- issue body
+  - issue_comment [created, edited]               -- comments on issues and PRs
   - pull_request [opened, edited]                 -- PR body
-  - pull_request_review_comment [created, edited]-- PR diff-line comments
+  - pull_request_review_comment [created, edited] -- PR diff-line comments
+  - pull_request_review [submitted]               -- PR review body
 
 Usage (from the workflow shell step):
     python3 scripts/strip_session_bylines.py
@@ -29,7 +30,7 @@ Environment variables (set by the workflow):
     GITHUB_TOKEN          GitHub token with issues:write and pull-requests:write.
     GITHUB_REPOSITORY     "owner/repo".
     GITHUB_EVENT_NAME     One of: issues, issue_comment, pull_request,
-                          pull_request_review_comment.
+                          pull_request_review_comment, pull_request_review.
     GITHUB_EVENT_PATH     Path to the JSON file with the full event payload.
 
 Exit code is always 0 so a missing/failed strip never breaks the caller.
@@ -75,10 +76,23 @@ def _github_headers(token: str) -> dict[str, str]:
     }
 
 
-def _patch(token: str, url: str, body: str) -> bool:
-    """PATCH *url* with {"body": body}; return True on success."""
+def _update(
+    method: str, token: str, url: str, body: str
+) -> bool:
+    """Update *url* with {"body": body} using the specified HTTP method.
+
+    Args:
+        method: HTTP method name ("patch" or "put").
+        token: GitHub API token.
+        url: API endpoint URL.
+        body: The new body text.
+
+    Returns:
+        True if the request succeeded, False otherwise.
+    """
     try:
-        resp = requests.patch(
+        req_method = getattr(requests, method)
+        resp = req_method(
             url,
             headers=_github_headers(token),
             json={"body": body},
@@ -87,8 +101,18 @@ def _patch(token: str, url: str, body: str) -> bool:
         resp.raise_for_status()
         return True
     except Exception as exc:  # noqa: BLE001
-        print(f"Warning: PATCH {url} failed: {exc}", file=sys.stderr)
+        print(f"Warning: {method.upper()} {url} failed: {exc}", file=sys.stderr)
         return False
+
+
+def _patch(token: str, url: str, body: str) -> bool:
+    """PATCH *url* with {"body": body}; return True on success."""
+    return _update("patch", token, url, body)
+
+
+def _put(token: str, url: str, body: str) -> bool:
+    """PUT *url* with {"body": body}; return True on success."""
+    return _update("put", token, url, body)
 
 
 def handle_issue(token: str, repository: str, payload: dict) -> bool:
@@ -163,11 +187,32 @@ def handle_pull_request_review_comment(token: str, repository: str, payload: dic
     return ok
 
 
+def handle_pull_request_review(token: str, repository: str, payload: dict) -> bool:
+    """Strip bylines from a PR review body.  Returns True if a PUT was issued."""
+    review = payload.get("review", {})
+    pr = payload.get("pull_request", {})
+    review_id = review.get("id")
+    pr_number = pr.get("number")
+    body = review.get("body") or ""
+
+    stripped = strip_bylines(body)
+    if stripped == body:
+        print(f"Review #{review_id}: no bylines found, skipping.")
+        return False
+
+    url = f"https://api.github.com/repos/{repository}/pulls/{pr_number}/reviews/{review_id}"
+    ok = _put(token, url, stripped)
+    if ok:
+        print(f"Review #{review_id}: bylines stripped.")
+    return ok
+
+
 _HANDLER_NAMES = {
     "issues": "handle_issue",
     "issue_comment": "handle_issue_comment",
     "pull_request": "handle_pull_request",
     "pull_request_review_comment": "handle_pull_request_review_comment",
+    "pull_request_review": "handle_pull_request_review",
 }
 
 
