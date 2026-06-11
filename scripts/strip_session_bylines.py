@@ -76,10 +76,23 @@ def _github_headers(token: str) -> dict[str, str]:
     }
 
 
-def _patch(token: str, url: str, body: str) -> bool:
-    """PATCH *url* with {"body": body}; return True on success."""
+def _update(
+    method: str, token: str, url: str, body: str
+) -> bool:
+    """Update *url* with {"body": body} using the specified HTTP method.
+
+    Args:
+        method: HTTP method name ("patch" or "put").
+        token: GitHub API token.
+        url: API endpoint URL.
+        body: The new body text.
+
+    Returns:
+        True if the request succeeded, False otherwise.
+    """
     try:
-        resp = requests.patch(
+        req_method = getattr(requests, method)
+        resp = req_method(
             url,
             headers=_github_headers(token),
             json={"body": body},
@@ -88,24 +101,18 @@ def _patch(token: str, url: str, body: str) -> bool:
         resp.raise_for_status()
         return True
     except Exception as exc:  # noqa: BLE001
-        print(f"Warning: PATCH {url} failed: {exc}", file=sys.stderr)
+        print(f"Warning: {method.upper()} {url} failed: {exc}", file=sys.stderr)
         return False
+
+
+def _patch(token: str, url: str, body: str) -> bool:
+    """PATCH *url* with {"body": body}; return True on success."""
+    return _update("patch", token, url, body)
 
 
 def _put(token: str, url: str, body: str) -> bool:
     """PUT *url* with {"body": body}; return True on success."""
-    try:
-        resp = requests.put(
-            url,
-            headers=_github_headers(token),
-            json={"body": body},
-            timeout=30,
-        )
-        resp.raise_for_status()
-        return True
-    except Exception as exc:  # noqa: BLE001
-        print(f"Warning: PUT {url} failed: {exc}", file=sys.stderr)
-        return False
+    return _update("put", token, url, body)
 
 
 def handle_issue(token: str, repository: str, payload: dict) -> bool:
