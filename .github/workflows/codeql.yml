@@ -21,6 +21,7 @@ jobs:
     outputs:
       kotlin: ${{ steps.check.outputs.kotlin }}
       python: ${{ steps.check.outputs.python }}
+      actions: ${{ steps.check.outputs.actions }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -33,6 +34,7 @@ jobs:
             # Always scan on push to main and on scheduled runs.
             echo "kotlin=true" >> $GITHUB_OUTPUT
             echo "python=true" >> $GITHUB_OUTPUT
+            echo "actions=true" >> $GITHUB_OUTPUT
           else
             BASE_REF="${{ github.base_ref }}"
             git fetch origin "$BASE_REF" --depth=1
@@ -44,6 +46,9 @@ jobs:
 
             PYTHON_CHANGED=$(echo "$CHANGED" | grep -E '\.py$' || true)
             echo "python=$([ -n "$PYTHON_CHANGED" ] && echo true || echo false)" >> $GITHUB_OUTPUT
+
+            ACTIONS_CHANGED=$(echo "$CHANGED" | grep -E '^\.github/(workflows|actions)/' || true)
+            echo "actions=$([ -n "$ACTIONS_CHANGED" ] && echo true || echo false)" >> $GITHUB_OUTPUT
           fi
 
   analyze-kotlin:
@@ -117,3 +122,25 @@ jobs:
         uses: github/codeql-action/analyze@v3
         with:
           category: python
+
+  analyze-actions:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.actions == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: actions
+          build-mode: none
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: actions
