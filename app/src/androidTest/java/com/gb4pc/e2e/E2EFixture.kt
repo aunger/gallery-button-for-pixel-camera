@@ -54,14 +54,31 @@ class E2EFixture(
 
     companion object {
         // Issue #233: bounded relaunch for the first-launch teardown race in launchPixelCamera().
-        // Up to LAUNCH_ATTEMPTS launches, each given LAUNCH_VERIFY_MS to activate the overlay
-        // before re-issuing. The launch attempts are 3 x 5 s = 15 s worst case. A genuinely
-        // broken launch returns from launchPixelCamera() after that budget (the baseline wait
-        // below only consumes time when a prior overlay is still active, which is itself a
-        // separate failure and not the healthy path), leaving the 30 s assertion in
-        // overlayAppearsWhenViewfinderOpens to fail the test rather than hang.
+        //
+        // The per-attempt verify windows must not false-positive a *healthy* launch as a failed
+        // one. waitForOverlayActive() documents that on the CI emulator a healthy activation can
+        // take ~9 s (camera open) + ~1 s (UsageStats) and budgets 20 s for it. So the first
+        // attempt is given a window in that range (LAUNCH_FIRST_VERIFY_MS): a slow-but-healthy
+        // first launch activates the overlay inside that window and returns without the loop ever
+        // re-issuing `am start`. Re-issuing on a healthy, mid-resume activity would itself race the
+        // OPEN transition (a second `input swipe` + `am start` over the resuming activity), i.e.
+        // re-create the very failure this fix targets, so the first window deliberately errs long.
+        //
+        // Only the *teardown* failure mode (activity force-removed ~3 ms after START, before
+        // onResume(), so the camera never opens and the overlay can never activate) survives that
+        // first window. Recovery from it is fast: every observed non-first launch in CI opens the
+        // camera within ~30 ms, so the follow-up attempts use the shorter LAUNCH_RETRY_VERIFY_MS.
+        //
+        // Worst-case budget for a genuinely broken launch:
+        //   baseline inactive wait (LAUNCH_BASELINE_MS, only consumed if a prior overlay is still
+        //   active going in -- itself a separate failure, not the healthy path)
+        //   + LAUNCH_FIRST_VERIFY_MS + (LAUNCH_ATTEMPTS - 1) x LAUNCH_RETRY_VERIFY_MS
+        //   = 3 + 12 + 2 x 6 = 27 s, under the 30 s overlayAppearsWhenViewfinderOpens assertion,
+        // so launchPixelCamera() returns and lets the caller's own assertion fail rather than hang.
         private const val LAUNCH_ATTEMPTS = 3
-        private const val LAUNCH_VERIFY_MS = 5_000L
+        private const val LAUNCH_FIRST_VERIFY_MS = 12_000L
+        private const val LAUNCH_RETRY_VERIFY_MS = 6_000L
+        private const val LAUNCH_BASELINE_MS = 3_000L
     }
 
     /**
@@ -114,15 +131,18 @@ class E2EFixture(
         // deactivation), waitForCondition would read the stale true on its first poll and return
         // before this launch's `am start` had any effect. Wait for a clean inactive baseline first
         // so each attempt observes a genuine false -> true transition. Bounded so it cannot hang.
-        waitForCondition(LAUNCH_VERIFY_MS) { !OverlayService.isOverlayActive }
+        waitForCondition(LAUNCH_BASELINE_MS) { !OverlayService.isOverlayActive }
         repeat(LAUNCH_ATTEMPTS) { attempt ->
             uiAutomation.executeShellCommand(
                 "am start -a android.media.action.STILL_IMAGE_CAMERA -p $pcPackage"
             ).close()
-            // Give this launch its own short window to reach onResume() and activate the
-            // overlay before deciding whether to re-issue. The sum across attempts stays well
-            // under each caller's activation timeout.
-            if (waitForCondition(LAUNCH_VERIFY_MS) { OverlayService.isOverlayActive }) return
+            // The first attempt gets the full healthy-activation window so a slow-but-healthy
+            // launch is never mistaken for a failed one and re-issued (which would itself race the
+            // OPEN transition). Only the teardown failure mode survives that window, and recovery
+            // from it is fast, so later attempts use the shorter retry window. See the
+            // companion-object note for the budget rationale.
+            val verifyMs = if (attempt == 0) LAUNCH_FIRST_VERIFY_MS else LAUNCH_RETRY_VERIFY_MS
+            if (waitForCondition(verifyMs) { OverlayService.isOverlayActive }) return
             if (attempt < LAUNCH_ATTEMPTS - 1) {
                 // The previous launch was torn down before the camera opened. Re-dismiss the
                 // keyguard (the screen can re-sleep between attempts) and try again.
