@@ -2,6 +2,7 @@ package com.gb4pc.e2e
 
 import android.app.KeyguardManager
 import android.app.UiAutomation
+import android.util.Log
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -53,6 +54,12 @@ class E2EFixture(
     private val pcPackage = Constants.PIXEL_CAMERA_PACKAGE
 
     companion object {
+        // Tag for the diagnostic logcat lines emitted by launchPixelCamera() (issue #233). These
+        // make the bounded-relaunch path observable in a CI run's logcat: when the first-launch
+        // teardown race occurs, the log shows which attempt re-issued `am start` and which one the
+        // overlay finally activated on, instead of leaving the retry/recovery to be inferred.
+        private const val TAG = "GB4PC_E2E"
+
         // Issue #233: bounded relaunch for the first-launch teardown race in launchPixelCamera().
         //
         // The per-attempt verify windows must not false-positive a *healthy* launch as a failed
@@ -133,6 +140,7 @@ class E2EFixture(
         // so each attempt observes a genuine false -> true transition. Bounded so it cannot hang.
         waitForCondition(LAUNCH_BASELINE_MS) { !OverlayService.isOverlayActive }
         repeat(LAUNCH_ATTEMPTS) { attempt ->
+            Log.i(TAG, "launchPixelCamera: am start attempt ${attempt + 1}/$LAUNCH_ATTEMPTS")
             uiAutomation.executeShellCommand(
                 "am start -a android.media.action.STILL_IMAGE_CAMERA -p $pcPackage"
             ).close()
@@ -142,11 +150,25 @@ class E2EFixture(
             // from it is fast, so later attempts use the shorter retry window. See the
             // companion-object note for the budget rationale.
             val verifyMs = if (attempt == 0) LAUNCH_FIRST_VERIFY_MS else LAUNCH_RETRY_VERIFY_MS
-            if (waitForCondition(verifyMs) { OverlayService.isOverlayActive }) return
+            if (waitForCondition(verifyMs) { OverlayService.isOverlayActive }) {
+                Log.i(TAG, "launchPixelCamera: overlay active on attempt ${attempt + 1}")
+                return
+            }
             if (attempt < LAUNCH_ATTEMPTS - 1) {
                 // The previous launch was torn down before the camera opened. Re-dismiss the
                 // keyguard (the screen can re-sleep between attempts) and try again.
+                Log.w(
+                    TAG,
+                    "launchPixelCamera: overlay still inactive after ${verifyMs} ms on attempt " +
+                        "${attempt + 1} (first-launch teardown race); re-issuing am start"
+                )
                 wakeAndDismissKeyguard()
+            } else {
+                Log.w(
+                    TAG,
+                    "launchPixelCamera: overlay still inactive after $LAUNCH_ATTEMPTS attempts; " +
+                        "letting the caller's own assertion fail"
+                )
             }
         }
     }
