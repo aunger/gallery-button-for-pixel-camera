@@ -258,14 +258,14 @@ class TestHandlePullRequestReview(unittest.TestCase):
         payload = self._payload(88, 42, "Clean review body.")
         result = ssb.handle_pull_request_review("tok", "owner/repo", payload)
         self.assertFalse(result)
-        mock_requests.patch.assert_not_called()
+        mock_requests.put.assert_not_called()
 
     @patch("strip_session_bylines.requests")
     def test_handles_none_body_gracefully(self, mock_requests):
         payload = {"review": {"id": 1, "body": None}, "pull_request": {"number": 5}}
         result = ssb.handle_pull_request_review("tok", "owner/repo", payload)
         self.assertFalse(result)
-        mock_requests.patch.assert_not_called()
+        mock_requests.put.assert_not_called()
 
     @patch("strip_session_bylines.requests")
     def test_patches_markdown_footer_in_review_body(self, mock_requests):
