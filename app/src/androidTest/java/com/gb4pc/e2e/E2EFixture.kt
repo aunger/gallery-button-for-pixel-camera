@@ -2,7 +2,6 @@ package com.gb4pc.e2e
 
 import android.app.KeyguardManager
 import android.app.UiAutomation
-import android.util.Log
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -12,6 +11,7 @@ import android.media.MediaScannerConnection
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.util.Log
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.UiDevice
 import com.gb4pc.Constants
