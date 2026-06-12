@@ -381,17 +381,26 @@ jobs:
             echo "outcome=success" >> "$GITHUB_OUTPUT"
           else
             echo "outcome=failure" >> "$GITHUB_OUTPUT"
-            echo "=== LOGCAT (since test start) ==="
-            "$ADB" logcat -d -T "$LOGCAT_SINCE" | \
-              bash scripts/filter_logcat.sh
           fi
+          # Capture the filtered logcat regardless of pass/fail (issues #364/#365).
+          # The GB4PC_E2E diagnostic lines from E2EFixture.launchPixelCamera() are
+          # what make the issue #233 bounded-relaunch path observable, but they are
+          # only useful if they survive a *green* run too -- on a pass the retry
+          # either fired and recovered or never fired, and only the logcat can tell
+          # the two apart. Dumping it only in the failure branch discarded that
+          # evidence on every passing run, so always tee it to a file and upload it.
+          echo "=== LOGCAT (since test start) ==="
+          "$ADB" logcat -d -T "$LOGCAT_SINCE" | \
+            bash scripts/filter_logcat.sh | tee results/e2e-overlay-logcat.txt
 
       - name: Upload overlay E2E markers
         if: always() && steps.diff_check.outputs.needs_full_build == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: testresults-e2e-overlay
-          path: results/e2e-overlay.ndjson
+          path: |
+            results/e2e-overlay.ndjson
+            results/e2e-overlay-logcat.txt
           retention-days: 14
 
       - name: Run GalleryButtonVisualE2ETest

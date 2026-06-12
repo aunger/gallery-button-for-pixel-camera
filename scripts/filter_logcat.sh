@@ -10,8 +10,10 @@
 #      suppressed.
 #   2. Lines are filtered to only those relevant for CI failure diagnosis:
 #      AndroidRuntime, FATAL, "Process crashed", app/service tags
-#      (com.gb4pc, OverlayService, MockCamera, CameraService), and any
-#      logcat error tag (E/<tag>).
+#      (com.gb4pc, OverlayService, MockCamera, CameraService), the E2E
+#      harness diagnostic tag (GB4PC_E2E, emitted by
+#      E2EFixture.launchPixelCamera() to make the issue #233 bounded-relaunch
+#      path observable), and any logcat error tag (E/<tag>).
 #
 # Usage:
 #   adb logcat -d | scripts/filter_logcat.sh
@@ -22,4 +24,4 @@
 #   bitmap_url=data:image/png;base64,ABC= →  bitmap_url=data:image/png;base64,[elided]
 
 sed 's/;base64,[A-Za-z0-9+/=]\{8,\}/;base64,[elided]/g' | \
-  grep -E "AndroidRuntime|FATAL|Process crashed|com\.gb4pc|OverlayService|MockCamera|CameraService|E/\w" || true
+  grep -E "AndroidRuntime|FATAL|Process crashed|com\.gb4pc|OverlayService|MockCamera|CameraService|GB4PC_E2E|E/\w" || true
