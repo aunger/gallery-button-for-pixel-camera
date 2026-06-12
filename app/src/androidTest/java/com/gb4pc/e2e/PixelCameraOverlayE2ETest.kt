@@ -33,6 +33,19 @@ import org.junit.runner.RunWith
  *   - Package-signature validation (stub installed under same package ID
  *     but not signed the same way as real Pixel Camera)
  * True E2E on a physical Pixel device is tracked in issue #15.
+ *
+ * ### [E2EFixture.launchPixelCamera] already waits for overlay activation (issue #233 / #362 / #369)
+ *
+ * [E2EFixture.launchPixelCamera] does not return until `OverlayService.isOverlayActive` is
+ * already `true` (or its own ~27 s retry budget is exhausted). Every test below that calls
+ * `launchPixelCamera()` and then polls `isOverlayActive` (directly or via
+ * [E2EFixture.waitForOverlayActive]) therefore observes `true` on its very first poll in the
+ * healthy case; `launchPixelCamera()` just finished waiting for exactly that condition. Any
+ * `timeoutMs` passed to that follow-up poll is mostly headroom for the unlikely case that the
+ * overlay deactivates again (e.g. via the debounce/deactivation path in `OverlayServiceLogic`)
+ * between `launchPixelCamera()` returning and the check running, not the primary mechanism that
+ * exercises activation (including the DT-06a `ACTIVATION_RETRY_MS` retry, which has normally
+ * already run to completion inside `launchPixelCamera()`).
  */
 @E2ETest
 @RunWith(AndroidJUnit4::class)
@@ -92,22 +105,16 @@ class PixelCameraOverlayE2ETest {
      * Without the retry in OverlayServiceLogic, the overlay never appears if the initial
      * evaluateForeground() call finds no foreground package.
      *
-     * Note on [E2EFixture.launchPixelCamera] (issue #233 / #362): that helper does not return
-     * until `OverlayService.isOverlayActive` is already `true` (or its own ~27 s retry budget is
-     * exhausted). So in the healthy case, the `waitForCondition` call below observes `true` on
-     * its very first poll; the DT-06a retry described above has typically already run to
-     * completion *inside* `launchPixelCamera()`, before this test's own wait begins. This test's
-     * `timeoutMs` therefore mostly provides headroom for the case where the overlay is active but
-     * then deactivates again (e.g. via the debounce/deactivation path) between
-     * `launchPixelCamera()` returning and this check running; it is not the primary mechanism
-     * that exercises the ACTIVATION_RETRY_MS retry (issue #369).
+     * See the class-level note above on [E2EFixture.launchPixelCamera] (issue #233 / #362 /
+     * #369): in the healthy case the DT-06a retry has normally already completed inside
+     * `launchPixelCamera()`, so the `waitForCondition` call below is mostly a final-state
+     * assertion plus headroom for a deactivate-and-reactivate race.
      */
     @Test
     fun overlayAppearsAfterUsageStatsLag() {
         // Launch PC — camera unavailable fires quickly; UsageStats may lag behind.
-        // launchPixelCamera() already waits (internally) for isOverlayActive to become true, so
-        // by the time it returns the DT-06a retry has normally already completed (see the
-        // class-level note on issue #369 above).
+        // launchPixelCamera() already waits (internally) for isOverlayActive to become true; see
+        // the class-level note above.
         fixture.launchPixelCamera()
 
         // Headroom window: covers the unlikely case that the overlay deactivates again between
