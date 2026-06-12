@@ -91,19 +91,28 @@ class PixelCameraOverlayE2ETest {
      * Without the retry in OverlayServiceLogic, the overlay never appears if the initial
      * evaluateForeground() call finds no foreground package.
      *
-     * This test verifies the overlay still appears within ACTIVATION_RETRY_MS + 1 s, which is
-     * only reliably achievable if the retry mechanism is in place.
+     * This test verifies the overlay still appears within camera-open latency +
+     * ACTIVATION_RETRY_MS + headroom, which is only reliably achievable if the retry
+     * mechanism is in place.
      */
     @Test
     fun overlayAppearsAfterUsageStatsLag() {
         // Launch PC — camera unavailable fires quickly; UsageStats may lag behind.
         fixture.launchPixelCamera()
 
-        // Generous window: ACTIVATION_RETRY_MS (1 s) + 6 s headroom for scheduling overhead on
-        // loaded CI runners. The retry fires at ~1 s; the extra slack avoids flakiness without
-        // defeating the test's purpose (proving the retry fires at all). 6 s headroom is used
-        // because CI emulators can take up to 9 s for camera open + UsageStats detection.
-        val timeoutMs = Constants.ACTIVATION_RETRY_MS + 6000L
+        // Generous window: camera-open latency + ACTIVATION_RETRY_MS (1 s) + headroom for
+        // scheduling overhead on loaded CI runners.
+        //
+        // waitForOverlayActive()'s 20 s default budgets ~9 s for camera open plus up to 1 s for
+        // UsageStats detection on CI emulators. This test additionally needs the
+        // ACTIVATION_RETRY_MS (1 s) retry delay to elapse *after* that initial detection window,
+        // since the retry only fires once the first evaluateForeground() finds no foreground
+        // package. Using only ACTIVATION_RETRY_MS + 6 s (7 s total) was tighter than the 9 s
+        // camera-open figure documented elsewhere and flaked under CI load (issue #249).
+        //
+        // 9 s camera-open + ACTIVATION_RETRY_MS (1 s) + 5 s headroom = 15 s. The extra slack
+        // avoids flakiness without defeating the test's purpose (proving the retry fires at all).
+        val timeoutMs = 9000L + Constants.ACTIVATION_RETRY_MS + 5000L
         val appeared = fixture.waitForCondition(timeoutMs) { OverlayService.isOverlayActive }
         assertTrue(
             "Overlay should appear within ${timeoutMs} ms even when UsageStats lags behind " +
