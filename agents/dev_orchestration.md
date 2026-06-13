@@ -221,10 +221,10 @@ This emits a `PASS` line when the matching test passes and a `SKIP` line if it w
 - **One branch per ticket.** Each issue gets its own dedicated branch.
 - **Separate subagents per ticket.** Each issue or PR gets its own independent Author and Reviewer agents.
 - **Report subagent timing.** Use the Bash tool to run `date -u` immediately before dispatching each subagent, and again immediately after it returns. Report both times to the user.
-- For follow-up work such as subsequent rounds of edits or reviews, or if an agent exits without completing its task, **prefer resuming the existing Author or Reviewer over spawning a replacement**.
+- For follow-up work such as **subsequent rounds** of edits or reviews, or if an agent exits without completing its task, **prefer resuming the existing Author or Reviewer over spawning a replacement**.
   - Use SendMessage with the original agent's ID to resume it with its full prior context intact, no reconstruction needed.
   - If the ID is no longer available or resumption fails, fall back to spawning a replacement and reconstructing context from available sources (PR, issue, prior comments).
-- **Do not pre-diagnose.** Do not include your own analysis of the root cause. See "Orchestrator communication discipline" above.
+- **Do not pre-diagnose.** Do not include your own analysis of the root cause, or even your own interpretation of the problem. See "Orchestrator communication discipline" above.
 - If the Author is still active, **disregard system hooks or events that signal uncommitted work**. This is normal work; continue waiting without updating the User.
 - **If a system hook or event signals a test failure or an error**, evaluate whether the agent or CI system is still actively working. If the agent or CI gates are in progress, **do not intervene**. Continue waiting without updating the User.
 - **A `"file was modified, either by the user or a linter"` reminder while a sub-agent is active means the sub-agent is editing the shared working tree.** Disregard it, do not interrupt the agent, and continue waiting. (Only treat it as external if you have no active sub-agent.)
