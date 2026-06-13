@@ -11,6 +11,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.gb4pc.data.PrefsManager
 import com.gb4pc.ui.settings.MainActivity
 import com.gb4pc.ui.setup.SetupActivity
+import com.gb4pc.util.PermissionHelper
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -76,9 +77,19 @@ class MainSettingsScreenTest {
     }
 
     @Test
-    fun mainScreen_showsPixelCameraMissingCard_whenNotInstalled() {
-        // On an emulator Pixel Camera is never present — the error card must be visible
-        composeRule.onNodeWithText("Pixel Camera is not installed", substring = true)
-            .assertIsDisplayed()
+    fun mainScreen_showsPixelCameraMissingCard_matchingInstalledState() {
+        // The e2e-mock-camera stub shares Pixel Camera's applicationId, so on CI
+        // (and on any device where it has been side-loaded) isPixelCameraInstalled
+        // is true and the missing-camera card must be hidden. On a real device
+        // without Pixel Camera (or its stub) installed, the card must be shown.
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val cameraInstalled = PermissionHelper.isPixelCameraInstalled(context)
+
+        val cardNode = composeRule.onNodeWithText("Pixel Camera is not installed", substring = true)
+        if (cameraInstalled) {
+            cardNode.assertDoesNotExist()
+        } else {
+            cardNode.assertIsDisplayed()
+        }
     }
 }
