@@ -67,7 +67,7 @@ def fetch_stale_issues(repo: str, token: str, cutoff: datetime.datetime) -> list
     page = 1
     while True:
         batch = gh_api(
-            f"repos/{repo}/issues?state=open&labels=test-failure&per_page=100&page={page}",
+            f"repos/{repo}/issues?labels=test-failure&per_page=100&page={page}",
             token=token,
         )
         if not batch:
