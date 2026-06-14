@@ -51,17 +51,13 @@ Terminology: In most cases, the *Author* is also referred to as *Programmer*. In
 
 ## Attribution
 
-#### Issue and PR description text
+- Begin any comments or reviews with the following line, where {your role} is Author, Reviewer, etc.:
 
-Do not append any Claude attribution byline, session URL, or footer.
+  ```
+  🤖 {your role}
+  ```
 
-#### Comment text
-
-Do not append any Claude attribution byline, session URL, or footer.
-
-#### Commit messages
-
-Do not append any Claude attribution byline, session URL, or footer.
+- Do not append any Claude attribution byline, session URL, or footer to commit messages or issue or PR description text or comment text.
 
 ## Scope
 
