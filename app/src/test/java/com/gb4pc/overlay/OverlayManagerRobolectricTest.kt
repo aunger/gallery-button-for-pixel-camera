@@ -4,7 +4,10 @@ import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.drawable.AdaptiveIconDrawable
 import android.graphics.drawable.BitmapDrawable
+import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
+import android.widget.FrameLayout
 import android.widget.ImageView
 import androidx.test.core.app.ApplicationProvider
 import com.gb4pc.data.OverlayPosition
@@ -37,6 +40,15 @@ import org.robolectric.shadows.ShadowWindowManagerImpl
  */
 @RunWith(RobolectricTestRunner::class)
 class OverlayManagerRobolectricTest {
+
+    /**
+     * The view added to the WindowManager is now the full-screen host (Issue #230); the gallery
+     * icon is its single child. Returns that child [ImageView].
+     */
+    private fun iconViewOf(hostView: View): ImageView {
+        val host = hostView as ViewGroup
+        return host.getChildAt(0) as ImageView
+    }
 
     /**
      * Regression guard for Issue #66: when focusableOverlay is false (the default),
@@ -113,7 +125,7 @@ class OverlayManagerRobolectricTest {
         val shadowWm = shadowOf(windowManager) as ShadowWindowManagerImpl
         val views = shadowWm.views
         assertEquals("Expected exactly one view added to WindowManager after show()", 1, views.size)
-        val overlayView = views[0] as ImageView
+        val overlayView = iconViewOf(views[0])
 
         // Step 2: simulate showLatestPhotoThumbnail() successfully loading a bitmap.
         val testBitmap = Bitmap.createBitmap(10, 10, Bitmap.Config.ARGB_8888)
@@ -160,7 +172,7 @@ class OverlayManagerRobolectricTest {
 
         val windowManager = context.getSystemService(WindowManager::class.java)
         val shadowWm = shadowOf(windowManager) as ShadowWindowManagerImpl
-        val overlayView = shadowWm.views[0] as ImageView
+        val overlayView = iconViewOf(shadowWm.views[0])
 
         assertTrue(
             "Issue #188: overlay drawable must be a SquircleDrawable so the squircle shape " +
@@ -190,7 +202,7 @@ class OverlayManagerRobolectricTest {
 
         val windowManager = context.getSystemService(WindowManager::class.java)
         val shadowWm = shadowOf(windowManager) as ShadowWindowManagerImpl
-        val overlayView = shadowWm.views[0] as ImageView
+        val overlayView = iconViewOf(shadowWm.views[0])
 
         // Exercise the public API to trigger a thumbnail load attempt.
         overlayManager.showLatestPhotoThumbnail("content://com.gb4pc.test/images/1")
@@ -233,7 +245,7 @@ class OverlayManagerRobolectricTest {
 
         val windowManager = context.getSystemService(WindowManager::class.java)
         val shadowWm = shadowOf(windowManager) as ShadowWindowManagerImpl
-        val overlayView = shadowWm.views[0] as ImageView
+        val overlayView = iconViewOf(shadowWm.views[0])
 
         // The drawable must be a SquircleDrawable (outer squircle clip is guaranteed regardless
         // of the launcher mask), wrapping a raw AdaptiveIconDrawable (not a pre-masked bitmap).
@@ -252,21 +264,27 @@ class OverlayManagerRobolectricTest {
         )
     }
 
-    // ── Issue #229: overlay positioned relative to the true screen origin ───
+    // ── Issues #229 / #230: full-screen overlay window, icon positioned as a child ───
 
     /**
-     * Regression guard for Issue #229: the overlay window's [WindowManager.LayoutParams] must
-     * include `FLAG_LAYOUT_IN_SCREEN` (in addition to `FLAG_LAYOUT_NO_LIMITS`) so that
-     * `Gravity.TOP or Gravity.START` with `x`/`y` set by [calculateOverlayXPx] /
-     * [calculateOverlayYPx] positions the overlay relative to the physical-screen origin
-     * (0, 0), not below the status bar.
+     * Regression guard for Issues #229 and #230: the overlay window must be a full-screen
+     * (MATCH_PARENT x MATCH_PARENT) window, anchored at the physical-screen origin via
+     * `FLAG_LAYOUT_IN_SCREEN` + `FLAG_LAYOUT_NO_LIMITS`, with `FLAG_NOT_TOUCH_MODAL` set so it
+     * does not swallow touches meant for the camera app below.
      *
-     * Without this flag, the E2E visual test observed the overlay rendered ~128 px lower
-     * than its configured `yPercent` (BLUE centroid at y=1784 instead of the expected
-     * y=1656 for yPercent=69% on a 2400 px-tall display).
+     * Issue #229: the overlay used to be a small window positioned with `Gravity.TOP|START` and
+     * an explicit x/y. `FLAG_LAYOUT_IN_SCREEN` shifted the *rendered surface* to the physical
+     * origin (the overlay had rendered ~128 px lower, BLUE centroid at y=1784 instead of the
+     * expected y=1656 for yPercent=69% on a 2400 px-tall display).
+     *
+     * Issue #230: a small window's *touchable* region is derived from the decor-inset-fitted
+     * frame, which diverged from the shifted surface, so taps on the rendered icon missed the
+     * window's touchable region and never reached the click listener. Making the window
+     * full-screen keeps the input region aligned with the surface, and the icon is positioned
+     * by [calculateOverlayXPx] / [calculateOverlayYPx] as the child's `leftMargin` / `topMargin`.
      */
     @Test
-    fun `overlay window uses FLAG_LAYOUT_IN_SCREEN so position is relative to screen origin`() {
+    fun `overlay window is full-screen and not touch modal with the icon positioned as a child`() {
         val context: Application = ApplicationProvider.getApplicationContext()
         val prefsManager: PrefsManager = mock {
             on { galleryPackage } doReturn null
@@ -279,11 +297,28 @@ class OverlayManagerRobolectricTest {
 
         val windowManager = context.getSystemService(WindowManager::class.java)
         val shadowWm = shadowOf(windowManager) as ShadowWindowManagerImpl
-        val overlayView = shadowWm.views[0]
-        val params = overlayView.layoutParams as WindowManager.LayoutParams
+        val hostView = shadowWm.views[0] as ViewGroup
+        val params = hostView.layoutParams as WindowManager.LayoutParams
 
+        assertEquals(
+            "Overlay window must be full-screen width so its input region matches the rendered " +
+                "surface (Issue #230).",
+            WindowManager.LayoutParams.MATCH_PARENT,
+            params.width
+        )
+        assertEquals(
+            "Overlay window must be full-screen height so its input region matches the rendered " +
+                "surface (Issue #230).",
+            WindowManager.LayoutParams.MATCH_PARENT,
+            params.height
+        )
         assertTrue(
-            "Overlay window must set FLAG_LAYOUT_IN_SCREEN so x/y are relative to the " +
+            "Full-screen overlay window must set FLAG_NOT_TOUCH_MODAL so touches outside the " +
+                "icon pass through to the camera app (Issue #230).",
+            (params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL) != 0
+        )
+        assertTrue(
+            "Overlay window must set FLAG_LAYOUT_IN_SCREEN so it is anchored at the " +
                 "physical-screen origin, not below the status bar (Issue #229).",
             (params.flags and WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN) != 0
         )
@@ -291,6 +326,25 @@ class OverlayManagerRobolectricTest {
             "Overlay window must retain FLAG_LAYOUT_NO_LIMITS so it can extend into the " +
                 "system-bar areas.",
             (params.flags and WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS) != 0
+        )
+
+        // The icon is a positioned child of the full-screen host, offset by the pure position
+        // functions so it still renders at the configured percent of the display (Issue #229).
+        val icon = iconViewOf(hostView)
+        val iconParams = icon.layoutParams as FrameLayout.LayoutParams
+        val displayWidth = context.resources.displayMetrics.widthPixels
+        val displayHeight = context.resources.displayMetrics.heightPixels
+        val pos = OverlayPosition.default()
+        val sizePx = calculateOverlaySizePx(pos.sizePercent, displayWidth, displayHeight)
+        assertEquals(
+            "Icon child leftMargin must equal calculateOverlayXPx for the configured position.",
+            calculateOverlayXPx(pos.xPercent, displayWidth, sizePx),
+            iconParams.leftMargin
+        )
+        assertEquals(
+            "Icon child topMargin must equal calculateOverlayYPx for the configured position.",
+            calculateOverlayYPx(pos.yPercent, displayHeight, sizePx),
+            iconParams.topMargin
         )
     }
 
