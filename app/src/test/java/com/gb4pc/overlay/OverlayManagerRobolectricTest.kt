@@ -294,6 +294,43 @@ class OverlayManagerRobolectricTest {
         )
     }
 
+    // ── Issue #230 / #397: tap on the overlay reaches its clickable ImageView ─
+
+    /**
+     * Regression guard for Issue #230 / #397
+     * (`test2a_emptyGalleryNoGreenAfterTap`): the small, non-focusable overlay window must set
+     * `FLAG_NOT_TOUCH_MODAL` so an in-bounds tap reaches its clickable [android.widget.ImageView]
+     * and fires `handleTap()`, while touches outside the icon's bounds still pass through to the
+     * camera app behind it.
+     *
+     * Without this flag the E2E suite observed the tap as a no-op: the green camera feed stayed
+     * full-screen and the gallery never opened (GREEN coverage ~87% after tap instead of < 10%).
+     */
+    @Test
+    fun `overlay window sets FLAG_NOT_TOUCH_MODAL so in-bounds taps reach the icon`() {
+        val context: Application = ApplicationProvider.getApplicationContext()
+        val prefsManager: PrefsManager = mock {
+            on { galleryPackage } doReturn null
+            on { getOverlayPosition(any()) } doReturn OverlayPosition.default()
+            on { focusableOverlay } doReturn false
+        }
+
+        val overlayManager = OverlayManager(context, prefsManager)
+        overlayManager.show()
+
+        val windowManager = context.getSystemService(WindowManager::class.java)
+        val shadowWm = shadowOf(windowManager) as ShadowWindowManagerImpl
+        val overlayView = shadowWm.views[0]
+        val params = overlayView.layoutParams as WindowManager.LayoutParams
+
+        assertTrue(
+            "Overlay window must set FLAG_NOT_TOUCH_MODAL so an in-bounds tap reaches the " +
+                "clickable ImageView (firing handleTap()) while out-of-bounds touches pass " +
+                "through to the camera app (Issue #230 / #397).",
+            (params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL) != 0
+        )
+    }
+
     // ── Issue #81: loadThumbnailBitmap fallback ──────────────────────────────
 
     /**

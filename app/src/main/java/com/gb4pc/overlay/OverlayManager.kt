@@ -383,6 +383,19 @@ class OverlayManager(
         // Combined with FLAG_LAYOUT_NO_LIMITS, this makes (x, y) relative to the true
         // physical-screen origin (0, 0), matching calculateOverlayXPx/calculateOverlayYPx's
         // assumptions.
+        //
+        // FLAG_NOT_TOUCH_MODAL (both branches): the overlay is a small (sizePx x sizePx)
+        // window. Without this flag a non-focusable overlay still claims a touchable region,
+        // but the in-bounds tap injected by the E2E UiDevice.click was not opening the gallery
+        // (Issue #230 / #397 — test2a_emptyGalleryNoGreenAfterTap: the green camera feed stays
+        // full-screen, handleTap() never fires). FLAG_NOT_TOUCH_MODAL only forwards pointer
+        // events that fall *outside* the window bounds to the windows behind it; in-bounds
+        // touches always go to this window's clickable ImageView. So a small window plus
+        // FLAG_NOT_TOUCH_MODAL both delivers the in-bounds tap to handleTap() and lets the
+        // surrounding camera-app touches pass through. (The earlier full-screen attempt also
+        // carried this flag and did deliver the tap, but was reverted because a full-screen
+        // window has no outside region and swallowed every camera touch; keeping the window
+        // small avoids that.)
         val windowFlags = if (prefsManager.focusableOverlay) {
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
@@ -390,6 +403,7 @@ class OverlayManager(
                 showWhenLockedFlag
         } else {
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                 showWhenLockedFlag
