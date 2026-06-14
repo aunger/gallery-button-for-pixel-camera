@@ -375,13 +375,23 @@ class OverlayManager(
         // FLAG_NOT_TOUCH_MODAL is also set to keep touch events outside the overlay's bounds
         // passing through to the camera app. Trade-off: the focusable window may steal
         // volume/power key events from the camera app even when dispatchKeyEvent returns false.
+        //
+        // FLAG_LAYOUT_IN_SCREEN: without this flag, a TYPE_APPLICATION_OVERLAY window's
+        // Gravity.TOP|START origin is offset below the system status bar, so x/y (computed
+        // above relative to the full display size) land the overlay too far down the screen
+        // (Issue #229 — the overlay rendered ~128 px lower than the configured yPercent).
+        // Combined with FLAG_LAYOUT_NO_LIMITS, this makes (x, y) relative to the true
+        // physical-screen origin (0, 0), matching calculateOverlayXPx/calculateOverlayYPx's
+        // assumptions.
         val windowFlags = if (prefsManager.focusableOverlay) {
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                 showWhenLockedFlag
         } else {
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                 showWhenLockedFlag
         }
 

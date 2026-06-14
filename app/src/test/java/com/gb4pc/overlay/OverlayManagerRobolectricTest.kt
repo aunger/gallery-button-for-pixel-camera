@@ -252,6 +252,48 @@ class OverlayManagerRobolectricTest {
         )
     }
 
+    // ── Issue #229: overlay positioned relative to the true screen origin ───
+
+    /**
+     * Regression guard for Issue #229: the overlay window's [WindowManager.LayoutParams] must
+     * include `FLAG_LAYOUT_IN_SCREEN` (in addition to `FLAG_LAYOUT_NO_LIMITS`) so that
+     * `Gravity.TOP or Gravity.START` with `x`/`y` set by [calculateOverlayXPx] /
+     * [calculateOverlayYPx] positions the overlay relative to the physical-screen origin
+     * (0, 0), not below the status bar.
+     *
+     * Without this flag, the E2E visual test observed the overlay rendered ~128 px lower
+     * than its configured `yPercent` (BLUE centroid at y=1784 instead of the expected
+     * y=1656 for yPercent=69% on a 2400 px-tall display).
+     */
+    @Test
+    fun `overlay window uses FLAG_LAYOUT_IN_SCREEN so position is relative to screen origin`() {
+        val context: Application = ApplicationProvider.getApplicationContext()
+        val prefsManager: PrefsManager = mock {
+            on { galleryPackage } doReturn null
+            on { getOverlayPosition(any()) } doReturn OverlayPosition.default()
+            on { focusableOverlay } doReturn false
+        }
+
+        val overlayManager = OverlayManager(context, prefsManager)
+        overlayManager.show()
+
+        val windowManager = context.getSystemService(WindowManager::class.java)
+        val shadowWm = shadowOf(windowManager) as ShadowWindowManagerImpl
+        val overlayView = shadowWm.views[0]
+        val params = overlayView.layoutParams as WindowManager.LayoutParams
+
+        assertTrue(
+            "Overlay window must set FLAG_LAYOUT_IN_SCREEN so x/y are relative to the " +
+                "physical-screen origin, not below the status bar (Issue #229).",
+            (params.flags and WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN) != 0
+        )
+        assertTrue(
+            "Overlay window must retain FLAG_LAYOUT_NO_LIMITS so it can extend into the " +
+                "system-bar areas.",
+            (params.flags and WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS) != 0
+        )
+    }
+
     // ── Issue #81: loadThumbnailBitmap fallback ──────────────────────────────
 
     /**
