@@ -349,9 +349,10 @@ class E2EFixture(
      *
      * Issue #229 established that the overlay's rendered position does not match the
      * coordinates computed from [PrefsManager.getOverlayPosition]: the overlay renders about
-     * 128px lower than [calculateOverlayYPx] predicts. Tapping the *computed* position
-     * therefore misses the overlay's clickable view entirely--the tap lands on empty camera-app
-     * space above the icon and silently fails to launch the gallery (issues #230, #231, #232).
+     * 128px lower than `OverlayManager.calculateOverlayYPx` predicts. Tapping the *computed*
+     * position therefore misses the overlay's clickable view entirely--the tap lands on empty
+     * camera-app space above the icon and silently fails to launch the gallery (issues #230,
+     * #231, #232).
      *
      * To tap reliably regardless of that rendering discrepancy, this locates the overlay by its
      * actual on-screen pixels: it takes a fresh screenshot and taps the centroid of the
