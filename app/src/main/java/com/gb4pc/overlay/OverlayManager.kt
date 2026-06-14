@@ -405,6 +405,25 @@ class OverlayManager(
             gravity = Gravity.TOP or Gravity.START
             x = xPx
             y = yPx
+
+            // Issue #230: align the window's touchable input region with its rendered surface.
+            //
+            // FLAG_LAYOUT_IN_SCREEN (above) shifts the rendered surface up to the physical-screen
+            // origin so the icon draws at the configured (x, y) (Issue #229, verified by
+            // test1a_overlayShowsBlueAtConfiguredPosition). But on API 30+ a window's frame -- and
+            // therefore the touchable input region derived from it -- is by default fitted to the
+            // system-bar insets, which FLAG_LAYOUT_IN_SCREEN does not move. The surface and the
+            // input region then diverged by the status-bar height: a tap at the rendered icon
+            // centre (where UiDevice.click lands) fell below the touchable region and passed
+            // through to the camera, so handleTap() never fired and the gallery never opened.
+            //
+            // setFitInsetsTypes(0) stops the frame from being inset-fitted, so the input region
+            // coincides with the FLAG_LAYOUT_IN_SCREEN-placed surface at (x, y). The window stays
+            // small (sizePx x sizePx), so touches outside the icon still pass through to the
+            // camera (FLAG_NOT_FOCUSABLE / FLAG_NOT_TOUCH_MODAL forward out-of-bounds events).
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                fitInsetsTypes = 0
+            }
         }
     }
 }

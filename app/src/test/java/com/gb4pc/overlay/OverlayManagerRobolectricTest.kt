@@ -252,21 +252,30 @@ class OverlayManagerRobolectricTest {
         )
     }
 
-    // ── Issue #229: overlay positioned relative to the true screen origin ───
+    // ── Issues #229 / #230: small window placed and made touchable at the screen origin ──
 
     /**
-     * Regression guard for Issue #229: the overlay window's [WindowManager.LayoutParams] must
-     * include `FLAG_LAYOUT_IN_SCREEN` (in addition to `FLAG_LAYOUT_NO_LIMITS`) so that
-     * `Gravity.TOP or Gravity.START` with `x`/`y` set by [calculateOverlayXPx] /
-     * [calculateOverlayYPx] positions the overlay relative to the physical-screen origin
-     * (0, 0), not below the status bar.
+     * Regression guard for Issues #229 and #230: the overlay window must be a SMALL
+     * (icon-sized) [WindowManager.LayoutParams] window, positioned with `Gravity.TOP or
+     * Gravity.START` and `x`/`y` from [calculateOverlayXPx] / [calculateOverlayYPx], anchored
+     * to the physical-screen origin via `FLAG_LAYOUT_IN_SCREEN` + `FLAG_LAYOUT_NO_LIMITS`, AND
+     * with its touchable input region aligned to that surface via `setFitInsetsTypes(0)`.
      *
-     * Without this flag, the E2E visual test observed the overlay rendered ~128 px lower
-     * than its configured `yPercent` (BLUE centroid at y=1784 instead of the expected
-     * y=1656 for yPercent=69% on a 2400 px-tall display).
+     * Issue #229: without `FLAG_LAYOUT_IN_SCREEN` the rendered surface sat ~128 px below the
+     * configured `yPercent` (BLUE centroid at y=1784 instead of y=1656 for yPercent=69% on a
+     * 2400 px-tall display).
+     *
+     * Issue #230: `FLAG_LAYOUT_IN_SCREEN` moved the surface but not the inset-fitted frame the
+     * touchable input region is derived from, so a tap at the rendered icon centre fell outside
+     * the touchable region and never reached the click listener. `setFitInsetsTypes(0)` stops
+     * the frame from being inset-fitted, so the input region coincides with the surface.
+     *
+     * The window must stay SMALL (icon-sized, NOT full-screen): a full-screen window would
+     * swallow every on-screen touch except the icon and block the camera app. The explicit
+     * width/height assertions guard against re-introducing that regression.
      */
     @Test
-    fun `overlay window uses FLAG_LAYOUT_IN_SCREEN so position is relative to screen origin`() {
+    fun `overlay window is small, screen-anchored, and has input region aligned to its surface`() {
         val context: Application = ApplicationProvider.getApplicationContext()
         val prefsManager: PrefsManager = mock {
             on { galleryPackage } doReturn null
@@ -282,6 +291,32 @@ class OverlayManagerRobolectricTest {
         val overlayView = shadowWm.views[0]
         val params = overlayView.layoutParams as WindowManager.LayoutParams
 
+        // The window must be small (icon-sized), NOT full-screen (Issue #230 regression guard).
+        val displayWidth = context.resources.displayMetrics.widthPixels
+        val displayHeight = context.resources.displayMetrics.heightPixels
+        val pos = OverlayPosition.default()
+        val sizePx = calculateOverlaySizePx(pos.sizePercent, displayWidth, displayHeight)
+        assertEquals(
+            "Overlay window width must be the icon size, not full-screen (Issue #230).",
+            sizePx,
+            params.width
+        )
+        assertEquals(
+            "Overlay window height must be the icon size, not full-screen (Issue #230).",
+            sizePx,
+            params.height
+        )
+        assertEquals(
+            "Overlay window x must equal calculateOverlayXPx for the configured position.",
+            calculateOverlayXPx(pos.xPercent, displayWidth, sizePx),
+            params.x
+        )
+        assertEquals(
+            "Overlay window y must equal calculateOverlayYPx for the configured position.",
+            calculateOverlayYPx(pos.yPercent, displayHeight, sizePx),
+            params.y
+        )
+
         assertTrue(
             "Overlay window must set FLAG_LAYOUT_IN_SCREEN so x/y are relative to the " +
                 "physical-screen origin, not below the status bar (Issue #229).",
@@ -291,6 +326,12 @@ class OverlayManagerRobolectricTest {
             "Overlay window must retain FLAG_LAYOUT_NO_LIMITS so it can extend into the " +
                 "system-bar areas.",
             (params.flags and WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS) != 0
+        )
+        assertEquals(
+            "Overlay window must set fitInsetsTypes = 0 so its touchable input region aligns " +
+                "with the FLAG_LAYOUT_IN_SCREEN-placed surface (Issue #230).",
+            0,
+            params.fitInsetsTypes
         )
     }
 
