@@ -26,7 +26,12 @@ You file one tracking issue per item (see **What to do**) so that each requireme
 1. Read the issue description, PR description, and all comments on both.
    Scan the PR description for unchecked checkboxes (`- [ ]`).
    For each one, decide whether the completed CI run already satisfies it (for example, "Instrumented test X passes on CI" is satisfied once that test's run is recorded as passing).
-   If it is satisfied, edit the PR description to check the box (`- [x]`).
+   If it is satisfied, check the box (`- [x]`) by editing the PR description:
+   a. Take the current PR body exactly as returned by `pull_request_read` (method `get`).
+   b. In that body, replace only the matched `- [ ]` line with `- [x]`, leaving the rest of the body (including any other unchecked boxes) unchanged.
+   c. Write the updated body back with `mcp__github__update_pull_request`, passing the full new body in its `body` field.
+   d. If that call fails, fall back to `curl -sX PATCH -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/{owner}/{repo}/pulls/{number} -d '{"body": "..."}'`, with the same full updated body JSON-escaped as the `body` field.
+   e. If both attempts fail, leave the checkbox as-is and continue without failing; do not add it to the *before merging* list solely because of this edit failure.
    Leave unchecked any box that CI does not address; such an item is then a candidate for the *before merging* list under **Unautomated verification steps**.
    Also look for the other kind of outstanding requirement described under **Role**: changes outside the repo (such as an issue that needs to be filed).
    Assemble the *before merging* list, labeling each item as either an unautomated verification step or a change outside the repo, and noting for each item the URL of the specific PR comment that called for it.
@@ -63,4 +68,5 @@ You file one tracking issue per item (see **What to do**) so that each requireme
 - Do not modify source files.
 - Do not commit or push anything.
 - Limit your reading to the issue, PR, and project test infrastructure references.
-- The only repository-changing actions you take are checking off satisfied PR description checkboxes, and filing the tracking issues described above and linking them to the PR.
+- The only repository-changing action you take is filing the tracking issues described above and linking them to the PR.
+- You may also edit the PR description to check off satisfied checkboxes (step 1); this is PR metadata, not a repository change.
