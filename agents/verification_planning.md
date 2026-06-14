@@ -26,6 +26,8 @@ You file one tracking issue per item (see **What to do**) so that each requireme
 1. Read the issue description, PR description, and all comments on both.
    Scan the PR description for unchecked checkboxes (`- [ ]`).
    For each one, decide whether the completed CI run already satisfies it (for example, "Instrumented test X passes on CI" is satisfied once that test's run is recorded as passing).
+   If a checkbox names a specific test and the PR's CI summary comment does not already confirm it, check that test's own result: read the `testresults-<group>` artifacts from the head commit's `build-and-test` run, the same per-test PASS/FAIL/SKIP signal `scripts/ci_monitor.py` parses.
+   A SKIP for that test does not satisfy the checkbox, even if the overall run succeeded.
    If it is satisfied, check the box (`- [x]`) by editing the PR description:
    a. Take the current PR body exactly as returned by `pull_request_read` (method `get`).
    b. In that body, replace only the matched `- [ ]` line with `- [x]`, leaving the rest of the body (including any other unchecked boxes) unchanged.
