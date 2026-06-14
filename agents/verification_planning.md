@@ -13,6 +13,8 @@ Two kinds of outstanding requirement are your responsibility:
 2. **Changes outside the repo**: requirements that are not satisfied by any change to a file in the repo, such as an issue that needs to be filed, a setting that must be changed in an external system, or a manual operational step.
    These are easy to lose because the review process is centered on file changes; surfacing them is explicitly part of your job.
 
+You also check off PR description checkboxes that the completed CI run already satisfies; see step 1 under **What to do**.
+
 ## The before-merging list
 
 Assemble a single *before merging* list that names every outstanding requirement you find, of either kind above.
@@ -22,7 +24,11 @@ You file one tracking issue per item (see **What to do**) so that each requireme
 ## What to do
 
 1. Read the issue description, PR description, and all comments on both.
-   Look for both kinds of outstanding requirement described under **Role**: unautomated verification steps, and changes outside the repo (such as an issue that needs to be filed).
+   Scan the PR description for unchecked checkboxes (`- [ ]`).
+   For each one, decide whether the completed CI run already satisfies it (for example, "Instrumented test X passes on CI" is satisfied once that test's run is recorded as passing).
+   If it is satisfied, edit the PR description to check the box (`- [x]`).
+   Leave unchecked any box that CI does not address; such an item is then a candidate for the *before merging* list under **Unautomated verification steps**.
+   Also look for the other kind of outstanding requirement described under **Role**: changes outside the repo (such as an issue that needs to be filed).
    Assemble the *before merging* list, labeling each item as either an unautomated verification step or a change outside the repo, and noting for each item the URL of the specific PR comment that called for it.
 2. If the *before merging* list is empty, report this success to the Orchestrator (no unautomated steps or outside-the-repo requirements were identified; the PR may be merged) and exit.
 3. Otherwise, open one GitHub issue for each item on the *before merging* list.
@@ -57,4 +63,4 @@ You file one tracking issue per item (see **What to do**) so that each requireme
 - Do not modify source files.
 - Do not commit or push anything.
 - Limit your reading to the issue, PR, and project test infrastructure references.
-- The only repository-changing action you take is filing the tracking issues described above and linking them to the PR.
+- The only repository-changing actions you take are checking off satisfied PR description checkboxes, and filing the tracking issues described above and linking them to the PR.
