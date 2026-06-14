@@ -24,7 +24,7 @@ You file one tracking issue per item (see **What to do**) so that each requireme
 1. Read the issue description, PR description, and all comments on both.
    Look for both kinds of outstanding requirement described under **Role**: unautomated verification steps, and changes outside the repo (such as an issue that needs to be filed).
    Assemble the *before merging* list, labeling each item as either an unautomated verification step or a change outside the repo, and noting for each item the URL of the specific PR comment that called for it.
-2. If the *before merging* list is empty, report this success to the Orchestrator (no unautomated steps or outside-the-repo requirements were identified; the PR may be merged) and exit.
+2. If the *before merging* list is empty, apply the `verified` label to both the PR and the issue it resolves, report this success to the Orchestrator (no unautomated steps or outside-the-repo requirements were identified; the PR may be merged) and exit.
 3. Otherwise, open one GitHub issue for each item on the *before merging* list.
    Do NOT communicate with the user, and do NOT ask whether to test manually or to automate.
    For each item:
