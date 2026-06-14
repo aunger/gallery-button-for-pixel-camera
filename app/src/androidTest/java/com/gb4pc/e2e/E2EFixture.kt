@@ -345,24 +345,40 @@ class E2EFixture(
     }
 
     /**
-     * Taps the overlay button at its configured screen position.
+     * Taps the overlay button at its actual rendered position.
      *
-     * Reads the active [com.gb4pc.data.OverlayPosition] from [PrefsManager], computes pixel
-     * coordinates from [android.view.WindowMetrics] (API 30+) or [android.util.DisplayMetrics]
-     * (API 26–29), then dispatches a tap via [UiDevice].
+     * Issue #229 established that the overlay's rendered position does not match the
+     * coordinates computed from [PrefsManager.getOverlayPosition]: the overlay renders about
+     * 128px lower than [calculateOverlayYPx] predicts. Tapping the *computed* position
+     * therefore misses the overlay's clickable view entirely--the tap lands on empty camera-app
+     * space above the icon and silently fails to launch the gallery (issues #230, #231, #232).
      *
-     * If the overlay is not rendered (e.g. blocked in secure-camera mode) this call taps empty
-     * screen space and has no visible effect — the plan requires this silent behaviour for
-     * Tests 4a/5a's baseline-failure scenario.
+     * To tap reliably regardless of that rendering discrepancy, this locates the overlay by its
+     * actual on-screen pixels: it takes a fresh screenshot and taps the centroid of the
+     * YELLOW union BLUE mask (the gallery icon's background and foreground colors, as used by
+     * test1c_overlayOuterIsSquircle).
+     *
+     * If the overlay is not rendered (e.g. blocked in secure-camera mode), the mask is empty and
+     * this falls back to the position computed from [PrefsManager.getOverlayPosition], tapping
+     * empty screen space and having no visible effect, which Tests 4a/5a's baseline-failure
+     * scenario requires.
      */
     fun tapOverlay() {
         val (displayWidth, displayHeight) = displaySize()
 
-        val aspectRatio = AspectRatioUtil.quantize(displayWidth, displayHeight)
-        val pos = PrefsManager(context).getOverlayPosition(aspectRatio)
+        val screen = Screenshot.captureScreen()
+        val iconMask = ColorMatch.union(
+            ColorMatch.mask(screen, Rgb.BLUE),
+            ColorMatch.mask(screen, Rgb.YELLOW)
+        )
 
-        val x = (pos.xPercent / 100f * displayWidth).toInt()
-        val y = (pos.yPercent / 100f * displayHeight).toInt()
+        val (x, y) = if (iconMask.pixelCount > 0) {
+            iconMask.centroid.x.toInt() to iconMask.centroid.y.toInt()
+        } else {
+            val aspectRatio = AspectRatioUtil.quantize(displayWidth, displayHeight)
+            val pos = PrefsManager(context).getOverlayPosition(aspectRatio)
+            (pos.xPercent / 100f * displayWidth).toInt() to (pos.yPercent / 100f * displayHeight).toInt()
+        }
 
         UiDevice.getInstance(InstrumentationRegistry.getInstrumentation()).click(x, y)
     }
