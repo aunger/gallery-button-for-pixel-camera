@@ -13,7 +13,6 @@ import android.os.Build
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.WindowManager
-import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.Toast
 import androidx.core.content.ContextCompat
@@ -75,23 +74,6 @@ class OverlayManager(
 ) {
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private val keyguardManager = context.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
-
-    /**
-     * The full-screen host window actually added to the [WindowManager]. The gallery icon is a
-     * positioned child of this host (see [createOverlayHost]).
-     *
-     * The window spans the whole display so its input/touchable region coincides with its
-     * rendered surface. A small positioned [TYPE_APPLICATION_OVERLAY] window's touchable region
-     * is derived from the decor-inset-fitted frame, which diverges from the surface after
-     * [WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN] shifts the surface to the physical
-     * origin (Issue #229's fix). That divergence left taps on the rendered icon landing outside
-     * the window's touchable region, so the tap never reached [handleTap] (Issue #230). With a
-     * full-screen window there is no inset to subtract, so a tap on the icon's pixels hits the
-     * icon child and fires its click listener.
-     */
-    private var hostView: FrameLayout? = null
-
-    /** The gallery icon child view. Holds the icon/thumbnail drawable and the tap listener. */
     private var overlayView: ImageView? = null
     private var isShowing = false
 
@@ -100,13 +82,12 @@ class OverlayManager(
             return
         }
 
-        val (host, icon) = createOverlayHost()
+        val view = createOverlayView()
         val params = createLayoutParams()
 
         try {
-            windowManager.addView(host, params)
-            hostView = host
-            overlayView = icon
+            windowManager.addView(view, params)
+            overlayView = view
             isShowing = true
             DebugLog.log("Overlay shown")
         } catch (e: Exception) {
@@ -115,28 +96,23 @@ class OverlayManager(
     }
 
     fun hide() {
-        hostView?.let { view ->
+        overlayView?.let { view ->
             try {
                 windowManager.removeView(view)
             } catch (_: Exception) {
                 // View may already be removed
             }
         }
-        hostView = null
         overlayView = null
         isShowing = false
         DebugLog.log("Overlay hidden")
     }
 
     fun updatePosition() {
-        val icon = overlayView ?: return
-        val host = hostView ?: return
-        if (!isShowing) return
-        // The window is full-screen; only the icon child's offset/size changes when the
-        // configured position changes. Re-apply the child's layout params in place.
-        icon.layoutParams = iconLayoutParams()
+        if (!isShowing || overlayView == null) return
+        val params = createLayoutParams()
         try {
-            host.requestLayout()
+            windowManager.updateViewLayout(overlayView, params)
         } catch (_: Exception) {}
     }
 
@@ -200,22 +176,10 @@ class OverlayManager(
         }
     }
 
-    /**
-     * Builds the full-screen host [FrameLayout] and its gallery-icon [ImageView] child.
-     *
-     * The host fills the window (which spans the whole display) and is NOT clickable, so touches
-     * outside the icon are not consumed by the view hierarchy and -- together with
-     * [WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL] on the window -- pass through to the
-     * camera app below. Only the icon child is clickable, so a tap on the icon fires [handleTap]
-     * while taps elsewhere reach the camera (Issue #230).
-     *
-     * The key and focus overrides that used to live on the icon view now live on the host, since
-     * the host is the attached root that receives window-level key and focus events.
-     */
-    private fun createOverlayHost(): Pair<FrameLayout, ImageView> {
+    private fun createOverlayView(): ImageView {
         // When focusable overlay is enabled we need a custom subclass to handle key and focus
-        // events on the root (host) view.
-        val host = object : FrameLayout(context) {
+        // events on the root view.
+        val imageView = object : ImageView(context) {
             /**
              * Do not consume key events — pass them through to the camera app.
              *
@@ -242,41 +206,10 @@ class OverlayManager(
                 }
             }
         }
-        // The host itself must not be clickable, so touches outside the icon are not consumed and
-        // pass through to the camera app.
-        host.isClickable = false
-
-        val imageView = ImageView(context)
         imageView.scaleType = ImageView.ScaleType.FIT_CENTER
         updateIconDrawable(imageView)
         imageView.setOnClickListener { handleTap() }
-
-        host.addView(imageView, iconLayoutParams())
-        return host to imageView
-    }
-
-    /**
-     * Computes the icon child's [FrameLayout.LayoutParams]: its size and its top/left offset
-     * within the full-screen host, derived from the configured overlay position via the same
-     * pure functions used for the previous per-window x/y ([calculateOverlaySizePx],
-     * [calculateOverlayXPx], [calculateOverlayYPx]). Keeping these functions unchanged means the
-     * icon renders at the same pixel position as before, so the position assertion in
-     * test1a_overlayShowsBlueAtConfiguredPosition still holds.
-     */
-    private fun iconLayoutParams(): FrameLayout.LayoutParams {
-        val (displayWidth, displayHeight) = displayBounds()
-        val aspectRatio = AspectRatioUtil.quantize(displayWidth, displayHeight)
-        val position = prefsManager.getOverlayPosition(aspectRatio)
-
-        val sizePx = calculateOverlaySizePx(position.sizePercent, displayWidth, displayHeight)
-        val xPx = calculateOverlayXPx(position.xPercent, displayWidth, sizePx)
-        val yPx = calculateOverlayYPx(position.yPercent, displayHeight, sizePx)
-
-        return FrameLayout.LayoutParams(sizePx, sizePx).apply {
-            gravity = Gravity.TOP or Gravity.START
-            leftMargin = xPx
-            topMargin = yPx
-        }
+        return imageView
     }
 
     /**
@@ -413,50 +346,43 @@ class OverlayManager(
         DebugLog.log("Launched secure viewer")
     }
 
-    /**
-     * The full display bounds in pixels.
-     *
-     * M8: On API 30+ use currentWindowMetrics for correct bounds in split-screen; fall back to
-     * displayMetrics on older API. The same bounds drive the full-screen window size and the icon
-     * child's offset, so the icon lands at the configured percent of the real display.
-     */
-    private fun displayBounds(): Pair<Int, Int> {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+    private fun createLayoutParams(): WindowManager.LayoutParams {
+        @Suppress("DEPRECATION")
+        val showWhenLockedFlag = WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
+
+        // M8: On API 30+ use currentWindowMetrics for correct bounds in split-screen;
+        // fall back to displayMetrics on older API.
+        val (displayWidth, displayHeight) = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val bounds = windowManager.currentWindowMetrics.bounds
             bounds.width() to bounds.height()
         } else {
             @Suppress("DEPRECATION")
             val dm = android.util.DisplayMetrics()
-            @Suppress("DEPRECATION")
             windowManager.defaultDisplay.getMetrics(dm)
             dm.widthPixels to dm.heightPixels
         }
-    }
 
-    private fun createLayoutParams(): WindowManager.LayoutParams {
-        @Suppress("DEPRECATION")
-        val showWhenLockedFlag = WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
+        val aspectRatio = AspectRatioUtil.quantize(displayWidth, displayHeight)
+        val position = prefsManager.getOverlayPosition(aspectRatio)
 
-        // The overlay window spans the whole display. A full-screen window's input/touchable
-        // region matches its rendered surface (no decor-inset subtraction), so a tap on the
-        // icon's pixels reaches the icon child (Issue #230). The icon is positioned within this
-        // window by iconLayoutParams(), not by the window's own x/y.
+        val sizePx = calculateOverlaySizePx(position.sizePercent, displayWidth, displayHeight)
+        val xPx = calculateOverlayXPx(position.xPercent, displayWidth, sizePx)
+        val yPx = calculateOverlayYPx(position.yPercent, displayHeight, sizePx)
+
+        // FLAG_NOT_FOCUSABLE: safe default — overlay never steals input focus.
+        // Experimental focusable path: omit FLAG_NOT_FOCUSABLE so the window can receive focus
+        // events, enabling onWindowFocusChanged(false) as a task-switcher signal.
+        // FLAG_NOT_TOUCH_MODAL is also set to keep touch events outside the overlay's bounds
+        // passing through to the camera app. Trade-off: the focusable window may steal
+        // volume/power key events from the camera app even when dispatchKeyEvent returns false.
         //
-        // FLAG_NOT_TOUCH_MODAL is REQUIRED on this full-screen window: without it the window is
-        // touch-modal and would swallow every touch on screen, blocking the camera app. With it,
-        // only the icon child (the sole clickable view) is touchable; touches elsewhere pass
-        // through to the camera below.
-        //
-        // FLAG_NOT_FOCUSABLE (non-focusable default): the overlay never steals input focus.
-        // Focusable path: omit FLAG_NOT_FOCUSABLE so the window can receive focus events,
-        // enabling onWindowFocusChanged(false) as a task-switcher signal. Trade-off: the
-        // focusable window may steal volume/power key events from the camera app even when
-        // dispatchKeyEvent returns false.
-        //
-        // FLAG_LAYOUT_IN_SCREEN + FLAG_LAYOUT_NO_LIMITS keep the full-screen window anchored at
-        // the true physical-screen origin (0, 0) and allowed to extend into the system-bar areas,
-        // so the icon child's (leftMargin, topMargin) are relative to the real display origin,
-        // matching calculateOverlayXPx/calculateOverlayYPx's assumptions (Issue #229).
+        // FLAG_LAYOUT_IN_SCREEN: without this flag, a TYPE_APPLICATION_OVERLAY window's
+        // Gravity.TOP|START origin is offset below the system status bar, so x/y (computed
+        // above relative to the full display size) land the overlay too far down the screen
+        // (Issue #229 — the overlay rendered ~128 px lower than the configured yPercent).
+        // Combined with FLAG_LAYOUT_NO_LIMITS, this makes (x, y) relative to the true
+        // physical-screen origin (0, 0), matching calculateOverlayXPx/calculateOverlayYPx's
+        // assumptions.
         val windowFlags = if (prefsManager.focusableOverlay) {
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
@@ -464,22 +390,21 @@ class OverlayManager(
                 showWhenLockedFlag
         } else {
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                 showWhenLockedFlag
         }
 
         return WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.MATCH_PARENT,
+            sizePx,
+            sizePx,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             windowFlags,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = 0
-            y = 0
+            x = xPx
+            y = yPx
         }
     }
 }
