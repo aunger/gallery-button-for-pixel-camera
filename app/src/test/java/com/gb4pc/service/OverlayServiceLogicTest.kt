@@ -357,14 +357,13 @@ class OverlayServiceLogicTest {
     }
 
     /**
-     * When the retry fires but UsageStats still has not caught up, no second retry must be
-     * scheduled — the retry is strictly one-shot per camera-open event.
-     *
-     * Without the activationRetryPending flag, scheduleActivationRetry() re-schedules on every
-     * evaluateForeground() call triggered by the runnable, creating a 1 Hz polling loop.
+     * When the retry fires but UsageStats still has not caught up, the retry re-schedules itself
+     * (UsageStats can lag the camera callback by more than one ACTIVATION_RETRY_MS interval). Each
+     * fired retry that still finds no foreground schedules at most one follow-up, so the loop runs
+     * at exactly 1 Hz (one pending postDelayed at a time) rather than fanning out.
      */
     @Test
-    fun `DT-06a retry does not re-schedule when foreground still not detected after firing`() {
+    fun `DT-06a retry re-schedules once per firing when foreground still not detected`() {
         whenever(foregroundDetector.getForegroundPackage()).thenReturn(null)
         cameraState.setCameraUnavailable("0")
         logic.evaluateForeground()
@@ -374,9 +373,80 @@ class OverlayServiceLogicTest {
         verify(handler).postDelayed(runnableCaptor.capture(), eq(Constants.ACTIVATION_RETRY_MS))
         runnableCaptor.firstValue.run()
 
-        // Foreground still not detected — must NOT schedule a second postDelayed
-        verify(handler, times(1)).postDelayed(any(), eq(Constants.ACTIVATION_RETRY_MS))
+        // Foreground still not detected -- exactly one follow-up retry is scheduled (2 total).
+        verify(handler, times(2)).postDelayed(any(), eq(Constants.ACTIVATION_RETRY_MS))
         assertFalse("Overlay must not be active when foreground was never detected", logic.isOverlayActive)
+    }
+
+    /**
+     * The self-rescheduling retry is bounded: across a single camera-open event it fires at most
+     * ACTIVATION_RETRY_MAX_ATTEMPTS times when UsageStats never catches up, then stops. This proves
+     * the loop cannot poll forever (e.g. if onCameraAvailable's cancel path is somehow missed).
+     */
+    @Test
+    fun `DT-06a retry stops after ACTIVATION_RETRY_MAX_ATTEMPTS when foreground never detected`() {
+        whenever(foregroundDetector.getForegroundPackage()).thenReturn(null)
+        cameraState.setCameraUnavailable("0")
+        logic.evaluateForeground()
+
+        val scheduled = drainActivationRetries()
+
+        // The chain self-terminates after exactly ACTIVATION_RETRY_MAX_ATTEMPTS schedules.
+        assertEquals(Constants.ACTIVATION_RETRY_MAX_ATTEMPTS, scheduled)
+        assertFalse("Overlay must not be active when foreground was never detected", logic.isOverlayActive)
+    }
+
+    /**
+     * A fresh camera-open event resets the retry attempt budget: after a sequence that exhausts the
+     * retries (foreground never detected), releasing and re-opening the camera lets the retry run
+     * the full ACTIVATION_RETRY_MAX_ATTEMPTS again.
+     */
+    @Test
+    fun `DT-06a attempt budget resets on a new camera-open event`() {
+        whenever(foregroundDetector.getForegroundPackage()).thenReturn(null)
+
+        // First sequence: exhaust the budget.
+        cameraState.setCameraUnavailable("0")
+        logic.evaluateForeground()
+        val first = drainActivationRetries()
+        assertEquals(Constants.ACTIVATION_RETRY_MAX_ATTEMPTS, first)
+
+        // Camera released, then re-opened: this resets the budget via cancelActivationRetry().
+        logic.onCameraAvailable("0")
+        cameraState.setCameraUnavailable("0")
+        logic.evaluateForeground()
+
+        // The full budget is available again for the new camera-open event. Baseline past the
+        // posts already fired by the first drain so only the second sequence's retries are counted.
+        val second = drainActivationRetries(baseline = first)
+        assertEquals(Constants.ACTIVATION_RETRY_MAX_ATTEMPTS, second)
+    }
+
+    /**
+     * Runs the activation-retry chain to completion and returns the number of retries scheduled in
+     * this drain (i.e. since [baseline] cumulative posts).
+     *
+     * Each fired retry that still finds no foreground package schedules the next one via a new
+     * handler.postDelayed(). This drains that chain by, on each step, capturing every posted
+     * runnable and running the latest one, until a step posts nothing new. The cumulative captor
+     * count grows monotonically, so [baseline] lets a second drain in the same test ignore the
+     * runnables already fired by an earlier drain. Bounded so a non-terminating loop fails the test.
+     */
+    private fun drainActivationRetries(baseline: Int = 0): Int {
+        var total = baseline
+        while (true) {
+            val captor = argumentCaptor<Runnable>()
+            verify(handler, atLeastOnce())
+                .postDelayed(captor.capture(), eq(Constants.ACTIVATION_RETRY_MS))
+            if (captor.allValues.size <= total) break  // no new retry was posted -> chain terminated
+            captor.allValues.last().run()
+            total = captor.allValues.size
+            assertTrue(
+                "Activation retry did not terminate within a bounded number of attempts",
+                total - baseline <= Constants.ACTIVATION_RETRY_MAX_ATTEMPTS * 4
+            )
+        }
+        return total - baseline
     }
 
     /**

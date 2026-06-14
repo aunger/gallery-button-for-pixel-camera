@@ -97,13 +97,15 @@ class PixelCameraOverlayE2ETest {
     }
 
     /**
-     * Regression test for the UsageStats-lag retry (DT-06a / Constants.ACTIVATION_RETRY_MS)
-     * and a final-state assertion that the overlay is active after [E2EFixture.launchPixelCamera].
+     * Regression test for the UsageStats-lag retry (DT-06a / Constants.ACTIVATION_RETRY_MS) and a
+     * final-state assertion that the overlay is active after [E2EFixture.launchPixelCamera].
      *
      * When Pixel Camera starts, the CameraManager fires onCameraUnavailable almost immediately,
-     * but UsageStatsManager may not reflect Pixel Camera as the foreground app for ~800 ms.
-     * Without the retry in OverlayServiceLogic, the overlay never appears if the initial
-     * evaluateForeground() call finds no foreground package.
+     * but UsageStatsManager may not reflect Pixel Camera as the foreground app for ~800 ms (and
+     * longer under CI load). Without the retry in OverlayServiceLogic, the overlay never appears if
+     * the initial evaluateForeground() call finds no foreground package. The retry re-schedules
+     * itself up to Constants.ACTIVATION_RETRY_MAX_ATTEMPTS times (issue #249), so lag longer than a
+     * single ACTIVATION_RETRY_MS interval is tolerated rather than permanently dropping activation.
      *
      * See the class-level note above on [E2EFixture.launchPixelCamera] (issue #233 / #362 /
      * #369): in the healthy case the DT-06a retry has normally already completed inside
@@ -119,16 +121,17 @@ class PixelCameraOverlayE2ETest {
 
         // Headroom window: covers the unlikely case that the overlay deactivates again between
         // launchPixelCamera() returning and the check below, e.g. via the debounce/deactivation
-        // path in OverlayServiceLogic. 9 s camera-open + ACTIVATION_RETRY_MS (1 s) +
-        // 5 s headroom = 15 s. This is deliberately smaller than the 20 s default in
-        // E2EFixture.waitForOverlayActive(), because that method's budget covers a primary wait
-        // for activation, whereas launchPixelCamera() has already established
-        // isOverlayActive == true here in the common case; this window only needs to cover a
-        // re-activation after a deactivation, not the original 9 s camera-open latency from a
-        // cold start. Even so, it is intentionally generous: a tight timeout here (e.g. the
-        // previous 7 s) risked flaking under CI load (issue #249) without making the assertion
-        // any more meaningful.
-        val timeoutMs = 9000L + Constants.ACTIVATION_RETRY_MS + 5000L
+        // path in OverlayServiceLogic. 9 s camera-open + the full activation-retry budget
+        // (ACTIVATION_RETRY_MS x ACTIVATION_RETRY_MAX_ATTEMPTS) + 5 s headroom. This is deliberately
+        // smaller than the 20 s default in E2EFixture.waitForOverlayActive(), because that method's
+        // budget covers a primary wait for activation, whereas launchPixelCamera() has already
+        // established isOverlayActive == true here in the common case; this window only needs to
+        // cover a re-activation after a deactivation, not the original 9 s camera-open latency from
+        // a cold start. Even so, it is intentionally generous: a tight timeout here (e.g. the
+        // previous 7 s) risked flaking under CI load (issue #249) without making the assertion any
+        // more meaningful.
+        val timeoutMs =
+            9000L + Constants.ACTIVATION_RETRY_MS * Constants.ACTIVATION_RETRY_MAX_ATTEMPTS + 5000L
         val appeared = fixture.waitForCondition(timeoutMs) { OverlayService.isOverlayActive }
         assertTrue(
             "Overlay should be active after launchPixelCamera() (and remain or become active " +
