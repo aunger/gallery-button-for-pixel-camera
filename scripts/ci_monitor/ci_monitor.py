@@ -6,35 +6,14 @@ Each stdout line is consumed as a task-notification event, so output is the
 interface: terminal outcome lines end the loop, while informational lines
 (in_progress heartbeat, per-step deltas, per-test FAILs) keep it alive.
 
+See scripts/ci_monitor/README.md for full usage instructions, including the
+command-line arguments, per-outcome filter flags, and the outcome vocabulary.
+
 Usage:
-    python3 scripts/ci_monitor.py --pr <PR_NUMBER> [filter flags]
-
-Arguments:
-    --pr <PR_NUMBER>   The pull request number to monitor (required).
-
-Per-outcome filter flags (each outcome is independent):
-    --include-fail [PATTERN]   Report FAIL markers, optionally regex-filtered on name.
-                               Default: all FAIL markers reported.
-    --no-include-fail          Suppress all FAIL markers.
-    --include-skip [PATTERN]   Report SKIP markers, optionally regex-filtered on name.
-                               Default: all SKIP markers reported.
-    --no-include-skip          Suppress all SKIP markers.
-    --include-pass [PATTERN]   Report PASS markers, optionally regex-filtered on name.
-                               Default: no PASS markers reported.
-    --no-include-pass          Suppress all PASS markers (explicit form of default).
+    python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER> [filter flags]
 
 Environment:
     GITHUB_TOKEN  GitHub token used for the REST calls (required).
-
-Outcome vocabulary (one terminal line ends the loop):
-    PR#N: Clear ...      All checks passed and mergeable_state is clean/unstable.
-    PR#N: Blocked ...    A check failed, or mergeable_state is behind/dirty.
-    PR#N: Infra ...      A CI infrastructure problem, or mergeable_state=blocked.
-    PR#N: in_progress    CI still running; emitted only after >120 s of silence.
-    PR#N: step "..." -> ...    A build-and-test step reached a conclusion (informational).
-    PR#N: FAIL [suite] name: ...   A per-test failure from a testresults artifact (informational).
-    PR#N: PASS [suite] name: ...   A per-test pass (informational; emitted only when --include-pass used).
-    PR#N: SKIP [suite] name: ...   A per-test skip (informational; suppressed only with --no-include-skip).
 
 NOTE on error handling: the poll loop must survive transient REST/parse
 failures. HTTP and JSON errors are caught per-call and treated as "no data this

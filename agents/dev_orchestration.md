@@ -27,7 +27,7 @@ These rules are absolute:
    It must never carry one sub-agent's words to another sub-agent.
    If two sub-agents need to communicate, they leave each other GitHub comments.
 4. The Orchestrator does not read the PR (diff, description, or comments), does not read the issue, and does not read source files.
-   Its only window into CI is the CI Monitor (`scripts/ci_monitor.py`).
+   Its only window into CI is the CI Monitor (`scripts/ci_monitor/ci_monitor.py`).
    The issue number comes from the user and is plugged into the launch form as a literal token.
 5. Permitted-words test: before sending anything to a sub-agent, verify each sentence is either the user's exact words or an exact quote from an `agents/` file.
    If it is neither, do not send it.
@@ -144,7 +144,7 @@ Monitor output lines are relayed to the user verbatim; this is user-facing statu
 ```
   if Reviewer requested changes → goto newAuthor
   if Reviewer gave LGTM:
-    Orchestrator launches a Monitor tool call running `python3 scripts/ci_monitor.py --pr <PR_NUMBER>` from the repo root (run_in_background: true, timeout_ms: 1800000)
+    Orchestrator launches a Monitor tool call running `python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER>` from the repo root (run_in_background: true, timeout_ms: 1800000)
     Each stdout line arrives as a task-notification event; relay each line to the user verbatim.
     Act only on the terminal lines Clear, Blocked, or Infra. Relay in_progress lines to the user as brief status updates (the script suppresses these unless no other output has been emitted for over 120 seconds).
     Relay `step "..." -> ...` and `FAIL [...] ...` lines to the user as informational test-result deltas; they do NOT end the loop or start a new Author round.
@@ -166,53 +166,12 @@ Monitor output lines are relayed to the user verbatim; this is user-facing statu
 
 ### Monitor script
 
-The poll loop lives in [`scripts/ci_monitor.py`](../scripts/ci_monitor.py). Run it from the repo root, passing the PR number via `--pr`, as the `command` for the `Monitor` tool call:
+The poll loop lives in [`scripts/ci_monitor/ci_monitor.py`](../scripts/ci_monitor/ci_monitor.py), passing the PR number via `--pr`, as the `command` for the `Monitor` tool call. For the command syntax, per-test outcome filters, and the full outcome vocabulary, see [`scripts/ci_monitor/README.md`](../scripts/ci_monitor/README.md).
 
-```bash
-python3 scripts/ci_monitor.py --pr <PR_NUMBER>
-```
+Orchestrator-specific notes:
 
-`OWNER`/`REPO` default to this repo at the top of the script, and it reads `$GITHUB_TOKEN` from the environment. The script catches transient REST/parse failures per call so they cannot kill the resilient poll loop; the 30-minute escalation threshold is enforced by `timeout_ms: 1800000` on the Monitor call, not inside the script. Each stdout line is the interface (see the outcome vocabulary below): terminal lines (`Clear`/`Blocked`/`Infra`) end the loop, while informational lines keep it alive.
-
-### Per-test outcome filters
-
-By default the monitor reports **all FAIL markers**, **all SKIP markers**, and **no PASS markers**. The Orchestrator may supply independent filter flags to narrow or expand which per-test outcomes are streamed:
-
-| Flag | Effect |
-|---|---|
-| `--include-fail [PATTERN]` | Report FAIL markers (default); optionally restrict to those whose `name` matches PATTERN. |
-| `--no-include-fail` | Suppress all FAIL markers. |
-| `--include-skip [PATTERN]` | Report SKIP markers (default); optionally restrict to those whose `name` matches PATTERN. |
-| `--no-include-skip` | Suppress all SKIP markers. |
-| `--include-pass [PATTERN]` | Report PASS markers (not the default); optionally restrict to those whose `name` matches PATTERN. |
-| `--no-include-pass` | Suppress all PASS markers (explicit form of the default). |
-
-Each `--include-*` flag takes an **optional regex** matched against the marker's `name` field. Supplied without a pattern it includes *all* markers of that outcome. The three outcomes keep their distinct labels in output: `--include-pass` never relabels a SKIP as PASS.
-
-**Task-relevance validation.** To verify that a task-relevant test actually ran and passed — rather than being silently skipped — supply `--include-pass` with a regex matching the test(s) of interest:
-
-```bash
-python3 scripts/ci_monitor.py --pr <PR_NUMBER> --include-pass 'MyFeatureTest'
-```
-
-This emits a `PASS` line when the matching test passes and a `SKIP` line if it was skipped (which would be a false-validation trap: the code path was never exercised). With no pattern (`--include-pass ''`), every passing test is reported.
-
-### Outcome vocabulary
-
-| Line emitted          | Meaning                                                                                               |
-|-----------------------|-------------------------------------------------------------------------------------------------------|
-| `PR#N: Clear ...`     | All CI checks passed and `mergeable_state` is `clean` or `unstable`; PR may be merged.               |
-| `PR#N: Blocked ...`   | A check failed (`failure`/`action_required`) or `mergeable_state` is `behind`/`dirty`; new Author round needed. |
-| `PR#N: Infra ...`     | A CI infrastructure problem (`cancelled`, `timed_out`, `stale`, `startup_failure`, or `mergeable_state=blocked`); escalate to user. |
-| `PR#N: in_progress`   | CI still running; emitted only after >120 s of silence (no other output); relay to user as a brief status update. |
-| `PR#N: step "..." -> ...` | A `build-and-test` step reached a conclusion: one of the three named test steps (`Build and run unit tests`, `Run *E2ETest`), or any genuine step failure. **Informational** — surfaces *which group* finished/failed and when; never ends the loop. |
-| `PR#N: FAIL [suite] name: ...` | A per-test failure (message + truncated trace) parsed from a `testresults-<group>` artifact, possibly followed by indented trace lines. **Informational** — emitted by default; suppress with `--no-include-fail`; never ends the loop. |
-| `PR#N: SKIP [suite] name: ...` | A per-test skip parsed from a `testresults-<group>` artifact. **Informational** — emitted by default; suppress with `--no-include-skip`; never ends the loop. A skipped task-relevant test is a false-validation trap. |
-| `PR#N: PASS [suite] name: ...` | A per-test pass parsed from a `testresults-<group>` artifact. **Informational** — suppressed by default; enable with `--include-pass [PATTERN]`; never ends the loop. |
-
-- `step`/`FAIL`/`SKIP`/`PASS` lines are **informational test-result deltas**, not terminal outcomes: relay them to the user but do not start a new Author round. Only a `Blocked` line does that.
-- The Monitor reads results at **step granularity** from two polled REST signals — per-step `conclusion` (`/actions/runs/{id}/jobs`) and the `testresults-<group>` artifacts (`/actions/runs/{id}/artifacts`). It deliberately does **not** scrape the in-progress job log: `GET /actions/jobs/{job_id}/logs` returns 404 until the job completes, so markers are not readable mid-run that way.
 - The 30-minute escalation threshold is enforced by `timeout_ms: 1800000` on the Monitor call — no elapsed-time tracking needed.
+- `step`/`FAIL`/`SKIP`/`PASS` lines are informational test-result deltas, not terminal outcomes: relay them to the user but do not start a new Author round. Only a `Blocked` line does that.
 - Do not subscribe to PR events or delay dispatching the Reviewer while waiting for CI; the Monitor loop replaces that pattern.
 
 ## Delegation rules

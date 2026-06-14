@@ -41,7 +41,7 @@ import unittest.mock
 import urllib.error
 import zipfile
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "ci_monitor"))
 
 import ci_monitor  # noqa: E402
 
@@ -833,7 +833,7 @@ print("\n=== (o) Gap D: ci_monitor.py prints its real PID and stops on SIGTERM =
 # SIGTERM to that exact PID, and confirm the process exits via the signal. A
 # bogus token + the unreachable real API_BASE means the loop never gets past the
 # SHA fetch, so it stays alive (sleeping) until we signal it — no network needed.
-_MONITOR_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ci_monitor.py")
+_MONITOR_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ci_monitor", "ci_monitor.py")
 _proc = subprocess.Popen(
     [sys.executable, _MONITOR_PATH, "--pr", "1"],
     stdout=subprocess.PIPE,
