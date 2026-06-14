@@ -23,6 +23,12 @@ object Constants {
     // Retry delay when UsageStats hasn't caught up with the foreground app yet (DT-06a)
     const val ACTIVATION_RETRY_MS = 1000L
 
+    // Maximum number of activation retries per camera-open event (DT-06a). UsageStats can lag the
+    // camera callback by more than a single ACTIVATION_RETRY_MS interval, especially on slow
+    // emulators, so the retry re-schedules itself up to this many times (a total retry budget of
+    // ACTIVATION_RETRY_MS x ACTIVATION_RETRY_MAX_ATTEMPTS) instead of giving up after one attempt.
+    const val ACTIVATION_RETRY_MAX_ATTEMPTS = 5
+
     // Debug log buffer size (UI-10)
     const val DEBUG_LOG_BUFFER_SIZE = 200
 

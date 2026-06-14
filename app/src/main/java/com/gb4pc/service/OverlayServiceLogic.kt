@@ -39,11 +39,19 @@ class OverlayServiceLogic(
         private set
 
     private var deactivateRunnable: Runnable? = null
-    // DT-06a: Retry runnable for UsageStats lag — fires if foreground not detected on first check.
-    // activationRetryPending gates re-scheduling: it stays true while the runnable is executing
-    // so that evaluateForeground() inside the runnable cannot queue a second retry.
+    // DT-06a: Retry runnable for UsageStats lag -- fires if foreground not detected on first check.
+    // activationRetryPending gates re-scheduling: it is true exactly while a retry runnable is
+    // posted to the handler, so a burst of evaluateForeground() calls (e.g. several camera events)
+    // cannot stack multiple retries for the same lag.
+    //
+    // UsageStats can lag the camera callback by more than one ACTIVATION_RETRY_MS interval, so the
+    // retry is not one-shot: when a fired retry still finds no foreground package, it re-schedules
+    // itself until the overlay activates, the camera is released, or
+    // Constants.ACTIVATION_RETRY_MAX_ATTEMPTS attempts have been made. activationRetryAttempts
+    // counts attempts made in the current camera-open sequence and is reset by cancelActivationRetry().
     private var activationRetryRunnable: Runnable? = null
     private var activationRetryPending = false
+    private var activationRetryAttempts = 0
 
     // ── Camera callback delegation ──────────────────────────────────────────
 
@@ -214,18 +222,31 @@ class OverlayServiceLogic(
         }
     }
 
-    // DT-06a: Retry activation after UsageStats lag — one shot per camera-open event.
+    // DT-06a: Retry activation after UsageStats lag. Re-schedules itself up to
+    // ACTIVATION_RETRY_MAX_ATTEMPTS times per camera-open event so that UsageStats lag longer than
+    // a single ACTIVATION_RETRY_MS interval is still tolerated.
     private fun scheduleActivationRetry() {
-        if (activationRetryPending) return  // already scheduled or currently executing
-        DebugLog.log("Logic: scheduling activation retry in ${Constants.ACTIVATION_RETRY_MS}ms")
+        if (activationRetryPending) return  // a retry is already posted for this lag
+        if (activationRetryAttempts >= Constants.ACTIVATION_RETRY_MAX_ATTEMPTS) {
+            DebugLog.log(
+                "Logic: activation retry budget exhausted after $activationRetryAttempts attempts; " +
+                    "giving up until the next camera-open event"
+            )
+            return
+        }
+        activationRetryAttempts++
+        DebugLog.log(
+            "Logic: scheduling activation retry ${activationRetryAttempts}/" +
+                "${Constants.ACTIVATION_RETRY_MAX_ATTEMPTS} in ${Constants.ACTIVATION_RETRY_MS}ms"
+        )
         activationRetryPending = true
         val runnable = Runnable {
             activationRetryRunnable = null
-            DebugLog.log("Logic: activation retry firing")
-            // activationRetryPending stays true while evaluateForeground() runs, so any
-            // scheduleActivationRetry() call inside cannot queue a second retry.
-            evaluateForeground()
+            // Clear the pending flag before evaluating so that, if UsageStats still has not caught
+            // up, evaluateForeground() can schedule the next attempt (up to the attempt cap).
             activationRetryPending = false
+            DebugLog.log("Logic: activation retry firing (attempt $activationRetryAttempts)")
+            evaluateForeground()
         }
         activationRetryRunnable = runnable
         handler.postDelayed(runnable, Constants.ACTIVATION_RETRY_MS)
@@ -238,6 +259,7 @@ class OverlayServiceLogic(
             activationRetryRunnable = null
         }
         activationRetryPending = false
+        activationRetryAttempts = 0
     }
 
     /** Called from onDestroy to clean up mutable state. */
