@@ -33,7 +33,7 @@ You file one tracking issue per item (see **What to do**) so that each requireme
       (If the requirement came from the PR or issue description itself rather than a comment, link to that description instead.)
    c. Record that the new issue **blocks** the PR, using GitHub's issue-dependencies feature.
       GitHub exposes this through the REST API.
-      The `gh` CLI is not installed in the sandbox, so call the REST endpoint with `curl` and `$GITHUB_TOKEN`, the same way `scripts/ci_monitor.sh` does (`-H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json"`).
+      The `gh` CLI is not installed in the sandbox, so call the REST endpoint with `curl` and `$GITHUB_TOKEN`, using the auth headers (`-H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json"`).
       To mark the PR as blocked by the new issue:
       `curl -sX POST -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/{owner}/{repo}/issues/{number}/dependencies/blocked_by -d '{"issue_id": {new issue's id}}'`,
       where `{number}` is the current PR number and `{new issue's id}` is the new issue's internal id (the `id` field, not its number; obtain it from the issue-creation response, or by reading the issue through the same API).
