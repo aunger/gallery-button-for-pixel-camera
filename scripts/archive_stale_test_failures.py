@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """Archive stale test-failure GitHub issues.
 
-Finds all open issues labelled ``test-failure`` whose ``updated_at``
-timestamp is older than STALE_DAYS (default 21).  For each such issue
-the ``test-failure`` label is removed and ``test-failure-archive`` is
-added, so it falls out of the Phase 4 dedup search scope.
+Finds all issues (open or closed) labelled ``test-failure`` whose
+``updated_at`` timestamp is older than STALE_DAYS (default 21).  For
+each such issue the ``test-failure`` label is removed and
+``test-failure-archive`` is added, so it falls out of the Phase 4
+dedup search scope.  Closed issues are included because a closed
+issue that still carries ``test-failure`` remains within
+``find_existing_issue``'s dedup search and could be reopened by a
+later failure of the same test.
 
 Usage:
     python3 scripts/archive_stale_test_failures.py
@@ -59,7 +63,7 @@ def gh_api(path: str, token: str, method: str = "GET", body: object = None) -> o
 # ---------------------------------------------------------------------------
 
 def fetch_stale_issues(repo: str, token: str, cutoff: datetime.datetime) -> list[dict]:
-    """Return all open test-failure issues last updated before *cutoff*.
+    """Return all test-failure issues, open or closed, last updated before *cutoff*.
 
     Paginates through all pages automatically.
     """
@@ -67,7 +71,7 @@ def fetch_stale_issues(repo: str, token: str, cutoff: datetime.datetime) -> list
     page = 1
     while True:
         batch = gh_api(
-            f"repos/{repo}/issues?state=open&labels=test-failure&per_page=100&page={page}",
+            f"repos/{repo}/issues?labels=test-failure&per_page=100&page={page}",
             token=token,
         )
         if not batch:
