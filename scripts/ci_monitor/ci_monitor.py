@@ -42,15 +42,24 @@ TEST_MARKER = "##GB4PC_TEST##"
 # any kind, so a quiet poll loop stays quiet. Every emitted line resets the timer.
 SILENCE_SECONDS = 120
 
-# Gap E (issue #402) — before emitting a Blocked/Infra terminal line, pause this
-# long and re-poll the step/artifact signals once more. /actions/runs/{id}/jobs
-# and /actions/runs/{id}/artifacts can lag behind /commits/{sha}/check-runs: the
+# Gap E (issue #402) — before emitting a Blocked/Infra terminal line, re-poll
+# the step/artifact signals a few more times. /actions/runs/{id}/jobs and
+# /actions/runs/{id}/artifacts can lag behind /commits/{sha}/check-runs: the
 # poll where check-runs first reports the failing conclusion may still show the
 # final "Gate on test failures" step as not-yet-completed, or the
-# testresults-<group> artifact as not-yet-listed. One extra drain poll after a
-# short delay gives those endpoints a chance to catch up before the loop ends,
-# so a Blocked terminal is not reported with zero diagnostic step/FAIL lines.
+# testresults-<group> artifact as not-yet-listed. These extra drain polls give
+# those endpoints a chance to catch up before the loop ends, so a Blocked
+# terminal is not reported with zero diagnostic step/FAIL lines.
+#
+# DRAIN_DELAY_SECONDS is the pause before each drain poll. DRAIN_MAX_ATTEMPTS
+# bounds how many times we retry: draining stops as soon as a poll emits a new
+# line, or after this many attempts have found nothing new. At 5s per attempt,
+# 3 attempts cover up to 15s of lag (issue #402 Runs B/C/E/F/T needed only one);
+# if the lag outlives that (Run G's multi-process, multi-minute shape), the
+# drain gives up and `drain_then_print` says so explicitly rather than printing
+# a bare terminal line.
 DRAIN_DELAY_SECONDS = 5
+DRAIN_MAX_ATTEMPTS = 3
 
 
 # ── Parsers ───────────────────────────────────────────────────────────────────
@@ -484,15 +493,26 @@ def main(argv):
         return emitted[0]
 
     def drain_then_print(sha, terminal_line):
-        """Gap E (issue #402) — one extra signal poll before a terminal line.
+        """Gap E (issue #402) — drain lagging signal polls before a terminal line.
 
-        Pauses DRAIN_DELAY_SECONDS and re-polls the step/artifact signals once
-        more, so any step or FAIL/SKIP/PASS line that was still lagging on the
-        poll that produced the terminal result gets a chance to be emitted
-        before the loop ends. Then prints `terminal_line` and flushes.
+        Pauses DRAIN_DELAY_SECONDS and re-polls the step/artifact signals, so
+        any step or FAIL/SKIP/PASS line that was still lagging on the poll that
+        produced the terminal result gets a chance to be emitted before the
+        loop ends. Repeats up to DRAIN_MAX_ATTEMPTS times, stopping as soon as a
+        poll emits something new. If every attempt comes up empty, prints a
+        line saying so, so a `Blocked`/`Infra` terminal with no diagnostics is
+        distinguishable from one where the drain simply found nothing new to
+        report. Then prints `terminal_line` and flushes.
         """
-        time.sleep(DRAIN_DELAY_SECONDS)
-        poll_signals(sha)
+        drained = False
+        for _ in range(DRAIN_MAX_ATTEMPTS):
+            time.sleep(DRAIN_DELAY_SECONDS)
+            if poll_signals(sha):
+                drained = True
+                break
+        if not drained:
+            print("PR#%s: drain poll found no new diagnostic signals" % pr)
+            sys.stdout.flush()
         print(terminal_line)
         sys.stdout.flush()
 

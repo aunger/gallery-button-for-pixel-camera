@@ -25,6 +25,7 @@ Covers:
   (r) #260 outcome filters: parse_fails obeys outcome_filters for FAIL/PASS/SKIP
   (s) #260 CLI flags: _parse_outcome_filters and main() pass filter flags through
   (t) #402 Gap E: drain_then_print surfaces a step/FAIL that lags one poll behind Blocked
+  (u) #402 Gap E (review): drain_then_print's bounded retry recovers a two-poll lag
 
 No network calls required; no GITHUB_TOKEN needed.
 Always exits 0 on success, non-zero on failure.
@@ -264,8 +265,10 @@ ZIP_BYTES = make_zip_ndjson([
 # artifacts, [zip per new artifact]. Iteration 1 (in_progress) downloads the
 # zip; iteration 2 (Blocked, terminal) finds the artifact already seen and
 # skips the zip call, then drain_then_print (Gap E) re-polls runs/jobs/artifacts
-# once more before printing the terminal line. 6 + 5 + 3 = 14 entries; the
-# deque must be exactly drained.
+# up to DRAIN_MAX_ATTEMPTS times before printing the terminal line. Every drain
+# attempt here finds the step/artifact already seen (nothing new), so all
+# DRAIN_MAX_ATTEMPTS=3 attempts run. 6 + 5 + 3*3 = 20 entries; the deque must be
+# exactly drained.
 side_effects_i = collections.deque([
     # iteration 1
     PR_JSON,            # pulls -> sha
@@ -280,10 +283,17 @@ side_effects_i = collections.deque([
     {"workflow_runs": [{"id": 555, "status": "in_progress"}]},  # runs -> run_id
     JOBS_FAIL,          # jobs -> step already seen, nothing new
     ARTS_JSON,          # artifacts -> artifact already seen, no zip call
-    # drain_then_print (Gap E) — one extra signal poll before the terminal line
-    {"workflow_runs": [{"id": 555, "status": "in_progress"}]},  # runs -> run_id
-    JOBS_FAIL,          # jobs -> step already seen, nothing new
-    ARTS_JSON,          # artifacts -> artifact already seen, no zip call
+    # drain_then_print (Gap E) — up to DRAIN_MAX_ATTEMPTS extra signal polls
+    # before the terminal line; all attempts find nothing new here.
+    {"workflow_runs": [{"id": 555, "status": "in_progress"}]},  # drain attempt 1: runs
+    JOBS_FAIL,          # drain attempt 1: jobs -> nothing new
+    ARTS_JSON,          # drain attempt 1: artifacts -> nothing new
+    {"workflow_runs": [{"id": 555, "status": "in_progress"}]},  # drain attempt 2: runs
+    JOBS_FAIL,          # drain attempt 2: jobs -> nothing new
+    ARTS_JSON,          # drain attempt 2: artifacts -> nothing new
+    {"workflow_runs": [{"id": 555, "status": "in_progress"}]},  # drain attempt 3: runs
+    JOBS_FAIL,          # drain attempt 3: jobs -> nothing new
+    ARTS_JSON,          # drain attempt 3: artifacts -> nothing new
 ])
 
 
@@ -321,8 +331,12 @@ check(fail_line_i in lines_i and blocked_line_i in lines_i
       and lines_i.index(fail_line_i) < lines_i.index(blocked_line_i),
       "FAIL line precedes terminal Blocked",
       "FAIL line not before Blocked; output: %r" % out_i)
+no_new_line_i = "PR#285: drain poll found no new diagnostic signals"
+check(no_new_line_i in lines_i and lines_i.index(no_new_line_i) < lines_i.index(blocked_line_i),
+      "drain poll found nothing new -> flagged immediately before terminal Blocked",
+      "'drain poll found no new diagnostic signals' missing or misordered; output: %r" % out_i)
 check(len(side_effects_i) == 0,
-      "all 14 mocked requests consumed (zip skipped in iteration 2 and drain)",
+      "all 20 mocked requests consumed (zip skipped in iteration 2 and all 3 drain attempts)",
       "request deque not drained; %d entries left" % len(side_effects_i))
 check(rc_i == 0, "main() returned 0", "main() returned %r" % rc_i)
 
@@ -358,7 +372,8 @@ ARTS_EMPTY = {"artifacts": []}
 # plus the single pre-loop clock startup read makes the time deque 66 entries.
 # The 13 iterations supply check-runs in_progress for 1..12 and Blocked at 13.
 # Iteration 13 also triggers drain_then_print (Gap E), which re-polls
-# runs/jobs/artifacts once more (3 extra requests, no zip) before the terminal.
+# runs/jobs/artifacts up to DRAIN_MAX_ATTEMPTS times (3 extra requests per
+# attempt, no zip) before the terminal; every attempt finds nothing new here.
 jobs_for_iter = [JOBS_STEP7 if n == 7 else JOBS_EMPTY for n in range(1, 14)]
 checks_for_iter = [CHECK_BL if n == 13 else CHECK_IP for n in range(1, 14)]
 
@@ -369,10 +384,12 @@ for n in range(13):
     req_j.append(RUNS_J)               # runs -> run_id
     req_j.append(jobs_for_iter[n])     # jobs
     req_j.append(ARTS_EMPTY)           # artifacts (no zip)
-# drain_then_print (Gap E) on the terminal Blocked iteration
-req_j.append(RUNS_J)                   # runs -> run_id
-req_j.append(JOBS_EMPTY)               # jobs -> step already seen, nothing new
-req_j.append(ARTS_EMPTY)               # artifacts (no zip)
+# drain_then_print (Gap E) on the terminal Blocked iteration: DRAIN_MAX_ATTEMPTS
+# attempts, each finding nothing new (step already seen, artifacts empty).
+for _ in range(3):
+    req_j.append(RUNS_J)                   # runs -> run_id
+    req_j.append(JOBS_EMPTY)               # jobs -> step already seen, nothing new
+    req_j.append(ARTS_EMPTY)               # artifacts (no zip)
 
 
 def fake_request_j(url, token, raw=False):
@@ -425,8 +442,12 @@ check(len(ip_idx) == 2 and step_idx != -1 and bl_idx != -1
       and ip_idx[0] < step_idx < ip_idx[1] < bl_idx,
       "ordering: first in_progress, step, second in_progress, Blocked",
       "ordering wrong; lines: %r" % lines_j)
+no_new_line_j = "PR#285: drain poll found no new diagnostic signals"
+check(no_new_line_j in lines_j and lines_j.index(no_new_line_j) < bl_idx,
+      "drain poll found nothing new -> flagged immediately before terminal Blocked",
+      "'drain poll found no new diagnostic signals' missing or misordered; output: %r" % out_j)
 check(len(req_j) == 0,
-      "all mocked requests consumed (65 + 3 drain entries drained)",
+      "all mocked requests consumed (65 + 9 drain entries drained)",
       "request deque not drained; %d entries left" % len(req_j))
 check(rc_j == 0, "main() returned 0", "main() returned %r" % rc_j)
 
@@ -670,8 +691,9 @@ ZIP_UNIT_M = make_zip_ndjson([
 # Poll 1 (5): step delta only (artifacts empty). Poll 2 (6): step already seen,
 # artifact appears -> zip downloaded -> FAIL emitted. Poll 3 terminal (5):
 # Blocked; artifact already seen so no zip call. Then drain_then_print (Gap E)
-# re-polls runs/jobs/artifacts once more (3), everything already seen, no zip.
-# 5 + 6 + 5 + 3 = 19, drained.
+# re-polls runs/jobs/artifacts up to DRAIN_MAX_ATTEMPTS times (3 each),
+# everything already seen on every attempt, no zip.
+# 5 + 6 + 5 + 3*3 = 25, drained.
 side_effects_m = collections.deque([
     # poll 1 — step delta only
     PR_M,               # pulls -> sha
@@ -692,10 +714,11 @@ side_effects_m = collections.deque([
     RUNS_M,             # runs -> run_id
     JOBS_UNIT_FAIL_M,   # jobs -> step already seen, nothing new
     ARTS_UNIT_M,        # artifacts -> artifact already seen, no zip call
-    # drain_then_print (Gap E) — one extra signal poll before the terminal line
-    RUNS_M,             # runs -> run_id
-    JOBS_UNIT_FAIL_M,   # jobs -> step already seen, nothing new
-    ARTS_UNIT_M,        # artifacts -> artifact already seen, no zip call
+    # drain_then_print (Gap E) — up to DRAIN_MAX_ATTEMPTS extra signal polls
+    # before the terminal line; all attempts find nothing new here.
+    RUNS_M, JOBS_UNIT_FAIL_M, ARTS_UNIT_M,  # drain attempt 1
+    RUNS_M, JOBS_UNIT_FAIL_M, ARTS_UNIT_M,  # drain attempt 2
+    RUNS_M, JOBS_UNIT_FAIL_M, ARTS_UNIT_M,  # drain attempt 3
 ])
 
 
@@ -750,8 +773,12 @@ check(ordered_m,
 check(any(ln.startswith("PR#272:   ") for ln in lines_m),
       "FAIL carries an indented trace line",
       "indented trace line missing; output: %r" % out_m)
+no_new_line_m = "PR#272: drain poll found no new diagnostic signals"
+check(no_new_line_m in lines_m and lines_m.index(no_new_line_m) < lines_m.index(blocked_line_m),
+      "drain poll found nothing new -> flagged immediately before terminal Blocked",
+      "'drain poll found no new diagnostic signals' missing or misordered; output: %r" % out_m)
 check(len(side_effects_m) == 0,
-      "all 19 mocked requests consumed (zip only on poll 2)",
+      "all 25 mocked requests consumed (zip only on poll 2)",
       "request deque not drained; %d entries left" % len(side_effects_m))
 check(rc_m == 0, "main() returned 0", "main() returned %r" % rc_m)
 
@@ -953,14 +980,18 @@ ARTS_REAL_UNIT_P = {"artifacts": [{"id": 4243, "name": "testresults-unit", "expi
 # Poll 1 (5): step delta, artifact not yet present. Poll 2 (6): step seen,
 # artifact appears -> real-shaped zip downloaded -> FAIL emitted. Poll 3 (5):
 # terminal Blocked, artifact already seen so no zip call. Then drain_then_print
-# (Gap E) re-polls runs/jobs/artifacts once more (3), already seen, no zip.
-# 5 + 6 + 5 + 3 = 19.
+# (Gap E) re-polls runs/jobs/artifacts up to DRAIN_MAX_ATTEMPTS times (3 each),
+# already seen on every attempt, no zip.
+# 5 + 6 + 5 + 3*3 = 25.
 side_effects_p = collections.deque([
     PR_P, CHECK_IP_P, RUNS_P, JOBS_UNIT_FAIL_P, {"artifacts": []},
     PR_P, CHECK_IP_P, RUNS_P, JOBS_UNIT_FAIL_P, ARTS_REAL_UNIT_P, REAL_UNIT_ZIP,
     PR_P, CHECK_BL_P, RUNS_P, JOBS_UNIT_FAIL_P, ARTS_REAL_UNIT_P,
-    # drain_then_print (Gap E) — one extra signal poll before the terminal line
-    RUNS_P, JOBS_UNIT_FAIL_P, ARTS_REAL_UNIT_P,
+    # drain_then_print (Gap E) — up to DRAIN_MAX_ATTEMPTS extra signal polls
+    # before the terminal line; all attempts find nothing new here.
+    RUNS_P, JOBS_UNIT_FAIL_P, ARTS_REAL_UNIT_P,  # drain attempt 1
+    RUNS_P, JOBS_UNIT_FAIL_P, ARTS_REAL_UNIT_P,  # drain attempt 2
+    RUNS_P, JOBS_UNIT_FAIL_P, ARTS_REAL_UNIT_P,  # drain attempt 3
 ])
 
 
@@ -995,8 +1026,12 @@ check(
     and lines_p.index(step_line_p) < lines_p.index(fail_line_p) < lines_p.index(blocked_line_p),
     "ordering: step, then FAIL, then terminal Blocked — both signals before the job concludes",
     "ordering wrong; lines: %r" % lines_p)
+no_new_line_p = "PR#258: drain poll found no new diagnostic signals"
+check(no_new_line_p in lines_p and lines_p.index(no_new_line_p) < lines_p.index(blocked_line_p),
+      "drain poll found nothing new -> flagged immediately before terminal Blocked",
+      "'drain poll found no new diagnostic signals' missing or misordered; output: %r" % out_p)
 check(len(side_effects_p) == 0,
-      "all 19 mocked requests consumed (zip only on poll 2)",
+      "all 25 mocked requests consumed (zip only on poll 2)",
       "request deque not drained; %d entries left" % len(side_effects_p))
 check(rc_p == 0, "main() returned 0", "main() returned %r" % rc_p)
 
@@ -1048,8 +1083,8 @@ ARTS_EMPTY_Q = {"artifacts": []}
 #   poll 3: emits a step delta -> resets the real timer    -> NO heartbeat this poll
 #   poll 4: quiet; one SLEEP_Q elapsed since the step      -> heartbeat #2, resets timer
 #   poll 5: Blocked terminal, then drain_then_print (Gap E) re-polls
-#           runs/jobs/artifacts once more (everything already seen) before
-#           printing the terminal line.
+#           runs/jobs/artifacts up to DRAIN_MAX_ATTEMPTS times (everything
+#           already seen on every attempt) before printing the terminal line.
 JOBS_SCHEDULE_Q = [JOBS_EMPTY_Q, JOBS_EMPTY_Q, JOBS_STEP_Q, JOBS_EMPTY_Q, JOBS_EMPTY_Q]
 CHECK_SCHEDULE_Q = [CHECK_IP_Q, CHECK_IP_Q, CHECK_IP_Q, CHECK_IP_Q, CHECK_BL_Q]
 
@@ -1060,10 +1095,12 @@ for n in range(5):
     req_q.append(RUNS_Q)
     req_q.append(JOBS_SCHEDULE_Q[n])
     req_q.append(ARTS_EMPTY_Q)
-# drain_then_print (Gap E) on the terminal Blocked poll
-req_q.append(RUNS_Q)
-req_q.append(JOBS_EMPTY_Q)
-req_q.append(ARTS_EMPTY_Q)
+# drain_then_print (Gap E) on the terminal Blocked poll: DRAIN_MAX_ATTEMPTS
+# attempts, each finding nothing new.
+for _ in range(3):
+    req_q.append(RUNS_Q)
+    req_q.append(JOBS_EMPTY_Q)
+    req_q.append(ARTS_EMPTY_Q)
 
 
 def fake_request_q(url, token, raw=False):
@@ -1111,6 +1148,10 @@ step_idx_q = lines_q.index(step_line_q) if step_line_q in lines_q else -1
 check(len(ip_idx_q) == 2 and step_idx_q != -1 and ip_idx_q[0] < step_idx_q < ip_idx_q[1],
       "an emitted step line resets the real-time silence timer (no heartbeat on the step poll)",
       "step did not reset the real-time timer; lines: %r" % lines_q)
+no_new_line_q = "PR#259: drain poll found no new diagnostic signals"
+check(no_new_line_q in lines_q and lines_q.index(no_new_line_q) < lines_q.index(blocked_line_q),
+      "drain poll found nothing new -> flagged immediately before terminal Blocked",
+      "'drain poll found no new diagnostic signals' missing or misordered; output: %r" % out_q)
 check(lines_q.count(blocked_line_q) == 1 and lines_q[-1] == blocked_line_q,
       "Blocked terminal emitted once as the final line",
       "terminal Blocked wrong; output: %r" % out_q)
@@ -1321,12 +1362,15 @@ JOBS_EMPTY_S = {"jobs": [{"name": "build-and-test", "steps": []}]}
 ARTS_MIX_S = {"artifacts": [{"id": 2222, "name": "testresults-mix", "expired": False}]}
 
 # Poll 1 (6): artifact available, zip downloaded; poll 2 (5): terminal Blocked,
-# then drain_then_print (Gap E) re-polls runs/jobs/artifacts once more (3),
-# artifact already seen so no zip call.
+# then drain_then_print (Gap E) re-polls runs/jobs/artifacts up to
+# DRAIN_MAX_ATTEMPTS times (3 each), artifact already seen on every attempt so
+# no zip call.
 side_effects_s = collections.deque([
     PR_S, CHECK_IP_S, RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S, ZIP_MIXED,
     PR_S, CHECK_BL_S, RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S,
-    RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S,
+    RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S,  # drain attempt 1
+    RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S,  # drain attempt 2
+    RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S,  # drain attempt 3
 ])
 
 
@@ -1352,8 +1396,12 @@ check(any("PR#260: PASS [com.gb4pc.unit.MixTest] test_pass:" in ln for ln in lin
 check(any("PR#260: SKIP [com.gb4pc.unit.MixTest] test_skip:" in ln for ln in lines_s),
       "main() --include-pass '': SKIP line emitted and stays labeled SKIP",
       "main() --include-pass '': SKIP missing or mislabeled; output: %r" % out_s)
+no_new_line_s = "PR#260: drain poll found no new diagnostic signals"
+check(no_new_line_s in lines_s,
+      "main() --include-pass '': drain poll found nothing new -> flagged before terminal",
+      "main() --include-pass '': 'drain poll found no new diagnostic signals' missing; output: %r" % out_s)
 check(len(side_effects_s) == 0,
-      "main() --include-pass '': all 14 mocked requests consumed",
+      "main() --include-pass '': all 20 mocked requests consumed",
       "request deque not drained; %d entries left" % len(side_effects_s))
 check(rc_s == 0, "main() --include-pass '' returned 0", "main() returned %r" % rc_s)
 
@@ -1361,7 +1409,9 @@ check(rc_s == 0, "main() --include-pass '' returned 0", "main() returned %r" % r
 side_effects_s2 = collections.deque([
     PR_S, CHECK_IP_S, RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S, ZIP_MIXED,
     PR_S, CHECK_BL_S, RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S,
-    RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S,
+    RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S,  # drain attempt 1
+    RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S,  # drain attempt 2
+    RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S,  # drain attempt 3
 ])
 
 
@@ -1388,16 +1438,19 @@ check(not any("PASS" in ln for ln in lines_s2 if not ln.startswith("monitor PID"
       "main() no flags: no PASS emitted",
       "main() no flags: unexpected PASS; output: %r" % out_s2)
 check(len(side_effects_s2) == 0,
-      "main() no flags: all 14 mocked requests consumed",
+      "main() no flags: all 20 mocked requests consumed",
       "request deque not drained; %d entries left" % len(side_effects_s2))
 
 # main() with --no-include-fail: only SKIP emitted (no FAIL, no PASS)
-# The trailing 3 entries cover drain_then_print's (Gap E) extra signal poll
-# before the terminal line; the artifact is already seen so no zip call.
+# The trailing entries cover drain_then_print's (Gap E) up to DRAIN_MAX_ATTEMPTS
+# extra signal polls before the terminal line; the artifact is already seen on
+# every attempt so no zip call.
 side_effects_s3 = collections.deque([
     PR_S, CHECK_IP_S, RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S, ZIP_MIXED,
     PR_S, CHECK_BL_S, RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S,
-    RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S,
+    RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S,  # drain attempt 1
+    RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S,  # drain attempt 2
+    RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S,  # drain attempt 3
 ])
 
 
@@ -1422,12 +1475,15 @@ check(any("SKIP [com.gb4pc.unit.MixTest] test_skip:" in ln for ln in lines_s3),
       "main() --no-include-fail: SKIP missing; output: %r" % out_s3)
 
 # main() with --no-include-skip: only FAIL emitted (no SKIP, no PASS)
-# The trailing 3 entries cover drain_then_print's (Gap E) extra signal poll
-# before the terminal line; the artifact is already seen so no zip call.
+# The trailing entries cover drain_then_print's (Gap E) up to DRAIN_MAX_ATTEMPTS
+# extra signal polls before the terminal line; the artifact is already seen on
+# every attempt so no zip call.
 side_effects_s4 = collections.deque([
     PR_S, CHECK_IP_S, RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S, ZIP_MIXED,
     PR_S, CHECK_BL_S, RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S,
-    RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S,
+    RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S,  # drain attempt 1
+    RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S,  # drain attempt 2
+    RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S,  # drain attempt 3
 ])
 
 
@@ -1543,6 +1599,107 @@ check(len(side_effects_t) == 0,
       "all 9 mocked requests consumed (drain poll downloads the newly-listed zip)",
       "request deque not drained; %d entries left" % len(side_effects_t))
 check(rc_t == 0, "main() returned 0", "main() returned %r" % rc_t)
+
+
+# ── (u) Gap E (#402 review): drain_then_print's bounded retry recovers a
+#       two-poll lag (Run G shape) that a single drain attempt would miss ──────
+print("\n=== (u) Gap E (#402 review): drain attempt 2 surfaces step+FAIL after attempt 1 finds nothing ===")
+
+# A reviewer concern on PR #408 was that a single DRAIN_DELAY_SECONDS re-poll
+# only covers a one-poll lag (Runs B/C/E/F/T), not a longer lag like Run G's. This
+# group reproduces a two-poll lag: check-runs flips to failure (Blocked) on poll
+# 1, drain attempt 1 still finds jobs/artifacts not caught up (nothing new), and
+# only drain attempt 2 sees the failing gate step and the FAIL marker. With
+# DRAIN_MAX_ATTEMPTS=3, attempt 2 still runs and surfaces both before the
+# terminal line, and the "drain poll found no new diagnostic signals" line is
+# NOT printed (drain attempt 2 found something new).
+PR_U = {"head": {"sha": "900110ng"}}
+CHECK_BL_U = {"total_count": 1, "check_runs": [{"status": "completed", "conclusion": "failure"}]}
+RUNS_U = {"workflow_runs": [{"id": 9002, "status": "completed"}]}
+JOBS_EMPTY_U = {"jobs": [{"name": "build-and-test", "steps": []}]}
+JOBS_GATE_FAIL_U = {
+    "jobs": [
+        {
+            "name": "build-and-test",
+            "steps": [
+                {"number": 1, "name": "Set up job", "status": "completed", "conclusion": "success"},
+                {"number": 4, "name": "Build and run unit tests", "status": "completed", "conclusion": "success"},
+                {"number": 5, "name": "Run PixelCameraOverlayE2ETest", "status": "completed", "conclusion": "success"},
+                {"number": 6, "name": "Run GalleryButtonVisualE2ETest", "status": "completed", "conclusion": "success"},
+                {"number": 7, "name": "Gate on test failures", "status": "completed", "conclusion": "failure"},
+            ],
+        }
+    ]
+}
+ARTS_EMPTY_U = {"artifacts": []}
+ARTS_E2E_U = {"artifacts": [{"id": 5006, "name": "testresults-e2e-gallery", "expired": False}]}
+ZIP_E2E_U = make_zip_ndjson([
+    '##GB4PC_TEST## {"suite":"com.gb4pc.e2e.GalleryButtonVisualE2ETest","name":"test1a","outcome":"FAIL","ms":9,"msg":"java.lang.AssertionError: button not green","trace":""}',
+])
+
+# Poll 1 (5): check-runs already Blocked (terminal), jobs/artifacts not caught
+# up. Drain attempt 1 (3): still nothing new. Drain attempt 2 (3 + zip): jobs
+# now shows the failing gate step and the artifact is listed -> step + FAIL
+# emitted, drain stops (DRAIN_MAX_ATTEMPTS allows up to 3, but 2 suffices).
+# 5 + 3 + 4 = 12.
+side_effects_u = collections.deque([
+    PR_U,             # pulls -> sha
+    CHECK_BL_U,       # check-runs -> Blocked (terminal), decided on poll 1
+    RUNS_U,           # runs -> run_id
+    JOBS_EMPTY_U,     # jobs -> not yet caught up, nothing new
+    ARTS_EMPTY_U,     # artifacts -> not yet listed
+    # drain attempt 1 — still not caught up
+    RUNS_U,           # runs -> run_id
+    JOBS_EMPTY_U,     # jobs -> still not yet caught up, nothing new
+    ARTS_EMPTY_U,     # artifacts -> still not yet listed
+    # drain attempt 2 — now caught up
+    RUNS_U,           # runs -> run_id
+    JOBS_GATE_FAIL_U, # jobs -> "Gate on test failures" -> failure
+    ARTS_E2E_U,       # artifacts -> testresults-e2e-gallery now listed
+    ZIP_E2E_U,        # zip (raw) -> FAIL line for test1a
+])
+
+
+def fake_request_u(url, token, raw=False):
+    return side_effects_u.popleft()
+
+
+buf_u = io.StringIO()
+with unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_u), \
+        unittest.mock.patch.object(ci_monitor.time, "time", return_value=4100.0), \
+        unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None), \
+        unittest.mock.patch("sys.stdout", new=buf_u):
+    rc_u = ci_monitor.main(["ci_monitor.py", "--pr", "402"])
+
+out_u = buf_u.getvalue()
+lines_u = out_u.splitlines()
+gate_step_line_u = 'PR#402: step "Gate on test failures" -> failure'
+fail_line_u = "PR#402: FAIL [com.gb4pc.e2e.GalleryButtonVisualE2ETest] test1a: java.lang.AssertionError: button not green"
+blocked_line_u = "PR#402: Blocked"
+no_new_line_u = "PR#402: drain poll found no new diagnostic signals"
+
+check(gate_step_line_u in lines_u,
+      "drain attempt 2 surfaces the lagging 'Gate on test failures' step failure",
+      "gate step failure line missing; output: %r" % out_u)
+check(fail_line_u in lines_u,
+      "drain attempt 2 surfaces the lagging per-test FAIL marker",
+      "FAIL line missing; output: %r" % out_u)
+check(lines_u.count(blocked_line_u) == 1,
+      "Blocked terminal line emitted exactly once",
+      "Blocked terminal line count != 1; output: %r" % out_u)
+check(
+    gate_step_line_u in lines_u and fail_line_u in lines_u and blocked_line_u in lines_u
+    and lines_u.index(gate_step_line_u) < lines_u.index(blocked_line_u)
+    and lines_u.index(fail_line_u) < lines_u.index(blocked_line_u),
+    "ordering: drained step and FAIL lines (from attempt 2) precede the terminal Blocked line",
+    "ordering wrong; lines: %r" % lines_u)
+check(no_new_line_u not in lines_u,
+      "drain attempt 2 found new signals -> 'drain poll found no new diagnostic signals' NOT printed",
+      "unexpected 'drain poll found no new diagnostic signals'; output: %r" % out_u)
+check(len(side_effects_u) == 0,
+      "all 12 mocked requests consumed (drain attempt 1 empty, attempt 2 downloads the zip)",
+      "request deque not drained; %d entries left" % len(side_effects_u))
+check(rc_u == 0, "main() returned 0", "main() returned %r" % rc_u)
 
 
 # ── Summary ────────────────────────────────────────────────────────────────────
