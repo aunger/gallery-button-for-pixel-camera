@@ -256,7 +256,13 @@ class GalleryButtonVisualE2ETest {
         Screenshot.saveForArtifact(s1, "3a-s1.png")
 
         fixture.tapOverlay()
-        fixture.pause(1000)
+
+        // Poll up to 15 s for the gallery's photo to render — a fixed 1 s pause races
+        // LastPhotoActivity's cold start (process spawn + MediaStore query + JPEG decode),
+        // which the CI logcat shows can take ~1.4 s. waitForGreenCoverage's return value is
+        // discarded: it only gates the wait, and the assertion below re-measures full-screen
+        // coverage on a fresh screenshot against the original 40% threshold.
+        fixture.waitForGreenCoverage(minCoverage = 0.40f, timeoutMs = 15_000L)
 
         val s2 = Screenshot.captureScreen()
         Screenshot.saveForArtifact(s2, "3a-s2.png")
