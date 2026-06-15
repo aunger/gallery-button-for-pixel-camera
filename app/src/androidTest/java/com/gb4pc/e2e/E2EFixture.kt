@@ -250,15 +250,22 @@ class E2EFixture(
     }
 
     /**
-     * Deletes all images from the external MediaStore and asserts the roll is empty.
+     * Deletes all images owned by this package from the external MediaStore and asserts
+     * none remain.
      *
      * Uses [ContentResolver.delete] with a null predicate to remove every row from
-     * [MediaStore.Images.Media.EXTERNAL_CONTENT_URI]. On API 33+ this would throw
-     * [android.app.RecoverableSecurityException] for rows inserted by other packages;
-     * since the test suite controls all insertions in the E2E environment this should
-     * not occur. If it does, the exception propagates and fails the test loudly.
+     * [MediaStore.Images.Media.EXTERNAL_CONTENT_URI]. [ContentResolver.delete] only ever
+     * removes rows owned by the calling package (`com.gb4pc`); rows inserted by other
+     * packages (e.g. the mock camera's captured photos, owned by
+     * `com.google.android.GoogleCamera`) are left in place and are not this method's concern.
      *
-     * After deletion a query is performed to assert 0 rows remain.
+     * After deletion, the post-condition is checked by querying with
+     * `OWNER_PACKAGE_NAME = com.gb4pc` rather than an unfiltered query: since `com.gb4pc`
+     * holds `READ_MEDIA_IMAGES` (see `app/src/debug/AndroidManifest.xml`), an unfiltered
+     * query also returns other packages' rows, which this method cannot and should not
+     * delete. Asserting on the unfiltered count would fail whenever a cross-package row
+     * (such as a previously captured mock photo) is still present, even though this
+     * method did exactly what it could: clear every row `com.gb4pc` owns.
      */
     fun clearCameraRoll() {
         context.contentResolver.delete(
@@ -269,11 +276,18 @@ class E2EFixture(
         val cursor = context.contentResolver.query(
             MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
             arrayOf(MediaStore.Images.Media._ID),
-            null, null, null
+            "${MediaStore.Images.Media.OWNER_PACKAGE_NAME} = ?",
+            arrayOf(context.packageName),
+            null
         )
         val count = cursor?.count ?: 0
         cursor?.close()
-        assertEquals("MediaStore should be empty after clearCameraRoll()", 0, count)
+        assertEquals(
+            "MediaStore should contain no rows owned by ${context.packageName} " +
+                "after clearCameraRoll()",
+            0,
+            count
+        )
     }
 
     /**
