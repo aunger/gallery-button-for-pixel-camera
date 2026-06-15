@@ -236,6 +236,12 @@ tasks.register("connectedE2EAndroidTest") {
         // READ_MEDIA_IMAGES lets mock gallery query MediaStore for the last captured photo.
         exec { commandLine(e2eAdb, "shell", "appops", "set", "com.gb4pc.mockgallery", "READ_MEDIA_IMAGES", "allow") }
         exec { commandLine(e2eAdb, "install", "-r", e2eTestApk.get().asFile.absolutePath) }
+        // READ_MEDIA_IMAGES lets the instrumented test process (com.gb4pc.test) see
+        // MediaStore rows inserted by other packages (e2e-mock-camera). Without this,
+        // E2EFixture.captureOnePhoto()'s countMediaStoreImages() query only returns
+        // rows owned by com.gb4pc.test itself (scoped storage, API 29+), so it never
+        // observes the photo the mock camera wrote and times out (issues #231/#232).
+        exec { commandLine(e2eAdb, "shell", "appops", "set", "com.gb4pc.test", "READ_MEDIA_IMAGES", "allow") }
         // Run E2E tests with -r for machine-parseable per-test status lines.
         // am instrument exits non-zero on test failure but returns 0 on process crash;
         // capture stdout, write JUnit XML, then fail loudly on crash or test failure.
