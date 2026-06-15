@@ -148,6 +148,7 @@ Monitor output lines are relayed to the user verbatim; this is user-facing statu
     Each stdout line arrives as a task-notification event; relay each line to the user verbatim.
     Act only on the terminal lines Clear, Blocked, or Infra. Relay in_progress lines to the user as brief status updates (the script suppresses these unless no other output has been emitted for over 120 seconds).
     Relay `step "..." -> ...` and `FAIL [...] ...` lines to the user as informational test-result deltas; they do NOT end the loop or start a new Author round.
+    if Monitor emits `drain poll found no new diagnostic signals` immediately followed by a Blocked or Infra line → goto undiagnosedTerminal
     if Monitor emits a Blocked line  → goto newAuthor
     if Monitor emits an Infra line   → escalate to user; stop
     if Monitor times out (30 min)    → escalate to user; stop
@@ -162,6 +163,20 @@ Monitor output lines are relayed to the user verbatim; this is user-facing statu
       If the Planner reports its before-merging list is empty, then this *before-merging requirements* process is complete, and the Orchestrator should exit this step.
       Otherwise, relay the planner's reported before-merging list to the user verbatim.
       → PR may be merged once every issue the planner filed for its before-merging list is resolved.
+
+undiagnosedTerminal:
+  // Issue #410 (Run G, issue #402): "drain poll found no new diagnostic
+  // signals" right before Blocked/Infra means the bounded in-process drain
+  // (see ci_monitor/README.md) found nothing this process, but the
+  // underlying lag can resolve minutes later, outliving that one Monitor
+  // process. Give it one out-of-process recheck before treating it as real.
+  Relay the flagged terminal line to the user, noting that a one-time recheck follows.
+  Wait 5 minutes without a sleep loop: issue a Monitor tool call running `sleep 300` (run_in_background: true), and treat its completion notification as the wake-up.
+  Re-launch the Monitor tool call (same command as the original, fresh invocation) and relay its lines as usual.
+  if the re-run emits any `step "..." -> ...` or `FAIL/SKIP/PASS [...] ...` line, a Clear line, or a terminal that is not the same flagged-undiagnosed shape:
+    → treat the re-run's outcome as authoritative; resume the routing above from "Act only on the terminal lines..." using the re-run's lines
+  else (the re-run repeats `drain poll found no new diagnostic signals` followed by the same Blocked/Infra terminal):
+    → proceed with the original terminal's routing (Blocked → newAuthor; Infra → escalate to user, stop) without a further re-run
 ```
 
 ### Monitor script
