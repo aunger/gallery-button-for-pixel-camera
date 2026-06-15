@@ -53,19 +53,6 @@ class E2EFixture(
 ) {
     private val pcPackage = Constants.PIXEL_CAMERA_PACKAGE
 
-    /**
-     * Context of the instrumentation test package itself (`com.gb4pc.test`), as opposed to
-     * [context] (`instrumentation.targetContext`, the app-under-test `com.gb4pc`).
-     *
-     * MediaStore queries that need to see rows inserted by other packages (e2e-mock-camera,
-     * `com.google.android.GoogleCamera`) must run as `com.gb4pc.test`: that is the package
-     * `connectedE2EAndroidTest` grants `READ_MEDIA_IMAGES` to via `appops set` (issues
-     * #231/#232). `com.gb4pc` (the app under test, used by [context]) does not declare or
-     * hold that permission, so a `ContentResolver` obtained from [context] only ever sees
-     * MediaStore rows owned by `com.gb4pc` itself, regardless of the appops grant.
-     */
-    private val testContext: Context = InstrumentationRegistry.getInstrumentation().context
-
     companion object {
         // Tag for the diagnostic logcat lines emitted by launchPixelCamera() (issue #233). These
         // make the bounded-relaunch path observable in a CI run's logcat: when the first-launch
@@ -274,12 +261,12 @@ class E2EFixture(
      * After deletion a query is performed to assert 0 rows remain.
      */
     fun clearCameraRoll() {
-        testContext.contentResolver.delete(
+        context.contentResolver.delete(
             MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
             null,
             null
         )
-        val cursor = testContext.contentResolver.query(
+        val cursor = context.contentResolver.query(
             MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
             arrayOf(MediaStore.Images.Media._ID),
             null, null, null
@@ -541,7 +528,7 @@ class E2EFixture(
     // ── Private helpers ───────────────────────────────────────────────────────
 
     private fun countMediaStoreImages(): Int {
-        val cursor = testContext.contentResolver.query(
+        val cursor = context.contentResolver.query(
             MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
             arrayOf(MediaStore.Images.Media._ID),
             null, null, null
