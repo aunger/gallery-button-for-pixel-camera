@@ -148,6 +148,7 @@ Monitor output lines are relayed to the user verbatim; this is user-facing statu
     Each stdout line arrives as a task-notification event; relay each line to the user verbatim.
     Act only on the terminal lines Clear, Blocked, or Infra. Relay in_progress lines to the user as brief status updates (the script suppresses these unless no other output has been emitted for over 120 seconds).
     Relay `step "..." -> ...` and `FAIL [...] ...` lines to the user as informational test-result deltas; they do NOT end the loop or start a new Author round.
+    Relay a `PR#N: drain poll found no new diagnostic signals` line to the user the same way; it is informational, precedes the terminal line that follows it, and does NOT end the loop or start a new Author round on its own.
     if Monitor emits a Blocked line  → goto newAuthor
     if Monitor emits an Infra line   → escalate to user; stop
     if Monitor times out (30 min)    → escalate to user; stop
