@@ -22,6 +22,9 @@ Covers:
   (o) Gap D: real subprocess prints its own PID and SIGTERM to that PID stops it
   (p) #258 fidelity: a real-shaped testresults-* artifact zip drives step+FAIL through main()
   (q) #259 real clock: heartbeat fires only after real >SILENCE_SECONDS silence; output resets it
+  (r) #260 outcome filters: parse_fails obeys outcome_filters for FAIL/PASS/SKIP
+  (s) #260 CLI flags: _parse_outcome_filters and main() pass filter flags through
+  (t) #402 Gap E: drain_then_print surfaces a step/FAIL that lags one poll behind Blocked
 
 No network calls required; no GITHUB_TOKEN needed.
 Always exits 0 on success, non-zero on failure.
@@ -260,7 +263,9 @@ ZIP_BYTES = make_zip_ndjson([
 # Per iteration the request order is: pulls (sha), check-runs, runs, jobs,
 # artifacts, [zip per new artifact]. Iteration 1 (in_progress) downloads the
 # zip; iteration 2 (Blocked, terminal) finds the artifact already seen and
-# skips the zip call. 6 + 5 = 11 entries; the deque must be exactly drained.
+# skips the zip call, then drain_then_print (Gap E) re-polls runs/jobs/artifacts
+# once more before printing the terminal line. 6 + 5 + 3 = 14 entries; the
+# deque must be exactly drained.
 side_effects_i = collections.deque([
     # iteration 1
     PR_JSON,            # pulls -> sha
@@ -272,6 +277,10 @@ side_effects_i = collections.deque([
     # iteration 2
     PR_JSON,            # pulls -> sha
     CHECK_BLOCKED,      # check-runs -> Blocked (terminal)
+    {"workflow_runs": [{"id": 555, "status": "in_progress"}]},  # runs -> run_id
+    JOBS_FAIL,          # jobs -> step already seen, nothing new
+    ARTS_JSON,          # artifacts -> artifact already seen, no zip call
+    # drain_then_print (Gap E) — one extra signal poll before the terminal line
     {"workflow_runs": [{"id": 555, "status": "in_progress"}]},  # runs -> run_id
     JOBS_FAIL,          # jobs -> step already seen, nothing new
     ARTS_JSON,          # artifacts -> artifact already seen, no zip call
@@ -313,7 +322,7 @@ check(fail_line_i in lines_i and blocked_line_i in lines_i
       "FAIL line precedes terminal Blocked",
       "FAIL line not before Blocked; output: %r" % out_i)
 check(len(side_effects_i) == 0,
-      "all 11 mocked requests consumed (zip skipped in iteration 2)",
+      "all 14 mocked requests consumed (zip skipped in iteration 2 and drain)",
       "request deque not drained; %d entries left" % len(side_effects_i))
 check(rc_i == 0, "main() returned 0", "main() returned %r" % rc_i)
 
@@ -348,6 +357,8 @@ ARTS_EMPTY = {"artifacts": []}
 # artifacts); no zip is ever downloaded (artifacts empty). 13 iterations -> 65,
 # plus the single pre-loop clock startup read makes the time deque 66 entries.
 # The 13 iterations supply check-runs in_progress for 1..12 and Blocked at 13.
+# Iteration 13 also triggers drain_then_print (Gap E), which re-polls
+# runs/jobs/artifacts once more (3 extra requests, no zip) before the terminal.
 jobs_for_iter = [JOBS_STEP7 if n == 7 else JOBS_EMPTY for n in range(1, 14)]
 checks_for_iter = [CHECK_BL if n == 13 else CHECK_IP for n in range(1, 14)]
 
@@ -358,6 +369,10 @@ for n in range(13):
     req_j.append(RUNS_J)               # runs -> run_id
     req_j.append(jobs_for_iter[n])     # jobs
     req_j.append(ARTS_EMPTY)           # artifacts (no zip)
+# drain_then_print (Gap E) on the terminal Blocked iteration
+req_j.append(RUNS_J)                   # runs -> run_id
+req_j.append(JOBS_EMPTY)               # jobs -> step already seen, nothing new
+req_j.append(ARTS_EMPTY)               # artifacts (no zip)
 
 
 def fake_request_j(url, token, raw=False):
@@ -411,7 +426,7 @@ check(len(ip_idx) == 2 and step_idx != -1 and bl_idx != -1
       "ordering: first in_progress, step, second in_progress, Blocked",
       "ordering wrong; lines: %r" % lines_j)
 check(len(req_j) == 0,
-      "all mocked requests consumed (65 entries drained)",
+      "all mocked requests consumed (65 + 3 drain entries drained)",
       "request deque not drained; %d entries left" % len(req_j))
 check(rc_j == 0, "main() returned 0", "main() returned %r" % rc_j)
 
@@ -654,7 +669,9 @@ ZIP_UNIT_M = make_zip_ndjson([
 
 # Poll 1 (5): step delta only (artifacts empty). Poll 2 (6): step already seen,
 # artifact appears -> zip downloaded -> FAIL emitted. Poll 3 terminal (5):
-# Blocked; artifact already seen so no zip call. 5 + 6 + 5 = 16, drained.
+# Blocked; artifact already seen so no zip call. Then drain_then_print (Gap E)
+# re-polls runs/jobs/artifacts once more (3), everything already seen, no zip.
+# 5 + 6 + 5 + 3 = 19, drained.
 side_effects_m = collections.deque([
     # poll 1 — step delta only
     PR_M,               # pulls -> sha
@@ -672,6 +689,10 @@ side_effects_m = collections.deque([
     # poll 3 — terminal Blocked
     PR_M,               # pulls -> sha
     CHECK_BL_M,         # check-runs -> Blocked (terminal)
+    RUNS_M,             # runs -> run_id
+    JOBS_UNIT_FAIL_M,   # jobs -> step already seen, nothing new
+    ARTS_UNIT_M,        # artifacts -> artifact already seen, no zip call
+    # drain_then_print (Gap E) — one extra signal poll before the terminal line
     RUNS_M,             # runs -> run_id
     JOBS_UNIT_FAIL_M,   # jobs -> step already seen, nothing new
     ARTS_UNIT_M,        # artifacts -> artifact already seen, no zip call
@@ -730,7 +751,7 @@ check(any(ln.startswith("PR#272:   ") for ln in lines_m),
       "FAIL carries an indented trace line",
       "indented trace line missing; output: %r" % out_m)
 check(len(side_effects_m) == 0,
-      "all 16 mocked requests consumed (zip only on poll 2)",
+      "all 19 mocked requests consumed (zip only on poll 2)",
       "request deque not drained; %d entries left" % len(side_effects_m))
 check(rc_m == 0, "main() returned 0", "main() returned %r" % rc_m)
 
@@ -931,11 +952,15 @@ ARTS_REAL_UNIT_P = {"artifacts": [{"id": 4243, "name": "testresults-unit", "expi
 
 # Poll 1 (5): step delta, artifact not yet present. Poll 2 (6): step seen,
 # artifact appears -> real-shaped zip downloaded -> FAIL emitted. Poll 3 (5):
-# terminal Blocked, artifact already seen so no zip call. 5 + 6 + 5 = 16.
+# terminal Blocked, artifact already seen so no zip call. Then drain_then_print
+# (Gap E) re-polls runs/jobs/artifacts once more (3), already seen, no zip.
+# 5 + 6 + 5 + 3 = 19.
 side_effects_p = collections.deque([
     PR_P, CHECK_IP_P, RUNS_P, JOBS_UNIT_FAIL_P, {"artifacts": []},
     PR_P, CHECK_IP_P, RUNS_P, JOBS_UNIT_FAIL_P, ARTS_REAL_UNIT_P, REAL_UNIT_ZIP,
     PR_P, CHECK_BL_P, RUNS_P, JOBS_UNIT_FAIL_P, ARTS_REAL_UNIT_P,
+    # drain_then_print (Gap E) — one extra signal poll before the terminal line
+    RUNS_P, JOBS_UNIT_FAIL_P, ARTS_REAL_UNIT_P,
 ])
 
 
@@ -971,7 +996,7 @@ check(
     "ordering: step, then FAIL, then terminal Blocked — both signals before the job concludes",
     "ordering wrong; lines: %r" % lines_p)
 check(len(side_effects_p) == 0,
-      "all 16 mocked requests consumed (zip only on poll 2)",
+      "all 19 mocked requests consumed (zip only on poll 2)",
       "request deque not drained; %d entries left" % len(side_effects_p))
 check(rc_p == 0, "main() returned 0", "main() returned %r" % rc_p)
 
@@ -1022,7 +1047,9 @@ ARTS_EMPTY_Q = {"artifacts": []}
 #   poll 2: quiet; one SLEEP_Q elapsed (> window)         -> heartbeat #1, resets timer
 #   poll 3: emits a step delta -> resets the real timer    -> NO heartbeat this poll
 #   poll 4: quiet; one SLEEP_Q elapsed since the step      -> heartbeat #2, resets timer
-#   poll 5: Blocked terminal
+#   poll 5: Blocked terminal, then drain_then_print (Gap E) re-polls
+#           runs/jobs/artifacts once more (everything already seen) before
+#           printing the terminal line.
 JOBS_SCHEDULE_Q = [JOBS_EMPTY_Q, JOBS_EMPTY_Q, JOBS_STEP_Q, JOBS_EMPTY_Q, JOBS_EMPTY_Q]
 CHECK_SCHEDULE_Q = [CHECK_IP_Q, CHECK_IP_Q, CHECK_IP_Q, CHECK_IP_Q, CHECK_BL_Q]
 
@@ -1033,6 +1060,10 @@ for n in range(5):
     req_q.append(RUNS_Q)
     req_q.append(JOBS_SCHEDULE_Q[n])
     req_q.append(ARTS_EMPTY_Q)
+# drain_then_print (Gap E) on the terminal Blocked poll
+req_q.append(RUNS_Q)
+req_q.append(JOBS_EMPTY_Q)
+req_q.append(ARTS_EMPTY_Q)
 
 
 def fake_request_q(url, token, raw=False):
@@ -1289,10 +1320,13 @@ RUNS_S = {"workflow_runs": [{"id": 1111, "status": "in_progress"}]}
 JOBS_EMPTY_S = {"jobs": [{"name": "build-and-test", "steps": []}]}
 ARTS_MIX_S = {"artifacts": [{"id": 2222, "name": "testresults-mix", "expired": False}]}
 
-# Poll 1 (6): artifact available, zip downloaded; poll 2 (5): terminal Blocked.
+# Poll 1 (6): artifact available, zip downloaded; poll 2 (5): terminal Blocked,
+# then drain_then_print (Gap E) re-polls runs/jobs/artifacts once more (3),
+# artifact already seen so no zip call.
 side_effects_s = collections.deque([
     PR_S, CHECK_IP_S, RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S, ZIP_MIXED,
     PR_S, CHECK_BL_S, RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S,
+    RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S,
 ])
 
 
@@ -1319,7 +1353,7 @@ check(any("PR#260: SKIP [com.gb4pc.unit.MixTest] test_skip:" in ln for ln in lin
       "main() --include-pass '': SKIP line emitted and stays labeled SKIP",
       "main() --include-pass '': SKIP missing or mislabeled; output: %r" % out_s)
 check(len(side_effects_s) == 0,
-      "main() --include-pass '': all 11 mocked requests consumed",
+      "main() --include-pass '': all 14 mocked requests consumed",
       "request deque not drained; %d entries left" % len(side_effects_s))
 check(rc_s == 0, "main() --include-pass '' returned 0", "main() returned %r" % rc_s)
 
@@ -1327,6 +1361,7 @@ check(rc_s == 0, "main() --include-pass '' returned 0", "main() returned %r" % r
 side_effects_s2 = collections.deque([
     PR_S, CHECK_IP_S, RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S, ZIP_MIXED,
     PR_S, CHECK_BL_S, RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S,
+    RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S,
 ])
 
 
@@ -1353,13 +1388,16 @@ check(not any("PASS" in ln for ln in lines_s2 if not ln.startswith("monitor PID"
       "main() no flags: no PASS emitted",
       "main() no flags: unexpected PASS; output: %r" % out_s2)
 check(len(side_effects_s2) == 0,
-      "main() no flags: all 11 mocked requests consumed",
+      "main() no flags: all 14 mocked requests consumed",
       "request deque not drained; %d entries left" % len(side_effects_s2))
 
 # main() with --no-include-fail: only SKIP emitted (no FAIL, no PASS)
+# The trailing 3 entries cover drain_then_print's (Gap E) extra signal poll
+# before the terminal line; the artifact is already seen so no zip call.
 side_effects_s3 = collections.deque([
     PR_S, CHECK_IP_S, RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S, ZIP_MIXED,
     PR_S, CHECK_BL_S, RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S,
+    RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S,
 ])
 
 
@@ -1384,9 +1422,12 @@ check(any("SKIP [com.gb4pc.unit.MixTest] test_skip:" in ln for ln in lines_s3),
       "main() --no-include-fail: SKIP missing; output: %r" % out_s3)
 
 # main() with --no-include-skip: only FAIL emitted (no SKIP, no PASS)
+# The trailing 3 entries cover drain_then_print's (Gap E) extra signal poll
+# before the terminal line; the artifact is already seen so no zip call.
 side_effects_s4 = collections.deque([
     PR_S, CHECK_IP_S, RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S, ZIP_MIXED,
     PR_S, CHECK_BL_S, RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S,
+    RUNS_S, JOBS_EMPTY_S, ARTS_MIX_S,
 ])
 
 
@@ -1409,6 +1450,99 @@ check(not any("SKIP" in ln for ln in lines_s4 if "PR#260:" in ln),
 check(any("FAIL [com.gb4pc.unit.MixTest] test_fail:" in ln for ln in lines_s4),
       "main() --no-include-skip: FAIL still emitted",
       "main() --no-include-skip: FAIL missing; output: %r" % out_s4)
+
+
+# ── (t) Gap E (#402): drain_then_print surfaces a step/FAIL that lags behind
+#       the Blocked terminal by exactly one poll ─────────────────────────────
+print("\n=== (t) Gap E (#402): drain poll surfaces step+FAIL that lag behind Blocked ===")
+
+# Reproduces Run B/E/G from issue #402: check-runs flips straight from
+# in_progress to failure (Blocked) on poll 1, while /actions/runs/{id}/jobs
+# still shows the failing "Gate on test failures" step as not-yet-completed
+# and the testresults-* artifact is not yet listed. Without the drain, poll 1
+# would emit Blocked with zero step/FAIL lines. With drain_then_print, the
+# same poll's terminal line is followed by one extra signal poll
+# (DRAIN_DELAY_SECONDS later) where the jobs/artifacts endpoints have caught
+# up, surfacing the step failure and FAIL marker before the terminal line.
+PR_T = {"head": {"sha": "9001dead"}}
+CHECK_BL_T = {"total_count": 1, "check_runs": [{"status": "completed", "conclusion": "failure"}]}
+RUNS_T = {"workflow_runs": [{"id": 9001, "status": "completed"}]}
+JOBS_EMPTY_T = {"jobs": [{"name": "build-and-test", "steps": []}]}
+JOBS_GATE_FAIL_T = {
+    "jobs": [
+        {
+            "name": "build-and-test",
+            "steps": [
+                {"number": 1, "name": "Set up job", "status": "completed", "conclusion": "success"},
+                {"number": 4, "name": "Build and run unit tests", "status": "completed", "conclusion": "success"},
+                {"number": 5, "name": "Run PixelCameraOverlayE2ETest", "status": "completed", "conclusion": "success"},
+                {"number": 6, "name": "Run GalleryButtonVisualE2ETest", "status": "completed", "conclusion": "success"},
+                {"number": 7, "name": "Gate on test failures", "status": "completed", "conclusion": "failure"},
+            ],
+        }
+    ]
+}
+ARTS_EMPTY_T = {"artifacts": []}
+ARTS_E2E_T = {"artifacts": [{"id": 5005, "name": "testresults-e2e-gallery", "expired": False}]}
+ZIP_E2E_T = make_zip_ndjson([
+    '##GB4PC_TEST## {"suite":"com.gb4pc.e2e.GalleryButtonVisualE2ETest","name":"test1a","outcome":"FAIL","ms":9,"msg":"java.lang.AssertionError: button not green","trace":""}',
+])
+
+# Poll 1 (5): check-runs already Blocked (terminal), but jobs/artifacts not yet
+# caught up -> no step/FAIL lines from poll_signals. drain_then_print then
+# sleeps DRAIN_DELAY_SECONDS and re-polls runs/jobs/artifacts (3 + zip): jobs
+# now shows the failing gate step and the artifact is listed -> step + FAIL
+# emitted, then the Blocked terminal line. 5 + 3 + 1 = 9.
+side_effects_t = collections.deque([
+    PR_T,             # pulls -> sha
+    CHECK_BL_T,       # check-runs -> Blocked (terminal), decided on poll 1
+    RUNS_T,           # runs -> run_id
+    JOBS_EMPTY_T,     # jobs -> not yet caught up, nothing new
+    ARTS_EMPTY_T,     # artifacts -> not yet listed
+    # drain_then_print (Gap E): one extra signal poll, now caught up
+    RUNS_T,           # runs -> run_id
+    JOBS_GATE_FAIL_T, # jobs -> "Gate on test failures" -> failure
+    ARTS_E2E_T,       # artifacts -> testresults-e2e-gallery now listed
+    ZIP_E2E_T,        # zip (raw) -> FAIL line for test1a
+])
+
+
+def fake_request_t(url, token, raw=False):
+    return side_effects_t.popleft()
+
+
+buf_t = io.StringIO()
+with unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_t), \
+        unittest.mock.patch.object(ci_monitor.time, "time", return_value=4000.0), \
+        unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None), \
+        unittest.mock.patch("sys.stdout", new=buf_t):
+    rc_t = ci_monitor.main(["ci_monitor.py", "--pr", "402"])
+
+out_t = buf_t.getvalue()
+lines_t = out_t.splitlines()
+gate_step_line_t = 'PR#402: step "Gate on test failures" -> failure'
+fail_line_t = "PR#402: FAIL [com.gb4pc.e2e.GalleryButtonVisualE2ETest] test1a: java.lang.AssertionError: button not green"
+blocked_line_t = "PR#402: Blocked"
+
+check(gate_step_line_t in lines_t,
+      "drain poll surfaces the lagging 'Gate on test failures' step failure",
+      "gate step failure line missing; output: %r" % out_t)
+check(fail_line_t in lines_t,
+      "drain poll surfaces the lagging per-test FAIL marker",
+      "FAIL line missing; output: %r" % out_t)
+check(lines_t.count(blocked_line_t) == 1,
+      "Blocked terminal line emitted exactly once",
+      "Blocked terminal line count != 1; output: %r" % out_t)
+check(
+    gate_step_line_t in lines_t and fail_line_t in lines_t and blocked_line_t in lines_t
+    and lines_t.index(gate_step_line_t) < lines_t.index(blocked_line_t)
+    and lines_t.index(fail_line_t) < lines_t.index(blocked_line_t),
+    "ordering: drained step and FAIL lines precede the terminal Blocked line",
+    "ordering wrong; lines: %r" % lines_t)
+check(len(side_effects_t) == 0,
+      "all 9 mocked requests consumed (drain poll downloads the newly-listed zip)",
+      "request deque not drained; %d entries left" % len(side_effects_t))
+check(rc_t == 0, "main() returned 0", "main() returned %r" % rc_t)
 
 
 # ── Summary ────────────────────────────────────────────────────────────────────
