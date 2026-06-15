@@ -39,6 +39,20 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+            isReturnDefaultValues = true
+        }
+    }
 }
 
-// No external dependencies needed — MediaStore is part of the Android framework.
+dependencies {
+    // Robolectric lets us launch LastPhotoActivity on the JVM and assert it does not
+    // crash against an empty (or populated) MediaStore. This guards the regression in
+    // issue #230 where an embedded "LIMIT" in the query sort order threw on launch.
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.test:core:1.6.1")
+}
