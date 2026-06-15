@@ -10,6 +10,7 @@ import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.LayerDrawable
 import android.os.Build
+import android.util.Log
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -77,6 +78,13 @@ class OverlayManager(
     private val keyguardManager = context.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
     private var overlayView: ImageView? = null
     private var isShowing = false
+
+    private companion object {
+        // Touch-routing diagnostic for Issue #230 / #397. These logs must reach logcat (not just
+        // the in-memory DebugLog buffer) so a CI run records them; DebugLog.log writes only to an
+        // in-process circular buffer that the instrumented test cannot observe.
+        const val TAG = "GB4PC_Overlay"
+    }
 
     fun show() {
         if (isShowing) {
@@ -203,10 +211,11 @@ class OverlayManager(
              * a click-detector or launch failure.
              */
             override fun dispatchTouchEvent(event: MotionEvent): Boolean {
-                DebugLog.log(
-                    "Overlay dispatchTouchEvent: action=${event.actionMasked} " +
-                        "raw=(${event.rawX}, ${event.rawY}) local=(${event.x}, ${event.y})"
-                )
+                val message = "Overlay dispatchTouchEvent: action=${event.actionMasked} " +
+                    "raw=(${event.rawX}, ${event.rawY}) local=(${event.x}, ${event.y})"
+                // Emit to logcat (not just DebugLog's in-memory buffer) so the CI run records it.
+                Log.i(TAG, message)
+                DebugLog.log(message)
                 return super.dispatchTouchEvent(event)
             }
 
@@ -321,7 +330,13 @@ class OverlayManager(
         val isGalleryInstalled = galleryPackage != null &&
             PermissionHelper.isAppInstalled(context, galleryPackage)
 
-        DebugLog.log("Overlay tapped: locked=$isLocked, gallery=$galleryPackage, installed=$isGalleryInstalled")
+        val tapMessage =
+            "Overlay tapped: locked=$isLocked, gallery=$galleryPackage, installed=$isGalleryInstalled"
+        // Emit to logcat too (see dispatchTouchEvent): a CI run can then distinguish a touch-routing
+        // miss (no dispatchTouchEvent line) from a click-detector/launch failure (touch logged but
+        // no "Overlay tapped" line) for Issue #230 / #397.
+        Log.i(TAG, tapMessage)
+        DebugLog.log(tapMessage)
 
         val action = TapActionResolver.resolve(isLocked, galleryPackage, isGalleryInstalled)
         executeTapAction(action)
