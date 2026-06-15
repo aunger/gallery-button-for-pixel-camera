@@ -400,9 +400,12 @@ class OverlayManager(
         // Gravity.TOP|START origin is offset below the system status bar, so x/y (computed
         // above relative to the full display size) land the overlay too far down the screen
         // (Issue #229 — the overlay rendered ~128 px lower than the configured yPercent).
-        // Combined with FLAG_LAYOUT_NO_LIMITS, this makes (x, y) relative to the true
-        // physical-screen origin (0, 0), matching calculateOverlayXPx/calculateOverlayYPx's
-        // assumptions.
+        // This flag makes (x, y) relative to the true physical-screen origin (0, 0), matching
+        // calculateOverlayXPx/calculateOverlayYPx's assumptions, and on its own is sufficient to
+        // place the surface correctly (test1a confirms this; it does not require
+        // FLAG_LAYOUT_NO_LIMITS). The focusable branch additionally keeps FLAG_LAYOUT_NO_LIMITS,
+        // but only because that path is not exercised by the failing default-prefs test, not
+        // because positioning needs it.
         //
         // FLAG_NOT_TOUCH_MODAL (both branches): the overlay is a small (sizePx x sizePx)
         // window. This flag forwards pointer events that fall *outside* the window bounds to the
