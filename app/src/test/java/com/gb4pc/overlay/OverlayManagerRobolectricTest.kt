@@ -256,10 +256,9 @@ class OverlayManagerRobolectricTest {
 
     /**
      * Regression guard for Issue #229: the overlay window's [WindowManager.LayoutParams] must
-     * include `FLAG_LAYOUT_IN_SCREEN` (in addition to `FLAG_LAYOUT_NO_LIMITS`) so that
-     * `Gravity.TOP or Gravity.START` with `x`/`y` set by [calculateOverlayXPx] /
-     * [calculateOverlayYPx] positions the overlay relative to the physical-screen origin
-     * (0, 0), not below the status bar.
+     * include `FLAG_LAYOUT_IN_SCREEN` so that `Gravity.TOP or Gravity.START` with `x`/`y` set by
+     * [calculateOverlayXPx] / [calculateOverlayYPx] positions the overlay relative to the
+     * physical-screen origin (0, 0), not below the status bar.
      *
      * Without this flag, the E2E visual test observed the overlay rendered ~128 px lower
      * than its configured `yPercent` (BLUE centroid at y=1784 instead of the expected
@@ -287,10 +286,84 @@ class OverlayManagerRobolectricTest {
                 "physical-screen origin, not below the status bar (Issue #229).",
             (params.flags and WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN) != 0
         )
+    }
+
+    // ── Issue #230 / #397: small window keeps its touchable region on-screen ──
+
+    /**
+     * Regression guard for Issue #230 / #397
+     * (`test2a_emptyGalleryNoGreenAfterTap`): the small, non-focusable overlay window must NOT set
+     * `FLAG_LAYOUT_NO_LIMITS`.
+     *
+     * The icon is small and positioned well inside the display (default 20% / 69%, ~16% of the
+     * min dimension), so it never needs to extend past the screen limits. With
+     * `FLAG_LAYOUT_NO_LIMITS` the frame the WindowManager uses to derive the touchable input
+     * region can diverge from the on-screen surface for such a small window, so an in-bounds tap
+     * is not routed to the window and `handleTap()` never fires. CI observed exactly that: even
+     * with `FLAG_NOT_TOUCH_MODAL` set, the tap stayed a no-op (~87% green) while the surface
+     * position was correct (test1a passed). Dropping `FLAG_LAYOUT_NO_LIMITS` keeps the frame
+     * within screen limits so the touchable region matches the surface.
+     */
+    @Test
+    fun `non-focusable overlay window does not set FLAG_LAYOUT_NO_LIMITS`() {
+        val context: Application = ApplicationProvider.getApplicationContext()
+        val prefsManager: PrefsManager = mock {
+            on { galleryPackage } doReturn null
+            on { getOverlayPosition(any()) } doReturn OverlayPosition.default()
+            on { focusableOverlay } doReturn false
+        }
+
+        val overlayManager = OverlayManager(context, prefsManager)
+        overlayManager.show()
+
+        val windowManager = context.getSystemService(WindowManager::class.java)
+        val shadowWm = shadowOf(windowManager) as ShadowWindowManagerImpl
+        val overlayView = shadowWm.views[0]
+        val params = overlayView.layoutParams as WindowManager.LayoutParams
+
         assertTrue(
-            "Overlay window must retain FLAG_LAYOUT_NO_LIMITS so it can extend into the " +
-                "system-bar areas.",
-            (params.flags and WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS) != 0
+            "Non-focusable overlay window must NOT set FLAG_LAYOUT_NO_LIMITS so its small " +
+                "touchable input region stays within screen limits and matches the " +
+                "FLAG_LAYOUT_IN_SCREEN-placed surface, letting in-bounds taps reach the icon " +
+                "(Issue #230 / #397).",
+            (params.flags and WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS) == 0
+        )
+    }
+
+    // ── Issue #230 / #397: tap on the overlay reaches its clickable ImageView ─
+
+    /**
+     * Regression guard for Issue #230 / #397
+     * (`test2a_emptyGalleryNoGreenAfterTap`): the small, non-focusable overlay window must set
+     * `FLAG_NOT_TOUCH_MODAL` so an in-bounds tap reaches its clickable [android.widget.ImageView]
+     * and fires `handleTap()`, while touches outside the icon's bounds still pass through to the
+     * camera app behind it.
+     *
+     * Without this flag the E2E suite observed the tap as a no-op: the green camera feed stayed
+     * full-screen and the gallery never opened (GREEN coverage ~87% after tap instead of < 10%).
+     */
+    @Test
+    fun `overlay window sets FLAG_NOT_TOUCH_MODAL so in-bounds taps reach the icon`() {
+        val context: Application = ApplicationProvider.getApplicationContext()
+        val prefsManager: PrefsManager = mock {
+            on { galleryPackage } doReturn null
+            on { getOverlayPosition(any()) } doReturn OverlayPosition.default()
+            on { focusableOverlay } doReturn false
+        }
+
+        val overlayManager = OverlayManager(context, prefsManager)
+        overlayManager.show()
+
+        val windowManager = context.getSystemService(WindowManager::class.java)
+        val shadowWm = shadowOf(windowManager) as ShadowWindowManagerImpl
+        val overlayView = shadowWm.views[0]
+        val params = overlayView.layoutParams as WindowManager.LayoutParams
+
+        assertTrue(
+            "Overlay window must set FLAG_NOT_TOUCH_MODAL so an in-bounds tap reaches the " +
+                "clickable ImageView (firing handleTap()) while out-of-bounds touches pass " +
+                "through to the camera app (Issue #230 / #397).",
+            (params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL) != 0
         )
     }
 

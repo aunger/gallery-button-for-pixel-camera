@@ -60,6 +60,9 @@ class E2EFixture(
         // overlay finally activated on, instead of leaving the retry/recovery to be inferred.
         private const val TAG = "GB4PC_E2E"
 
+        /** Package name of the mock gallery APK (see `:e2e-mock-gallery` module). */
+        private const val MOCK_GALLERY_PACKAGE = "com.gb4pc.mockgallery"
+
         // Issue #233: bounded relaunch for the first-launch teardown race in launchPixelCamera().
         //
         // The per-attempt verify windows must not false-positive a *healthy* launch as a failed
@@ -103,6 +106,13 @@ class E2EFixture(
         Thread.sleep(1000)
         // Ensure PC is not running at test start.
         stopPixelCamera()
+        // Ensure the mock gallery is not left foregrounded from a previous test (Issue #230 /
+        // #397). Once test2a's tap opens the gallery (com.gb4pc.mockgallery), it can stay in
+        // front into the next test; setUp() only stopped Pixel Camera, so a later test that
+        // expects the green camera feed (e.g. test1a's BLUE-centroid check) could screenshot the
+        // stale gallery instead. Force-stopping it here, mirroring stopPixelCamera(), gives each
+        // test a clean foreground baseline.
+        stopMockGallery()
         // Wait for the overlay to deactivate so each test starts from a known inactive state.
         // This prevents stale isOverlayActive=true from a previous test from causing
         // waitForOverlayActive() to return immediately with a stale flag.
@@ -201,6 +211,14 @@ class E2EFixture(
 
     fun stopPixelCamera() {
         uiAutomation.executeShellCommand("am force-stop $pcPackage").close()
+    }
+
+    /**
+     * Force-stops the mock gallery app so it is not left foregrounded between tests (Issue #230 /
+     * #397). Mirrors [stopPixelCamera]; called from [setUp] to give each test a clean foreground.
+     */
+    fun stopMockGallery() {
+        uiAutomation.executeShellCommand("am force-stop $MOCK_GALLERY_PACKAGE").close()
     }
 
     /**
