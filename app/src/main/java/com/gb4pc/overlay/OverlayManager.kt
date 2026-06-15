@@ -427,20 +427,18 @@ class OverlayManager(
         // windows behind it (so the surrounding camera-app touches pass through), while in-bounds
         // touches go to this window's clickable ImageView.
         //
-        // FLAG_LAYOUT_NO_LIMITS is deliberately NOT set on the non-focusable branch (Issue #230 /
-        // #397). The overlay icon is small and positioned well inside the display (default 20% /
-        // 69%, ~16% of the min dimension), so it never needs to extend past the screen limits.
-        // FLAG_NOT_TOUCH_MODAL alone (with FLAG_LAYOUT_NO_LIMITS kept) was observed in CI to still
-        // leave test2a_emptyGalleryNoGreenAfterTap a no-op: the green camera feed stayed
-        // full-screen (~87%) and handleTap() never fired, even though the tap lands dead-centre on
-        // the rendered icon (test1a confirms the surface position). The remaining suspect is the
-        // window's touchable input region: with FLAG_LAYOUT_NO_LIMITS the frame the WM uses to
-        // derive the touchable region can diverge from the on-screen surface for a small window,
-        // so the injected in-bounds tap is not routed to this window. A full-screen
-        // FLAG_NOT_TOUCH_MODAL window *did* deliver the tap (but swallowed every camera touch, so
-        // it was reverted); the only structural difference from the small window was its size /
-        // touchable extent. Dropping FLAG_LAYOUT_NO_LIMITS keeps the small window's frame within
-        // screen limits so its touchable region matches the FLAG_LAYOUT_IN_SCREEN-placed surface.
+        // FLAG_LAYOUT_NO_LIMITS is not set on the non-focusable branch. The overlay icon is small
+        // and positioned well inside the display (default 20% / 69%, ~16% of the min dimension), so
+        // it never needs to extend past the screen limits; keeping the frame within screen limits
+        // aligns its touchable region with the FLAG_LAYOUT_IN_SCREEN-placed surface.
+        //
+        // Historical note (Issue #230 / #397): earlier rounds dropped FLAG_LAYOUT_NO_LIMITS here on
+        // the theory that test2a_emptyGalleryNoGreenAfterTap's tap was not reaching this window. CI
+        // logcat (after the diagnostics below were made to emit) disproved that theory: the tap DOES
+        // fire handleTap() and DOES launch the gallery. test2a's ~87% green was actually the gallery
+        // activity crashing on launch and the green camera being restored to the foreground; the
+        // real fix was in the mock gallery's MediaStore query, not these flags. The flag set is kept
+        // because test1a confirms the surface position is correct under it.
         //
         // The focusable branch keeps FLAG_LAYOUT_NO_LIMITS unchanged (it is not exercised by the
         // failing default-prefs test path).
