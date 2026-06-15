@@ -256,7 +256,13 @@ class GalleryButtonVisualE2ETest {
         Screenshot.saveForArtifact(s1, "3a-s1.png")
 
         fixture.tapOverlay()
-        fixture.pause(1000)
+
+        // Poll up to 15 s for the gallery's photo to render — a fixed 1 s pause races
+        // LastPhotoActivity's cold start (process spawn + MediaStore query + JPEG decode),
+        // which the CI logcat shows can take ~1.4 s. waitForGreenCoverage's return value is
+        // discarded: it only gates the wait, and the assertion below re-measures full-screen
+        // coverage on a fresh screenshot against the original 40% threshold.
+        fixture.waitForGreenCoverage(minCoverage = 0.40f, timeoutMs = 15_000L)
 
         val s2 = Screenshot.captureScreen()
         Screenshot.saveForArtifact(s2, "3a-s2.png")
@@ -298,6 +304,23 @@ class GalleryButtonVisualE2ETest {
      * The assertion itself (`coverage(GREEN) < 10%`) is correct and produces the right signal:
      * it fails when the regression is present and MockCameraActivity is green, and passes when
      * the overlay works and the empty gallery is shown. Do not change the assertion.
+     *
+     * **Caveat introduced by PR #400 (issues #231/#232) — re-check when fixing #156.**
+     *
+     * [E2EFixture.clearCameraRoll] can only delete MediaStore rows owned by `com.gb4pc`.
+     * `test3a` (which runs alphabetically before this test) captures a GREEN photo owned by
+     * `com.google.android.GoogleCamera` (the mock camera), which `clearCameraRoll()` cannot
+     * remove and which therefore remains in the camera roll for every test that runs after
+     * `test3a`, including this one. Today that is harmless: this test fails for the #156 reason
+     * (overlay blocked, tap is a no-op) regardless of the camera roll's contents.
+     *
+     * But once #156 is fixed and `tapOverlay()` starts succeeding here, the gallery will no
+     * longer be empty -- it will show `test3a`'s leftover GREEN photo -- so GREEN coverage will
+     * be >= 10% and this assertion will fail for a reason unrelated to #156. If this test is
+     * still failing after #156 lands, check for that leftover row before assuming the
+     * secure-camera fix is incomplete. Fixing this will require a way to clear cross-package
+     * MediaStore rows the test suite itself created (e.g. `pm clear` / shell `content delete`
+     * as root between tests), which is out of scope for #231/#232.
      *
      * Tracking issue: #156 — same as test5a. Do NOT skip, ignore, or quarantine this test.
      */
