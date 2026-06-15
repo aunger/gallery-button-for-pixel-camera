@@ -233,7 +233,15 @@ tasks.register("connectedE2EAndroidTest") {
         // Without this, E2EFixture.captureOnePhoto()'s countMediaStoreImages() query only
         // returns rows owned by com.gb4pc itself (scoped storage, API 29+), so it never
         // observes the photo the mock camera wrote and times out (issues #231/#232).
-        exec { commandLine(e2eAdb, "shell", "appops", "set", "com.gb4pc", "READ_MEDIA_IMAGES", "allow") }
+        //
+        // READ_MEDIA_IMAGES is a normal dangerous/runtime permission, not an appops-gated
+        // special permission like SYSTEM_ALERT_WINDOW or GET_USAGE_STATS above. `appops set
+        // ... allow` only adjusts the AppOps mode; it does not flip the PackageManager-level
+        // grant state that ContentResolver's permission check (PermissionChecker) consults,
+        // so the prior `appops set com.gb4pc READ_MEDIA_IMAGES allow` was a no-op and CI still
+        // timed out. `pm grant` is the mechanism already used for CAMERA below and in
+        // build.yml; it grants the manifest-declared permission outright.
+        exec { commandLine(e2eAdb, "shell", "pm", "grant", "com.gb4pc", "android.permission.READ_MEDIA_IMAGES") }
         // Install mock Pixel Camera so CameraManager callbacks and UsageStats detection are exercised.
         // CI also installs this APK explicitly before invoking the task (see build.yml) because
         // relying solely on this doLast install caused test failures in CI; kept here for local runs.
@@ -242,7 +250,10 @@ tasks.register("connectedE2EAndroidTest") {
         // Install mock gallery so tapOverlay() can navigate to it in visual E2E tests.
         exec { commandLine(e2eAdb, "install", "-r", e2eMockGalleryApk.get().asFile.absolutePath) }
         // READ_MEDIA_IMAGES lets mock gallery query MediaStore for the last captured photo.
-        exec { commandLine(e2eAdb, "shell", "appops", "set", "com.gb4pc.mockgallery", "READ_MEDIA_IMAGES", "allow") }
+        // Use `pm grant` (not `appops set`) for the same reason as the com.gb4pc grant above:
+        // READ_MEDIA_IMAGES is a dangerous runtime permission, and `appops set ... allow` does
+        // not flip its PackageManager-level grant state.
+        exec { commandLine(e2eAdb, "shell", "pm", "grant", "com.gb4pc.mockgallery", "android.permission.READ_MEDIA_IMAGES") }
         exec { commandLine(e2eAdb, "install", "-r", e2eTestApk.get().asFile.absolutePath) }
         // Run E2E tests with -r for machine-parseable per-test status lines.
         // am instrument exits non-zero on test failure but returns 0 on process crash;

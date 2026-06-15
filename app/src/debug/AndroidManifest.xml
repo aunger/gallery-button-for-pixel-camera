@@ -13,7 +13,7 @@
         mock camera wrote and times out (issues #231/#232).
 
         READ_MEDIA_IMAGES (API 33+) and READ_EXTERNAL_STORAGE (API 29-32) are both
-        declared so the appops grant in connectedE2EAndroidTest covers the full
+        declared so the `pm grant` in connectedE2EAndroidTest covers the full
         minSdk 26..targetSdk 35 range; READ_EXTERNAL_STORAGE is a no-op on API 33+ but
         harmless to request. This file applies to debug builds only, so the permissions
         are never declared in a release build.
