@@ -12,6 +12,7 @@ import android.graphics.drawable.LayerDrawable
 import android.os.Build
 import android.view.Gravity
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.WindowManager
 import android.widget.ImageView
 import android.widget.Toast
@@ -189,6 +190,25 @@ class OverlayManager(
              * broken regardless of this override. This must be verified on a real device.
              */
             override fun dispatchKeyEvent(event: KeyEvent): Boolean = false
+
+            /**
+             * Touch-routing diagnostic for Issue #230 / #397. Every prior "the tap misses"
+             * conclusion was inferred from screenshots and green-coverage percentages; no run
+             * ever recorded whether a pointer event actually reached the overlay window. Logging
+             * each MotionEvent (with its raw screen coordinates) makes that observable in a CI
+             * logcat: if a DOWN at the icon's centre appears here, the touch reached this window
+             * and the fault is downstream of input routing; if nothing appears after tapOverlay(),
+             * the small window's touchable region never received the event. Paired with the
+             * existing "Overlay tapped" log in handleTap(), this distinguishes a routing miss from
+             * a click-detector or launch failure.
+             */
+            override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+                DebugLog.log(
+                    "Overlay dispatchTouchEvent: action=${event.actionMasked} " +
+                        "raw=(${event.rawX}, ${event.rawY}) local=(${event.x}, ${event.y})"
+                )
+                return super.dispatchTouchEvent(event)
+            }
 
             override fun onWindowFocusChanged(hasFocus: Boolean) {
                 super.onWindowFocusChanged(hasFocus)
@@ -385,17 +405,27 @@ class OverlayManager(
         // assumptions.
         //
         // FLAG_NOT_TOUCH_MODAL (both branches): the overlay is a small (sizePx x sizePx)
-        // window. Without this flag a non-focusable overlay still claims a touchable region,
-        // but the in-bounds tap injected by the E2E UiDevice.click was not opening the gallery
-        // (Issue #230 / #397 — test2a_emptyGalleryNoGreenAfterTap: the green camera feed stays
-        // full-screen, handleTap() never fires). FLAG_NOT_TOUCH_MODAL only forwards pointer
-        // events that fall *outside* the window bounds to the windows behind it; in-bounds
-        // touches always go to this window's clickable ImageView. So a small window plus
-        // FLAG_NOT_TOUCH_MODAL both delivers the in-bounds tap to handleTap() and lets the
-        // surrounding camera-app touches pass through. (The earlier full-screen attempt also
-        // carried this flag and did deliver the tap, but was reverted because a full-screen
-        // window has no outside region and swallowed every camera touch; keeping the window
-        // small avoids that.)
+        // window. This flag forwards pointer events that fall *outside* the window bounds to the
+        // windows behind it (so the surrounding camera-app touches pass through), while in-bounds
+        // touches go to this window's clickable ImageView.
+        //
+        // FLAG_LAYOUT_NO_LIMITS is deliberately NOT set on the non-focusable branch (Issue #230 /
+        // #397). The overlay icon is small and positioned well inside the display (default 20% /
+        // 69%, ~16% of the min dimension), so it never needs to extend past the screen limits.
+        // FLAG_NOT_TOUCH_MODAL alone (with FLAG_LAYOUT_NO_LIMITS kept) was observed in CI to still
+        // leave test2a_emptyGalleryNoGreenAfterTap a no-op: the green camera feed stayed
+        // full-screen (~87%) and handleTap() never fired, even though the tap lands dead-centre on
+        // the rendered icon (test1a confirms the surface position). The remaining suspect is the
+        // window's touchable input region: with FLAG_LAYOUT_NO_LIMITS the frame the WM uses to
+        // derive the touchable region can diverge from the on-screen surface for a small window,
+        // so the injected in-bounds tap is not routed to this window. A full-screen
+        // FLAG_NOT_TOUCH_MODAL window *did* deliver the tap (but swallowed every camera touch, so
+        // it was reverted); the only structural difference from the small window was its size /
+        // touchable extent. Dropping FLAG_LAYOUT_NO_LIMITS keeps the small window's frame within
+        // screen limits so its touchable region matches the FLAG_LAYOUT_IN_SCREEN-placed surface.
+        //
+        // The focusable branch keeps FLAG_LAYOUT_NO_LIMITS unchanged (it is not exercised by the
+        // failing default-prefs test path).
         val windowFlags = if (prefsManager.focusableOverlay) {
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
@@ -404,7 +434,6 @@ class OverlayManager(
         } else {
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                 showWhenLockedFlag
         }
