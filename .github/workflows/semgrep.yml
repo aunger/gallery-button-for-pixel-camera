@@ -76,12 +76,6 @@ jobs:
             --sarif \
             --output semgrep.sarif \
             $SCAN_TARGETS
-        # continue-on-error keeps the SARIF upload reachable even when --error
-        # causes a non-zero exit.  This is intentionally different from the
-        # build workflow (CLAUDE.md §CI Architecture): there, continue-on-error
-        # was removed because it masked infrastructure failures.  Here we always
-        # want SARIF uploaded; the "Fail on findings" step below is the actual gate.
-        continue-on-error: true
 
       - name: Upload SARIF
         if: always() && steps.targets.outputs.skip != 'true' && hashFiles('semgrep.sarif') != ''
@@ -89,7 +83,3 @@ jobs:
         with:
           sarif_file: semgrep.sarif
           category: semgrep
-
-      - name: Fail on findings
-        if: steps.semgrep.outcome == 'failure'
-        run: exit 1
