@@ -35,7 +35,14 @@ jobs:
         id: targets
         run: |
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            TARGETS=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | tr '\n' ' ')
+            # --diff-filter=ACMR keeps Added/Copied/Modified/Renamed paths and
+            # drops Deletions; for renames git reports the new (post-rename) path.
+            # Filter once more to paths that still exist in the working tree so a
+            # nonexistent target can never error out the scan.
+            TARGETS=""
+            while IFS= read -r f; do
+              [[ -n "$f" && -e "$f" ]] && TARGETS+="$f "
+            done < <(git diff --name-only --diff-filter=ACMR "origin/${{ github.base_ref }}...HEAD")
             if [[ -z "${TARGETS// }" ]]; then
               echo "skip=true" >> "$GITHUB_OUTPUT"
             else
@@ -62,7 +69,7 @@ jobs:
         continue-on-error: true
 
       - name: Upload SARIF
-        if: always()
+        if: always() && steps.targets.outputs.skip != 'true' && hashFiles('semgrep.sarif') != ''
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: semgrep.sarif
