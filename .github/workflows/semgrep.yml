@@ -21,6 +21,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -29,8 +31,25 @@ jobs:
       - name: Install Semgrep
         run: pip install semgrep
 
+      - name: Compute scan targets
+        id: targets
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            TARGETS=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | tr '\n' ' ')
+            if [[ -z "${TARGETS// }" ]]; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "skip=false" >> "$GITHUB_OUTPUT"
+              echo "targets=$TARGETS" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "targets=." >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Run Semgrep
         id: semgrep
+        if: steps.targets.outputs.skip != 'true'
         run: |
           semgrep scan \
             --config p/python \
@@ -39,7 +58,7 @@ jobs:
             --error \
             --sarif \
             --output semgrep.sarif \
-            .
+            ${{ steps.targets.outputs.targets }}
         continue-on-error: true
 
       - name: Upload SARIF
