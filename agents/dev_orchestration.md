@@ -181,14 +181,14 @@ undiagnosedTerminal:
     → proceed with the original terminal's routing (Blocked → newAuthor; Infra → escalate to user, stop) without a further re-run
 
 silentVanish:
-  // Issue #411: the Monitor task can silently vanish -- the process exits
+  // Issue #411: the Monitor task can silently vanish--the process exits
   // without the task-notification infrastructure delivering any terminal line
   // (not even a timeout notification). This leaves the session stuck until
   // the user sends a message. When a user message wakes the session while
   // a Monitor invocation is still nominally pending, check whether the task
   // is still alive using TaskOutput (passing the Monitor's task ID).
   // If TaskOutput returns "No task found with ID: <id>", the task record has
-  // been dropped -- a silent vanish. Re-launch the Monitor once immediately
+  // been dropped--a silent vanish. Re-launch the Monitor once immediately
   // and resume the routing above from "Act only on the terminal lines..."
   // with this fresh invocation (applying all normal checks, including
   // undiagnosedTerminal if warranted).
@@ -204,7 +204,7 @@ silentVanish:
     Resume the routing above from "Act only on the terminal lines..." with the fresh invocation.
     if this fresh invocation also produces no terminal line before the next user message:
       → escalate to user; stop
-  else (the Monitor task is still registered -- a user message is not proof of a vanish):
+  else (the Monitor task is still registered--a user message is not proof of a vanish):
     Relay to the user that CI is still running and the Monitor is alive; then continue waiting for the Monitor's terminal line; do not re-launch.
 ```
 
