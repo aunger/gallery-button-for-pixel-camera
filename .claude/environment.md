@@ -72,8 +72,8 @@ No manual setup is needed.
 | markdownlint-cli2 | `*.md` | lint; MD013 (line length) disabled via `.markdownlint.yaml` |
 | ktlint | `*.kt`, `*.kts` | format; auto-corrects in place |
 
-When a hook modifies a file it was not the agent's commit that changed it --
-stage the changes and commit again.
+When a hook modifies a file, the agent did not cause that change --
+stage the modified files and commit again.
 
 ### Semgrep (CI only)
 

@@ -198,5 +198,4 @@ else
     echo "[session-start] Step 3c: pre-commit hook wired"
 fi
 
-
 echo "[session-start] Complete. ANDROID_HOME=$ANDROID_HOME"
