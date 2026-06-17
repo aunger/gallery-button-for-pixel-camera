@@ -13,18 +13,26 @@ Two kinds of outstanding requirement are your responsibility:
 2. **Changes outside the repo**: requirements that are not satisfied by any change to a file in the repo, such as an issue that needs to be filed, a setting that must be changed in an external system, or a manual operational step.
    These are easy to lose because the review process is centered on file changes; surfacing them is explicitly part of your job.
 
-## The before-merging list
+## Two lists, not one
 
-Assemble a single *before merging* list that names every outstanding requirement you find, of either kind above.
-This list is the deliverable the merge decision depends on: the PR may be merged only once every item on it is resolved.
-You file one tracking issue per item (see **What to do**) so that each requirement is followed up and blocks the PR until done.
+Classify each finding into exactly one of two tracks:
+
+- **Before-merging (blocking)**: requirements from the two kinds above that are in scope for this PR and must be resolved before it can be merged.
+- **Follow-on (non-blocking)**: work that is explicitly deferred, out of scope for this PR, or otherwise not a condition of merging (for example, cleanup in another package that the PR explicitly deferred to a follow-up).
+
+Both lists are deliverables.
+File a tracking issue for every item in either list so nothing is lost.
+Only the before-merging list controls the merge gate.
 
 ## What to do
 
 1. Read the issue description, PR description, and all comments on both.
    Look for both kinds of outstanding requirement described under **Role**: unautomated verification steps, and changes outside the repo (such as an issue that needs to be filed).
-   Assemble the *before merging* list, labeling each item as either an unautomated verification step or a change outside the repo, and noting for each item the URL of the specific PR comment that called for it.
+   Assemble two lists:
+   - the *before merging* list, labeling each item as either an unautomated verification step or a change outside the repo, and noting for each item the URL of the specific PR comment that called for it; and
+   - the *follow-on* list, noting for each item the URL of the source comment or description and a brief reason it is not a merge blocker (e.g., "explicitly deferred in PR comment," "out of scope for this PR").
 2. If the *before merging* list is empty, apply the `verified` label to both the PR and the issue it resolves, report this success to the Orchestrator (no unautomated steps or outside-the-repo requirements were identified; the PR may be merged) and exit.
+   A non-empty follow-on list does not prevent you from applying the `verified` label; apply it anyway and also report the follow-on list.
 3. Otherwise, open one GitHub issue for each item on the *before merging* list.
    Do NOT communicate with the user, and do NOT ask whether to test manually or to automate.
    For each item:
@@ -47,8 +55,17 @@ You file one tracking issue per item (see **What to do**) so that each requireme
       Send the id as a bare JSON integer in the request body (not a quoted string), as the API requires.
       If the PR number is not accepted for a sub-issue relationship, fall back to making the new issue a sub-issue of the **parent issue** the PR resolves instead, by sending the same request to `.../issues/{parent issue number}/sub_issues`.
       If neither call succeeds, skip this link without failing.
-4. Report the *before merging* list to the Orchestrator and exit.
-   The PR may be merged once every one of these filed issues is resolved.
+4. Open one GitHub issue for each item on the *follow-on* list.
+   For each item:
+   a. Title the issue `(re PR #{number}) {task title}`, using the same convention as blocking issues.
+   b. In the issue description, include a URL to the source comment or description, and state clearly that this issue does **not** block PR #{number} (for example, "This is a follow-on item and does not block merging PR #{number}.").
+   c. Do **not** call the `blocked_by` dependency endpoint for follow-on issues.
+      Do **not** add any "Blocks PR #..." line to the issue body.
+   d. Optionally make the new issue a sub-issue of the PR (same API call as step 3d), as a convenient organizational link.
+      Skip this without failing if it does not succeed.
+5. Report both lists to the Orchestrator and exit.
+   The PR may be merged once every item on the *before merging* list is resolved.
+   Follow-on issues do not gate the merge.
 
 ## Boundaries
 
