@@ -144,7 +144,7 @@ Monitor output lines are relayed to the user verbatim; this is user-facing statu
 ```
   if Reviewer requested changes → goto newAuthor
   if Reviewer gave LGTM:
-    Orchestrator launches a Monitor tool call running `python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER>` from the repo root (run_in_background: true, timeout_ms: 1800000). Record the task ID returned by the Monitor tool call for use in silentVanish recovery.
+    Orchestrator launches a Monitor tool call running `python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER>` from the repo root (run_in_background: true, timeout_ms: 1800000). Record the task ID returned by the Monitor tool call for use in silentVanish recovery, and clear the silentVanish re-launch flag (this original launch is not a re-launch).
     Each stdout line arrives as a task-notification event; relay each line to the user verbatim.
     Act only on the terminal lines Clear, Blocked, or Infra. Relay in_progress lines to the user as brief status updates (the script suppresses these unless no other output has been emitted for over 120 seconds).
     Relay `step "..." -> ...` and `FAIL [...] ...` lines to the user as informational test-result deltas; they do NOT end the loop or start a new Author round.
@@ -192,18 +192,29 @@ silentVanish:
   // and resume the routing above from "Act only on the terminal lines..."
   // with this fresh invocation (applying all normal checks, including
   // undiagnosedTerminal if warranted).
-  // If the fresh invocation also vanishes silently (a second user message
-  // arrives before any terminal line), escalate to the user; stop.
+  // If that re-launched invocation also vanishes silently (a second user
+  // message arrives before any terminal line), escalate to the user; stop.
+  // To make that double-vanish escalation reachable: the routing loop sends
+  // every user-message wake-up here via "goto silentVanish", so the second
+  // vanish re-enters this block from the top rather than reaching a nested
+  // instruction after the re-launch. Track whether the current Monitor
+  // invocation is itself a silentVanish re-launch (set the flag when
+  // re-launching below; clear it on the original launch and whenever a Monitor
+  // invocation delivers any terminal line). On a confirmed vanish, the
+  // re-launch flag decides whether to re-launch (first vanish) or escalate
+  // (second vanish); a still-alive task never escalates.
   // Note: the user message that triggered this branch is treated as a wake-up event only.
   // Its content (if any) is set aside; the Orchestrator's narrow scope during CI monitoring
   // means user questions or instructions cannot be addressed mid-monitor. The user is informed
   // of CI status (see branches below), which is the appropriate response in this context.
   if TaskOutput for the Monitor's task ID returns "No task found with ID: <id>":
-    Inform the user that the Monitor task vanished without a terminal notification and is being re-launched.
-    Re-launch the Monitor tool call (same command as the original, fresh invocation).
-    Resume the routing above from "Act only on the terminal lines..." with the fresh invocation.
-    if this fresh invocation also produces no terminal line before the next user message:
+    // Confirmed vanish: the task record was dropped.
+    if the current Monitor invocation is itself a silentVanish re-launch (the re-launch flag is set):
+      // A re-launched Monitor vanished too; one recovery attempt has already been spent.
       → escalate to user; stop
+    Inform the user that the Monitor task vanished without a terminal notification and is being re-launched.
+    Re-launch the Monitor tool call (same command as the original, fresh invocation); set the silentVanish re-launch flag for this fresh invocation.
+    Resume the routing above from "Act only on the terminal lines..." with the fresh invocation.
   else (the Monitor task is still registered--a user message is not proof of a vanish):
     Relay to the user that CI is still running and the Monitor is alive; then continue waiting for the Monitor's terminal line; do not re-launch.
 ```
