@@ -57,15 +57,30 @@ jobs:
       - name: Run Semgrep
         id: semgrep
         if: steps.targets.outputs.skip != 'true'
+        env:
+          SCAN_TARGETS: ${{ steps.targets.outputs.targets }}
         run: |
+          # --error only on PRs: fails on findings so the PR is blocked.
+          # Non-PR events (push, schedule) scan for visibility without blocking;
+          # findings still land in the Security tab via SARIF.
+          # Tracked for future cleanup in issue #436.
+          EXTRA=""
+          [[ "${{ github.event_name }}" == "pull_request" ]] && EXTRA="--error"
+          # SC2086: word-splitting on SCAN_TARGETS and EXTRA is intentional.
+          # shellcheck disable=SC2086
           semgrep scan \
             --config p/python \
             --config p/kotlin \
             --config p/security-audit \
-            --error \
+            $EXTRA \
             --sarif \
             --output semgrep.sarif \
-            ${{ steps.targets.outputs.targets }}
+            $SCAN_TARGETS
+        # continue-on-error keeps the SARIF upload reachable even when --error
+        # causes a non-zero exit.  This is intentionally different from the
+        # build workflow (CLAUDE.md §CI Architecture): there, continue-on-error
+        # was removed because it masked infrastructure failures.  Here we always
+        # want SARIF uploaded; the "Fail on findings" step below is the actual gate.
         continue-on-error: true
 
       - name: Upload SARIF
