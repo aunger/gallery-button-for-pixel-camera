@@ -15,6 +15,21 @@ import android.widget.ImageView
  */
 class LastPhotoActivity : Activity() {
 
+    companion object {
+        /**
+         * Sort order for the most-recent-photo query: newest first.
+         *
+         * Do NOT append a "LIMIT" clause here. Since API 29 the platform validates the
+         * ORDER BY argument and rejects an embedded LIMIT with
+         * "IllegalArgumentException: Invalid token LIMIT", which crashed this activity on
+         * launch (issue #230). The caller reads only the first row via moveToFirst(), so
+         * no SQL-level LIMIT is needed. Exposed as a constant so a unit test can assert
+         * the no-LIMIT invariant without depending on the platform's SQL validation
+         * (which Robolectric does not reproduce).
+         */
+        internal const val LAST_PHOTO_SORT_ORDER = "${MediaStore.Images.Media.DATE_ADDED} DESC"
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_last_photo)
@@ -29,13 +44,12 @@ class LastPhotoActivity : Activity() {
 
     private fun queryLastPhotoUri(): Uri? {
         val projection = arrayOf(MediaStore.Images.Media._ID)
-        val sortOrder = "${MediaStore.Images.Media.DATE_ADDED} DESC LIMIT 1"
         contentResolver.query(
             MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
             projection,
             null,
             null,
-            sortOrder
+            LAST_PHOTO_SORT_ORDER
         )?.use { cursor ->
             if (cursor.moveToFirst()) {
                 val id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID))

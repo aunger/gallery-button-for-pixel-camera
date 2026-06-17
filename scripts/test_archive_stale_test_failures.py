@@ -19,13 +19,16 @@ _NOW = datetime(2026, 5, 25, 4, 0, 0, tzinfo=timezone.utc)
 _CUTOFF = _NOW - timedelta(days=21)  # 2026-05-04T04:00:00+00:00
 
 
-def _make_issue(number: int, title: str, updated_at: datetime, labels: list[str]) -> dict:
+def _make_issue(
+    number: int, title: str, updated_at: datetime, labels: list[str], state: str = "open"
+) -> dict:
     """Build a minimal GitHub issue dict as returned by the API."""
     return {
         "number": number,
         "title": title,
         "updated_at": updated_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "labels": [{"name": lbl} for lbl in labels],
+        "state": state,
     }
 
 
@@ -174,6 +177,26 @@ class TestFetchStaleIssues(unittest.TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["number"], 1)
 
+    def test_stale_closed_issue_returned(self):
+        """A closed, stale, test-failure issue is included (not just open ones)."""
+        stale_ts = _CUTOFF - timedelta(days=1)
+        issue = _make_issue(4, "Closed stale failure", stale_ts, ["test-failure"], state="closed")
+
+        with patch.object(astf, "gh_api", side_effect=self._gh_api_side_effect([[issue], []])):
+            result = astf.fetch_stale_issues("owner/repo", "tok", _CUTOFF)
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["number"], 4)
+
+    def test_query_does_not_filter_by_state(self):
+        """The issues query omits state=open so closed issues are also fetched."""
+        with patch.object(astf, "gh_api", side_effect=self._gh_api_side_effect([[], []])) as mock_api:
+            astf.fetch_stale_issues("owner/repo", "tok", _CUTOFF)
+
+        path = mock_api.call_args_list[0][0][0]
+        self.assertNotIn("state=open", path)
+        self.assertIn("labels=test-failure", path)
+
 
 # ---------------------------------------------------------------------------
 # archive_issue tests
@@ -306,6 +329,18 @@ class TestMain(unittest.TestCase):
 
         self.assertEqual(result, 0)
         mock_archive.assert_not_called()
+
+    def test_archives_stale_closed_issue(self):
+        """A closed, stale, test-failure issue returned by fetch_stale_issues is archived."""
+        stale_ts = datetime.now(timezone.utc) - timedelta(days=30)
+        closed_issue = _make_issue(12, "Closed stale", stale_ts, ["test-failure"], state="closed")
+
+        with patch.object(astf, "fetch_stale_issues", return_value=[closed_issue]):
+            with patch.object(astf, "archive_issue") as mock_archive:
+                result = astf.main()
+
+        self.assertEqual(result, 0)
+        mock_archive.assert_called_once_with(closed_issue, "owner/repo", "test-token")
 
     def test_continues_after_single_archive_failure(self):
         """An error on one issue does not prevent processing subsequent issues."""

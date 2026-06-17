@@ -46,6 +46,9 @@ class ForegroundDetector(
         var totalEvents = 0
         var foregroundEvents = 0
         var skippedSelfEvents = 0
+        // Tracks all distinct foreground packages seen in this window, in order of first appearance
+        // (Issue #324). LinkedHashSet gives O(1) deduplication while preserving insertion order.
+        val allForegroundPackages = LinkedHashSet<String>()
 
         while (events.hasNextEvent()) {
             events.getNextEvent(event)
@@ -63,6 +66,7 @@ class ForegroundDetector(
                 }
                 foregroundEvents++
                 DebugLog.log("ForegroundDetector: foreground event type=${event.eventType} pkg=${event.packageName} ts=${event.timeStamp}")
+                allForegroundPackages.add(event.packageName)
                 if (event.timeStamp >= latestTimestamp) {
                     latestTimestamp = event.timeStamp
                     latestForegroundPackage = event.packageName
@@ -72,7 +76,7 @@ class ForegroundDetector(
 
         val selfNote = if (skippedSelfEvents > 0) ", skipped $skippedSelfEvents self-event(s)" else ""
         if (latestForegroundPackage != null) {
-            DebugLog.log("ForegroundDetector: foreground=$latestForegroundPackage ($foregroundEvents foreground event(s) of $totalEvents total$selfNote)")
+            DebugLog.log("ForegroundDetector: foreground=$latestForegroundPackage, all FG apps=$allForegroundPackages ($foregroundEvents foreground event(s) of $totalEvents total$selfNote)")
         } else {
             DebugLog.log("ForegroundDetector: no foreground app detected ($foregroundEvents foreground event(s) of $totalEvents total$selfNote)")
         }

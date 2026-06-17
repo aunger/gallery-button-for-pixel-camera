@@ -11,6 +11,7 @@ import android.media.MediaScannerConnection
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.util.Log
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.UiDevice
 import com.gb4pc.Constants
@@ -52,6 +53,44 @@ class E2EFixture(
 ) {
     private val pcPackage = Constants.PIXEL_CAMERA_PACKAGE
 
+    companion object {
+        // Tag for the diagnostic logcat lines emitted by launchPixelCamera() (issue #233). These
+        // make the bounded-relaunch path observable in a CI run's logcat: when the first-launch
+        // teardown race occurs, the log shows which attempt re-issued `am start` and which one the
+        // overlay finally activated on, instead of leaving the retry/recovery to be inferred.
+        private const val TAG = "GB4PC_E2E"
+
+        /** Package name of the mock gallery APK (see `:e2e-mock-gallery` module). */
+        private const val MOCK_GALLERY_PACKAGE = "com.gb4pc.mockgallery"
+
+        // Issue #233: bounded relaunch for the first-launch teardown race in launchPixelCamera().
+        //
+        // The per-attempt verify windows must not false-positive a *healthy* launch as a failed
+        // one. waitForOverlayActive() documents that on the CI emulator a healthy activation can
+        // take ~9 s (camera open) + ~1 s (UsageStats) and budgets 20 s for it. So the first
+        // attempt is given a window in that range (LAUNCH_FIRST_VERIFY_MS): a slow-but-healthy
+        // first launch activates the overlay inside that window and returns without the loop ever
+        // re-issuing `am start`. Re-issuing on a healthy, mid-resume activity would itself race the
+        // OPEN transition (a second `input swipe` + `am start` over the resuming activity), i.e.
+        // re-create the very failure this fix targets, so the first window deliberately errs long.
+        //
+        // Only the *teardown* failure mode (activity force-removed ~3 ms after START, before
+        // onResume(), so the camera never opens and the overlay can never activate) survives that
+        // first window. Recovery from it is fast: every observed non-first launch in CI opens the
+        // camera within ~30 ms, so the follow-up attempts use the shorter LAUNCH_RETRY_VERIFY_MS.
+        //
+        // Worst-case budget for a genuinely broken launch:
+        //   baseline inactive wait (LAUNCH_BASELINE_MS, only consumed if a prior overlay is still
+        //   active going in -- itself a separate failure, not the healthy path)
+        //   + LAUNCH_FIRST_VERIFY_MS + (LAUNCH_ATTEMPTS - 1) x LAUNCH_RETRY_VERIFY_MS
+        //   = 3 + 12 + 2 x 6 = 27 s, under the 30 s overlayAppearsWhenViewfinderOpens assertion,
+        // so launchPixelCamera() returns and lets the caller's own assertion fail rather than hang.
+        private const val LAUNCH_ATTEMPTS = 3
+        private const val LAUNCH_FIRST_VERIFY_MS = 12_000L
+        private const val LAUNCH_RETRY_VERIFY_MS = 6_000L
+        private const val LAUNCH_BASELINE_MS = 3_000L
+    }
+
     /**
      * Run from `@Before`. Performs all preconditions; tests that pass `setUp()` are
      * guaranteed: Pixel Camera installed, OverlayService running and registered, PC
@@ -59,14 +98,21 @@ class E2EFixture(
      */
     fun setUp() {
         ensurePixelCameraInstalled()
-        // Wake the display so screenshots during tests capture actual UI, not a black screen.
-        uiAutomation.executeShellCommand("input keyevent 224").close()  // KEYCODE_WAKEUP
-        Thread.sleep(300)
+        // Wake the display and dismiss the swipe keyguard so screenshots during tests
+        // capture actual UI, not a black screen or the gray (#E9E8EF) lock screen.
+        wakeAndDismissKeyguard()
         startServiceWithSetupCompleted()
         // Allow the service time to register camera callbacks.
         Thread.sleep(1000)
         // Ensure PC is not running at test start.
         stopPixelCamera()
+        // Ensure the mock gallery is not left foregrounded from a previous test (Issue #230 /
+        // #397). Once test2a's tap opens the gallery (com.gb4pc.mockgallery), it can stay in
+        // front into the next test; setUp() only stopped Pixel Camera, so a later test that
+        // expects the green camera feed (e.g. test1a's BLUE-centroid check) could screenshot the
+        // stale gallery instead. Force-stopping it here, mirroring stopPixelCamera(), gives each
+        // test a clean foreground baseline.
+        stopMockGallery()
         // Wait for the overlay to deactivate so each test starts from a known inactive state.
         // This prevents stale isOverlayActive=true from a previous test from causing
         // waitForOverlayActive() to return immediately with a stale flag.
@@ -74,9 +120,87 @@ class E2EFixture(
     }
 
     fun launchPixelCamera() {
-        uiAutomation.executeShellCommand(
-            "am start -a android.media.action.STILL_IMAGE_CAMERA -p $pcPackage"
-        ).close()
+        // Wake and dismiss the swipe keyguard first. STILL_IMAGE_CAMERA is a non-secure
+        // launch, so if the keyguard is up the activity starts behind it and screenshots
+        // capture the gray (#E9E8EF) lock screen instead of the green camera View--the
+        // root cause of the test0 smoke flake (issue #235). The screen can re-sleep or
+        // re-lock between setUp() and a later test's launch (and between CI steps), so the
+        // dismissal must run on every launch, not only once in setUp().
+        wakeAndDismissKeyguard()
+
+        // Issue #233: On the API-35 CI emulator the *first* STILL_IMAGE_CAMERA launch of a
+        // suite is frequently torn down inside its own OPEN window-transition before the
+        // activity reaches onResume(). WindowManager force-removes the just-created
+        // ActivityRecord ("Force removing ActivityRecord{... MockCameraActivity}" / "Attempted
+        // to add application window with unknown token ... Aborting"), so MockCameraActivity
+        // never calls openCamera(), CameraManager.AvailabilityCallback.onCameraUnavailable
+        // never fires, and the overlay never activates -- the test then times out at 30 s.
+        // A re-issued `am start` after the transition has settled reliably brings the activity
+        // up (every non-first launch in CI opens the camera within ~30 ms), so retry the launch
+        // until the overlay activates, which is the observable proof the camera reached
+        // onResume() and opened. The retry is bounded so a genuinely broken launch still fails
+        // the caller's own activation assertion rather than hanging.
+        //
+        // The activation check below treats isOverlayActive becoming true as proof that *this*
+        // launch reached onResume(). That proof is only sound from a known-inactive baseline: if
+        // a previous test's overlay is still active when launchPixelCamera() is called (setUp()'s
+        // waitForOverlayInactive() and the mid-test goHome()/stopPixelCamera() flows do not assert
+        // deactivation), waitForCondition would read the stale true on its first poll and return
+        // before this launch's `am start` had any effect. Wait for a clean inactive baseline first
+        // so each attempt observes a genuine false -> true transition. Bounded so it cannot hang.
+        waitForCondition(LAUNCH_BASELINE_MS) { !OverlayService.isOverlayActive }
+        repeat(LAUNCH_ATTEMPTS) { attempt ->
+            Log.i(TAG, "launchPixelCamera: am start attempt ${attempt + 1}/$LAUNCH_ATTEMPTS")
+            uiAutomation.executeShellCommand(
+                "am start -a android.media.action.STILL_IMAGE_CAMERA -p $pcPackage"
+            ).close()
+            // The first attempt gets the full healthy-activation window so a slow-but-healthy
+            // launch is never mistaken for a failed one and re-issued (which would itself race the
+            // OPEN transition). Only the teardown failure mode survives that window, and recovery
+            // from it is fast, so later attempts use the shorter retry window. See the
+            // companion-object note for the budget rationale.
+            val verifyMs = if (attempt == 0) LAUNCH_FIRST_VERIFY_MS else LAUNCH_RETRY_VERIFY_MS
+            if (waitForCondition(verifyMs) { OverlayService.isOverlayActive }) {
+                Log.i(TAG, "launchPixelCamera: overlay active on attempt ${attempt + 1}")
+                return
+            }
+            if (attempt < LAUNCH_ATTEMPTS - 1) {
+                // The previous launch was torn down before the camera opened. Re-dismiss the
+                // keyguard (the screen can re-sleep between attempts) and try again.
+                Log.w(
+                    TAG,
+                    "launchPixelCamera: overlay still inactive after ${verifyMs} ms on attempt " +
+                        "${attempt + 1} (first-launch teardown race); re-issuing am start"
+                )
+                wakeAndDismissKeyguard()
+            } else {
+                Log.w(
+                    TAG,
+                    "launchPixelCamera: overlay still inactive after $LAUNCH_ATTEMPTS attempts; " +
+                        "letting the caller's own assertion fail"
+                )
+            }
+        }
+    }
+
+    /**
+     * Wakes the display and dismisses the emulator's swipe-style lock screen.
+     *
+     * Sends KEYCODE_WAKEUP (224) to turn the screen on regardless of API level, then performs
+     * an upward swipe to dismiss the swipe keyguard the CI emulator shows after boot or after
+     * the display sleeps. This mirrors the CI pre-flight smoke check (`build.yml`), which uses
+     * the same wake + swipe sequence; `wm dismiss-keyguard` did not reliably dismiss the
+     * swipe-type lock screen on the API-35 CI emulator. When the screen is already unlocked the
+     * swipe is a harmless gesture over the foreground activity.
+     *
+     * An upward swipe is preferred over KEYCODE_MENU (82): KEYCODE_MENU can open a foreground
+     * activity's options/overflow menu, obscuring the camera View.
+     */
+    fun wakeAndDismissKeyguard() {
+        uiAutomation.executeShellCommand("input keyevent 224").close()  // KEYCODE_WAKEUP
+        Thread.sleep(300)
+        uiAutomation.executeShellCommand("input swipe 300 1000 300 300").close()
+        Thread.sleep(300)
     }
 
     fun goHome() {
@@ -87,6 +211,14 @@ class E2EFixture(
 
     fun stopPixelCamera() {
         uiAutomation.executeShellCommand("am force-stop $pcPackage").close()
+    }
+
+    /**
+     * Force-stops the mock gallery app so it is not left foregrounded between tests (Issue #230 /
+     * #397). Mirrors [stopPixelCamera]; called from [setUp] to give each test a clean foreground.
+     */
+    fun stopMockGallery() {
+        uiAutomation.executeShellCommand("am force-stop $MOCK_GALLERY_PACKAGE").close()
     }
 
     /**
@@ -118,15 +250,22 @@ class E2EFixture(
     }
 
     /**
-     * Deletes all images from the external MediaStore and asserts the roll is empty.
+     * Deletes all images owned by this package from the external MediaStore and asserts
+     * none remain.
      *
      * Uses [ContentResolver.delete] with a null predicate to remove every row from
-     * [MediaStore.Images.Media.EXTERNAL_CONTENT_URI]. On API 33+ this would throw
-     * [android.app.RecoverableSecurityException] for rows inserted by other packages;
-     * since the test suite controls all insertions in the E2E environment this should
-     * not occur. If it does, the exception propagates and fails the test loudly.
+     * [MediaStore.Images.Media.EXTERNAL_CONTENT_URI]. [ContentResolver.delete] only ever
+     * removes rows owned by the calling package (`com.gb4pc`); rows inserted by other
+     * packages (e.g. the mock camera's captured photos, owned by
+     * `com.google.android.GoogleCamera`) are left in place and are not this method's concern.
      *
-     * After deletion a query is performed to assert 0 rows remain.
+     * After deletion, the post-condition is checked by querying with
+     * `OWNER_PACKAGE_NAME = com.gb4pc` rather than an unfiltered query: since `com.gb4pc`
+     * holds `READ_MEDIA_IMAGES` (see `app/src/debug/AndroidManifest.xml`), an unfiltered
+     * query also returns other packages' rows, which this method cannot and should not
+     * delete. Asserting on the unfiltered count would fail whenever a cross-package row
+     * (such as a previously captured mock photo) is still present, even though this
+     * method did exactly what it could: clear every row `com.gb4pc` owns.
      */
     fun clearCameraRoll() {
         context.contentResolver.delete(
@@ -137,11 +276,18 @@ class E2EFixture(
         val cursor = context.contentResolver.query(
             MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
             arrayOf(MediaStore.Images.Media._ID),
-            null, null, null
+            "${MediaStore.Images.Media.OWNER_PACKAGE_NAME} = ?",
+            arrayOf(context.packageName),
+            null
         )
         val count = cursor?.count ?: 0
         cursor?.close()
-        assertEquals("MediaStore should be empty after clearCameraRoll()", 0, count)
+        assertEquals(
+            "MediaStore should contain no rows owned by ${context.packageName} " +
+                "after clearCameraRoll()",
+            0,
+            count
+        )
     }
 
     /**

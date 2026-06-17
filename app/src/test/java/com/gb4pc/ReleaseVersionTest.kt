@@ -14,8 +14,8 @@ import java.time.format.DateTimeParseException
  * validate the build that produced this APK, not future builds.
  *
  * Verifies:
- *  1. versionName is either semver (MAJOR.MINOR.PATCH) for tagged releases, or
- *     dev.N for CI/pre-release builds (where N is github.run_number).
+ *  1. versionName is either semver (MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-PRERELEASE)
+ *     for tagged releases, or dev.N for CI builds (where N is github.run_number).
  *  2. versionCode is either a valid yyyyMMdd build date (local dev builds) or a
  *     positive CI run number (github.run_number in CI builds).
  */
@@ -24,10 +24,10 @@ class ReleaseVersionTest {
     @Test
     fun `versionName is semver or dev build label`() {
         val versionName = BuildConfig.VERSION_NAME
-        val semver = Regex("""^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$""")
+        val semver = Regex("""^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$""")
         val devLabel = Regex("""^dev(\.\d+)?$""")
         assertTrue(
-            "versionName '$versionName' must be semver (X.Y.Z) or a dev label (dev.N)",
+            "versionName '$versionName' must be semver (X.Y.Z or X.Y.Z-PRERELEASE) or a dev label (dev.N)",
             semver.matches(versionName) || devLabel.matches(versionName)
         )
     }

@@ -136,6 +136,7 @@ KEPT_CASES["com.gb4pc"]="05-25 14:08:16.131  1204  1204 D com.gb4pc.app: some me
 KEPT_CASES["OverlayService"]="05-25 14:08:16.131  1204  1204 D OverlayService: some message"
 KEPT_CASES["MockCamera"]="05-25 14:08:16.131  1204  1204 D MockCamera: some message"
 KEPT_CASES["CameraService"]="05-25 14:08:16.131  1204  1204 D CameraService: some message"
+KEPT_CASES["GB4PC_E2E"]="05-25 14:08:16.131  1204  1204 I GB4PC_E2E: launchPixelCamera: am start attempt 1/3"
 KEPT_CASES["E/<tag>"]="05-25 14:08:16.131  1204  1204 E/SomeTag: some error"
 
 for LABEL in "${!KEPT_CASES[@]}"; do

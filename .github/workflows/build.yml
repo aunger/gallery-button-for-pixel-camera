@@ -30,6 +30,12 @@ jobs:
     # ubuntu-latest has KVM hardware acceleration (available since April 2024).
     runs-on: ubuntu-latest
 
+    outputs:
+      # Surfaced so link-pr-to-ci-summary (issue #331) can tell whether the
+      # "Write test-result summary" step actually ran--on docs-only PRs it is
+      # skipped, and the job's "Summary" section has nothing to link to.
+      needs_full_build: ${{ steps.diff_check.outputs.needs_full_build }}
+
     steps:
       - uses: actions/checkout@v6
         with:
@@ -106,9 +112,11 @@ jobs:
           ANDROID_AVD_HOME="$AVD_HOME" $ANDROID_HOME/emulator/emulator -list-avds
 
       - name: Run Python script unit tests
+        if: steps.diff_check.outputs.needs_full_build == 'true'
         run: python3 -m unittest discover -s scripts -p "test_*.py" -v
 
       - name: Run shell script unit tests
+        if: steps.diff_check.outputs.needs_full_build == 'true'
         run: |
           for test_script in scripts/test_*.sh; do
             echo "==> Running $test_script"
@@ -214,10 +222,14 @@ jobs:
           echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Services ready (${SVCWAIT}s after boot flag)."
 
           # Wake, unlock, keep on, and disable animations now that services are up.
-          # KEYCODE_WAKEUP (224) is more reliable than KEYCODE_MENU (82) for waking
-          # the display from sleep; KEYCODE_MENU then dismisses the lock screen.
-          "$ADB" shell input keyevent 224
-          "$ADB" shell input keyevent 82
+          # Use the same wake + upward-swipe sequence as the pre-flight step and
+          # E2EFixture.wakeAndDismissKeyguard(): KEYCODE_MENU (82) could not reliably
+          # dismiss the swipe-type lock screen on the API-35 CI emulator (issue #341).
+          # sleep 2 lets the swipe animation complete before subsequent commands fire
+          # (same reasoning as the pre-flight step's post-swipe sleep 2).
+          "$ADB" shell input keyevent KEYCODE_WAKEUP
+          "$ADB" shell input swipe 300 1000 300 300
+          sleep 2
           # Prevent the screen from sleeping while the emulator is "plugged in"
           # (value 7 = stay on for AC/USB/wireless charging combined).
           # Without this the screen can time out between the unlock here and the
@@ -320,6 +332,16 @@ jobs:
         id: run_instrumented
         if: steps.diff_check.outputs.needs_full_build == 'true'
         run: |
+          ADB="$ANDROID_HOME/platform-tools/adb"
+          # Wake and dismiss the swipe keyguard before starting the test suite.
+          # The E2E setup (including mock-camera install) can take 10-30 s, and the
+          # screen may sleep or re-lock in that window. This mirrors
+          # E2EFixture.wakeAndDismissKeyguard() (issue #344 / #341).
+          # sleep 2 lets the swipe animation complete before Gradle's am start fires
+          # (same reasoning as the pre-flight step's post-swipe sleep 2).
+          "$ADB" shell input keyevent KEYCODE_WAKEUP
+          "$ADB" shell input swipe 300 1000 300 300
+          sleep 2
           if ./gradlew connectedDebugAndroidTest; then
             echo "outcome=success" >> "$GITHUB_OUTPUT"
           else
@@ -341,6 +363,15 @@ jobs:
         if: steps.diff_check.outputs.needs_full_build == 'true'
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
+          # Wake and dismiss the swipe keyguard before starting the test suite.
+          # The instrumented tests can run for several minutes, and the screen may
+          # sleep or re-lock before this step starts. This mirrors
+          # E2EFixture.wakeAndDismissKeyguard() (issue #344 / #341).
+          # sleep 2 lets the swipe animation complete before Gradle's am start fires
+          # (same reasoning as the pre-flight step's post-swipe sleep 2).
+          "$ADB" shell input keyevent KEYCODE_WAKEUP
+          "$ADB" shell input swipe 300 1000 300 300
+          sleep 2
           mkdir -p results
           set -o pipefail
           LOGCAT_SINCE=$("$ADB" shell "date '+%m-%d %H:%M:%S.000'" | tr -d '\r')
@@ -350,17 +381,26 @@ jobs:
             echo "outcome=success" >> "$GITHUB_OUTPUT"
           else
             echo "outcome=failure" >> "$GITHUB_OUTPUT"
-            echo "=== LOGCAT (since test start) ==="
-            "$ADB" logcat -d -T "$LOGCAT_SINCE" | \
-              bash scripts/filter_logcat.sh
           fi
+          # Capture the filtered logcat regardless of pass/fail (issues #364/#365).
+          # The GB4PC_E2E diagnostic lines from E2EFixture.launchPixelCamera() are
+          # what make the issue #233 bounded-relaunch path observable, but they are
+          # only useful if they survive a *green* run too -- on a pass the retry
+          # either fired and recovered or never fired, and only the logcat can tell
+          # the two apart. Dumping it only in the failure branch discarded that
+          # evidence on every passing run, so always tee it to a file and upload it.
+          echo "=== LOGCAT (since test start) ==="
+          "$ADB" logcat -d -T "$LOGCAT_SINCE" | \
+            bash scripts/filter_logcat.sh | tee results/e2e-overlay-logcat.txt
 
       - name: Upload overlay E2E markers
         if: always() && steps.diff_check.outputs.needs_full_build == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: testresults-e2e-overlay
-          path: results/e2e-overlay.ndjson
+          path: |
+            results/e2e-overlay.ndjson
+            results/e2e-overlay-logcat.txt
           retention-days: 14
 
       - name: Run GalleryButtonVisualE2ETest
@@ -370,6 +410,15 @@ jobs:
         if: steps.diff_check.outputs.needs_full_build == 'true'
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
+          # Wake and dismiss the swipe keyguard before starting the test suite.
+          # The previous E2E suite (PixelCameraOverlayE2ETest) can run for several
+          # minutes, and the screen may sleep or re-lock before this step starts.
+          # This mirrors E2EFixture.wakeAndDismissKeyguard() (issue #344 / #341).
+          # sleep 2 lets the swipe animation complete before Gradle's am start fires
+          # (same reasoning as the pre-flight step's post-swipe sleep 2).
+          "$ADB" shell input keyevent KEYCODE_WAKEUP
+          "$ADB" shell input swipe 300 1000 300 300
+          sleep 2
           mkdir -p results
           set -o pipefail
           LOGCAT_SINCE=$("$ADB" shell "date '+%m-%d %H:%M:%S.000'" | tr -d '\r')
@@ -534,6 +583,38 @@ jobs:
               --suite-label "Instrumented Tests" \
             downloaded-artifacts/e2e-test-results \
               --suite-label "E2E Tests"
+
+  # Surface the build-and-test job's pass/fail summary directly on the PR
+  # (issue #331): post or update a sticky comment linking to the job's
+  # "Summary" section, e.g. .../actions/runs/<run_id>#summary-<job_id>.
+  # Reviewers can then jump straight to the test summary instead of hunting
+  # through the Checks tab. Runs regardless of build outcome so the link is
+  # always available, including on red builds.
+  #
+  # Docs-only PRs skip the "Write test-result summary" step entirely (see
+  # needs_full_build), so the job's "Summary" section has nothing to link to;
+  # SUMMARY_WRITTEN tells the script to say so rather than post a misleading
+  # link.
+  link-pr-to-ci-summary:
+    needs: [build-and-test]
+    runs-on: ubuntu-latest
+    if: always() && github.event_name == 'pull_request' && needs.build-and-test.result != 'cancelled'
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Post CI summary link on PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          WORKFLOW_RUN_PR_URL: ${{ github.event.pull_request.html_url }}
+          SUMMARY_WRITTEN: ${{ needs.build-and-test.outputs.needs_full_build }}
+        run: python3 scripts/post_pr_ci_summary_link.py
 
   # Produce a signed release-config APK on every merge to main for easy sideloading.
   # Named gb4pc-dev.<run_number>.apk to distinguish from tagged releases.

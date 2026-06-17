@@ -10,8 +10,10 @@ import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.LayerDrawable
 import android.os.Build
+import android.util.Log
 import android.view.Gravity
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.WindowManager
 import android.widget.ImageView
 import android.widget.Toast
@@ -76,6 +78,13 @@ class OverlayManager(
     private val keyguardManager = context.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
     private var overlayView: ImageView? = null
     private var isShowing = false
+
+    private companion object {
+        // Touch-routing diagnostic for Issue #230 / #397. These logs must reach logcat (not just
+        // the in-memory DebugLog buffer) so a CI run records them; DebugLog.log writes only to an
+        // in-process circular buffer that the instrumented test cannot observe.
+        const val TAG = "GB4PC_Overlay"
+    }
 
     fun show() {
         if (isShowing) {
@@ -190,6 +199,26 @@ class OverlayManager(
              */
             override fun dispatchKeyEvent(event: KeyEvent): Boolean = false
 
+            /**
+             * Touch-routing diagnostic for Issue #230 / #397. Every prior "the tap misses"
+             * conclusion was inferred from screenshots and green-coverage percentages; no run
+             * ever recorded whether a pointer event actually reached the overlay window. Logging
+             * each MotionEvent (with its raw screen coordinates) makes that observable in a CI
+             * logcat: if a DOWN at the icon's centre appears here, the touch reached this window
+             * and the fault is downstream of input routing; if nothing appears after tapOverlay(),
+             * the small window's touchable region never received the event. Paired with the
+             * existing "Overlay tapped" log in handleTap(), this distinguishes a routing miss from
+             * a click-detector or launch failure.
+             */
+            override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+                val message = "Overlay dispatchTouchEvent: action=${event.actionMasked} " +
+                    "raw=(${event.rawX}, ${event.rawY}) local=(${event.x}, ${event.y})"
+                // Emit to logcat (not just DebugLog's in-memory buffer) so the CI run records it.
+                Log.i(TAG, message)
+                DebugLog.log(message)
+                return super.dispatchTouchEvent(event)
+            }
+
             override fun onWindowFocusChanged(hasFocus: Boolean) {
                 super.onWindowFocusChanged(hasFocus)
                 // Only invoke focus callbacks when the focusable-overlay mode is active.
@@ -301,7 +330,13 @@ class OverlayManager(
         val isGalleryInstalled = galleryPackage != null &&
             PermissionHelper.isAppInstalled(context, galleryPackage)
 
-        DebugLog.log("Overlay tapped: locked=$isLocked, gallery=$galleryPackage, installed=$isGalleryInstalled")
+        val tapMessage =
+            "Overlay tapped: locked=$isLocked, gallery=$galleryPackage, installed=$isGalleryInstalled"
+        // Emit to logcat too (see dispatchTouchEvent): a CI run can then distinguish a touch-routing
+        // miss (no dispatchTouchEvent line) from a click-detector/launch failure (touch logged but
+        // no "Overlay tapped" line) for Issue #230 / #397.
+        Log.i(TAG, tapMessage)
+        DebugLog.log(tapMessage)
 
         val action = TapActionResolver.resolve(isLocked, galleryPackage, isGalleryInstalled)
         executeTapAction(action)
@@ -375,13 +410,47 @@ class OverlayManager(
         // FLAG_NOT_TOUCH_MODAL is also set to keep touch events outside the overlay's bounds
         // passing through to the camera app. Trade-off: the focusable window may steal
         // volume/power key events from the camera app even when dispatchKeyEvent returns false.
+        //
+        // FLAG_LAYOUT_IN_SCREEN: without this flag, a TYPE_APPLICATION_OVERLAY window's
+        // Gravity.TOP|START origin is offset below the system status bar, so x/y (computed
+        // above relative to the full display size) land the overlay too far down the screen
+        // (Issue #229 — the overlay rendered ~128 px lower than the configured yPercent).
+        // This flag makes (x, y) relative to the true physical-screen origin (0, 0), matching
+        // calculateOverlayXPx/calculateOverlayYPx's assumptions, and on its own is sufficient to
+        // place the surface correctly (test1a confirms this; it does not require
+        // FLAG_LAYOUT_NO_LIMITS). The focusable branch additionally keeps FLAG_LAYOUT_NO_LIMITS,
+        // but only because that path is not exercised by the failing default-prefs test, not
+        // because positioning needs it.
+        //
+        // FLAG_NOT_TOUCH_MODAL (both branches): the overlay is a small (sizePx x sizePx)
+        // window. This flag forwards pointer events that fall *outside* the window bounds to the
+        // windows behind it (so the surrounding camera-app touches pass through), while in-bounds
+        // touches go to this window's clickable ImageView.
+        //
+        // FLAG_LAYOUT_NO_LIMITS is not set on the non-focusable branch. The overlay icon is small
+        // and positioned well inside the display (default 20% / 69%, ~16% of the min dimension), so
+        // it never needs to extend past the screen limits; keeping the frame within screen limits
+        // aligns its touchable region with the FLAG_LAYOUT_IN_SCREEN-placed surface.
+        //
+        // Historical note (Issue #230 / #397): earlier rounds dropped FLAG_LAYOUT_NO_LIMITS here on
+        // the theory that test2a_emptyGalleryNoGreenAfterTap's tap was not reaching this window. CI
+        // logcat (after the diagnostics below were made to emit) disproved that theory: the tap DOES
+        // fire handleTap() and DOES launch the gallery. test2a's ~87% green was actually the gallery
+        // activity crashing on launch and the green camera being restored to the foreground; the
+        // real fix was in the mock gallery's MediaStore query, not these flags. The flag set is kept
+        // because test1a confirms the surface position is correct under it.
+        //
+        // The focusable branch keeps FLAG_LAYOUT_NO_LIMITS unchanged (it is not exercised by the
+        // failing default-prefs test path).
         val windowFlags = if (prefsManager.focusableOverlay) {
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                 showWhenLockedFlag
         } else {
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                 showWhenLockedFlag
         }
 

@@ -1,0 +1,214 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Run weekly on Monday at 08:00 UTC to catch newly-published queries.
+    - cron: '0 8 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  # Detect which languages have changed so language-specific CodeQL jobs can
+  # skip themselves when no relevant files are modified.
+  # On push to main or a scheduled run, all languages are always scanned.
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      kotlin: ${{ steps.check.outputs.kotlin }}
+      python: ${{ steps.check.outputs.python }}
+      actions: ${{ steps.check.outputs.actions }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Detect language changes
+        id: check
+        run: |
+          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
+            # Always scan on push to main and on scheduled runs.
+            echo "kotlin=true" >> $GITHUB_OUTPUT
+            echo "python=true" >> $GITHUB_OUTPUT
+            echo "actions=true" >> $GITHUB_OUTPUT
+          else
+            BASE_REF="${{ github.base_ref }}"
+            git fetch origin "$BASE_REF" --depth=1
+
+            CHANGED=$(git diff --name-only "origin/$BASE_REF"...HEAD)
+
+            KOTLIN_CHANGED=$(echo "$CHANGED" | grep -E '\.(kt|kts|java)$' || true)
+            echo "kotlin=$([ -n "$KOTLIN_CHANGED" ] && echo true || echo false)" >> $GITHUB_OUTPUT
+
+            PYTHON_CHANGED=$(echo "$CHANGED" | grep -E '\.py$' || true)
+            echo "python=$([ -n "$PYTHON_CHANGED" ] && echo true || echo false)" >> $GITHUB_OUTPUT
+
+            ACTIONS_CHANGED=$(echo "$CHANGED" | grep -E '^\.github/(workflows|actions)/' || true)
+            echo "actions=$([ -n "$ACTIONS_CHANGED" ] && echo true || echo false)" >> $GITHUB_OUTPUT
+          fi
+
+  analyze-kotlin:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.kotlin == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: java-kotlin
+          # Use the default query suite. To add extra queries, uncomment:
+          # queries: security-extended
+
+      - name: Build for CodeQL
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: |
+          ./gradlew assembleDebug -PversionName=codeql.$BUILD_NUMBER
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: kotlin
+
+  analyze-python:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: python
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: python
+
+  analyze-actions:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.actions == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: actions
+          build-mode: none
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: actions
+
+  # A language whose analyze job is skipped still needs code-scanning results
+  # for its category, or the PR is stuck forever on "Code scanning is waiting
+  # for results from CodeQL" and cannot merge (issue #358). For each skipped
+  # category, upload an empty (zero-result) CodeQL SARIF run so code scanning
+  # reports a result for that category on this commit. Always runs so it can
+  # report whichever subset of categories was skipped.
+  report-skipped:
+    needs: [detect-changes, analyze-kotlin, analyze-python, analyze-actions]
+    if: always() && needs.detect-changes.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build empty SARIF for skipped categories
+        env:
+          KOTLIN: ${{ needs.detect-changes.outputs.kotlin }}
+          PYTHON: ${{ needs.detect-changes.outputs.python }}
+          ACTIONS: ${{ needs.detect-changes.outputs.actions }}
+        run: |
+          # Emit one empty CodeQL run per skipped category. A category maps to a
+          # run's automationDetails.id, so code scanning records a separate
+          # result for each. The runs array must be non-empty to upload, but
+          # each run may carry zero results.
+          runs=""
+          add_run() {
+            local category="$1"
+            runs="${runs:+$runs,}$(cat <<JSON
+          {
+            "tool": { "driver": { "name": "CodeQL", "rules": [] } },
+            "automationDetails": { "id": "$category/" },
+            "results": [],
+            "columnKind": "utf16CodeUnits"
+          }
+          JSON
+          )"
+          }
+
+          [ "$KOTLIN" != "true" ] && add_run kotlin
+          [ "$PYTHON" != "true" ] && add_run python
+          [ "$ACTIONS" != "true" ] && add_run actions
+
+          if [ -z "$runs" ]; then
+            echo "All categories were analyzed; nothing to report."
+            echo "upload=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          cat > empty.sarif <<JSON
+          {
+            "\$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+            "version": "2.1.0",
+            "runs": [ $runs ]
+          }
+          JSON
+
+          python3 -c "import json,sys; json.load(open('empty.sarif'))"
+          echo "upload=true" >> "$GITHUB_OUTPUT"
+        id: build
+
+      - name: Upload empty CodeQL results for skipped categories
+        if: steps.build.outputs.upload == 'true'
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: empty.sarif

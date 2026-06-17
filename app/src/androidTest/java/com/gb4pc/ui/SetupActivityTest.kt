@@ -2,13 +2,16 @@ package com.gb4pc.ui
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.gb4pc.R
 import com.gb4pc.data.PrefsManager
 import com.gb4pc.ui.setup.SetupActivity
 import org.junit.After
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -41,9 +44,28 @@ class SetupActivityTest {
     }
 
     @Test
-    fun setupScreen_showsGrantButton() {
-        // Every step has a "Grant …" button — at least one should be present
-        composeRule.onNodeWithText("Grant", substring = true).assertIsDisplayed()
+    fun setupScreen_showsActionButton() {
+        // Every step has a primary action button, but its label depends on
+        // the step (e.g. "Allow Notifications", "Grant Usage Access", "Grant
+        // Overlay Permission", "Exclude from Battery Optimization"); not all
+        // of them say "Grant". Whichever step is shown first, its button
+        // should be present.
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val possibleButtonTexts = listOf(
+            R.string.setup_notification_button,
+            R.string.setup_usage_access_button,
+            R.string.setup_overlay_button,
+            R.string.setup_battery_button,
+        ).map { context.getString(it) }
+
+        val displayedButtons = possibleButtonTexts.filter { text ->
+            composeRule.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
+        }
+
+        assertTrue(
+            "Expected one of $possibleButtonTexts to be displayed, but none were found",
+            displayedButtons.isNotEmpty()
+        )
     }
 
     @Test

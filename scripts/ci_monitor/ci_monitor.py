@@ -6,35 +6,14 @@ Each stdout line is consumed as a task-notification event, so output is the
 interface: terminal outcome lines end the loop, while informational lines
 (in_progress heartbeat, per-step deltas, per-test FAILs) keep it alive.
 
+See scripts/ci_monitor/README.md for full usage instructions, including the
+command-line arguments, per-outcome filter flags, and the outcome vocabulary.
+
 Usage:
-    python3 scripts/ci_monitor.py --pr <PR_NUMBER> [filter flags]
-
-Arguments:
-    --pr <PR_NUMBER>   The pull request number to monitor (required).
-
-Per-outcome filter flags (each outcome is independent):
-    --include-fail [PATTERN]   Report FAIL markers, optionally regex-filtered on name.
-                               Default: all FAIL markers reported.
-    --no-include-fail          Suppress all FAIL markers.
-    --include-skip [PATTERN]   Report SKIP markers, optionally regex-filtered on name.
-                               Default: all SKIP markers reported.
-    --no-include-skip          Suppress all SKIP markers.
-    --include-pass [PATTERN]   Report PASS markers, optionally regex-filtered on name.
-                               Default: no PASS markers reported.
-    --no-include-pass          Suppress all PASS markers (explicit form of default).
+    python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER> [filter flags]
 
 Environment:
     GITHUB_TOKEN  GitHub token used for the REST calls (required).
-
-Outcome vocabulary (one terminal line ends the loop):
-    PR#N: Clear ...      All checks passed and mergeable_state is clean/unstable.
-    PR#N: Blocked ...    A check failed, or mergeable_state is behind/dirty.
-    PR#N: Infra ...      A CI infrastructure problem, or mergeable_state=blocked.
-    PR#N: in_progress    CI still running; emitted only after >120 s of silence.
-    PR#N: step "..." -> ...    A build-and-test step reached a conclusion (informational).
-    PR#N: FAIL [suite] name: ...   A per-test failure from a testresults artifact (informational).
-    PR#N: PASS [suite] name: ...   A per-test pass (informational; emitted only when --include-pass used).
-    PR#N: SKIP [suite] name: ...   A per-test skip (informational; suppressed only with --no-include-skip).
 
 NOTE on error handling: the poll loop must survive transient REST/parse
 failures. HTTP and JSON errors are caught per-call and treated as "no data this
@@ -62,6 +41,29 @@ TEST_MARKER = "##GB4PC_TEST##"
 # SHA", "still computing") until this many seconds have elapsed with no output of
 # any kind, so a quiet poll loop stays quiet. Every emitted line resets the timer.
 SILENCE_SECONDS = 120
+
+# Gap E (issue #402) — before emitting a Blocked/Infra terminal line, re-poll
+# the step/artifact signals a few more times. /actions/runs/{id}/jobs and
+# /actions/runs/{id}/artifacts can lag behind /commits/{sha}/check-runs: the
+# poll where check-runs first reports the failing conclusion may still show the
+# final "Gate on test failures" step as not-yet-completed, or the
+# testresults-<group> artifact as not-yet-listed. These extra drain polls give
+# those endpoints a chance to catch up before the loop ends, so a Blocked
+# terminal is not reported with zero diagnostic step/FAIL lines.
+#
+# DRAIN_DELAY_SECONDS is the pause before each drain poll. DRAIN_MAX_ATTEMPTS
+# bounds how many times we retry. Every attempt runs (the drain does not stop
+# at the first fruitful one): the two lagging endpoints can settle at different
+# times (issue #419), e.g. the gate step appears on attempt 1 while the
+# testresults-<group> artifact only lists on attempt 2, so stopping after the
+# first attempt that emits anything would drop the later signal for this
+# process's lifetime. At 5s per attempt, 3 attempts cover up to 15s of lag
+# (issue #402 Runs B/C/E/F/T needed only one); if the lag outlives that
+# (Run G's multi-process, multi-minute shape), the drain gives up and
+# `drain_then_print` says so explicitly rather than printing a bare terminal
+# line.
+DRAIN_DELAY_SECONDS = 5
+DRAIN_MAX_ATTEMPTS = 3
 
 
 # ── Parsers ───────────────────────────────────────────────────────────────────
@@ -430,6 +432,99 @@ def main(argv):
         sys.stdout.flush()
         last_output_ts = time.time()
 
+    def poll_signals(sha):
+        """Fetch and emit the per-step and per-test informational signals for `sha`.
+
+        Mirrors the streamed test-result signals described in the module
+        docstring: per-step conclusion deltas (Signal 1, via parse_steps) and
+        per-test FAIL/SKIP/PASS markers from testresults-<group> artifacts
+        (Signal 2, via parse_fails). Both are purely informational — they reset
+        the silence timer via emit_block but never end the loop. Returns True if
+        any line was emitted this call.
+        """
+        emitted = [False]
+
+        def _emit(lines):
+            if lines:
+                emitted[0] = True
+            emit_block(lines)
+
+        runs_json = _request(
+            "%s/repos/%s/%s/actions/runs?head_sha=%s&event=pull_request&per_page=5"
+            % (API_BASE, OWNER, REPO, sha),
+            token,
+        )
+        run_id = parse_run_id(runs_json) if runs_json else ""
+
+        if run_id:
+            # Signal 1 — per-step conclusion deltas for the build-and-test job.
+            jobs_json = _request(
+                "%s/repos/%s/%s/actions/runs/%s/jobs?per_page=30"
+                % (API_BASE, OWNER, REPO, run_id),
+                token,
+            )
+            if jobs_json:
+                _emit(parse_steps(jobs_json, seen_steps))
+
+            # Signal 2 — per-test FAIL detail from the testresults-<group>
+            # artifacts. Download each new artifact once, parse its
+            # ##GB4PC_TEST## ndjson markers, and emit new FAIL entries.
+            artifacts_json = _request(
+                "%s/repos/%s/%s/actions/runs/%s/artifacts?per_page=100"
+                % (API_BASE, OWNER, REPO, run_id),
+                token,
+            )
+            if artifacts_json:
+                for aid, _name in parse_new_artifacts(artifacts_json, seen_arts):
+                    zip_bytes = _request(
+                        "%s/repos/%s/%s/actions/artifacts/%s/zip"
+                        % (API_BASE, OWNER, REPO, aid),
+                        token,
+                        raw=True,
+                    )
+                    if not zip_bytes:
+                        continue
+                    try:
+                        lines = list(extract_ndjson_lines(zip_bytes))
+                    except (zipfile.BadZipFile, OSError):
+                        continue
+                    _emit(parse_fails(lines, seen_fails, outcome_filters))
+                    # Mark the artifact seen only after a successful download
+                    # and parse: a transient failure above hits `continue` and
+                    # leaves the id unseen, so it is retried on the next poll.
+                    seen_arts.add(aid)
+
+        return emitted[0]
+
+    def drain_then_print(sha, terminal_line):
+        """Gap E (issue #402) — drain lagging signal polls before a terminal line.
+
+        Pauses DRAIN_DELAY_SECONDS and re-polls the step/artifact signals, so
+        any step or FAIL/SKIP/PASS line that was still lagging on the poll that
+        produced the terminal result gets a chance to be emitted before the
+        loop ends. Repeats up to DRAIN_MAX_ATTEMPTS times.
+
+        Every attempt runs even after one emits something (issue #419): the two
+        lagging endpoints (the gate step from /actions/runs/{id}/jobs and the
+        testresults-<group> artifact from /actions/runs/{id}/artifacts) can
+        settle on different attempts, so stopping at the first fruitful attempt
+        would drop the later-arriving signal for this process's lifetime. If
+        every attempt comes up empty, prints a line saying so, so a
+        `Blocked`/`Infra` terminal with no diagnostics is distinguishable from
+        one where the drain simply found nothing new to report. Then prints
+        `terminal_line` and flushes.
+        """
+        drained = False
+        for _ in range(DRAIN_MAX_ATTEMPTS):
+            time.sleep(DRAIN_DELAY_SECONDS)
+            if poll_signals(sha):
+                drained = True
+        if not drained:
+            print("PR#%s: drain poll found no new diagnostic signals" % pr)
+            sys.stdout.flush()
+        print(terminal_line)
+        sys.stdout.flush()
+
     # Gap D — advertise our PID so the Orchestrator can stop us out-of-band
     # (e.g. `kill -TERM <PID>`) if the Monitor tool's TaskStop is unavailable.
     print("monitor PID %d — if TaskStop is unavailable, send SIGTERM to this PID to stop me" % os.getpid())
@@ -471,50 +566,7 @@ def main(argv):
         # surface even while the check stays green via continue-on-error. Both
         # signals are purely informational: they reset the silence timer but
         # never end the loop.
-        runs_json = _request(
-            "%s/repos/%s/%s/actions/runs?head_sha=%s&event=pull_request&per_page=5"
-            % (API_BASE, OWNER, REPO, sha),
-            token,
-        )
-        run_id = parse_run_id(runs_json) if runs_json else ""
-
-        if run_id:
-            # Signal 1 — per-step conclusion deltas for the build-and-test job.
-            jobs_json = _request(
-                "%s/repos/%s/%s/actions/runs/%s/jobs?per_page=30"
-                % (API_BASE, OWNER, REPO, run_id),
-                token,
-            )
-            if jobs_json:
-                emit_block(parse_steps(jobs_json, seen_steps))
-
-            # Signal 2 — per-test FAIL detail from the testresults-<group>
-            # artifacts. Download each new artifact once, parse its
-            # ##GB4PC_TEST## ndjson markers, and emit new FAIL entries.
-            artifacts_json = _request(
-                "%s/repos/%s/%s/actions/runs/%s/artifacts?per_page=100"
-                % (API_BASE, OWNER, REPO, run_id),
-                token,
-            )
-            if artifacts_json:
-                for aid, _name in parse_new_artifacts(artifacts_json, seen_arts):
-                    zip_bytes = _request(
-                        "%s/repos/%s/%s/actions/artifacts/%s/zip"
-                        % (API_BASE, OWNER, REPO, aid),
-                        token,
-                        raw=True,
-                    )
-                    if not zip_bytes:
-                        continue
-                    try:
-                        lines = list(extract_ndjson_lines(zip_bytes))
-                    except (zipfile.BadZipFile, OSError):
-                        continue
-                    emit_block(parse_fails(lines, seen_fails, outcome_filters))
-                    # Mark the artifact seen only after a successful download
-                    # and parse: a transient failure above hits `continue` and
-                    # leaves the id unseen, so it is retried on the next poll.
-                    seen_arts.add(aid)
+        poll_signals(sha)
         # ----------------------------------------------------------------------
 
         if result == "in_progress":
@@ -535,12 +587,12 @@ def main(argv):
                 sys.stdout.flush()
                 break
             elif mergeable in ("behind", "dirty"):
-                print("PR#%s: Blocked (mergeable_state=%s)" % (pr, mergeable))
-                sys.stdout.flush()
+                # Gap E (issue #402) — drain lagging step/FAIL signals before
+                # the terminal line; see drain_then_print and DRAIN_DELAY_SECONDS.
+                drain_then_print(sha, "PR#%s: Blocked (mergeable_state=%s)" % (pr, mergeable))
                 break
             elif mergeable == "blocked":
-                print("PR#%s: Infra (mergeable_state=blocked)" % pr)
-                sys.stdout.flush()
+                drain_then_print(sha, "PR#%s: Infra (mergeable_state=blocked)" % pr)
                 break
             else:
                 # Gap B — throttle "still computing" to >120s of silence, just
@@ -554,7 +606,14 @@ def main(argv):
                     sys.stdout.flush()
                     last_output_ts = now
         elif result in ("Blocked", "Infra"):
-            print("PR#%s: %s" % (pr, result))
+            # Gap E (issue #402) — drain lagging step/FAIL signals before the
+            # terminal line; see drain_then_print and DRAIN_DELAY_SECONDS.
+            drain_then_print(sha, "PR#%s: %s" % (pr, result))
+            break
+        elif result == "Clear":
+            # No check runs registered (total_count == 0) — PR is already clear.
+            # Break immediately; no drain needed (there are no failing signals).
+            print("PR#%s: Clear" % pr)
             sys.stdout.flush()
             break
         elif result is not None:
