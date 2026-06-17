@@ -1559,14 +1559,14 @@ side_effects_t = collections.deque([
     RUNS_T,           # runs -> run_id
     JOBS_EMPTY_T,     # jobs -> not yet caught up, nothing new
     ARTS_EMPTY_T,     # artifacts -> not yet listed
-    # drain attempt 1 — caught up: step + FAIL surface
+    # drain attempt 1 -- caught up: step + FAIL surface
     RUNS_T,           # runs -> run_id
     JOBS_GATE_FAIL_T, # jobs -> "Gate on test failures" -> failure
     ARTS_E2E_T,       # artifacts -> testresults-e2e-gallery now listed
     ZIP_E2E_T,        # zip (raw) -> FAIL line for test1a
-    # drain attempt 2 — everything already seen, nothing new
+    # drain attempt 2 -- everything already seen, nothing new
     RUNS_T, JOBS_GATE_FAIL_T, ARTS_E2E_T,
-    # drain attempt 3 — everything already seen, nothing new
+    # drain attempt 3 -- everything already seen, nothing new
     RUNS_T, JOBS_GATE_FAIL_T, ARTS_E2E_T,
 ])
 
@@ -1657,16 +1657,16 @@ side_effects_u = collections.deque([
     RUNS_U,           # runs -> run_id
     JOBS_EMPTY_U,     # jobs -> not yet caught up, nothing new
     ARTS_EMPTY_U,     # artifacts -> not yet listed
-    # drain attempt 1 — still not caught up
+    # drain attempt 1 -- still not caught up
     RUNS_U,           # runs -> run_id
     JOBS_EMPTY_U,     # jobs -> still not yet caught up, nothing new
     ARTS_EMPTY_U,     # artifacts -> still not yet listed
-    # drain attempt 2 — now caught up
+    # drain attempt 2 -- now caught up
     RUNS_U,           # runs -> run_id
     JOBS_GATE_FAIL_U, # jobs -> "Gate on test failures" -> failure
     ARTS_E2E_U,       # artifacts -> testresults-e2e-gallery now listed
     ZIP_E2E_U,        # zip (raw) -> FAIL line for test1a
-    # drain attempt 3 — everything already seen, nothing new
+    # drain attempt 3 -- everything already seen, nothing new
     RUNS_U, JOBS_GATE_FAIL_U, ARTS_E2E_U,
 ])
 
