@@ -55,7 +55,7 @@ No manual setup is needed.
 | `ktlint` | 3a | `~/.local/bin/ktlint` | Kotlin formatting and style (official Kotlin style guide) |
 | `pre-commit` | 3b | `~/.local/bin/pre-commit` | Hook framework; manages ruff, markdownlint, and ktlint |
 | git hook | 3c | `.git/hooks/pre-commit` | Runs all hooks automatically on every `git commit` |
-| hook envs | 3d | `~/.cache/pre-commit/` | Pre-warmed so the first commit is not slow |
+| hook envs | -- | `~/.cache/pre-commit/` | Populated on first commit (not pre-warmed at startup) |
 
 ### Hooks configured in `.pre-commit-config.yaml`
 

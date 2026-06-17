@@ -193,17 +193,5 @@ else
     echo "[session-start] Step 3c: pre-commit hook wired"
 fi
 
-# STEP 3d — pre-warm hook environments so the first commit isn't slow.
-# Runs pre-commit over all files with output suppressed; violations are
-# expected on the first run and are intentionally ignored here.
-PRECOMMIT_CACHE="$HOME/.cache/pre-commit"
-if [[ -d "$PRECOMMIT_CACHE" ]] \
-        && [[ -n "$(ls -A "$PRECOMMIT_CACHE" 2>/dev/null)" ]]; then
-    echo "[session-start] Step 3d: pre-commit environments cached — skip"
-else
-    echo "[session-start] Step 3d: pre-warming pre-commit environments…"
-    (cd "$REPO_ROOT" && pre-commit run --all-files >/dev/null 2>&1) || true
-    echo "[session-start] Step 3d: pre-commit environments ready"
-fi
 
 echo "[session-start] Complete. ANDROID_HOME=$ANDROID_HOME"
