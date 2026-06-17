@@ -144,7 +144,7 @@ Monitor output lines are relayed to the user verbatim; this is user-facing statu
 ```
   if Reviewer requested changes → goto newAuthor
   if Reviewer gave LGTM:
-    Orchestrator launches a Monitor tool call running `python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER>` from the repo root (run_in_background: true, timeout_ms: 1800000)
+    Orchestrator launches a Monitor tool call running `python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER>` from the repo root (run_in_background: true, timeout_ms: 1800000). Record the task ID returned by the Monitor tool call for use in silentVanish recovery.
     Each stdout line arrives as a task-notification event; relay each line to the user verbatim.
     Act only on the terminal lines Clear, Blocked, or Infra. Relay in_progress lines to the user as brief status updates (the script suppresses these unless no other output has been emitted for over 120 seconds).
     Relay `step "..." -> ...` and `FAIL [...] ...` lines to the user as informational test-result deltas; they do NOT end the loop or start a new Author round.
@@ -201,7 +201,7 @@ silentVanish:
     if this fresh invocation also produces no terminal line before the next user message:
       → escalate to user; stop
   else (the Monitor task is still registered -- a user message is not proof of a vanish):
-    Continue waiting for the Monitor's terminal line; do not re-launch.
+    Relay to the user that CI is still running and the Monitor is alive; then continue waiting for the Monitor's terminal line; do not re-launch.
 ```
 
 ### Monitor script
