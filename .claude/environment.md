@@ -43,6 +43,47 @@ by the container — never hard-code them.
 
 ---
 
+## Linting and formatting
+
+The `SessionStart` hook installs and wires up the linting stack automatically (steps 3a-3d).
+No manual setup is needed.
+
+### Tools installed at session start
+
+| Tool | Step | Location | Purpose |
+|------|------|----------|---------|
+| `ktlint` | 3a | `~/.local/bin/ktlint` | Kotlin formatting and style (official Kotlin style guide) |
+| `pre-commit` | 3b | `~/.local/bin/pre-commit` | Hook framework; manages ruff, markdownlint, and ktlint |
+| git hook | 3c | `.git/hooks/pre-commit` | Runs all hooks automatically on every `git commit` |
+| hook envs | 3d | `~/.cache/pre-commit/` | Pre-warmed so the first commit is not slow |
+
+### Hooks configured in `.pre-commit-config.yaml`
+
+| Hook | Files | Behavior |
+|------|-------|---------|
+| trailing-whitespace | all | removes trailing spaces |
+| end-of-file-fixer | all | ensures files end with a newline |
+| check-yaml | `*.yaml`, `*.yml` | validates YAML syntax |
+| check-toml | `*.toml` | validates TOML syntax |
+| check-merge-conflict | all | blocks accidental conflict markers |
+| check-added-large-files | all | blocks large binary commits |
+| ruff | `*.py` | lint + auto-fix (E, F rules) |
+| ruff-format | `*.py` | format |
+| markdownlint-cli2 | `*.md` | lint; MD013 (line length) disabled via `.markdownlint.yaml` |
+| ktlint | `*.kt`, `*.kts` | format; auto-corrects in place |
+
+When a hook modifies a file it was not the agent's commit that changed it --
+stage the changes and commit again.
+
+### Semgrep (CI only)
+
+Semgrep runs in CI (`.github/workflows/semgrep.yml`) on PRs and weekly.
+Rulesets: `p/python`, `p/kotlin`, `p/security-audit`.
+Results appear in the GitHub Security tab (SARIF upload).
+Findings block the PR.
+
+---
+
 ## GitHub MCP tool quirks
 
 ### `issue_write labels: []` is a silent no-op
