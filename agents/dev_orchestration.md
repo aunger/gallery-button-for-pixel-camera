@@ -194,6 +194,10 @@ silentVanish:
   // undiagnosedTerminal if warranted).
   // If the fresh invocation also vanishes silently (a second user message
   // arrives before any terminal line), escalate to the user; stop.
+  // Note: the user message that triggered this branch is treated as a wake-up event only.
+  // Its content (if any) is set aside; the Orchestrator's narrow scope during CI monitoring
+  // means user questions or instructions cannot be addressed mid-monitor. The user is informed
+  // of CI status (see branches below), which is the appropriate response in this context.
   if TaskOutput for the Monitor's task ID returns "No task found with ID: <id>":
     Inform the user that the Monitor task vanished without a terminal notification and is being re-launched.
     Re-launch the Monitor tool call (same command as the original, fresh invocation).
@@ -235,7 +239,7 @@ Orchestrators do not need `sleep`-based keep-alive loops while waiting on sub-ag
 Task-notification events (sub-agent completion) and Monitor events (CI status) keep the session alive on their own.
 Dispatch and wait; do not add artificial delays.
 
-If a session ever stalls with no such event for an extended period, use the `silentVanish` recovery path (see the Monitor loop above) rather than adding a sleep loop.
+If the session stalls (no Monitor or sub-agent event arrives) and a user message later wakes it, apply the `silentVanish` recovery path (see the Monitor loop above) if the Monitor was pending.
 If the stall cannot be explained by a known recoverable cause (e.g., a Monitor task vanish), file a bug describing the gap.
 
 ## When to abort
