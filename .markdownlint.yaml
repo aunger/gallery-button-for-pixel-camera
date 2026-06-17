@@ -1,0 +1,2 @@
+# MD013: line length -- disabled because URLs and code spans can exceed any reasonable limit.
+MD013: false
