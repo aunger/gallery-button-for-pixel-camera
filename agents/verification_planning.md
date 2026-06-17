@@ -58,14 +58,10 @@ Only the before-merging list controls the merge gate.
       If neither call succeeds, skip this link without failing.
 4. Open one GitHub issue for each item on the *follow-on* list.
    For each item:
-   a. Title the issue `(re PR #{number}) {task title}`, using the same convention as blocking issues.
+   a. Title the issue simply `{task title}`, without referencing the current PR.
    b. In the issue description, include a URL to the source comment or description, and state clearly that this issue does **not** block PR #{number} (for example, "This is a follow-on item and does not block merging PR #{number}.").
    c. Do **not** call the `blocked_by` dependency endpoint for follow-on issues.
       Do **not** add any "Blocks PR #..." line to the issue body.
-   d. Optionally make the new issue a sub-issue of the PR (same API call as step 3d), as a convenient organizational link.
-      Skip this without failing if it does not succeed.
-      (Unlike blocking issues, follow-on issues do not fall back to the parent issue if the PR sub-issue call fails.
-      The organizational link is a convenience only; losing it for a non-blocking item carries no risk to the merge gate.)
 5. Report both lists to the Orchestrator and exit.
    The PR may be merged once every item on the *before merging* list is resolved.
    Follow-on issues do not gate the merge.
