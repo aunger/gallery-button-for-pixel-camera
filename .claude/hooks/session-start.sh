@@ -146,4 +146,56 @@ else
     echo "[session-start] Step 2c: all SDK packages present — skip"
 fi
 
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 3 — Linting tools (pre-commit framework + ktlint).
+# ─────────────────────────────────────────────────────────────────────────────
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+LOCAL_BIN="$HOME/.local/bin"
+mkdir -p "$LOCAL_BIN"
+
+# Ensure ~/.local/bin is on PATH (for ktlint and the pre-commit binary).
+if [[ ":$PATH:" != *":$LOCAL_BIN:"* ]]; then
+    export PATH="$LOCAL_BIN:$PATH"
+fi
+if [[ -n "${CLAUDE_ENV_FILE:-}" ]] \
+        && ! grep -q 'local/bin' "${CLAUDE_ENV_FILE}" 2>/dev/null; then
+    echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$CLAUDE_ENV_FILE"
+fi
+
+# STEP 3a — ktlint binary.
+KTLINT_BIN="$LOCAL_BIN/ktlint"
+if [[ -x "$KTLINT_BIN" ]]; then
+    echo "[session-start] Step 3a: ktlint present — skip"
+else
+    echo "[session-start] Step 3a: installing ktlint…"
+    curl -sSL \
+        https://github.com/pinterest/ktlint/releases/latest/download/ktlint \
+        -o "$KTLINT_BIN"
+    chmod +x "$KTLINT_BIN"
+    echo "[session-start] Step 3a: ktlint installed"
+fi
+
+# STEP 3b — pre-commit Python package.
+# Check the binary directly rather than via `command -v`: PATH may not yet
+# include $LOCAL_BIN, and pip skips reinstalling the entrypoint script when
+# the package dist-info already exists.  --force-reinstall recreates the
+# missing binary in that case without requiring a full uninstall.
+PRECOMMIT_BIN="$LOCAL_BIN/pre-commit"
+if [[ -x "$PRECOMMIT_BIN" ]]; then
+    echo "[session-start] Step 3b: pre-commit present — skip"
+else
+    echo "[session-start] Step 3b: installing pre-commit…"
+    pip install --user --force-reinstall --quiet pre-commit
+    echo "[session-start] Step 3b: pre-commit installed"
+fi
+
+# STEP 3c — wire pre-commit into the repo's git hooks.
+if [[ -f "$REPO_ROOT/.git/hooks/pre-commit" ]]; then
+    echo "[session-start] Step 3c: pre-commit hook wired — skip"
+else
+    echo "[session-start] Step 3c: running pre-commit install…"
+    (cd "$REPO_ROOT" && "$PRECOMMIT_BIN" install)
+    echo "[session-start] Step 3c: pre-commit hook wired"
+fi
+
 echo "[session-start] Complete. ANDROID_HOME=$ANDROID_HOME"

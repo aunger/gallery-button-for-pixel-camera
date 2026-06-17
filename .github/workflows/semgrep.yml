@@ -1,0 +1,85 @@
+name: Semgrep
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Run weekly on Monday at 08:00 UTC to catch newly-published rules.
+    - cron: '0 8 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  semgrep:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+
+      - name: Install Semgrep
+        run: pip install semgrep
+
+      - name: Compute scan targets
+        id: targets
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            # --diff-filter=ACMR keeps Added/Copied/Modified/Renamed paths and
+            # drops Deletions; for renames git reports the new (post-rename) path.
+            # Filter once more to paths that still exist in the working tree so a
+            # nonexistent target can never error out the scan.
+            TARGETS=""
+            while IFS= read -r f; do
+              [[ -n "$f" && -e "$f" ]] && TARGETS+="$f "
+            done < <(git diff --name-only --diff-filter=ACMR "origin/${{ github.base_ref }}...HEAD")
+            if [[ -z "${TARGETS// }" ]]; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "skip=false" >> "$GITHUB_OUTPUT"
+              echo "targets=$TARGETS" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "targets=." >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run Semgrep
+        id: semgrep
+        if: steps.targets.outputs.skip != 'true'
+        env:
+          SCAN_TARGETS: ${{ steps.targets.outputs.targets }}
+        run: |
+          # --error only on PRs: fails on findings so the PR is blocked.
+          # Non-PR events (push, schedule) scan for visibility without blocking;
+          # findings still land in the Security tab via SARIF.
+          # Tracked for future cleanup in issue #436.
+          EXTRA=""
+          [[ "${{ github.event_name }}" == "pull_request" ]] && EXTRA="--error"
+          # SC2086: word-splitting on SCAN_TARGETS and EXTRA is intentional.
+          # shellcheck disable=SC2086
+          semgrep scan \
+            --config p/python \
+            --config p/kotlin \
+            --config p/security-audit \
+            $EXTRA \
+            --sarif \
+            --output semgrep.sarif \
+            $SCAN_TARGETS
+
+      - name: Upload SARIF
+        if: always() && steps.targets.outputs.skip != 'true' && hashFiles('semgrep.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
