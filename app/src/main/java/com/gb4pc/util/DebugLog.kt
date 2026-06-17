@@ -25,9 +25,9 @@ object DebugLog {
     var listener: (() -> Unit)? = null
 
     fun log(message: String) {
-        Log.d(LOGCAT_TAG, message)
         val snapshot: (() -> Unit)?
         synchronized(lock) {
+            Log.d(LOGCAT_TAG, message)
             buffer.addLast(Entry(System.currentTimeMillis(), message))
             while (buffer.size > Constants.DEBUG_LOG_BUFFER_SIZE) buffer.removeFirst()
             snapshot = listener
