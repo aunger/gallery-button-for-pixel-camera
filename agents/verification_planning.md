@@ -14,7 +14,7 @@ Two kinds of outstanding requirement are your responsibility:
 2. **Changes outside the repo**: requirements that are not satisfied by any change to a file in the repo, such as an issue that needs to be filed, a setting that must be changed in an external system, or a manual operational step.
    These are easy to lose because the review process is centered on file changes; surfacing them is explicitly part of your job.
 
-## Two lists, not one
+## Two lists
 
 Classify each finding into exactly one of two tracks:
 
