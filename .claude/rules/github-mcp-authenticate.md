@@ -23,7 +23,7 @@ When a GitHub MCP tool call fails because the server is temporarily unavailable
 call rather than calling `mcp__github__authenticate` or giving up.
 
 Use exponential back-off between retries, starting at 5 seconds and doubling
-on each attempt, capped at 30 minutes per wait interval.
+on each attempt.
 Keep retrying until the call succeeds or 30 minutes of total elapsed time
 has passed.
 If the call still fails after 30 minutes total, report that the GitHub MCP
@@ -42,7 +42,8 @@ server is temporarily unavailable and stop retrying.
 | 7 | 160 s (~2 min 40 s) |
 | 8 | 320 s (~5 min 20 s) |
 | 9 | 640 s (~10 min 40 s) |
-| 10 | 1280 s (~21 min 20 s) -- cap at 1800 s (30 min) |
+| 10 | 1280 s (~21 min 20 s) |
+| 11 | 2560 s uncapped--cap to 1800 s (30 min) |
 
 Stop when total elapsed time (sum of all waits plus call durations) exceeds
 30 minutes, or when the call succeeds.
