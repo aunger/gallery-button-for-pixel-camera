@@ -176,11 +176,16 @@ else
 fi
 
 # STEP 3b — pre-commit Python package.
-if command -v pre-commit &>/dev/null; then
+# Check the binary directly rather than via `command -v`: PATH may not yet
+# include $LOCAL_BIN, and pip skips reinstalling the entrypoint script when
+# the package dist-info already exists.  --force-reinstall recreates the
+# missing binary in that case without requiring a full uninstall.
+PRECOMMIT_BIN="$LOCAL_BIN/pre-commit"
+if [[ -x "$PRECOMMIT_BIN" ]]; then
     echo "[session-start] Step 3b: pre-commit present — skip"
 else
     echo "[session-start] Step 3b: installing pre-commit…"
-    pip install --user --quiet pre-commit
+    pip install --user --force-reinstall --quiet pre-commit
     echo "[session-start] Step 3b: pre-commit installed"
 fi
 
@@ -189,7 +194,7 @@ if [[ -f "$REPO_ROOT/.git/hooks/pre-commit" ]]; then
     echo "[session-start] Step 3c: pre-commit hook wired — skip"
 else
     echo "[session-start] Step 3c: running pre-commit install…"
-    (cd "$REPO_ROOT" && pre-commit install)
+    (cd "$REPO_ROOT" && "$PRECOMMIT_BIN" install)
     echo "[session-start] Step 3c: pre-commit hook wired"
 fi
 
