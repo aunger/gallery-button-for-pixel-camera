@@ -36,6 +36,7 @@ jobs:
             --config p/python \
             --config p/kotlin \
             --config p/security-audit \
+            --error \
             --sarif \
             --output semgrep.sarif \
             .
