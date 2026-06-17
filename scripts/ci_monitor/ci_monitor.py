@@ -52,12 +52,16 @@ SILENCE_SECONDS = 120
 # terminal is not reported with zero diagnostic step/FAIL lines.
 #
 # DRAIN_DELAY_SECONDS is the pause before each drain poll. DRAIN_MAX_ATTEMPTS
-# bounds how many times we retry: draining stops as soon as a poll emits a new
-# line, or after this many attempts have found nothing new. At 5s per attempt,
-# 3 attempts cover up to 15s of lag (issue #402 Runs B/C/E/F/T needed only one);
-# if the lag outlives that (Run G's multi-process, multi-minute shape), the
-# drain gives up and `drain_then_print` says so explicitly rather than printing
-# a bare terminal line.
+# bounds how many times we retry. Every attempt runs (the drain does not stop
+# at the first fruitful one): the two lagging endpoints can settle at different
+# times (issue #419), e.g. the gate step appears on attempt 1 while the
+# testresults-<group> artifact only lists on attempt 2, so stopping after the
+# first attempt that emits anything would drop the later signal for this
+# process's lifetime. At 5s per attempt, 3 attempts cover up to 15s of lag
+# (issue #402 Runs B/C/E/F/T needed only one); if the lag outlives that
+# (Run G's multi-process, multi-minute shape), the drain gives up and
+# `drain_then_print` says so explicitly rather than printing a bare terminal
+# line.
 DRAIN_DELAY_SECONDS = 5
 DRAIN_MAX_ATTEMPTS = 3
 
@@ -498,18 +502,23 @@ def main(argv):
         Pauses DRAIN_DELAY_SECONDS and re-polls the step/artifact signals, so
         any step or FAIL/SKIP/PASS line that was still lagging on the poll that
         produced the terminal result gets a chance to be emitted before the
-        loop ends. Repeats up to DRAIN_MAX_ATTEMPTS times, stopping as soon as a
-        poll emits something new. If every attempt comes up empty, prints a
-        line saying so, so a `Blocked`/`Infra` terminal with no diagnostics is
-        distinguishable from one where the drain simply found nothing new to
-        report. Then prints `terminal_line` and flushes.
+        loop ends. Repeats up to DRAIN_MAX_ATTEMPTS times.
+
+        Every attempt runs even after one emits something (issue #419): the two
+        lagging endpoints (the gate step from /actions/runs/{id}/jobs and the
+        testresults-<group> artifact from /actions/runs/{id}/artifacts) can
+        settle on different attempts, so stopping at the first fruitful attempt
+        would drop the later-arriving signal for this process's lifetime. If
+        every attempt comes up empty, prints a line saying so, so a
+        `Blocked`/`Infra` terminal with no diagnostics is distinguishable from
+        one where the drain simply found nothing new to report. Then prints
+        `terminal_line` and flushes.
         """
         drained = False
         for _ in range(DRAIN_MAX_ATTEMPTS):
             time.sleep(DRAIN_DELAY_SECONDS)
             if poll_signals(sha):
                 drained = True
-                break
         if not drained:
             print("PR#%s: drain poll found no new diagnostic signals" % pr)
             sys.stdout.flush()
