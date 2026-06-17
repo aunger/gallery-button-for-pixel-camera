@@ -610,6 +610,12 @@ def main(argv):
             # terminal line; see drain_then_print and DRAIN_DELAY_SECONDS.
             drain_then_print(sha, "PR#%s: %s" % (pr, result))
             break
+        elif result == "Clear":
+            # No check runs registered (total_count == 0) — PR is already clear.
+            # Break immediately; no drain needed (there are no failing signals).
+            print("PR#%s: Clear" % pr)
+            sys.stdout.flush()
+            break
         elif result is not None:
             print("PR#%s: %s" % (pr, result))
             sys.stdout.flush()

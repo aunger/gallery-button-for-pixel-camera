@@ -26,7 +26,8 @@ Covers:
   (s) #260 CLI flags: _parse_outcome_filters and main() pass filter flags through
   (t) #402 Gap E: drain_then_print surfaces a step/FAIL that lags one poll behind Blocked
   (u) #402 Gap E (review): drain_then_print's bounded retry recovers a two-poll lag
-  (v) #419: two endpoints settle on different drain attempts; both signals surfaced
+  (v) #415: Clear from parse_check_result (no checks) breaks the loop exactly once
+  (w) #419: two endpoints settle on different drain attempts; both signals surfaced
 
 No network calls required; no GITHUB_TOKEN needed.
 Always exits 0 on success, non-zero on failure.
@@ -1712,9 +1713,63 @@ check(len(side_effects_u) == 0,
 check(rc_u == 0, "main() returned 0", "main() returned %r" % rc_u)
 
 
-# ── (v) #419: the two lagging endpoints settle on different drain attempts;
+# ── (v) #415: Clear from parse_check_result (no checks) breaks the loop ───────
+print("\n=== (v) #415: Clear (no check runs) emits exactly one Clear terminal and exits ===")
+
+# Reproduces issue #415: when /commits/{sha}/check-runs reports total_count==0
+# (no CI checks registered), parse_check_result returns 'Clear'. Before the fix,
+# this fell through to the elif result is not None: catch-all which printed the
+# Clear line but did NOT break, causing the script to loop and re-print 'Clear'
+# on every subsequent poll until the 30-minute timeout.
+#
+# After the fix, the main loop detects result == "Clear" and breaks immediately
+# after printing the terminal line exactly once, without a drain (no failing
+# signals exist when there are no check runs).
+#
+# Scenario: poll 1 fetches the SHA (open PR), check-runs returns no checks
+# (total_count=0 -> parse_check_result='Clear') -> terminal Clear emitted, loop
+# exits. Per-iteration request order: pulls (sha), check-runs; poll_signals is
+# called but finds no run_id (no workflow_runs) so issues only the runs request
+# (1 extra call) before check-runs result is evaluated and the loop breaks.
+# 2 + 1 = 3 entries in the deque.
+PR_V = {"head": {"sha": "00c1ea12"}, "merged": False, "state": "open"}
+CHECK_CLEAR_V = {"total_count": 0, "check_runs": []}
+RUNS_EMPTY_V = {"workflow_runs": []}
+
+side_effects_v = collections.deque([
+    PR_V,           # pulls -> sha, terminal == '' (open)
+    CHECK_CLEAR_V,  # check-runs -> total_count=0 -> Clear (terminal)
+    RUNS_EMPTY_V,   # runs -> no run_id -> poll_signals returns False
+])
+
+
+def fake_request_v(url, token, raw=False):
+    return side_effects_v.popleft()
+
+
+buf_v = io.StringIO()
+with unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_v), \
+        unittest.mock.patch.object(ci_monitor.time, "time", return_value=5000.0), \
+        unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None), \
+        unittest.mock.patch("sys.stdout", new=buf_v):
+    rc_v = ci_monitor.main(["ci_monitor.py", "--pr", "415"])
+
+out_v = buf_v.getvalue()
+lines_v = out_v.splitlines()
+clear_lines_v = [ln for ln in lines_v if ln.startswith("PR#415: Clear")]
+
+check(len(clear_lines_v) == 1,
+      "Clear (no check runs) emitted exactly once (got %d)" % len(clear_lines_v),
+      "Clear line count != 1; output: %r" % out_v)
+check(len(side_effects_v) == 0,
+      "all 3 mocked requests consumed (loop exits after first Clear)",
+      "request deque not drained; %d entries left" % len(side_effects_v))
+check(rc_v == 0, "main() returned 0", "main() returned %r" % rc_v)
+
+
+# ── (w) #419: the two lagging endpoints settle on different drain attempts;
 #       drain_then_print surfaces BOTH (does not stop at the first fruitful) ───
-print("\n=== (v) #419: step lags to attempt 1, artifact FAIL lags to attempt 2 -> both surfaced ===")
+print("\n=== (w) #419: step lags to attempt 1, artifact FAIL lags to attempt 2 -> both surfaced ===")
 
 # Issue #419's partial-lag case: on the poll that produces the terminal
 # Blocked, neither signal is ready. The gate STEP catches up on drain attempt 1
@@ -1725,11 +1780,11 @@ print("\n=== (v) #419: step lags to attempt 1, artifact FAIL lags to attempt 2 -
 # still runs and surfaces the FAIL. seen_arts is only populated once the
 # artifact is actually downloaded, so the lagging artifact is the genuine
 # signal recovered here, not a re-emit of an already-seen one.
-PR_V = {"head": {"sha": "519c0de1"}}
-CHECK_BL_V = {"total_count": 1, "check_runs": [{"status": "completed", "conclusion": "failure"}]}
-RUNS_V = {"workflow_runs": [{"id": 9419, "status": "completed"}]}
-JOBS_EMPTY_V = {"jobs": [{"name": "build-and-test", "steps": []}]}
-JOBS_GATE_FAIL_V = {
+PR_W = {"head": {"sha": "519c0de1"}}
+CHECK_BL_W = {"total_count": 1, "check_runs": [{"status": "completed", "conclusion": "failure"}]}
+RUNS_W = {"workflow_runs": [{"id": 9419, "status": "completed"}]}
+JOBS_EMPTY_W = {"jobs": [{"name": "build-and-test", "steps": []}]}
+JOBS_GATE_FAIL_W = {
     "jobs": [
         {
             "name": "build-and-test",
@@ -1740,9 +1795,9 @@ JOBS_GATE_FAIL_V = {
         }
     ]
 }
-ARTS_EMPTY_V = {"artifacts": []}
-ARTS_E2E_V = {"artifacts": [{"id": 5419, "name": "testresults-e2e-gallery", "expired": False}]}
-ZIP_E2E_V = make_zip_ndjson([
+ARTS_EMPTY_W = {"artifacts": []}
+ARTS_E2E_W = {"artifacts": [{"id": 5419, "name": "testresults-e2e-gallery", "expired": False}]}
+ZIP_E2E_W = make_zip_ndjson([
     '##GB4PC_TEST## {"suite":"com.gb4pc.e2e.GalleryButtonVisualE2ETest","name":"test1a","outcome":"FAIL","ms":9,"msg":"java.lang.AssertionError: button not green","trace":""}',
 ])
 
@@ -1751,66 +1806,66 @@ ZIP_E2E_V = make_zip_ndjson([
 # Drain attempt 2 (3 + zip): artifact now listed -> FAIL emitted; the step is
 # already seen. Drain attempt 3 (3): everything already seen, nothing new.
 # 5 + 3 + 4 + 3 = 15.
-side_effects_v = collections.deque([
-    PR_V,             # pulls -> sha
-    CHECK_BL_V,       # check-runs -> Blocked (terminal), decided on poll 1
-    RUNS_V,           # runs -> run_id
-    JOBS_EMPTY_V,     # jobs -> not yet caught up, nothing new
-    ARTS_EMPTY_V,     # artifacts -> not yet listed
-    # drain attempt 1 — STEP caught up, ARTIFACT still lagging
-    RUNS_V,           # runs -> run_id
-    JOBS_GATE_FAIL_V, # jobs -> "Gate on test failures" -> failure (emits)
-    ARTS_EMPTY_V,     # artifacts -> still not listed
-    # drain attempt 2 — ARTIFACT now caught up
-    RUNS_V,           # runs -> run_id
-    JOBS_GATE_FAIL_V, # jobs -> step already seen, nothing new
-    ARTS_E2E_V,       # artifacts -> testresults-e2e-gallery now listed
-    ZIP_E2E_V,        # zip (raw) -> FAIL line for test1a
-    # drain attempt 3 — everything already seen, nothing new
-    RUNS_V, JOBS_GATE_FAIL_V, ARTS_E2E_V,
+side_effects_w = collections.deque([
+    PR_W,             # pulls -> sha
+    CHECK_BL_W,       # check-runs -> Blocked (terminal), decided on poll 1
+    RUNS_W,           # runs -> run_id
+    JOBS_EMPTY_W,     # jobs -> not yet caught up, nothing new
+    ARTS_EMPTY_W,     # artifacts -> not yet listed
+    # drain attempt 1 -- STEP caught up, ARTIFACT still lagging
+    RUNS_W,           # runs -> run_id
+    JOBS_GATE_FAIL_W, # jobs -> "Gate on test failures" -> failure (emits)
+    ARTS_EMPTY_W,     # artifacts -> still not listed
+    # drain attempt 2 -- ARTIFACT now caught up
+    RUNS_W,           # runs -> run_id
+    JOBS_GATE_FAIL_W, # jobs -> step already seen, nothing new
+    ARTS_E2E_W,       # artifacts -> testresults-e2e-gallery now listed
+    ZIP_E2E_W,        # zip (raw) -> FAIL line for test1a
+    # drain attempt 3 -- everything already seen, nothing new
+    RUNS_W, JOBS_GATE_FAIL_W, ARTS_E2E_W,
 ])
 
 
-def fake_request_v(url, token, raw=False):
-    return side_effects_v.popleft()
+def fake_request_w(url, token, raw=False):
+    return side_effects_w.popleft()
 
 
-buf_v = io.StringIO()
-with unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_v), \
+buf_w = io.StringIO()
+with unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_w), \
         unittest.mock.patch.object(ci_monitor.time, "time", return_value=4200.0), \
         unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None), \
-        unittest.mock.patch("sys.stdout", new=buf_v):
-    rc_v = ci_monitor.main(["ci_monitor.py", "--pr", "419"])
+        unittest.mock.patch("sys.stdout", new=buf_w):
+    rc_w = ci_monitor.main(["ci_monitor.py", "--pr", "419"])
 
-out_v = buf_v.getvalue()
-lines_v = out_v.splitlines()
-gate_step_line_v = 'PR#419: step "Gate on test failures" -> failure'
-fail_line_v = "PR#419: FAIL [com.gb4pc.e2e.GalleryButtonVisualE2ETest] test1a: java.lang.AssertionError: button not green"
-blocked_line_v = "PR#419: Blocked"
-no_new_line_v = "PR#419: drain poll found no new diagnostic signals"
+out_w = buf_w.getvalue()
+lines_w = out_w.splitlines()
+gate_step_line_w = 'PR#419: step "Gate on test failures" -> failure'
+fail_line_w = "PR#419: FAIL [com.gb4pc.e2e.GalleryButtonVisualE2ETest] test1a: java.lang.AssertionError: button not green"
+blocked_line_w = "PR#419: Blocked"
+no_new_line_w = "PR#419: drain poll found no new diagnostic signals"
 
-check(gate_step_line_v in lines_v,
+check(gate_step_line_w in lines_w,
       "drain attempt 1 surfaces the gate step that caught up first",
-      "gate step failure line missing; output: %r" % out_v)
-check(fail_line_v in lines_v,
+      "gate step failure line missing; output: %r" % out_w)
+check(fail_line_w in lines_w,
       "drain attempt 2 surfaces the FAIL whose artifact lagged a further attempt (NOT dropped)",
-      "lagging FAIL marker was dropped; output: %r" % out_v)
-check(lines_v.count(blocked_line_v) == 1,
+      "lagging FAIL marker was dropped; output: %r" % out_w)
+check(lines_w.count(blocked_line_w) == 1,
       "Blocked terminal line emitted exactly once",
-      "Blocked terminal line count != 1; output: %r" % out_v)
+      "Blocked terminal line count != 1; output: %r" % out_w)
 check(
-    gate_step_line_v in lines_v and fail_line_v in lines_v and blocked_line_v in lines_v
-    and lines_v.index(gate_step_line_v) < lines_v.index(blocked_line_v)
-    and lines_v.index(fail_line_v) < lines_v.index(blocked_line_v),
+    gate_step_line_w in lines_w and fail_line_w in lines_w and blocked_line_w in lines_w
+    and lines_w.index(gate_step_line_w) < lines_w.index(blocked_line_w)
+    and lines_w.index(fail_line_w) < lines_w.index(blocked_line_w),
     "ordering: both drained signals precede the terminal Blocked line",
-    "ordering wrong; lines: %r" % lines_v)
-check(no_new_line_v not in lines_v,
+    "ordering wrong; lines: %r" % lines_w)
+check(no_new_line_w not in lines_w,
       "the drain found new signals -> 'drain poll found no new diagnostic signals' NOT printed",
-      "unexpected 'drain poll found no new diagnostic signals'; output: %r" % out_v)
-check(len(side_effects_v) == 0,
+      "unexpected 'drain poll found no new diagnostic signals'; output: %r" % out_w)
+check(len(side_effects_w) == 0,
       "all 15 mocked requests consumed (step on attempt 1, artifact+zip on attempt 2, attempt 3 empty)",
-      "request deque not drained; %d entries left" % len(side_effects_v))
-check(rc_v == 0, "main() returned 0", "main() returned %r" % rc_v)
+      "request deque not drained; %d entries left" % len(side_effects_w))
+check(rc_w == 0, "main() returned 0", "main() returned %r" % rc_w)
 
 
 # ── Summary ────────────────────────────────────────────────────────────────────
