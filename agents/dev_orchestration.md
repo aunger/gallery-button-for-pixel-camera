@@ -144,7 +144,7 @@ Monitor output lines are relayed to the user verbatim; this is user-facing statu
 ```
   if Reviewer requested changes → goto newAuthor
   if Reviewer gave LGTM:
-    Orchestrator launches a Monitor tool call running `python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER>` from the repo root (run_in_background: true, timeout_ms: 1800000)
+    Orchestrator launches a Monitor tool call running `python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER>` from the repo root (run_in_background: true, timeout_ms: 1800000). Record the task ID returned by the Monitor tool call for use in silentVanish recovery, and clear the silentVanish re-launch flag (this original launch is not a re-launch).
     Each stdout line arrives as a task-notification event; relay each line to the user verbatim.
     Act only on the terminal lines Clear, Blocked, or Infra. Relay in_progress lines to the user as brief status updates (the script suppresses these unless no other output has been emitted for over 120 seconds).
     Relay `step "..." -> ...` and `FAIL [...] ...` lines to the user as informational test-result deltas; they do NOT end the loop or start a new Author round.
@@ -152,6 +152,7 @@ Monitor output lines are relayed to the user verbatim; this is user-facing statu
     if Monitor emits a Blocked line  → goto newAuthor
     if Monitor emits an Infra line   → escalate to user; stop
     if Monitor times out (30 min)    → escalate to user; stop
+    if a user message wakes the session before Monitor delivers any terminal line → goto silentVanish
     if Monitor emits a Clear line:
       // Step: Surface outstanding before-merging requirements
       //   (unautomated verification tests and changes outside the repo, such as an issue that needs to be filed)
@@ -178,6 +179,44 @@ undiagnosedTerminal:
     → treat the re-run's outcome as authoritative; resume the routing above from "Act only on the terminal lines..." using the re-run's lines (still without re-applying the undiagnosedTerminal check)
   else (the re-run repeats `drain poll found no new diagnostic signals` followed by the same Blocked/Infra terminal):
     → proceed with the original terminal's routing (Blocked → newAuthor; Infra → escalate to user, stop) without a further re-run
+
+silentVanish:
+  // Issue #411: the Monitor task can silently vanish--the process exits
+  // without the task-notification infrastructure delivering any terminal line
+  // (not even a timeout notification). This leaves the session stuck until
+  // the user sends a message. When a user message wakes the session while
+  // a Monitor invocation is still nominally pending, check whether the task
+  // is still alive using TaskOutput (passing the Monitor's task ID).
+  // If TaskOutput returns "No task found with ID: <id>", the task record has
+  // been dropped--a silent vanish. Re-launch the Monitor once immediately
+  // and resume the routing above from "Act only on the terminal lines..."
+  // with this fresh invocation (applying all normal checks, including
+  // undiagnosedTerminal if warranted).
+  // If that re-launched invocation also vanishes silently (a second user
+  // message arrives before any terminal line), escalate to the user; stop.
+  // To make that double-vanish escalation reachable: the routing loop sends
+  // every user-message wake-up here via "goto silentVanish", so the second
+  // vanish re-enters this block from the top rather than reaching a nested
+  // instruction after the re-launch. Track whether the current Monitor
+  // invocation is itself a silentVanish re-launch (set the flag when
+  // re-launching below; clear it on the original launch and whenever a Monitor
+  // invocation delivers any terminal line). On a confirmed vanish, the
+  // re-launch flag decides whether to re-launch (first vanish) or escalate
+  // (second vanish); a still-alive task never escalates.
+  // Note: the user message that triggered this branch is treated as a wake-up event only.
+  // Its content (if any) is set aside; the Orchestrator's narrow scope during CI monitoring
+  // means user questions or instructions cannot be addressed mid-monitor. The user is informed
+  // of CI status (see branches below), which is the appropriate response in this context.
+  if TaskOutput for the Monitor's task ID returns "No task found with ID: <id>":
+    // Confirmed vanish: the task record was dropped.
+    if the current Monitor invocation is itself a silentVanish re-launch (the re-launch flag is set):
+      // A re-launched Monitor vanished too; one recovery attempt has already been spent.
+      → escalate to user; stop
+    Inform the user that the Monitor task vanished without a terminal notification and is being re-launched.
+    Re-launch the Monitor tool call (same command as the original, fresh invocation); set the silentVanish re-launch flag for this fresh invocation.
+    Resume the routing above from "Act only on the terminal lines..." with the fresh invocation.
+  else (the Monitor task is still registered--a user message is not proof of a vanish):
+    Relay to the user that CI is still running and the Monitor is alive; then continue waiting for the Monitor's terminal line; do not re-launch.
 ```
 
 ### Monitor script
@@ -211,7 +250,8 @@ Orchestrators do not need `sleep`-based keep-alive loops while waiting on sub-ag
 Task-notification events (sub-agent completion) and Monitor events (CI status) keep the session alive on their own.
 Dispatch and wait; do not add artificial delays.
 
-If a session ever stalls with no such event for an extended period, file a bug describing the gap rather than adding a sleep loop to work around it.
+If the session stalls (no Monitor or sub-agent event arrives) and a user message later wakes it, apply the `silentVanish` recovery path (see the Monitor loop above) if the Monitor was pending.
+If the stall cannot be explained by a known recoverable cause (e.g., a Monitor task vanish), file a bug describing the gap.
 
 ## When to abort
 
