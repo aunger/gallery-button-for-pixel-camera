@@ -189,7 +189,7 @@ if [[ -f "$REPO_ROOT/.git/hooks/pre-commit" ]]; then
     echo "[session-start] Step 3c: pre-commit hook wired — skip"
 else
     echo "[session-start] Step 3c: running pre-commit install…"
-    (cd "$REPO_ROOT" && pre-commit install --quiet)
+    (cd "$REPO_ROOT" && pre-commit install)
     echo "[session-start] Step 3c: pre-commit hook wired"
 fi
 
