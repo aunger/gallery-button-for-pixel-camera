@@ -45,7 +45,7 @@ by the container — never hard-code them.
 
 ## Linting and formatting
 
-The `SessionStart` hook installs and wires up the linting stack automatically (steps 3a-3d).
+The `SessionStart` hook installs and wires up the linting stack automatically (steps 3a-3c).
 No manual setup is needed.
 
 ### Tools installed at session start
