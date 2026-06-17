@@ -152,6 +152,7 @@ Monitor output lines are relayed to the user verbatim; this is user-facing statu
     if Monitor emits a Blocked line  → goto newAuthor
     if Monitor emits an Infra line   → escalate to user; stop
     if Monitor times out (30 min)    → escalate to user; stop
+    if a user message wakes the session before Monitor delivers any terminal line → goto silentVanish
     if Monitor emits a Clear line:
       // Step: Surface outstanding before-merging requirements
       //   (unautomated verification tests and changes outside the repo, such as an issue that needs to be filed)
@@ -178,6 +179,29 @@ undiagnosedTerminal:
     → treat the re-run's outcome as authoritative; resume the routing above from "Act only on the terminal lines..." using the re-run's lines (still without re-applying the undiagnosedTerminal check)
   else (the re-run repeats `drain poll found no new diagnostic signals` followed by the same Blocked/Infra terminal):
     → proceed with the original terminal's routing (Blocked → newAuthor; Infra → escalate to user, stop) without a further re-run
+
+silentVanish:
+  // Issue #411: the Monitor task can silently vanish -- the process exits
+  // without the task-notification infrastructure delivering any terminal line
+  // (not even a timeout notification). This leaves the session stuck until
+  // the user sends a message. When a user message wakes the session while
+  // a Monitor invocation is still nominally pending, check whether the task
+  // is still alive using TaskOutput (passing the Monitor's task ID).
+  // If TaskOutput returns "No task found with ID: <id>", the task record has
+  // been dropped -- a silent vanish. Re-launch the Monitor once immediately
+  // and resume the routing above from "Act only on the terminal lines..."
+  // with this fresh invocation (applying all normal checks, including
+  // undiagnosedTerminal if warranted).
+  // If the fresh invocation also vanishes silently (a second user message
+  // arrives before any terminal line), escalate to the user; stop.
+  if TaskOutput for the Monitor's task ID returns "No task found with ID: <id>":
+    Inform the user that the Monitor task vanished without a terminal notification and is being re-launched.
+    Re-launch the Monitor tool call (same command as the original, fresh invocation).
+    Resume the routing above from "Act only on the terminal lines..." with the fresh invocation.
+    if this fresh invocation also produces no terminal line before the next user message:
+      → escalate to user; stop
+  else (the Monitor task is still registered -- a user message is not proof of a vanish):
+    Continue waiting for the Monitor's terminal line; do not re-launch.
 ```
 
 ### Monitor script
@@ -211,7 +235,8 @@ Orchestrators do not need `sleep`-based keep-alive loops while waiting on sub-ag
 Task-notification events (sub-agent completion) and Monitor events (CI status) keep the session alive on their own.
 Dispatch and wait; do not add artificial delays.
 
-If a session ever stalls with no such event for an extended period, file a bug describing the gap rather than adding a sleep loop to work around it.
+If a session ever stalls with no such event for an extended period, use the `silentVanish` recovery path (see the Monitor loop above) rather than adding a sleep loop.
+If the stall cannot be explained by a known recoverable cause (e.g., a Monitor task vanish), file a bug describing the gap.
 
 ## When to abort
 
