@@ -26,6 +26,7 @@ Covers:
   (s) #260 CLI flags: _parse_outcome_filters and main() pass filter flags through
   (t) #402 Gap E: drain_then_print surfaces a step/FAIL that lags one poll behind Blocked
   (u) #402 Gap E (review): drain_then_print's bounded retry recovers a two-poll lag
+  (v) #415: Clear from parse_check_result (no checks) breaks the loop exactly once
 
 No network calls required; no GITHUB_TOKEN needed.
 Always exits 0 on success, non-zero on failure.
@@ -1700,6 +1701,60 @@ check(len(side_effects_u) == 0,
       "all 12 mocked requests consumed (drain attempt 1 empty, attempt 2 downloads the zip)",
       "request deque not drained; %d entries left" % len(side_effects_u))
 check(rc_u == 0, "main() returned 0", "main() returned %r" % rc_u)
+
+
+# ── (v) #415: Clear from parse_check_result (no checks) breaks the loop ───────
+print("\n=== (v) #415: Clear (no check runs) emits exactly one Clear terminal and exits ===")
+
+# Reproduces issue #415: when /commits/{sha}/check-runs reports total_count==0
+# (no CI checks registered), parse_check_result returns 'Clear'. Before the fix,
+# this fell through to the elif result is not None: catch-all which printed the
+# Clear line but did NOT break, causing the script to loop and re-print 'Clear'
+# on every subsequent poll until the 30-minute timeout.
+#
+# After the fix, the main loop detects result == "Clear" and breaks immediately
+# after printing the terminal line exactly once, without a drain (no failing
+# signals exist when there are no check runs).
+#
+# Scenario: poll 1 fetches the SHA (open PR), check-runs returns no checks
+# (total_count=0 -> parse_check_result='Clear') -> terminal Clear emitted, loop
+# exits. Per-iteration request order: pulls (sha), check-runs; poll_signals is
+# called but finds no run_id (no workflow_runs) so issues only the runs request
+# (1 extra call) before check-runs result is evaluated and the loop breaks.
+# 2 + 1 = 3 entries in the deque.
+PR_V = {"head": {"sha": "00c1ea12"}, "merged": False, "state": "open"}
+CHECK_CLEAR_V = {"total_count": 0, "check_runs": []}
+RUNS_EMPTY_V = {"workflow_runs": []}
+
+side_effects_v = collections.deque([
+    PR_V,           # pulls -> sha, terminal == '' (open)
+    CHECK_CLEAR_V,  # check-runs -> total_count=0 -> Clear (terminal)
+    RUNS_EMPTY_V,   # runs -> no run_id -> poll_signals returns False
+])
+
+
+def fake_request_v(url, token, raw=False):
+    return side_effects_v.popleft()
+
+
+buf_v = io.StringIO()
+with unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_v), \
+        unittest.mock.patch.object(ci_monitor.time, "time", return_value=5000.0), \
+        unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None), \
+        unittest.mock.patch("sys.stdout", new=buf_v):
+    rc_v = ci_monitor.main(["ci_monitor.py", "--pr", "415"])
+
+out_v = buf_v.getvalue()
+lines_v = out_v.splitlines()
+clear_lines_v = [ln for ln in lines_v if ln.startswith("PR#415: Clear")]
+
+check(len(clear_lines_v) == 1,
+      "Clear (no check runs) emitted exactly once (got %d)" % len(clear_lines_v),
+      "Clear line count != 1; output: %r" % out_v)
+check(len(side_effects_v) == 0,
+      "all 3 mocked requests consumed (loop exits after first Clear)",
+      "request deque not drained; %d entries left" % len(side_effects_v))
+check(rc_v == 0, "main() returned 0", "main() returned %r" % rc_v)
 
 
 # ── Summary ────────────────────────────────────────────────────────────────────
