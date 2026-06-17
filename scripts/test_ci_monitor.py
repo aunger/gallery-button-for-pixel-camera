@@ -26,6 +26,7 @@ Covers:
   (s) #260 CLI flags: _parse_outcome_filters and main() pass filter flags through
   (t) #402 Gap E: drain_then_print surfaces a step/FAIL that lags one poll behind Blocked
   (u) #402 Gap E (review): drain_then_print's bounded retry recovers a two-poll lag
+  (v) #419: two endpoints settle on different drain attempts; both signals surfaced
 
 No network calls required; no GITHUB_TOKEN needed.
 Always exits 0 on success, non-zero on failure.
@@ -1546,20 +1547,26 @@ ZIP_E2E_T = make_zip_ndjson([
 
 # Poll 1 (5): check-runs already Blocked (terminal), but jobs/artifacts not yet
 # caught up -> no step/FAIL lines from poll_signals. drain_then_print then
-# sleeps DRAIN_DELAY_SECONDS and re-polls runs/jobs/artifacts (3 + zip): jobs
-# now shows the failing gate step and the artifact is listed -> step + FAIL
-# emitted, then the Blocked terminal line. 5 + 3 + 1 = 9.
+# sleeps DRAIN_DELAY_SECONDS and re-polls runs/jobs/artifacts: attempt 1 (3 +
+# zip) finds the caught-up jobs/artifacts -> step + FAIL emitted. Per issue
+# #419 the drain no longer stops at the first fruitful attempt, so attempts 2
+# and 3 (3 each) also run, finding everything already seen -> nothing new, no
+# further zip. Then the Blocked terminal line. 5 + 4 + 3 + 3 = 15.
 side_effects_t = collections.deque([
     PR_T,             # pulls -> sha
     CHECK_BL_T,       # check-runs -> Blocked (terminal), decided on poll 1
     RUNS_T,           # runs -> run_id
     JOBS_EMPTY_T,     # jobs -> not yet caught up, nothing new
     ARTS_EMPTY_T,     # artifacts -> not yet listed
-    # drain_then_print (Gap E): one extra signal poll, now caught up
+    # drain attempt 1 — caught up: step + FAIL surface
     RUNS_T,           # runs -> run_id
     JOBS_GATE_FAIL_T, # jobs -> "Gate on test failures" -> failure
     ARTS_E2E_T,       # artifacts -> testresults-e2e-gallery now listed
     ZIP_E2E_T,        # zip (raw) -> FAIL line for test1a
+    # drain attempt 2 — everything already seen, nothing new
+    RUNS_T, JOBS_GATE_FAIL_T, ARTS_E2E_T,
+    # drain attempt 3 — everything already seen, nothing new
+    RUNS_T, JOBS_GATE_FAIL_T, ARTS_E2E_T,
 ])
 
 
@@ -1596,7 +1603,7 @@ check(
     "ordering: drained step and FAIL lines precede the terminal Blocked line",
     "ordering wrong; lines: %r" % lines_t)
 check(len(side_effects_t) == 0,
-      "all 9 mocked requests consumed (drain poll downloads the newly-listed zip)",
+      "all 15 mocked requests consumed (drain attempt 1 downloads the zip; attempts 2-3 find nothing new)",
       "request deque not drained; %d entries left" % len(side_effects_t))
 check(rc_t == 0, "main() returned 0", "main() returned %r" % rc_t)
 
@@ -1640,8 +1647,9 @@ ZIP_E2E_U = make_zip_ndjson([
 # Poll 1 (5): check-runs already Blocked (terminal), jobs/artifacts not caught
 # up. Drain attempt 1 (3): still nothing new. Drain attempt 2 (3 + zip): jobs
 # now shows the failing gate step and the artifact is listed -> step + FAIL
-# emitted, drain stops (DRAIN_MAX_ATTEMPTS allows up to 3, but 2 suffices).
-# 5 + 3 + 4 = 12.
+# emitted. Per issue #419 the drain no longer stops at the first fruitful
+# attempt, so attempt 3 (3) also runs, finding everything already seen ->
+# nothing new. 5 + 3 + 4 + 3 = 15.
 side_effects_u = collections.deque([
     PR_U,             # pulls -> sha
     CHECK_BL_U,       # check-runs -> Blocked (terminal), decided on poll 1
@@ -1657,6 +1665,8 @@ side_effects_u = collections.deque([
     JOBS_GATE_FAIL_U, # jobs -> "Gate on test failures" -> failure
     ARTS_E2E_U,       # artifacts -> testresults-e2e-gallery now listed
     ZIP_E2E_U,        # zip (raw) -> FAIL line for test1a
+    # drain attempt 3 — everything already seen, nothing new
+    RUNS_U, JOBS_GATE_FAIL_U, ARTS_E2E_U,
 ])
 
 
@@ -1697,9 +1707,110 @@ check(no_new_line_u not in lines_u,
       "drain attempt 2 found new signals -> 'drain poll found no new diagnostic signals' NOT printed",
       "unexpected 'drain poll found no new diagnostic signals'; output: %r" % out_u)
 check(len(side_effects_u) == 0,
-      "all 12 mocked requests consumed (drain attempt 1 empty, attempt 2 downloads the zip)",
+      "all 15 mocked requests consumed (drain attempt 1 empty, attempt 2 downloads the zip, attempt 3 finds nothing new)",
       "request deque not drained; %d entries left" % len(side_effects_u))
 check(rc_u == 0, "main() returned 0", "main() returned %r" % rc_u)
+
+
+# ── (v) #419: the two lagging endpoints settle on different drain attempts;
+#       drain_then_print surfaces BOTH (does not stop at the first fruitful) ───
+print("\n=== (v) #419: step lags to attempt 1, artifact FAIL lags to attempt 2 -> both surfaced ===")
+
+# Issue #419's partial-lag case: on the poll that produces the terminal
+# Blocked, neither signal is ready. The gate STEP catches up on drain attempt 1
+# (so that attempt emits something), but the testresults-* ARTIFACT only lists
+# on drain attempt 2. The pre-#419 code broke out of the drain at the first
+# fruitful attempt, so it emitted the step but silently dropped the FAIL marker
+# for this process's lifetime. With the drain running every attempt, attempt 2
+# still runs and surfaces the FAIL. seen_arts is only populated once the
+# artifact is actually downloaded, so the lagging artifact is the genuine
+# signal recovered here, not a re-emit of an already-seen one.
+PR_V = {"head": {"sha": "519c0de1"}}
+CHECK_BL_V = {"total_count": 1, "check_runs": [{"status": "completed", "conclusion": "failure"}]}
+RUNS_V = {"workflow_runs": [{"id": 9419, "status": "completed"}]}
+JOBS_EMPTY_V = {"jobs": [{"name": "build-and-test", "steps": []}]}
+JOBS_GATE_FAIL_V = {
+    "jobs": [
+        {
+            "name": "build-and-test",
+            "steps": [
+                {"number": 1, "name": "Set up job", "status": "completed", "conclusion": "success"},
+                {"number": 7, "name": "Gate on test failures", "status": "completed", "conclusion": "failure"},
+            ],
+        }
+    ]
+}
+ARTS_EMPTY_V = {"artifacts": []}
+ARTS_E2E_V = {"artifacts": [{"id": 5419, "name": "testresults-e2e-gallery", "expired": False}]}
+ZIP_E2E_V = make_zip_ndjson([
+    '##GB4PC_TEST## {"suite":"com.gb4pc.e2e.GalleryButtonVisualE2ETest","name":"test1a","outcome":"FAIL","ms":9,"msg":"java.lang.AssertionError: button not green","trace":""}',
+])
+
+# Poll 1 (5): Blocked terminal, nothing caught up. Drain attempt 1 (3): jobs now
+# shows the failing gate step (emits something) but artifacts still empty.
+# Drain attempt 2 (3 + zip): artifact now listed -> FAIL emitted; the step is
+# already seen. Drain attempt 3 (3): everything already seen, nothing new.
+# 5 + 3 + 4 + 3 = 15.
+side_effects_v = collections.deque([
+    PR_V,             # pulls -> sha
+    CHECK_BL_V,       # check-runs -> Blocked (terminal), decided on poll 1
+    RUNS_V,           # runs -> run_id
+    JOBS_EMPTY_V,     # jobs -> not yet caught up, nothing new
+    ARTS_EMPTY_V,     # artifacts -> not yet listed
+    # drain attempt 1 — STEP caught up, ARTIFACT still lagging
+    RUNS_V,           # runs -> run_id
+    JOBS_GATE_FAIL_V, # jobs -> "Gate on test failures" -> failure (emits)
+    ARTS_EMPTY_V,     # artifacts -> still not listed
+    # drain attempt 2 — ARTIFACT now caught up
+    RUNS_V,           # runs -> run_id
+    JOBS_GATE_FAIL_V, # jobs -> step already seen, nothing new
+    ARTS_E2E_V,       # artifacts -> testresults-e2e-gallery now listed
+    ZIP_E2E_V,        # zip (raw) -> FAIL line for test1a
+    # drain attempt 3 — everything already seen, nothing new
+    RUNS_V, JOBS_GATE_FAIL_V, ARTS_E2E_V,
+])
+
+
+def fake_request_v(url, token, raw=False):
+    return side_effects_v.popleft()
+
+
+buf_v = io.StringIO()
+with unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_v), \
+        unittest.mock.patch.object(ci_monitor.time, "time", return_value=4200.0), \
+        unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None), \
+        unittest.mock.patch("sys.stdout", new=buf_v):
+    rc_v = ci_monitor.main(["ci_monitor.py", "--pr", "419"])
+
+out_v = buf_v.getvalue()
+lines_v = out_v.splitlines()
+gate_step_line_v = 'PR#419: step "Gate on test failures" -> failure'
+fail_line_v = "PR#419: FAIL [com.gb4pc.e2e.GalleryButtonVisualE2ETest] test1a: java.lang.AssertionError: button not green"
+blocked_line_v = "PR#419: Blocked"
+no_new_line_v = "PR#419: drain poll found no new diagnostic signals"
+
+check(gate_step_line_v in lines_v,
+      "drain attempt 1 surfaces the gate step that caught up first",
+      "gate step failure line missing; output: %r" % out_v)
+check(fail_line_v in lines_v,
+      "drain attempt 2 surfaces the FAIL whose artifact lagged a further attempt (NOT dropped)",
+      "lagging FAIL marker was dropped; output: %r" % out_v)
+check(lines_v.count(blocked_line_v) == 1,
+      "Blocked terminal line emitted exactly once",
+      "Blocked terminal line count != 1; output: %r" % out_v)
+check(
+    gate_step_line_v in lines_v and fail_line_v in lines_v and blocked_line_v in lines_v
+    and lines_v.index(gate_step_line_v) < lines_v.index(blocked_line_v)
+    and lines_v.index(fail_line_v) < lines_v.index(blocked_line_v),
+    "ordering: both drained signals precede the terminal Blocked line",
+    "ordering wrong; lines: %r" % lines_v)
+check(no_new_line_v not in lines_v,
+      "the drain found new signals -> 'drain poll found no new diagnostic signals' NOT printed",
+      "unexpected 'drain poll found no new diagnostic signals'; output: %r" % out_v)
+check(len(side_effects_v) == 0,
+      "all 15 mocked requests consumed (step on attempt 1, artifact+zip on attempt 2, attempt 3 empty)",
+      "request deque not drained; %d entries left" % len(side_effects_v))
+check(rc_v == 0, "main() returned 0", "main() returned %r" % rc_v)
 
 
 # ── Summary ────────────────────────────────────────────────────────────────────
