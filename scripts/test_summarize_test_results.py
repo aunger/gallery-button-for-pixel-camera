@@ -18,6 +18,7 @@ import summarize_test_results as srt  # noqa: E402
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _write_xml(directory: Path, filename: str, content: str) -> Path:
     """Write an XML file to *directory* and return its path."""
     path = directory / filename
@@ -75,8 +76,8 @@ SKIPPED_XML = """\
 # parse_directory tests
 # ---------------------------------------------------------------------------
 
-class TestParseDirectory(unittest.TestCase):
 
+class TestParseDirectory(unittest.TestCase):
     def setUp(self):
         self._tmpdir = tempfile.TemporaryDirectory()
         self.tmpdir = Path(self._tmpdir.name)
@@ -119,9 +120,7 @@ class TestParseDirectory(unittest.TestCase):
 
     def test_non_xml_files_ignored(self):
         (self.tmpdir / "not-a-test.txt").write_text("ignore me")
-        (self.tmpdir / "TEST-foo.xml").write_text(
-            textwrap.dedent(PASSING_XML), encoding="utf-8"
-        )
+        (self.tmpdir / "TEST-foo.xml").write_text(textwrap.dedent(PASSING_XML), encoding="utf-8")
         classes = srt.parse_directory(self.tmpdir)
         self.assertEqual(len(classes), 1)
 
@@ -164,20 +163,26 @@ class TestParseDirectory(unittest.TestCase):
 # TestClass.any_failed tests
 # ---------------------------------------------------------------------------
 
-class TestTestClass(unittest.TestCase):
 
+class TestTestClass(unittest.TestCase):
     def test_all_pass_not_any_failed(self):
-        cls = srt.TestClass(name="Foo", cases=[
-            srt.TestCase("a", True),
-            srt.TestCase("b", True),
-        ])
+        cls = srt.TestClass(
+            name="Foo",
+            cases=[
+                srt.TestCase("a", True),
+                srt.TestCase("b", True),
+            ],
+        )
         self.assertFalse(cls.any_failed)
 
     def test_one_failure_is_any_failed(self):
-        cls = srt.TestClass(name="Foo", cases=[
-            srt.TestCase("a", True),
-            srt.TestCase("b", False),
-        ])
+        cls = srt.TestClass(
+            name="Foo",
+            cases=[
+                srt.TestCase("a", True),
+                srt.TestCase("b", False),
+            ],
+        )
         self.assertTrue(cls.any_failed)
 
     def test_empty_cases_not_any_failed(self):
@@ -185,9 +190,12 @@ class TestTestClass(unittest.TestCase):
         self.assertFalse(cls.any_failed)
 
     def test_all_skipped_not_any_failed(self):
-        cls = srt.TestClass(name="Skipped", cases=[
-            srt.TestCase("s", False, skipped=True),
-        ])
+        cls = srt.TestClass(
+            name="Skipped",
+            cases=[
+                srt.TestCase("s", False, skipped=True),
+            ],
+        )
         self.assertFalse(cls.any_failed)
 
 
@@ -195,8 +203,8 @@ class TestTestClass(unittest.TestCase):
 # render_suite tests
 # ---------------------------------------------------------------------------
 
-class TestRenderSuite(unittest.TestCase):
 
+class TestRenderSuite(unittest.TestCase):
     def test_empty_suite_shows_no_results_note(self):
         lines = srt.render_suite("Unit Tests", {})
         combined = "\n".join(lines)
@@ -270,11 +278,9 @@ class TestRenderSuite(unittest.TestCase):
             )
         }
         lines = srt.render_suite("Suite", classes)
-        combined = "\n".join(lines)
         # The class summary line must contain FAIL
         summary_line = next(
-            line for line in lines
-            if "com.example.Mixed" in line and "<summary>" in line
+            line for line in lines if "com.example.Mixed" in line and "<summary>" in line
         )
         self.assertIn("❌ FAIL", summary_line)
 
@@ -319,8 +325,7 @@ class TestRenderSuite(unittest.TestCase):
         }
         lines = srt.render_suite("Suite", classes)
         summary_line = next(
-            line for line in lines
-            if "com.example.AllSkip" in line and "<summary>" in line
+            line for line in lines if "com.example.AllSkip" in line and "<summary>" in line
         )
         self.assertIn("⏭ SKIP", summary_line)
         self.assertNotIn("✅ PASS", summary_line)
@@ -389,8 +394,8 @@ class TestRenderSuite(unittest.TestCase):
 # build_markdown tests
 # ---------------------------------------------------------------------------
 
-class TestBuildMarkdown(unittest.TestCase):
 
+class TestBuildMarkdown(unittest.TestCase):
     def test_starts_with_h2(self):
         md = srt.build_markdown([])
         self.assertTrue(md.startswith("## Test Results"))
@@ -418,8 +423,8 @@ class TestBuildMarkdown(unittest.TestCase):
 # parse_args tests
 # ---------------------------------------------------------------------------
 
-class TestParseArgs(unittest.TestCase):
 
+class TestParseArgs(unittest.TestCase):
     def test_single_pair(self):
         specs = srt.parse_args(["path/to/unit", "--suite-label", "Unit Tests"])
         self.assertEqual(len(specs), 1)
@@ -428,10 +433,16 @@ class TestParseArgs(unittest.TestCase):
         self.assertEqual(specs[0].outcome, "")
 
     def test_two_pairs(self):
-        specs = srt.parse_args([
-            "dir1", "--suite-label", "Label1",
-            "dir2", "--suite-label", "Label2",
-        ])
+        specs = srt.parse_args(
+            [
+                "dir1",
+                "--suite-label",
+                "Label1",
+                "dir2",
+                "--suite-label",
+                "Label2",
+            ]
+        )
         self.assertEqual(len(specs), 2)
         self.assertEqual(specs[1].label, "Label2")
 
@@ -449,17 +460,31 @@ class TestParseArgs(unittest.TestCase):
             srt.parse_args(["dir1"])
 
     def test_outcome_parsed_when_present(self):
-        specs = srt.parse_args([
-            "dir1", "--suite-label", "Label1", "--outcome", "skipped",
-        ])
+        specs = srt.parse_args(
+            [
+                "dir1",
+                "--suite-label",
+                "Label1",
+                "--outcome",
+                "skipped",
+            ]
+        )
         self.assertEqual(len(specs), 1)
         self.assertEqual(specs[0].outcome, "skipped")
 
     def test_outcome_optional_between_suites(self):
-        specs = srt.parse_args([
-            "dir1", "--suite-label", "Label1", "--outcome", "failure",
-            "dir2", "--suite-label", "Label2",
-        ])
+        specs = srt.parse_args(
+            [
+                "dir1",
+                "--suite-label",
+                "Label1",
+                "--outcome",
+                "failure",
+                "dir2",
+                "--suite-label",
+                "Label2",
+            ]
+        )
         self.assertEqual(len(specs), 2)
         self.assertEqual(specs[0].outcome, "failure")
         self.assertEqual(specs[1].outcome, "")
@@ -472,6 +497,7 @@ class TestParseArgs(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # main() integration tests
 # ---------------------------------------------------------------------------
+
 
 class TestMain(unittest.TestCase):
     """Integration tests for main().
@@ -520,10 +546,15 @@ class TestMain(unittest.TestCase):
         missing = self.tmpdir / "nonexistent"
         captured = io.StringIO()
         with patch("sys.stdout", captured):
-            result = srt.main([
-                str(missing), "--suite-label", "Instrumented Tests",
-                "--outcome", "skipped",
-            ])
+            result = srt.main(
+                [
+                    str(missing),
+                    "--suite-label",
+                    "Instrumented Tests",
+                    "--outcome",
+                    "skipped",
+                ]
+            )
         self.assertEqual(result, 0)
         output = captured.getvalue()
         self.assertIn("SKIPPED", output.upper())

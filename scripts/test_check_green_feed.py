@@ -9,7 +9,7 @@ import sys
 import tempfile
 import unittest
 import zlib
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 # Allow importing the script as a module.
 sys.path.insert(0, os.path.dirname(__file__))
@@ -19,6 +19,7 @@ import check_green_feed as cgf  # noqa: E402
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_png(width: int, height: int, r: int, g: int, b: int) -> bytes:
     """Build a minimal valid PNG filled with a solid RGB color."""
@@ -57,6 +58,7 @@ def _write_png(r: int, g: int, b: int, width: int = 400, height: int = 400) -> s
 # check_image tests (unchanged single-shot behaviour)
 # ---------------------------------------------------------------------------
 
+
 class TestCheckImageGreen(unittest.TestCase):
     def test_pass_on_green_image(self):
         path = _write_png(cgf.TARGET_R, cgf.TARGET_G, cgf.TARGET_B)
@@ -80,6 +82,7 @@ class TestCheckImageGreen(unittest.TestCase):
 # main() --adb retry-loop tests (new behaviour)
 # ---------------------------------------------------------------------------
 
+
 class TestMainAdbRetryLoop(unittest.TestCase):
     """Tests for the --adb retry-loop path through main()."""
 
@@ -98,10 +101,13 @@ class TestMainAdbRetryLoop(unittest.TestCase):
         """When the image passes on the first try, main exits 0."""
         green_png = _write_png(cgf.TARGET_R, cgf.TARGET_G, cgf.TARGET_B)
         try:
-            with patch("check_green_feed.subprocess.run",
-                       return_value=self._make_ok_run_result()) as mock_run, \
-                 patch("check_green_feed.time.sleep") as mock_sleep, \
-                 patch("builtins.open", create=True) as mock_open:
+            with (
+                patch(
+                    "check_green_feed.subprocess.run", return_value=self._make_ok_run_result()
+                ) as _,
+                patch("check_green_feed.time.sleep") as mock_sleep,
+                patch("builtins.open", create=True) as mock_open,
+            ):
                 # subprocess.run writes nothing; check_image reads the pre-existing file
                 mock_open.return_value.__enter__ = lambda s: s
                 mock_open.return_value.__exit__ = MagicMock(return_value=False)
@@ -122,11 +128,12 @@ class TestMainAdbRetryLoop(unittest.TestCase):
         os.close(fd)
         try:
             side_effects = [1, 1, 0]  # fail, fail, pass
-            with patch("check_green_feed.subprocess.run",
-                       return_value=self._make_ok_run_result()), \
-                 patch("check_green_feed.time.sleep"), \
-                 patch("builtins.open", unittest.mock.mock_open()), \
-                 patch("check_green_feed.check_image", side_effect=side_effects):
+            with (
+                patch("check_green_feed.subprocess.run", return_value=self._make_ok_run_result()),
+                patch("check_green_feed.time.sleep"),
+                patch("builtins.open", unittest.mock.mock_open()),
+                patch("check_green_feed.check_image", side_effect=side_effects),
+            ):
                 result = self._run_main(["--adb", "/fake/adb", path])
             self.assertEqual(result, 0)
         finally:
@@ -137,11 +144,12 @@ class TestMainAdbRetryLoop(unittest.TestCase):
         fd, path = tempfile.mkstemp(suffix=".png")
         os.close(fd)
         try:
-            with patch("check_green_feed.subprocess.run",
-                       return_value=self._make_ok_run_result()), \
-                 patch("check_green_feed.time.sleep"), \
-                 patch("builtins.open", unittest.mock.mock_open()), \
-                 patch("check_green_feed.check_image", return_value=1):
+            with (
+                patch("check_green_feed.subprocess.run", return_value=self._make_ok_run_result()),
+                patch("check_green_feed.time.sleep"),
+                patch("builtins.open", unittest.mock.mock_open()),
+                patch("check_green_feed.check_image", return_value=1),
+            ):
                 result = self._run_main(["--adb", "/fake/adb", path])
             self.assertEqual(result, 1)
         finally:
@@ -153,11 +161,12 @@ class TestMainAdbRetryLoop(unittest.TestCase):
         fd, path = tempfile.mkstemp(suffix=".png")
         os.close(fd)
         try:
-            with patch("check_green_feed.subprocess.run",
-                       return_value=self._make_ok_run_result()), \
-                 patch("check_green_feed.time.sleep") as mock_sleep, \
-                 patch("builtins.open", unittest.mock.mock_open()), \
-                 patch("check_green_feed.check_image", return_value=1):
+            with (
+                patch("check_green_feed.subprocess.run", return_value=self._make_ok_run_result()),
+                patch("check_green_feed.time.sleep") as mock_sleep,
+                patch("builtins.open", unittest.mock.mock_open()),
+                patch("check_green_feed.check_image", return_value=1),
+            ):
                 self._run_main(["--adb", "/fake/adb", path])
             self.assertEqual(mock_sleep.call_count, 2 * cgf.MAX_ATTEMPTS)
             mock_sleep.assert_called_with(cgf.RETRY_DELAY_SECONDS)
@@ -178,11 +187,14 @@ class TestMainAdbRetryLoop(unittest.TestCase):
             # Run two iterations (fail once, then pass) so we can check ordering
             # across multiple retry cycles.
             side_effects = [1, 0]
-            with patch("check_green_feed.subprocess.run",
-                       return_value=self._make_ok_run_result()) as mock_run, \
-                 patch("check_green_feed.time.sleep"), \
-                 patch("builtins.open", unittest.mock.mock_open()), \
-                 patch("check_green_feed.check_image", side_effect=side_effects):
+            with (
+                patch(
+                    "check_green_feed.subprocess.run", return_value=self._make_ok_run_result()
+                ) as mock_run,
+                patch("check_green_feed.time.sleep"),
+                patch("builtins.open", unittest.mock.mock_open()),
+                patch("check_green_feed.check_image", side_effect=side_effects),
+            ):
                 self._run_main(["--adb", "/fake/adb", path])
 
             # Build a flat list of the command argument lists from each call.
@@ -207,26 +219,29 @@ class TestMainAdbRetryLoop(unittest.TestCase):
             self.assertGreater(len(screencap_indices), 0, "No screencap call found")
 
             for sc_idx in screencap_indices:
-                self.assertGreaterEqual(sc_idx, 3,
+                self.assertGreaterEqual(
+                    sc_idx,
+                    3,
                     "Not enough preceding calls before screencap to fit "
-                    "wakeup + swipe + dumpsys-window")
+                    "wakeup + swipe + dumpsys-window",
+                )
                 dumpsys_idx = sc_idx - 1
                 swipe_idx = sc_idx - 2
                 wakeup_idx = sc_idx - 3
                 self.assertTrue(
                     is_dumpsys_window(arg_lists[dumpsys_idx]),
                     f"Call immediately before screencap (index {dumpsys_idx}) is not "
-                    f"a dumpsys window call: {arg_lists[dumpsys_idx]}"
+                    f"a dumpsys window call: {arg_lists[dumpsys_idx]}",
                 )
                 self.assertTrue(
                     is_swipe(arg_lists[swipe_idx]),
                     f"Call two before screencap (index {swipe_idx}) is not "
-                    f"an upward swipe: {arg_lists[swipe_idx]}"
+                    f"an upward swipe: {arg_lists[swipe_idx]}",
                 )
                 self.assertTrue(
                     is_wakeup(arg_lists[wakeup_idx]),
                     f"Call three before screencap (index {wakeup_idx}) is not "
-                    f"KEYCODE_WAKEUP (224): {arg_lists[wakeup_idx]}"
+                    f"KEYCODE_WAKEUP (224): {arg_lists[wakeup_idx]}",
                 )
         finally:
             os.unlink(path)
@@ -264,10 +279,12 @@ class TestMainAdbRetryLoop(unittest.TestCase):
             def fake_sleep(seconds):
                 call_log.append(f"sleep({seconds})")
 
-            with patch("check_green_feed.subprocess.run", side_effect=fake_run), \
-                 patch("check_green_feed.time.sleep", side_effect=fake_sleep), \
-                 patch("builtins.open", unittest.mock.mock_open()), \
-                 patch("check_green_feed.check_image", side_effect=side_effects):
+            with (
+                patch("check_green_feed.subprocess.run", side_effect=fake_run),
+                patch("check_green_feed.time.sleep", side_effect=fake_sleep),
+                patch("builtins.open", unittest.mock.mock_open()),
+                patch("check_green_feed.check_image", side_effect=side_effects),
+            ):
                 self._run_main(["--adb", "/fake/adb", path])
 
             # Find every screencap in the log and assert the expected ordering:
@@ -278,25 +295,26 @@ class TestMainAdbRetryLoop(unittest.TestCase):
             self.assertGreater(len(screencap_positions), 0, "No screencap logged")
 
             for sc_pos in screencap_positions:
-                self.assertGreaterEqual(sc_pos, 3,
-                    "Not enough preceding log entries before screencap")
+                self.assertGreaterEqual(
+                    sc_pos, 3, "Not enough preceding log entries before screencap"
+                )
                 self.assertEqual(
                     call_log[sc_pos - 1],
                     "other",
                     f"Entry immediately before screencap (index {sc_pos - 1}) is not "
-                    f"the ANR check (other): {call_log[sc_pos - 1]}"
+                    f"the ANR check (other): {call_log[sc_pos - 1]}",
                 )
                 self.assertIn(
                     "sleep",
                     call_log[sc_pos - 2],
                     f"Entry two before screencap (index {sc_pos - 2}) is not "
-                    f"a sleep call: {call_log[sc_pos - 2]}"
+                    f"a sleep call: {call_log[sc_pos - 2]}",
                 )
                 self.assertEqual(
                     call_log[sc_pos - 3],
                     "swipe",
                     f"Entry three before screencap (index {sc_pos - 3}) is not "
-                    f"a swipe call: {call_log[sc_pos - 3]}"
+                    f"a swipe call: {call_log[sc_pos - 3]}",
                 )
         finally:
             os.unlink(path)
@@ -353,18 +371,22 @@ class TestInputServiceFailure(unittest.TestCase):
             def fake_sleep(s):
                 sleep_calls.append(s)
 
-            with patch("check_green_feed.subprocess.run",
-                       side_effect=run_side_effects) as mock_run, \
-                 patch("check_green_feed.time.sleep", side_effect=fake_sleep), \
-                 patch("builtins.open", unittest.mock.mock_open()), \
-                 patch("check_green_feed.check_image", return_value=0), \
-                 patch("sys.stderr", new_callable=io.StringIO) as mock_stderr:
+            with (
+                patch("check_green_feed.subprocess.run", side_effect=run_side_effects) as mock_run,
+                patch("check_green_feed.time.sleep", side_effect=fake_sleep),
+                patch("builtins.open", unittest.mock.mock_open()),
+                patch("check_green_feed.check_image", return_value=0),
+                patch("sys.stderr", new_callable=io.StringIO) as mock_stderr,
+            ):
                 result = self._run_main(["--adb", "/fake/adb", path])
 
             self.assertEqual(result, 0)
             # Extra sleep must have been inserted (more than the standard 2 per attempt).
-            self.assertGreater(len(sleep_calls), 2,
-                "Expected extra sleep when wakeup fails, but sleep count was not > 2")
+            self.assertGreater(
+                len(sleep_calls),
+                2,
+                "Expected extra sleep when wakeup fails, but sleep count was not > 2",
+            )
             # A warning must have been written to stderr.
             warning_output = mock_stderr.getvalue()
             self.assertIn("WARNING", warning_output)
@@ -372,7 +394,9 @@ class TestInputServiceFailure(unittest.TestCase):
             # Screencap must still have been called.
             arg_lists = [c.args[0] for c in mock_run.call_args_list if c.args]
             screencap_calls = [a for a in arg_lists if "screencap" in a]
-            self.assertEqual(len(screencap_calls), 1, "screencap must still run despite wakeup failure")
+            self.assertEqual(
+                len(screencap_calls), 1, "screencap must still run despite wakeup failure"
+            )
         finally:
             os.unlink(path)
 
@@ -396,23 +420,29 @@ class TestInputServiceFailure(unittest.TestCase):
             def fake_sleep(s):
                 sleep_calls.append(s)
 
-            with patch("check_green_feed.subprocess.run",
-                       side_effect=run_side_effects) as mock_run, \
-                 patch("check_green_feed.time.sleep", side_effect=fake_sleep), \
-                 patch("builtins.open", unittest.mock.mock_open()), \
-                 patch("check_green_feed.check_image", return_value=0), \
-                 patch("sys.stderr", new_callable=io.StringIO) as mock_stderr:
+            with (
+                patch("check_green_feed.subprocess.run", side_effect=run_side_effects) as mock_run,
+                patch("check_green_feed.time.sleep", side_effect=fake_sleep),
+                patch("builtins.open", unittest.mock.mock_open()),
+                patch("check_green_feed.check_image", return_value=0),
+                patch("sys.stderr", new_callable=io.StringIO) as mock_stderr,
+            ):
                 result = self._run_main(["--adb", "/fake/adb", path])
 
             self.assertEqual(result, 0)
-            self.assertGreater(len(sleep_calls), 2,
-                "Expected extra sleep when swipe fails, but sleep count was not > 2")
+            self.assertGreater(
+                len(sleep_calls),
+                2,
+                "Expected extra sleep when swipe fails, but sleep count was not > 2",
+            )
             warning_output = mock_stderr.getvalue()
             self.assertIn("WARNING", warning_output)
             self.assertIn("input service unavailable", warning_output)
             arg_lists = [c.args[0] for c in mock_run.call_args_list if c.args]
             screencap_calls = [a for a in arg_lists if "screencap" in a]
-            self.assertEqual(len(screencap_calls), 1, "screencap must still run despite swipe failure")
+            self.assertEqual(
+                len(screencap_calls), 1, "screencap must still run despite swipe failure"
+            )
         finally:
             os.unlink(path)
 
@@ -442,18 +472,23 @@ class TestInputServiceFailure(unittest.TestCase):
                     screencap_count[0] += 1
                 return make_run_result_for(args, **kwargs)
 
-            with patch("check_green_feed.subprocess.run",
-                       side_effect=counting_run), \
-                 patch("check_green_feed.time.sleep"), \
-                 patch("builtins.open", unittest.mock.mock_open()), \
-                 patch("check_green_feed.check_image", return_value=1), \
-                 patch("sys.stderr", new_callable=io.StringIO):
+            with (
+                patch("check_green_feed.subprocess.run", side_effect=counting_run),
+                patch("check_green_feed.time.sleep"),
+                patch("builtins.open", unittest.mock.mock_open()),
+                patch("check_green_feed.check_image", return_value=1),
+                patch("sys.stderr", new_callable=io.StringIO),
+            ):
                 result = self._run_main(["--adb", "/fake/adb", path])
 
-            self.assertEqual(result, 1,
-                "main should return 1 when all attempts fail, not abort early")
-            self.assertEqual(screencap_count[0], cgf.MAX_ATTEMPTS,
-                f"screencap should run on every attempt; expected {cgf.MAX_ATTEMPTS}, got {screencap_count[0]}")
+            self.assertEqual(
+                result, 1, "main should return 1 when all attempts fail, not abort early"
+            )
+            self.assertEqual(
+                screencap_count[0],
+                cgf.MAX_ATTEMPTS,
+                f"screencap should run on every attempt; expected {cgf.MAX_ATTEMPTS}, got {screencap_count[0]}",
+            )
         finally:
             os.unlink(path)
 
@@ -465,17 +500,22 @@ class TestInputServiceFailure(unittest.TestCase):
         try:
             ok = self._make_run_result(returncode=0, stderr="")
 
-            with patch("check_green_feed.subprocess.run", return_value=ok), \
-                 patch("check_green_feed.time.sleep") as mock_sleep, \
-                 patch("builtins.open", unittest.mock.mock_open()), \
-                 patch("check_green_feed.check_image", return_value=0):
+            with (
+                patch("check_green_feed.subprocess.run", return_value=ok),
+                patch("check_green_feed.time.sleep") as mock_sleep,
+                patch("builtins.open", unittest.mock.mock_open()),
+                patch("check_green_feed.check_image", return_value=0),
+            ):
                 result = self._run_main(["--adb", "/fake/adb", path])
 
             self.assertEqual(result, 0)
             # Exactly 2 sleeps on the first (successful) attempt: one at the top
             # of the loop and one between swipe and screencap.
-            self.assertEqual(mock_sleep.call_count, 2,
-                f"Expected 2 sleeps when input service succeeds, got {mock_sleep.call_count}")
+            self.assertEqual(
+                mock_sleep.call_count,
+                2,
+                f"Expected 2 sleeps when input service succeeds, got {mock_sleep.call_count}",
+            )
         finally:
             os.unlink(path)
 
@@ -523,17 +563,17 @@ class TestPerRetryAnrDismiss(unittest.TestCase):
             #   wakeup → swipe → dumpsys-window(detect: clear) → screencap(passes)
             run_side_effects = [
                 # attempt 1
-                self._make_run_result(),   # wakeup keyevent 224
-                self._make_run_result(),   # swipe
-                anr_window,                # dumpsys window → ANR detected
-                keyevent_ok,               # KEYCODE_ENTER dismiss
-                clear_window,              # dumpsys window → confirm dismissed
-                screencap_ok,              # screencap (written to file)
+                self._make_run_result(),  # wakeup keyevent 224
+                self._make_run_result(),  # swipe
+                anr_window,  # dumpsys window → ANR detected
+                keyevent_ok,  # KEYCODE_ENTER dismiss
+                clear_window,  # dumpsys window → confirm dismissed
+                screencap_ok,  # screencap (written to file)
                 # attempt 2
-                self._make_run_result(),   # wakeup keyevent 224
-                self._make_run_result(),   # swipe
-                clear_window,              # dumpsys window → detect: clear
-                screencap_ok,              # screencap (written to file)
+                self._make_run_result(),  # wakeup keyevent 224
+                self._make_run_result(),  # swipe
+                clear_window,  # dumpsys window → detect: clear
+                screencap_ok,  # screencap (written to file)
             ]
 
             keyback_calls: list[list[str]] = []
@@ -548,13 +588,13 @@ class TestPerRetryAnrDismiss(unittest.TestCase):
 
             sleep_calls: list[float] = []
 
-            with patch("check_green_feed.subprocess.run",
-                       side_effect=tracking_run), \
-                 patch("check_green_feed.time.sleep",
-                       side_effect=lambda s: sleep_calls.append(s)), \
-                 patch("builtins.open", unittest.mock.mock_open()), \
-                 patch("check_green_feed._dump_first_failure_diagnostics"), \
-                 patch("check_green_feed.check_image", side_effect=[1, 0]):
+            with (
+                patch("check_green_feed.subprocess.run", side_effect=tracking_run),
+                patch("check_green_feed.time.sleep", side_effect=lambda s: sleep_calls.append(s)),
+                patch("builtins.open", unittest.mock.mock_open()),
+                patch("check_green_feed._dump_first_failure_diagnostics"),
+                patch("check_green_feed.check_image", side_effect=[1, 0]),
+            ):
                 result = self._run_main(["--adb", "/fake/adb", path])
 
             self.assertEqual(result, 0, "main should succeed on the second attempt")
@@ -562,16 +602,18 @@ class TestPerRetryAnrDismiss(unittest.TestCase):
             # Attempt 1 has 2 dumpsys calls (detect + confirm-after-dismiss);
             # attempt 2 has 1 (detect only, no ANR found).  Total = 3.
             self.assertEqual(
-                len(dumpsys_calls), 3,
+                len(dumpsys_calls),
+                3,
                 f"Expected 3 dumpsys window calls (2 for attempt-1 ANR dismiss + 1 for attempt-2 detect), "
-                f"got {len(dumpsys_calls)}"
+                f"got {len(dumpsys_calls)}",
             )
 
             # KEYCODE_ENTER must be sent exactly once (for the first-attempt ANR).
             keyback_back_calls = [c for c in keyback_calls if "KEYCODE_ENTER" in c]
             self.assertEqual(
-                len(keyback_back_calls), 1,
-                f"Expected 1 KEYCODE_ENTER for ANR dismiss, got {len(keyback_back_calls)}"
+                len(keyback_back_calls),
+                1,
+                f"Expected 1 KEYCODE_ENTER for ANR dismiss, got {len(keyback_back_calls)}",
             )
 
             # An extra sleep must follow the KEYCODE_ENTER dismiss.
@@ -579,8 +621,9 @@ class TestPerRetryAnrDismiss(unittest.TestCase):
             # Attempt 1 also has the ANR dismiss poll sleep → total > 2 * 1 = 2 for
             # the first attempt, i.e. total sleep count across both attempts > 4.
             self.assertGreater(
-                len(sleep_calls), 4,
-                f"Expected extra sleep after ANR dismiss; got {len(sleep_calls)} total sleeps"
+                len(sleep_calls),
+                4,
+                f"Expected extra sleep after ANR dismiss; got {len(sleep_calls)} total sleeps",
             )
         finally:
             os.unlink(path)
@@ -604,18 +647,20 @@ class TestPerRetryAnrDismiss(unittest.TestCase):
                 r.stdout = clear_window.stdout
                 return r
 
-            with patch("check_green_feed.subprocess.run",
-                       side_effect=tracking_run), \
-                 patch("check_green_feed.time.sleep"), \
-                 patch("builtins.open", unittest.mock.mock_open()), \
-                 patch("check_green_feed.check_image", return_value=0):
+            with (
+                patch("check_green_feed.subprocess.run", side_effect=tracking_run),
+                patch("check_green_feed.time.sleep"),
+                patch("builtins.open", unittest.mock.mock_open()),
+                patch("check_green_feed.check_image", return_value=0),
+            ):
                 result = self._run_main(["--adb", "/fake/adb", path])
 
             self.assertEqual(result, 0)
             self.assertEqual(
-                len(dismiss_calls), 0,
+                len(dismiss_calls),
+                0,
                 f"KEYCODE_ENTER must not be sent when there is no ANR dialog; "
-                f"got {len(dismiss_calls)} call(s)"
+                f"got {len(dismiss_calls)} call(s)",
             )
         finally:
             os.unlink(path)
@@ -647,23 +692,26 @@ class TestPerRetryAnrDismiss(unittest.TestCase):
             attempts = 3
             check_results = [1] * (attempts - 1) + [0]
 
-            with patch("check_green_feed.subprocess.run",
-                       side_effect=tracking_run), \
-                 patch("check_green_feed.time.sleep"), \
-                 patch("builtins.open", unittest.mock.mock_open()), \
-                 patch("check_green_feed._dump_first_failure_diagnostics"), \
-                 patch("check_green_feed.check_image", side_effect=check_results):
+            with (
+                patch("check_green_feed.subprocess.run", side_effect=tracking_run),
+                patch("check_green_feed.time.sleep"),
+                patch("builtins.open", unittest.mock.mock_open()),
+                patch("check_green_feed._dump_first_failure_diagnostics"),
+                patch("check_green_feed.check_image", side_effect=check_results),
+            ):
                 result = self._run_main(["--adb", "/fake/adb", path])
 
             self.assertEqual(result, 0)
             self.assertEqual(
-                screencap_count[0], attempts,
-                f"Expected {attempts} screencaps, got {screencap_count[0]}"
+                screencap_count[0],
+                attempts,
+                f"Expected {attempts} screencaps, got {screencap_count[0]}",
             )
             self.assertEqual(
-                dumpsys_count[0], attempts,
+                dumpsys_count[0],
+                attempts,
                 f"Expected {attempts} dumpsys window calls (one per attempt, "
-                f"from the per-retry ANR check), got {dumpsys_count[0]}"
+                f"from the per-retry ANR check), got {dumpsys_count[0]}",
             )
         finally:
             os.unlink(path)
@@ -696,7 +744,7 @@ class TestDismissAnrIfPresent(unittest.TestCase):
         # For each retry: KEYCODE_ENTER + confirm dumpsys (always shows ANR).
         for _ in range(cgf._ANR_DISMISS_MAX_RETRIES):
             run_side_effects.append(self._make_run_result())  # KEYCODE_ENTER
-            run_side_effects.append(anr_window)               # confirm dumpsys
+            run_side_effects.append(anr_window)  # confirm dumpsys
 
         def tracking_run(args, **kwargs):
             if "KEYCODE_ENTER" in args:
@@ -704,9 +752,11 @@ class TestDismissAnrIfPresent(unittest.TestCase):
             return run_side_effects.pop(0)
 
         stderr_buf = io.StringIO()
-        with patch("check_green_feed.subprocess.run", side_effect=tracking_run), \
-             patch("check_green_feed.time.sleep"), \
-             patch("sys.stderr", stderr_buf):
+        with (
+            patch("check_green_feed.subprocess.run", side_effect=tracking_run),
+            patch("check_green_feed.time.sleep"),
+            patch("sys.stderr", stderr_buf),
+        ):
             # Must return, not raise.
             cgf._dismiss_anr_if_present("/fake/adb")
 
@@ -715,7 +765,7 @@ class TestDismissAnrIfPresent(unittest.TestCase):
             len(keyback_calls),
             cgf._ANR_DISMISS_MAX_RETRIES,
             f"Expected {cgf._ANR_DISMISS_MAX_RETRIES} KEYCODE_ENTER sends when all retries "
-            f"are exhausted, got {len(keyback_calls)}"
+            f"are exhausted, got {len(keyback_calls)}",
         )
 
         # The exhaustion log line must be present.
@@ -723,14 +773,13 @@ class TestDismissAnrIfPresent(unittest.TestCase):
         self.assertIn(
             "persisted after",
             log_output,
-            f"Expected 'persisted after' in stderr log when all retries exhausted; got: {log_output!r}"
+            f"Expected 'persisted after' in stderr log when all retries exhausted; got: {log_output!r}",
         )
         self.assertIn(
             str(cgf._ANR_DISMISS_MAX_RETRIES),
             log_output,
-            f"Expected retry count {cgf._ANR_DISMISS_MAX_RETRIES} in stderr log; got: {log_output!r}"
+            f"Expected retry count {cgf._ANR_DISMISS_MAX_RETRIES} in stderr log; got: {log_output!r}",
         )
-
 
     def test_timeout_during_dismiss_does_not_abort_loop(self):
         """A subprocess timeout on a KEYCODE_ENTER send or a confirm dumpsys must
@@ -755,13 +804,13 @@ class TestDismissAnrIfPresent(unittest.TestCase):
         #   detect(ANR) → ENTER#1(timeout) → confirm#1(timeout) →
         #   ENTER#2(ok)  → confirm#2(ANR) → ENTER#3(ok) → confirm#3(clear)
         run_side_effects: list = [
-            anr_window,                 # initial detect
-            timeout_exc,                # ENTER #1 → times out
-            timeout_exc,                # confirm #1 → times out (treated as None)
-            self._make_run_result(),    # ENTER #2
-            anr_window,                 # confirm #2 → still present
-            self._make_run_result(),    # ENTER #3
-            clear_window,               # confirm #3 → dismissed
+            anr_window,  # initial detect
+            timeout_exc,  # ENTER #1 → times out
+            timeout_exc,  # confirm #1 → times out (treated as None)
+            self._make_run_result(),  # ENTER #2
+            anr_window,  # confirm #2 → still present
+            self._make_run_result(),  # ENTER #3
+            clear_window,  # confirm #3 → dismissed
         ]
 
         def tracking_run(args, **kwargs):
@@ -773,16 +822,19 @@ class TestDismissAnrIfPresent(unittest.TestCase):
             return effect
 
         stderr_buf = io.StringIO()
-        with patch("check_green_feed.subprocess.run", side_effect=tracking_run), \
-             patch("check_green_feed.time.sleep"), \
-             patch("sys.stderr", stderr_buf):
+        with (
+            patch("check_green_feed.subprocess.run", side_effect=tracking_run),
+            patch("check_green_feed.time.sleep"),
+            patch("sys.stderr", stderr_buf),
+        ):
             # Must not raise.
             cgf._dismiss_anr_if_present("/fake/adb")
 
         self.assertEqual(
-            len(enter_calls), 3,
+            len(enter_calls),
+            3,
             f"Expected the loop to keep retrying through timeouts and send "
-            f"KEYCODE_ENTER 3 times, got {len(enter_calls)}"
+            f"KEYCODE_ENTER 3 times, got {len(enter_calls)}",
         )
         self.assertIn("dismissed after 3", stderr_buf.getvalue())
 
@@ -798,12 +850,15 @@ class TestDismissAnrIfPresent(unittest.TestCase):
                 enter_calls.append(list(args))
             raise timeout_exc
 
-        with patch("check_green_feed.subprocess.run", side_effect=tracking_run), \
-             patch("check_green_feed.time.sleep"):
+        with (
+            patch("check_green_feed.subprocess.run", side_effect=tracking_run),
+            patch("check_green_feed.time.sleep"),
+        ):
             cgf._dismiss_anr_if_present("/fake/adb")
 
         self.assertEqual(
-            len(enter_calls), 0,
+            len(enter_calls),
+            0,
             "KEYCODE_ENTER must not be sent when the ANR state is undetermined",
         )
 
@@ -816,9 +871,9 @@ class TestDismissAnrIfPresent(unittest.TestCase):
         clear_window = self._make_run_result(stdout="WindowState idle")
         enter_calls: list[list] = []
         run_side_effects = [
-            systemui_anr,              # detect
-            self._make_run_result(),   # ENTER #1
-            clear_window,              # confirm cleared
+            systemui_anr,  # detect
+            self._make_run_result(),  # ENTER #1
+            clear_window,  # confirm cleared
         ]
 
         def tracking_run(args, **kwargs):
@@ -826,12 +881,15 @@ class TestDismissAnrIfPresent(unittest.TestCase):
                 enter_calls.append(list(args))
             return run_side_effects.pop(0)
 
-        with patch("check_green_feed.subprocess.run", side_effect=tracking_run), \
-             patch("check_green_feed.time.sleep"):
+        with (
+            patch("check_green_feed.subprocess.run", side_effect=tracking_run),
+            patch("check_green_feed.time.sleep"),
+        ):
             cgf._dismiss_anr_if_present("/fake/adb")
 
-        self.assertEqual(len(enter_calls), 1,
-                         "SystemUI ANR must be dismissed with one KEYCODE_ENTER")
+        self.assertEqual(
+            len(enter_calls), 1, "SystemUI ANR must be dismissed with one KEYCODE_ENTER"
+        )
 
 
 class TestDismissAnrUsesKeycodeEnter(unittest.TestCase):
@@ -854,7 +912,7 @@ class TestDismissAnrUsesKeycodeEnter(unittest.TestCase):
         enter_calls: list[list] = []
         back_calls: list[list] = []
         run_side_effects = [
-            anr_window,    # initial dumpsys window detect
+            anr_window,  # initial dumpsys window detect
             self._make_run_result(),  # KEYCODE_ENTER
             clear_window,  # confirm dumpsys window
         ]
@@ -866,17 +924,17 @@ class TestDismissAnrUsesKeycodeEnter(unittest.TestCase):
                 back_calls.append(list(args))
             return run_side_effects.pop(0)
 
-        with patch("check_green_feed.subprocess.run", side_effect=tracking_run), \
-             patch("check_green_feed.time.sleep"):
+        with (
+            patch("check_green_feed.subprocess.run", side_effect=tracking_run),
+            patch("check_green_feed.time.sleep"),
+        ):
             cgf._dismiss_anr_if_present("/fake/adb")
 
         self.assertEqual(
-            len(enter_calls), 1,
-            f"Expected exactly 1 KEYCODE_ENTER send, got {len(enter_calls)}"
+            len(enter_calls), 1, f"Expected exactly 1 KEYCODE_ENTER send, got {len(enter_calls)}"
         )
         self.assertEqual(
-            len(back_calls), 0,
-            f"KEYCODE_BACK must never be sent; got {len(back_calls)} call(s)"
+            len(back_calls), 0, f"KEYCODE_BACK must never be sent; got {len(back_calls)} call(s)"
         )
 
     def test_keycode_back_never_sent(self):
@@ -899,13 +957,16 @@ class TestDismissAnrUsesKeycodeEnter(unittest.TestCase):
                 back_calls.append(list(args))
             return run_side_effects.pop(0)
 
-        with patch("check_green_feed.subprocess.run", side_effect=tracking_run), \
-             patch("check_green_feed.time.sleep"):
+        with (
+            patch("check_green_feed.subprocess.run", side_effect=tracking_run),
+            patch("check_green_feed.time.sleep"),
+        ):
             cgf._dismiss_anr_if_present("/fake/adb")
 
         self.assertEqual(
-            len(back_calls), 0,
-            f"KEYCODE_BACK must never be sent; got {len(back_calls)} call(s): {back_calls}"
+            len(back_calls),
+            0,
+            f"KEYCODE_BACK must never be sent; got {len(back_calls)} call(s): {back_calls}",
         )
 
 
