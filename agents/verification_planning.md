@@ -39,7 +39,7 @@ Only the before-merging list controls the merge gate.
    If such a comment exists, parse it to extract the list of already-filed issues (each line with a `- [ ]` or `- [x]` checkbox carries an issue URL of the form `https://github.com/{owner}/{repo}/issues/{n}`).
    Treat those issues as already filed and do not create duplicates for the corresponding items.
    If the comment does not exist, proceed with filing all items normally.
-4. Otherwise, open one GitHub issue for each item on the *before merging* list that is not already covered by a prior-run comment (step 3).
+4. If the before-merging list is not empty (i.e., step 2 did not exit), open one GitHub issue for each item on the *before merging* list that is not already covered by a prior-run comment (step 3).
    Do NOT communicate with the user, and do NOT ask whether to test manually or to automate.
    For each item:
    a. Title the issue `(re PR #{number}) {required task title}`, where `{number}` is the current PR number and `{required task title}` is a short title for the outstanding requirement.
@@ -51,6 +51,7 @@ Only the before-merging list controls the merge gate.
    b. In the issue description, include a URL to the source comment or description, and state clearly that this issue does **not** block PR #{number} (for example, "This is a follow-on item and does not block merging PR #{number}.").
 6. Post (or replace) the verification-plan comment on the PR.
    The comment must contain the exact HTML marker `<!-- gb4pc-verification-plan -->` on its own line so future runs can find it.
+   The rebuilt comment must list all issues--those parsed from the prior-run comment in step 3 and any newly filed in steps 4-5--so that future runs can find the complete record and will not re-file already-existing issues.
    Format the comment as follows (use the actual issue URLs):
 
    ```markdown
