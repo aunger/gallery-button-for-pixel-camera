@@ -52,7 +52,7 @@ Only the before-merging list controls the merge gate.
       where `{number}` is the current PR number and `{new issue's id}` is the new issue's internal id (the `id` field, not its number; obtain it from the issue-creation response, or by reading the issue through the same API).
       Send the id as a bare JSON integer in the request body (not a quoted string), as the API requires.
       If the PR number is not accepted for an issue-dependency relationship, fall back to blocking the **parent issue** the PR resolves (the issue this PR fixes) instead, by sending the same request to `.../issues/{parent issue number}/dependencies/blocked_by`.
-      Only if neither call succeeds, state the blocking relationship in plain text in the new issue's description (for example, "Blocks PR #{number}") so it is not lost, and skip the formal link without failing.
+      Only if neither call succeeds for a reason other than the dependency already existing (treat a 409 or 422 response as success rather than a failure that triggers the fallback), state the blocking relationship in plain text in the new issue's description (for example, "Blocks PR #{number}") so it is not lost, and skip the formal link without failing.
    e. Make the new issue a **sub-issue** of the PR, using GitHub's sub-issues feature.
       GitHub exposes this through the REST API; call it with `curl` and `$GITHUB_TOKEN` as in step 3d (the `gh` CLI is not installed):
       `curl -sX POST -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/{owner}/{repo}/issues/{number}/sub_issues -d '{"sub_issue_id": {new issue's id}}'`,
@@ -65,7 +65,7 @@ Only the before-merging list controls the merge gate.
    a. Title the issue simply `{task title}`, without referencing the current PR.
    b. **Before filing**: search GitHub for an open or closed issue whose title exactly matches the title from step 4a.
       Use the same search approach as step 3b, with `q=repo:{owner}/{repo} in:title "{exact title}" is:issue` as the query string.
-      If an exact title match exists, record the existing issue's number for inclusion in the step-5 report; do not re-file or re-write its description.
+      If an exact title match exists, record the existing issue's number for inclusion in the step-5 report; step 4c is moot for an existing issue.
    c. In the issue description, include a URL to the source comment or description, and state clearly that this issue does **not** block PR #{number} (for example, "This is a follow-on item and does not block merging PR #{number}.").
    d. Do **not** call the `blocked_by` dependency endpoint for follow-on issues.
       Do **not** add any "Blocks PR #..." line to the issue body.
