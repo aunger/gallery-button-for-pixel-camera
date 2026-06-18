@@ -40,7 +40,7 @@ Only the before-merging list controls the merge gate.
    a. Title the issue `(re PR #{number}) {required task title}`, where `{number}` is the current PR number and `{required task title}` is a short title for the outstanding requirement.
    b. **Before filing**: search GitHub for an open or closed issue whose title exactly matches the title from step 3a.
       Use the GitHub search API: `curl -sG -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/search/issues --data-urlencode "q=repo:{owner}/{repo} in:title \"{exact title}\" is:issue"`.
-      If any result has a title that exactly matches (case-insensitively), the issue was already filed in a prior run--skip filing and use that existing issue's id and number for steps 3c and 3d.
+      If any result has a title that exactly matches (case-insensitively), the issue was already filed in a prior run--skip filing (step 3c is moot for an existing issue); proceed to steps 3d and 3e using the existing issue's id and number.
       Only create a new issue when no exact title match exists.
    c. In the issue description, include a URL to the particular PR comment that called for this requirement.
       (If the requirement came from the PR or issue description itself rather than a comment, link to that description instead.)
@@ -64,8 +64,8 @@ Only the before-merging list controls the merge gate.
    For each item:
    a. Title the issue simply `{task title}`, without referencing the current PR.
    b. **Before filing**: search GitHub for an open or closed issue whose title exactly matches the title from step 4a.
-      Use the same search approach as step 3b.
-      If an exact title match exists, skip filing and use the existing issue for tracking; do not file a duplicate.
+      Use the same search approach as step 3b, with `q=repo:{owner}/{repo} in:title "{exact title}" is:issue` as the query string.
+      If an exact title match exists, record the existing issue's number for inclusion in the step-5 report; do not re-file or re-write its description.
    c. In the issue description, include a URL to the source comment or description, and state clearly that this issue does **not** block PR #{number} (for example, "This is a follow-on item and does not block merging PR #{number}.").
    d. Do **not** call the `blocked_by` dependency endpoint for follow-on issues.
       Do **not** add any "Blocks PR #..." line to the issue body.
