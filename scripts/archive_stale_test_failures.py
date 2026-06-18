@@ -38,6 +38,7 @@ import urllib.error
 # GitHub API helper
 # ---------------------------------------------------------------------------
 
+
 def gh_api(path: str, token: str, method: str = "GET", body: object = None) -> object:
     """Make a GitHub API request and return the parsed JSON response.
 
@@ -62,6 +63,7 @@ def gh_api(path: str, token: str, method: str = "GET", body: object = None) -> o
 # Core logic
 # ---------------------------------------------------------------------------
 
+
 def fetch_stale_issues(repo: str, token: str, cutoff: datetime.datetime) -> list[dict]:
     """Return all test-failure issues, open or closed, last updated before *cutoff*.
 
@@ -81,9 +83,7 @@ def fetch_stale_issues(repo: str, token: str, cutoff: datetime.datetime) -> list
 
     stale = []
     for issue in issues:
-        updated_at = datetime.datetime.fromisoformat(
-            issue["updated_at"].replace("Z", "+00:00")
-        )
+        updated_at = datetime.datetime.fromisoformat(issue["updated_at"].replace("Z", "+00:00"))
         if updated_at < cutoff:
             stale.append(issue)
     return stale
@@ -92,11 +92,7 @@ def fetch_stale_issues(repo: str, token: str, cutoff: datetime.datetime) -> list
 def archive_issue(issue: dict, repo: str, token: str) -> None:
     """Swap labels on *issue*: remove test-failure, add test-failure-archive."""
     n = issue["number"]
-    current_labels = [
-        label["name"]
-        for label in issue["labels"]
-        if label["name"] != "test-failure"
-    ]
+    current_labels = [label["name"] for label in issue["labels"] if label["name"] != "test-failure"]
     current_labels.append("test-failure-archive")
     gh_api(
         f"repos/{repo}/issues/{n}",
@@ -111,6 +107,7 @@ def archive_issue(issue: dict, repo: str, token: str) -> None:
 # Entry point
 # ---------------------------------------------------------------------------
 
+
 def main() -> int:
     token = os.environ.get("GITHUB_TOKEN", "")
     repo = os.environ.get("GITHUB_REPOSITORY", "")
@@ -123,10 +120,7 @@ def main() -> int:
         print("Warning: GITHUB_REPOSITORY not set — skipping archival.", file=sys.stderr)
         return 0
 
-    cutoff = (
-        datetime.datetime.now(datetime.timezone.utc)
-        - datetime.timedelta(days=stale_days)
-    )
+    cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=stale_days)
 
     try:
         stale = fetch_stale_issues(repo, token, cutoff)

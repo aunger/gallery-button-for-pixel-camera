@@ -164,9 +164,9 @@ When the device is locked and the user taps the overlay, GB4PC displays a built-
 
 - **UI-10** The Advanced Settings screen contains:
 1. **Overlay Position** — Three labeled sliders or number inputs:
-  - `X position` (0.00–100.00%) — horizontal center
-  - `Y position` (0.00–100.00%) — vertical center
-  - `Size` (1.00–30.00%) — percentage of the shorter screen dimension
+    - `X position` (0.00–100.00%) — horizontal center
+    - `Y position` (0.00–100.00%) — vertical center
+    - `Size` (1.00–30.00%) — percentage of the shorter screen dimension
 1. **Reset to Defaults** button — restores the shipped default position values for the current display aspect ratio. Shows a confirmation dialog before resetting.
 1. **Debug Log** — A scrollable log viewer showing the most recent foreground detection events (camera callbacks, USM queries, overlay show/hide events), timestamped. Useful for troubleshooting. The log is held in a circular buffer of the last 200 entries, in memory only (not persisted).
 - **UI-11** Changes to position/size values are applied immediately (live preview if the overlay is currently visible). Values are saved on change.

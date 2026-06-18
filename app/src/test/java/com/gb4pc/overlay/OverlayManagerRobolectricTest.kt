@@ -37,7 +37,6 @@ import org.robolectric.shadows.ShadowWindowManagerImpl
  */
 @RunWith(RobolectricTestRunner::class)
 class OverlayManagerRobolectricTest {
-
     /**
      * Regression guard for Issue #66: when focusableOverlay is false (the default),
      * onFocusLost must not be called when the overlay is shown.
@@ -51,19 +50,21 @@ class OverlayManagerRobolectricTest {
     fun `show with non-focusable overlay does not trigger onFocusLost`() {
         val context: Application = ApplicationProvider.getApplicationContext()
 
-        val prefsManager: PrefsManager = mock {
-            on { galleryPackage } doReturn null
-            on { getOverlayPosition(any()) } doReturn OverlayPosition.default()
-            on { focusableOverlay } doReturn false
-        }
+        val prefsManager: PrefsManager =
+            mock {
+                on { galleryPackage } doReturn null
+                on { getOverlayPosition(any()) } doReturn OverlayPosition.default()
+                on { focusableOverlay } doReturn false
+            }
 
         var focusLostCount = 0
-        val overlayManager = OverlayManager(
-            context = context,
-            prefsManager = prefsManager,
-            onFocusLost = { focusLostCount++ },
-            onFocusGained = {},
-        )
+        val overlayManager =
+            OverlayManager(
+                context = context,
+                prefsManager = prefsManager,
+                onFocusLost = { focusLostCount++ },
+                onFocusGained = {},
+            )
 
         overlayManager.show()
 
@@ -71,7 +72,7 @@ class OverlayManagerRobolectricTest {
         assertEquals(
             "onFocusLost must not fire when focusableOverlay is false (Issue #66 regression)",
             0,
-            focusLostCount
+            focusLostCount,
         )
 
         val windowManager = context.getSystemService(WindowManager::class.java)
@@ -79,7 +80,7 @@ class OverlayManagerRobolectricTest {
         assertEquals(
             "Overlay view must remain in the WindowManager after show()",
             1,
-            shadowWm.views.size
+            shadowWm.views.size,
         )
     }
 
@@ -98,10 +99,11 @@ class OverlayManagerRobolectricTest {
         // Mock PrefsManager: galleryPackage = null → getGalleryIcon returns the plain
         // placeholder drawable (a VectorDrawable / LayerDrawable, NOT a BitmapDrawable),
         // so any BitmapDrawable on the view must have come from setImageBitmap().
-        val prefsManager: PrefsManager = mock {
-            on { galleryPackage } doReturn null
-            on { getOverlayPosition(any()) } doReturn OverlayPosition.default()
-        }
+        val prefsManager: PrefsManager =
+            mock {
+                on { galleryPackage } doReturn null
+                on { getOverlayPosition(any()) } doReturn OverlayPosition.default()
+            }
 
         val overlayManager = OverlayManager(context, prefsManager)
 
@@ -120,7 +122,7 @@ class OverlayManagerRobolectricTest {
         overlayView.setImageBitmap(testBitmap)
         assertTrue(
             "Sanity: after setImageBitmap the drawable must be a BitmapDrawable",
-            overlayView.drawable is BitmapDrawable
+            overlayView.drawable is BitmapDrawable,
         )
 
         // Step 3: second show() call — simulates the second camera lens on a dual-camera
@@ -132,7 +134,7 @@ class OverlayManagerRobolectricTest {
         assertTrue(
             "After the second show() call the thumbnail BitmapDrawable must not have been " +
                 "replaced by the icon drawable (regression guard for Issue #45)",
-            overlayView.drawable is BitmapDrawable
+            overlayView.drawable is BitmapDrawable,
         )
     }
 
@@ -149,11 +151,12 @@ class OverlayManagerRobolectricTest {
     @Test
     fun `overlay view shows gallery icon wrapped in SquircleDrawable`() {
         val context: Application = ApplicationProvider.getApplicationContext()
-        val prefsManager: PrefsManager = mock {
-            on { galleryPackage } doReturn null
-            on { getOverlayPosition(any()) } doReturn OverlayPosition.default()
-            on { focusableOverlay } doReturn false
-        }
+        val prefsManager: PrefsManager =
+            mock {
+                on { galleryPackage } doReturn null
+                on { getOverlayPosition(any()) } doReturn OverlayPosition.default()
+                on { focusableOverlay } doReturn false
+            }
 
         val overlayManager = OverlayManager(context, prefsManager)
         overlayManager.show()
@@ -165,7 +168,7 @@ class OverlayManagerRobolectricTest {
         assertTrue(
             "Issue #188: overlay drawable must be a SquircleDrawable so the squircle shape " +
                 "is independent of the device launcher mask.",
-            overlayView.drawable is SquircleDrawable
+            overlayView.drawable is SquircleDrawable,
         )
     }
 
@@ -179,11 +182,12 @@ class OverlayManagerRobolectricTest {
     @Test
     fun `overlay view shows thumbnail wrapped in SquircleDrawable`() {
         val context: Application = ApplicationProvider.getApplicationContext()
-        val prefsManager: PrefsManager = mock {
-            on { galleryPackage } doReturn null
-            on { getOverlayPosition(any()) } doReturn OverlayPosition.default()
-            on { focusableOverlay } doReturn false
-        }
+        val prefsManager: PrefsManager =
+            mock {
+                on { galleryPackage } doReturn null
+                on { getOverlayPosition(any()) } doReturn OverlayPosition.default()
+                on { focusableOverlay } doReturn false
+            }
 
         val overlayManager = OverlayManager(context, prefsManager)
         overlayManager.show()
@@ -201,7 +205,7 @@ class OverlayManagerRobolectricTest {
         // (wrapping a BitmapDrawable), not a raw BitmapDrawable.
         assertTrue(
             "Issue #188: after showLatestPhotoThumbnail, drawable must still be a SquircleDrawable",
-            overlayView.drawable is SquircleDrawable
+            overlayView.drawable is SquircleDrawable,
         )
     }
 
@@ -220,13 +224,14 @@ class OverlayManagerRobolectricTest {
         // Use the app's own package as the "gallery" package under test. Robolectric fully
         // initialises the host application's resources, so getResourcesForApplication() and
         // the mipmap/ic_launcher adaptive icon (API 26+, AdaptiveIconDrawable) are available.
-        val selfPackage = context.packageName  // "com.gb4pc"
+        val selfPackage = context.packageName // "com.gb4pc"
 
-        val prefsManager: PrefsManager = mock {
-            on { galleryPackage } doReturn selfPackage
-            on { getOverlayPosition(any()) } doReturn OverlayPosition.default()
-            on { focusableOverlay } doReturn false
-        }
+        val prefsManager: PrefsManager =
+            mock {
+                on { galleryPackage } doReturn selfPackage
+                on { getOverlayPosition(any()) } doReturn OverlayPosition.default()
+                on { focusableOverlay } doReturn false
+            }
 
         val overlayManager = OverlayManager(context, prefsManager)
         overlayManager.show()
@@ -239,16 +244,16 @@ class OverlayManagerRobolectricTest {
         // of the launcher mask), wrapping a raw AdaptiveIconDrawable (not a pre-masked bitmap).
         assertTrue(
             "Issue #188: gallery icon must be wrapped in a SquircleDrawable.",
-            overlayView.drawable is SquircleDrawable
+            overlayView.drawable is SquircleDrawable,
         )
         val squircle = overlayView.drawable as SquircleDrawable
         assertFalse(
             "Issue #188: the inner drawable must NOT be a pre-masked BitmapDrawable.",
-            squircle.inner is BitmapDrawable
+            squircle.inner is BitmapDrawable,
         )
         assertTrue(
             "Issue #188: the inner drawable must be a raw AdaptiveIconDrawable (no launcher mask).",
-            squircle.inner is AdaptiveIconDrawable
+            squircle.inner is AdaptiveIconDrawable,
         )
     }
 
@@ -267,11 +272,12 @@ class OverlayManagerRobolectricTest {
     @Test
     fun `overlay window uses FLAG_LAYOUT_IN_SCREEN so position is relative to screen origin`() {
         val context: Application = ApplicationProvider.getApplicationContext()
-        val prefsManager: PrefsManager = mock {
-            on { galleryPackage } doReturn null
-            on { getOverlayPosition(any()) } doReturn OverlayPosition.default()
-            on { focusableOverlay } doReturn false
-        }
+        val prefsManager: PrefsManager =
+            mock {
+                on { galleryPackage } doReturn null
+                on { getOverlayPosition(any()) } doReturn OverlayPosition.default()
+                on { focusableOverlay } doReturn false
+            }
 
         val overlayManager = OverlayManager(context, prefsManager)
         overlayManager.show()
@@ -284,7 +290,7 @@ class OverlayManagerRobolectricTest {
         assertTrue(
             "Overlay window must set FLAG_LAYOUT_IN_SCREEN so x/y are relative to the " +
                 "physical-screen origin, not below the status bar (Issue #229).",
-            (params.flags and WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN) != 0
+            (params.flags and WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN) != 0,
         )
     }
 
@@ -307,11 +313,12 @@ class OverlayManagerRobolectricTest {
     @Test
     fun `non-focusable overlay window does not set FLAG_LAYOUT_NO_LIMITS`() {
         val context: Application = ApplicationProvider.getApplicationContext()
-        val prefsManager: PrefsManager = mock {
-            on { galleryPackage } doReturn null
-            on { getOverlayPosition(any()) } doReturn OverlayPosition.default()
-            on { focusableOverlay } doReturn false
-        }
+        val prefsManager: PrefsManager =
+            mock {
+                on { galleryPackage } doReturn null
+                on { getOverlayPosition(any()) } doReturn OverlayPosition.default()
+                on { focusableOverlay } doReturn false
+            }
 
         val overlayManager = OverlayManager(context, prefsManager)
         overlayManager.show()
@@ -326,7 +333,7 @@ class OverlayManagerRobolectricTest {
                 "touchable input region stays within screen limits and matches the " +
                 "FLAG_LAYOUT_IN_SCREEN-placed surface, letting in-bounds taps reach the icon " +
                 "(Issue #230 / #397).",
-            (params.flags and WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS) == 0
+            (params.flags and WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS) == 0,
         )
     }
 
@@ -345,11 +352,12 @@ class OverlayManagerRobolectricTest {
     @Test
     fun `overlay window sets FLAG_NOT_TOUCH_MODAL so in-bounds taps reach the icon`() {
         val context: Application = ApplicationProvider.getApplicationContext()
-        val prefsManager: PrefsManager = mock {
-            on { galleryPackage } doReturn null
-            on { getOverlayPosition(any()) } doReturn OverlayPosition.default()
-            on { focusableOverlay } doReturn false
-        }
+        val prefsManager: PrefsManager =
+            mock {
+                on { galleryPackage } doReturn null
+                on { getOverlayPosition(any()) } doReturn OverlayPosition.default()
+                on { focusableOverlay } doReturn false
+            }
 
         val overlayManager = OverlayManager(context, prefsManager)
         overlayManager.show()
@@ -363,7 +371,7 @@ class OverlayManagerRobolectricTest {
             "Overlay window must set FLAG_NOT_TOUCH_MODAL so an in-bounds tap reaches the " +
                 "clickable ImageView (firing handleTap()) while out-of-bounds touches pass " +
                 "through to the camera app (Issue #230 / #397).",
-            (params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL) != 0
+            (params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL) != 0,
         )
     }
 
@@ -377,11 +385,12 @@ class OverlayManagerRobolectricTest {
     @Test
     fun `loadThumbnailBitmap completes without throwing for an inaccessible URI`() {
         val context: Application = ApplicationProvider.getApplicationContext()
-        val prefsManager: PrefsManager = mock {
-            on { galleryPackage } doReturn null
-            on { getOverlayPosition(any()) } doReturn OverlayPosition.default()
-            on { focusableOverlay } doReturn false
-        }
+        val prefsManager: PrefsManager =
+            mock {
+                on { galleryPackage } doReturn null
+                on { getOverlayPosition(any()) } doReturn OverlayPosition.default()
+                on { focusableOverlay } doReturn false
+            }
         val overlayManager = OverlayManager(context, prefsManager)
 
         // A URI with an unregistered authority — this exercises the fallback exception-
@@ -402,18 +411,20 @@ class OverlayManagerRobolectricTest {
     @Test
     fun `loadThumbnailBitmap does not throw for any URI`() {
         val context: Application = ApplicationProvider.getApplicationContext()
-        val prefsManager: PrefsManager = mock {
-            on { galleryPackage } doReturn null
-            on { getOverlayPosition(any()) } doReturn OverlayPosition.default()
-            on { focusableOverlay } doReturn false
-        }
+        val prefsManager: PrefsManager =
+            mock {
+                on { galleryPackage } doReturn null
+                on { getOverlayPosition(any()) } doReturn OverlayPosition.default()
+                on { focusableOverlay } doReturn false
+            }
         val overlayManager = OverlayManager(context, prefsManager)
 
-        val urisToTest = listOf(
-            "content://media/external/images/media/99999",
-            "content://com.gb4pc.unregistered/images/1",
-            "content://invalid",
-        )
+        val urisToTest =
+            listOf(
+                "content://media/external/images/media/99999",
+                "content://com.gb4pc.unregistered/images/1",
+                "content://invalid",
+            )
 
         for (uriString in urisToTest) {
             val uri = android.net.Uri.parse(uriString)
@@ -425,7 +436,7 @@ class OverlayManagerRobolectricTest {
             }
             assertFalse(
                 "loadThumbnailBitmap must not throw for URI: $uriString",
-                threw
+                threw,
             )
         }
     }

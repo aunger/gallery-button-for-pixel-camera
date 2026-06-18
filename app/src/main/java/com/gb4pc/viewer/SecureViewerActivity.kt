@@ -20,28 +20,27 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
-import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import androidx.viewpager2.widget.ViewPager2
 import com.davemorrissey.labs.subscaleview.ImageSource
 import com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView
 import com.gb4pc.R
 import com.gb4pc.util.DebugLog
 import com.google.android.material.snackbar.Snackbar
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Secure filmstrip viewer displayed on top of the lock screen (§5).
  * SF-06: Uses setShowWhenLocked and setTurnScreenOn.
  */
 class SecureViewerActivity : ComponentActivity() {
-
     private lateinit var viewPager: ViewPager2
     private lateinit var emptyMessage: TextView
     private lateinit var shareButton: ImageView
@@ -50,13 +49,17 @@ class SecureViewerActivity : ComponentActivity() {
     private val sessionTracker get() = SessionTracker.instance
 
     // L4: BroadcastReceiver to finish the activity when the device unlocks (SF-15)
-    private val userPresentReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == Intent.ACTION_USER_PRESENT) {
-                finish()
+    private val userPresentReceiver =
+        object : BroadcastReceiver() {
+            override fun onReceive(
+                context: Context?,
+                intent: Intent?,
+            ) {
+                if (intent?.action == Intent.ACTION_USER_PRESENT) {
+                    finish()
+                }
             }
         }
-    }
 
     // C3: ActivityResultLauncher for MediaStore delete request (API 30+ and API 29 recoverable).
     // The launcher must be constructed before STARTED, so it lives on the activity even
@@ -119,58 +122,65 @@ class SecureViewerActivity : ComponentActivity() {
     // This activity reads SessionTracker directly.
 
     private fun setupLayout() {
-        val root = ViewGroup.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT
-        )
+        val root =
+            ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            )
 
         val container = android.widget.FrameLayout(this).apply { layoutParams = root }
         container.setBackgroundColor(0xFF000000.toInt())
 
         // ViewPager2 for horizontal swiping (SF-07)
-        viewPager = ViewPager2(this).apply {
-            layoutParams = ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            )
-        }
+        viewPager =
+            ViewPager2(this).apply {
+                layoutParams =
+                    ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                    )
+            }
         adapter = MediaPagerAdapter()
         viewPager.adapter = adapter
         container.addView(viewPager)
 
         // Empty state message (SF-12)
-        emptyMessage = TextView(this).apply {
-            text = getString(R.string.viewer_no_photos)
-            setTextColor(0xFFFFFFFF.toInt())
-            textSize = 18f
-            gravity = android.view.Gravity.CENTER
-            layoutParams = android.widget.FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            )
-        }
+        emptyMessage =
+            TextView(this).apply {
+                text = getString(R.string.viewer_no_photos)
+                setTextColor(0xFFFFFFFF.toInt())
+                textSize = 18f
+                gravity = android.view.Gravity.CENTER
+                layoutParams =
+                    android.widget.FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                    )
+            }
         container.addView(emptyMessage)
 
         // Share button (SF-11)
-        shareButton = ImageView(this).apply {
-            setImageResource(android.R.drawable.ic_menu_share)
-            setColorFilter(0xFFFFFFFF.toInt())
-            val size = (48 * resources.displayMetrics.density).toInt()
-            val margin = (16 * resources.displayMetrics.density).toInt()
-            layoutParams = android.widget.FrameLayout.LayoutParams(size, size).apply {
-                gravity = android.view.Gravity.TOP or android.view.Gravity.END
-                topMargin = margin
-                marginEnd = margin
+        shareButton =
+            ImageView(this).apply {
+                setImageResource(android.R.drawable.ic_menu_share)
+                setColorFilter(0xFFFFFFFF.toInt())
+                val size = (48 * resources.displayMetrics.density).toInt()
+                val margin = (16 * resources.displayMetrics.density).toInt()
+                layoutParams =
+                    android.widget.FrameLayout.LayoutParams(size, size).apply {
+                        gravity = android.view.Gravity.TOP or android.view.Gravity.END
+                        topMargin = margin
+                        marginEnd = margin
+                    }
+                setPadding(
+                    (8 * resources.displayMetrics.density).toInt(),
+                    (8 * resources.displayMetrics.density).toInt(),
+                    (8 * resources.displayMetrics.density).toInt(),
+                    (8 * resources.displayMetrics.density).toInt(),
+                )
+                setBackgroundResource(android.R.drawable.dialog_holo_dark_frame)
+                setOnClickListener { handleShare() }
             }
-            setPadding(
-                (8 * resources.displayMetrics.density).toInt(),
-                (8 * resources.displayMetrics.density).toInt(),
-                (8 * resources.displayMetrics.density).toInt(),
-                (8 * resources.displayMetrics.density).toInt()
-            )
-            setBackgroundResource(android.R.drawable.dialog_holo_dark_frame)
-            setOnClickListener { handleShare() }
-        }
         container.addView(shareButton)
 
         // Swipe-to-delete via ItemTouchHelper on the ViewPager2's RecyclerView (SF-10)
@@ -186,41 +196,58 @@ class SecureViewerActivity : ComponentActivity() {
             DebugLog.log("setupSwipeToDelete: ViewPager2 child is not a RecyclerView — swipe-to-delete unavailable")
             return
         }
-        val swipeCallback = object : ItemTouchHelper.SimpleCallback(0, ItemTouchHelper.UP or ItemTouchHelper.DOWN) {
-            override fun onMove(rv: RecyclerView, vh: RecyclerView.ViewHolder, target: RecyclerView.ViewHolder) = false
+        val swipeCallback =
+            object : ItemTouchHelper.SimpleCallback(0, ItemTouchHelper.UP or ItemTouchHelper.DOWN) {
+                override fun onMove(
+                    rv: RecyclerView,
+                    vh: RecyclerView.ViewHolder,
+                    target: RecyclerView.ViewHolder,
+                ) = false
 
-            override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {
-                val position = viewHolder.adapterPosition
-                val media = adapter.getItemAt(position) ?: return
-                handleDelete(media, position)
+                override fun onSwiped(
+                    viewHolder: RecyclerView.ViewHolder,
+                    direction: Int,
+                ) {
+                    val position = viewHolder.adapterPosition
+                    val media = adapter.getItemAt(position) ?: return
+                    handleDelete(media, position)
+                }
             }
-        }
         ItemTouchHelper(swipeCallback).attachToRecyclerView(recyclerView)
     }
 
-    private fun handleDelete(media: MediaItem, position: Int) {
+    private fun handleDelete(
+        media: MediaItem,
+        position: Int,
+    ) {
         // Remove from session immediately
         sessionTracker.removeMedia(media.uri)
         refreshMedia()
 
         // SF-10: Show undo snackbar
         val rootView = findViewById<View>(android.R.id.content)
-        Snackbar.make(rootView, R.string.viewer_photo_deleted, Snackbar.LENGTH_LONG)
-            .setDuration(com.gb4pc.Constants.UNDO_TIMEOUT_MS.toInt())
-            .setAction(R.string.viewer_undo) {
+        Snackbar
+            .make(rootView, R.string.viewer_photo_deleted, Snackbar.LENGTH_LONG)
+            .setDuration(
+                com.gb4pc.Constants.UNDO_TIMEOUT_MS
+                    .toInt(),
+            ).setAction(R.string.viewer_undo) {
                 // Undo: re-add to session
                 sessionTracker.addMedia(media)
                 refreshMedia()
-            }
-            .addCallback(object : Snackbar.Callback() {
-                override fun onDismissed(transientBottomBar: Snackbar?, event: Int) {
-                    if (event != DISMISS_EVENT_ACTION) {
-                        // Actually delete from MediaStore
-                        deletionManager.delete(Uri.parse(media.uri))
+            }.addCallback(
+                object : Snackbar.Callback() {
+                    override fun onDismissed(
+                        transientBottomBar: Snackbar?,
+                        event: Int,
+                    ) {
+                        if (event != DISMISS_EVENT_ACTION) {
+                            // Actually delete from MediaStore
+                            deletionManager.delete(Uri.parse(media.uri))
+                        }
                     }
-                }
-            })
-            .show()
+                },
+            ).show()
     }
 
     /**
@@ -232,21 +259,26 @@ class SecureViewerActivity : ComponentActivity() {
         val media = adapter.getItemAt(currentPosition) ?: return
 
         val km = getSystemService(KEYGUARD_SERVICE) as KeyguardManager
-        km.requestDismissKeyguard(this, object : KeyguardManager.KeyguardDismissCallback() {
-            override fun onDismissSucceeded() {
-                runOnUiThread {
-                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                        type = if (media.isVideo) "video/*" else "image/*"
-                        putExtra(Intent.EXTRA_STREAM, Uri.parse(media.uri))
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        km.requestDismissKeyguard(
+            this,
+            object : KeyguardManager.KeyguardDismissCallback() {
+                override fun onDismissSucceeded() {
+                    runOnUiThread {
+                        val shareIntent =
+                            Intent(Intent.ACTION_SEND).apply {
+                                type = if (media.isVideo) "video/*" else "image/*"
+                                putExtra(Intent.EXTRA_STREAM, Uri.parse(media.uri))
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                        startActivity(Intent.createChooser(shareIntent, null))
                     }
-                    startActivity(Intent.createChooser(shareIntent, null))
                 }
-            }
 
-            override fun onDismissError() {}
-            override fun onDismissCancelled() {}
-        })
+                override fun onDismissError() {}
+
+                override fun onDismissCancelled() {}
+            },
+        )
     }
 
     private fun refreshMedia() {
@@ -261,20 +293,27 @@ class SecureViewerActivity : ComponentActivity() {
      * L6: ViewPager2 adapter using ListAdapter + DiffUtil for efficient updates.
      */
     inner class MediaPagerAdapter : ListAdapter<MediaItem, MediaPagerAdapter.MediaViewHolder>(DIFF_CALLBACK) {
-
         fun getItemAt(position: Int): MediaItem? = if (position in 0 until itemCount) getItem(position) else null
 
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): MediaViewHolder {
-            val container = FrameLayout(parent.context).apply {
-                layoutParams = ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT
-                )
-            }
+        override fun onCreateViewHolder(
+            parent: ViewGroup,
+            viewType: Int,
+        ): MediaViewHolder {
+            val container =
+                FrameLayout(parent.context).apply {
+                    layoutParams =
+                        ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                        )
+                }
             return MediaViewHolder(container)
         }
 
-        override fun onBindViewHolder(holder: MediaViewHolder, position: Int) {
+        override fun onBindViewHolder(
+            holder: MediaViewHolder,
+            position: Int,
+        ) {
             // Cancel any pending load from a previous bind of this holder
             holder.loadJob?.cancel()
             holder.loadJob = null
@@ -287,24 +326,28 @@ class SecureViewerActivity : ComponentActivity() {
                 val uri = Uri.parse(item.uri)
                 if (item.isVideo) {
                     // SF-09: Show video thumbnail with play button overlay
-                    val imageView = ImageView(container.context).apply {
-                        layoutParams = FrameLayout.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.MATCH_PARENT
-                        )
-                        scaleType = ImageView.ScaleType.FIT_CENTER
-                    }
+                    val imageView =
+                        ImageView(container.context).apply {
+                            layoutParams =
+                                FrameLayout.LayoutParams(
+                                    ViewGroup.LayoutParams.MATCH_PARENT,
+                                    ViewGroup.LayoutParams.MATCH_PARENT,
+                                )
+                            scaleType = ImageView.ScaleType.FIT_CENTER
+                        }
                     container.addView(imageView)
 
                     // SF-09: Play button icon overlay
-                    val playIcon = ImageView(container.context).apply {
-                        setImageResource(android.R.drawable.ic_media_play)
-                        setColorFilter(0xCCFFFFFF.toInt())
-                        val iconSize = (64 * resources.displayMetrics.density).toInt()
-                        layoutParams = FrameLayout.LayoutParams(iconSize, iconSize).apply {
-                            gravity = android.view.Gravity.CENTER
+                    val playIcon =
+                        ImageView(container.context).apply {
+                            setImageResource(android.R.drawable.ic_media_play)
+                            setColorFilter(0xCCFFFFFF.toInt())
+                            val iconSize = (64 * resources.displayMetrics.density).toInt()
+                            layoutParams =
+                                FrameLayout.LayoutParams(iconSize, iconSize).apply {
+                                    gravity = android.view.Gravity.CENTER
+                                }
                         }
-                    }
                     container.addView(playIcon)
 
                     container.setOnClickListener {
@@ -312,64 +355,78 @@ class SecureViewerActivity : ComponentActivity() {
                     }
 
                     // Decode thumbnail on IO thread, then set on main thread
-                    holder.loadJob = lifecycleScope.launch {
-                        val bitmap = withContext(Dispatchers.IO) {
-                            try { loadBitmap(uri) } catch (e: Exception) {
-                                DebugLog.log("Failed to load video thumbnail: ${e.message}")
-                                null
-                            }
+                    holder.loadJob =
+                        lifecycleScope.launch {
+                            val bitmap =
+                                withContext(Dispatchers.IO) {
+                                    try {
+                                        loadBitmap(uri)
+                                    } catch (e: Exception) {
+                                        DebugLog.log("Failed to load video thumbnail: ${e.message}")
+                                        null
+                                    }
+                                }
+                            imageView.setImageBitmap(bitmap)
                         }
-                        imageView.setImageBitmap(bitmap)
-                    }
                 } else {
                     // SF-08: Use SubsamplingScaleImageView for pinch-to-zoom
-                    val scaleView = SubsamplingScaleImageView(container.context).apply {
-                        layoutParams = FrameLayout.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.MATCH_PARENT
-                        )
-                        setMinimumDpi(80)
-                        setDoubleTapZoomDpi(240)
-                    }
+                    val scaleView =
+                        SubsamplingScaleImageView(container.context).apply {
+                            layoutParams =
+                                FrameLayout.LayoutParams(
+                                    ViewGroup.LayoutParams.MATCH_PARENT,
+                                    ViewGroup.LayoutParams.MATCH_PARENT,
+                                )
+                            setMinimumDpi(80)
+                            setDoubleTapZoomDpi(240)
+                        }
                     scaleView.setImage(ImageSource.uri(uri))
                     container.addView(scaleView)
                 }
             } catch (e: Exception) {
                 DebugLog.log("Failed to load media: ${e.message}")
-                val errorView = ImageView(container.context).apply {
-                    layoutParams = FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT
-                    )
-                    setImageResource(android.R.drawable.ic_menu_report_image)
-                    scaleType = ImageView.ScaleType.CENTER
-                }
+                val errorView =
+                    ImageView(container.context).apply {
+                        layoutParams =
+                            FrameLayout.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                            )
+                        setImageResource(android.R.drawable.ic_menu_report_image)
+                        scaleType = ImageView.ScaleType.CENTER
+                    }
                 container.addView(errorView)
             }
         }
 
-        private fun loadBitmap(uri: Uri): android.graphics.Bitmap? {
-            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        private fun loadBitmap(uri: Uri): android.graphics.Bitmap? =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 contentResolver.loadThumbnail(uri, android.util.Size(1024, 1024), null)
             } else {
                 @Suppress("DEPRECATION")
                 MediaStore.Images.Media.getBitmap(contentResolver, uri)
             }
-        }
 
-        inner class MediaViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+        inner class MediaViewHolder(
+            view: View,
+        ) : RecyclerView.ViewHolder(view) {
             var loadJob: Job? = null
         }
     }
 
     companion object {
         // L6: DiffUtil callback — items are the same if they share the same URI
-        val DIFF_CALLBACK = object : DiffUtil.ItemCallback<MediaItem>() {
-            override fun areItemsTheSame(oldItem: MediaItem, newItem: MediaItem): Boolean =
-                oldItem.uri == newItem.uri
+        val DIFF_CALLBACK =
+            object : DiffUtil.ItemCallback<MediaItem>() {
+                override fun areItemsTheSame(
+                    oldItem: MediaItem,
+                    newItem: MediaItem,
+                ): Boolean = oldItem.uri == newItem.uri
 
-            override fun areContentsTheSame(oldItem: MediaItem, newItem: MediaItem): Boolean =
-                oldItem == newItem
-        }
+                override fun areContentsTheSame(
+                    oldItem: MediaItem,
+                    newItem: MediaItem,
+                ): Boolean = oldItem == newItem
+            }
     }
 }

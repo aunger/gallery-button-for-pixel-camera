@@ -18,6 +18,7 @@ import check_allowed_failures as caf  # noqa: E402
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _write(directory: Path, filename: str, content: str) -> Path:
     path = directory / filename
     path.write_text(textwrap.dedent(content), encoding="utf-8")
@@ -65,6 +66,7 @@ SKIPPED_XML = """\
 # Allowlist loading
 # ---------------------------------------------------------------------------
 
+
 class LoadAllowlistTests(unittest.TestCase):
     def test_missing_file_returns_empty_set(self):
         self.assertEqual(caf.load_allowlist(None), set())
@@ -72,13 +74,17 @@ class LoadAllowlistTests(unittest.TestCase):
 
     def test_parses_entries_and_strips_comments(self):
         with tempfile.TemporaryDirectory() as d:
-            path = _write(Path(d), "allow.txt", """\
+            path = _write(
+                Path(d),
+                "allow.txt",
+                """\
                 # a header comment
                 com.example.BarTest#testD
 
                 com.example.FooTest      # inline comment
                   com.example.BazTest#testE
-            """)
+            """,
+            )
             self.assertEqual(
                 caf.load_allowlist(path),
                 {
@@ -92,9 +98,13 @@ class LoadAllowlistTests(unittest.TestCase):
         # The `#` separating class from method must survive, even when the line
         # also carries a whitespace-preceded inline comment.
         with tempfile.TemporaryDirectory() as d:
-            path = _write(Path(d), "allow.txt", """\
+            path = _write(
+                Path(d),
+                "allow.txt",
+                """\
                 com.example.BarTest#testD   # flaky, see #123
-            """)
+            """,
+            )
             self.assertEqual(
                 caf.load_allowlist(path),
                 {"com.example.BarTest#testD"},
@@ -119,6 +129,7 @@ class IsAllowedTests(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Parsing
 # ---------------------------------------------------------------------------
+
 
 class ParseFailuresTests(unittest.TestCase):
     def test_collects_failures_and_errors_but_not_passes_or_skips(self):
@@ -145,6 +156,7 @@ class ParseFailuresTests(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # main() exit codes
 # ---------------------------------------------------------------------------
+
 
 class MainExitCodeTests(unittest.TestCase):
     def _run(self, argv):
@@ -175,10 +187,15 @@ class MainExitCodeTests(unittest.TestCase):
             directory = Path(d)
             _write(directory, "TEST-fail.xml", FAILING_XML)
             allow = _write(directory, "allow.txt", "com.example.BarTest#testD\n")
-            code, out = self._run([
-                "--allowlist", str(allow),
-                str(directory), "--suite-label", "Unit Tests",
-            ])
+            code, out = self._run(
+                [
+                    "--allowlist",
+                    str(allow),
+                    str(directory),
+                    "--suite-label",
+                    "Unit Tests",
+                ]
+            )
             self.assertEqual(code, 0)
             self.assertIn("allowlisted", out)
 
@@ -187,10 +204,15 @@ class MainExitCodeTests(unittest.TestCase):
             directory = Path(d)
             _write(directory, "TEST-fail.xml", FAILING_XML)
             allow = _write(directory, "allow.txt", "com.example.BarTest\n")
-            code, _ = self._run([
-                "--allowlist", str(allow),
-                str(directory), "--suite-label", "Unit Tests",
-            ])
+            code, _ = self._run(
+                [
+                    "--allowlist",
+                    str(allow),
+                    str(directory),
+                    "--suite-label",
+                    "Unit Tests",
+                ]
+            )
             self.assertEqual(code, 0)
 
     def test_fails_when_one_of_several_failures_is_not_allowlisted(self):
@@ -199,10 +221,15 @@ class MainExitCodeTests(unittest.TestCase):
             _write(directory, "TEST-fail.xml", FAILING_XML)
             _write(directory, "TEST-error.xml", ERROR_XML)
             allow = _write(directory, "allow.txt", "com.example.BarTest#testD\n")
-            code, out = self._run([
-                "--allowlist", str(allow),
-                str(directory), "--suite-label", "Unit Tests",
-            ])
+            code, out = self._run(
+                [
+                    "--allowlist",
+                    str(allow),
+                    str(directory),
+                    "--suite-label",
+                    "Unit Tests",
+                ]
+            )
             self.assertEqual(code, 1)
             self.assertIn("com.example.BazTest#testE", out)
 
@@ -217,9 +244,15 @@ class MainExitCodeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             directory = Path(d)
             _write(directory, "TEST-pass.xml", PASSING_XML)
-            code, out = self._run([
-                str(directory), "--suite-label", "E2E Tests", "--outcome", "failure",
-            ])
+            code, out = self._run(
+                [
+                    str(directory),
+                    "--suite-label",
+                    "E2E Tests",
+                    "--outcome",
+                    "failure",
+                ]
+            )
             self.assertEqual(code, 1)
             self.assertIn("infrastructure", out)
             self.assertIn("E2E Tests", out)
@@ -231,19 +264,32 @@ class MainExitCodeTests(unittest.TestCase):
             directory = Path(d)
             _write(directory, "TEST-fail.xml", FAILING_XML)
             allow = _write(directory, "allow.txt", "com.example.BarTest#testD\n")
-            code, _ = self._run([
-                "--allowlist", str(allow),
-                str(directory), "--suite-label", "E2E Tests", "--outcome", "failure",
-            ])
+            code, _ = self._run(
+                [
+                    "--allowlist",
+                    str(allow),
+                    str(directory),
+                    "--suite-label",
+                    "E2E Tests",
+                    "--outcome",
+                    "failure",
+                ]
+            )
             self.assertEqual(code, 0)
 
     def test_success_outcome_is_not_an_infra_failure(self):
         with tempfile.TemporaryDirectory() as d:
             directory = Path(d)
             _write(directory, "TEST-pass.xml", PASSING_XML)
-            code, _ = self._run([
-                str(directory), "--suite-label", "Unit Tests", "--outcome", "success",
-            ])
+            code, _ = self._run(
+                [
+                    str(directory),
+                    "--suite-label",
+                    "Unit Tests",
+                    "--outcome",
+                    "success",
+                ]
+            )
             self.assertEqual(code, 0)
 
 
@@ -259,11 +305,18 @@ class ParseArgsTests(unittest.TestCase):
         self.assertEqual(cm.exception.code, 2)
 
     def test_parses_allowlist_and_specs(self):
-        allowlist, specs = caf.parse_args([
-            "--allowlist", "a.txt",
-            "dir1", "--suite-label", "Unit Tests",
-            "dir2", "--suite-label", "E2E Tests",
-        ])
+        allowlist, specs = caf.parse_args(
+            [
+                "--allowlist",
+                "a.txt",
+                "dir1",
+                "--suite-label",
+                "Unit Tests",
+                "dir2",
+                "--suite-label",
+                "E2E Tests",
+            ]
+        )
         self.assertEqual(allowlist, Path("a.txt"))
         self.assertEqual(
             specs,
@@ -274,10 +327,20 @@ class ParseArgsTests(unittest.TestCase):
         )
 
     def test_parses_outcome(self):
-        _, specs = caf.parse_args([
-            "dir1", "--suite-label", "Unit Tests", "--outcome", "success",
-            "dir2", "--suite-label", "E2E Tests", "--outcome", "failure",
-        ])
+        _, specs = caf.parse_args(
+            [
+                "dir1",
+                "--suite-label",
+                "Unit Tests",
+                "--outcome",
+                "success",
+                "dir2",
+                "--suite-label",
+                "E2E Tests",
+                "--outcome",
+                "failure",
+            ]
+        )
         self.assertEqual(
             specs,
             [

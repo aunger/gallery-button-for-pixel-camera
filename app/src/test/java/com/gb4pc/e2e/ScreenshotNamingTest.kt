@@ -8,27 +8,28 @@ import org.junit.Test
  * screenshot filenames with the test that produced them (issue #201).
  */
 class ScreenshotNamingTest {
-
     // ── buildPrefix ───────────────────────────────────────────────────────────
 
     @Test
     fun `buildPrefix combines class and method name with underscore`() {
-        val prefix = ScreenshotNaming.buildPrefix(
-            simpleClassName = "PixelCameraOverlayE2ETest",
-            methodName = "overlayAppearsWhenViewfinderOpens"
-        )
+        val prefix =
+            ScreenshotNaming.buildPrefix(
+                simpleClassName = "PixelCameraOverlayE2ETest",
+                methodName = "overlayAppearsWhenViewfinderOpens",
+            )
         assertEquals(
             "PixelCameraOverlayE2ETest_overlayAppearsWhenViewfinderOpens",
-            prefix
+            prefix,
         )
     }
 
     @Test
     fun `buildPrefix handles numbered method names`() {
-        val prefix = ScreenshotNaming.buildPrefix(
-            simpleClassName = "GalleryButtonVisualE2ETest",
-            methodName = "test0_smokeGreenFeedVisible"
-        )
+        val prefix =
+            ScreenshotNaming.buildPrefix(
+                simpleClassName = "GalleryButtonVisualE2ETest",
+                methodName = "test0_smokeGreenFeedVisible",
+            )
         assertEquals("GalleryButtonVisualE2ETest_test0_smokeGreenFeedVisible", prefix)
     }
 
@@ -42,13 +43,14 @@ class ScreenshotNamingTest {
 
     @Test
     fun `resolvedName with prefix prepends prefix and underscore`() {
-        val name = ScreenshotNaming.resolvedName(
-            testPrefix = "PixelCameraOverlayE2ETest_overlayAppearsWhenViewfinderOpens",
-            baseName = "failure.png"
-        )
+        val name =
+            ScreenshotNaming.resolvedName(
+                testPrefix = "PixelCameraOverlayE2ETest_overlayAppearsWhenViewfinderOpens",
+                baseName = "failure.png",
+            )
         assertEquals(
             "PixelCameraOverlayE2ETest_overlayAppearsWhenViewfinderOpens_failure.png",
-            name
+            name,
         )
     }
 
@@ -56,25 +58,27 @@ class ScreenshotNamingTest {
     fun `resolvedName with prefix matches issue example format`() {
         // Issue #201 example: "failure_screenshot.png" →
         //   "PixelCameraOverlayE2ETest_overlayAppearsWhenViewfinderOpens_failure_screenshot.png"
-        val name = ScreenshotNaming.resolvedName(
-            testPrefix = "PixelCameraOverlayE2ETest_overlayAppearsWhenViewfinderOpens",
-            baseName = "failure_screenshot.png"
-        )
+        val name =
+            ScreenshotNaming.resolvedName(
+                testPrefix = "PixelCameraOverlayE2ETest_overlayAppearsWhenViewfinderOpens",
+                baseName = "failure_screenshot.png",
+            )
         assertEquals(
             "PixelCameraOverlayE2ETest_overlayAppearsWhenViewfinderOpens_failure_screenshot.png",
-            name
+            name,
         )
     }
 
     @Test
     fun `resolvedName with prefix on numbered screenshot name`() {
-        val name = ScreenshotNaming.resolvedName(
-            testPrefix = "GalleryButtonVisualE2ETest_test0_smokeGreenFeedVisible",
-            baseName = "0-screen.png"
-        )
+        val name =
+            ScreenshotNaming.resolvedName(
+                testPrefix = "GalleryButtonVisualE2ETest_test0_smokeGreenFeedVisible",
+                baseName = "0-screen.png",
+            )
         assertEquals(
             "GalleryButtonVisualE2ETest_test0_smokeGreenFeedVisible_0-screen.png",
-            name
+            name,
         )
     }
 

@@ -151,9 +151,10 @@ class E2EFixture(
         waitForCondition(LAUNCH_BASELINE_MS) { !OverlayService.isOverlayActive }
         repeat(LAUNCH_ATTEMPTS) { attempt ->
             Log.i(TAG, "launchPixelCamera: am start attempt ${attempt + 1}/$LAUNCH_ATTEMPTS")
-            uiAutomation.executeShellCommand(
-                "am start -a android.media.action.STILL_IMAGE_CAMERA -p $pcPackage"
-            ).close()
+            uiAutomation
+                .executeShellCommand(
+                    "am start -a android.media.action.STILL_IMAGE_CAMERA -p $pcPackage",
+                ).close()
             // The first attempt gets the full healthy-activation window so a slow-but-healthy
             // launch is never mistaken for a failed one and re-issued (which would itself race the
             // OPEN transition). Only the teardown failure mode survives that window, and recovery
@@ -169,15 +170,15 @@ class E2EFixture(
                 // keyguard (the screen can re-sleep between attempts) and try again.
                 Log.w(
                     TAG,
-                    "launchPixelCamera: overlay still inactive after ${verifyMs} ms on attempt " +
-                        "${attempt + 1} (first-launch teardown race); re-issuing am start"
+                    "launchPixelCamera: overlay still inactive after $verifyMs ms on attempt " +
+                        "${attempt + 1} (first-launch teardown race); re-issuing am start",
                 )
                 wakeAndDismissKeyguard()
             } else {
                 Log.w(
                     TAG,
                     "launchPixelCamera: overlay still inactive after $LAUNCH_ATTEMPTS attempts; " +
-                        "letting the caller's own assertion fail"
+                        "letting the caller's own assertion fail",
                 )
             }
         }
@@ -197,16 +198,17 @@ class E2EFixture(
      * activity's options/overflow menu, obscuring the camera View.
      */
     fun wakeAndDismissKeyguard() {
-        uiAutomation.executeShellCommand("input keyevent 224").close()  // KEYCODE_WAKEUP
+        uiAutomation.executeShellCommand("input keyevent 224").close() // KEYCODE_WAKEUP
         Thread.sleep(300)
         uiAutomation.executeShellCommand("input swipe 300 1000 300 300").close()
         Thread.sleep(300)
     }
 
     fun goHome() {
-        uiAutomation.executeShellCommand(
-            "am start -a android.intent.action.MAIN -c android.intent.category.HOME"
-        ).close()
+        uiAutomation
+            .executeShellCommand(
+                "am start -a android.intent.action.MAIN -c android.intent.category.HOME",
+            ).close()
     }
 
     fun stopPixelCamera() {
@@ -225,7 +227,10 @@ class E2EFixture(
      * Polls [condition] every 100 ms until it returns true or [timeoutMs] elapses. Returns
      * the final value of [condition].
      */
-    fun waitForCondition(timeoutMs: Long, condition: () -> Boolean): Boolean {
+    fun waitForCondition(
+        timeoutMs: Long,
+        condition: () -> Boolean,
+    ): Boolean {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
             if (condition()) return true
@@ -271,22 +276,23 @@ class E2EFixture(
         context.contentResolver.delete(
             MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
             null,
-            null
+            null,
         )
-        val cursor = context.contentResolver.query(
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            arrayOf(MediaStore.Images.Media._ID),
-            "${MediaStore.Images.Media.OWNER_PACKAGE_NAME} = ?",
-            arrayOf(context.packageName),
-            null
-        )
+        val cursor =
+            context.contentResolver.query(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                arrayOf(MediaStore.Images.Media._ID),
+                "${MediaStore.Images.Media.OWNER_PACKAGE_NAME} = ?",
+                arrayOf(context.packageName),
+                null,
+            )
         val count = cursor?.count ?: 0
         cursor?.close()
         assertEquals(
             "MediaStore should contain no rows owned by ${context.packageName} " +
                 "after clearCameraRoll()",
             0,
-            count
+            count,
         )
     }
 
@@ -315,13 +321,17 @@ class E2EFixture(
 
         // Listen for ACTION_SHUTTER_DONE so we know the mock camera finished writing.
         val latch = CountDownLatch(1)
-        val receiver = object : BroadcastReceiver() {
-            override fun onReceive(ctx: Context, intent: Intent) {
-                if (intent.action == actionShutterDone) {
-                    latch.countDown()
+        val receiver =
+            object : BroadcastReceiver() {
+                override fun onReceive(
+                    ctx: Context,
+                    intent: Intent,
+                ) {
+                    if (intent.action == actionShutterDone) {
+                        latch.countDown()
+                    }
                 }
             }
-        }
         val filter = IntentFilter(actionShutterDone)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             // RECEIVER_EXPORTED is required so MockCameraActivity (running under the
@@ -355,14 +365,16 @@ class E2EFixture(
 
         if (!appeared) {
             // Fall back: trigger a media scan in case the indexer hasn't picked up the file.
-            val dcimPath = Environment.getExternalStoragePublicDirectory(
-                Environment.DIRECTORY_DCIM
-            ).absolutePath
+            val dcimPath =
+                Environment
+                    .getExternalStoragePublicDirectory(
+                        Environment.DIRECTORY_DCIM,
+                    ).absolutePath
             val scanLatch = CountDownLatch(1)
             MediaScannerConnection.scanFile(
                 context,
                 arrayOf(dcimPath),
-                arrayOf("image/jpeg")
+                arrayOf("image/jpeg"),
             ) { _, _ -> scanLatch.countDown() }
             scanLatch.await(5, TimeUnit.SECONDS)
 
@@ -370,7 +382,7 @@ class E2EFixture(
             if (!appearedAfterScan) {
                 fail(
                     "captureOnePhoto(): new image row did not appear in MediaStore within 15 s " +
-                        "(even after MediaScannerConnection.scanFile fallback)"
+                        "(even after MediaScannerConnection.scanFile fallback)",
                 )
             }
         }
@@ -411,10 +423,11 @@ class E2EFixture(
      * @throws AssertionError if the keyguard does not engage within 5 seconds.
      */
     fun lockScreen() {
-        uiAutomation.executeShellCommand("input keyevent 223").close()  // KEYCODE_SLEEP
-        val locked = waitForCondition(5_000L) {
-            (context.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager).isKeyguardLocked
-        }
+        uiAutomation.executeShellCommand("input keyevent 223").close() // KEYCODE_SLEEP
+        val locked =
+            waitForCondition(5_000L) {
+                (context.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager).isKeyguardLocked
+            }
         if (!locked) {
             fail("lockScreen(): KeyguardManager.isKeyguardLocked did not become true within 5 s")
         }
@@ -431,9 +444,10 @@ class E2EFixture(
      * Call [lockScreen] before this method to guarantee the device is locked first.
      */
     fun launchSecureCamera() {
-        uiAutomation.executeShellCommand(
-            "am start -a android.media.action.STILL_IMAGE_CAMERA_SECURE"
-        ).close()
+        uiAutomation
+            .executeShellCommand(
+                "am start -a android.media.action.STILL_IMAGE_CAMERA_SECURE",
+            ).close()
 
         val keyguard = context.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
         if (!keyguard.isKeyguardLocked) {
@@ -441,7 +455,7 @@ class E2EFixture(
                 "launchSecureCamera(): KeyguardManager.isKeyguardLocked == false after launching " +
                     "STILL_IMAGE_CAMERA_SECURE — the adb path dismissed the keyguard. " +
                     "Call lockScreen() before launchSecureCamera() and confirm the emulator " +
-                    "honours the secure-camera launch path."
+                    "honours the secure-camera launch path.",
             )
         }
     }
@@ -494,8 +508,8 @@ class E2EFixture(
         if (!appeared) {
             fail(
                 "waitForOverlayActive: OverlayService.isOverlayActive did not become true " +
-                    "within ${timeoutMs} ms. Check that the service started, permissions are " +
-                    "granted, and Pixel Camera is in the foreground."
+                    "within $timeoutMs ms. Check that the service started, permissions are " +
+                    "granted, and Pixel Camera is in the foreground.",
             )
         }
     }
@@ -524,12 +538,13 @@ class E2EFixture(
             val w = screen.width
             val h = screen.height
             val margin = (1f - 0.60f) / 2f
-            val region = android.graphics.Rect(
-                (w * margin).toInt(),
-                (h * margin).toInt(),
-                (w * (1f - margin)).toInt(),
-                (h * (1f - margin)).toInt()
-            )
+            val region =
+                android.graphics.Rect(
+                    (w * margin).toInt(),
+                    (h * margin).toInt(),
+                    (w * (1f - margin)).toInt(),
+                    (h * (1f - margin)).toInt(),
+                )
             val greenMask = ColorMatch.mask(screen, Rgb.GREEN)
             val coverage = ColorMatch.coverageFraction(greenMask, region)
             lastCoverage = coverage
@@ -542,18 +557,21 @@ class E2EFixture(
     // ── Private helpers ───────────────────────────────────────────────────────
 
     private fun countMediaStoreImages(): Int {
-        val cursor = context.contentResolver.query(
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            arrayOf(MediaStore.Images.Media._ID),
-            null, null, null
-        )
+        val cursor =
+            context.contentResolver.query(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                arrayOf(MediaStore.Images.Media._ID),
+                null,
+                null,
+                null,
+            )
         val count = cursor?.count ?: 0
         cursor?.close()
         return count
     }
 
-    internal fun displaySize(): Pair<Int, Int> {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+    internal fun displaySize(): Pair<Int, Int> =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val wm = context.getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
             val bounds = wm.currentWindowMetrics.bounds
             bounds.width() to bounds.height()
@@ -564,7 +582,6 @@ class E2EFixture(
             wm.defaultDisplay.getMetrics(dm)
             dm.widthPixels to dm.heightPixels
         }
-    }
 
     private fun ensurePixelCameraInstalled() {
         try {
@@ -573,7 +590,7 @@ class E2EFixture(
             fail(
                 "Pixel Camera ($pcPackage) is not installed. " +
                     "Run 'scripts/setup-e2e-emulator.sh' (or 'adb install e2e/pixel-camera.apk') " +
-                    "before executing the E2E suite."
+                    "before executing the E2E suite.",
             )
         }
     }

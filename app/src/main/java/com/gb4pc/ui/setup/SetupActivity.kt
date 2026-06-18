@@ -28,7 +28,6 @@ import com.gb4pc.util.PermissionHelper
  * Guided setup flow activity (§2.2, PM-01 through PM-05).
  */
 class SetupActivity : ComponentActivity() {
-
     private lateinit var prefsManager: PrefsManager
     private val steps: List<SetupStep> = getSetupSteps()
     private var currentIndex: Int = 0
@@ -49,9 +48,10 @@ class SetupActivity : ComponentActivity() {
         }
     }
 
-    private val notificationPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { /* Handled in onResume */ }
+    private val notificationPermissionLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.RequestPermission(),
+        ) { /* Handled in onResume */ }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -75,12 +75,13 @@ class SetupActivity : ComponentActivity() {
         }
     }
 
-    private fun isCurrentStepGranted(): Boolean = when (currentStep) {
-        SetupStep.NOTIFICATION -> PermissionHelper.hasNotificationPermission(this)
-        SetupStep.USAGE_ACCESS -> PermissionHelper.hasUsageStatsPermission(this)
-        SetupStep.OVERLAY -> PermissionHelper.hasOverlayPermission(this)
-        SetupStep.BATTERY -> PermissionHelper.isBatteryOptimizationExcluded(this)
-    }
+    private fun isCurrentStepGranted(): Boolean =
+        when (currentStep) {
+            SetupStep.NOTIFICATION -> PermissionHelper.hasNotificationPermission(this)
+            SetupStep.USAGE_ACCESS -> PermissionHelper.hasUsageStatsPermission(this)
+            SetupStep.OVERLAY -> PermissionHelper.hasOverlayPermission(this)
+            SetupStep.BATTERY -> PermissionHelper.isBatteryOptimizationExcluded(this)
+        }
 
     private fun updateUI() {
         if (isCompleted) return
@@ -98,7 +99,7 @@ class SetupActivity : ComponentActivity() {
                         } else {
                             updateUI()
                         }
-                    }
+                    },
                 )
             }
         }
@@ -111,23 +112,26 @@ class SetupActivity : ComponentActivity() {
                     notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                 }
             }
+
             SetupStep.USAGE_ACCESS -> {
                 startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
             }
+
             SetupStep.OVERLAY -> {
                 startActivity(
                     Intent(
                         Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse("package:$packageName")
-                    )
+                        Uri.parse("package:$packageName"),
+                    ),
                 )
             }
+
             SetupStep.BATTERY -> {
                 startActivity(
                     Intent(
                         Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                        Uri.parse("package:$packageName")
-                    )
+                        Uri.parse("package:$packageName"),
+                    ),
                 )
             }
         }
@@ -138,75 +142,88 @@ class SetupActivity : ComponentActivity() {
 fun SetupScreen(
     currentStep: SetupStep,
     onGrantClick: () -> Unit,
-    onSkipClick: () -> Unit
+    onSkipClick: () -> Unit,
 ) {
-    val (title, description, buttonText) = when (currentStep) {
-        SetupStep.NOTIFICATION -> Triple(
-            stringResource(R.string.setup_notification_title),
-            stringResource(R.string.setup_notification_desc),
-            stringResource(R.string.setup_notification_button)
-        )
-        SetupStep.USAGE_ACCESS -> Triple(
-            stringResource(R.string.setup_usage_access_title),
-            stringResource(R.string.setup_usage_access_desc),
-            stringResource(R.string.setup_usage_access_button)
-        )
-        SetupStep.OVERLAY -> Triple(
-            stringResource(R.string.setup_overlay_title),
-            stringResource(R.string.setup_overlay_desc),
-            stringResource(R.string.setup_overlay_button)
-        )
-        SetupStep.BATTERY -> Triple(
-            stringResource(R.string.setup_battery_title),
-            stringResource(R.string.setup_battery_desc),
-            stringResource(R.string.setup_battery_button)
-        )
-    }
+    val (title, description, buttonText) =
+        when (currentStep) {
+            SetupStep.NOTIFICATION -> {
+                Triple(
+                    stringResource(R.string.setup_notification_title),
+                    stringResource(R.string.setup_notification_desc),
+                    stringResource(R.string.setup_notification_button),
+                )
+            }
+
+            SetupStep.USAGE_ACCESS -> {
+                Triple(
+                    stringResource(R.string.setup_usage_access_title),
+                    stringResource(R.string.setup_usage_access_desc),
+                    stringResource(R.string.setup_usage_access_button),
+                )
+            }
+
+            SetupStep.OVERLAY -> {
+                Triple(
+                    stringResource(R.string.setup_overlay_title),
+                    stringResource(R.string.setup_overlay_desc),
+                    stringResource(R.string.setup_overlay_button),
+                )
+            }
+
+            SetupStep.BATTERY -> {
+                Triple(
+                    stringResource(R.string.setup_battery_title),
+                    stringResource(R.string.setup_battery_desc),
+                    stringResource(R.string.setup_battery_button),
+                )
+            }
+        }
 
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(32.dp),
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(32.dp),
             verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
                 text = stringResource(R.string.setup_title),
                 style = MaterialTheme.typography.headlineSmall,
-                modifier = Modifier.padding(bottom = 48.dp)
+                modifier = Modifier.padding(bottom = 48.dp),
             )
 
             Icon(
                 Icons.Default.CheckCircle,
                 contentDescription = null,
                 modifier = Modifier.size(64.dp).padding(bottom = 16.dp),
-                tint = MaterialTheme.colorScheme.primary
+                tint = MaterialTheme.colorScheme.primary,
             )
 
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.padding(bottom = 16.dp)
+                modifier = Modifier.padding(bottom = 16.dp),
             )
 
             Text(
                 text = description,
                 style = MaterialTheme.typography.bodyMedium,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.padding(bottom = 32.dp)
+                modifier = Modifier.padding(bottom = 32.dp),
             )
 
             Button(
                 onClick = onGrantClick,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(buttonText)
             }
 
             TextButton(
                 onClick = onSkipClick,
-                modifier = Modifier.padding(top = 16.dp)
+                modifier = Modifier.padding(top = 16.dp),
             ) {
                 Text(stringResource(R.string.setup_skip))
             }

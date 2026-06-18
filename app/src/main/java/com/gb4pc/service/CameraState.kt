@@ -8,7 +8,6 @@ import java.util.concurrent.ConcurrentHashMap
  * Thread-safe: camera callbacks may interleave with foreground evaluation.
  */
 class CameraState {
-
     private val unavailableCameras: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
     fun setCameraUnavailable(cameraId: String) {

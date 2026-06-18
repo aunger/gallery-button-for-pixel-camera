@@ -84,7 +84,7 @@ class MediaDeletionManager(
             try {
                 pendingUri = uri
                 launchDeleteRequest(
-                    IntentSenderRequest.Builder(e.userAction.actionIntent.intentSender).build()
+                    IntentSenderRequest.Builder(e.userAction.actionIntent.intentSender).build(),
                 )
             } catch (inner: Exception) {
                 DebugLog.log("Could not launch delete permission UI: ${inner.message}")

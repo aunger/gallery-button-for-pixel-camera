@@ -9,7 +9,7 @@ import com.gb4pc.Constants
 class OverlayPosition private constructor(
     val xPercent: Float,
     val yPercent: Float,
-    val sizePercent: Float
+    val sizePercent: Float,
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -27,18 +27,22 @@ class OverlayPosition private constructor(
     override fun toString(): String = "OverlayPosition(x=$xPercent%, y=$yPercent%, size=$sizePercent%)"
 
     companion object {
-        fun default() = OverlayPosition(
-            xPercent = Constants.DEFAULT_X_PERCENT,
-            yPercent = Constants.DEFAULT_Y_PERCENT,
-            sizePercent = Constants.DEFAULT_SIZE_PERCENT
-        )
+        fun default() =
+            OverlayPosition(
+                xPercent = Constants.DEFAULT_X_PERCENT,
+                yPercent = Constants.DEFAULT_Y_PERCENT,
+                sizePercent = Constants.DEFAULT_SIZE_PERCENT,
+            )
 
-        operator fun invoke(xPercent: Float, yPercent: Float, sizePercent: Float): OverlayPosition {
-            return OverlayPosition(
+        operator fun invoke(
+            xPercent: Float,
+            yPercent: Float,
+            sizePercent: Float,
+        ): OverlayPosition =
+            OverlayPosition(
                 xPercent = xPercent.coerceIn(0f, 100f),
                 yPercent = yPercent.coerceIn(0f, 100f),
-                sizePercent = sizePercent.coerceIn(Constants.MIN_SIZE_PERCENT, Constants.MAX_SIZE_PERCENT)
+                sizePercent = sizePercent.coerceIn(Constants.MIN_SIZE_PERCENT, Constants.MAX_SIZE_PERCENT),
             )
-        }
     }
 }

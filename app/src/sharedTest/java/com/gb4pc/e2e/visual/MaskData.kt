@@ -30,7 +30,7 @@ data class MaskData(
     val bboxBottom: Int,
     val centroidX: Float,
     val centroidY: Float,
-    val pixelCount: Int
+    val pixelCount: Int,
 ) {
     val bboxWidth: Int get() = bboxRight - bboxLeft
     val bboxHeight: Int get() = bboxBottom - bboxTop
@@ -66,7 +66,6 @@ data class MaskData(
 
     companion object {
         /** Creates an empty (0×0) MaskData. */
-        fun empty(): MaskData =
-            MaskData(BooleanArray(0), 0, 0, 0, 0, 0, 0, 0f, 0f, 0)
+        fun empty(): MaskData = MaskData(BooleanArray(0), 0, 0, 0, 0, 0, 0, 0f, 0f, 0)
     }
 }

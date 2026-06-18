@@ -27,7 +27,6 @@ import org.mockito.kotlin.whenever
  * coverage.
  */
 class MediaDeletionManagerTest {
-
     private lateinit var contentResolver: ContentResolver
     private lateinit var uri: Uri
     private var launcherCalls: Int = 0
@@ -83,13 +82,15 @@ class MediaDeletionManagerTest {
     @Test
     fun `API 29 RecoverableSecurityException launches the embedded IntentSender`() {
         val mockRemoteAction: RemoteAction = mock()
-        val mockPendingIntent: android.app.PendingIntent = mock {
-            on { intentSender } doReturn mock()
-        }
+        val mockPendingIntent: android.app.PendingIntent =
+            mock {
+                on { intentSender } doReturn mock()
+            }
         whenever(mockRemoteAction.actionIntent).thenReturn(mockPendingIntent)
-        val securityException = mock<android.app.RecoverableSecurityException> {
-            on { userAction } doReturn mockRemoteAction
-        }
+        val securityException =
+            mock<android.app.RecoverableSecurityException> {
+                on { userAction } doReturn mockRemoteAction
+            }
         whenever(contentResolver.delete(eq(uri), anyOrNull(), anyOrNull())).thenThrow(securityException)
 
         newManager(apiLevel = Build.VERSION_CODES.Q).delete(uri)
@@ -101,13 +102,15 @@ class MediaDeletionManagerTest {
     @Test
     fun `onDeleteRequestResult with resultOk=true retries the delete`() {
         val mockRemoteAction: RemoteAction = mock()
-        val mockPendingIntent: android.app.PendingIntent = mock {
-            on { intentSender } doReturn mock()
-        }
+        val mockPendingIntent: android.app.PendingIntent =
+            mock {
+                on { intentSender } doReturn mock()
+            }
         whenever(mockRemoteAction.actionIntent).thenReturn(mockPendingIntent)
-        val securityException = mock<android.app.RecoverableSecurityException> {
-            on { userAction } doReturn mockRemoteAction
-        }
+        val securityException =
+            mock<android.app.RecoverableSecurityException> {
+                on { userAction } doReturn mockRemoteAction
+            }
         whenever(contentResolver.delete(eq(uri), anyOrNull(), anyOrNull()))
             .thenThrow(securityException)
             .thenReturn(1) // retry succeeds
@@ -125,13 +128,15 @@ class MediaDeletionManagerTest {
     @Test
     fun `onDeleteRequestResult with resultOk=false does not retry`() {
         val mockRemoteAction: RemoteAction = mock()
-        val mockPendingIntent: android.app.PendingIntent = mock {
-            on { intentSender } doReturn mock()
-        }
+        val mockPendingIntent: android.app.PendingIntent =
+            mock {
+                on { intentSender } doReturn mock()
+            }
         whenever(mockRemoteAction.actionIntent).thenReturn(mockPendingIntent)
-        val securityException = mock<android.app.RecoverableSecurityException> {
-            on { userAction } doReturn mockRemoteAction
-        }
+        val securityException =
+            mock<android.app.RecoverableSecurityException> {
+                on { userAction } doReturn mockRemoteAction
+            }
         whenever(contentResolver.delete(eq(uri), anyOrNull(), anyOrNull())).thenThrow(securityException)
 
         val manager = newManager(apiLevel = Build.VERSION_CODES.Q)

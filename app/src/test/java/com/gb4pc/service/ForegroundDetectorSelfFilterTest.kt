@@ -19,10 +19,9 @@ import org.robolectric.RobolectricTestRunner
  * accessible — they are stubs with default values under the plain JVM test runner.
  */
 @Suppress("DEPRECATION") // MOVE_TO_FOREGROUND / MOVE_TO_BACKGROUND are deprecated by the SDK
-                          // but are valid event types still exercised in mixed-event tests here.
+// but are valid event types still exercised in mixed-event tests here.
 @RunWith(RobolectricTestRunner::class)
 class ForegroundDetectorSelfFilterTest {
-
     private val selfPkg = "com.gb4pc"
     private val cameraPkg = "com.google.android.GoogleCamera"
     private val otherPkg = "com.example.other"
@@ -64,7 +63,11 @@ class ForegroundDetectorSelfFilterTest {
         return events
     }
 
-    private fun setEventField(event: UsageEvents.Event, fieldName: String, value: Any) {
+    private fun setEventField(
+        event: UsageEvents.Event,
+        fieldName: String,
+        value: Any,
+    ) {
         val field = event.javaClass.getDeclaredField(fieldName)
         field.isAccessible = true
         field.set(event, value)
@@ -79,7 +82,7 @@ class ForegroundDetectorSelfFilterTest {
 
         assertNull(
             "GB4PC's own MOVE_TO_FOREGROUND must not be returned as the foreground package",
-            detector.getForegroundPackage()
+            detector.getForegroundPackage(),
         )
     }
 
@@ -88,13 +91,13 @@ class ForegroundDetectorSelfFilterTest {
         // Camera opened first, then GB4PC overlay fired its own event — camera should remain.
         eventsOf(
             Triple(cameraPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 1000L),
-            Triple(selfPkg,    UsageEvents.Event.MOVE_TO_FOREGROUND, 2000L),
+            Triple(selfPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 2000L),
         )
 
         assertEquals(
             "Camera package must remain the detected foreground app when GB4PC fires after it (Issue #80)",
             cameraPkg,
-            detector.getForegroundPackage()
+            detector.getForegroundPackage(),
         )
     }
 
@@ -102,15 +105,15 @@ class ForegroundDetectorSelfFilterTest {
     fun `self MOVE_TO_FOREGROUND between two other apps is skipped`() {
         // Some other app, then GB4PC overlay, then camera — camera wins on timestamp.
         eventsOf(
-            Triple(otherPkg,  UsageEvents.Event.MOVE_TO_FOREGROUND, 1000L),
-            Triple(selfPkg,   UsageEvents.Event.MOVE_TO_FOREGROUND, 2000L),
+            Triple(otherPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 1000L),
+            Triple(selfPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 2000L),
             Triple(cameraPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 3000L),
         )
 
         assertEquals(
             "Camera package (latest non-self MOVE_TO_FOREGROUND) must be detected",
             cameraPkg,
-            detector.getForegroundPackage()
+            detector.getForegroundPackage(),
         )
     }
 
@@ -121,13 +124,13 @@ class ForegroundDetectorSelfFilterTest {
         // Camera first, then user opens another app — that app should be returned.
         eventsOf(
             Triple(cameraPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 1000L),
-            Triple(otherPkg,  UsageEvents.Event.MOVE_TO_FOREGROUND, 2000L),
+            Triple(otherPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 2000L),
         )
 
         assertEquals(
             "When the user genuinely navigates away, the new foreground app must be detected",
             otherPkg,
-            detector.getForegroundPackage()
+            detector.getForegroundPackage(),
         )
     }
 
@@ -136,14 +139,14 @@ class ForegroundDetectorSelfFilterTest {
         // Camera → user navigates away → GB4PC overlay fires (shouldn't matter) → other stays.
         eventsOf(
             Triple(cameraPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 1000L),
-            Triple(otherPkg,  UsageEvents.Event.MOVE_TO_FOREGROUND, 2000L),
-            Triple(selfPkg,   UsageEvents.Event.MOVE_TO_FOREGROUND, 3000L),
+            Triple(otherPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 2000L),
+            Triple(selfPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 3000L),
         )
 
         assertEquals(
             "The other app must remain detected even when GB4PC fires after it",
             otherPkg,
-            detector.getForegroundPackage()
+            detector.getForegroundPackage(),
         )
     }
 
@@ -157,7 +160,7 @@ class ForegroundDetectorSelfFilterTest {
 
         assertNull(
             "Multiple GB4PC self-events must all be skipped, returning null",
-            detector.getForegroundPackage()
+            detector.getForegroundPackage(),
         )
     }
 
@@ -165,14 +168,14 @@ class ForegroundDetectorSelfFilterTest {
     fun `non-foreground events for self package are not affected`() {
         // Self fires a non-foreground event type — should not interfere with detection.
         eventsOf(
-            Triple(cameraPkg, UsageEvents.Event.MOVE_TO_FOREGROUND,  1000L),
-            Triple(selfPkg,   UsageEvents.Event.MOVE_TO_BACKGROUND,  2000L),
+            Triple(cameraPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 1000L),
+            Triple(selfPkg, UsageEvents.Event.MOVE_TO_BACKGROUND, 2000L),
         )
 
         assertEquals(
             "Non-foreground events for selfPkg must not interfere with camera detection",
             cameraPkg,
-            detector.getForegroundPackage()
+            detector.getForegroundPackage(),
         )
     }
 
@@ -187,7 +190,7 @@ class ForegroundDetectorSelfFilterTest {
         assertEquals(
             "ACTIVITY_RESUMED must be recognised as a foreground event (Issue #86)",
             cameraPkg,
-            detector.getForegroundPackage()
+            detector.getForegroundPackage(),
         )
     }
 
@@ -198,7 +201,7 @@ class ForegroundDetectorSelfFilterTest {
 
         assertNull(
             "Self ACTIVITY_RESUMED must be skipped (Issue #86)",
-            detector.getForegroundPackage()
+            detector.getForegroundPackage(),
         )
     }
 
@@ -206,13 +209,13 @@ class ForegroundDetectorSelfFilterTest {
     fun `self ACTIVITY_RESUMED does not displace earlier camera ACTIVITY_RESUMED (Issue #86)`() {
         eventsOf(
             Triple(cameraPkg, UsageEvents.Event.ACTIVITY_RESUMED, 1000L),
-            Triple(selfPkg,   UsageEvents.Event.ACTIVITY_RESUMED, 2000L),
+            Triple(selfPkg, UsageEvents.Event.ACTIVITY_RESUMED, 2000L),
         )
 
         assertEquals(
             "Camera ACTIVITY_RESUMED must not be displaced by self ACTIVITY_RESUMED (Issue #86)",
             cameraPkg,
-            detector.getForegroundPackage()
+            detector.getForegroundPackage(),
         )
     }
 
@@ -222,13 +225,13 @@ class ForegroundDetectorSelfFilterTest {
         // from before the user launched Pixel Camera, which then emits ACTIVITY_RESUMED.
         eventsOf(
             Triple("com.android.launcher3", UsageEvents.Event.MOVE_TO_FOREGROUND, 1000L),
-            Triple(cameraPkg,               UsageEvents.Event.ACTIVITY_RESUMED,   2000L),
+            Triple(cameraPkg, UsageEvents.Event.ACTIVITY_RESUMED, 2000L),
         )
 
         assertEquals(
             "Camera ACTIVITY_RESUMED (newer) must win over older launcher MOVE_TO_FOREGROUND (Issue #86)",
             cameraPkg,
-            detector.getForegroundPackage()
+            detector.getForegroundPackage(),
         )
     }
 
@@ -243,7 +246,7 @@ class ForegroundDetectorSelfFilterTest {
         val pkg = detector.getForegroundPackage()
         assertFalse(
             "Launcher MOVE_TO_FOREGROUND must not be detected as Pixel Camera (Issue #86)",
-            ForegroundDetector.isPixelCameraPackage(pkg)
+            ForegroundDetector.isPixelCameraPackage(pkg),
         )
     }
 
@@ -254,30 +257,32 @@ class ForegroundDetectorSelfFilterTest {
         // Three distinct packages appear in the window; the summary log must list all of them.
         eventsOf(
             Triple("com.android.launcher3", UsageEvents.Event.MOVE_TO_FOREGROUND, 1000L),
-            Triple(otherPkg,                UsageEvents.Event.MOVE_TO_FOREGROUND, 2000L),
-            Triple(cameraPkg,               UsageEvents.Event.MOVE_TO_FOREGROUND, 3000L),
+            Triple(otherPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 2000L),
+            Triple(cameraPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 3000L),
         )
 
         detector.getForegroundPackage()
 
-        val summaryLine = DebugLog.getEntries()
-            .map { it.message }
-            .last { it.startsWith("ForegroundDetector: foreground=") }
+        val summaryLine =
+            DebugLog
+                .getEntries()
+                .map { it.message }
+                .last { it.startsWith("ForegroundDetector: foreground=") }
         assertTrue(
             "Summary log must include 'all FG apps=' with the full package list (Issue #324). Got: $summaryLine",
-            summaryLine.contains("all FG apps=")
+            summaryLine.contains("all FG apps="),
         )
         assertTrue(
             "Summary log must include launcher package. Got: $summaryLine",
-            summaryLine.contains("com.android.launcher3")
+            summaryLine.contains("com.android.launcher3"),
         )
         assertTrue(
             "Summary log must include otherPkg. Got: $summaryLine",
-            summaryLine.contains(otherPkg)
+            summaryLine.contains(otherPkg),
         )
         assertTrue(
             "Summary log must include cameraPkg. Got: $summaryLine",
-            summaryLine.contains(cameraPkg)
+            summaryLine.contains(cameraPkg),
         )
     }
 
@@ -286,25 +291,27 @@ class ForegroundDetectorSelfFilterTest {
         // When selfPkg appears among events, it must not appear in the all FG apps list.
         eventsOf(
             Triple(cameraPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 1000L),
-            Triple(selfPkg,   UsageEvents.Event.MOVE_TO_FOREGROUND, 2000L),
+            Triple(selfPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 2000L),
         )
 
         detector.getForegroundPackage()
 
-        val summaryLine = DebugLog.getEntries()
-            .map { it.message }
-            .last { it.startsWith("ForegroundDetector: foreground=") }
+        val summaryLine =
+            DebugLog
+                .getEntries()
+                .map { it.message }
+                .last { it.startsWith("ForegroundDetector: foreground=") }
         assertTrue(
             "Summary log must contain 'all FG apps='. Got: $summaryLine",
-            summaryLine.contains("all FG apps=")
+            summaryLine.contains("all FG apps="),
         )
         assertFalse(
             "Self package must not appear in the all FG apps list (Issue #324). Got: $summaryLine",
-            summaryLine.contains(selfPkg)
+            summaryLine.contains(selfPkg),
         )
         assertTrue(
             "Camera package must appear in the all FG apps list. Got: $summaryLine",
-            summaryLine.contains(cameraPkg)
+            summaryLine.contains(cameraPkg),
         )
     }
 
@@ -314,16 +321,18 @@ class ForegroundDetectorSelfFilterTest {
 
         detector.getForegroundPackage()
 
-        val summaryLine = DebugLog.getEntries()
-            .map { it.message }
-            .last { it.startsWith("ForegroundDetector: foreground=") }
+        val summaryLine =
+            DebugLog
+                .getEntries()
+                .map { it.message }
+                .last { it.startsWith("ForegroundDetector: foreground=") }
         assertTrue(
             "Summary log must contain 'all FG apps=' even with a single package. Got: $summaryLine",
-            summaryLine.contains("all FG apps=")
+            summaryLine.contains("all FG apps="),
         )
         assertTrue(
             "Single foreground package must appear in the list. Got: $summaryLine",
-            summaryLine.contains(cameraPkg)
+            summaryLine.contains(cameraPkg),
         )
     }
 }

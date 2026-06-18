@@ -20,7 +20,6 @@ import org.robolectric.RobolectricTestRunner
 @Suppress("DEPRECATION") // MOVE_TO_FOREGROUND is deprecated in API 29; accepted in mixed tests.
 @RunWith(RobolectricTestRunner::class)
 class ForegroundDetectorLogTest {
-
     private val selfPkg = "com.gb4pc"
     private val cameraPkg = "com.google.android.GoogleCamera"
     private val otherPkg = "com.example.other"
@@ -53,7 +52,11 @@ class ForegroundDetectorLogTest {
         return events
     }
 
-    private fun setEventField(event: UsageEvents.Event, fieldName: String, value: Any) {
+    private fun setEventField(
+        event: UsageEvents.Event,
+        fieldName: String,
+        value: Any,
+    ) {
         val field = event.javaClass.getDeclaredField(fieldName)
         field.isAccessible = true
         field.set(event, value)
@@ -72,7 +75,7 @@ class ForegroundDetectorLogTest {
         val summary = loggedMessages().first { it.startsWith("ForegroundDetector: foreground=") }
         assertTrue(
             "Summary log must include 'all FG apps' with the camera package",
-            summary.contains("all FG apps=[$cameraPkg]")
+            summary.contains("all FG apps=[$cameraPkg]"),
         )
     }
 
@@ -81,7 +84,7 @@ class ForegroundDetectorLogTest {
     @Test
     fun `summary log lists all FG apps when multiple packages appear (Issue #324)`() {
         eventsOf(
-            Triple(otherPkg,  UsageEvents.Event.MOVE_TO_FOREGROUND, 1000L),
+            Triple(otherPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 1000L),
             Triple(cameraPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 2000L),
         )
 
@@ -90,15 +93,15 @@ class ForegroundDetectorLogTest {
         val summary = loggedMessages().first { it.startsWith("ForegroundDetector: foreground=") }
         assertTrue(
             "Summary log must list both packages in the all-apps list",
-            summary.contains(otherPkg) && summary.contains(cameraPkg) && summary.contains("all FG apps=")
+            summary.contains(otherPkg) && summary.contains(cameraPkg) && summary.contains("all FG apps="),
         )
     }
 
     @Test
     fun `summary log lists three distinct FG apps (Issue #324)`() {
         eventsOf(
-            Triple(otherPkg,  UsageEvents.Event.MOVE_TO_FOREGROUND, 1000L),
-            Triple(thirdPkg,  UsageEvents.Event.MOVE_TO_FOREGROUND, 2000L),
+            Triple(otherPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 1000L),
+            Triple(thirdPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 2000L),
             Triple(cameraPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 3000L),
         )
 
@@ -107,7 +110,7 @@ class ForegroundDetectorLogTest {
         val summary = loggedMessages().first { it.startsWith("ForegroundDetector: foreground=") }
         assertTrue(
             "Summary log must list all three packages",
-            summary.contains(otherPkg) && summary.contains(thirdPkg) && summary.contains(cameraPkg)
+            summary.contains(otherPkg) && summary.contains(thirdPkg) && summary.contains(cameraPkg),
         )
     }
 
@@ -117,7 +120,7 @@ class ForegroundDetectorLogTest {
     fun `same package appearing multiple times is listed only once (Issue #324)`() {
         eventsOf(
             Triple(cameraPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 1000L),
-            Triple(otherPkg,  UsageEvents.Event.MOVE_TO_FOREGROUND, 2000L),
+            Triple(otherPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 2000L),
             Triple(cameraPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 3000L),
         )
 
@@ -129,7 +132,7 @@ class ForegroundDetectorLogTest {
         val count = allAppsSection.split(", ").count { it == cameraPkg }
         assertTrue(
             "Camera package must appear exactly once in the all-apps list even when it fires twice",
-            count == 1
+            count == 1,
         )
     }
 
@@ -139,7 +142,7 @@ class ForegroundDetectorLogTest {
     fun `self package is not included in all FG apps list (Issue #324)`() {
         eventsOf(
             Triple(cameraPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 1000L),
-            Triple(selfPkg,   UsageEvents.Event.MOVE_TO_FOREGROUND, 2000L),
+            Triple(selfPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 2000L),
         )
 
         detector.getForegroundPackage()
@@ -148,7 +151,7 @@ class ForegroundDetectorLogTest {
         val allAppsSection = summary.substringAfter("all FG apps=[").substringBefore("]")
         assertTrue(
             "Self package must not appear in the all-apps list",
-            !allAppsSection.contains(selfPkg)
+            !allAppsSection.contains(selfPkg),
         )
     }
 
@@ -156,9 +159,10 @@ class ForegroundDetectorLogTest {
 
     @Test
     fun `no foreground events produces 'no foreground app detected' log, not all-apps (Issue #324)`() {
-        val events: UsageEvents = mock {
-            on { hasNextEvent() } doReturn false
-        }
+        val events: UsageEvents =
+            mock {
+                on { hasNextEvent() } doReturn false
+            }
         whenever(usm.queryEvents(any(), any())).thenReturn(events)
 
         detector.getForegroundPackage()
@@ -166,11 +170,11 @@ class ForegroundDetectorLogTest {
         val messages = loggedMessages()
         assertTrue(
             "When no events found the log must say 'no foreground app detected'",
-            messages.any { it.contains("no foreground app detected") }
+            messages.any { it.contains("no foreground app detected") },
         )
         assertTrue(
             "When no events found, the summary must not contain 'all FG apps'",
-            messages.none { it.contains("all FG apps=") }
+            messages.none { it.contains("all FG apps=") },
         )
     }
 }

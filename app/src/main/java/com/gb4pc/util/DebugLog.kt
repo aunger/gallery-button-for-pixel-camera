@@ -12,11 +12,13 @@ import java.util.LinkedList
  * so that all application log messages are visible in logcat and CI log captures (Issue #399).
  */
 object DebugLog {
-
     /** logcat tag used for all forwarded messages. */
     const val LOGCAT_TAG = "GB4PC"
 
-    data class Entry(val timestamp: Long, val message: String)
+    data class Entry(
+        val timestamp: Long,
+        val message: String,
+    )
 
     private val buffer = LinkedList<Entry>()
     private val lock = Any()

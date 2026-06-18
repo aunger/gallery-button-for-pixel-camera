@@ -10,7 +10,6 @@ import java.io.FileOutputStream
  * Screen-capture helpers used by E2E visual tests.
  */
 object Screenshot {
-
     /**
      * Thread-local holding the current test's name prefix (e.g.
      * `"PixelCameraOverlayE2ETest_overlayAppearsWhenViewfinderOpens"`).
@@ -24,8 +23,7 @@ object Screenshot {
     /**
      * Captures the current screen via UiAutomation and returns it as a [Bitmap].
      */
-    fun captureScreen(): Bitmap =
-        InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+    fun captureScreen(): Bitmap = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
 
     /**
      * Returns the resolved screenshot output directory (creating it if necessary).
@@ -35,9 +33,10 @@ object Screenshot {
      */
     internal fun screenshotDir(): File {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
-        val externalFilesDir = requireNotNull(ctx.getExternalFilesDir(null)) {
-            "External storage is not available — cannot access screenshot directory"
-        }
+        val externalFilesDir =
+            requireNotNull(ctx.getExternalFilesDir(null)) {
+                "External storage is not available — cannot access screenshot directory"
+            }
         return File(externalFilesDir, "screenshots").also { it.mkdirs() }
     }
 
@@ -56,7 +55,10 @@ object Screenshot {
      * artifact browser — e.g. `"0-screen.png"` becomes
      * `"GalleryButtonVisualE2ETest_test0_smokeGreenFeedVisible_0-screen.png"`.
      */
-    fun saveForArtifact(bmp: Bitmap, name: String) {
+    fun saveForArtifact(
+        bmp: Bitmap,
+        name: String,
+    ) {
         val resolvedName = ScreenshotNaming.resolvedName(currentTestPrefix.get(), name)
         val dir = screenshotDir()
         FileOutputStream(File(dir, resolvedName)).use { out ->

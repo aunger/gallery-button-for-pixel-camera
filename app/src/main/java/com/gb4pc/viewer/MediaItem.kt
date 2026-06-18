@@ -6,5 +6,5 @@ package com.gb4pc.viewer
 data class MediaItem(
     val uri: String,
     val dateTaken: Long,
-    val isVideo: Boolean
+    val isVideo: Boolean,
 )

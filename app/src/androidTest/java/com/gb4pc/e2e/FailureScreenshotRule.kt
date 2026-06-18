@@ -24,14 +24,19 @@ import java.io.File
  * ```
  */
 class FailureScreenshotRule : TestWatcher() {
-
     companion object {
         private const val TAG = "FailureScreenshotRule"
     }
 
-    override fun failed(e: Throwable?, description: Description) {
-        val externalFilesDir = InstrumentationRegistry.getInstrumentation().targetContext
-            .getExternalFilesDir(null)
+    override fun failed(
+        e: Throwable?,
+        description: Description,
+    ) {
+        val externalFilesDir =
+            InstrumentationRegistry
+                .getInstrumentation()
+                .targetContext
+                .getExternalFilesDir(null)
         if (externalFilesDir == null) {
             Log.w(TAG, "External storage unavailable; skipping failure screenshot for ${description.methodName}")
             return
@@ -40,8 +45,10 @@ class FailureScreenshotRule : TestWatcher() {
         dir.mkdirs()
         val className = description.testClass?.simpleName ?: "UnknownClass"
         val screenshotFile = File(dir, "$className-${description.methodName}-failure.png")
-        val success = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
-            .takeScreenshot(screenshotFile)
+        val success =
+            UiDevice
+                .getInstance(InstrumentationRegistry.getInstrumentation())
+                .takeScreenshot(screenshotFile)
         if (!success) {
             Log.w(TAG, "Failed to write failure screenshot to ${screenshotFile.absolutePath}")
         }

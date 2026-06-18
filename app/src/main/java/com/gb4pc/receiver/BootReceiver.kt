@@ -12,7 +12,10 @@ import com.gb4pc.util.DebugLog
  * if the service was previously enabled.
  */
 class BootReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) {
+    override fun onReceive(
+        context: Context,
+        intent: Intent,
+    ) {
         val isBoot = intent.action == Intent.ACTION_BOOT_COMPLETED
         val isInstallOrUpdate = intent.action == Intent.ACTION_MY_PACKAGE_REPLACED
         if (!isBoot && !isInstallOrUpdate) return

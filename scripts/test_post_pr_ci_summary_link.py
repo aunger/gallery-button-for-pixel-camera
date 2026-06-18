@@ -14,8 +14,8 @@ import post_pr_ci_summary_link as link  # noqa: E402
 # pr_number_from_url
 # ---------------------------------------------------------------------------
 
-class TestPrNumberFromUrl(unittest.TestCase):
 
+class TestPrNumberFromUrl(unittest.TestCase):
     def test_extracts_number_from_pull_url(self):
         url = "https://github.com/owner/repo/pull/42"
         self.assertEqual(link.pr_number_from_url(url), "42")
@@ -36,8 +36,8 @@ class TestPrNumberFromUrl(unittest.TestCase):
 # build_comment_body
 # ---------------------------------------------------------------------------
 
-class TestBuildCommentBody(unittest.TestCase):
 
+class TestBuildCommentBody(unittest.TestCase):
     def test_includes_marker_and_link_when_summary_written(self):
         body = link.build_comment_body("https://example.com/run#summary-1", True)
         self.assertIn(link.MARKER, body)
@@ -57,8 +57,8 @@ class TestBuildCommentBody(unittest.TestCase):
 # find_job_id
 # ---------------------------------------------------------------------------
 
-class TestFindJobId(unittest.TestCase):
 
+class TestFindJobId(unittest.TestCase):
     @patch("post_pr_ci_summary_link.requests")
     def test_returns_id_for_matching_job_name(self, mock_requests):
         mock_resp = MagicMock()
@@ -99,7 +99,9 @@ class TestFindJobId(unittest.TestCase):
     @patch("post_pr_ci_summary_link.requests")
     def test_returns_none_when_no_matching_job(self, mock_requests):
         mock_resp = MagicMock()
-        mock_resp.json.return_value = {"jobs": [{"id": 222, "name": "file-issues", "run_attempt": 1}]}
+        mock_resp.json.return_value = {
+            "jobs": [{"id": 222, "name": "file-issues", "run_attempt": 1}]
+        }
         mock_requests.get.return_value = mock_resp
         result = link.find_job_id("token", "owner/repo", "999", "1", "build-and-test")
         self.assertIsNone(result)
@@ -115,8 +117,8 @@ class TestFindJobId(unittest.TestCase):
 # find_existing_comment / upsert_comment
 # ---------------------------------------------------------------------------
 
-class TestFindExistingComment(unittest.TestCase):
 
+class TestFindExistingComment(unittest.TestCase):
     @patch("post_pr_ci_summary_link.requests")
     def test_returns_id_of_comment_with_marker(self, mock_requests):
         mock_resp = MagicMock()
@@ -144,7 +146,6 @@ class TestFindExistingComment(unittest.TestCase):
 
 
 class TestUpsertComment(unittest.TestCase):
-
     @patch("post_pr_ci_summary_link.find_existing_comment")
     @patch("post_pr_ci_summary_link.requests")
     def test_creates_comment_when_none_exists(self, mock_requests, mock_find):
@@ -184,8 +185,8 @@ class TestUpsertComment(unittest.TestCase):
 # main
 # ---------------------------------------------------------------------------
 
-class TestMain(unittest.TestCase):
 
+class TestMain(unittest.TestCase):
     def _env(self, **overrides):
         env = {
             "GITHUB_TOKEN": "token",

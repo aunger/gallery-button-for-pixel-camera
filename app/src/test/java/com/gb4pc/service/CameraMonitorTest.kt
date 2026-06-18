@@ -5,7 +5,6 @@ import org.junit.Before
 import org.junit.Test
 
 class CameraMonitorTest {
-
     private lateinit var state: CameraState
 
     @Before

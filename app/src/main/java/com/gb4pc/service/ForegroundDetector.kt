@@ -17,7 +17,6 @@ class ForegroundDetector(
     private val usageStatsManager: UsageStatsManager,
     private val selfPackage: String,
 ) {
-
     /**
      * Queries UsageStatsManager for the most recent foreground event
      * in the last [Constants.USAGE_STATS_WINDOW_MS] milliseconds.
@@ -56,12 +55,15 @@ class ForegroundDetector(
             // Accept both ACTIVITY_RESUMED (API 29+) and the legacy MOVE_TO_FOREGROUND so that
             // detection works on all supported Android versions. On API 29+ the system emits
             // ACTIVITY_RESUMED instead of MOVE_TO_FOREGROUND (Issue #86).
-            val isForegroundEvent = event.eventType == UsageEvents.Event.ACTIVITY_RESUMED ||
-                event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND
+            val isForegroundEvent =
+                event.eventType == UsageEvents.Event.ACTIVITY_RESUMED ||
+                    event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND
             if (isForegroundEvent) {
                 if (event.packageName == selfPackage) {
                     skippedSelfEvents++
-                    DebugLog.log("ForegroundDetector: skipping self foreground event pkg=${event.packageName} ts=${event.timeStamp} (Issue #80)")
+                    DebugLog.log(
+                        "ForegroundDetector: skipping self foreground event pkg=${event.packageName} ts=${event.timeStamp} (Issue #80)",
+                    )
                     continue
                 }
                 foregroundEvents++
@@ -76,16 +78,18 @@ class ForegroundDetector(
 
         val selfNote = if (skippedSelfEvents > 0) ", skipped $skippedSelfEvents self-event(s)" else ""
         if (latestForegroundPackage != null) {
-            DebugLog.log("ForegroundDetector: foreground=$latestForegroundPackage, all FG apps=$allForegroundPackages ($foregroundEvents foreground event(s) of $totalEvents total$selfNote)")
+            DebugLog.log(
+                "ForegroundDetector: foreground=$latestForegroundPackage, all FG apps=$allForegroundPackages ($foregroundEvents foreground event(s) of $totalEvents total$selfNote)",
+            )
         } else {
-            DebugLog.log("ForegroundDetector: no foreground app detected ($foregroundEvents foreground event(s) of $totalEvents total$selfNote)")
+            DebugLog.log(
+                "ForegroundDetector: no foreground app detected ($foregroundEvents foreground event(s) of $totalEvents total$selfNote)",
+            )
         }
         return latestForegroundPackage
     }
 
     companion object {
-        fun isPixelCameraPackage(packageName: String?): Boolean {
-            return packageName == Constants.PIXEL_CAMERA_PACKAGE
-        }
+        fun isPixelCameraPackage(packageName: String?): Boolean = packageName == Constants.PIXEL_CAMERA_PACKAGE
     }
 }

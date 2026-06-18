@@ -16,7 +16,6 @@ import org.robolectric.shadows.ShadowLog
  */
 @RunWith(RobolectricTestRunner::class)
 class DebugLogLogcatTest {
-
     @Before
     fun setUp() {
         ShadowLog.reset()
@@ -41,9 +40,9 @@ class DebugLogLogcatTest {
 
         val logged = ShadowLog.getLogsForTag(DebugLog.LOGCAT_TAG)
         assertEquals(3, logged.size)
-        assertEquals("first",  logged[0].msg)
+        assertEquals("first", logged[0].msg)
         assertEquals("second", logged[1].msg)
-        assertEquals("third",  logged[2].msg)
+        assertEquals("third", logged[2].msg)
     }
 
     @Test
@@ -64,7 +63,7 @@ class DebugLogLogcatTest {
         val logged = ShadowLog.getLogsForTag(DebugLog.LOGCAT_TAG)
         assertTrue(
             "logcat must receive the overflow message even when the in-memory buffer evicts it",
-            logged.any { it.msg == "overflow message" }
+            logged.any { it.msg == "overflow message" },
         )
     }
 }

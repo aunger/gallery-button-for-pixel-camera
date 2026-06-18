@@ -28,7 +28,6 @@ import com.gb4pc.ui.theme.GB4PCTheme
 import com.gb4pc.util.PermissionHelper
 
 class MainActivity : ComponentActivity() {
-
     private lateinit var prefsManager: PrefsManager
 
     // Permission states updated in onResume so Compose reacts to changes
@@ -62,7 +61,7 @@ class MainActivity : ComponentActivity() {
                     hasUsageStats = hasUsageStats.value,
                     hasOverlay = hasOverlay.value,
                     isBatteryExcluded = isBatteryExcluded.value,
-                    galleryPackage = galleryPackage.value
+                    galleryPackage = galleryPackage.value,
                 )
             }
         }
@@ -86,7 +85,7 @@ fun MainSettingsScreen(
     hasUsageStats: Boolean,
     hasOverlay: Boolean,
     isBatteryExcluded: Boolean,
-    galleryPackage: String?
+    galleryPackage: String?,
 ) {
     val context = LocalContext.current
     var isServiceEnabled by remember { mutableStateOf(prefsManager.isServiceEnabled) }
@@ -94,29 +93,31 @@ fun MainSettingsScreen(
 
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(
-            modifier = Modifier
-                .windowInsetsPadding(WindowInsets.statusBars)
-                .padding(16.dp)
-                .fillMaxWidth()
+            modifier =
+                Modifier
+                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .padding(16.dp)
+                    .fillMaxWidth(),
         ) {
             Text(
                 text = stringResource(R.string.app_name),
                 style = MaterialTheme.typography.headlineMedium,
-                modifier = Modifier.padding(bottom = 16.dp)
+                modifier = Modifier.padding(bottom = 16.dp),
             )
 
             // UI-03: Pixel Camera not installed notice
             if (!isPixelCameraInstalled) {
                 Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer
-                    ),
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+                    colors =
+                        CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                        ),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
                 ) {
                     Text(
                         text = stringResource(R.string.settings_pixel_camera_missing),
                         modifier = Modifier.padding(16.dp),
-                        color = MaterialTheme.colorScheme.onErrorContainer
+                        color = MaterialTheme.colorScheme.onErrorContainer,
                     )
                 }
             }
@@ -127,7 +128,7 @@ fun MainSettingsScreen(
                     message = stringResource(R.string.settings_permission_missing, "Usage Access"),
                     onClick = {
                         context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
-                    }
+                    },
                 )
             }
             if (!hasOverlay) {
@@ -135,10 +136,12 @@ fun MainSettingsScreen(
                     message = stringResource(R.string.settings_permission_missing, "Draw Over Apps"),
                     onClick = {
                         context.startActivity(
-                            Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                Uri.parse("package:${context.packageName}"))
+                            Intent(
+                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:${context.packageName}"),
+                            ),
                         )
-                    }
+                    },
                 )
             }
 
@@ -148,26 +151,29 @@ fun MainSettingsScreen(
                     message = stringResource(R.string.settings_battery_warning),
                     onClick = {
                         context.startActivity(
-                            Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                                Uri.parse("package:${context.packageName}"))
+                            Intent(
+                                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                Uri.parse("package:${context.packageName}"),
+                            ),
                         )
-                    }
+                    },
                 )
             }
 
             // UI-01.1: Master toggle
             if (isPixelCameraInstalled) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 12.dp),
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 12.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = stringResource(R.string.settings_service_toggle),
-                            style = MaterialTheme.typography.titleMedium
+                            style = MaterialTheme.typography.titleMedium,
                         )
                     }
                     Switch(
@@ -180,7 +186,7 @@ fun MainSettingsScreen(
                             } else {
                                 OverlayService.stop(context)
                             }
-                        }
+                        },
                     )
                 }
 
@@ -188,25 +194,26 @@ fun MainSettingsScreen(
 
                 // UI-01.2: Gallery app row
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            context.startActivity(Intent(context, PickerActivity::class.java))
-                        }
-                        .padding(vertical = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                context.startActivity(Intent(context, PickerActivity::class.java))
+                            }.padding(vertical = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = stringResource(R.string.settings_gallery_app),
-                            style = MaterialTheme.typography.titleMedium
+                            style = MaterialTheme.typography.titleMedium,
                         )
                         Text(
-                            text = galleryPackage
-                                ?.let { getAppLabel(context, it) }
-                                ?: stringResource(R.string.settings_gallery_not_set),
+                            text =
+                                galleryPackage
+                                    ?.let { getAppLabel(context, it) }
+                                    ?: stringResource(R.string.settings_gallery_not_set),
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
@@ -215,21 +222,22 @@ fun MainSettingsScreen(
 
                 // UI-01.4: Experimental responsiveness boost toggle (#55)
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 12.dp),
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 12.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = stringResource(R.string.settings_focusable_overlay_title),
-                            style = MaterialTheme.typography.titleMedium
+                            style = MaterialTheme.typography.titleMedium,
                         )
                         Text(
                             text = stringResource(R.string.settings_focusable_overlay_subtitle),
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     Switch(
@@ -242,7 +250,7 @@ fun MainSettingsScreen(
                             if (prefsManager.isServiceEnabled) {
                                 OverlayService.reshowOverlay(context)
                             }
-                        }
+                        },
                     )
                 }
 
@@ -250,18 +258,18 @@ fun MainSettingsScreen(
 
                 // UI-01.3: Advanced Settings
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            context.startActivity(Intent(context, AdvancedSettingsActivity::class.java))
-                        }
-                        .padding(vertical = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                context.startActivity(Intent(context, AdvancedSettingsActivity::class.java))
+                            }.padding(vertical = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.padding(end = 12.dp))
                     Text(
                         text = stringResource(R.string.settings_advanced),
-                        style = MaterialTheme.typography.titleMedium
+                        style = MaterialTheme.typography.titleMedium,
                     )
                 }
             }
@@ -270,41 +278,48 @@ fun MainSettingsScreen(
 }
 
 @Composable
-fun PermissionBanner(message: String, onClick: () -> Unit) {
+fun PermissionBanner(
+    message: String,
+    onClick: () -> Unit,
+) {
     Card(
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.tertiaryContainer
-        ),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 8.dp)
-            .clickable(onClick = onClick)
+        colors =
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+            ),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(bottom = 8.dp)
+                .clickable(onClick = onClick),
     ) {
         Row(
             modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
                 Icons.Default.Warning,
                 contentDescription = null,
                 modifier = Modifier.padding(end = 8.dp),
-                tint = MaterialTheme.colorScheme.onTertiaryContainer
+                tint = MaterialTheme.colorScheme.onTertiaryContainer,
             )
             Text(
                 text = message,
                 color = MaterialTheme.colorScheme.onTertiaryContainer,
-                style = MaterialTheme.typography.bodySmall
+                style = MaterialTheme.typography.bodySmall,
             )
         }
     }
 }
 
-private fun getAppLabel(context: android.content.Context, packageName: String): String {
-    return try {
+private fun getAppLabel(
+    context: android.content.Context,
+    packageName: String,
+): String =
+    try {
         val pm = context.packageManager
         val appInfo = pm.getApplicationInfo(packageName, 0)
         pm.getApplicationLabel(appInfo).toString()
     } catch (_: Exception) {
         packageName
     }
-}

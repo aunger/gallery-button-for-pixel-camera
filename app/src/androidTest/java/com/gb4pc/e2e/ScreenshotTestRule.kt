@@ -46,7 +46,6 @@ import java.io.File
  * ```
  */
 class ScreenshotTestRule : TestWatcher() {
-
     companion object {
         private const val TAG = "ScreenshotTestRule"
     }
@@ -67,17 +66,23 @@ class ScreenshotTestRule : TestWatcher() {
         renameStragglersForTest(description)
     }
 
-    override fun failed(e: Throwable?, description: Description) {
+    override fun failed(
+        e: Throwable?,
+        description: Description,
+    ) {
         val prefix = testPrefix(description)
-        val dir = try {
-            Screenshot.screenshotDir()
-        } catch (ex: Exception) {
-            Log.w(TAG, "External storage unavailable; skipping failure screenshot for ${description.methodName}")
-            return
-        }
+        val dir =
+            try {
+                Screenshot.screenshotDir()
+            } catch (ex: Exception) {
+                Log.w(TAG, "External storage unavailable; skipping failure screenshot for ${description.methodName}")
+                return
+            }
         val screenshotFile = File(dir, "${prefix}_failure.png")
-        val success = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
-            .takeScreenshot(screenshotFile)
+        val success =
+            UiDevice
+                .getInstance(InstrumentationRegistry.getInstrumentation())
+                .takeScreenshot(screenshotFile)
         if (!success) {
             Log.w(TAG, "Failed to write failure screenshot to ${screenshotFile.absolutePath}")
         }
@@ -90,14 +95,17 @@ class ScreenshotTestRule : TestWatcher() {
         return ScreenshotNaming.buildPrefix(className, description.methodName)
     }
 
-    private fun existingScreenshotFileNames(): Set<String> {
-        return try {
-            Screenshot.screenshotDir().listFiles()?.map { it.name }?.toSet() ?: emptySet()
+    private fun existingScreenshotFileNames(): Set<String> =
+        try {
+            Screenshot
+                .screenshotDir()
+                .listFiles()
+                ?.map { it.name }
+                ?.toSet() ?: emptySet()
         } catch (e: Exception) {
             Log.w(TAG, "Could not list screenshot directory: ${e.message}")
             emptySet()
         }
-    }
 
     /**
      * Renames any new files that appeared during the test and are not already prefixed
@@ -108,12 +116,13 @@ class ScreenshotTestRule : TestWatcher() {
      */
     private fun renameStragglersForTest(description: Description) {
         val prefix = testPrefix(description)
-        val dir = try {
-            Screenshot.screenshotDir()
-        } catch (e: Exception) {
-            Log.w(TAG, "Could not access screenshot directory for straggler rename: ${e.message}")
-            return
-        }
+        val dir =
+            try {
+                Screenshot.screenshotDir()
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not access screenshot directory for straggler rename: ${e.message}")
+                return
+            }
         val currentFiles = dir.listFiles() ?: return
         for (file in currentFiles) {
             val name = file.name

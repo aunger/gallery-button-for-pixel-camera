@@ -24,7 +24,6 @@ import org.mockito.kotlin.verify
  * still satisfies both call sites.
  */
 class MediaObserverRetryTest {
-
     private lateinit var handler: Handler
     private val retryDelayMs = 500L
 
@@ -38,12 +37,13 @@ class MediaObserverRetryTest {
     @Test
     fun `onChange invokes handleResult immediately with isRetry=false`() {
         val seen = mutableListOf<Pair<Int, Boolean>>()
-        val retry = MediaObserverRetry<Int>(
-            handler = handler,
-            query = { 42 },
-            handleResult = { result, isRetry -> seen.add(result to isRetry) },
-            retryDelayMs = retryDelayMs,
-        )
+        val retry =
+            MediaObserverRetry<Int>(
+                handler = handler,
+                query = { 42 },
+                handleResult = { result, isRetry -> seen.add(result to isRetry) },
+                retryDelayMs = retryDelayMs,
+            )
 
         retry.onChange(startMs = 999_000L)
 
@@ -54,12 +54,13 @@ class MediaObserverRetryTest {
 
     @Test
     fun `onChange always schedules a retry`() {
-        val retry = MediaObserverRetry<Int>(
-            handler = handler,
-            query = { 1 },
-            handleResult = { _, _ -> },
-            retryDelayMs = retryDelayMs,
-        )
+        val retry =
+            MediaObserverRetry<Int>(
+                handler = handler,
+                query = { 1 },
+                handleResult = { _, _ -> },
+                retryDelayMs = retryDelayMs,
+            )
 
         retry.onChange(startMs = 999_000L)
 
@@ -70,12 +71,13 @@ class MediaObserverRetryTest {
     fun `retry runnable invokes handleResult with isRetry=true`() {
         var callCount = 0
         val seen = mutableListOf<Pair<Int, Boolean>>()
-        val retry = MediaObserverRetry<Int>(
-            handler = handler,
-            query = { callCount++ },
-            handleResult = { result, isRetry -> seen.add(result to isRetry) },
-            retryDelayMs = retryDelayMs,
-        )
+        val retry =
+            MediaObserverRetry<Int>(
+                handler = handler,
+                query = { callCount++ },
+                handleResult = { result, isRetry -> seen.add(result to isRetry) },
+                retryDelayMs = retryDelayMs,
+            )
 
         retry.onChange(startMs = 999_000L)
         val runnableCaptor = argumentCaptor<Runnable>()
@@ -87,12 +89,13 @@ class MediaObserverRetryTest {
 
     @Test
     fun `retry is one-shot - retry runnable does not schedule another retry`() {
-        val retry = MediaObserverRetry<Int>(
-            handler = handler,
-            query = { 0 },
-            handleResult = { _, _ -> },
-            retryDelayMs = retryDelayMs,
-        )
+        val retry =
+            MediaObserverRetry<Int>(
+                handler = handler,
+                query = { 0 },
+                handleResult = { _, _ -> },
+                retryDelayMs = retryDelayMs,
+            )
 
         retry.onChange(startMs = 999_000L)
         val runnableCaptor = argumentCaptor<Runnable>()
@@ -107,12 +110,13 @@ class MediaObserverRetryTest {
 
     @Test
     fun `rapid-fire onChange cancels previous retry and reschedules`() {
-        val retry = MediaObserverRetry<Int>(
-            handler = handler,
-            query = { 0 },
-            handleResult = { _, _ -> },
-            retryDelayMs = retryDelayMs,
-        )
+        val retry =
+            MediaObserverRetry<Int>(
+                handler = handler,
+                query = { 0 },
+                handleResult = { _, _ -> },
+                retryDelayMs = retryDelayMs,
+            )
 
         retry.onChange(startMs = 999_000L)
         val runnableCaptor = argumentCaptor<Runnable>()
@@ -130,15 +134,16 @@ class MediaObserverRetryTest {
     @Test
     fun `startMs is forwarded to query on initial call and retry`() {
         val capturedStartMs = mutableListOf<Long>()
-        val retry = MediaObserverRetry<Int>(
-            handler = handler,
-            query = { startMs ->
-                capturedStartMs.add(startMs)
-                0
-            },
-            handleResult = { _, _ -> },
-            retryDelayMs = retryDelayMs,
-        )
+        val retry =
+            MediaObserverRetry<Int>(
+                handler = handler,
+                query = { startMs ->
+                    capturedStartMs.add(startMs)
+                    0
+                },
+                handleResult = { _, _ -> },
+                retryDelayMs = retryDelayMs,
+            )
 
         val expectedStartMs = 1_234_567L
         retry.onChange(startMs = expectedStartMs)
@@ -164,13 +169,14 @@ class MediaObserverRetryTest {
         var callCount = 0
         val added = mutableListOf<String>()
 
-        val retry = MediaObserverRetry<List<MediaItem>>(
-            handler = handler,
-            // Call 0: only item1 committed; call 1 (retry): both committed.
-            query = { if (callCount++ == 0) listOf(item1) else listOf(item1, item2) },
-            handleResult = { items, _ -> items.forEach { added.add(it.uri) } },
-            retryDelayMs = retryDelayMs,
-        )
+        val retry =
+            MediaObserverRetry<List<MediaItem>>(
+                handler = handler,
+                // Call 0: only item1 committed; call 1 (retry): both committed.
+                query = { if (callCount++ == 0) listOf(item1) else listOf(item1, item2) },
+                handleResult = { items, _ -> items.forEach { added.add(it.uri) } },
+                retryDelayMs = retryDelayMs,
+            )
 
         retry.onChange(startMs = 999_000L)
         val runnableCaptor = argumentCaptor<Runnable>()
@@ -193,18 +199,19 @@ class MediaObserverRetryTest {
         val shown = mutableListOf<String>()
         val showThumbnail: (String) -> Unit = mock()
 
-        val retry = MediaObserverRetry<MediaItem?>(
-            handler = handler,
-            // Call 0: still IS_PENDING (null); call 1 (retry): committed.
-            query = { if (callCount++ == 0) null else sample },
-            handleResult = { item, _ ->
-                if (item != null) {
-                    showThumbnail(item.uri)
-                    shown.add(item.uri)
-                }
-            },
-            retryDelayMs = retryDelayMs,
-        )
+        val retry =
+            MediaObserverRetry<MediaItem?>(
+                handler = handler,
+                // Call 0: still IS_PENDING (null); call 1 (retry): committed.
+                query = { if (callCount++ == 0) null else sample },
+                handleResult = { item, _ ->
+                    if (item != null) {
+                        showThumbnail(item.uri)
+                        shown.add(item.uri)
+                    }
+                },
+                retryDelayMs = retryDelayMs,
+            )
 
         retry.onChange(startMs = 999_000L)
         // showThumbnail not yet called — initial query returned null.

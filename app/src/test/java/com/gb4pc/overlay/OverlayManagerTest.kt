@@ -27,7 +27,6 @@ import org.junit.Test
  *      still holds the Bitmap drawable, NOT a Drawable (i.e. updateIcon() was NOT called).
  */
 class OverlayManagerTest {
-
     // ── Issue #39: squircle constant ─────────────────────────────────────────
 
     /**
@@ -42,11 +41,11 @@ class OverlayManagerTest {
         val fraction = Constants.SQUIRCLE_CORNER_RADIUS_FRACTION
         assertTrue(
             "Corner radius fraction must be positive (got $fraction)",
-            fraction > 0f
+            fraction > 0f,
         )
         assertTrue(
             "Corner radius fraction must be ≤ 0.5 to avoid pill/circle shape (got $fraction)",
-            fraction <= 0.5f
+            fraction <= 0.5f,
         )
     }
 
@@ -62,7 +61,7 @@ class OverlayManagerTest {
             "Radius for a 200 px view must equal 60f (200 * 0.30)",
             60f,
             radius,
-            0.001f
+            0.001f,
         )
     }
 
@@ -70,54 +69,59 @@ class OverlayManagerTest {
     fun `calculateOverlaySizePx uses min of width and height`() {
         // size% = 11.5, min(1080, 2400) = 1080
         // expected = 1080 * 11.5 / 100 = 124.2
-        val sizePx = calculateOverlaySizePx(
-            sizePercent = 11.5f,
-            displayWidth = 1080,
-            displayHeight = 2400
-        )
+        val sizePx =
+            calculateOverlaySizePx(
+                sizePercent = 11.5f,
+                displayWidth = 1080,
+                displayHeight = 2400,
+            )
         assertEquals(124, sizePx)
     }
 
     @Test
     fun `calculateOverlaySizePx with landscape uses min dimension`() {
-        val sizePx = calculateOverlaySizePx(
-            sizePercent = 10.0f,
-            displayWidth = 2400,
-            displayHeight = 1080
-        )
+        val sizePx =
+            calculateOverlaySizePx(
+                sizePercent = 10.0f,
+                displayWidth = 2400,
+                displayHeight = 1080,
+            )
         // min(2400, 1080) = 1080, 1080 * 10 / 100 = 108
         assertEquals(108, sizePx)
     }
 
     @Test
     fun `calculateOverlayXPx positions center of overlay`() {
-        val xPx = calculateOverlayXPx(
-            xPercent = 50.0f,
-            displayWidth = 1080,
-            overlaySize = 100
-        )
+        val xPx =
+            calculateOverlayXPx(
+                xPercent = 50.0f,
+                displayWidth = 1080,
+                overlaySize = 100,
+            )
         // center at 50% of 1080 = 540, left edge = 540 - 50 = 490
         assertEquals(490, xPx)
     }
 
     @Test
     fun `calculateOverlayYPx positions center of overlay`() {
-        val yPx = calculateOverlayYPx(
-            yPercent = 50.0f,
-            displayHeight = 2400,
-            overlaySize = 100
-        )
+        val yPx =
+            calculateOverlayYPx(
+                yPercent = 50.0f,
+                displayHeight = 2400,
+                overlaySize = 100,
+            )
         // center at 50% of 2400 = 1200, top edge = 1200 - 50 = 1150
         assertEquals(1150, yPx)
     }
 
     @Test
     fun `calculateOverlayXPx at 0 percent`() {
-        val xPx = calculateOverlayXPx(
-            xPercent = 0.0f,
-            displayWidth = 1080,
-            overlaySize = 100
-        )
+        val xPx =
+            calculateOverlayXPx(
+                xPercent = 0.0f,
+                displayWidth = 1080,
+                overlaySize = 100,
+            )
         // center at 0, left edge = 0 - 50 = -50
         assertEquals(-50, xPx)
     }

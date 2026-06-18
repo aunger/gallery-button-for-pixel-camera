@@ -11,7 +11,6 @@ package com.gb4pc.e2e
  * object for filename computation.
  */
 object ScreenshotNaming {
-
     /**
      * Builds the canonical test-prefix string for the given class and method names.
      *
@@ -19,8 +18,10 @@ object ScreenshotNaming {
      *
      * Example: `"PixelCameraOverlayE2ETest_overlayAppearsWhenViewfinderOpens"`
      */
-    fun buildPrefix(simpleClassName: String, methodName: String): String =
-        "${simpleClassName}_${methodName}"
+    fun buildPrefix(
+        simpleClassName: String,
+        methodName: String,
+    ): String = "${simpleClassName}_$methodName"
 
     /**
      * Returns the artifact filename for [baseName] given an optional [testPrefix].
@@ -37,6 +38,8 @@ object ScreenshotNaming {
      *   // → "0-screen.png"
      * ```
      */
-    fun resolvedName(testPrefix: String?, baseName: String): String =
-        if (testPrefix != null) "${testPrefix}_$baseName" else baseName
+    fun resolvedName(
+        testPrefix: String?,
+        baseName: String,
+    ): String = if (testPrefix != null) "${testPrefix}_$baseName" else baseName
 }

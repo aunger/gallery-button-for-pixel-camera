@@ -17,7 +17,6 @@ import org.mockito.kotlin.*
  * tests run on the plain JVM without Robolectric.
  */
 class OverlayServiceLogicTest {
-
     // ── Mocked collaborators ────────────────────────────────────────────────
     private lateinit var overlayManager: OverlayManager
     private lateinit var foregroundDetector: ForegroundDetector
@@ -56,23 +55,24 @@ class OverlayServiceLogicTest {
         mediaObserverRegistered = false
         thumbnailObserverRegistered = false
 
-        logic = OverlayServiceLogic(
-            hasUsageStatsPermission = { usageStatsPermission },
-            hasOverlayPermission = { overlayPermission },
-            overlayManager = overlayManager,
-            cameraState = cameraState,
-            foregroundDetector = foregroundDetector,
-            sessionTracker = sessionTracker,
-            handler = handler,
-            debounceMs = 0L, // keep handler calls synchronous-looking in tests
-            onUsageAccessLost = { usageAccessLostCount++ },
-            onOverlayPermissionLost = { overlayLostCount++ },
-            isKeyguardLocked = { keyguardLocked },
-            onRegisterMediaObserver = { mediaObserverRegistered = true },
-            onUnregisterMediaObserver = { mediaObserverRegistered = false },
-            onRegisterThumbnailObserver = { thumbnailObserverRegistered = true },
-            onUnregisterThumbnailObserver = { thumbnailObserverRegistered = false },
-        )
+        logic =
+            OverlayServiceLogic(
+                hasUsageStatsPermission = { usageStatsPermission },
+                hasOverlayPermission = { overlayPermission },
+                overlayManager = overlayManager,
+                cameraState = cameraState,
+                foregroundDetector = foregroundDetector,
+                sessionTracker = sessionTracker,
+                handler = handler,
+                debounceMs = 0L, // keep handler calls synchronous-looking in tests
+                onUsageAccessLost = { usageAccessLostCount++ },
+                onOverlayPermissionLost = { overlayLostCount++ },
+                isKeyguardLocked = { keyguardLocked },
+                onRegisterMediaObserver = { mediaObserverRegistered = true },
+                onUnregisterMediaObserver = { mediaObserverRegistered = false },
+                onRegisterThumbnailObserver = { thumbnailObserverRegistered = true },
+                onUnregisterThumbnailObserver = { thumbnailObserverRegistered = false },
+            )
     }
 
     // ── DT-05: multi-camera ─────────────────────────────────────────────────
@@ -155,21 +155,22 @@ class OverlayServiceLogicTest {
 
         // Call again — observer must not be registered a second time
         var registrationCount = 0
-        val logic2 = OverlayServiceLogic(
-            hasUsageStatsPermission = { true },
-            hasOverlayPermission = { true },
-            overlayManager = overlayManager,
-            cameraState = cameraState,
-            foregroundDetector = foregroundDetector,
-            sessionTracker = sessionTracker,
-            handler = handler,
-            debounceMs = 0L,
-            onUsageAccessLost = {},
-            onOverlayPermissionLost = {},
-            isKeyguardLocked = { keyguardLocked },
-            onRegisterMediaObserver = { registrationCount++ },
-            onUnregisterMediaObserver = {},
-        )
+        val logic2 =
+            OverlayServiceLogic(
+                hasUsageStatsPermission = { true },
+                hasOverlayPermission = { true },
+                overlayManager = overlayManager,
+                cameraState = cameraState,
+                foregroundDetector = foregroundDetector,
+                sessionTracker = sessionTracker,
+                handler = handler,
+                debounceMs = 0L,
+                onUsageAccessLost = {},
+                onOverlayPermissionLost = {},
+                isKeyguardLocked = { keyguardLocked },
+                onRegisterMediaObserver = { registrationCount++ },
+                onUnregisterMediaObserver = {},
+            )
         logic2.evaluateForeground()
         logic2.evaluateForeground()
         logic2.evaluateForeground()
@@ -438,12 +439,12 @@ class OverlayServiceLogicTest {
             val captor = argumentCaptor<Runnable>()
             verify(handler, atLeastOnce())
                 .postDelayed(captor.capture(), eq(Constants.ACTIVATION_RETRY_MS))
-            if (captor.allValues.size <= total) break  // no new retry was posted -> chain terminated
+            if (captor.allValues.size <= total) break // no new retry was posted -> chain terminated
             captor.allValues.last().run()
             total = captor.allValues.size
             assertTrue(
                 "Activation retry did not terminate within a bounded number of attempts",
-                total - baseline <= Constants.ACTIVATION_RETRY_MAX_ATTEMPTS * 4
+                total - baseline <= Constants.ACTIVATION_RETRY_MAX_ATTEMPTS * 4,
             )
         }
         return total - baseline
@@ -555,21 +556,22 @@ class OverlayServiceLogicTest {
     @Test
     fun `issue-46 deactivation uses debounceMs delay when Pixel Camera is still foreground on camera switch`() {
         val debounce = 50L
-        val logicWithDebounce = OverlayServiceLogic(
-            hasUsageStatsPermission = { true },
-            hasOverlayPermission = { true },
-            overlayManager = overlayManager,
-            cameraState = CameraState(),
-            foregroundDetector = foregroundDetector,
-            sessionTracker = sessionTracker,
-            handler = handler,
-            debounceMs = debounce,
-            onUsageAccessLost = {},
-            onOverlayPermissionLost = {},
-            isKeyguardLocked = { false },
-            onRegisterMediaObserver = {},
-            onUnregisterMediaObserver = {},
-        )
+        val logicWithDebounce =
+            OverlayServiceLogic(
+                hasUsageStatsPermission = { true },
+                hasOverlayPermission = { true },
+                overlayManager = overlayManager,
+                cameraState = CameraState(),
+                foregroundDetector = foregroundDetector,
+                sessionTracker = sessionTracker,
+                handler = handler,
+                debounceMs = debounce,
+                onUsageAccessLost = {},
+                onOverlayPermissionLost = {},
+                isKeyguardLocked = { false },
+                onRegisterMediaObserver = {},
+                onUnregisterMediaObserver = {},
+            )
 
         // Activate the overlay
         whenever(foregroundDetector.getForegroundPackage()).thenReturn(Constants.PIXEL_CAMERA_PACKAGE)
@@ -790,7 +792,7 @@ class OverlayServiceLogicTest {
         logic.onOverlayFocusGained()
 
         assertTrue("Overlay should be active after focus regained", logic.isOverlayActive)
-        verify(sessionTracker, times(2)).startSession()  // once on activation, once on focus regained
+        verify(sessionTracker, times(2)).startSession() // once on activation, once on focus regained
         assertTrue("Media observer must be re-registered on focus gained while locked (Issue #92)", mediaObserverRegistered)
     }
 
@@ -920,21 +922,22 @@ class OverlayServiceLogicTest {
     @Test
     fun `issue-81 deactivation uses debounceMs on lock screen, not 0ms`() {
         val debounce = 50L
-        val logicWithDebounce = OverlayServiceLogic(
-            hasUsageStatsPermission = { true },
-            hasOverlayPermission = { true },
-            overlayManager = overlayManager,
-            cameraState = CameraState(),
-            foregroundDetector = foregroundDetector,
-            sessionTracker = sessionTracker,
-            handler = handler,
-            debounceMs = debounce,
-            onUsageAccessLost = {},
-            onOverlayPermissionLost = {},
-            isKeyguardLocked = { true },  // device is locked
-            onRegisterMediaObserver = {},
-            onUnregisterMediaObserver = {},
-        )
+        val logicWithDebounce =
+            OverlayServiceLogic(
+                hasUsageStatsPermission = { true },
+                hasOverlayPermission = { true },
+                overlayManager = overlayManager,
+                cameraState = CameraState(),
+                foregroundDetector = foregroundDetector,
+                sessionTracker = sessionTracker,
+                handler = handler,
+                debounceMs = debounce,
+                onUsageAccessLost = {},
+                onOverlayPermissionLost = {},
+                isKeyguardLocked = { true }, // device is locked
+                onRegisterMediaObserver = {},
+                onUnregisterMediaObserver = {},
+            )
 
         // Activate via lock-screen bypass
         logicWithDebounce.onCameraUnavailable("0")
@@ -980,21 +983,22 @@ class OverlayServiceLogicTest {
     @Test
     fun `issue-91 recheck scheduled when PC still in foreground after gallery launch`() {
         val debounce = 50L
-        val logicWithDebounce = OverlayServiceLogic(
-            hasUsageStatsPermission = { true },
-            hasOverlayPermission = { true },
-            overlayManager = overlayManager,
-            cameraState = CameraState(),
-            foregroundDetector = foregroundDetector,
-            sessionTracker = sessionTracker,
-            handler = handler,
-            debounceMs = debounce,
-            onUsageAccessLost = {},
-            onOverlayPermissionLost = {},
-            isKeyguardLocked = { false },
-            onRegisterMediaObserver = {},
-            onUnregisterMediaObserver = {},
-        )
+        val logicWithDebounce =
+            OverlayServiceLogic(
+                hasUsageStatsPermission = { true },
+                hasOverlayPermission = { true },
+                overlayManager = overlayManager,
+                cameraState = CameraState(),
+                foregroundDetector = foregroundDetector,
+                sessionTracker = sessionTracker,
+                handler = handler,
+                debounceMs = debounce,
+                onUsageAccessLost = {},
+                onOverlayPermissionLost = {},
+                isKeyguardLocked = { false },
+                onRegisterMediaObserver = {},
+                onUnregisterMediaObserver = {},
+            )
 
         whenever(foregroundDetector.getForegroundPackage()).thenReturn(Constants.PIXEL_CAMERA_PACKAGE)
         logicWithDebounce.showOverlay()
@@ -1016,21 +1020,22 @@ class OverlayServiceLogicTest {
     @Test
     fun `issue-91 recheck hides overlay when PC left foreground by recheck time`() {
         val debounce = 50L
-        val logicWithDebounce = OverlayServiceLogic(
-            hasUsageStatsPermission = { true },
-            hasOverlayPermission = { true },
-            overlayManager = overlayManager,
-            cameraState = CameraState(),
-            foregroundDetector = foregroundDetector,
-            sessionTracker = sessionTracker,
-            handler = handler,
-            debounceMs = debounce,
-            onUsageAccessLost = {},
-            onOverlayPermissionLost = {},
-            isKeyguardLocked = { false },
-            onRegisterMediaObserver = {},
-            onUnregisterMediaObserver = {},
-        )
+        val logicWithDebounce =
+            OverlayServiceLogic(
+                hasUsageStatsPermission = { true },
+                hasOverlayPermission = { true },
+                overlayManager = overlayManager,
+                cameraState = CameraState(),
+                foregroundDetector = foregroundDetector,
+                sessionTracker = sessionTracker,
+                handler = handler,
+                debounceMs = debounce,
+                onUsageAccessLost = {},
+                onOverlayPermissionLost = {},
+                isKeyguardLocked = { false },
+                onRegisterMediaObserver = {},
+                onUnregisterMediaObserver = {},
+            )
 
         whenever(foregroundDetector.getForegroundPackage()).thenReturn(Constants.PIXEL_CAMERA_PACKAGE)
         logicWithDebounce.showOverlay()
@@ -1056,21 +1061,22 @@ class OverlayServiceLogicTest {
     @Test
     fun `issue-91 recheck does not hide overlay when PC still in foreground at recheck time`() {
         val debounce = 50L
-        val logicWithDebounce = OverlayServiceLogic(
-            hasUsageStatsPermission = { true },
-            hasOverlayPermission = { true },
-            overlayManager = overlayManager,
-            cameraState = CameraState(),
-            foregroundDetector = foregroundDetector,
-            sessionTracker = sessionTracker,
-            handler = handler,
-            debounceMs = debounce,
-            onUsageAccessLost = {},
-            onOverlayPermissionLost = {},
-            isKeyguardLocked = { false },
-            onRegisterMediaObserver = {},
-            onUnregisterMediaObserver = {},
-        )
+        val logicWithDebounce =
+            OverlayServiceLogic(
+                hasUsageStatsPermission = { true },
+                hasOverlayPermission = { true },
+                overlayManager = overlayManager,
+                cameraState = CameraState(),
+                foregroundDetector = foregroundDetector,
+                sessionTracker = sessionTracker,
+                handler = handler,
+                debounceMs = debounce,
+                onUsageAccessLost = {},
+                onOverlayPermissionLost = {},
+                isKeyguardLocked = { false },
+                onRegisterMediaObserver = {},
+                onUnregisterMediaObserver = {},
+            )
 
         whenever(foregroundDetector.getForegroundPackage()).thenReturn(Constants.PIXEL_CAMERA_PACKAGE)
         logicWithDebounce.showOverlay()
@@ -1124,23 +1130,24 @@ class OverlayServiceLogicTest {
         var thumbnailRegistered = false
         var mediaRegistered = false
         val debounce = 50L
-        val logicWithSession = OverlayServiceLogic(
-            hasUsageStatsPermission = { true },
-            hasOverlayPermission = { true },
-            overlayManager = overlayManager,
-            cameraState = CameraState(),
-            foregroundDetector = foregroundDetector,
-            sessionTracker = sessionTracker,
-            handler = handler,
-            debounceMs = debounce,
-            onUsageAccessLost = {},
-            onOverlayPermissionLost = {},
-            isKeyguardLocked = { true },   // locked so session starts on activation
-            onRegisterMediaObserver = { mediaRegistered = true },
-            onUnregisterMediaObserver = { mediaRegistered = false },
-            onRegisterThumbnailObserver = { thumbnailRegistered = true },
-            onUnregisterThumbnailObserver = { thumbnailRegistered = false },
-        )
+        val logicWithSession =
+            OverlayServiceLogic(
+                hasUsageStatsPermission = { true },
+                hasOverlayPermission = { true },
+                overlayManager = overlayManager,
+                cameraState = CameraState(),
+                foregroundDetector = foregroundDetector,
+                sessionTracker = sessionTracker,
+                handler = handler,
+                debounceMs = debounce,
+                onUsageAccessLost = {},
+                onOverlayPermissionLost = {},
+                isKeyguardLocked = { true }, // locked so session starts on activation
+                onRegisterMediaObserver = { mediaRegistered = true },
+                onUnregisterMediaObserver = { mediaRegistered = false },
+                onRegisterThumbnailObserver = { thumbnailRegistered = true },
+                onUnregisterThumbnailObserver = { thumbnailRegistered = false },
+            )
 
         // Activate via lock-screen bypass — starts a session immediately
         logicWithSession.onCameraUnavailable("0")
@@ -1152,7 +1159,7 @@ class OverlayServiceLogicTest {
         // PC is still in foreground at gallery launch → recheck scheduled
         whenever(foregroundDetector.getForegroundPackage()).thenReturn(Constants.PIXEL_CAMERA_PACKAGE)
         logicWithSession.onGalleryLaunched()
-        verify(overlayManager, never()).hide()  // not hidden yet
+        verify(overlayManager, never()).hide() // not hidden yet
 
         // Capture the recheck runnable; PC has left by the time it fires
         val runnableCaptor = argumentCaptor<Runnable>()
@@ -1186,21 +1193,22 @@ class OverlayServiceLogicTest {
     @Test
     fun `issue-91 gallery-launch recheck cancelled on reset`() {
         val debounce = 50L
-        val logicWithDebounce = OverlayServiceLogic(
-            hasUsageStatsPermission = { true },
-            hasOverlayPermission = { true },
-            overlayManager = overlayManager,
-            cameraState = CameraState(),
-            foregroundDetector = foregroundDetector,
-            sessionTracker = sessionTracker,
-            handler = handler,
-            debounceMs = debounce,
-            onUsageAccessLost = {},
-            onOverlayPermissionLost = {},
-            isKeyguardLocked = { false },
-            onRegisterMediaObserver = {},
-            onUnregisterMediaObserver = {},
-        )
+        val logicWithDebounce =
+            OverlayServiceLogic(
+                hasUsageStatsPermission = { true },
+                hasOverlayPermission = { true },
+                overlayManager = overlayManager,
+                cameraState = CameraState(),
+                foregroundDetector = foregroundDetector,
+                sessionTracker = sessionTracker,
+                handler = handler,
+                debounceMs = debounce,
+                onUsageAccessLost = {},
+                onOverlayPermissionLost = {},
+                isKeyguardLocked = { false },
+                onRegisterMediaObserver = {},
+                onUnregisterMediaObserver = {},
+            )
 
         whenever(foregroundDetector.getForegroundPackage()).thenReturn(Constants.PIXEL_CAMERA_PACKAGE)
         logicWithDebounce.showOverlay()
