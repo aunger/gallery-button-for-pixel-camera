@@ -1,0 +1,39 @@
+name: Remove verified label on new push
+
+# When a new commit is pushed to a PR (synchronize) or the PR is reopened,
+# the `verified` label applied by the Verification Planner becomes stale.
+# This workflow removes it so the label only reflects the most recent
+# verification pass.
+
+on:
+  pull_request:
+    types: [synchronize, reopened]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  remove-verified-label:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove verified label if present
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Check if the verified label is on the PR.
+          LABELS=$(curl -sf \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPO/issues/$PR_NUMBER/labels" \
+            | python3 -c "import sys, json; print(' '.join(l['name'] for l in json.load(sys.stdin)))")
+          if echo "$LABELS" | grep -qw "verified"; then
+            echo "Removing 'verified' label from PR #$PR_NUMBER"
+            curl -sf -X DELETE \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$REPO/issues/$PR_NUMBER/labels/verified"
+          else
+            echo "'verified' label not present on PR #$PR_NUMBER -- nothing to do"
+          fi
