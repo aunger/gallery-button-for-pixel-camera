@@ -24,7 +24,7 @@ jobs:
         env:
           LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
         run: |
-          if echo "$LABELS" | grep -qi '"verification needed"'; then
+          if echo "$LABELS" | jq -e '[.[] | ascii_downcase] | contains(["verification needed"])' > /dev/null; then
             echo "ERROR: This PR has a 'verification needed' label."
             echo "Remove the label after all before-merging requirements are resolved."
             exit 1
