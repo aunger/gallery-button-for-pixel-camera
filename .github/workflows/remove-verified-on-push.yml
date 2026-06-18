@@ -10,7 +10,8 @@ on:
     types: [synchronize, reopened]
 
 permissions:
-  pull-requests: write
+  issues: write
+  pull-requests: read
 
 jobs:
   remove-verified-label:
@@ -28,7 +29,7 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/$REPO/issues/$PR_NUMBER/labels" \
             | python3 -c "import sys, json; print(' '.join(l['name'] for l in json.load(sys.stdin)))")
-          if echo "$LABELS" | grep -qw "verified"; then
+          if echo "$LABELS" | tr ' ' '\n' | grep -qx "verified"; then
             echo "Removing 'verified' label from PR #$PR_NUMBER"
             curl -sf -X DELETE \
               -H "Authorization: Bearer $GITHUB_TOKEN" \
