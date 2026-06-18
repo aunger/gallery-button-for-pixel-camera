@@ -306,22 +306,17 @@ class GalleryButtonVisualE2ETest {
      * it fails when the regression is present and MockCameraActivity is green, and passes when
      * the overlay works and the empty gallery is shown. Do not change the assertion.
      *
-     * **Caveat introduced by PR #400 (issues #231/#232) — re-check when fixing #156.**
+     * **Cross-package roll cleanup (issue #406 — resolves the PR #400 caveat).**
      *
-     * [E2EFixture.clearCameraRoll] can only delete MediaStore rows owned by `com.gb4pc`.
      * `test3a` (which runs alphabetically before this test) captures a GREEN photo owned by
-     * `com.google.android.GoogleCamera` (the mock camera), which `clearCameraRoll()` cannot
-     * remove and which therefore remains in the camera roll for every test that runs after
-     * `test3a`, including this one. Today that is harmless: this test fails for the #156 reason
-     * (overlay blocked, tap is a no-op) regardless of the camera roll's contents.
-     *
-     * But once #156 is fixed and `tapOverlay()` starts succeeding here, the gallery will no
-     * longer be empty -- it will show `test3a`'s leftover GREEN photo -- so GREEN coverage will
-     * be >= 10% and this assertion will fail for a reason unrelated to #156. If this test is
-     * still failing after #156 lands, check for that leftover row before assuming the
-     * secure-camera fix is incomplete. Fixing this will require a way to clear cross-package
-     * MediaStore rows the test suite itself created (e.g. `pm clear` / shell `content delete`
-     * as root between tests), which is out of scope for #231/#232.
+     * `com.google.android.GoogleCamera` (the mock camera). Earlier, [E2EFixture.clearCameraRoll]
+     * could only delete rows owned by `com.gb4pc`, so that cross-package photo survived into
+     * this test and would have made the "empty gallery" assumption false once #156 was fixed.
+     * [E2EFixture.clearCameraRoll] now also runs a `content delete` shell command under the
+     * `shell` UID, which removes rows owned by *any* package, so this test's `clearCameraRoll()`
+     * genuinely empties the roll before the tap. The empty-gallery assumption therefore holds
+     * independently of `test3a`, and a failure here after #156 lands reflects the secure-camera
+     * path itself, not a leftover MediaStore row.
      *
      * Tracking issue: #156 — same as test5a. Do NOT skip, ignore, or quarantine this test.
      */
