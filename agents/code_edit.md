@@ -19,6 +19,23 @@
   - For example, *Modified test `pocket_square_is_a_square` to allow circles in addition to squares, because they are more round.*
 - Existing tests must not be deleted or silently disabled to make a change compile.
 
+## Delegating to nested sub-agents
+
+When you dispatch a nested sub-agent via the Agent tool, follow these rules:
+
+- **Use foreground (the default) when you need the results in the same turn.**
+  Do not set `run_in_background: true` for any sub-agent whose findings you will act on before returning.
+  The Agent tool blocks until the sub-agent completes, so the results are available immediately.
+- **Do not exit before a foreground sub-agent completes.**
+  A foreground sub-agent runs to completion during the same tool call; you receive its result as the return value.
+  If the call returns, the sub-agent is done--you do not need to wait further.
+  Exit only after you have consumed or recorded the result.
+- **Use `run_in_background: true` only for fire-and-forget work** whose results are not needed in the current turn.
+  If you are unsure whether you will need the results, use foreground.
+- **Never rely on a background sub-agent's output in the same turn.**
+  Background sub-agents surface as task-notification events after you exit.
+  Their results are not available to you during the current turn.
+
 ## Finish well
 
 - If you are a sub-agent and were given a branch or branch name, commit your changes before you return.
