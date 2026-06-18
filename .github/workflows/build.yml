@@ -570,6 +570,9 @@ jobs:
           path: downloaded-artifacts/instrumented-test-results
         continue-on-error: true
 
+      - name: Install Python script dependencies
+        run: pip install -r scripts/requirements.txt
+
       - name: File issues for failed tests
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
