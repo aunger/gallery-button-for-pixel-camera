@@ -60,19 +60,13 @@ jobs:
         env:
           SCAN_TARGETS: ${{ steps.targets.outputs.targets }}
         run: |
-          # --error only on PRs: fails on findings so the PR is blocked.
-          # Non-PR events (push, schedule) scan for visibility without blocking;
-          # findings still land in the Security tab via SARIF.
-          # Tracked for future cleanup in issue #436.
-          EXTRA=""
-          [[ "${{ github.event_name }}" == "pull_request" ]] && EXTRA="--error"
-          # SC2086: word-splitting on SCAN_TARGETS and EXTRA is intentional.
+          # SC2086: word-splitting on SCAN_TARGETS is intentional.
           # shellcheck disable=SC2086
           semgrep scan \
             --config p/python \
             --config p/kotlin \
             --config p/security-audit \
-            $EXTRA \
+            --error \
             --sarif \
             --output semgrep.sarif \
             $SCAN_TARGETS

@@ -25,7 +25,7 @@ Optional environment variables (populated automatically by GitHub Actions):
 
 import os
 import sys
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
