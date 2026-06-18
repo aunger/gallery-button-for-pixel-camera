@@ -34,7 +34,7 @@ The allowlist does that narrowly:
 
 Add an entry to `.github/allowed-test-failures.txt`:
 
-```
+```text
 com.gb4pc.e2e.GalleryButtonVisualE2ETest#someMethod   # tolerate one method
 com.gb4pc.e2e.GalleryButtonVisualE2ETest              # tolerate the whole class
 ```

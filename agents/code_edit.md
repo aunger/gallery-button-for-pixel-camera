@@ -8,8 +8,8 @@
 ## Organize your changes
 
 - You should split your changes into commits by concern.
-    - Avoid monolithic commits.
-    - **Do not** organize your commits by file rather than by concern (e.g. "all changes to Foo.kt in one commit, Bar.kt in another").
+  - Avoid monolithic commits.
+  - **Do not** organize your commits by file rather than by concern (e.g. "all changes to Foo.kt in one commit, Bar.kt in another").
 - When you refactor existing code, **always** commit the pure refactoring (which does not change behavior or output) separately. **Do not** combine that refactoring with a change in functionality or behavior.
 
 ## Test coverage

@@ -20,6 +20,7 @@
 - **Do not return before posting your review.** Posting your review is the only valid exit condition. After forming your verdict, call the review-submission tool before stopping.
 
   Review pattern:
+
   ``` no
   (ReviewText, IsReviewApproval) := <review the diff; form your verdict and review text>
   post review: mcp__github__pull_request_review_write(ReviewText, IsReviewApproval)
@@ -53,7 +54,7 @@ Terminology: In most cases, the *Author* is also referred to as *Programmer*. In
 
 - Begin any comments or reviews with the following line, where {your role} is Author, Reviewer, etc.:
 
-  ```
+  ```text
   🤖 {your role}
   ```
 
