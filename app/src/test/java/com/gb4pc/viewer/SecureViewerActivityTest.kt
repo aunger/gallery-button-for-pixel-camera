@@ -19,7 +19,6 @@ import org.junit.Test
  * are left at the bottom of the file marked @Ignore with explanatory comments.
  */
 class SecureViewerActivityTest {
-
     // ---------------------------------------------------------------------------
     // 1. DiffUtil.ItemCallback<MediaItem>
     // ---------------------------------------------------------------------------
@@ -101,7 +100,7 @@ class SecureViewerActivityTest {
     // be run as instrumented tests (androidTest) or with Robolectric.
     // ---------------------------------------------------------------------------
 
-    /**
+    /*
      * STUB: Verify that ACTION_USER_PRESENT causes SecureViewerActivity to call finish().
      *
      * Approach with Robolectric:
@@ -114,23 +113,26 @@ class SecureViewerActivityTest {
      * Currently omitted because this requires Robolectric setup that is not yet
      * wired for activities using setShowWhenLocked / KeyguardManager stubs.
      */
+
     // @Ignore("Requires Robolectric + KeyguardManager stub")
     // @Test fun `user present broadcast finishes the activity`() {}
 
-    /**
+    /*
      * STUB: Verify that deleteFromMediaStore on API 30+ launches a system delete request.
      *
      * This requires mocking MediaStore.createDeleteRequest and ActivityResultLauncher, which
      * are best tested via instrumented tests on a physical device or emulator.
      */
+
     // @Ignore("Requires instrumentation test on API 30+ device/emulator")
     // @Test fun `deleteFromMediaStore launches createDeleteRequest on API 30+`() {}
 
-    /**
+    /*
      * STUB: Verify that RecoverableSecurityException on API 29 launches the recovery intent.
      *
      * This requires a device/emulator running API 29 and a MediaStore item owned by another app.
      */
+
     // @Ignore("Requires instrumentation test on API 29 device/emulator")
     // @Test fun `deleteFromMediaStore handles RecoverableSecurityException on API 29`() {}
 }
