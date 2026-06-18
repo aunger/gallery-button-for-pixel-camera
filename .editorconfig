@@ -1,0 +1,7 @@
+[*.{kt,kts}]
+# Allow wildcard imports from Compose and common test libraries -- expanding these
+# would add dozens of explicit imports per file with no readability benefit.
+ij_kotlin_packages_to_use_import_on_demand = androidx.compose.foundation.layout,androidx.compose.material3,androidx.compose.runtime,org.junit.Assert,org.mockito.kotlin
+
+# @Composable functions conventionally use PascalCase (component naming).
+ktlint_function_naming_ignore_when_annotated_with = Composable
