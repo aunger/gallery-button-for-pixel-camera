@@ -1,0 +1,32 @@
+name: Block merge when "verification needed" label is present
+
+# Fails the required status check whenever the PR carries a "verification
+# needed" label, preventing merge until the label is removed.
+#
+# Triggers on the full set of PR events so the check always reflects the
+# current label state:
+#   - opened / reopened / synchronize: ensure fresh PRs are blocked from the start.
+#   - labeled / unlabeled: re-evaluate immediately when the label changes.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  check-verification-needed:
+    name: No "verification needed" label
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for "verification needed" label
+        env:
+          LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
+        run: |
+          if echo "$LABELS" | jq -e '[.[] | ascii_downcase] | contains(["verification needed"])' > /dev/null; then
+            echo "ERROR: This PR has a 'verification needed' label."
+            echo "Remove the label after all before-merging requirements are resolved."
+            exit 1
+          fi
+          echo "OK: 'verification needed' label is not present."
