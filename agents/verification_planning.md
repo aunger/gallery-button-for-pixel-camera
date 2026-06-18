@@ -38,9 +38,13 @@ Only the before-merging list controls the merge gate.
    Do NOT communicate with the user, and do NOT ask whether to test manually or to automate.
    For each item:
    a. Title the issue `(re PR #{number}) {required task title}`, where `{number}` is the current PR number and `{required task title}` is a short title for the outstanding requirement.
-   b. In the issue description, include a URL to the particular PR comment that called for this requirement.
+   b. **Before filing**: search GitHub for an open or closed issue whose title exactly matches the title from step 3a.
+      Use the GitHub search API: `curl -sG -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/search/issues --data-urlencode "q=repo:{owner}/{repo} in:title \"{exact title}\" is:issue"`.
+      If any result has a title that exactly matches (case-insensitively), the issue was already filed in a prior run--skip filing and use that existing issue's id and number for steps 3c and 3d.
+      Only create a new issue when no exact title match exists.
+   c. In the issue description, include a URL to the particular PR comment that called for this requirement.
       (If the requirement came from the PR or issue description itself rather than a comment, link to that description instead.)
-   c. Record that the new issue **blocks** the PR, using GitHub's issue-dependencies feature.
+   d. Record that the new issue **blocks** the PR, using GitHub's issue-dependencies feature.
       GitHub exposes this through the REST API.
       The `gh` CLI is not installed in the sandbox, so call the REST endpoint with `curl` and `$GITHUB_TOKEN`, using the auth headers (`-H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json"`).
       To mark the PR as blocked by the new issue:
@@ -49,8 +53,8 @@ Only the before-merging list controls the merge gate.
       Send the id as a bare JSON integer in the request body (not a quoted string), as the API requires.
       If the PR number is not accepted for an issue-dependency relationship, fall back to blocking the **parent issue** the PR resolves (the issue this PR fixes) instead, by sending the same request to `.../issues/{parent issue number}/dependencies/blocked_by`.
       Only if neither call succeeds, state the blocking relationship in plain text in the new issue's description (for example, "Blocks PR #{number}") so it is not lost, and skip the formal link without failing.
-   d. Make the new issue a **sub-issue** of the PR, using GitHub's sub-issues feature.
-      GitHub exposes this through the REST API; call it with `curl` and `$GITHUB_TOKEN` as in step 3c (the `gh` CLI is not installed):
+   e. Make the new issue a **sub-issue** of the PR, using GitHub's sub-issues feature.
+      GitHub exposes this through the REST API; call it with `curl` and `$GITHUB_TOKEN` as in step 3d (the `gh` CLI is not installed):
       `curl -sX POST -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/{owner}/{repo}/issues/{number}/sub_issues -d '{"sub_issue_id": {new issue's id}}'`,
       where `{number}` is the current PR number and `{new issue's id}` is the new issue's internal id (not its number).
       Send the id as a bare JSON integer in the request body (not a quoted string), as the API requires.
@@ -59,8 +63,11 @@ Only the before-merging list controls the merge gate.
 4. Open one GitHub issue for each item on the *follow-on* list.
    For each item:
    a. Title the issue simply `{task title}`, without referencing the current PR.
-   b. In the issue description, include a URL to the source comment or description, and state clearly that this issue does **not** block PR #{number} (for example, "This is a follow-on item and does not block merging PR #{number}.").
-   c. Do **not** call the `blocked_by` dependency endpoint for follow-on issues.
+   b. **Before filing**: search GitHub for an open or closed issue whose title exactly matches the title from step 4a.
+      Use the same search approach as step 3b.
+      If an exact title match exists, skip filing and use the existing issue for tracking; do not file a duplicate.
+   c. In the issue description, include a URL to the source comment or description, and state clearly that this issue does **not** block PR #{number} (for example, "This is a follow-on item and does not block merging PR #{number}.").
+   d. Do **not** call the `blocked_by` dependency endpoint for follow-on issues.
       Do **not** add any "Blocks PR #..." line to the issue body.
 5. Report both lists to the Orchestrator and exit.
    The PR may be merged once every item on the *before merging* list is resolved.
