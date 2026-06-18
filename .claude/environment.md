@@ -115,15 +115,17 @@ no signal about what actually changed. **Always follow a write with a confirming
 
 Write operations (`add_issue_comment`, `issue_write`, etc.) occasionally fail with the following error while reads on the same resource succeed:
 
-```
+```text
 MCP server "github" requires re-authorization (token expired)
 ```
 
 #### Possible workaround (not guaranteed, appears to work)
+
 If writes fail with this error, try performing any `issue_read` first, then immediately retry the write.
 Do not interpret this as "no blind writes" enforcement.
 
 #### Observations
+
 `$GITHUB_TOKEN` is a fine-grained PAT (`github_pat_...` format), not a JWT.
 It is stable across sessions and does not change mid-session or after MCP reads/writes.
 The "token expired" error therefore **does not refer to `GITHUB_TOKEN` expiring**.

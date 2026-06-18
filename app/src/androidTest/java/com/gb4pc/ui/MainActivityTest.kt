@@ -27,7 +27,6 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class MainActivityRedirectTest {
-
     private lateinit var prefs: PrefsManager
 
     @Before
@@ -55,18 +54,19 @@ class MainActivityRedirectTest {
 
 @RunWith(AndroidJUnit4::class)
 class MainSettingsScreenTest {
-
     private val composeRule = createAndroidComposeRule<MainActivity>()
-    private val prefsSetup = object : ExternalResource() {
-        override fun before() {
-            PrefsManager(InstrumentationRegistry.getInstrumentation().targetContext)
-                .isSetupCompleted = true
+    private val prefsSetup =
+        object : ExternalResource() {
+            override fun before() {
+                PrefsManager(InstrumentationRegistry.getInstrumentation().targetContext)
+                    .isSetupCompleted = true
+            }
+
+            override fun after() {
+                PrefsManager(InstrumentationRegistry.getInstrumentation().targetContext)
+                    .isSetupCompleted = false
+            }
         }
-        override fun after() {
-            PrefsManager(InstrumentationRegistry.getInstrumentation().targetContext)
-                .isSetupCompleted = false
-        }
-    }
 
     @get:Rule
     val chain: RuleChain = RuleChain.outerRule(prefsSetup).around(composeRule)

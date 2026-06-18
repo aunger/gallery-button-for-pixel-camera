@@ -19,7 +19,8 @@ import com.gb4pc.R
 import com.gb4pc.ui.theme.GB4PCTheme
 import com.gb4pc.util.DebugLog
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Date
+import java.util.Locale
 
 /**
  * Dedicated screen for viewing the in-memory debug log (issue #83).
@@ -66,7 +67,7 @@ fun LogViewerScreen(onNavigateUp: () -> Unit = {}) {
                     IconButton(onClick = onNavigateUp) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.log_viewer_navigate_up)
+                            contentDescription = stringResource(R.string.log_viewer_navigate_up),
                         )
                     }
                 },
@@ -74,40 +75,43 @@ fun LogViewerScreen(onNavigateUp: () -> Unit = {}) {
                     TextButton(onClick = { DebugLog.clear() }) {
                         Text(stringResource(R.string.log_viewer_clear))
                     }
-                }
+                },
             )
-        }
+        },
     ) { padding ->
         if (entries.isEmpty()) {
             Box(
-                modifier = Modifier
-                    .padding(padding)
-                    .fillMaxSize()
+                modifier =
+                    Modifier
+                        .padding(padding)
+                        .fillMaxSize(),
             ) {
                 Text(
                     text = stringResource(R.string.log_viewer_empty),
                     modifier = Modifier.padding(16.dp),
-                    style = MaterialTheme.typography.bodySmall
+                    style = MaterialTheme.typography.bodySmall,
                 )
             }
         } else {
             SelectionContainer(
-                modifier = Modifier
-                    .padding(padding)
-                    .fillMaxSize()
+                modifier =
+                    Modifier
+                        .padding(padding)
+                        .fillMaxSize(),
             ) {
                 LazyColumn(
                     state = listState,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 8.dp),
-                    contentPadding = PaddingValues(vertical = 8.dp)
+                    modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 8.dp),
+                    contentPadding = PaddingValues(vertical = 8.dp),
                 ) {
                     items(entries) { entry ->
                         Text(
                             text = "${dateFormat.format(Date(entry.timestamp))}  ${entry.message}",
                             style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(vertical = 2.dp)
+                            modifier = Modifier.padding(vertical = 2.dp),
                         )
                     }
                 }

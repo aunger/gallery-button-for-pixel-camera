@@ -39,7 +39,7 @@ Exit codes:
 
 import re
 import sys
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -53,6 +53,7 @@ _INLINE_COMMENT = re.compile(r"(?:^|\s)#.*$")
 # ---------------------------------------------------------------------------
 # Data model
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class FailedTest:
@@ -68,6 +69,7 @@ class FailedTest:
 @dataclass(frozen=True)
 class SuiteSpec:
     """One test suite to inspect: where its results live and how its step fared."""
+
     directory: Path
     label: str
     # The GitHub Actions step ``outcome`` for the step that produced these
@@ -81,6 +83,7 @@ class SuiteSpec:
 # ---------------------------------------------------------------------------
 # Allowlist
 # ---------------------------------------------------------------------------
+
 
 def load_allowlist(path: Path | None) -> set[str]:
     """Return the set of allowlist entries (class names and class#method names).
@@ -104,15 +107,13 @@ def load_allowlist(path: Path | None) -> set[str]:
 
 def is_allowed(failure: FailedTest, allowlist: set[str]) -> bool:
     """True when *failure* is tolerated by *allowlist* (class- or method-level)."""
-    return (
-        failure.class_name in allowlist
-        or failure.qualified in allowlist
-    )
+    return failure.class_name in allowlist or failure.qualified in allowlist
 
 
 # ---------------------------------------------------------------------------
 # Parsing
 # ---------------------------------------------------------------------------
+
 
 def parse_failures(directory: Path, suite_label: str) -> list[FailedTest]:
     """Return one FailedTest for every failing test case found in *directory*."""
@@ -137,11 +138,13 @@ def parse_failures(directory: Path, suite_label: str) -> list[FailedTest]:
                     continue
                 if tc.find("failure") is None and tc.find("error") is None:
                     continue
-                failures.append(FailedTest(
-                    class_name=class_name,
-                    method_name=method_name,
-                    suite_label=suite_label,
-                ))
+                failures.append(
+                    FailedTest(
+                        class_name=class_name,
+                        method_name=method_name,
+                        suite_label=suite_label,
+                    )
+                )
 
     return failures
 
@@ -217,6 +220,7 @@ def parse_args(argv: list[str]) -> tuple[Path | None, list[SuiteSpec]]:
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
 
 def main(argv: list[str] | None = None) -> int:
     if argv is None:

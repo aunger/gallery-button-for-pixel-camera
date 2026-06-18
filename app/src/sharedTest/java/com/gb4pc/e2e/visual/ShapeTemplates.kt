@@ -10,11 +10,13 @@ import kotlin.math.pow
  * JVM unit tests and Android instrumented tests.
  */
 object ShapeTemplates {
-
     /**
      * Returns a [MaskData] of size [w]×[h] with every pixel set to true (a filled square).
      */
-    fun square(w: Int, h: Int): MaskData {
+    fun square(
+        w: Int,
+        h: Int,
+    ): MaskData {
         require(w > 0 && h > 0) { "square: dimensions must be positive (got $w×$h)" }
         val bits = BooleanArray(w * h) { true }
         val cx = (w - 1) / 2f
@@ -23,9 +25,13 @@ object ShapeTemplates {
             bits = bits,
             width = w,
             height = h,
-            bboxLeft = 0, bboxTop = 0, bboxRight = w, bboxBottom = h,
-            centroidX = cx, centroidY = cy,
-            pixelCount = w * h
+            bboxLeft = 0,
+            bboxTop = 0,
+            bboxRight = w,
+            bboxBottom = h,
+            centroidX = cx,
+            centroidY = cy,
+            pixelCount = w * h,
         )
     }
 
@@ -37,14 +43,23 @@ object ShapeTemplates {
      * Using the pixel center (x + 0.5) produces a more accurate circular/elliptical boundary
      * than rounding to the grid corner.
      */
-    fun circle(w: Int, h: Int): MaskData {
+    fun circle(
+        w: Int,
+        h: Int,
+    ): MaskData {
         require(w > 0 && h > 0) { "circle: dimensions must be positive (got $w×$h)" }
         val bits = BooleanArray(w * h)
-        val rx = w / 2.0; val ry = h / 2.0
-        val cx = w / 2.0; val cy = h / 2.0
-        var sumX = 0L; var sumY = 0L; var count = 0
-        var minX = Int.MAX_VALUE; var maxX = Int.MIN_VALUE
-        var minY = Int.MAX_VALUE; var maxY = Int.MIN_VALUE
+        val rx = w / 2.0
+        val ry = h / 2.0
+        val cx = w / 2.0
+        val cy = h / 2.0
+        var sumX = 0L
+        var sumY = 0L
+        var count = 0
+        var minX = Int.MAX_VALUE
+        var maxX = Int.MIN_VALUE
+        var minY = Int.MAX_VALUE
+        var maxY = Int.MIN_VALUE
         for (y in 0 until h) {
             for (x in 0 until w) {
                 val nx = (x + 0.5 - cx) / rx
@@ -55,7 +70,9 @@ object ShapeTemplates {
                     if (x > maxX) maxX = x
                     if (y < minY) minY = y
                     if (y > maxY) maxY = y
-                    sumX += x; sumY += y; count++
+                    sumX += x
+                    sumY += y
+                    count++
                 }
             }
         }
@@ -69,13 +86,20 @@ object ShapeTemplates {
      * Formula: |2x/w − 1|^n + |2y/h − 1|^n ≤ 1, with n = 4.
      * This approximates Android's adaptive-icon mask.
      */
-    fun squircle(w: Int, h: Int): MaskData {
+    fun squircle(
+        w: Int,
+        h: Int,
+    ): MaskData {
         require(w > 0 && h > 0) { "squircle: dimensions must be positive (got $w×$h)" }
         val n = 4.0
         val bits = BooleanArray(w * h)
-        var sumX = 0L; var sumY = 0L; var count = 0
-        var minX = Int.MAX_VALUE; var maxX = Int.MIN_VALUE
-        var minY = Int.MAX_VALUE; var maxY = Int.MIN_VALUE
+        var sumX = 0L
+        var sumY = 0L
+        var count = 0
+        var minX = Int.MAX_VALUE
+        var maxX = Int.MIN_VALUE
+        var minY = Int.MAX_VALUE
+        var maxY = Int.MIN_VALUE
         for (y in 0 until h) {
             for (x in 0 until w) {
                 // Use pixel center for sub-pixel accuracy.
@@ -87,7 +111,9 @@ object ShapeTemplates {
                     if (x > maxX) maxX = x
                     if (y < minY) minY = y
                     if (y > maxY) maxY = y
-                    sumX += x; sumY += y; count++
+                    sumX += x
+                    sumY += y
+                    count++
                 }
             }
         }
@@ -97,19 +123,29 @@ object ShapeTemplates {
     // ── internal helpers ──────────────────────────────────────────────────────────────────────────────
 
     private fun buildMaskData(
-        bits: BooleanArray, w: Int, h: Int,
-        sumX: Long, sumY: Long, count: Int,
-        minX: Int, maxX: Int, minY: Int, maxY: Int
+        bits: BooleanArray,
+        w: Int,
+        h: Int,
+        sumX: Long,
+        sumY: Long,
+        count: Int,
+        minX: Int,
+        maxX: Int,
+        minY: Int,
+        maxY: Int,
     ): MaskData {
         if (count == 0) return MaskData(bits, w, h, 0, 0, 0, 0, 0f, 0f, 0)
         return MaskData(
             bits = bits,
             width = w,
             height = h,
-            bboxLeft = minX, bboxTop = minY, bboxRight = maxX + 1, bboxBottom = maxY + 1,
+            bboxLeft = minX,
+            bboxTop = minY,
+            bboxRight = maxX + 1,
+            bboxBottom = maxY + 1,
             centroidX = sumX.toFloat() / count,
             centroidY = sumY.toFloat() / count,
-            pixelCount = count
+            pixelCount = count,
         )
     }
 }

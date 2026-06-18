@@ -25,8 +25,8 @@ Optional environment variables (populated automatically by GitHub Actions):
 
 import os
 import sys
-import xml.etree.ElementTree as ET
-from dataclasses import dataclass, field
+import defusedxml.ElementTree as ET
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 import requests
@@ -35,6 +35,7 @@ import requests
 # ---------------------------------------------------------------------------
 # Data model
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class FailedTest:
@@ -49,6 +50,7 @@ class FailedTest:
 # ---------------------------------------------------------------------------
 # Parsing
 # ---------------------------------------------------------------------------
+
 
 def parse_failures(directory: Path, suite_label: str, artifact_name: str) -> list[FailedTest]:
     """Return one FailedTest for every failing test case found in *directory*."""
@@ -88,14 +90,16 @@ def parse_failures(directory: Path, suite_label: str, artifact_name: str) -> lis
                 failure_message = problem_el.get("message", "")
                 stack_trace = (problem_el.text or "").strip()
 
-                failures.append(FailedTest(
-                    class_name=class_name,
-                    method_name=method_name,
-                    failure_message=failure_message,
-                    stack_trace=stack_trace,
-                    suite_label=suite_label,
-                    artifact_name=artifact_name,
-                ))
+                failures.append(
+                    FailedTest(
+                        class_name=class_name,
+                        method_name=method_name,
+                        failure_message=failure_message,
+                        stack_trace=stack_trace,
+                        suite_label=suite_label,
+                        artifact_name=artifact_name,
+                    )
+                )
 
     return failures
 
@@ -154,11 +158,7 @@ def make_issue_body(
         else "_CI run ID not available_"
     )
 
-    artifact_url = (
-        f"{run_url}#artifacts"
-        if github_run_id
-        else "_not available_"
-    )
+    artifact_url = f"{run_url}#artifacts" if github_run_id else "_not available_"
 
     stack_excerpt = failure.stack_trace
     if len(stack_excerpt) > _STACK_TRACE_LIMIT:
@@ -210,6 +210,7 @@ _Filed automatically by CI on failure of `{failure.class_name}.{failure.method_n
 # GitHub API helpers
 # ---------------------------------------------------------------------------
 
+
 def _github_headers(token: str) -> dict[str, str]:
     return {
         "Authorization": f"Bearer {token}",
@@ -235,7 +236,9 @@ def find_existing_issue(
     """
     simple_class = class_name.split(".")[-1]
     # Omit is:open / is:closed so both states are searched.
-    query = f'repo:{repository} is:issue label:test-failure "[{simple_class}] {method_name}" in:title'
+    query = (
+        f'repo:{repository} is:issue label:test-failure "[{simple_class}] {method_name}" in:title'
+    )
     url = "https://api.github.com/search/issues"
     try:
         resp = requests.get(
@@ -313,6 +316,7 @@ def reopen_issue(
 # ---------------------------------------------------------------------------
 # Core logic
 # ---------------------------------------------------------------------------
+
 
 def process_failure(
     failure: FailedTest,
@@ -440,6 +444,7 @@ def _artifact_name_for_label(label: str) -> str:
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
 
 def main(argv: list[str] | None = None) -> int:
     if argv is None:

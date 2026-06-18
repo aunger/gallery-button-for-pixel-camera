@@ -5,7 +5,7 @@ import os
 import sys
 import unittest
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(__file__))
 import archive_stale_test_failures as astf  # noqa: E402
@@ -36,14 +36,14 @@ def _make_issue(
 # gh_api tests
 # ---------------------------------------------------------------------------
 
-class TestGhApi(unittest.TestCase):
 
+class TestGhApi(unittest.TestCase):
     @patch("archive_stale_test_failures.urllib.request.urlopen")
     def test_get_request_sets_correct_headers(self, mock_urlopen):
         mock_cm = MagicMock()
         mock_cm.__enter__ = MagicMock(return_value=mock_cm)
         mock_cm.__exit__ = MagicMock(return_value=False)
-        mock_cm.read.return_value = b'[]'
+        mock_cm.read.return_value = b"[]"
         mock_urlopen.return_value = mock_cm
 
         astf.gh_api("repos/owner/repo/issues", token="mytoken")
@@ -58,7 +58,7 @@ class TestGhApi(unittest.TestCase):
         mock_cm = MagicMock()
         mock_cm.__enter__ = MagicMock(return_value=mock_cm)
         mock_cm.__exit__ = MagicMock(return_value=False)
-        mock_cm.read.return_value = b'{}'
+        mock_cm.read.return_value = b"{}"
         mock_urlopen.return_value = mock_cm
 
         astf.gh_api(
@@ -88,8 +88,8 @@ class TestGhApi(unittest.TestCase):
 # fetch_stale_issues tests
 # ---------------------------------------------------------------------------
 
-class TestFetchStaleIssues(unittest.TestCase):
 
+class TestFetchStaleIssues(unittest.TestCase):
     def _gh_api_side_effect(self, pages: list[list[dict]]):
         """Return a side_effect function that yields successive pages."""
         call_count = [0]
@@ -156,9 +156,7 @@ class TestFetchStaleIssues(unittest.TestCase):
         page1 = [_make_issue(i, f"Issue {i}", stale_ts, ["test-failure"]) for i in range(1, 4)]
         page2 = [_make_issue(i, f"Issue {i}", stale_ts, ["test-failure"]) for i in range(4, 7)]
 
-        with patch.object(
-            astf, "gh_api", side_effect=self._gh_api_side_effect([page1, page2, []])
-        ):
+        with patch.object(astf, "gh_api", side_effect=self._gh_api_side_effect([page1, page2, []])):
             result = astf.fetch_stale_issues("owner/repo", "tok", _CUTOFF)
 
         self.assertEqual(len(result), 6)
@@ -190,7 +188,9 @@ class TestFetchStaleIssues(unittest.TestCase):
 
     def test_query_does_not_filter_by_state(self):
         """The issues query omits state=open so closed issues are also fetched."""
-        with patch.object(astf, "gh_api", side_effect=self._gh_api_side_effect([[], []])) as mock_api:
+        with patch.object(
+            astf, "gh_api", side_effect=self._gh_api_side_effect([[], []])
+        ) as mock_api:
             astf.fetch_stale_issues("owner/repo", "tok", _CUTOFF)
 
         path = mock_api.call_args_list[0][0][0]
@@ -202,11 +202,13 @@ class TestFetchStaleIssues(unittest.TestCase):
 # archive_issue tests
 # ---------------------------------------------------------------------------
 
-class TestArchiveIssue(unittest.TestCase):
 
+class TestArchiveIssue(unittest.TestCase):
     def test_replaces_test_failure_with_archive_label(self):
         issue = _make_issue(
-            42, "Old failure", _CUTOFF - timedelta(days=1),
+            42,
+            "Old failure",
+            _CUTOFF - timedelta(days=1),
             ["test-failure", "ci", "for ai to do"],
         )
 
@@ -214,7 +216,6 @@ class TestArchiveIssue(unittest.TestCase):
             astf.archive_issue(issue, "owner/repo", "tok")
 
         mock_api.assert_called_once()
-        _, kwargs = mock_api.call_args[0], mock_api.call_args[1]
         body = mock_api.call_args[1]["body"]
         self.assertIn("test-failure-archive", body["labels"])
         self.assertNotIn("test-failure", body["labels"])
@@ -223,7 +224,9 @@ class TestArchiveIssue(unittest.TestCase):
 
     def test_archive_label_added_even_when_only_label(self):
         issue = _make_issue(
-            5, "Bare label issue", _CUTOFF - timedelta(days=1),
+            5,
+            "Bare label issue",
+            _CUTOFF - timedelta(days=1),
             ["test-failure"],
         )
 
@@ -255,14 +258,17 @@ class TestArchiveIssue(unittest.TestCase):
 # main() tests
 # ---------------------------------------------------------------------------
 
-class TestMain(unittest.TestCase):
 
+class TestMain(unittest.TestCase):
     def setUp(self):
-        self._env_patch = patch.dict(os.environ, {
-            "GITHUB_TOKEN": "test-token",
-            "GITHUB_REPOSITORY": "owner/repo",
-            "STALE_DAYS": "21",
-        })
+        self._env_patch = patch.dict(
+            os.environ,
+            {
+                "GITHUB_TOKEN": "test-token",
+                "GITHUB_REPOSITORY": "owner/repo",
+                "STALE_DAYS": "21",
+            },
+        )
         self._env_patch.start()
 
     def tearDown(self):

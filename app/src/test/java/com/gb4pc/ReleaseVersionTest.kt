@@ -20,7 +20,6 @@ import java.time.format.DateTimeParseException
  *     positive CI run number (github.run_number in CI builds).
  */
 class ReleaseVersionTest {
-
     @Test
     fun `versionName is semver or dev build label`() {
         val versionName = BuildConfig.VERSION_NAME
@@ -28,7 +27,7 @@ class ReleaseVersionTest {
         val devLabel = Regex("""^dev(\.\d+)?$""")
         assertTrue(
             "versionName '$versionName' must be semver (X.Y.Z or X.Y.Z-PRERELEASE) or a dev label (dev.N)",
-            semver.matches(versionName) || devLabel.matches(versionName)
+            semver.matches(versionName) || devLabel.matches(versionName),
         )
     }
 
@@ -39,21 +38,22 @@ class ReleaseVersionTest {
         assertTrue("versionCode must be positive, was $code", code > 0)
         if (str.length == 8) {
             // Local dev build: validate as yyyyMMdd within sane range.
-            val buildDate = try {
-                LocalDate.parse(str, DateTimeFormatter.ofPattern("yyyyMMdd"))
-            } catch (e: DateTimeParseException) {
-                fail("8-digit versionCode '$code' is not a valid yyyyMMdd date: ${e.message}")
-                return
-            }
+            val buildDate =
+                try {
+                    LocalDate.parse(str, DateTimeFormatter.ofPattern("yyyyMMdd"))
+                } catch (e: DateTimeParseException) {
+                    fail("8-digit versionCode '$code' is not a valid yyyyMMdd date: ${e.message}")
+                    return
+                }
             val projectEpoch = LocalDate.of(2024, 1, 1)
             val tomorrow = LocalDate.now(ZoneOffset.UTC).plusDays(1)
             assertTrue(
                 "versionCode date '$buildDate' is before project epoch ($projectEpoch)",
-                !buildDate.isBefore(projectEpoch)
+                !buildDate.isBefore(projectEpoch),
             )
             assertFalse(
                 "versionCode date '$buildDate' should not be in the future",
-                buildDate.isAfter(tomorrow)
+                buildDate.isAfter(tomorrow),
             )
         }
         // else: CI build — github.run_number is any positive integer, already checked above.

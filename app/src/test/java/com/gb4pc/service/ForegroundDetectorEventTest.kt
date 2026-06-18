@@ -15,7 +15,6 @@ import java.util.concurrent.atomic.AtomicBoolean
  * its fields return defaults (eventType=0, packageName=null).
  */
 class ForegroundDetectorEventTest {
-
     private lateinit var usm: UsageStatsManager
     private lateinit var detector: ForegroundDetector
 
@@ -33,9 +32,10 @@ class ForegroundDetectorEventTest {
 
     @Test
     fun `returns null when no events exist`() {
-        val events: UsageEvents = mock {
-            on { hasNextEvent() } doReturn false
-        }
+        val events: UsageEvents =
+            mock {
+                on { hasNextEvent() } doReturn false
+            }
         whenever(usm.queryEvents(any(), any())).thenReturn(events)
         assertNull(detector.getForegroundPackage())
     }
@@ -77,9 +77,10 @@ class ForegroundDetectorEventTest {
 
     @Test
     fun `queries correct time window`() {
-        val events: UsageEvents = mock {
-            on { hasNextEvent() } doReturn false
-        }
+        val events: UsageEvents =
+            mock {
+                on { hasNextEvent() } doReturn false
+            }
         whenever(usm.queryEvents(any(), any())).thenReturn(events)
 
         val before = System.currentTimeMillis()

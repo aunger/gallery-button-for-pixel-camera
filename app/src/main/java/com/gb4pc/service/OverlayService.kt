@@ -33,7 +33,6 @@ import com.gb4pc.viewer.SessionTracker
  * Foreground service that monitors camera hardware and manages the overlay (§3, §7).
  */
 class OverlayService : Service() {
-
     private lateinit var cameraManager: CameraManager
     private lateinit var foregroundDetector: ForegroundDetector
     private lateinit var prefsManager: PrefsManager
@@ -55,17 +54,18 @@ class OverlayService : Service() {
     private lateinit var mediaChangeDispatcher: MediaObserverRetry<List<MediaItem>>
     private lateinit var thumbnailChangeDispatcher: MediaObserverRetry<MediaItem?>
 
-    private val cameraCallback = object : CameraManager.AvailabilityCallback() {
-        override fun onCameraUnavailable(cameraId: String) {
-            DebugLog.log("Camera $cameraId unavailable")
-            logic.onCameraUnavailable(cameraId)
-        }
+    private val cameraCallback =
+        object : CameraManager.AvailabilityCallback() {
+            override fun onCameraUnavailable(cameraId: String) {
+                DebugLog.log("Camera $cameraId unavailable")
+                logic.onCameraUnavailable(cameraId)
+            }
 
-        override fun onCameraAvailable(cameraId: String) {
-            DebugLog.log("Camera $cameraId available")
-            logic.onCameraAvailable(cameraId)
+            override fun onCameraAvailable(cameraId: String) {
+                DebugLog.log("Camera $cameraId available")
+                logic.onCameraAvailable(cameraId)
+            }
         }
-    }
 
     override fun onCreate() {
         super.onCreate()
@@ -75,13 +75,14 @@ class OverlayService : Service() {
         val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
         foregroundDetector = ForegroundDetector(usm, packageName)
         prefsManager = PrefsManager(this)
-        overlayManager = OverlayManager(
-            context = this,
-            prefsManager = prefsManager,
-            onFocusLost = { logic.onOverlayFocusLost() },
-            onFocusGained = { logic.onOverlayFocusGained() },
-            onGalleryLaunched = { logic.onGalleryLaunched() },
-        )
+        overlayManager =
+            OverlayManager(
+                context = this,
+                prefsManager = prefsManager,
+                onFocusLost = { logic.onOverlayFocusLost() },
+                onFocusGained = { logic.onOverlayFocusGained() },
+                onGalleryLaunched = { logic.onGalleryLaunched() },
+            )
         cameraState = CameraState()
         val km = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
 
@@ -89,72 +90,85 @@ class OverlayService : Service() {
         // constant is ever overridden in tests or via a future settings hook.
         val mediaRetryDelayMs = Constants.MEDIA_OBSERVER_RETRY_MS
 
-        mediaChangeDispatcher = MediaObserverRetry(
-            handler = handler,
-            retryDelayMs = mediaRetryDelayMs,
-            query = ::queryAllMedia,
-            handleResult = { items, isRetry ->
-                items.forEach { item ->
-                    SessionTracker.instance.addMedia(item)
-                    DebugLog.log(
-                        if (isRetry) "Media added to session (retry): ${item.uri}"
-                        else "Media added to session: ${item.uri}"
-                    )
-                }
-                if (items.isEmpty() && !isRetry) {
-                    DebugLog.log("Media query returned empty — scheduling retry in ${mediaRetryDelayMs}ms")
-                }
-            },
-        )
+        mediaChangeDispatcher =
+            MediaObserverRetry(
+                handler = handler,
+                retryDelayMs = mediaRetryDelayMs,
+                query = ::queryAllMedia,
+                handleResult = { items, isRetry ->
+                    items.forEach { item ->
+                        SessionTracker.instance.addMedia(item)
+                        DebugLog.log(
+                            if (isRetry) {
+                                "Media added to session (retry): ${item.uri}"
+                            } else {
+                                "Media added to session: ${item.uri}"
+                            },
+                        )
+                    }
+                    if (items.isEmpty() && !isRetry) {
+                        DebugLog.log("Media query returned empty — scheduling retry in ${mediaRetryDelayMs}ms")
+                    }
+                },
+            )
 
-        thumbnailChangeDispatcher = MediaObserverRetry(
-            handler = handler,
-            retryDelayMs = mediaRetryDelayMs,
-            query = ::queryLatestMedia,
-            handleResult = { item, isRetry ->
-                if (item != null) {
-                    overlayManager.showLatestPhotoThumbnail(item.uri)
-                    DebugLog.log(
-                        if (isRetry) "Thumbnail updated (retry): ${item.uri}"
-                        else "Thumbnail updated: ${item.uri}"
-                    )
-                } else if (!isRetry) {
-                    DebugLog.log("Thumbnail query returned null — scheduling retry in ${mediaRetryDelayMs}ms")
-                }
-            },
-        )
+        thumbnailChangeDispatcher =
+            MediaObserverRetry(
+                handler = handler,
+                retryDelayMs = mediaRetryDelayMs,
+                query = ::queryLatestMedia,
+                handleResult = { item, isRetry ->
+                    if (item != null) {
+                        overlayManager.showLatestPhotoThumbnail(item.uri)
+                        DebugLog.log(
+                            if (isRetry) {
+                                "Thumbnail updated (retry): ${item.uri}"
+                            } else {
+                                "Thumbnail updated: ${item.uri}"
+                            },
+                        )
+                    } else if (!isRetry) {
+                        DebugLog.log("Thumbnail query returned null — scheduling retry in ${mediaRetryDelayMs}ms")
+                    }
+                },
+            )
 
-        logic = OverlayServiceLogic(
-            hasUsageStatsPermission = { PermissionHelper.hasUsageStatsPermission(this) },
-            hasOverlayPermission = { PermissionHelper.hasOverlayPermission(this) },
-            overlayManager = overlayManager,
-            cameraState = cameraState,
-            foregroundDetector = foregroundDetector,
-            sessionTracker = SessionTracker.instance,
-            handler = handler,
-            debounceMs = prefsManager.cameraDebounceMs,
-            onUsageAccessLost = {
-                postPermissionNotification(
-                    Constants.NOTIFICATION_PERMISSION_ID,
-                    getString(R.string.notification_usage_access_lost)
-                )
-            },
-            onOverlayPermissionLost = {
-                postPermissionNotification(
-                    Constants.NOTIFICATION_PERMISSION_ID,
-                    getString(R.string.notification_overlay_lost)
-                )
-            },
-            isKeyguardLocked = { km.isKeyguardLocked },
-            onRegisterMediaObserver = ::registerMediaObserver,
-            onUnregisterMediaObserver = ::unregisterMediaObserver,
-            onRegisterThumbnailObserver = ::registerThumbnailObserver,
-            onUnregisterThumbnailObserver = ::unregisterThumbnailObserver,
-            onOverlayStateChanged = { active -> isOverlayActive = active },
-        )
+        logic =
+            OverlayServiceLogic(
+                hasUsageStatsPermission = { PermissionHelper.hasUsageStatsPermission(this) },
+                hasOverlayPermission = { PermissionHelper.hasOverlayPermission(this) },
+                overlayManager = overlayManager,
+                cameraState = cameraState,
+                foregroundDetector = foregroundDetector,
+                sessionTracker = SessionTracker.instance,
+                handler = handler,
+                debounceMs = prefsManager.cameraDebounceMs,
+                onUsageAccessLost = {
+                    postPermissionNotification(
+                        Constants.NOTIFICATION_PERMISSION_ID,
+                        getString(R.string.notification_usage_access_lost),
+                    )
+                },
+                onOverlayPermissionLost = {
+                    postPermissionNotification(
+                        Constants.NOTIFICATION_PERMISSION_ID,
+                        getString(R.string.notification_overlay_lost),
+                    )
+                },
+                isKeyguardLocked = { km.isKeyguardLocked },
+                onRegisterMediaObserver = ::registerMediaObserver,
+                onUnregisterMediaObserver = ::unregisterMediaObserver,
+                onRegisterThumbnailObserver = ::registerThumbnailObserver,
+                onUnregisterThumbnailObserver = ::unregisterThumbnailObserver,
+                onOverlayStateChanged = { active -> isOverlayActive = active },
+            )
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    override fun onStartCommand(
+        intent: Intent?,
+        flags: Int,
+        startId: Int,
+    ): Int {
         if (intent?.action == ACTION_STOP) {
             DebugLog.log("Service stop requested")
             prefsManager.isServiceEnabled = false
@@ -222,18 +236,23 @@ class OverlayService : Service() {
     // H3/M1: Register receiver for screen-off and user-present events
     private fun registerScreenEventReceiver() {
         if (screenEventReceiver != null) return
-        screenEventReceiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context?, intent: Intent?) {
-                when (intent?.action) {
-                    Intent.ACTION_SCREEN_OFF -> onScreenOff()
-                    Intent.ACTION_USER_PRESENT -> onUserPresent()
+        screenEventReceiver =
+            object : BroadcastReceiver() {
+                override fun onReceive(
+                    context: Context?,
+                    intent: Intent?,
+                ) {
+                    when (intent?.action) {
+                        Intent.ACTION_SCREEN_OFF -> onScreenOff()
+                        Intent.ACTION_USER_PRESENT -> onUserPresent()
+                    }
                 }
             }
-        }
-        val filter = IntentFilter().apply {
-            addAction(Intent.ACTION_SCREEN_OFF)
-            addAction(Intent.ACTION_USER_PRESENT)
-        }
+        val filter =
+            IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_USER_PRESENT)
+            }
         ContextCompat.registerReceiver(this, screenEventReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
         DebugLog.log("Screen event receiver registered")
     }
@@ -242,7 +261,8 @@ class OverlayService : Service() {
         screenEventReceiver?.let {
             try {
                 unregisterReceiver(it)
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+            }
             screenEventReceiver = null
         }
     }
@@ -271,20 +291,24 @@ class OverlayService : Service() {
     private fun registerMediaObserver() {
         if (mediaObserver != null) return
         val sessionStartMs = SessionTracker.instance.sessionStartTimestamp
-        mediaObserver = object : ContentObserver(handler) {
-            override fun onChange(selfChange: Boolean, uri: Uri?) {
-                mediaChangeDispatcher.onChange(sessionStartMs)
+        mediaObserver =
+            object : ContentObserver(handler) {
+                override fun onChange(
+                    selfChange: Boolean,
+                    uri: Uri?,
+                ) {
+                    mediaChangeDispatcher.onChange(sessionStartMs)
+                }
             }
-        }
         contentResolver.registerContentObserver(
             MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
             true,
-            mediaObserver!!
+            mediaObserver!!,
         )
         contentResolver.registerContentObserver(
             MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
             true,
-            mediaObserver!!
+            mediaObserver!!,
         )
         DebugLog.log("ContentObserver registered at session start")
     }
@@ -301,16 +325,24 @@ class OverlayService : Service() {
         if (thumbnailObserver != null) return
         overlayActiveTimestamp = System.currentTimeMillis()
         val startMs = overlayActiveTimestamp
-        thumbnailObserver = object : ContentObserver(handler) {
-            override fun onChange(selfChange: Boolean, uri: Uri?) {
-                thumbnailChangeDispatcher.onChange(startMs)
+        thumbnailObserver =
+            object : ContentObserver(handler) {
+                override fun onChange(
+                    selfChange: Boolean,
+                    uri: Uri?,
+                ) {
+                    thumbnailChangeDispatcher.onChange(startMs)
+                }
             }
-        }
         contentResolver.registerContentObserver(
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true, thumbnailObserver!!
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            true,
+            thumbnailObserver!!,
         )
         contentResolver.registerContentObserver(
-            MediaStore.Video.Media.EXTERNAL_CONTENT_URI, true, thumbnailObserver!!
+            MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+            true,
+            thumbnailObserver!!,
         )
         DebugLog.log("Thumbnail observer registered")
     }
@@ -326,12 +358,13 @@ class OverlayService : Service() {
     // H4: Query for all committed media items added after session start.
     // Used by mediaChangeDispatcher to populate the secure session.
     private fun queryAllMedia(sessionStartMs: Long): List<MediaItem> {
-        val projection = arrayOf(
-            MediaStore.MediaColumns._ID,
-            MediaStore.MediaColumns.MIME_TYPE,
-            MediaStore.MediaColumns.DATE_ADDED,
-            MediaStore.MediaColumns.DATE_TAKEN
-        )
+        val projection =
+            arrayOf(
+                MediaStore.MediaColumns._ID,
+                MediaStore.MediaColumns.MIME_TYPE,
+                MediaStore.MediaColumns.DATE_ADDED,
+                MediaStore.MediaColumns.DATE_TAKEN,
+            )
         // Apply SESSION_TIMESTAMP_TOLERANCE_MS (same tolerance used by SessionTracker.isMediaInSession)
         // so photos whose DATE_ADDED was rounded to the same second as session start are not missed.
         val effectiveStartSec = (sessionStartMs - Constants.SESSION_TIMESTAMP_TOLERANCE_MS) / 1000
@@ -346,12 +379,13 @@ class OverlayService : Service() {
     // H4: Query for the most recent committed media item added after startMs.
     // Used by thumbnailChangeDispatcher to update the overlay button.
     private fun queryLatestMedia(startMs: Long): MediaItem? {
-        val projection = arrayOf(
-            MediaStore.MediaColumns._ID,
-            MediaStore.MediaColumns.MIME_TYPE,
-            MediaStore.MediaColumns.DATE_ADDED,
-            MediaStore.MediaColumns.DATE_TAKEN
-        )
+        val projection =
+            arrayOf(
+                MediaStore.MediaColumns._ID,
+                MediaStore.MediaColumns.MIME_TYPE,
+                MediaStore.MediaColumns.DATE_ADDED,
+                MediaStore.MediaColumns.DATE_TAKEN,
+            )
         val effectiveStartSec = (startMs - Constants.SESSION_TIMESTAMP_TOLERANCE_MS) / 1000
         val selectionArgs = arrayOf(effectiveStartSec.toString())
 
@@ -365,7 +399,7 @@ class OverlayService : Service() {
         contentUri: Uri,
         projection: Array<String>,
         selectionArgs: Array<String>,
-        isVideo: Boolean
+        isVideo: Boolean,
     ): List<MediaItem> {
         val selection = "${MediaStore.MediaColumns.DATE_ADDED} >= ?"
         val sortOrder = "${MediaStore.MediaColumns.DATE_ADDED} DESC"
@@ -383,22 +417,30 @@ class OverlayService : Service() {
     }
 
     private fun buildNotification(): Notification {
-        val openIntent = Intent(this, MainActivity::class.java).let { notifIntent ->
-            PendingIntent.getActivity(
-                this, 0, notifIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-        }
-        val stopIntent = Intent(this, OverlayService::class.java).apply {
-            action = ACTION_STOP
-        }.let { stopInt ->
-            PendingIntent.getService(
-                this, 0, stopInt,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-        }
+        val openIntent =
+            Intent(this, MainActivity::class.java).let { notifIntent ->
+                PendingIntent.getActivity(
+                    this,
+                    0,
+                    notifIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                )
+            }
+        val stopIntent =
+            Intent(this, OverlayService::class.java)
+                .apply {
+                    action = ACTION_STOP
+                }.let { stopInt ->
+                    PendingIntent.getService(
+                        this,
+                        0,
+                        stopInt,
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                    )
+                }
 
-        return NotificationCompat.Builder(this, Constants.NOTIFICATION_CHANNEL_ID)
+        return NotificationCompat
+            .Builder(this, Constants.NOTIFICATION_CHANNEL_ID)
             .setContentTitle(getString(R.string.notification_running))
             .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(openIntent)
@@ -408,20 +450,28 @@ class OverlayService : Service() {
             .build()
     }
 
-    private fun postPermissionNotification(id: Int, message: String) {
-        val intent = Intent(this, MainActivity::class.java).let { notifIntent ->
-            PendingIntent.getActivity(
-                this, id, notifIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-        }
-        val notification = NotificationCompat.Builder(this, Constants.NOTIFICATION_CHANNEL_ID)
-            .setContentTitle(getString(R.string.app_name))
-            .setContentText(message)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setContentIntent(intent)
-            .setAutoCancel(true)
-            .build()
+    private fun postPermissionNotification(
+        id: Int,
+        message: String,
+    ) {
+        val intent =
+            Intent(this, MainActivity::class.java).let { notifIntent ->
+                PendingIntent.getActivity(
+                    this,
+                    id,
+                    notifIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                )
+            }
+        val notification =
+            NotificationCompat
+                .Builder(this, Constants.NOTIFICATION_CHANNEL_ID)
+                .setContentTitle(getString(R.string.app_name))
+                .setContentText(message)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentIntent(intent)
+                .setAutoCancel(true)
+                .build()
 
         val nm = getSystemService(android.app.NotificationManager::class.java)
         nm.notify(id, notification)
@@ -460,9 +510,10 @@ class OverlayService : Service() {
          * startup (startForeground + camera callback registration).
          */
         fun reshowOverlay(context: Context) {
-            val intent = Intent(context, OverlayService::class.java).apply {
-                action = ACTION_RESHOW_OVERLAY
-            }
+            val intent =
+                Intent(context, OverlayService::class.java).apply {
+                    action = ACTION_RESHOW_OVERLAY
+                }
             context.startForegroundService(intent)
         }
     }

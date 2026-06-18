@@ -13,7 +13,6 @@ import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
 class ServiceCheckerTest {
-
     private lateinit var context: Context
     private lateinit var prefs: PrefsManager
     private lateinit var activityManager: ActivityManager
@@ -21,12 +20,14 @@ class ServiceCheckerTest {
     @Before
     fun setUp() {
         activityManager = mock()
-        context = mock {
-            on { getSystemService(Context.ACTIVITY_SERVICE) } doReturn activityManager
-        }
-        prefs = mock {
-            on { isServiceEnabled } doReturn false
-        }
+        context =
+            mock {
+                on { getSystemService(Context.ACTIVITY_SERVICE) } doReturn activityManager
+            }
+        prefs =
+            mock {
+                on { isServiceEnabled } doReturn false
+            }
         DebugLog.clear()
     }
 
@@ -36,9 +37,10 @@ class ServiceCheckerTest {
 
     @Test
     fun `isServiceRunning returns true when service is in running list`() {
-        val serviceInfo = ActivityManager.RunningServiceInfo().apply {
-            service = android.content.ComponentName("com.gb4pc", OverlayService::class.java.name)
-        }
+        val serviceInfo =
+            ActivityManager.RunningServiceInfo().apply {
+                service = android.content.ComponentName("com.gb4pc", OverlayService::class.java.name)
+            }
         whenever(activityManager.getRunningServices(Int.MAX_VALUE)).thenReturn(listOf(serviceInfo))
         assertTrue(ServiceChecker.isServiceRunning(context))
     }
@@ -51,9 +53,10 @@ class ServiceCheckerTest {
 
     @Test
     fun `isServiceRunning returns false when list contains a different service`() {
-        val serviceInfo = ActivityManager.RunningServiceInfo().apply {
-            service = android.content.ComponentName("com.other", "com.other.SomeService")
-        }
+        val serviceInfo =
+            ActivityManager.RunningServiceInfo().apply {
+                service = android.content.ComponentName("com.other", "com.other.SomeService")
+            }
         whenever(activityManager.getRunningServices(Int.MAX_VALUE)).thenReturn(listOf(serviceInfo))
         assertFalse(ServiceChecker.isServiceRunning(context))
     }
@@ -74,9 +77,10 @@ class ServiceCheckerTest {
     @Test
     fun `ensureServiceRunningIfEnabled does nothing when service is enabled and already running`() {
         whenever(prefs.isServiceEnabled).thenReturn(true)
-        val serviceInfo = ActivityManager.RunningServiceInfo().apply {
-            service = android.content.ComponentName("com.gb4pc", OverlayService::class.java.name)
-        }
+        val serviceInfo =
+            ActivityManager.RunningServiceInfo().apply {
+                service = android.content.ComponentName("com.gb4pc", OverlayService::class.java.name)
+            }
         whenever(activityManager.getRunningServices(Int.MAX_VALUE)).thenReturn(listOf(serviceInfo))
 
         ServiceChecker.ensureServiceRunningIfEnabled(context, prefs)
@@ -97,7 +101,7 @@ class ServiceCheckerTest {
         assertNotNull("Expected a log entry", logEntry)
         assertTrue(
             "Log should mention service not running",
-            logEntry!!.message.contains("should be running but isn't")
+            logEntry!!.message.contains("should be running but isn't"),
         )
         verify(context).startForegroundService(any())
     }

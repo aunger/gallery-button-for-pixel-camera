@@ -128,7 +128,7 @@ def parse_fails(lines, seen, outcome_filters=None):
         if i == -1:
             continue
         try:
-            m = json.loads(raw[i + len(TEST_MARKER):].strip())
+            m = json.loads(raw[i + len(TEST_MARKER) :].strip())
         except Exception:
             continue
         outcome = m.get("outcome", "")
@@ -292,7 +292,8 @@ def _request(url, token, raw=False):
     req.add_header("Authorization", "Bearer %s" % token)
     req.add_header("Accept", "application/vnd.github+json")
     try:
-        with urllib.request.urlopen(req) as resp:
+        # URL is built from a GitHub API constant; the file:// risk does not apply.
+        with urllib.request.urlopen(req) as resp:  # nosemgrep
             data = resp.read()
     except (urllib.error.URLError, OSError) as e:
         _request.last_error = e
@@ -330,7 +331,7 @@ def fetch_pr_with_retry(pr, token, attempts=3, base_delay=2):
         if attempt == attempts - 1:
             break
         hint = _retry_after_seconds(_request.last_error, time.time())
-        time.sleep(hint if hint is not None else base_delay * (2 ** attempt))
+        time.sleep(hint if hint is not None else base_delay * (2**attempt))
     return None
 
 
@@ -349,6 +350,7 @@ def _parse_outcome_filters(args):
                      'PASS': (enabled, pattern)}.
     Defaults: FAIL all, SKIP all, PASS none.
     """
+
     def _outcome(no_flag, include_flag, default_enabled):
         if no_flag:
             return (False, None)
@@ -376,7 +378,9 @@ class _DocstringParser(argparse.ArgumentParser):
         file.flush()
 
     def error(self, message):
-        sys.stderr.write("%s: error: %s\nUse --help for usage information.\n" % (self.prog, message))
+        sys.stderr.write(
+            "%s: error: %s\nUse --help for usage information.\n" % (self.prog, message)
+        )
         sys.exit(2)
 
 
@@ -397,8 +401,8 @@ def main(argv):
             dest="include_%s" % outcome,
             metavar="PATTERN",
             nargs="?",
-            default=None,   # sentinel: flag not supplied
-            const="",       # supplied with no argument: match all
+            default=None,  # sentinel: flag not supplied
+            const="",  # supplied with no argument: match all
             help="Include %s markers, optionally filtered by regex on name." % outcome.upper(),
         )
         parser.add_argument(
@@ -459,8 +463,7 @@ def main(argv):
         if run_id:
             # Signal 1 — per-step conclusion deltas for the build-and-test job.
             jobs_json = _request(
-                "%s/repos/%s/%s/actions/runs/%s/jobs?per_page=30"
-                % (API_BASE, OWNER, REPO, run_id),
+                "%s/repos/%s/%s/actions/runs/%s/jobs?per_page=30" % (API_BASE, OWNER, REPO, run_id),
                 token,
             )
             if jobs_json:
@@ -477,8 +480,7 @@ def main(argv):
             if artifacts_json:
                 for aid, _name in parse_new_artifacts(artifacts_json, seen_arts):
                     zip_bytes = _request(
-                        "%s/repos/%s/%s/actions/artifacts/%s/zip"
-                        % (API_BASE, OWNER, REPO, aid),
+                        "%s/repos/%s/%s/actions/artifacts/%s/zip" % (API_BASE, OWNER, REPO, aid),
                         token,
                         raw=True,
                     )
@@ -527,7 +529,10 @@ def main(argv):
 
     # Gap D — advertise our PID so the Orchestrator can stop us out-of-band
     # (e.g. `kill -TERM <PID>`) if the Monitor tool's TaskStop is unavailable.
-    print("monitor PID %d — if TaskStop is unavailable, send SIGTERM to this PID to stop me" % os.getpid())
+    print(
+        "monitor PID %d — if TaskStop is unavailable, send SIGTERM to this PID to stop me"
+        % os.getpid()
+    )
     sys.stdout.flush()
 
     while True:
@@ -576,12 +581,8 @@ def main(argv):
                 sys.stdout.flush()
                 last_output_ts = now
         elif result == "all_passed":
-            mpr_json = _request(
-                "%s/repos/%s/%s/pulls/%s" % (API_BASE, OWNER, REPO, pr), token
-            )
-            mergeable = (
-                mpr_json.get("mergeable_state", "unknown") if mpr_json else "unknown"
-            )
+            mpr_json = _request("%s/repos/%s/%s/pulls/%s" % (API_BASE, OWNER, REPO, pr), token)
+            mergeable = mpr_json.get("mergeable_state", "unknown") if mpr_json else "unknown"
             if mergeable in ("clean", "unstable"):
                 print("PR#%s: Clear (mergeable_state=%s)" % (pr, mergeable))
                 sys.stdout.flush()
@@ -600,8 +601,7 @@ def main(argv):
                 now = time.time()
                 if now - last_output_ts > SILENCE_SECONDS:
                     print(
-                        "PR#%s: all_passed mergeable_state=%s (still computing)"
-                        % (pr, mergeable)
+                        "PR#%s: all_passed mergeable_state=%s (still computing)" % (pr, mergeable)
                     )
                     sys.stdout.flush()
                     last_output_ts = now

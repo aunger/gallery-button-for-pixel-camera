@@ -168,7 +168,10 @@ def main(argv: list[str] | None = None) -> int:
     job_name = os.environ.get("JOB_NAME", DEFAULT_JOB_NAME)
 
     if not token or not repository:
-        print("Note: GITHUB_TOKEN/GITHUB_REPOSITORY not set--skipping CI summary link.", file=sys.stderr)
+        print(
+            "Note: GITHUB_TOKEN/GITHUB_REPOSITORY not set--skipping CI summary link.",
+            file=sys.stderr,
+        )
         return 0
     if not run_id:
         print("Note: GITHUB_RUN_ID not set--skipping CI summary link.", file=sys.stderr)

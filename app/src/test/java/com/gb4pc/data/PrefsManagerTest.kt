@@ -9,7 +9,6 @@ import org.junit.Test
 import org.mockito.kotlin.*
 
 class PrefsManagerTest {
-
     private lateinit var prefs: SharedPreferences
     private lateinit var editor: SharedPreferences.Editor
     private lateinit var context: Context
@@ -17,21 +16,24 @@ class PrefsManagerTest {
 
     @Before
     fun setUp() {
-        editor = mock {
-            on { putString(any(), any()) } doReturn it
-            on { putBoolean(any(), anyOrNull<Boolean>() ?: false) } doReturn it
-        }
-        prefs = mock {
-            on { edit() } doReturn editor
-            on { getString(eq(Constants.PREF_GALLERY_PACKAGE), anyOrNull()) } doReturn null
-            on { getBoolean(eq(Constants.PREF_SERVICE_ENABLED), any()) } doReturn false
-            on { getBoolean(eq(Constants.PREF_SETUP_COMPLETED), any()) } doReturn false
-            on { getBoolean(eq(Constants.PREF_FOCUSABLE_OVERLAY), any()) } doReturn false
-            on { getString(eq(Constants.PREF_OVERLAY_POSITIONS), anyOrNull()) } doReturn ""
-        }
-        context = mock {
-            on { getSharedPreferences(eq(Constants.PREFS_NAME), eq(Context.MODE_PRIVATE)) } doReturn prefs
-        }
+        editor =
+            mock {
+                on { putString(any(), any()) } doReturn it
+                on { putBoolean(any(), anyOrNull<Boolean>() ?: false) } doReturn it
+            }
+        prefs =
+            mock {
+                on { edit() } doReturn editor
+                on { getString(eq(Constants.PREF_GALLERY_PACKAGE), anyOrNull()) } doReturn null
+                on { getBoolean(eq(Constants.PREF_SERVICE_ENABLED), any()) } doReturn false
+                on { getBoolean(eq(Constants.PREF_SETUP_COMPLETED), any()) } doReturn false
+                on { getBoolean(eq(Constants.PREF_FOCUSABLE_OVERLAY), any()) } doReturn false
+                on { getString(eq(Constants.PREF_OVERLAY_POSITIONS), anyOrNull()) } doReturn ""
+            }
+        context =
+            mock {
+                on { getSharedPreferences(eq(Constants.PREFS_NAME), eq(Context.MODE_PRIVATE)) } doReturn prefs
+            }
         prefsManager = PrefsManager(context)
     }
 

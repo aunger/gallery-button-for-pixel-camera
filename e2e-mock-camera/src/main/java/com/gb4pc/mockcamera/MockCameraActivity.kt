@@ -38,7 +38,6 @@ import android.util.Log
  * when launched via STILL_IMAGE_CAMERA_SECURE for Tests 4a/5a.
  */
 class MockCameraActivity : Activity() {
-
     companion object {
         private const val TAG = "MockCameraActivity"
 
@@ -74,13 +73,17 @@ class MockCameraActivity : Activity() {
     // Shutter broadcast receiver
     // -------------------------------------------------------------------------
 
-    private val shutterReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            if (intent.action == ACTION_SHUTTER) {
-                triggerCapture()
+    private val shutterReceiver =
+        object : BroadcastReceiver() {
+            override fun onReceive(
+                context: Context,
+                intent: Intent,
+            ) {
+                if (intent.action == ACTION_SHUTTER) {
+                    triggerCapture()
+                }
             }
         }
-    }
 
     /**
      * True only after a successful [registerReceiver]. Tracked so [onPause] does not call
@@ -93,24 +96,28 @@ class MockCameraActivity : Activity() {
     // CameraDevice state callback
     // -------------------------------------------------------------------------
 
-    private val deviceStateCallback = object : CameraDevice.StateCallback() {
-        override fun onOpened(camera: CameraDevice) {
-            Log.d(TAG, "CameraDevice.onOpened: ${camera.id}")
-            cameraDevice = camera
-        }
+    private val deviceStateCallback =
+        object : CameraDevice.StateCallback() {
+            override fun onOpened(camera: CameraDevice) {
+                Log.d(TAG, "CameraDevice.onOpened: ${camera.id}")
+                cameraDevice = camera
+            }
 
-        override fun onDisconnected(camera: CameraDevice) {
-            Log.w(TAG, "CameraDevice.onDisconnected: ${camera.id}")
-            camera.close()
-            cameraDevice = null
-        }
+            override fun onDisconnected(camera: CameraDevice) {
+                Log.w(TAG, "CameraDevice.onDisconnected: ${camera.id}")
+                camera.close()
+                cameraDevice = null
+            }
 
-        override fun onError(camera: CameraDevice, error: Int) {
-            Log.e(TAG, "CameraDevice.onError: ${camera.id} error=$error")
-            camera.close()
-            cameraDevice = null
+            override fun onError(
+                camera: CameraDevice,
+                error: Int,
+            ) {
+                Log.e(TAG, "CameraDevice.onError: ${camera.id} error=$error")
+                camera.close()
+                cameraDevice = null
+            }
         }
-    }
 
     // -------------------------------------------------------------------------
     // Activity lifecycle
@@ -187,10 +194,11 @@ class MockCameraActivity : Activity() {
 
     private fun openCamera() {
         val cm = getSystemService(CAMERA_SERVICE) as CameraManager
-        val cameraId = cm.cameraIdList.firstOrNull() ?: run {
-            Log.w(TAG, "openCamera: no cameras found")
-            return
-        }
+        val cameraId =
+            cm.cameraIdList.firstOrNull() ?: run {
+                Log.w(TAG, "openCamera: no cameras found")
+                return
+            }
         try {
             cm.openCamera(cameraId, deviceStateCallback, cameraHandler)
         } catch (e: Exception) {
@@ -233,17 +241,20 @@ class MockCameraActivity : Activity() {
 
     private fun saveJpegToMediaStore(bytes: ByteArray) {
         val now = System.currentTimeMillis()
-        val values = ContentValues().apply {
-            put(MediaStore.Images.Media.DISPLAY_NAME, "mock_capture_$now.jpg")
-            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-            put(MediaStore.Images.Media.DATE_TAKEN, now)
-            put(MediaStore.Images.Media.DATE_ADDED, now / 1000)
-            put(MediaStore.Images.Media.DATE_MODIFIED, now / 1000)
-        }
+        val values =
+            ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, "mock_capture_$now.jpg")
+                put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                put(MediaStore.Images.Media.DATE_TAKEN, now)
+                put(MediaStore.Images.Media.DATE_ADDED, now / 1000)
+                put(MediaStore.Images.Media.DATE_MODIFIED, now / 1000)
+            }
 
-        val uri: Uri? = contentResolver.insert(
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values
-        )
+        val uri: Uri? =
+            contentResolver.insert(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                values,
+            )
         if (uri == null) {
             Log.e(TAG, "saveJpegToMediaStore: insert returned null URI")
             broadcastShutterDone(null)
@@ -266,7 +277,10 @@ class MockCameraActivity : Activity() {
      * Polls MediaStore until [uri] is queryable, then broadcasts [ACTION_SHUTTER_DONE].
      * Gives up after 10 s (100 × 100 ms).
      */
-    private fun pollUntilQueryable(uri: Uri, attemptsLeft: Int = 100) {
+    private fun pollUntilQueryable(
+        uri: Uri,
+        attemptsLeft: Int = 100,
+    ) {
         val cursor = contentResolver.query(uri, arrayOf(MediaStore.Images.Media._ID), null, null, null)
         val found = (cursor?.count ?: 0) > 0
         cursor?.close()
@@ -285,9 +299,10 @@ class MockCameraActivity : Activity() {
         // Intentionally do NOT call setPackage(packageName): the listener is the E2E test
         // process (com.gb4pc), not this APK. setPackage(com.google.android.GoogleCamera)
         // would restrict delivery to this package and starve the test's latch receiver.
-        val intent = Intent(ACTION_SHUTTER_DONE).apply {
-            if (uri != null) putExtra(EXTRA_IMAGE_URI, uri)
-        }
+        val intent =
+            Intent(ACTION_SHUTTER_DONE).apply {
+                if (uri != null) putExtra(EXTRA_IMAGE_URI, uri)
+            }
         sendBroadcast(intent)
     }
 }

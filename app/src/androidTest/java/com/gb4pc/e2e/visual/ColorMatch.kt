@@ -14,29 +14,39 @@ import android.graphics.Rect
  * takeScreenshot() PNG noise.
  */
 object ColorMatch {
-
     /**
      * Returns true if every RGB channel of [pixel] (a packed ARGB int from Bitmap.getPixel)
      * is within [tolerance] of the corresponding channel in [target].
      */
-    fun matches(pixel: Int, target: Rgb, tolerance: Int = 20): Boolean {
-        return kotlin.math.abs(Color.red(pixel)   - target.r) <= tolerance &&
-               kotlin.math.abs(Color.green(pixel) - target.g) <= tolerance &&
-               kotlin.math.abs(Color.blue(pixel)  - target.b) <= tolerance
-    }
+    fun matches(
+        pixel: Int,
+        target: Rgb,
+        tolerance: Int = 20,
+    ): Boolean =
+        kotlin.math.abs(Color.red(pixel) - target.r) <= tolerance &&
+            kotlin.math.abs(Color.green(pixel) - target.g) <= tolerance &&
+            kotlin.math.abs(Color.blue(pixel) - target.b) <= tolerance
 
     /**
      * Builds a [BinaryMask] by scanning [bmp] for pixels matching [target] within [tolerance].
      * Computes bbox, centroid, and pixelCount in a single pass.
      */
-    fun mask(bmp: Bitmap, target: Rgb, tolerance: Int = 20): BinaryMask {
+    fun mask(
+        bmp: Bitmap,
+        target: Rgb,
+        tolerance: Int = 20,
+    ): BinaryMask {
         val w = bmp.width
         val h = bmp.height
         val bits = BooleanArray(w * h)
 
-        var minX = Int.MAX_VALUE; var maxX = Int.MIN_VALUE
-        var minY = Int.MAX_VALUE; var maxY = Int.MIN_VALUE
-        var sumX = 0L; var sumY = 0L; var count = 0
+        var minX = Int.MAX_VALUE
+        var maxX = Int.MIN_VALUE
+        var minY = Int.MAX_VALUE
+        var maxY = Int.MIN_VALUE
+        var sumX = 0L
+        var sumY = 0L
+        var count = 0
 
         for (y in 0 until h) {
             for (x in 0 until w) {
@@ -47,15 +57,25 @@ object ColorMatch {
                     if (x > maxX) maxX = x
                     if (y < minY) minY = y
                     if (y > maxY) maxY = y
-                    sumX += x; sumY += y; count++
+                    sumX += x
+                    sumY += y
+                    count++
                 }
             }
         }
 
-        val bbox = if (count == 0) Rect(0, 0, 0, 0)
-                   else Rect(minX, minY, maxX + 1, maxY + 1)
-        val centroid = if (count == 0) PointF(0f, 0f)
-                       else PointF(sumX.toFloat() / count, sumY.toFloat() / count)
+        val bbox =
+            if (count == 0) {
+                Rect(0, 0, 0, 0)
+            } else {
+                Rect(minX, minY, maxX + 1, maxY + 1)
+            }
+        val centroid =
+            if (count == 0) {
+                PointF(0f, 0f)
+            } else {
+                PointF(sumX.toFloat() / count, sumY.toFloat() / count)
+            }
         return BinaryMask(bits, w, h, bbox, centroid, count)
     }
 
@@ -69,10 +89,13 @@ object ColorMatch {
      * Fraction of pixels within [region] that are true in [mask].
      * [region] is clipped to the mask bounds before counting.
      */
-    fun coverageFraction(mask: BinaryMask, region: Rect): Float {
-        val left   = region.left.coerceIn(0, mask.width)
-        val right  = region.right.coerceIn(0, mask.width)
-        val top    = region.top.coerceIn(0, mask.height)
+    fun coverageFraction(
+        mask: BinaryMask,
+        region: Rect,
+    ): Float {
+        val left = region.left.coerceIn(0, mask.width)
+        val right = region.right.coerceIn(0, mask.width)
+        val top = region.top.coerceIn(0, mask.height)
         val bottom = region.bottom.coerceIn(0, mask.height)
         val total = (right - left) * (bottom - top)
         if (total <= 0) return 0f
@@ -105,10 +128,12 @@ object ColorMatch {
         // Centroid in new (cropped) coordinates.
         val newCentroid = PointF(mask.centroid.x - bbox.left, mask.centroid.y - bbox.top)
         return BinaryMask(
-            newBits, newW, newH,
+            newBits,
+            newW,
+            newH,
             Rect(0, 0, newW, newH),
             newCentroid,
-            mask.pixelCount
+            mask.pixelCount,
         )
     }
 
@@ -118,15 +143,23 @@ object ColorMatch {
      *
      * @throws IllegalArgumentException if the two masks have different dimensions.
      */
-    fun union(a: BinaryMask, b: BinaryMask): BinaryMask {
+    fun union(
+        a: BinaryMask,
+        b: BinaryMask,
+    ): BinaryMask {
         require(a.width == b.width && a.height == b.height) {
             "union: masks must have equal dimensions (${a.width}×${a.height} vs ${b.width}×${b.height})"
         }
-        val w = a.width; val h = a.height
+        val w = a.width
+        val h = a.height
         val newBits = BooleanArray(w * h)
-        var minX = Int.MAX_VALUE; var maxX = Int.MIN_VALUE
-        var minY = Int.MAX_VALUE; var maxY = Int.MIN_VALUE
-        var sumX = 0L; var sumY = 0L; var count = 0
+        var minX = Int.MAX_VALUE
+        var maxX = Int.MIN_VALUE
+        var minY = Int.MAX_VALUE
+        var maxY = Int.MIN_VALUE
+        var sumX = 0L
+        var sumY = 0L
+        var count = 0
         for (y in 0 until h) {
             for (x in 0 until w) {
                 val idx = y * w + x
@@ -136,14 +169,24 @@ object ColorMatch {
                     if (x > maxX) maxX = x
                     if (y < minY) minY = y
                     if (y > maxY) maxY = y
-                    sumX += x; sumY += y; count++
+                    sumX += x
+                    sumY += y
+                    count++
                 }
             }
         }
-        val bbox = if (count == 0) Rect(0, 0, 0, 0)
-                   else Rect(minX, minY, maxX + 1, maxY + 1)
-        val centroid = if (count == 0) PointF(0f, 0f)
-                       else PointF(sumX.toFloat() / count, sumY.toFloat() / count)
+        val bbox =
+            if (count == 0) {
+                Rect(0, 0, 0, 0)
+            } else {
+                Rect(minX, minY, maxX + 1, maxY + 1)
+            }
+        val centroid =
+            if (count == 0) {
+                PointF(0f, 0f)
+            } else {
+                PointF(sumX.toFloat() / count, sumY.toFloat() / count)
+            }
         return BinaryMask(newBits, w, h, bbox, centroid, count)
     }
 }

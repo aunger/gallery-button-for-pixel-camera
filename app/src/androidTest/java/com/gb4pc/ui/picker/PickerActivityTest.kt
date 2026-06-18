@@ -17,7 +17,6 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class PickerActivityTest {
-
     @get:Rule
     val composeRule = createAndroidComposeRule<PickerActivity>()
 

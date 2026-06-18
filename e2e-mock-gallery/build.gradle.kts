@@ -3,7 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-/**
+/*
  * Minimal test-only APK used by the E2E visual test suite.
  *
  * applicationId = "com.gb4pc.mockgallery" is the gallery package seeded into

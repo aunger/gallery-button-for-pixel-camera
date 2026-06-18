@@ -7,8 +7,10 @@ import kotlin.math.min
  * Shape types that the classifier recognises.
  */
 sealed class Shape {
-    object SQUARE   : Shape()
-    object CIRCLE   : Shape()
+    object SQUARE : Shape()
+
+    object CIRCLE : Shape()
+
     object SQUIRCLE : Shape()
 }
 
@@ -19,7 +21,11 @@ sealed class Shape {
  * @param winnerIoU    Best IoU achieved by [winner].
  * @param runnerUpIoU  Best IoU achieved by the second-best shape.
  */
-data class ClassifyResult(val winner: Shape, val winnerIoU: Float, val runnerUpIoU: Float)
+data class ClassifyResult(
+    val winner: Shape,
+    val winnerIoU: Float,
+    val runnerUpIoU: Float,
+)
 
 /**
  * Classifies a [MaskData] as one of SQUARE / CIRCLE / SQUIRCLE by comparing it against
@@ -29,7 +35,6 @@ data class ClassifyResult(val winner: Shape, val winnerIoU: Float, val runnerUpI
  * tests (app/src/test) and Android instrumented tests (app/src/androidTest).
  */
 object ShapeMatcher {
-
     /**
      * Classifies [candidate] as the shape with the highest IoU after a position and scale sweep.
      *
@@ -50,25 +55,25 @@ object ShapeMatcher {
         val bw = cropped.width
         val bh = cropped.height
 
-        var squareIoU   = 0f
-        var circleIoU   = 0f
+        var squareIoU = 0f
+        var circleIoU = 0f
         var squircleIoU = 0f
 
         for (dw in -3..3) {
             for (dh in -3..3) {
                 val tw = max(1, bw + dw)
                 val th = max(1, bh + dh)
-                val squareTpl   = ShapeTemplates.square(tw, th)
-                val circleTpl   = ShapeTemplates.circle(tw, th)
+                val squareTpl = ShapeTemplates.square(tw, th)
+                val circleTpl = ShapeTemplates.circle(tw, th)
                 val squircleTpl = ShapeTemplates.squircle(tw, th)
 
                 for (dx in -8..8) {
                     for (dy in -8..8) {
-                        val iSquare   = sweepIoU(cropped, squareTpl,   dx, dy)
-                        val iCircle   = sweepIoU(cropped, circleTpl,   dx, dy)
+                        val iSquare = sweepIoU(cropped, squareTpl, dx, dy)
+                        val iCircle = sweepIoU(cropped, circleTpl, dx, dy)
                         val iSquircle = sweepIoU(cropped, squircleTpl, dx, dy)
-                        if (iSquare   > squareIoU)   squareIoU   = iSquare
-                        if (iCircle   > circleIoU)   circleIoU   = iCircle
+                        if (iSquare > squareIoU) squareIoU = iSquare
+                        if (iCircle > circleIoU) circleIoU = iCircle
                         if (iSquircle > squircleIoU) squircleIoU = iSquircle
                     }
                 }
@@ -76,14 +81,15 @@ object ShapeMatcher {
         }
 
         // Determine winner and runner-up.
-        val scores = listOf(
-            Shape.SQUARE   to squareIoU,
-            Shape.CIRCLE   to circleIoU,
-            Shape.SQUIRCLE to squircleIoU
-        ).sortedByDescending { it.second }
+        val scores =
+            listOf(
+                Shape.SQUARE to squareIoU,
+                Shape.CIRCLE to circleIoU,
+                Shape.SQUIRCLE to squircleIoU,
+            ).sortedByDescending { it.second }
 
-        val winner     = scores[0].first
-        val winnerIoU  = scores[0].second
+        val winner = scores[0].first
+        val winnerIoU = scores[0].second
         val runnerUpIoU = scores[1].second
 
         return ClassifyResult(winner, winnerIoU, runnerUpIoU)
@@ -101,7 +107,7 @@ object ShapeMatcher {
         candidate: MaskData,
         expected: Shape,
         minWinnerIoU: Float = 0.92f,
-        minMargin: Float = 0.05f
+        minMargin: Float = 0.05f,
     ) {
         val result = classify(candidate)
         val margin = result.winnerIoU - result.runnerUpIoU
@@ -109,20 +115,20 @@ object ShapeMatcher {
         if (result.winnerIoU < minWinnerIoU) {
             throw AssertionError(
                 "Shape sanity check failed: best IoU ${result.winnerIoU} < $minWinnerIoU " +
-                "(winner=${result.winner}, expected=$expected)"
+                    "(winner=${result.winner}, expected=$expected)",
             )
         }
         if (margin < minMargin) {
             throw AssertionError(
                 "Shape margin check failed: margin $margin < $minMargin " +
-                "(winner=${result.winner} IoU=${result.winnerIoU}, " +
-                "runnerUp IoU=${result.runnerUpIoU}, expected=$expected)"
+                    "(winner=${result.winner} IoU=${result.winnerIoU}, " +
+                    "runnerUp IoU=${result.runnerUpIoU}, expected=$expected)",
             )
         }
         if (result.winner != expected) {
             throw AssertionError(
                 "Shape identity check failed: winner=${result.winner} != expected=$expected " +
-                "(winnerIoU=${result.winnerIoU}, runnerUpIoU=${result.runnerUpIoU})"
+                    "(winnerIoU=${result.winnerIoU}, runnerUpIoU=${result.runnerUpIoU})",
             )
         }
     }
@@ -137,16 +143,21 @@ object ShapeMatcher {
      * mask boundary count as false. The union is the total number of pixels that are
      * true in either mask at their respective absolute coordinates.
      */
-    private fun sweepIoU(candidate: MaskData, template: MaskData, dx: Int, dy: Int): Float {
+    private fun sweepIoU(
+        candidate: MaskData,
+        template: MaskData,
+        dx: Int,
+        dy: Int,
+    ): Float {
         val cw = candidate.width
         val ch = candidate.height
         val tw = template.width
         val th = template.height
 
         // Overlap region in candidate coordinates.
-        val overlapLeft   = max(0, dx)
-        val overlapTop    = max(0, dy)
-        val overlapRight  = min(cw, dx + tw)
+        val overlapLeft = max(0, dx)
+        val overlapTop = max(0, dy)
+        val overlapRight = min(cw, dx + tw)
         val overlapBottom = min(ch, dy + th)
 
         if (overlapRight <= overlapLeft || overlapBottom <= overlapTop) {
@@ -188,10 +199,15 @@ object ShapeMatcher {
         val newCy = mask.centroidY - mask.bboxTop
         return MaskData(
             bits = newBits,
-            width = bw, height = bh,
-            bboxLeft = 0, bboxTop = 0, bboxRight = bw, bboxBottom = bh,
-            centroidX = newCx, centroidY = newCy,
-            pixelCount = mask.pixelCount
+            width = bw,
+            height = bh,
+            bboxLeft = 0,
+            bboxTop = 0,
+            bboxRight = bw,
+            bboxBottom = bh,
+            centroidX = newCx,
+            centroidY = newCy,
+            pixelCount = mask.pixelCount,
         )
     }
 }

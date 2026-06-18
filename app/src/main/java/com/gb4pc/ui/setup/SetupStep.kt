@@ -16,9 +16,10 @@ enum class SetupStep {
     BATTERY,
 }
 
-fun getSetupSteps(apiLevel: Int = Build.VERSION.SDK_INT): List<SetupStep> = buildList {
-    if (apiLevel >= 33) add(SetupStep.NOTIFICATION) // PM-05
-    add(SetupStep.USAGE_ACCESS)
-    add(SetupStep.OVERLAY)
-    add(SetupStep.BATTERY)
-}
+fun getSetupSteps(apiLevel: Int = Build.VERSION.SDK_INT): List<SetupStep> =
+    buildList {
+        if (apiLevel >= 33) add(SetupStep.NOTIFICATION) // PM-05
+        add(SetupStep.USAGE_ACCESS)
+        add(SetupStep.OVERLAY)
+        add(SetupStep.BATTERY)
+    }

@@ -15,10 +15,10 @@ private val LightColors = lightColorScheme()
 @Composable
 fun GB4PCTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    content: @Composable () -> Unit
+    content: @Composable () -> Unit,
 ) {
     MaterialTheme(
         colorScheme = if (darkTheme) DarkColors else LightColors,
-        content = content
+        content = content,
     )
 }

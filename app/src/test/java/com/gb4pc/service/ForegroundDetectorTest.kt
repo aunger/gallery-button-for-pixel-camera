@@ -9,7 +9,6 @@ import org.junit.Test
 import org.mockito.kotlin.*
 
 class ForegroundDetectorTest {
-
     private lateinit var usm: UsageStatsManager
     private lateinit var detector: ForegroundDetector
 
@@ -21,18 +20,20 @@ class ForegroundDetectorTest {
 
     @Test
     fun `getForegroundPackage returns null when no events`() {
-        val events: UsageEvents = mock {
-            on { hasNextEvent() } doReturn false
-        }
+        val events: UsageEvents =
+            mock {
+                on { hasNextEvent() } doReturn false
+            }
         whenever(usm.queryEvents(any(), any())).thenReturn(events)
         assertNull(detector.getForegroundPackage())
     }
 
     @Test
     fun `getForegroundPackage queries last 5 seconds`() {
-        val events: UsageEvents = mock {
-            on { hasNextEvent() } doReturn false
-        }
+        val events: UsageEvents =
+            mock {
+                on { hasNextEvent() } doReturn false
+            }
         whenever(usm.queryEvents(any(), any())).thenReturn(events)
 
         detector.getForegroundPackage()

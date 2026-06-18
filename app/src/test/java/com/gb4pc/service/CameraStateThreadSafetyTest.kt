@@ -10,7 +10,6 @@ import java.util.concurrent.atomic.AtomicInteger
  * Verifies CameraState is thread-safe under concurrent access (C1 fix).
  */
 class CameraStateThreadSafetyTest {
-
     @Test
     fun `concurrent add and remove does not throw ConcurrentModificationException`() {
         val state = CameraState()
@@ -20,25 +19,26 @@ class CameraStateThreadSafetyTest {
         val errors = AtomicInteger(0)
         val latch = CountDownLatch(threadCount)
 
-        val threads = (0 until threadCount).map { threadId ->
-            Thread {
-                try {
-                    barrier.await()
-                    for (i in 0 until iterations) {
-                        val cameraId = "${threadId}_$i"
-                        state.setCameraUnavailable(cameraId)
-                        state.anyCameraUnavailable()
-                        state.areAllCamerasAvailable()
-                        state.getUnavailableCameraIds()
-                        state.setCameraAvailable(cameraId)
+        val threads =
+            (0 until threadCount).map { threadId ->
+                Thread {
+                    try {
+                        barrier.await()
+                        for (i in 0 until iterations) {
+                            val cameraId = "${threadId}_$i"
+                            state.setCameraUnavailable(cameraId)
+                            state.anyCameraUnavailable()
+                            state.areAllCamerasAvailable()
+                            state.getUnavailableCameraIds()
+                            state.setCameraAvailable(cameraId)
+                        }
+                    } catch (e: Exception) {
+                        errors.incrementAndGet()
+                    } finally {
+                        latch.countDown()
                     }
-                } catch (e: Exception) {
-                    errors.incrementAndGet()
-                } finally {
-                    latch.countDown()
                 }
             }
-        }
 
         threads.forEach { it.start() }
         latch.await()

@@ -47,16 +47,16 @@ import kotlin.math.sqrt
 @RunWith(AndroidJUnit4::class)
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
 class GalleryButtonVisualE2ETest {
-
     @get:Rule
     val screenshotRule = ScreenshotTestRule()
 
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
-    private val fixture = E2EFixture(
-        context = context,
-        uiAutomation = instrumentation.uiAutomation,
-    )
+    private val fixture =
+        E2EFixture(
+            context = context,
+            uiAutomation = instrumentation.uiAutomation,
+        )
 
     @Before
     fun setUp() = fixture.setUp()
@@ -88,7 +88,7 @@ class GalleryButtonVisualE2ETest {
                 "test0_smokeGreenFeedVisible: GREEN coverage in central 60% of screen is " +
                     "${coverage * 100f}% — expected > 70%. " +
                     "Check that the mock-camera APK is installed under $MOCK_CAMERA_PACKAGE " +
-                    "and MockCameraActivity is in the foreground."
+                    "and MockCameraActivity is in the foreground.",
             )
         }
     }
@@ -139,7 +139,7 @@ class GalleryButtonVisualE2ETest {
                     "(${blue.centroid.x}, ${blue.centroid.y}) is $dist px from expected " +
                     "($expectedX, $expectedY). Tolerance = iconRadiusPx = $iconRadiusPx px. " +
                     "pos=$pos, screen=${screen.width}x${screen.height}, " +
-                    "aspect=$aspectRatio, pixelCount=${blue.pixelCount}"
+                    "aspect=$aspectRatio, pixelCount=${blue.pixelCount}",
             )
         }
     }
@@ -187,10 +187,11 @@ class GalleryButtonVisualE2ETest {
         fixture.pause(500)
 
         val screen = Screenshot.captureScreen()
-        val outer = ColorMatch.union(
-            ColorMatch.mask(screen, Rgb.BLUE),
-            ColorMatch.mask(screen, Rgb.YELLOW)
-        )
+        val outer =
+            ColorMatch.union(
+                ColorMatch.mask(screen, Rgb.BLUE),
+                ColorMatch.mask(screen, Rgb.YELLOW),
+            )
         Screenshot.saveForArtifact(screen, "1c-screen.png")
         Screenshot.saveForArtifact(maskToBitmap(outer), "1c-outer-mask.png")
 
@@ -230,7 +231,7 @@ class GalleryButtonVisualE2ETest {
             fail(
                 "test2a_emptyGalleryNoGreenAfterTap: GREEN coverage after tap is " +
                     "${coverage * 100f}% — expected < 10%. " +
-                    "The gallery opened showing unexpected green content with an empty roll."
+                    "The gallery opened showing unexpected green content with an empty roll.",
             )
         }
     }
@@ -275,7 +276,7 @@ class GalleryButtonVisualE2ETest {
             fail(
                 "test3a_populatedGalleryShowsGreenAfterTap: GREEN coverage after tap is " +
                     "${coverage * 100f}% — expected > 40%. " +
-                    "The gallery did not open, or the captured photo is not green."
+                    "The gallery did not open, or the captured photo is not green.",
             )
         }
     }
@@ -349,7 +350,7 @@ class GalleryButtonVisualE2ETest {
             fail(
                 "test4a_secureCameraLockedEmptyGalleryNoGreen: GREEN coverage after tap is " +
                     "${coverage * 100f}% — expected < 10%. " +
-                    "The gallery opened showing unexpected green content with an empty roll."
+                    "The gallery opened showing unexpected green content with an empty roll.",
             )
         }
     }
@@ -378,7 +379,7 @@ class GalleryButtonVisualE2ETest {
         // is required. After capture, return to home and stop the camera before locking.
         fixture.launchPixelCamera()
         fixture.waitForOverlayActive()
-        fixture.captureOnePhoto()   // GREEN JPEG now in MediaStore
+        fixture.captureOnePhoto() // GREEN JPEG now in MediaStore
         fixture.goHome()
         fixture.stopPixelCamera()
         fixture.lockScreen()
@@ -388,7 +389,7 @@ class GalleryButtonVisualE2ETest {
         val s1 = Screenshot.captureScreen()
         Screenshot.saveForArtifact(s1, "5a-s1.png")
 
-        fixture.tapOverlay()   // taps overlay position; no-op at baseline (overlay blocked)
+        fixture.tapOverlay() // taps overlay position; no-op at baseline (overlay blocked)
         fixture.pause(1000)
 
         val s2 = Screenshot.captureScreen()
@@ -404,7 +405,7 @@ class GalleryButtonVisualE2ETest {
                     "is ${coverage * 100f}% — expected > 40%. " +
                     "This is the expected baseline failure for the secure-camera overlay regression " +
                     "(issue #156). The overlay is not rendered or not tappable while the keyguard " +
-                    "is active, so the gallery did not open."
+                    "is active, so the gallery did not open.",
             )
         }
     }
@@ -414,7 +415,10 @@ class GalleryButtonVisualE2ETest {
     /**
      * Returns the Euclidean distance between two [PointF]s.
      */
-    private fun distance(a: PointF, b: PointF): Float {
+    private fun distance(
+        a: PointF,
+        b: PointF,
+    ): Float {
         val dx = a.x - b.x
         val dy = a.y - b.y
         return sqrt(dx * dx + dy * dy)

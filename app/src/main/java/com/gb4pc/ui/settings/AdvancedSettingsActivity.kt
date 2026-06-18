@@ -99,24 +99,25 @@ fun AdvancedSettingsScreen(prefsManager: PrefsManager) {
     Scaffold(
         topBar = {
             TopAppBar(title = { Text(stringResource(R.string.advanced_title)) })
-        }
+        },
     ) { padding ->
         Column(
-            modifier = Modifier
-                .padding(padding)
-                .padding(16.dp)
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
+            modifier =
+                Modifier
+                    .padding(padding)
+                    .padding(16.dp)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
         ) {
             // UI-10.1: Position sliders with text inputs (M4 fix: persist only on commit/onValueChangeFinished)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(bottom = 4.dp)
+                modifier = Modifier.padding(bottom = 4.dp),
             ) {
                 Text(
                     text = stringResource(R.string.advanced_x_position),
                     style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 )
                 OutlinedTextField(
                     value = xText,
@@ -128,16 +129,18 @@ fun AdvancedSettingsScreen(prefsManager: PrefsManager) {
                         }
                     },
                     suffix = { Text("%") },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Decimal,
-                        imeAction = ImeAction.Done
-                    ),
-                    keyboardActions = KeyboardActions(onDone = {
-                        commitXText()
-                        focusManager.clearFocus()
-                    }),
+                    keyboardOptions =
+                        KeyboardOptions(
+                            keyboardType = KeyboardType.Decimal,
+                            imeAction = ImeAction.Done,
+                        ),
+                    keyboardActions =
+                        KeyboardActions(onDone = {
+                            commitXText()
+                            focusManager.clearFocus()
+                        }),
                     singleLine = true,
-                    modifier = Modifier.width(96.dp)
+                    modifier = Modifier.width(96.dp),
                 )
             }
             Slider(
@@ -148,17 +151,17 @@ fun AdvancedSettingsScreen(prefsManager: PrefsManager) {
                 },
                 onValueChangeFinished = { savePosition() },
                 valueRange = 0f..100f,
-                modifier = Modifier.padding(bottom = 16.dp)
+                modifier = Modifier.padding(bottom = 16.dp),
             )
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(bottom = 4.dp)
+                modifier = Modifier.padding(bottom = 4.dp),
             ) {
                 Text(
                     text = stringResource(R.string.advanced_y_position),
                     style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 )
                 OutlinedTextField(
                     value = yText,
@@ -170,16 +173,18 @@ fun AdvancedSettingsScreen(prefsManager: PrefsManager) {
                         }
                     },
                     suffix = { Text("%") },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Decimal,
-                        imeAction = ImeAction.Done
-                    ),
-                    keyboardActions = KeyboardActions(onDone = {
-                        commitYText()
-                        focusManager.clearFocus()
-                    }),
+                    keyboardOptions =
+                        KeyboardOptions(
+                            keyboardType = KeyboardType.Decimal,
+                            imeAction = ImeAction.Done,
+                        ),
+                    keyboardActions =
+                        KeyboardActions(onDone = {
+                            commitYText()
+                            focusManager.clearFocus()
+                        }),
                     singleLine = true,
-                    modifier = Modifier.width(96.dp)
+                    modifier = Modifier.width(96.dp),
                 )
             }
             Slider(
@@ -190,17 +195,17 @@ fun AdvancedSettingsScreen(prefsManager: PrefsManager) {
                 },
                 onValueChangeFinished = { savePosition() },
                 valueRange = 0f..100f,
-                modifier = Modifier.padding(bottom = 16.dp)
+                modifier = Modifier.padding(bottom = 16.dp),
             )
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(bottom = 4.dp)
+                modifier = Modifier.padding(bottom = 4.dp),
             ) {
                 Text(
                     text = stringResource(R.string.advanced_size),
                     style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 )
                 OutlinedTextField(
                     value = sizeText,
@@ -212,16 +217,18 @@ fun AdvancedSettingsScreen(prefsManager: PrefsManager) {
                         }
                     },
                     suffix = { Text("%") },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Decimal,
-                        imeAction = ImeAction.Done
-                    ),
-                    keyboardActions = KeyboardActions(onDone = {
-                        commitSizeText()
-                        focusManager.clearFocus()
-                    }),
+                    keyboardOptions =
+                        KeyboardOptions(
+                            keyboardType = KeyboardType.Decimal,
+                            imeAction = ImeAction.Done,
+                        ),
+                    keyboardActions =
+                        KeyboardActions(onDone = {
+                            commitSizeText()
+                            focusManager.clearFocus()
+                        }),
                     singleLine = true,
-                    modifier = Modifier.width(96.dp)
+                    modifier = Modifier.width(96.dp),
                 )
             }
             Slider(
@@ -232,39 +239,41 @@ fun AdvancedSettingsScreen(prefsManager: PrefsManager) {
                 },
                 onValueChangeFinished = { savePosition() },
                 valueRange = Constants.MIN_SIZE_PERCENT..Constants.MAX_SIZE_PERCENT,
-                modifier = Modifier.padding(bottom = 16.dp)
+                modifier = Modifier.padding(bottom = 16.dp),
             )
 
             Text(
                 text = stringResource(R.string.advanced_camera_debounce_ms),
                 style = MaterialTheme.typography.labelLarge,
-                modifier = Modifier.padding(top = 8.dp)
+                modifier = Modifier.padding(top = 8.dp),
             )
             OutlinedTextField(
                 value = debounceText,
                 onValueChange = { debounceText = it },
                 suffix = { Text("ms") },
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Number,
-                    imeAction = ImeAction.Done
-                ),
-                keyboardActions = KeyboardActions(onDone = {
-                    commitDebounceText()
-                    focusManager.clearFocus()
-                }),
+                keyboardOptions =
+                    KeyboardOptions(
+                        keyboardType = KeyboardType.Number,
+                        imeAction = ImeAction.Done,
+                    ),
+                keyboardActions =
+                    KeyboardActions(onDone = {
+                        commitDebounceText()
+                        focusManager.clearFocus()
+                    }),
                 singleLine = true,
-                modifier = Modifier.width(128.dp)
+                modifier = Modifier.width(128.dp),
             )
             Text(
                 text = stringResource(R.string.advanced_camera_debounce_restart),
                 style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(bottom = 24.dp)
+                modifier = Modifier.padding(bottom = 24.dp),
             )
 
             // UI-10.2: Reset to defaults
             OutlinedButton(
                 onClick = { showResetDialog = true },
-                modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp)
+                modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp),
             ) {
                 Text(stringResource(R.string.advanced_reset))
             }
@@ -272,7 +281,7 @@ fun AdvancedSettingsScreen(prefsManager: PrefsManager) {
             // UI-10.3: Link to the dedicated log viewer screen (issue #83)
             OutlinedButton(
                 onClick = { context.startActivity(Intent(context, LogViewerActivity::class.java)) },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(stringResource(R.string.advanced_view_log))
             }
@@ -303,7 +312,7 @@ fun AdvancedSettingsScreen(prefsManager: PrefsManager) {
                     TextButton(onClick = { showResetDialog = false }) {
                         Text("Cancel")
                     }
-                }
+                },
             )
         }
     }

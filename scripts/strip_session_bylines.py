@@ -83,9 +83,7 @@ def _github_headers(token: str) -> dict[str, str]:
     }
 
 
-def _update(
-    method: str, token: str, url: str, body: str
-) -> bool:
+def _update(method: str, token: str, url: str, body: str) -> bool:
     """Update *url* with {"body": body} using the specified HTTP method.
 
     Args:

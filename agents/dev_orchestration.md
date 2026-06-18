@@ -54,8 +54,8 @@ The Orchestrator is not a Reviewer or a Programmer.
 - Create local Git branches to keep tasks separate
 - Read project instructions (AGENTS.md and the files it references)
 - Dispatch and communicate with subagents
-    - Replace subagents, reluctantly and when necessary, to complete a workflow
-    - Inform subagents of unfinished tasks or additional responsibilities
+  - Replace subagents, reluctantly and when necessary, to complete a workflow
+  - Inform subagents of unfinished tasks or additional responsibilities
 - Relay the user's exact words to either sub verbatim, and either sub's words back to the user verbatim (never between the two subs)
 - Relay Monitor output lines to the user (the say-nothing rule governs sub-agent messages, not user-facing status)
 - Provide instructions about which process document(s) to read
@@ -86,7 +86,7 @@ For each sub-agent role, use the first rule that applies:
 Use this template verbatim when dispatching any sub-agent.
 Fill only the tokens in braces; do not add any other words.
 
-```
+```text
 **{Role assignment statement}**
 GitHub repository: {owner-slash-repo or URL}
 Issue: {#xxx or "None"}
@@ -141,7 +141,7 @@ If the Author disagrees with a review point, they should make their case in PR c
 After the Reviewer exits and delivers its decision, the Orchestrator acts as follows.
 Monitor output lines are relayed to the user verbatim; this is user-facing status reporting and is not governed by the say-nothing rule (which covers sub-agent messages only).
 
-```
+```text
   if Reviewer requested changes → goto newAuthor
   if Reviewer gave LGTM:
     Orchestrator launches a Monitor tool call running `python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER>` from the repo root (run_in_background: true, timeout_ms: 1800000). Record the task ID returned by the Monitor tool call for use in silentVanish recovery, and clear the silentVanish re-launch flag (this original launch is not a re-launch).

@@ -40,10 +40,11 @@ class MediaObserverRetry<T>(
         handleResult(query(startMs), false)
 
         pendingRetry?.let { handler.removeCallbacks(it) }
-        val runnable = Runnable {
-            pendingRetry = null
-            handleResult(query(startMs), true)
-        }
+        val runnable =
+            Runnable {
+                pendingRetry = null
+                handleResult(query(startMs), true)
+            }
         pendingRetry = runnable
         handler.postDelayed(runnable, retryDelayMs)
     }

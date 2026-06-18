@@ -5,7 +5,6 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class OverlayPositionTest {
-
     @Test
     fun `default position has correct values from spec PS-02`() {
         val pos = OverlayPosition.default()

@@ -14,7 +14,6 @@ import android.widget.ImageView
  * transparent or uninitialized pixels when the camera roll is empty.
  */
 class LastPhotoActivity : Activity() {
-
     companion object {
         /**
          * Sort order for the most-recent-photo query: newest first.
@@ -44,18 +43,19 @@ class LastPhotoActivity : Activity() {
 
     private fun queryLastPhotoUri(): Uri? {
         val projection = arrayOf(MediaStore.Images.Media._ID)
-        contentResolver.query(
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            projection,
-            null,
-            null,
-            LAST_PHOTO_SORT_ORDER
-        )?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                val id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID))
-                return Uri.withAppendedPath(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id.toString())
+        contentResolver
+            .query(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                projection,
+                null,
+                null,
+                LAST_PHOTO_SORT_ORDER,
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID))
+                    return Uri.withAppendedPath(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id.toString())
+                }
             }
-        }
         return null
     }
 }

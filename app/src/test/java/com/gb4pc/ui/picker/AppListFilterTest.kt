@@ -6,14 +6,14 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AppListFilterTest {
-
-    private val apps = listOf(
-        AppInfo("Gallery", "com.example.gallery"),
-        AppInfo("Photos", "com.google.photos"),
-        AppInfo("Camera", "com.google.android.GoogleCamera"),
-        AppInfo("GB4PC", "com.gb4pc"),
-        AppInfo("Simple Gallery", "com.simplemobiletools.gallery")
-    )
+    private val apps =
+        listOf(
+            AppInfo("Gallery", "com.example.gallery"),
+            AppInfo("Photos", "com.google.photos"),
+            AppInfo("Camera", "com.google.android.GoogleCamera"),
+            AppInfo("GB4PC", "com.gb4pc"),
+            AppInfo("Simple Gallery", "com.simplemobiletools.gallery"),
+        )
 
     @Test
     fun `filter excludes Pixel Camera and GB4PC per UI-09`() {

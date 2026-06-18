@@ -13,8 +13,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
@@ -26,13 +24,14 @@ import com.gb4pc.R
 import com.gb4pc.data.PrefsManager
 import com.gb4pc.ui.theme.GB4PCTheme
 import com.gb4pc.util.DebugLog
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Gallery app picker (§6.2).
  * Can be launched from settings (UI-07) or JIT from the overlay (UI-08).
  */
 class PickerActivity : ComponentActivity() {
-
     companion object {
         const val EXTRA_LAUNCH_AFTER_PICK = "launch_after_pick"
     }
@@ -51,7 +50,7 @@ class PickerActivity : ComponentActivity() {
                     prefsManager = prefsManager,
                     onAppSelected = { packageName ->
                         handleSelection(packageName)
-                    }
+                    },
                 )
             }
         }
@@ -77,7 +76,7 @@ class PickerActivity : ComponentActivity() {
 @Composable
 fun PickerScreen(
     prefsManager: PrefsManager,
-    onAppSelected: (String) -> Unit
+    onAppSelected: (String) -> Unit,
 ) {
     val context = LocalContext.current
     var searchQuery by remember { mutableStateOf("") }
@@ -87,43 +86,48 @@ fun PickerScreen(
     var photoRelatedPackages by remember { mutableStateOf(emptySet<String>()) }
 
     LaunchedEffect(Unit) {
-        val (apps, photoPackages) = withContext(Dispatchers.IO) {
-            val pm = context.packageManager
-            val mainIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-            val resolveInfos = pm.queryIntentActivities(mainIntent, PackageManager.MATCH_ALL)
-            val loadedApps = resolveInfos.map { ri ->
-                AppInfo(
-                    label = ri.loadLabel(pm).toString(),
-                    packageName = ri.activityInfo.packageName
-                )
-            }.distinctBy { it.packageName }
-            val loadedPhotoPackages = AppListFilter.buildPhotoRelatedPackages(context)
-            loadedApps to loadedPhotoPackages
-        }
+        val (apps, photoPackages) =
+            withContext(Dispatchers.IO) {
+                val pm = context.packageManager
+                val mainIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+                val resolveInfos = pm.queryIntentActivities(mainIntent, PackageManager.MATCH_ALL)
+                val loadedApps =
+                    resolveInfos
+                        .map { ri ->
+                            AppInfo(
+                                label = ri.loadLabel(pm).toString(),
+                                packageName = ri.activityInfo.packageName,
+                            )
+                        }.distinctBy { it.packageName }
+                val loadedPhotoPackages = AppListFilter.buildPhotoRelatedPackages(context)
+                loadedApps to loadedPhotoPackages
+            }
         allApps = apps
         photoRelatedPackages = photoPackages
         if (photoPackages.isEmpty()) showAll = true
     }
 
-    val filteredApps = remember(allApps, photoRelatedPackages, searchQuery, showAll) {
-        val baseList = if (showAll) allApps else allApps.filter { it.packageName in photoRelatedPackages }
-        AppListFilter.filter(baseList, searchQuery, context.packageName)
-    }
+    val filteredApps =
+        remember(allApps, photoRelatedPackages, searchQuery, showAll) {
+            val baseList = if (showAll) allApps else allApps.filter { it.packageName in photoRelatedPackages }
+            AppListFilter.filter(baseList, searchQuery, context.packageName)
+        }
 
     Scaffold(
         topBar = {
             TopAppBar(title = { Text(stringResource(R.string.picker_title)) })
-        }
+        },
     ) { padding ->
         Column(modifier = Modifier.padding(padding)) {
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
                 placeholder = { Text(stringResource(R.string.picker_search_hint)) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                singleLine = true
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                singleLine = true,
             )
 
             LazyColumn {
@@ -133,7 +137,7 @@ fun PickerScreen(
                             text = stringResource(R.string.picker_filtered_hint),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                         )
                     }
                 }
@@ -144,9 +148,10 @@ fun PickerScreen(
                     item {
                         TextButton(
                             onClick = { showAll = true },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
                         ) {
                             Text(stringResource(R.string.picker_show_all))
                         }
@@ -158,28 +163,33 @@ fun PickerScreen(
 }
 
 @Composable
-fun AppRow(app: AppInfo, onClick: () -> Unit) {
+fun AppRow(
+    app: AppInfo,
+    onClick: () -> Unit,
+) {
     val context = LocalContext.current
-    val icon: Drawable? = remember(app.packageName) {
-        try {
-            context.packageManager.getApplicationIcon(app.packageName)
-        } catch (_: Exception) {
-            null
+    val icon: Drawable? =
+        remember(app.packageName) {
+            try {
+                context.packageManager.getApplicationIcon(app.packageName)
+            } catch (_: Exception) {
+                null
+            }
         }
-    }
 
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         icon?.let {
             Image(
                 bitmap = it.toBitmap(48, 48).asImageBitmap(),
                 contentDescription = app.label,
-                modifier = Modifier.size(48.dp)
+                modifier = Modifier.size(48.dp),
             )
         }
         Spacer(modifier = Modifier.width(16.dp))
@@ -188,7 +198,7 @@ fun AppRow(app: AppInfo, onClick: () -> Unit) {
             Text(
                 text = app.packageName,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }

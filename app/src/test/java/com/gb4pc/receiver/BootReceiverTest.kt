@@ -16,20 +16,21 @@ import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 
 class BootReceiverTest {
-
     private lateinit var context: Context
     private lateinit var prefs: SharedPreferences
     private val receiver = BootReceiver()
 
     @Before
     fun setUp() {
-        prefs = mock {
-            on { getBoolean(eq(Constants.PREF_SERVICE_ENABLED), any()) } doReturn false
-        }
-        context = mock {
-            on { getSharedPreferences(eq(Constants.PREFS_NAME), eq(Context.MODE_PRIVATE)) } doReturn prefs
-            on { startForegroundService(any()) } doReturn ComponentName("pkg", "cls")
-        }
+        prefs =
+            mock {
+                on { getBoolean(eq(Constants.PREF_SERVICE_ENABLED), any()) } doReturn false
+            }
+        context =
+            mock {
+                on { getSharedPreferences(eq(Constants.PREFS_NAME), eq(Context.MODE_PRIVATE)) } doReturn prefs
+                on { startForegroundService(any()) } doReturn ComponentName("pkg", "cls")
+            }
     }
 
     private fun intentWithAction(action: String?): Intent = mock { on { getAction() } doReturn action }

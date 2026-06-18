@@ -17,24 +17,33 @@ plugins {
 // github.run_number (via BUILD_NUMBER env var) in CI — monotonically increasing, no collisions.
 // BUILD_NUMBER must be a valid integer; a malformed value fails the build loudly.
 val envBuildNumber: String? = System.getenv("BUILD_NUMBER")
-val buildNumber: Int = when {
-    envBuildNumber == null ->
-        LocalDate.now(ZoneOffset.UTC).format(DateTimeFormatter.BASIC_ISO_DATE).toInt()
-    envBuildNumber.toIntOrNull() != null -> envBuildNumber.toInt()
-    else -> error("BUILD_NUMBER env var is set but not a valid integer: '$envBuildNumber'")
-}
+val buildNumber: Int =
+    when {
+        envBuildNumber == null -> {
+            LocalDate.now(ZoneOffset.UTC).format(DateTimeFormatter.BASIC_ISO_DATE).toInt()
+        }
+
+        envBuildNumber.toIntOrNull() != null -> {
+            envBuildNumber.toInt()
+        }
+
+        else -> {
+            error("BUILD_NUMBER env var is set but not a valid integer: '$envBuildNumber'")
+        }
+    }
 
 // ── Test-result marker helpers ────────────────────────────────────────────────
 // Shared by the unit-test listener (tasks.withType<Test>) and the E2E parser.
 // Produces the stable ##GB4PC_TEST## line format consumed by the CI Monitor.
 
 /** JSON-escapes a string value (no surrounding quotes). */
-fun jsonEscape(s: String): String = s
-    .replace("\\", "\\\\")
-    .replace("\"", "\\\"")
-    .replace("\n", "\\n")
-    .replace("\r", "\\r")
-    .replace("\t", "\\t")
+fun jsonEscape(s: String): String =
+    s
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
 
 /** Returns the first ≤10 stack frames of [ex] as a single newline-separated string. */
 fun buildTrace(ex: Throwable): String {
@@ -83,7 +92,7 @@ android {
             isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                "proguard-rules.pro",
             )
             // M6: Only apply release signing config when keystore env vars are present.
             if (keystorePath != null) {
@@ -123,27 +132,41 @@ android {
             isIncludeAndroidResources = true
             isReturnDefaultValues = true
             all { testTask ->
-                testTask.addTestListener(object : TestListener {
-                    override fun beforeSuite(suite: TestDescriptor) {}
-                    override fun afterSuite(suite: TestDescriptor, result: TestResult) {}
-                    override fun beforeTest(test: TestDescriptor) {}
-                    override fun afterTest(test: TestDescriptor, result: TestResult) {
-                        val outcome = when (result.resultType) {
-                            TestResult.ResultType.SUCCESS -> "PASS"
-                            TestResult.ResultType.FAILURE -> "FAIL"
-                            TestResult.ResultType.SKIPPED -> "SKIP"
+                testTask.addTestListener(
+                    object : TestListener {
+                        override fun beforeSuite(suite: TestDescriptor) {}
+
+                        override fun afterSuite(
+                            suite: TestDescriptor,
+                            result: TestResult,
+                        ) {}
+
+                        override fun beforeTest(test: TestDescriptor) {}
+
+                        override fun afterTest(
+                            test: TestDescriptor,
+                            result: TestResult,
+                        ) {
+                            val outcome =
+                                when (result.resultType) {
+                                    TestResult.ResultType.SUCCESS -> "PASS"
+                                    TestResult.ResultType.FAILURE -> "FAIL"
+                                    TestResult.ResultType.SKIPPED -> "SKIP"
+                                }
+                            val suite = test.className ?: ""
+                            val name = test.name
+                            val ms = result.endTime - result.startTime
+                            val ex = result.exception
+                            val msg = if (ex != null) jsonEscape(ex.message ?: ex.javaClass.name) else ""
+                            val trace = if (ex != null) jsonEscape(buildTrace(ex)) else ""
+                            println(
+                                """##GB4PC_TEST## {"suite":"${jsonEscape(
+                                    suite,
+                                )}","name":"${jsonEscape(name)}","outcome":"$outcome","ms":$ms,"msg":"$msg","trace":"$trace"}""",
+                            )
                         }
-                        val suite = test.className ?: ""
-                        val name = test.name
-                        val ms = result.endTime - result.startTime
-                        val ex = result.exception
-                        val msg = if (ex != null) jsonEscape(ex.message ?: ex.javaClass.name) else ""
-                        val trace = if (ex != null) jsonEscape(buildTrace(ex)) else ""
-                        println(
-                            """##GB4PC_TEST## {"suite":"${jsonEscape(suite)}","name":"${jsonEscape(name)}","outcome":"$outcome","ms":$ms,"msg":"$msg","trace":"$trace"}"""
-                        )
-                    }
-                })
+                    },
+                )
             }
         }
     }
@@ -203,16 +226,23 @@ dependencies {
 // Note: captures SDK dir and APK paths at configuration time so they are available
 // inside the doLast execution closure where the project extension is out of scope.
 val e2eAdb = "${android.sdkDirectory.absolutePath}/platform-tools/adb"
-val e2eAppApk = layout.buildDirectory
-    .file("outputs/apk/debug/app-debug.apk")
-val e2eTestApk = layout.buildDirectory
-    .file("outputs/apk/androidTest/debug/app-debug-androidTest.apk")
-val e2eMockCameraApk = project(":e2e-mock-camera").layout.buildDirectory
-    .file("outputs/apk/debug/e2e-mock-camera-debug.apk")
-val e2eMockGalleryApk = project(":e2e-mock-gallery").layout.buildDirectory
-    .file("outputs/apk/debug/e2e-mock-gallery-debug.apk")
-val e2eXmlDir = layout.buildDirectory
-    .dir("outputs/androidTest-results/connected/debug")
+val e2eAppApk =
+    layout.buildDirectory
+        .file("outputs/apk/debug/app-debug.apk")
+val e2eTestApk =
+    layout.buildDirectory
+        .file("outputs/apk/androidTest/debug/app-debug-androidTest.apk")
+val e2eMockCameraApk =
+    project(":e2e-mock-camera")
+        .layout.buildDirectory
+        .file("outputs/apk/debug/e2e-mock-camera-debug.apk")
+val e2eMockGalleryApk =
+    project(":e2e-mock-gallery")
+        .layout.buildDirectory
+        .file("outputs/apk/debug/e2e-mock-gallery-debug.apk")
+val e2eXmlDir =
+    layout.buildDirectory
+        .dir("outputs/androidTest-results/connected/debug")
 
 tasks.register("connectedE2EAndroidTest") {
     group = "verification"
@@ -259,18 +289,25 @@ tasks.register("connectedE2EAndroidTest") {
         // am instrument exits non-zero on test failure but returns 0 on process crash;
         // capture stdout, write JUnit XML, then fail loudly on crash or test failure.
         val e2eClass = project.findProperty("e2eClass") as String?
-        val classArgs = if (e2eClass != null)
-            listOf("-e", "class", e2eClass)
-        else
-            listOf("-e", "package", "com.gb4pc.e2e")
+        val classArgs =
+            if (e2eClass != null) {
+                listOf("-e", "class", e2eClass)
+            } else {
+                listOf("-e", "package", "com.gb4pc.e2e")
+            }
         val xmlSuiteName = e2eClass ?: "com.gb4pc.e2e"
 
         val instrumentOut = ByteArrayOutputStream()
         exec {
             commandLine(
-                e2eAdb, "shell", "am", "instrument", "-r", "-w",
+                e2eAdb,
+                "shell",
+                "am",
+                "instrument",
+                "-r",
+                "-w",
                 *classArgs.toTypedArray(),
-                "com.gb4pc.test/androidx.test.runner.AndroidJUnitRunner"
+                "com.gb4pc.test/androidx.test.runner.AndroidJUnitRunner",
             )
             standardOutput = instrumentOut
             // Don't throw on non-zero exit: am instrument exits 1 on test failure,
@@ -283,24 +320,43 @@ tasks.register("connectedE2EAndroidTest") {
         // Parse INSTRUMENTATION_STATUS blocks into JUnit XML.
         // Each test emits STATUS_CODE 1 (started) then 0 (pass), -2 (failure), or -1 (error).
         // Stack-trace values continue on lines starting with \t until the next STATUS: key.
-        data class TestCase(val cls: String, val name: String, val code: Int, val stack: String)
+        data class TestCase(
+            val cls: String,
+            val name: String,
+            val code: Int,
+            val stack: String,
+        )
         val cases = mutableListOf<TestCase>()
-        var curName = ""; var curClass = ""; var curStack = StringBuilder(); var inStack = false
+        var curName = ""
+        var curClass = ""
+        var curStack = StringBuilder()
+        var inStack = false
         for (line in output.lines()) {
             when {
                 line.startsWith("INSTRUMENTATION_STATUS: test=") -> {
-                    curName = line.removePrefix("INSTRUMENTATION_STATUS: test="); inStack = false
+                    curName = line.removePrefix("INSTRUMENTATION_STATUS: test=")
+                    inStack = false
                 }
+
                 line.startsWith("INSTRUMENTATION_STATUS: class=") -> {
-                    curClass = line.removePrefix("INSTRUMENTATION_STATUS: class="); inStack = false
+                    curClass = line.removePrefix("INSTRUMENTATION_STATUS: class=")
+                    inStack = false
                 }
+
                 line.startsWith("INSTRUMENTATION_STATUS: stack=") -> {
                     curStack = StringBuilder(line.removePrefix("INSTRUMENTATION_STATUS: stack="))
                     inStack = true
                 }
+
                 // Any other INSTRUMENTATION_STATUS: key ends a stack-trace continuation.
-                line.startsWith("INSTRUMENTATION_STATUS:") -> inStack = false
-                inStack && line.startsWith("\t") -> curStack.append('\n').append(line)
+                line.startsWith("INSTRUMENTATION_STATUS:") -> {
+                    inStack = false
+                }
+
+                inStack && line.startsWith("\t") -> {
+                    curStack.append('\n').append(line)
+                }
+
                 line.startsWith("INSTRUMENTATION_STATUS_CODE:") -> {
                     inStack = false
                     val code = line.removePrefix("INSTRUMENTATION_STATUS_CODE:").trim().toIntOrNull() ?: 0
@@ -308,48 +364,77 @@ tasks.register("connectedE2EAndroidTest") {
                         if (code != 1) {
                             cases += TestCase(curClass, curName, code, curStack.toString())
                             // Emit per-test marker immediately so the CI log is the source of truth.
-                            val outcome = when (code) {
-                                0 -> "PASS"
-                                -3 -> "SKIP"
-                                else -> "FAIL"
-                            }
+                            val outcome =
+                                when (code) {
+                                    0 -> "PASS"
+                                    -3 -> "SKIP"
+                                    else -> "FAIL"
+                                }
                             val stackStr = curStack.toString()
-                            val msg = if (code != 0 && code != -3)
-                                jsonEscape(stackStr.lines().firstOrNull().orEmpty().take(200))
-                            else ""
-                            val trace = if (code != 0 && code != -3) {
-                                val frames = stackStr.lines().take(10).joinToString("\n")
-                                jsonEscape(frames)
-                            } else ""
+                            val msg =
+                                if (code != 0 && code != -3) {
+                                    jsonEscape(
+                                        stackStr
+                                            .lines()
+                                            .firstOrNull()
+                                            .orEmpty()
+                                            .take(200),
+                                    )
+                                } else {
+                                    ""
+                                }
+                            val trace =
+                                if (code != 0 && code != -3) {
+                                    val frames = stackStr.lines().take(10).joinToString("\n")
+                                    jsonEscape(frames)
+                                } else {
+                                    ""
+                                }
                             println(
-                                """##GB4PC_TEST## {"suite":"${jsonEscape(curClass)}","name":"${jsonEscape(curName)}","outcome":"$outcome","ms":0,"msg":"$msg","trace":"$trace"}"""
+                                """##GB4PC_TEST## {"suite":"${jsonEscape(
+                                    curClass,
+                                )}","name":"${jsonEscape(curName)}","outcome":"$outcome","ms":0,"msg":"$msg","trace":"$trace"}""",
                             )
                         }
-                        curStack = StringBuilder()  // always reset so stale stack can't leak into the next test
+                        curStack = StringBuilder() // always reset so stale stack can't leak into the next test
                     }
                 }
-                inStack -> curStack.append('\n').append(line)
+
+                inStack -> {
+                    curStack.append('\n').append(line)
+                }
             }
         }
         val xmlOutDir = e2eXmlDir.get().asFile.also { it.mkdirs() }
         val failCount = cases.count { it.code != 0 }
+
         fun String.esc() = replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
-        File(xmlOutDir, "TEST-${xmlSuiteName}.xml").writeText(buildString {
-            appendLine("""<?xml version="1.0" encoding="UTF-8"?>""")
-            appendLine("""<testsuite name="$xmlSuiteName" tests="${cases.size}" failures="$failCount" errors="0">""")
-            for (c in cases) {
-                append("""  <testcase name="${c.name.esc()}" classname="${c.cls.esc()}"""")
-                if (c.code == 0) { appendLine("/>") } else {
-                    appendLine(">")
-                    val msg = c.stack.lines().firstOrNull().orEmpty().take(200).esc()
-                    appendLine("""    <failure message="$msg">""")
-                    appendLine(c.stack.esc())
-                    appendLine("    </failure>")
-                    appendLine("  </testcase>")
+        File(xmlOutDir, "TEST-$xmlSuiteName.xml").writeText(
+            buildString {
+                appendLine("""<?xml version="1.0" encoding="UTF-8"?>""")
+                appendLine("""<testsuite name="$xmlSuiteName" tests="${cases.size}" failures="$failCount" errors="0">""")
+                for (c in cases) {
+                    append("""  <testcase name="${c.name.esc()}" classname="${c.cls.esc()}"""")
+                    if (c.code == 0) {
+                        appendLine("/>")
+                    } else {
+                        appendLine(">")
+                        val msg =
+                            c.stack
+                                .lines()
+                                .firstOrNull()
+                                .orEmpty()
+                                .take(200)
+                                .esc()
+                        appendLine("""    <failure message="$msg">""")
+                        appendLine(c.stack.esc())
+                        appendLine("    </failure>")
+                        appendLine("  </testcase>")
+                    }
                 }
-            }
-            appendLine("</testsuite>")
-        })
+                appendLine("</testsuite>")
+            },
+        )
 
         // Crash guard: these strings appear in -r output on hard abort/crash.
         if (output.contains("Process crashed") || output.contains("INSTRUMENTATION_ABORTED")) {

@@ -24,7 +24,6 @@ import org.robolectric.RobolectricTestRunner
  */
 @RunWith(RobolectricTestRunner::class)
 class LastPhotoActivityRobolectricTest {
-
     /**
      * The real guard: the sort order must not contain a LIMIT clause. Robolectric's
      * MediaStore shim does not reproduce the platform's ORDER BY validation, so a mere
@@ -37,7 +36,7 @@ class LastPhotoActivityRobolectricTest {
             "LastPhotoActivity's MediaStore sort order must not embed a LIMIT clause; " +
                 "API 29+ rejects it with \"Invalid token LIMIT\" and crashes the activity " +
                 "on launch (issue #230). Was: ${LastPhotoActivity.LAST_PHOTO_SORT_ORDER}",
-            LastPhotoActivity.LAST_PHOTO_SORT_ORDER.contains("LIMIT", ignoreCase = true)
+            LastPhotoActivity.LAST_PHOTO_SORT_ORDER.contains("LIMIT", ignoreCase = true),
         )
     }
 

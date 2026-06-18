@@ -11,7 +11,6 @@ import com.gb4pc.util.DebugLog
  * Extracted as a standalone object so the logic can be unit-tested without a real Activity.
  */
 object ServiceChecker {
-
     /**
      * Returns true if [OverlayService] currently has a running instance.
      *
@@ -22,7 +21,8 @@ object ServiceChecker {
     fun isServiceRunning(context: Context): Boolean {
         val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
         val serviceName = OverlayService::class.java.name
-        return am.getRunningServices(Int.MAX_VALUE)
+        return am
+            .getRunningServices(Int.MAX_VALUE)
             .any { it.service.className == serviceName }
     }
 
@@ -33,7 +33,10 @@ object ServiceChecker {
      * Call this on app launch (e.g. [android.app.Activity.onCreate]) so a crashed or
      * killed service is automatically recovered.
      */
-    fun ensureServiceRunningIfEnabled(context: Context, prefs: PrefsManager) {
+    fun ensureServiceRunningIfEnabled(
+        context: Context,
+        prefs: PrefsManager,
+    ) {
         if (!prefs.isServiceEnabled) return
 
         if (!isServiceRunning(context)) {

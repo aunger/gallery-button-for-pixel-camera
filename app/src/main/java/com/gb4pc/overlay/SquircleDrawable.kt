@@ -32,8 +32,9 @@ import kotlin.math.pow
  *
  * Issue #188: make squircular overlays independent of launcher icon-mask shape.
  */
-class SquircleDrawable(val inner: Drawable) : Drawable() {
-
+class SquircleDrawable(
+    val inner: Drawable,
+) : Drawable() {
     private val clipPath = Path()
     private var pathWidth = -1
     private var pathHeight = -1
@@ -93,6 +94,7 @@ class SquircleDrawable(val inner: Drawable) : Drawable() {
     override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
 
     override fun getIntrinsicWidth(): Int = inner.intrinsicWidth
+
     override fun getIntrinsicHeight(): Int = inner.intrinsicHeight
 
     // ── path helpers ──────────────────────────────────────────────────────────
@@ -101,7 +103,10 @@ class SquircleDrawable(val inner: Drawable) : Drawable() {
      * Rebuilds [clipPath] for the given dimensions only when the dimensions have changed.
      * The path traces the superellipse boundary  |2x/w − 1|^4 + |2y/h − 1|^4 = 1.
      */
-    private fun rebuildPathIfNeeded(w: Int, h: Int) {
+    private fun rebuildPathIfNeeded(
+        w: Int,
+        h: Int,
+    ) {
         if (w == pathWidth && h == pathHeight) return
         pathWidth = w
         pathHeight = h
@@ -122,9 +127,13 @@ class SquircleDrawable(val inner: Drawable) : Drawable() {
          */
         private const val STEPS = 256
         private const val N = 4.0
-        internal const val EXP = 2.0 / N  // = 0.5
+        internal const val EXP = 2.0 / N // = 0.5
 
-        fun buildSuperellipsePath(path: Path, w: Int, h: Int) {
+        fun buildSuperellipsePath(
+            path: Path,
+            w: Int,
+            h: Int,
+        ) {
             path.reset()
             val cx = w / 2.0
             val cy = h / 2.0

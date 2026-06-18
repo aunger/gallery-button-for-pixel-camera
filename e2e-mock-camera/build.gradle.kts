@@ -3,7 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-/**
+/*
  * Minimal stub APK used exclusively for E2E testing on the emulator.
  *
  * applicationId = "com.google.android.GoogleCamera" makes GB4PC's ForegroundDetector

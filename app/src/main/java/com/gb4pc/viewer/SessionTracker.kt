@@ -8,7 +8,6 @@ import com.gb4pc.Constants
  * Thread-safe: accessed from OverlayService, SecureViewerActivity, and ContentObserver callbacks.
  */
 class SessionTracker {
-
     private val lock = Any()
 
     var isSessionActive: Boolean = false
@@ -58,16 +57,18 @@ class SessionTracker {
     /**
      * SF-07: Returns session media sorted most recent first.
      */
-    fun getSessionMedia(): List<MediaItem> {
-        return synchronized(lock) {
+    fun getSessionMedia(): List<MediaItem> =
+        synchronized(lock) {
             mediaItems.sortedByDescending { it.dateTaken }
         }
-    }
 
     /**
      * SF-04: Check if a media item belongs to the current session.
      */
-    fun isMediaInSession(dateTaken: Long, relativePath: String): Boolean {
+    fun isMediaInSession(
+        dateTaken: Long,
+        relativePath: String,
+    ): Boolean {
         return synchronized(lock) {
             if (!isSessionActive) return false
 

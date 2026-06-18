@@ -14,8 +14,7 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class SessionTrackerIntegrationTest {
-
-    private val tracker = SessionTracker()   // fresh instance per test
+    private val tracker = SessionTracker() // fresh instance per test
 
     @Before
     fun startSession() {
@@ -38,7 +37,7 @@ class SessionTrackerIntegrationTest {
     fun addMedia_duplicateUri_isDeduped() {
         val item = MediaItem("content://media/2", dateTaken = 2000L, isVideo = false)
         tracker.addMedia(item)
-        tracker.addMedia(item)  // second add must be a no-op
+        tracker.addMedia(item) // second add must be a no-op
         assertEquals(1, tracker.getSessionMedia().count { it.uri == "content://media/2" })
     }
 
@@ -70,7 +69,7 @@ class SessionTrackerIntegrationTest {
 
     @Test
     fun addMedia_whenSessionNotActive_isIgnored() {
-        tracker.endSession()  // deactivate
+        tracker.endSession() // deactivate
         tracker.addMedia(MediaItem("content://media/7", 1000L, false))
         assertTrue(tracker.getSessionMedia().isEmpty())
     }
@@ -78,11 +77,12 @@ class SessionTrackerIntegrationTest {
     @Test
     fun concurrentAddMedia_noDuplicates() {
         // Fire 20 threads each trying to add the same URI
-        val threads = (1..20).map {
-            Thread {
-                tracker.addMedia(MediaItem("content://media/concurrent", 1000L, false))
+        val threads =
+            (1..20).map {
+                Thread {
+                    tracker.addMedia(MediaItem("content://media/concurrent", 1000L, false))
+                }
             }
-        }
         threads.forEach { it.start() }
         threads.forEach { it.join() }
         assertEquals(1, tracker.getSessionMedia().count { it.uri == "content://media/concurrent" })

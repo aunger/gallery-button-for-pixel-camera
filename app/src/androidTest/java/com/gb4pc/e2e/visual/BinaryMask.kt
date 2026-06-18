@@ -19,7 +19,7 @@ data class BinaryMask(
     val height: Int,
     val bbox: Rect,
     val centroid: PointF,
-    val pixelCount: Int
+    val pixelCount: Int,
 ) {
     // BooleanArray does not implement structural equals/hashCode; override here.
     override fun equals(other: Any?): Boolean {

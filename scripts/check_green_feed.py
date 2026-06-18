@@ -77,9 +77,7 @@ def decode_png_to_rgb(path: str) -> tuple[list[list[tuple[int, int, int]]], int,
     if bit_depth != 8:
         raise ValueError(f"{path}: only 8-bit depth supported, got {bit_depth}")
     if color_type not in (2, 6):
-        raise ValueError(
-            f"{path}: only RGB (2) or RGBA (6) color type supported, got {color_type}"
-        )
+        raise ValueError(f"{path}: only RGB (2) or RGBA (6) color type supported, got {color_type}")
 
     channels = 3 if color_type == 2 else 4
     raw = zlib.decompress(b"".join(idat_parts))

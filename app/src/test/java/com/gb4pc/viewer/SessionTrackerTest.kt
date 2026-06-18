@@ -6,7 +6,6 @@ import org.junit.Before
 import org.junit.Test
 
 class SessionTrackerTest {
-
     private lateinit var tracker: SessionTracker
 
     @Before
@@ -62,22 +61,28 @@ class SessionTrackerTest {
         val sessionStart = tracker.sessionStartTimestamp
 
         // Within tolerance
-        assertTrue(tracker.isMediaInSession(
-            dateTaken = sessionStart - Constants.SESSION_TIMESTAMP_TOLERANCE_MS + 500,
-            relativePath = "DCIM/Camera/IMG_001.jpg"
-        ))
+        assertTrue(
+            tracker.isMediaInSession(
+                dateTaken = sessionStart - Constants.SESSION_TIMESTAMP_TOLERANCE_MS + 500,
+                relativePath = "DCIM/Camera/IMG_001.jpg",
+            ),
+        )
 
         // After session start
-        assertTrue(tracker.isMediaInSession(
-            dateTaken = sessionStart + 1000,
-            relativePath = "DCIM/Camera/IMG_002.jpg"
-        ))
+        assertTrue(
+            tracker.isMediaInSession(
+                dateTaken = sessionStart + 1000,
+                relativePath = "DCIM/Camera/IMG_002.jpg",
+            ),
+        )
 
         // Too early
-        assertFalse(tracker.isMediaInSession(
-            dateTaken = sessionStart - Constants.SESSION_TIMESTAMP_TOLERANCE_MS - 1000,
-            relativePath = "DCIM/Camera/IMG_003.jpg"
-        ))
+        assertFalse(
+            tracker.isMediaInSession(
+                dateTaken = sessionStart - Constants.SESSION_TIMESTAMP_TOLERANCE_MS - 1000,
+                relativePath = "DCIM/Camera/IMG_003.jpg",
+            ),
+        )
     }
 
     @Test
@@ -85,20 +90,26 @@ class SessionTrackerTest {
         tracker.startSession()
         val sessionStart = tracker.sessionStartTimestamp
 
-        assertTrue(tracker.isMediaInSession(
-            dateTaken = sessionStart,
-            relativePath = "DCIM/Camera/IMG_001.jpg"
-        ))
+        assertTrue(
+            tracker.isMediaInSession(
+                dateTaken = sessionStart,
+                relativePath = "DCIM/Camera/IMG_001.jpg",
+            ),
+        )
 
-        assertFalse(tracker.isMediaInSession(
-            dateTaken = sessionStart,
-            relativePath = "DCIM/Screenshots/IMG_001.jpg"
-        ))
+        assertFalse(
+            tracker.isMediaInSession(
+                dateTaken = sessionStart,
+                relativePath = "DCIM/Screenshots/IMG_001.jpg",
+            ),
+        )
 
-        assertFalse(tracker.isMediaInSession(
-            dateTaken = sessionStart,
-            relativePath = "Download/photo.jpg"
-        ))
+        assertFalse(
+            tracker.isMediaInSession(
+                dateTaken = sessionStart,
+                relativePath = "Download/photo.jpg",
+            ),
+        )
     }
 
     @Test

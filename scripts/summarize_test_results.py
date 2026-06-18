@@ -23,7 +23,7 @@ Exit code is always 0 (display only; failures are surfaced by earlier steps).
 
 import os
 import sys
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -31,6 +31,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # Data model
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class TestCase:
@@ -52,6 +53,7 @@ class TestClass:
 @dataclass(frozen=True)
 class SuiteSpec:
     """One test suite to summarize: where its results live and how its step fared."""
+
     directory: Path
     label: str
     # The GitHub Actions step ``outcome`` for the step that produced these
@@ -65,6 +67,7 @@ class SuiteSpec:
 # ---------------------------------------------------------------------------
 # Parsing
 # ---------------------------------------------------------------------------
+
 
 def parse_directory(directory: Path) -> dict[str, TestClass]:
     """Parse all TEST-*.xml files in *directory* and return classes keyed by name."""
@@ -92,12 +95,8 @@ def parse_directory(directory: Path) -> dict[str, TestClass]:
             for tc in suite.findall("testcase"):
                 tc_name = tc.get("name", "<unknown>")
                 skipped = tc.find("skipped") is not None
-                failed = (
-                    not skipped
-                    and (
-                        tc.find("failure") is not None
-                        or tc.find("error") is not None
-                    )
+                failed = not skipped and (
+                    tc.find("failure") is not None or tc.find("error") is not None
                 )
                 classes[class_name].cases.append(
                     TestCase(name=tc_name, passed=not failed and not skipped, skipped=skipped)
@@ -109,6 +108,7 @@ def parse_directory(directory: Path) -> dict[str, TestClass]:
 # ---------------------------------------------------------------------------
 # Markdown rendering
 # ---------------------------------------------------------------------------
+
 
 def render_class(cls: "TestClass") -> tuple[list[str], int, int, int]:
     """Render one class as a collapsible ``<details>`` block.
@@ -275,6 +275,7 @@ def parse_args(argv: list[str]) -> list[SuiteSpec]:
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
 
 def main(argv: list[str] | None = None) -> int:
     if argv is None:

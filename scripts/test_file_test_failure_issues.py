@@ -18,6 +18,7 @@ import file_test_failure_issues as ftfi  # noqa: E402
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _write_xml(directory: Path, filename: str, content: str) -> Path:
     """Write an XML file to *directory* and return its path."""
     path = directory / filename
@@ -84,8 +85,8 @@ _FIXED_SHA = "a1b2c3d4e5f6789"
 # parse_failures tests
 # ---------------------------------------------------------------------------
 
-class TestParseFailures(unittest.TestCase):
 
+class TestParseFailures(unittest.TestCase):
     def setUp(self):
         self._tmpdir = tempfile.TemporaryDirectory()
         self.tmpdir = Path(self._tmpdir.name)
@@ -158,17 +159,19 @@ class TestParseFailures(unittest.TestCase):
 # make_issue_title tests
 # ---------------------------------------------------------------------------
 
-class TestMakeIssueTitle(unittest.TestCase):
 
+class TestMakeIssueTitle(unittest.TestCase):
     def test_format_matches_spec(self):
         title = ftfi.make_issue_title(
-            "PrefsManagerTest", "readDefaultReturnsNull",
+            "PrefsManagerTest",
+            "readDefaultReturnsNull",
         )
         self.assertEqual(title, "[PrefsManagerTest] readDefaultReturnsNull")
 
     def test_strips_package_prefix(self):
         title = ftfi.make_issue_title(
-            "com.gb4pc.e2e.PixelCameraOverlayE2ETest", "overlayAppearsWhenViewfinderOpens",
+            "com.gb4pc.e2e.PixelCameraOverlayE2ETest",
+            "overlayAppearsWhenViewfinderOpens",
         )
         self.assertEqual(title, "[PixelCameraOverlayE2ETest] overlayAppearsWhenViewfinderOpens")
 
@@ -191,8 +194,8 @@ class TestMakeIssueTitle(unittest.TestCase):
 # make_issue_body tests
 # ---------------------------------------------------------------------------
 
-class TestMakeIssueBody(unittest.TestCase):
 
+class TestMakeIssueBody(unittest.TestCase):
     def setUp(self):
         self._tmpdir = tempfile.TemporaryDirectory()
         self.tmpdir = Path(self._tmpdir.name)
@@ -341,8 +344,8 @@ class TestMakeIssueBody(unittest.TestCase):
 # _find_ocr_text tests
 # ---------------------------------------------------------------------------
 
-class TestFindOcrText(unittest.TestCase):
 
+class TestFindOcrText(unittest.TestCase):
     def setUp(self):
         self._tmpdir = tempfile.TemporaryDirectory()
         self.tmpdir = Path(self._tmpdir.name)
@@ -380,8 +383,8 @@ class TestFindOcrText(unittest.TestCase):
 # Duplicate suppression tests
 # ---------------------------------------------------------------------------
 
-class TestFindExistingIssue(unittest.TestCase):
 
+class TestFindExistingIssue(unittest.TestCase):
     @patch("file_test_failure_issues.requests")
     def test_returns_issue_number_and_state_when_found_open(self, mock_requests):
         mock_resp = MagicMock()
@@ -414,7 +417,6 @@ class TestFindExistingIssue(unittest.TestCase):
 
 
 class TestCreateIssue(unittest.TestCase):
-
     @patch("file_test_failure_issues.requests")
     def test_returns_issue_number_on_success(self, mock_requests):
         mock_resp = MagicMock()
@@ -441,7 +443,6 @@ class TestCreateIssue(unittest.TestCase):
 
 
 class TestAddIssueComment(unittest.TestCase):
-
     @patch("file_test_failure_issues.requests")
     def test_returns_true_on_success(self, mock_requests):
         mock_resp = MagicMock()
@@ -457,7 +458,6 @@ class TestAddIssueComment(unittest.TestCase):
 
 
 class TestReopenIssue(unittest.TestCase):
-
     @patch("file_test_failure_issues.requests")
     def test_returns_true_on_success(self, mock_requests):
         mock_resp = MagicMock()
@@ -484,8 +484,8 @@ class TestReopenIssue(unittest.TestCase):
 # process_failure tests (duplicate suppression)
 # ---------------------------------------------------------------------------
 
-class TestProcessFailure(unittest.TestCase):
 
+class TestProcessFailure(unittest.TestCase):
     def setUp(self):
         self._tmpdir = tempfile.TemporaryDirectory()
         self.tmpdir = Path(self._tmpdir.name)
@@ -536,9 +536,7 @@ class TestProcessFailure(unittest.TestCase):
     @patch("file_test_failure_issues.add_issue_comment")
     @patch("file_test_failure_issues.create_issue")
     @patch("file_test_failure_issues.find_existing_issue")
-    def test_creates_issue_when_no_duplicate(
-        self, mock_find, mock_create, mock_comment
-    ):
+    def test_creates_issue_when_no_duplicate(self, mock_find, mock_create, mock_comment):
         mock_find.return_value = None  # no existing issue
         mock_create.return_value = 77
         self._call_process_failure()
@@ -562,9 +560,7 @@ class TestProcessFailure(unittest.TestCase):
     @patch("file_test_failure_issues.add_issue_comment")
     @patch("file_test_failure_issues.create_issue")
     @patch("file_test_failure_issues.find_existing_issue")
-    def test_does_not_reopen_open_issue(
-        self, mock_find, mock_create, mock_comment, mock_reopen
-    ):
+    def test_does_not_reopen_open_issue(self, mock_find, mock_create, mock_comment, mock_reopen):
         mock_find.return_value = (55, "open")  # already open
         self._call_process_failure()
         mock_reopen.assert_not_called()
@@ -575,19 +571,22 @@ class TestProcessFailure(unittest.TestCase):
 # main() exit-0 tests
 # ---------------------------------------------------------------------------
 
-class TestMain(unittest.TestCase):
 
+class TestMain(unittest.TestCase):
     def setUp(self):
         self._tmpdir = tempfile.TemporaryDirectory()
         self.tmpdir = Path(self._tmpdir.name)
-        self._env_patch = patch.dict(os.environ, {
-            "GITHUB_TOKEN": "test-token",
-            "GITHUB_REPOSITORY": "owner/repo",
-            "GITHUB_SERVER_URL": "https://github.com",
-            "GITHUB_RUN_ID": "42",
-            "WORKFLOW_RUN_SHA": "abc1234",
-            "WORKFLOW_RUN_BRANCH": "main",
-        })
+        self._env_patch = patch.dict(
+            os.environ,
+            {
+                "GITHUB_TOKEN": "test-token",
+                "GITHUB_REPOSITORY": "owner/repo",
+                "GITHUB_SERVER_URL": "https://github.com",
+                "GITHUB_RUN_ID": "42",
+                "WORKFLOW_RUN_SHA": "abc1234",
+                "WORKFLOW_RUN_BRANCH": "main",
+            },
+        )
         self._env_patch.start()
 
     def tearDown(self):
@@ -639,10 +638,16 @@ class TestMain(unittest.TestCase):
             dir2 = Path(e2e_tmpdir)
             _write_xml(self.tmpdir, "TEST-bar.xml", FAILING_XML)
             _write_xml(dir2, "TEST-baz.xml", ERROR_XML)
-            result = ftfi.main([
-                str(self.tmpdir), "--suite-label", "Unit Tests",
-                str(dir2), "--suite-label", "Instrumented Tests",
-            ])
+            result = ftfi.main(
+                [
+                    str(self.tmpdir),
+                    "--suite-label",
+                    "Unit Tests",
+                    str(dir2),
+                    "--suite-label",
+                    "Instrumented Tests",
+                ]
+            )
         self.assertEqual(result, 0)
         self.assertEqual(mock_process.call_count, 2)
 
@@ -651,8 +656,8 @@ class TestMain(unittest.TestCase):
 # parse_args tests
 # ---------------------------------------------------------------------------
 
-class TestParseArgs(unittest.TestCase):
 
+class TestParseArgs(unittest.TestCase):
     def test_single_pair(self):
         pairs = ftfi.parse_args(["path/to/unit", "--suite-label", "Unit Tests"])
         self.assertEqual(len(pairs), 1)
@@ -660,10 +665,16 @@ class TestParseArgs(unittest.TestCase):
         self.assertEqual(pairs[0][1], "Unit Tests")
 
     def test_two_pairs(self):
-        pairs = ftfi.parse_args([
-            "dir1", "--suite-label", "Label1",
-            "dir2", "--suite-label", "Label2",
-        ])
+        pairs = ftfi.parse_args(
+            [
+                "dir1",
+                "--suite-label",
+                "Label1",
+                "dir2",
+                "--suite-label",
+                "Label2",
+            ]
+        )
         self.assertEqual(len(pairs), 2)
         self.assertEqual(pairs[1][1], "Label2")
 
@@ -684,8 +695,8 @@ class TestParseArgs(unittest.TestCase):
 # _artifact_name_for_label tests
 # ---------------------------------------------------------------------------
 
-class TestArtifactNameForLabel(unittest.TestCase):
 
+class TestArtifactNameForLabel(unittest.TestCase):
     def test_unit_label_maps_to_unit_test_results(self):
         self.assertEqual(ftfi._artifact_name_for_label("Unit Tests"), "unit-test-results")
 
@@ -706,9 +717,7 @@ class TestArtifactNameForLabel(unittest.TestCase):
         )
 
     def test_unknown_label_slugified(self):
-        self.assertEqual(
-            ftfi._artifact_name_for_label("My Custom Suite"), "my-custom-suite"
-        )
+        self.assertEqual(ftfi._artifact_name_for_label("My Custom Suite"), "my-custom-suite")
 
 
 if __name__ == "__main__":

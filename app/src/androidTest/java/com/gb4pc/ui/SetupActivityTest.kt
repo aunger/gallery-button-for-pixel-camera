@@ -23,7 +23,6 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class SetupActivityTest {
-
     @get:Rule
     val composeRule = createAndroidComposeRule<SetupActivity>()
 
@@ -51,20 +50,22 @@ class SetupActivityTest {
         // of them say "Grant". Whichever step is shown first, its button
         // should be present.
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val possibleButtonTexts = listOf(
-            R.string.setup_notification_button,
-            R.string.setup_usage_access_button,
-            R.string.setup_overlay_button,
-            R.string.setup_battery_button,
-        ).map { context.getString(it) }
+        val possibleButtonTexts =
+            listOf(
+                R.string.setup_notification_button,
+                R.string.setup_usage_access_button,
+                R.string.setup_overlay_button,
+                R.string.setup_battery_button,
+            ).map { context.getString(it) }
 
-        val displayedButtons = possibleButtonTexts.filter { text ->
-            composeRule.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
-        }
+        val displayedButtons =
+            possibleButtonTexts.filter { text ->
+                composeRule.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
+            }
 
         assertTrue(
             "Expected one of $possibleButtonTexts to be displayed, but none were found",
-            displayedButtons.isNotEmpty()
+            displayedButtons.isNotEmpty(),
         )
     }
 

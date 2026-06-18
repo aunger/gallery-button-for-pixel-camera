@@ -4,7 +4,6 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AspectRatioUtilTest {
-
     @Test
     fun `quantize returns two decimal places`() {
         // 1080x2400 portrait -> 1080/2400 = 0.45

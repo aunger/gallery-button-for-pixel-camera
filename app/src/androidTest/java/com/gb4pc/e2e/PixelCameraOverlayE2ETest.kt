@@ -50,15 +50,15 @@ import org.junit.runner.RunWith
 @E2ETest
 @RunWith(AndroidJUnit4::class)
 class PixelCameraOverlayE2ETest {
-
     @get:Rule
     val screenshotRule = ScreenshotTestRule()
 
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
-    private val fixture = E2EFixture(
-        context = instrumentation.targetContext,
-        uiAutomation = instrumentation.uiAutomation,
-    )
+    private val fixture =
+        E2EFixture(
+            context = instrumentation.targetContext,
+            uiAutomation = instrumentation.uiAutomation,
+        )
 
     @Before
     fun setUp() = fixture.setUp()
@@ -92,7 +92,7 @@ class PixelCameraOverlayE2ETest {
         val disappeared = fixture.waitForCondition(timeoutMs = 10000L) { !OverlayService.isOverlayActive }
         assertTrue(
             "Overlay should disappear within 10 s after Pixel Camera viewfinder closes",
-            disappeared
+            disappeared,
         )
     }
 
@@ -135,8 +135,8 @@ class PixelCameraOverlayE2ETest {
         val appeared = fixture.waitForCondition(timeoutMs) { OverlayService.isOverlayActive }
         assertTrue(
             "Overlay should be active after launchPixelCamera() (and remain or become active " +
-                "again within ${timeoutMs} ms if it had deactivated)",
-            appeared
+                "again within $timeoutMs ms if it had deactivated)",
+            appeared,
         )
     }
 }

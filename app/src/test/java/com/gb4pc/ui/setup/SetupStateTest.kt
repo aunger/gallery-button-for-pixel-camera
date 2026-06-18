@@ -4,7 +4,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class SetupStateTest {
-
     @Test
     fun `step order is correct for API 33+`() {
         assertEquals(

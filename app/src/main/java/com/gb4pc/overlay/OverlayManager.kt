@@ -32,19 +32,31 @@ import kotlin.math.roundToInt
 // Pure functions: testable in plain JVM unit tests (see OverlayManagerTest).
 
 /** Overlay edge length in pixels: [sizePercent]% of `min(displayWidth, displayHeight)`. */
-internal fun calculateOverlaySizePx(sizePercent: Float, displayWidth: Int, displayHeight: Int): Int {
+internal fun calculateOverlaySizePx(
+    sizePercent: Float,
+    displayWidth: Int,
+    displayHeight: Int,
+): Int {
     val minDimension = min(displayWidth, displayHeight)
     return (minDimension * sizePercent / 100f).roundToInt()
 }
 
 /** Left edge X of an overlay whose centre lies at [xPercent]% of [displayWidth]. */
-internal fun calculateOverlayXPx(xPercent: Float, displayWidth: Int, overlaySize: Int): Int {
+internal fun calculateOverlayXPx(
+    xPercent: Float,
+    displayWidth: Int,
+    overlaySize: Int,
+): Int {
     val centerX = (displayWidth * xPercent / 100f).roundToInt()
     return centerX - overlaySize / 2
 }
 
 /** Top edge Y of an overlay whose centre lies at [yPercent]% of [displayHeight]. */
-internal fun calculateOverlayYPx(yPercent: Float, displayHeight: Int, overlaySize: Int): Int {
+internal fun calculateOverlayYPx(
+    yPercent: Float,
+    displayHeight: Int,
+    overlaySize: Int,
+): Int {
     val centerY = (displayHeight * yPercent / 100f).roundToInt()
     return centerY - overlaySize / 2
 }
@@ -122,7 +134,8 @@ class OverlayManager(
         val params = createLayoutParams()
         try {
             windowManager.updateViewLayout(overlayView, params)
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+        }
     }
 
     /**
@@ -146,7 +159,7 @@ class OverlayManager(
                     // Issue #188: wrap the bitmap in SquircleDrawable so the thumbnail is
                     // clipped to the superellipse squircle shape, just like the gallery icon.
                     targetView.setImageDrawable(
-                        SquircleDrawable(BitmapDrawable(targetView.resources, bmp))
+                        SquircleDrawable(BitmapDrawable(targetView.resources, bmp)),
                     )
                 }
             }
@@ -176,7 +189,10 @@ class OverlayManager(
         // Fallback: decode a downsampled version of the original file directly.
         return try {
             context.contentResolver.openInputStream(uri)?.use { stream ->
-                val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = 4 }
+                val opts =
+                    android.graphics.BitmapFactory
+                        .Options()
+                        .apply { inSampleSize = 4 }
                 android.graphics.BitmapFactory.decodeStream(stream, null, opts)
             }
         } catch (e: Exception) {
@@ -188,53 +204,55 @@ class OverlayManager(
     private fun createOverlayView(): ImageView {
         // When focusable overlay is enabled we need a custom subclass to handle key and focus
         // events on the root view.
-        val imageView = object : ImageView(context) {
-            /**
-             * Do not consume key events — pass them through to the camera app.
-             *
-             * NOTE (Issue #55 open question): Even with dispatchKeyEvent returning false, a
-             * focusable TYPE_APPLICATION_OVERLAY window may steal input focus from the camera
-             * app when first shown. If that happens, volume-as-shutter and zoom keys will be
-             * broken regardless of this override. This must be verified on a real device.
-             */
-            override fun dispatchKeyEvent(event: KeyEvent): Boolean = false
+        val imageView =
+            object : ImageView(context) {
+                /**
+                 * Do not consume key events — pass them through to the camera app.
+                 *
+                 * NOTE (Issue #55 open question): Even with dispatchKeyEvent returning false, a
+                 * focusable TYPE_APPLICATION_OVERLAY window may steal input focus from the camera
+                 * app when first shown. If that happens, volume-as-shutter and zoom keys will be
+                 * broken regardless of this override. This must be verified on a real device.
+                 */
+                override fun dispatchKeyEvent(event: KeyEvent): Boolean = false
 
-            /**
-             * Touch-routing diagnostic for Issue #230 / #397. Every prior "the tap misses"
-             * conclusion was inferred from screenshots and green-coverage percentages; no run
-             * ever recorded whether a pointer event actually reached the overlay window. Logging
-             * each MotionEvent (with its raw screen coordinates) makes that observable in a CI
-             * logcat: if a DOWN at the icon's centre appears here, the touch reached this window
-             * and the fault is downstream of input routing; if nothing appears after tapOverlay(),
-             * the small window's touchable region never received the event. Paired with the
-             * existing "Overlay tapped" log in handleTap(), this distinguishes a routing miss from
-             * a click-detector or launch failure.
-             */
-            override fun dispatchTouchEvent(event: MotionEvent): Boolean {
-                val message = "Overlay dispatchTouchEvent: action=${event.actionMasked} " +
-                    "raw=(${event.rawX}, ${event.rawY}) local=(${event.x}, ${event.y})"
-                // Emit to logcat (not just DebugLog's in-memory buffer) so the CI run records it.
-                Log.i(TAG, message)
-                DebugLog.log(message)
-                return super.dispatchTouchEvent(event)
-            }
+                /**
+                 * Touch-routing diagnostic for Issue #230 / #397. Every prior "the tap misses"
+                 * conclusion was inferred from screenshots and green-coverage percentages; no run
+                 * ever recorded whether a pointer event actually reached the overlay window. Logging
+                 * each MotionEvent (with its raw screen coordinates) makes that observable in a CI
+                 * logcat: if a DOWN at the icon's centre appears here, the touch reached this window
+                 * and the fault is downstream of input routing; if nothing appears after tapOverlay(),
+                 * the small window's touchable region never received the event. Paired with the
+                 * existing "Overlay tapped" log in handleTap(), this distinguishes a routing miss from
+                 * a click-detector or launch failure.
+                 */
+                override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+                    val message =
+                        "Overlay dispatchTouchEvent: action=${event.actionMasked} " +
+                            "raw=(${event.rawX}, ${event.rawY}) local=(${event.x}, ${event.y})"
+                    // Emit to logcat (not just DebugLog's in-memory buffer) so the CI run records it.
+                    Log.i(TAG, message)
+                    DebugLog.log(message)
+                    return super.dispatchTouchEvent(event)
+                }
 
-            override fun onWindowFocusChanged(hasFocus: Boolean) {
-                super.onWindowFocusChanged(hasFocus)
-                // Only invoke focus callbacks when the focusable-overlay mode is active.
-                // With FLAG_NOT_FOCUSABLE (default), the window never receives focus, so
-                // onWindowFocusChanged(false) fires immediately after show() — calling
-                // onFocusLost() here would hide the overlay the instant it appears (Issue #66).
-                if (!prefsManager.focusableOverlay) return
-                if (hasFocus) {
-                    DebugLog.log("Overlay gained window focus")
-                    onFocusGained()
-                } else {
-                    DebugLog.log("Overlay lost window focus — task switcher or system surface active")
-                    onFocusLost()
+                override fun onWindowFocusChanged(hasFocus: Boolean) {
+                    super.onWindowFocusChanged(hasFocus)
+                    // Only invoke focus callbacks when the focusable-overlay mode is active.
+                    // With FLAG_NOT_FOCUSABLE (default), the window never receives focus, so
+                    // onWindowFocusChanged(false) fires immediately after show() — calling
+                    // onFocusLost() here would hide the overlay the instant it appears (Issue #66).
+                    if (!prefsManager.focusableOverlay) return
+                    if (hasFocus) {
+                        DebugLog.log("Overlay gained window focus")
+                        onFocusGained()
+                    } else {
+                        DebugLog.log("Overlay lost window focus — task switcher or system surface active")
+                        onFocusLost()
+                    }
                 }
             }
-        }
         imageView.scaleType = ImageView.ScaleType.FIT_CENTER
         updateIconDrawable(imageView)
         imageView.setOnClickListener { handleTap() }
@@ -262,9 +280,7 @@ class OverlayManager(
      * [AdaptiveIconDrawable.draw] still applies the device's icon mask internally. Wrapping in
      * [SquircleDrawable] draws the background and foreground layers directly, bypassing that mask.
      */
-    private fun getGalleryIcon(packageName: String?): Drawable {
-        return SquircleDrawable(getRawGalleryIcon(packageName))
-    }
+    private fun getGalleryIcon(packageName: String?): Drawable = SquircleDrawable(getRawGalleryIcon(packageName))
 
     private fun getRawGalleryIcon(packageName: String?): Drawable {
         if (packageName != null) {
@@ -307,10 +323,12 @@ class OverlayManager(
      */
     private fun buildWarningPlaceholder(): Drawable {
         // L7: guarantee non-null at each step
-        val placeholder: Drawable = ContextCompat.getDrawable(context, R.drawable.ic_gallery_placeholder)
-            ?: ContextCompat.getDrawable(context, android.R.drawable.ic_menu_gallery)!!
-        val badge: Drawable = ContextCompat.getDrawable(context, android.R.drawable.ic_dialog_alert)
-            ?: return placeholder // if badge unavailable, fall back to plain placeholder
+        val placeholder: Drawable =
+            ContextCompat.getDrawable(context, R.drawable.ic_gallery_placeholder)
+                ?: ContextCompat.getDrawable(context, android.R.drawable.ic_menu_gallery)!!
+        val badge: Drawable =
+            ContextCompat.getDrawable(context, android.R.drawable.ic_dialog_alert)
+                ?: return placeholder // if badge unavailable, fall back to plain placeholder
 
         // Position the badge in the bottom-right quadrant (inset by 50% from top-left).
         val layers = arrayOf(placeholder, badge)
@@ -327,8 +345,9 @@ class OverlayManager(
     private fun handleTap() {
         val isLocked = keyguardManager.isKeyguardLocked
         val galleryPackage = prefsManager.galleryPackage
-        val isGalleryInstalled = galleryPackage != null &&
-            PermissionHelper.isAppInstalled(context, galleryPackage)
+        val isGalleryInstalled =
+            galleryPackage != null &&
+                PermissionHelper.isAppInstalled(context, galleryPackage)
 
         val tapMessage =
             "Overlay tapped: locked=$isLocked, gallery=$galleryPackage, installed=$isGalleryInstalled"
@@ -344,13 +363,25 @@ class OverlayManager(
 
     private fun executeTapAction(action: TapAction) {
         when (action) {
-            is TapAction.LaunchGallery -> launchGalleryApp(action.packageName)
-            is TapAction.LaunchSecureViewer -> launchSecureViewer()
-            is TapAction.LaunchPicker, is TapAction.LaunchPickerGalleryMissing -> launchPicker()
-            is TapAction.ShowUnlockToSetupToast ->
+            is TapAction.LaunchGallery -> {
+                launchGalleryApp(action.packageName)
+            }
+
+            is TapAction.LaunchSecureViewer -> {
+                launchSecureViewer()
+            }
+
+            is TapAction.LaunchPicker, is TapAction.LaunchPickerGalleryMissing -> {
+                launchPicker()
+            }
+
+            is TapAction.ShowUnlockToSetupToast -> {
                 Toast.makeText(context, R.string.toast_unlock_to_setup, Toast.LENGTH_SHORT).show()
-            is TapAction.ShowGalleryNotFoundToast ->
+            }
+
+            is TapAction.ShowGalleryNotFoundToast -> {
                 Toast.makeText(context, R.string.toast_gallery_not_found, Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -365,18 +396,20 @@ class OverlayManager(
     }
 
     private fun launchPicker() {
-        val intent = Intent(context, PickerActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            putExtra(PickerActivity.EXTRA_LAUNCH_AFTER_PICK, true)
-        }
+        val intent =
+            Intent(context, PickerActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                putExtra(PickerActivity.EXTRA_LAUNCH_AFTER_PICK, true)
+            }
         context.startActivity(intent)
         DebugLog.log("Launched gallery app picker (JIT)")
     }
 
     private fun launchSecureViewer() {
-        val intent = Intent(context, SecureViewerActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
+        val intent =
+            Intent(context, SecureViewerActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
         context.startActivity(intent)
         DebugLog.log("Launched secure viewer")
     }
@@ -387,15 +420,16 @@ class OverlayManager(
 
         // M8: On API 30+ use currentWindowMetrics for correct bounds in split-screen;
         // fall back to displayMetrics on older API.
-        val (displayWidth, displayHeight) = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val bounds = windowManager.currentWindowMetrics.bounds
-            bounds.width() to bounds.height()
-        } else {
-            @Suppress("DEPRECATION")
-            val dm = android.util.DisplayMetrics()
-            windowManager.defaultDisplay.getMetrics(dm)
-            dm.widthPixels to dm.heightPixels
-        }
+        val (displayWidth, displayHeight) =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val bounds = windowManager.currentWindowMetrics.bounds
+                bounds.width() to bounds.height()
+            } else {
+                @Suppress("DEPRECATION")
+                val dm = android.util.DisplayMetrics()
+                windowManager.defaultDisplay.getMetrics(dm)
+                dm.widthPixels to dm.heightPixels
+            }
 
         val aspectRatio = AspectRatioUtil.quantize(displayWidth, displayHeight)
         val position = prefsManager.getOverlayPosition(aspectRatio)
@@ -442,28 +476,30 @@ class OverlayManager(
         //
         // The focusable branch keeps FLAG_LAYOUT_NO_LIMITS unchanged (it is not exercised by the
         // failing default-prefs test path).
-        val windowFlags = if (prefsManager.focusableOverlay) {
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                showWhenLockedFlag
-        } else {
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+        val windowFlags =
+            if (prefsManager.focusableOverlay) {
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                showWhenLockedFlag
-        }
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                    showWhenLockedFlag
+            } else {
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                    showWhenLockedFlag
+            }
 
-        return WindowManager.LayoutParams(
-            sizePx,
-            sizePx,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            windowFlags,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = xPx
-            y = yPx
-        }
+        return WindowManager
+            .LayoutParams(
+                sizePx,
+                sizePx,
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                windowFlags,
+                PixelFormat.TRANSLUCENT,
+            ).apply {
+                gravity = Gravity.TOP or Gravity.START
+                x = xPx
+                y = yPx
+            }
     }
 }

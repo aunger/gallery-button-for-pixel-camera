@@ -11,24 +11,26 @@ import android.graphics.Rect
  * a value equal to the original.
  */
 
-fun BinaryMask.toMaskData(): MaskData = MaskData(
-    bits = bits.copyOf(),
-    width = width,
-    height = height,
-    bboxLeft = bbox.left,
-    bboxTop = bbox.top,
-    bboxRight = bbox.right,
-    bboxBottom = bbox.bottom,
-    centroidX = centroid.x,
-    centroidY = centroid.y,
-    pixelCount = pixelCount
-)
+fun BinaryMask.toMaskData(): MaskData =
+    MaskData(
+        bits = bits.copyOf(),
+        width = width,
+        height = height,
+        bboxLeft = bbox.left,
+        bboxTop = bbox.top,
+        bboxRight = bbox.right,
+        bboxBottom = bbox.bottom,
+        centroidX = centroid.x,
+        centroidY = centroid.y,
+        pixelCount = pixelCount,
+    )
 
-fun MaskData.toBinaryMask(): BinaryMask = BinaryMask(
-    bits = bits.copyOf(),
-    width = width,
-    height = height,
-    bbox = Rect(bboxLeft, bboxTop, bboxRight, bboxBottom),
-    centroid = PointF(centroidX, centroidY),
-    pixelCount = pixelCount
-)
+fun MaskData.toBinaryMask(): BinaryMask =
+    BinaryMask(
+        bits = bits.copyOf(),
+        width = width,
+        height = height,
+        bbox = Rect(bboxLeft, bboxTop, bboxRight, bboxBottom),
+        centroid = PointF(centroidX, centroidY),
+        pixelCount = pixelCount,
+    )
