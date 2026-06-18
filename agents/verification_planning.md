@@ -39,6 +39,8 @@ Only the before-merging list controls the merge gate.
    If such a comment exists, parse it to extract the list of already-filed issues (each line with a `- [ ]` or `- [x]` checkbox carries an issue URL of the form `https://github.com/{owner}/{repo}/issues/{n}`).
    Treat those issues as already filed and do not create duplicates for the corresponding items.
    Record the comment's id (the numeric id returned by the comments API, not its URL) for use in step 6.
+   For each parsed issue URL, fetch the issue (`GET https://api.github.com/repos/{owner}/{repo}/issues/{n}`) and record its title.
+   In steps 4 and 5, an item is "already covered" if its expected title matches the title of a prior issue.
    If the comment does not exist, proceed with filing all items normally.
 4. If the before-merging list is not empty (i.e., step 2 did not exit), open one GitHub issue for each item on the *before merging* list that is not already covered by a prior-run comment (step 3).
    Do NOT communicate with the user, and do NOT ask whether to test manually or to automate.
