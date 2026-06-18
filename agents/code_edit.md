@@ -26,11 +26,10 @@ When you dispatch a nested sub-agent via the Agent tool, follow these rules:
 - **Use foreground (the default) when you need the results in the same turn.**
   Do not set `run_in_background: true` for any sub-agent whose findings you will act on before returning.
   The Agent tool blocks until the sub-agent completes, so the results are available immediately.
-- **Do not exit before a foreground sub-agent completes.**
-  A foreground sub-agent runs to completion during the same tool call; you receive its result as the return value.
-  If the call returns, the sub-agent is done--you do not need to wait further.
-  Exit only after you have consumed or recorded the result.
-- **Use `run_in_background: true` only for fire-and-forget work** whose results are not needed in the current turn.
+- **If you want to exit while a sub-agent is still running, that sub-agent was launched with `run_in_background: true` and should not have been.**
+  A foreground sub-agent blocks the Agent tool call; you cannot exit before it finishes.
+  The result is returned to you when the call returns--consume or record it, then exit.
+- **Use `run_in_background: true` only for fire-and-forget work whose results are not needed in the current turn.**
   If you are unsure whether you will need the results, use foreground.
 - **Never rely on a background sub-agent's output in the same turn.**
   Background sub-agents surface as task-notification events after you exit.
