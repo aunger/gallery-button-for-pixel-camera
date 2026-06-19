@@ -100,17 +100,24 @@ if [[ -n "$MATCHES" ]]; then
       fi
 
       # Post a comment with matching lines and a link to this run.
+      # Use printf to produce real newlines (double-quoted strings do not
+      # interpret \n as a newline in bash), and jq to produce valid JSON so
+      # that logcat content containing quotes, backslashes, or newlines does
+      # not break the request body.
       if [[ -n "$RUN_ID" ]]; then
         RUN_LINK="${SERVER}/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}"
-        COMMENT_BODY="The issue #233 launch-retry signal was detected in [run ${RUN_ID}](${RUN_LINK}).\n\nMatching logcat lines:\n\`\`\`\n${MATCHES}\n\`\`\`\n\nInspect the \`e2e-overlay-logcat.txt\` artifact on that run for the full context."
+        COMMENT_BODY="$(printf 'The issue #233 launch-retry signal was detected in [run %s](%s).\n\nMatching logcat lines:\n```\n%s\n```\n\nInspect the `e2e-overlay-logcat.txt` artifact on that run for the full context.' \
+          "$RUN_ID" "$RUN_LINK" "$MATCHES")"
       else
-        COMMENT_BODY="The issue #233 launch-retry signal was detected.\n\nMatching logcat lines:\n\`\`\`\n${MATCHES}\n\`\`\`"
+        COMMENT_BODY="$(printf 'The issue #233 launch-retry signal was detected.\n\nMatching logcat lines:\n```\n%s\n```' \
+          "$MATCHES")"
       fi
+      COMMENT_JSON="$(jq -n --arg body "$COMMENT_BODY" '{"body": $body}')"
       curl -fsSL -X POST \
         -H "Authorization: Bearer ${GITHUB_TOKEN}" \
         -H "Accept: application/vnd.github+json" \
         -H "X-GitHub-Api-Version: 2022-11-28" \
-        -d "{\"body\":\"${COMMENT_BODY}\"}" \
+        -d "$COMMENT_JSON" \
         "${API}/comments" > /dev/null
       echo "DETECT_LAUNCH_RETRY: posted comment to issue #${ISSUE_NUMBER}."
     else
