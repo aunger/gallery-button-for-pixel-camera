@@ -4,6 +4,7 @@ name: Remove verified label on new push
 # the `verified` label applied by the Verification Planner becomes stale.
 # This workflow removes it so the label only reflects the most recent
 # verification pass.
+# Test trigger 1: label-absent path (re issue #442)
 
 on:
   pull_request:
