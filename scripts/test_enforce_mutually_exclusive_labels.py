@@ -1,14 +1,48 @@
 #!/usr/bin/env python3
 """Unit tests for enforce_mutually_exclusive_labels.py."""
 
+import json
 import os
 import sys
 import unittest
 import urllib.error
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(__file__))
 import enforce_mutually_exclusive_labels as emxl  # noqa: E402
+
+
+# ---------------------------------------------------------------------------
+# gh_api tests
+# ---------------------------------------------------------------------------
+
+
+class TestGhApi(unittest.TestCase):
+    """Tests for the gh_api helper, exercised without mocking the function itself."""
+
+    def _make_response(self, body: bytes, status: int = 200) -> MagicMock:
+        resp = MagicMock()
+        resp.read.return_value = body
+        resp.status = status
+        resp.__enter__ = lambda s: s
+        resp.__exit__ = MagicMock(return_value=False)
+        return resp
+
+    def test_returns_parsed_json_for_non_empty_body(self):
+        payload = {"labels": [{"name": "p1"}]}
+        response = self._make_response(json.dumps(payload).encode())
+        with patch("urllib.request.urlopen", return_value=response):
+            result = emxl.gh_api("repos/owner/repo/issues/1", token="tok")
+        self.assertEqual(result, payload)
+
+    def test_returns_none_for_empty_body(self):
+        """DELETE /labels/:name returns 204 No Content with an empty body."""
+        response = self._make_response(b"", status=204)
+        with patch("urllib.request.urlopen", return_value=response):
+            result = emxl.gh_api(
+                "repos/owner/repo/issues/1/labels/p2", token="tok", method="DELETE"
+            )
+        self.assertIsNone(result)
 
 
 # ---------------------------------------------------------------------------
