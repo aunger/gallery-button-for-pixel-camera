@@ -42,14 +42,14 @@ Only the before-merging list controls the merge gate.
    For each parsed issue ID n, fetch the issue (`GET https://api.github.com/repos/{owner}/{repo}/issues/{n}`) and record its title and internal id (the `id` field, not the issue number).
    In steps 4 and 5, an item is "already covered" if the title that would be assigned to it by step 4a (for before-merging items) or step 5a (for follow-on items) matches the title of a prior issue.
    If the comment does not exist, proceed with filing all items normally.
-4. If the before-merging list is not empty (i.e., step 2 did not exit), open one GitHub issue for each item on the *before merging* list that is not already covered by a prior-run comment (step 3).
+4. If the before-merging list is not empty (i.e., step 2 did not exit), for each item on the *before merging* list, do the following.
+   Skip sub-steps 4a and 4b for items already covered by a prior-run comment (step 3), but still execute sub-steps 4c and 4d for those items using the internal id recorded in step 3.
    Do NOT communicate with the user, and do NOT ask whether to test manually or to automate.
    For each item:
    a. Title the issue `(re PR #{number}) {required task title}`, where `{number}` is the current PR number and `{required task title}` is a short title for the outstanding requirement.
-      (Skip this sub-step for already-covered items; use the existing issue's internal id recorded in step 3 for steps 4c and 4d instead.)
+      (Skip this sub-step for already-covered items.)
    b. In the issue description, include a URL to the particular PR comment that called for this requirement.
       (If the requirement came from the PR or issue description itself rather than a comment, link to that description instead.)
-      (Skip this sub-step for already-covered items.)
    c. Record that the new issue **blocks** the PR, using GitHub's issue-dependencies feature.
       GitHub exposes this through the REST API.
       The `gh` CLI is not installed in the sandbox, so call the REST endpoint with `curl` and `$GITHUB_TOKEN`, using the auth headers (`-H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json"`).
