@@ -396,12 +396,6 @@ jobs:
           echo "=== LOGCAT (since test start) ==="
           "$ADB" logcat -d -T "$LOGCAT_SINCE" | \
             bash scripts/filter_logcat.sh | tee results/e2e-overlay-logcat.txt
-          # Issue #364 watch item: scan the captured logcat for the #233 launch-retry
-          # signal (an "am start attempt 2/3"/recovery/exhaustion line) so the long-
-          # awaited triggering run announces itself via a ::warning instead of being
-          # found only by a human sweeping every run. Informational only: exit 10
-          # (signal present) must not fail this otherwise-green step, so swallow it.
-          bash scripts/detect_launch_retry.sh results/e2e-overlay-logcat.txt || true
 
       - name: Upload overlay E2E markers
         if: always() && steps.diff_check.outputs.needs_full_build == 'true'
