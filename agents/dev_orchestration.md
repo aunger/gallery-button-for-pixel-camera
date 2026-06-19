@@ -149,11 +149,12 @@ Monitor output lines are relayed to the user verbatim; this is user-facing statu
     Act only on the terminal lines Clear, Blocked, or Infra. Relay in_progress lines to the user as brief status updates (the script suppresses these unless no other output has been emitted for over 120 seconds).
     Relay `step "..." -> ...` and `FAIL [...] ...` lines to the user as informational test-result deltas; they do NOT end the loop or start a new Author round.
     if Monitor emits `drain poll found no new diagnostic signals` immediately followed by a Blocked or Infra line → goto undiagnosedTerminal
-    if Monitor emits a Blocked line  → goto newAuthor
-    if Monitor emits an Infra line   → escalate to user; stop
+    if Monitor emits a Blocked line  → clear the silentVanish re-launch flag; goto newAuthor
+    if Monitor emits an Infra line   → clear the silentVanish re-launch flag; escalate to user; stop
     if Monitor times out (30 min)    → escalate to user; stop
     if a user message wakes the session before Monitor delivers any terminal line → goto silentVanish
     if Monitor emits a Clear line:
+      clear the silentVanish re-launch flag
       // Step: Surface outstanding before-merging requirements
       //   (unautomated verification tests and changes outside the repo, such as an issue that needs to be filed)
       // Triggered after Reviewer approval AND CI clears (Monitor emits Clear).
