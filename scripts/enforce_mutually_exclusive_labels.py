@@ -67,8 +67,8 @@ def gh_api(path: str, token: str, method: str = "GET", body: object = None) -> o
         data = None
     # URL is built from a GitHub API constant; the file:// risk does not apply.
     with urllib.request.urlopen(req, data) as r:  # nosemgrep
-        body = r.read()
-        return json.loads(body) if body else None
+        response_body = r.read()
+        return json.loads(response_body) if response_body else None
 
 
 # ---------------------------------------------------------------------------
@@ -176,6 +176,13 @@ def main() -> int:
         issue = gh_api(f"repos/{repo}/issues/{issue_number}", token=token)
     except Exception as exc:  # noqa: BLE001
         print(f"Error fetching issue #{issue_number}: {exc}", file=sys.stderr)
+        return 0
+
+    if not isinstance(issue, dict):
+        print(
+            f"Error: unexpected response fetching issue #{issue_number}: {issue!r}",
+            file=sys.stderr,
+        )
         return 0
 
     current_labels = [lbl["name"] for lbl in issue.get("labels", [])]

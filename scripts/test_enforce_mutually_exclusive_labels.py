@@ -370,6 +370,15 @@ class TestMain(unittest.TestCase):
             result = emxl.main()
         self.assertEqual(result, 0)
 
+    def test_exit_0_when_fetch_returns_non_dict(self):
+        # gh_api returns None for an empty body; main() must not crash on it.
+        with patch.object(emxl, "gh_api") as mock_api:
+            mock_api.return_value = None
+            result = emxl.main()
+        self.assertEqual(result, 0)
+        # Only the GET was attempted; no DELETE follows a bad response.
+        self.assertEqual(mock_api.call_count, 1)
+
 
 if __name__ == "__main__":
     unittest.main()
