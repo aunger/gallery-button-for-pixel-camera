@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# test_detect_launch_retry.sh — Shell-based tests for detect_launch_retry.sh.
+# test_detect_launch_retry.sh -- Shell-based tests for detect_launch_retry.sh.
+#
+# Tests run without GITHUB_ACTIONS=true, so no issue-filing or ::warning output
+# is triggered. These tests cover only the detection and exit-code behavior.
 #
 # Covers:
 #   (a) Attempt-1-only logcat (the steady state across 26+ runs) -> no signal, exit 0

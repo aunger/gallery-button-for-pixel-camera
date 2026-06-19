@@ -1,0 +1,53 @@
+name: Detect Launch Retry Signal
+
+# Runs after Build & Test completes to scan the overlay E2E logcat for the
+# issue #233 launch-retry signal (issue #364 watch item). Separated from the
+# build workflow so detection does not mix concerns with building and testing.
+#
+# When the signal is found, the detector opens or reopens issue #364 and posts
+# a comment linking to the triggering run, so the event is not lost under
+# subsequent builds.
+
+on:
+  workflow_run:
+    workflows: ["Build & Test"]
+    types: [completed]
+
+permissions:
+  issues: write
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    # Only scan runs that produced the overlay logcat artifact, i.e. runs that
+    # completed the E2E step (success or failure; a cancelled run produces nothing).
+    if: github.event.workflow_run.conclusion != 'cancelled'
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Download overlay logcat artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: testresults-e2e-overlay
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+          path: downloaded-artifacts/testresults-e2e-overlay
+        continue-on-error: true
+
+      - name: Scan logcat for launch-retry signal
+        # Exit 10 means the signal was found; the step should not fail the build.
+        # The script handles issue open/reopen and comment posting internally.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.event.workflow_run.id }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+        run: |
+          LOGCAT="downloaded-artifacts/testresults-e2e-overlay/e2e-overlay-logcat.txt"
+          if [[ ! -f "$LOGCAT" ]]; then
+            echo "No overlay logcat artifact found (docs-only or skipped E2E run); nothing to scan."
+            exit 0
+          fi
+          bash scripts/detect_launch_retry.sh "$LOGCAT" || true
