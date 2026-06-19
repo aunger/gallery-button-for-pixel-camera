@@ -1,0 +1,36 @@
+name: Enforce mutually exclusive labels
+
+# When a label belonging to a mutually exclusive set is added to an issue or
+# pull request, automatically removes any other labels from the same set so
+# that at most one member of each set is present at any time.
+#
+# Mutually exclusive sets:
+#   [p1, p2, p3]
+#   [needs verification, verified]
+#   [change requested, change done]
+#   [for ai to do, orchestrating]
+
+on:
+  issues:
+    types: [labeled]
+  pull_request:
+    types: [labeled]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  enforce-exclusive-labels:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Enforce mutually exclusive label sets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
+          ADDED_LABEL: ${{ github.event.label.name }}
+        run: python3 scripts/enforce_mutually_exclusive_labels.py
