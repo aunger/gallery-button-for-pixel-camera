@@ -5,3 +5,4 @@
 - If creating a PR, read `./agents/pr_creation.md`.
 - If editing code, read `./agents/code_edit.md`.
 - If scanning for outstanding before-merging requirements (unautomated verification steps or changes outside the repo), or planning automation of such steps, read `./agents/verification_planning.md`.
+- If a sub-agent that is delegating work to nested sub-agents via the Agent tool, read `./agents/subagent_delegation.md`.
