@@ -217,7 +217,7 @@ When the Reviewer returns, apply this transition to the PR before branching on i
 | `changes done` | -- |
 
 Then branch on the Reviewer's decision.
-In the `goto newAuthor` branch below (the Reviewer requested changes), also apply this transition to the PR:
+If the Reviewer requested changes, apply this transition to the PR:
 
 | Remove label | Add label |
 |---|---|
