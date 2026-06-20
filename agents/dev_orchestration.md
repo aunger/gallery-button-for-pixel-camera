@@ -210,13 +210,13 @@ If the Author disagrees with a review point, they should make their case in PR c
 After the Reviewer exits and delivers its decision, the Orchestrator acts as follows.
 Monitor output lines are relayed to the user verbatim; this is user-facing status reporting and is not governed by the say-nothing rule (which covers sub-agent messages only).
 
-When the Reviewer returns, apply this transition to the PR before branching on its decision:
+When the Reviewer returns, apply this transition to the PR:
 
 | Remove label | Add label |
 |---|---|
 | `changes done` | -- |
 
-Then if the Reviewer requested changes, apply this transition to the PR:
+If the Reviewer requested changes, additionally apply this transition to the PR:
 
 | Remove label | Add label |
 |---|---|
