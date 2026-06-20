@@ -1,6 +1,6 @@
-# Delegating to nested sub-agents
+# Delegating to nested sub-agents, as a sub-agent
 
-When you dispatch a nested sub-agent via the Agent tool, follow these rules:
+If you are a sub-agent dispatching a nested sub-agent via the Agent tool, follow these rules:
 
 - **Use foreground (the default) when you need the results in the same turn.**
   Do not set `run_in_background: true` for any sub-agent whose findings you will act on before returning.
