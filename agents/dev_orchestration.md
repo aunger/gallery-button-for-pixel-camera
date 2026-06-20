@@ -73,6 +73,33 @@ The Orchestrator is not a Reviewer or a Programmer.
 
 - See `inaugurate.md` for the full protocol when starting fresh work.
 
+## Label management
+
+The Orchestrator keeps the labels on the issue and its PR in step with the development cycle.
+At each transition below, a small Markdown table records the label move so the FSM is easy to spot when reviewing this file.
+Read each table as: remove the label in the left column, add the label in the right column.
+
+Unless a table says otherwise, the move applies **only to the PR**.
+Tables that act on the issue say *issue* explicitly.
+
+The transition tables appear inline at the point in the sequence where each transition occurs (see the sections below).
+This section lists them together for reference:
+
+- Starting to orchestrate a PR (see "Starting to orchestrate a PR")
+- Author returns (see "Assigning a Programmer")
+- Reviewer returns (see "CI checking after a Reviewer exits")
+- Verification Planner returns (see "CI checking after a Reviewer exits", Clear-line block)
+- Verifier returns (see "Decision-signal templates", Verification Agent routing)
+- Concluding PR orchestration (see "Concluding PR orchestration")
+
+## Starting to orchestrate a PR
+
+When you begin orchestrating a PR (the first thing you do once you have entered the Orchestrator role for a given issue and its PR), apply this transition to **both the issue and the PR**:
+
+| Remove label | Add label |
+|---|---|
+| `for ai to do` | `orchestrating` |
+
 ## Model selection
 
 For each sub-agent role, use the first rule that applies:
@@ -133,6 +160,14 @@ Routing on the Verification Agent's signal:
   Do not treat the PR as cleared and do not start a new Author round.
   Inform the user that manual verification is still required, and that the PR may be merged once every open before-merging tracking issue is resolved.
 
+When the Verifier returns, apply the transition matching its signal to the PR:
+
+| Signal | Remove label | Add label |
+|---|---|---|
+| `Verification passed` | `needs verification` | `verified` |
+| `Verification revealed an error` | `needs verification` | `change requested` |
+| `Verification incomplete` | -- | -- (leave `needs verification` applied) |
+
 ## Assigning a Programmer
 
 - Create a sub-agent at the Author model (see Model selection above)
@@ -140,6 +175,12 @@ Routing on the Verification Agent's signal:
   Branch names should follow the pattern `fix/issue-N-short-description` for bug fixes or `feature/issue-N-short-description` for new features.
   Never direct two Programmers for unrelated issues to the same branch.
 - Dispatch using the dispatch template above, with the Programmer role assignment statement and the literal issue number and branch name tokens.
+
+When the Author returns, apply this transition to the PR:
+
+| Remove label | Add label |
+|---|---|
+| `change requested` | `change done` |
 
 ## Assigning a Reviewer
 
@@ -154,6 +195,12 @@ If the Author disagrees with a review point, they should make their case in PR c
 
 After the Reviewer exits and delivers its decision, the Orchestrator acts as follows.
 Monitor output lines are relayed to the user verbatim; this is user-facing status reporting and is not governed by the say-nothing rule (which covers sub-agent messages only).
+
+When the Reviewer returns, apply this transition to the PR:
+
+| Remove label | Add label |
+|---|---|
+| `change done` | `change requested` (only if the Reviewer requested changes) |
 
 ```text
   if Reviewer requested changes → goto newAuthor
@@ -179,6 +226,14 @@ Monitor output lines are relayed to the user verbatim; this is user-facing statu
       If the Planner reports its before-merging list is empty, then this *before-merging requirements* process is complete, and the Orchestrator should exit this step.
       Otherwise, relay the planner's reported before-merging list to the user verbatim.
       → PR may be merged once every issue the planner filed for its before-merging list is resolved.
+
+      When the Verification Planner returns, apply this transition to the PR, depending on its answer:
+
+      | Remove label | Add label |
+      |---|---|
+      | -- | `verified` (if the before-merging list is empty) or `needs verification` (if it is not) |
+
+      (The Planner itself applies `verified` to both the PR and the issue when its before-merging list is empty; the Orchestrator adds `needs verification` to the PR when the list is not empty.)
 
 undiagnosedTerminal:
   // Issue #410 (Run G, issue #402): "drain poll found no new diagnostic
@@ -274,3 +329,11 @@ Stop the automated cycle and escalate to the User in these cases:
 
 - **After four rounds** of the Programmer / Reviewer loop not reaching consensus (unless the user gave a different threshold)
 - **If the Programmer gives up** or claims the issue cannot be solved as stated
+
+## Concluding PR orchestration
+
+When you conclude orchestration of a PR (the cycle is complete or you are escalating and stepping out of the Orchestrator role for this PR), apply this transition to **both the issue and the PR**:
+
+| Remove label | Add label |
+|---|---|
+| `orchestrating` | -- |
