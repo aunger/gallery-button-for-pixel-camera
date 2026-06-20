@@ -81,13 +81,22 @@ For each tracking issue:
 
 - If **FAIL** (verification revealed an error): comment on the original PR describing what failed, with the workflow run URL or script output as evidence.
   Leave the tracking issue open.
-  Report to the Orchestrator that verification revealed an error so the PR is sent back to an Author.
-  Do not fix the bug yourself.
+  Do not fix the bug yourself; the terminal signal emitted in the next section sends the PR back to an Author.
 
 - If **NOT AUTOMATABLE**: comment on the issue explaining why automation was not feasible.
   Leave it open.
 
 After all tracking issues are processed, post a summary comment on the original PR that lists each item and its result (PASS / FAIL / not automatable).
+
+## Report to the Orchestrator
+
+Once every item has been processed and the summary comment is posted, emit exactly one terminal signal to the Orchestrator, chosen by the worst outcome among the before-merging items:
+
+- If any item is **FAIL**, emit `Verification revealed an error`.
+  (You already left a diagnosis comment on the PR for each failure.)
+- Otherwise, if every item is **PASS** (none failed and none were not-automatable), emit `Verification passed`.
+- Otherwise (no item failed, but at least one item is **not automatable** and remains open), emit `Verification incomplete`.
+  The not-automatable items still gate the merge, so this is neither a pass nor an error; their tracking issues stay open for a human to resolve.
 
 ## Cleanup
 

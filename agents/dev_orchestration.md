@@ -122,9 +122,12 @@ It does not relay the Reviewer's review prose to the Author; the Author reads th
 Verification Agent outcome vocabulary (a dispatched Verification Agent emits one):
 - `Verification passed`
 - `Verification revealed an error`
+- `Verification incomplete`
 
-If a Verification Agent reports `Verification revealed an error`, route the PR back to a new Author round (goto newAuthor).
-The Verification Agent leaves its diagnosis as a PR comment, which the Author reads from GitHub; the Orchestrator does not relay it.
+Routing on the Verification Agent's signal:
+- `Verification passed`: every before-merging item was confirmed automatically. This *before-merging requirements* process is complete; the PR may be merged.
+- `Verification revealed an error`: route the PR back to a new Author round (goto newAuthor). The Verification Agent leaves its diagnosis as a PR comment, which the Author reads from GitHub; the Orchestrator does not relay it.
+- `Verification incomplete`: no item failed, but one or more before-merging items could not be automated and remain open for a human to verify. Do not treat the PR as cleared and do not start a new Author round. Inform the user that manual verification is still required, and that the PR may be merged once every open before-merging tracking issue is resolved.
 
 ## Assigning a Programmer
 
