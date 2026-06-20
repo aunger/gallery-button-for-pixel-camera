@@ -4,11 +4,15 @@ name: Enforce mutually exclusive labels
 # pull request, automatically removes any other labels from the same set so
 # that at most one member of each set is present at any time.
 #
-# Mutually exclusive sets:
+# Mutually exclusive sets (fixed):
 #   [p1, p2, p3]
 #   [needs verification, verified]
 #   [change requested, change done]
 #   [for ai to do, orchestrating]
+#
+# Mutually exclusive prefix groups:
+#   c-a-*   (author model, e.g. c-a-haiku, c-a-sonnet, c-a-opus)
+#   c-r-*   (reviewer model, e.g. c-r-haiku, c-r-sonnet, c-r-opus)
 
 on:
   issues:

@@ -236,7 +236,6 @@ If the Reviewer requested changes, additionally apply this transition to the PR:
       Then dispatch a Verification Agent (see pr_verify.md) using the dispatch template to carry out those before-merging items.
       The Verification Agent automates each item where possible and reports results on the tracking issues and PR; it does not consult the user.
       Route on the Verification Agent's terminal signal per "Routing on the Verification Agent's signal" above.
-      → PR may be merged once every issue the planner filed for its before-merging list is resolved.
 
 undiagnosedTerminal:
   // Issue #410 (Run G, issue #402): "drain poll found no new diagnostic
