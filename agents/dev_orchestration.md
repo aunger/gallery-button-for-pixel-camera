@@ -95,7 +95,9 @@ Git branch: {branch name or "None"}
 
 Role assignment statements (copy the applicable line exactly):
 
-- Programmer: "You are a Programmer resolving the linked issue. You *must* start your turn by re-fetching the description and all comments on the issue and, if it exists, on the PR. If no PR exists, create one before you exit, unless the issue warrants declining to open a PR (see "Declining to open a PR" in `pr_participation.md`)."
+- Programmer: "You are a Programmer resolving the linked issue.
+  You *must* start your turn by re-fetching the description and all comments on the issue and, if it exists, on the PR.
+  If no PR exists, create one before you exit, unless the issue warrants declining to open a PR (see "Declining to open a PR" in `pr_participation.md`)."
 - Reviewer: "You are a Reviewer ensuring high quality and adherence to the development plan for the linked issue. You *must* start your turn by re-fetching the description and all comments on the issue and on the PR."
 - Verification planner: "You are a Verification Planner: scan the linked issue and PR for outstanding before-merging requirements and file a tracking issue, linked to the PR, for each one. You *must* start your turn by re-fetching the description and all comments on the issue and on the PR."
 
@@ -108,8 +110,8 @@ When routing control signals, use these exact lines and no others.
 Fill only the tokens in braces.
 
 Author-to-Orchestrator review-target vocabulary (the Programmer emits one when it finishes a round):
-- `Review the PR` -- a PR exists; review it.
-- `Review the issue comment` -- the Author opened no PR and is requesting a review on its explanatory comment on the issue (see "Declining to open a PR" in `pr_participation.md`).
+- `Review the PR` -- the Author opened a PR.
+- `Review the issue comment` -- the Author opened no PR and posted its position as an explanatory comment on the issue (see "Declining to open a PR" in `pr_participation.md`).
 
 When the Author emits `Review the issue comment`, dispatch the Reviewer pointed at the **issue**, not a PR (see "Assigning a Reviewer").
 The Orchestrator does not read or judge the Author's explanation; it only notes which artifact the Reviewer must examine.
@@ -168,13 +170,8 @@ When the round is running on the no-PR path (the Author declined to open a PR), 
 After the Reviewer exits and delivers its decision, the Orchestrator acts as follows.
 Monitor output lines are relayed to the user verbatim; this is user-facing status reporting and is not governed by the say-nothing rule (which covers sub-agent messages only).
 
-There are two shapes the round can take, decided by the Author's review-target signal from the prior round:
-
-- **No PR (the Author emitted `Review the issue comment`).**
-  There is no diff, no branch to merge, and no CI to run.
-  Follow the no-PR routing in the first fence below; the Monitor loop in the second fence does not apply.
-- **PR (the Author emitted `Review the PR`).**
-  Skip the no-PR fence and proceed with the Monitor loop in the second fence below.
+The Author's review-target signal from the prior round decides which fence applies.
+If the Author emitted `Review the issue comment`, there is no diff or CI to run, so follow the no-PR routing fence; if it emitted `Review the PR`, follow the Monitor loop fence.
 
 No-PR routing:
 
