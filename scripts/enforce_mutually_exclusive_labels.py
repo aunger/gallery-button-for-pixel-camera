@@ -52,6 +52,8 @@ MUTUALLY_EXCLUSIVE_SETS: list[frozenset[str]] = [
 def gh_api(path: str, token: str, method: str = "GET", body: object = None) -> object:
     """Make a GitHub API request and return the parsed JSON response.
 
+    Returns ``None`` for responses with an empty body (e.g. 204 No Content).
+
     Raises ``urllib.error.HTTPError`` or ``urllib.error.URLError`` on
     failure so callers can handle errors explicitly.
     """
