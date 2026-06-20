@@ -98,6 +98,7 @@ Role assignment statements (copy the applicable line exactly):
 - Programmer: "You are a Programmer resolving the linked issue. You *must* start your turn by re-fetching the description and all comments on the issue and, if it exists, on the PR. If it does *not* exist, create the PR before you exit."
 - Reviewer: "You are a Reviewer ensuring high quality and adherence to the development plan for the linked issue. You *must* start your turn by re-fetching the description and all comments on the issue and on the PR."
 - Verification planner: "You are a Verification Planner: scan the linked issue and PR for outstanding before-merging requirements and file a tracking issue, linked to the PR, for each one. You *must* start your turn by re-fetching the description and all comments on the issue and on the PR."
+- Verification agent: "You are a Verification Agent: carry out the before-merging steps from the Verification Planner report on the linked PR, automating them where possible, and report results. You *must* start your turn by re-fetching the Verification Planner comment on the PR and each before-merging tracking issue it lists."
 
 ## Decision-signal templates
 
@@ -177,7 +178,9 @@ Monitor output lines are relayed to the user verbatim; this is user-facing statu
       Dispatch a Verification Planner sub-agent using the dispatch template.
       The planner assembles the before-merging list and, for each item, files a tracking issue linked to the PR (see verification_planning.md). It does not consult the user.
       If the Planner reports its before-merging list is empty, then this *before-merging requirements* process is complete, and the Orchestrator should exit this step.
-      Otherwise, relay the planner's reported before-merging list to the user verbatim.
+      Otherwise, relay the planner's reported before-merging list to the user verbatim, then dispatch a Verification Agent (see pr_verify.md) using the dispatch template to carry out those before-merging items.
+      The Verification Agent automates each item where possible and reports results on the tracking issues and PR; it does not consult the user.
+      Route on the Verification Agent's terminal signal per "Routing on the Verification Agent's signal" above.
       → PR may be merged once every issue the planner filed for its before-merging list is resolved.
 
 undiagnosedTerminal:
