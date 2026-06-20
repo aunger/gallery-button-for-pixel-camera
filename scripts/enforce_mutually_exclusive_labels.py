@@ -5,11 +5,15 @@ When a label that belongs to a mutually exclusive set is added to an issue or
 pull request, remove all other labels in the same set so that at most one
 member of each set is present at any time.
 
-Mutually exclusive sets:
+Mutually exclusive sets (fixed):
     [p1, p2, p3]
     [needs verification, verified]
     [change requested, change done]
     [for ai to do, orchestrating]
+
+Mutually exclusive prefix groups (any label sharing a prefix is exclusive):
+    c-a-*   (author model, e.g. c-a-haiku, c-a-sonnet, c-a-opus)
+    c-r-*   (reviewer model, e.g. c-r-haiku, c-r-sonnet, c-r-opus)
 
 Usage:
     python3 scripts/enforce_mutually_exclusive_labels.py
@@ -41,6 +45,13 @@ MUTUALLY_EXCLUSIVE_SETS: list[frozenset[str]] = [
     frozenset({"needs verification", "verified"}),
     frozenset({"change requested", "change done"}),
     frozenset({"for ai to do", "orchestrating"}),
+]
+
+# Prefix-based exclusive groups: any two labels sharing a prefix are exclusive.
+# Matching is case-insensitive.
+MUTUALLY_EXCLUSIVE_PREFIXES: list[str] = [
+    "c-a-",
+    "c-r-",
 ]
 
 
@@ -85,18 +96,45 @@ def find_conflicting_set(added_label: str) -> frozenset[str] | None:
     return None
 
 
+def find_conflicting_prefix(added_label: str) -> str | None:
+    """Return the exclusive prefix that *added_label* matches, or None."""
+    lower = added_label.lower()
+    for prefix in MUTUALLY_EXCLUSIVE_PREFIXES:
+        if lower.startswith(prefix):
+            return prefix
+    return None
+
+
 def labels_to_remove(
     added_label: str,
     current_labels: list[str],
     label_set: frozenset[str],
 ) -> list[str]:
-    """Return the current labels that conflict with *added_label*.
+    """Return the current labels that conflict with *added_label* (fixed-set groups).
 
     Conflicts are labels in *label_set* other than *added_label* itself.
     """
     added_lower = added_label.lower()
     return [
         lbl for lbl in current_labels if lbl.lower() in label_set and lbl.lower() != added_lower
+    ]
+
+
+def labels_to_remove_by_prefix(
+    added_label: str,
+    current_labels: list[str],
+    prefix: str,
+) -> list[str]:
+    """Return the current labels that conflict with *added_label* (prefix groups).
+
+    Conflicts are labels that share *prefix* (case-insensitive) but differ from
+    *added_label* itself.
+    """
+    added_lower = added_label.lower()
+    return [
+        lbl
+        for lbl in current_labels
+        if lbl.lower().startswith(prefix) and lbl.lower() != added_lower
     ]
 
 
@@ -168,7 +206,9 @@ def main() -> int:
         return 0
 
     label_set = find_conflicting_set(added_label)
-    if label_set is None:
+    conflicting_prefix = find_conflicting_prefix(added_label)
+
+    if label_set is None and conflicting_prefix is None:
         print(f"Label '{added_label}' is not in any mutually exclusive set -- nothing to do.")
         return 0
 
@@ -186,7 +226,14 @@ def main() -> int:
         return 0
 
     current_labels = [lbl["name"] for lbl in issue.get("labels", [])]
-    to_remove = labels_to_remove(added_label, current_labels, label_set)
+
+    to_remove: list[str] = []
+    if label_set is not None:
+        to_remove.extend(labels_to_remove(added_label, current_labels, label_set))
+    if conflicting_prefix is not None:
+        to_remove.extend(
+            labels_to_remove_by_prefix(added_label, current_labels, conflicting_prefix)
+        )
 
     if not to_remove:
         print(
