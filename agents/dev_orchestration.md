@@ -119,33 +119,6 @@ Orchestrator escalation/abort line:
 The Orchestrator routes the Reviewer's chosen signal verbatim.
 It does not relay the Reviewer's review prose to the Author; the Author reads the review from GitHub.
 
-## Label management
-
-Manage these labels on the PR throughout the orchestration lifecycle.
-
-- When starting to orchestrate a PR:
-  - Remove `for ai to do`
-  - Add `orchestrating`
-
-- When Author returns:
-  - Remove `change requested`
-  - Add `change done`
-
-- When Reviewer returns:
-  - Remove `change done`
-  - If change was requested, add `change requested`
-
-- When Verification Planner returns:
-  - Depending on answer, add `verified` or `needs verification`
-
-- When Verifier returns:
-  - If verified, remove `needs verification` and add `verified`
-  - If verification shows error, remove `needs verification` and add `change requested`
-  - If verification couldn't be automated, leave `needs verification` applied
-
-- When concluding PR orchestration:
-  - Remove `orchestrating`
-
 ## Assigning a Programmer
 
 - Create a sub-agent at the Author model (see Model selection above)
