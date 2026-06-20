@@ -77,7 +77,9 @@ The Orchestrator is not a Reviewer or a Programmer.
 
 The Orchestrator keeps the labels on the issue and its PR in step with the development cycle.
 At each transition below, a small Markdown table records the label move so the FSM is easy to spot when reviewing this file.
-Read each table as: remove the label in the left column, add the label in the right column.
+Read each table as: remove the label in the "Remove label" column, add the label in the "Add label" column.
+The removal is unconditional unless the "Remove label" cell itself is qualified; a parenthetical in the "Add label" cell gates only the add.
+Some tables prepend a "Signal" column that selects which row applies (for example, the Verifier table); read the chosen row left-to-right as usual.
 
 Unless a table says otherwise, the move applies **only to the PR**.
 Tables that act on the issue say *issue* explicitly.
@@ -164,9 +166,9 @@ When the Verifier returns, apply the transition matching its signal to the PR:
 
 | Signal | Remove label | Add label |
 |---|---|---|
-| `Verification passed` | `needs verification` | `verified` |
-| `Verification revealed an error` | `needs verification` | `change requested` |
-| `Verification incomplete` | -- | -- (leave `needs verification` applied) |
+| `Verification passed` | `verification needed` | `verified` |
+| `Verification revealed an error` | `verification needed` | `changes requested` |
+| `Verification incomplete` | -- | -- (leave `verification needed` applied) |
 
 ## Assigning a Programmer
 
@@ -180,7 +182,7 @@ When the Author returns, apply this transition to the PR:
 
 | Remove label | Add label |
 |---|---|
-| `change requested` | `change done` |
+| `changes requested` | `changes done` |
 
 ## Assigning a Reviewer
 
@@ -200,7 +202,7 @@ When the Reviewer returns, apply this transition to the PR:
 
 | Remove label | Add label |
 |---|---|
-| `change done` | `change requested` (only if the Reviewer requested changes) |
+| `changes done` (always) | `changes requested` (only if the Reviewer requested changes) |
 
 ```text
   if Reviewer requested changes → goto newAuthor
@@ -231,9 +233,9 @@ When the Reviewer returns, apply this transition to the PR:
 
       | Remove label | Add label |
       |---|---|
-      | -- | `verified` (if the before-merging list is empty) or `needs verification` (if it is not) |
+      | -- | `verification needed` (only if the before-merging list is not empty) |
 
-      (The Planner itself applies `verified` to both the PR and the issue when its before-merging list is empty; the Orchestrator adds `needs verification` to the PR when the list is not empty.)
+      (When the before-merging list is empty, the Planner itself applies `verified` to both the PR and the issue, so the Orchestrator has nothing to add in that case. The Orchestrator's only added duty here is applying `verification needed` to the PR when the list is not empty.)
 
 undiagnosedTerminal:
   // Issue #410 (Run G, issue #402): "drain poll found no new diagnostic
