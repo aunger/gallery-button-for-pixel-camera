@@ -110,8 +110,8 @@ When routing control signals, use these exact lines and no others.
 Fill only the tokens in braces.
 
 Author-to-Orchestrator status vocabulary (the Programmer emits one when it finishes a round, reporting only what it did):
-- `PR opened` -- the Author opened a PR.
-- `No PR; position posted on the issue` -- the Author opened no PR and posted its position as an explanatory comment on the issue (see "Declining to open a PR" in `pr_participation.md`).
+- `PR opened`: the Author opened a PR.
+- `No PR; position posted on the issue`: the Author opened no PR and posted its position as an explanatory comment on the issue (see "Declining to open a PR" in `pr_participation.md`).
 
 When the Author emits `No PR; position posted on the issue`, dispatch the Reviewer pointed at the **issue**, not a PR (see "Assigning a Reviewer").
 The Orchestrator does not read or judge the Author's explanation; it only notes which artifact the Reviewer must examine.
