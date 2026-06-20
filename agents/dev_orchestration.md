@@ -95,12 +95,11 @@ Git branch: {branch name or "None"}
 
 Role assignment statements (copy the applicable line exactly):
 
-- Programmer: "You are a Programmer resolving the linked issue. You *must* start your turn by re-fetching the description and all comments on the issue and, if it exists, on the PR. If it does *not* exist, create the PR before you exit."
+- Programmer: "You are a Programmer resolving the linked issue. You *must* start your turn by re-fetching the description and all comments on the issue and, if it exists, on the PR. If no PR exists, create one before you exit, unless the issue warrants declining to open a PR (see "Declining to open a PR" in `pr_participation.md`)."
 - Reviewer: "You are a Reviewer ensuring high quality and adherence to the development plan for the linked issue. You *must* start your turn by re-fetching the description and all comments on the issue and on the PR."
 - Verification planner: "You are a Verification Planner: scan the linked issue and PR for outstanding before-merging requirements and file a tracking issue, linked to the PR, for each one. You *must* start your turn by re-fetching the description and all comments on the issue and on the PR."
 
-The Programmer statement's "create the PR before you exit" is the default.
-It does not override the Author's right to decline to open a PR in the three circumstances described under "Declining to open a PR" in `pr_participation.md`.
+The Programmer statement names the decline path so the dispatched Programmer receives it in the copied line, not only by reading `pr_participation.md`.
 An Author that legitimately declines satisfies its exit obligation by posting the explanatory issue comment and emitting `Review the issue comment` (see the Author review-target vocabulary below) instead of creating a PR.
 
 ## Decision-signal templates
@@ -173,15 +172,23 @@ There are two shapes the round can take, decided by the Author's review-target s
 
 - **No PR (the Author emitted `Review the issue comment`).**
   There is no diff, no branch to merge, and no CI to run.
-    if Reviewer requested changes → goto newAuthor
-    if Reviewer gave LGTM:
-      The issue is resolved without a code change, and the Reviewer agreed.
-      Do NOT launch the CI Monitor and do NOT dispatch a Verification Planner; both presuppose a PR.
-      Inform the user that the Author and Reviewer agreed the issue needs no PR, and that the loop is complete.
-      The issue may now be closed by the user (the Orchestrator does not close it).
-      stop
+  Follow the no-PR routing in the first fence below; the Monitor loop in the second fence does not apply.
 - **PR (the Author emitted `Review the PR`).**
-  Proceed with the Monitor loop below.
+  Skip the no-PR fence and proceed with the Monitor loop in the second fence below.
+
+No-PR routing:
+
+```text
+  if Reviewer requested changes → goto newAuthor
+  if Reviewer gave LGTM:
+    The issue is resolved without a code change, and the Reviewer agreed.
+    Do NOT launch the CI Monitor and do NOT dispatch a Verification Planner; both presuppose a PR.
+    Inform the user that the Author and Reviewer agreed the issue needs no PR, and that the loop is complete.
+    The issue may now be closed by the user (the Orchestrator does not close it).
+    stop
+```
+
+PR routing (Monitor loop):
 
 ```text
   if Reviewer requested changes → goto newAuthor

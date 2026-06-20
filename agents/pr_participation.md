@@ -19,7 +19,7 @@
   The Orchestrator runs the CI Monitor script after you exit; you do not need to poll.
 - **Do not return before posting your review.** Posting your review is the only valid exit condition. After forming your verdict, call the review-submission tool before stopping.
 
-  Review pattern:
+  Review pattern (this is the PR-path mechanism; when the Author opened no PR, post on the issue instead, per "Reviewing an Author who declined to open a PR" below):
 
   ``` no
   (ReviewText, IsReviewApproval) := <review the diff; form your verdict and review text>
