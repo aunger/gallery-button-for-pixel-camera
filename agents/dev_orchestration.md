@@ -216,8 +216,7 @@ When the Reviewer returns, apply this transition to the PR before branching on i
 |---|---|
 | `changes done` | -- |
 
-Then branch on the Reviewer's decision.
-If the Reviewer requested changes, apply this transition to the PR:
+Then if the Reviewer requested changes, apply this transition to the PR:
 
 | Remove label | Add label |
 |---|---|
