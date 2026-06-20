@@ -119,6 +119,20 @@ Orchestrator escalation/abort line:
 The Orchestrator routes the Reviewer's chosen signal verbatim.
 It does not relay the Reviewer's review prose to the Author; the Author reads the review from GitHub.
 
+Verification Agent outcome vocabulary (a dispatched Verification Agent emits one):
+- `Verification passed`
+- `Verification revealed an error`
+- `Verification incomplete`
+
+Routing on the Verification Agent's signal:
+- `Verification passed`: every before-merging item was confirmed automatically.
+  This *before-merging requirements* process is complete; the PR may be merged.
+- `Verification revealed an error`: route the PR back to a new Author round (goto newAuthor).
+  The Verification Agent leaves its diagnosis as a PR comment, which the Author reads from GitHub; the Orchestrator does not relay it.
+- `Verification incomplete`: no item failed, but one or more before-merging items could not be automated and remain open for a human to verify.
+  Do not treat the PR as cleared and do not start a new Author round.
+  Inform the user that manual verification is still required, and that the PR may be merged once every open before-merging tracking issue is resolved.
+
 ## Assigning a Programmer
 
 - Create a sub-agent at the Author model (see Model selection above)
@@ -149,11 +163,12 @@ Monitor output lines are relayed to the user verbatim; this is user-facing statu
     Act only on the terminal lines Clear, Blocked, or Infra. Relay in_progress lines to the user as brief status updates (the script suppresses these unless no other output has been emitted for over 120 seconds).
     Relay `step "..." -> ...` and `FAIL [...] ...` lines to the user as informational test-result deltas; they do NOT end the loop or start a new Author round.
     if Monitor emits `drain poll found no new diagnostic signals` immediately followed by a Blocked or Infra line → goto undiagnosedTerminal
-    if Monitor emits a Blocked line  → goto newAuthor
-    if Monitor emits an Infra line   → escalate to user; stop
+    if Monitor emits a Blocked line  → clear the silentVanish re-launch flag; goto newAuthor
+    if Monitor emits an Infra line   → clear the silentVanish re-launch flag; escalate to user; stop
     if Monitor times out (30 min)    → escalate to user; stop
     if a user message wakes the session before Monitor delivers any terminal line → goto silentVanish
     if Monitor emits a Clear line:
+      clear the silentVanish re-launch flag
       // Step: Surface outstanding before-merging requirements
       //   (unautomated verification tests and changes outside the repo, such as an issue that needs to be filed)
       // Triggered after Reviewer approval AND CI clears (Monitor emits Clear).

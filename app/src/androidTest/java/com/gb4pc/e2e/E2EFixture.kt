@@ -10,6 +10,7 @@ import android.content.pm.PackageManager
 import android.media.MediaScannerConnection
 import android.os.Build
 import android.os.Environment
+import android.os.ParcelFileDescriptor
 import android.provider.MediaStore
 import android.util.Log
 import androidx.test.platform.app.InstrumentationRegistry
@@ -255,42 +256,56 @@ class E2EFixture(
     }
 
     /**
-     * Deletes all images owned by this package from the external MediaStore and asserts
-     * none remain.
+     * Empties the external-images MediaStore of every row, regardless of which package owns
+     * it, and asserts none remain.
      *
-     * Uses [ContentResolver.delete] with a null predicate to remove every row from
-     * [MediaStore.Images.Media.EXTERNAL_CONTENT_URI]. [ContentResolver.delete] only ever
-     * removes rows owned by the calling package (`com.gb4pc`); rows inserted by other
-     * packages (e.g. the mock camera's captured photos, owned by
-     * `com.google.android.GoogleCamera`) are left in place and are not this method's concern.
+     * Two deletion passes run, because no single API caller can remove every row:
      *
-     * After deletion, the post-condition is checked by querying with
-     * `OWNER_PACKAGE_NAME = com.gb4pc` rather than an unfiltered query: since `com.gb4pc`
-     * holds `READ_MEDIA_IMAGES` (see `app/src/debug/AndroidManifest.xml`), an unfiltered
-     * query also returns other packages' rows, which this method cannot and should not
-     * delete. Asserting on the unfiltered count would fail whenever a cross-package row
-     * (such as a previously captured mock photo) is still present, even though this
-     * method did exactly what it could: clear every row `com.gb4pc` owns.
+     *  1. [ContentResolver.delete] from this process (`com.gb4pc`). Under scoped storage
+     *     (API 29+) this only removes rows `com.gb4pc` itself owns; rows inserted by other
+     *     packages (e.g. the mock camera's captured photos, owned by
+     *     `com.google.android.GoogleCamera`) are silently skipped, because an app cannot
+     *     delete another app's MediaStore rows without a user-confirmed
+     *     `createDeleteRequest` consent dialog, which is unavailable in an unattended test.
+     *
+     *  2. A `content delete` shell command via [runShellCommand]. `uiAutomation`-issued shell
+     *     commands run under the `shell` UID, which holds broad MediaStore access and deletes
+     *     rows owned by *any* package without a consent dialog. This is the cross-package
+     *     cleanup tracked by issue #406: it removes the mock camera's leftover GREEN capture
+     *     (owned by `com.google.android.GoogleCamera`) that pass 1 cannot touch, so a later
+     *     test (e.g. `test4a`) genuinely starts from an empty roll rather than inheriting
+     *     `test3a`'s photo.
+     *
+     * Pass 1 is kept rather than relying solely on pass 2 so the common case (clearing
+     * `com.gb4pc`'s own rows) still works directly through the ContentResolver, and the shell
+     * pass is purely additive for the cross-package rows.
+     *
+     * The post-condition is now an *unfiltered* count: after both passes the entire external
+     * camera roll must be empty. Asserting the unfiltered count (rather than only the rows
+     * `com.gb4pc` owns) is what makes the "empty gallery" assumption in `test2a`/`test4a`
+     * actually true.
      */
     fun clearCameraRoll() {
+        // Pass 1: delete this package's own rows via the ContentResolver.
         context.contentResolver.delete(
             MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
             null,
             null,
         )
-        val cursor =
-            context.contentResolver.query(
-                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                arrayOf(MediaStore.Images.Media._ID),
-                "${MediaStore.Images.Media.OWNER_PACKAGE_NAME} = ?",
-                arrayOf(context.packageName),
-                null,
+
+        // Pass 2: delete cross-package rows via the shell UID, which is not bound by the
+        // scoped-storage ownership restriction that limits pass 1 (issue #406).
+        val deleteOutput =
+            runShellCommand(
+                "content delete --uri ${MediaStore.Images.Media.EXTERNAL_CONTENT_URI}",
             )
-        val count = cursor?.count ?: 0
-        cursor?.close()
+        Log.i(TAG, "clearCameraRoll: shell content delete output: $deleteOutput")
+
+        // Post-condition: the entire external camera roll must now be empty, across all owners.
+        val count = countMediaStoreImages()
         assertEquals(
-            "MediaStore should contain no rows owned by ${context.packageName} " +
-                "after clearCameraRoll()",
+            "MediaStore external images should be empty after clearCameraRoll() " +
+                "(both the com.gb4pc ContentResolver pass and the cross-package shell pass)",
             0,
             count,
         )
@@ -555,6 +570,21 @@ class E2EFixture(
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
+
+    /**
+     * Runs [command] via [UiAutomation.executeShellCommand] under the `shell` UID and returns
+     * its combined stdout/stderr as a trimmed string.
+     *
+     * Unlike the fire-and-forget `executeShellCommand(...).close()` pattern used elsewhere in
+     * this fixture, this helper drains the command's output so callers can log or inspect it.
+     * The `shell` UID has broader MediaStore privileges than this test's own UID (`com.gb4pc`),
+     * which is why it is used for the cross-package `content delete` in [clearCameraRoll]
+     * (issue #406).
+     */
+    private fun runShellCommand(command: String): String =
+        ParcelFileDescriptor.AutoCloseInputStream(uiAutomation.executeShellCommand(command)).use {
+            it.readBytes().toString(Charsets.UTF_8).trim()
+        }
 
     private fun countMediaStoreImages(): Int {
         val cursor =

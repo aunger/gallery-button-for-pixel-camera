@@ -1,0 +1,43 @@
+name: Block merge when a blocking label is present
+
+# Fails the required status check whenever the PR carries any blocking label,
+# preventing merge until the label is removed.
+#
+# Blocking labels:
+#   - verification needed
+#   - change requested
+#   - change done
+#   - orchestrating
+#
+# Triggers on the full set of PR events so the check always reflects the
+# current label state:
+#   - opened / reopened / synchronize: ensure fresh PRs are blocked from the start.
+#   - labeled / unlabeled: re-evaluate immediately when the label changes.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  check-blocking-labels:
+    name: No blocking labels
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for blocking labels
+        env:
+          LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
+        run: |
+          BLOCKING_LABELS='["verification needed","change requested","change done","orchestrating"]'
+          PRESENT=$(echo "$LABELS" | jq --argjson blocking "$BLOCKING_LABELS" \
+            '[.[] | ascii_downcase] as $pr | $blocking | map(. as $b | $pr | any(. == $b)) | any')
+          if [ "$PRESENT" = "true" ]; then
+            MATCHED=$(echo "$LABELS" | jq --argjson blocking "$BLOCKING_LABELS" \
+              '[.[] | ascii_downcase] as $pr | $blocking | map(select(. as $b | $pr | any(. == $b))) | join(", ")')
+            echo "ERROR: This PR has a blocking label: $MATCHED"
+            echo "Remove the label once the blocking condition is resolved."
+            exit 1
+          fi
+          echo "OK: No blocking labels are present."
