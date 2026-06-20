@@ -78,8 +78,11 @@ The Orchestrator is not a Reviewer or a Programmer.
 The Orchestrator keeps the labels on the issue and its PR in step with the development cycle.
 At each transition below, a small Markdown table records the label move so the FSM is easy to spot when reviewing this file.
 Read each table as: remove the label in the "Remove label" column, add the label in the "Add label" column.
-The removal is unconditional unless the "Remove label" cell itself is qualified; a parenthetical in the "Add label" cell gates only the add.
-Some tables prepend a "Signal" column that selects which row applies (for example, the Verifier table); read the chosen row left-to-right as usual.
+A `--` cell means there is nothing to remove or add.
+
+Every table is unconditional: when control reaches the table, apply the whole table.
+There are no conditions or signals inside a table.
+Each table is placed at the exact point in the existing instruction sequence where that move applies, so the surrounding branch (not the table) already decides whether you are there.
 
 Unless a table says otherwise, the move applies **only to the PR**.
 Tables that act on the issue say *issue* explicitly.
@@ -89,9 +92,9 @@ This section lists them together for reference:
 
 - Starting to orchestrate a PR (see "Starting to orchestrate a PR")
 - Author returns (see "Assigning a Programmer")
-- Reviewer returns (see "CI checking after a Reviewer exits")
-- Verification Planner returns (see "CI checking after a Reviewer exits", Clear-line block)
-- Verifier returns (see "Decision-signal templates", Verification Agent routing)
+- Reviewer returns (see "CI checking after a Reviewer exits", both at the top and in the requested-changes branch)
+- Verification Planner returns (see "CI checking after a Reviewer exits", non-empty before-merging branch)
+- Verifier returns (see "Decision-signal templates", Verification Agent routing branches)
 - Concluding PR orchestration (see "Concluding PR orchestration")
 
 ## Starting to orchestrate a PR
@@ -156,19 +159,28 @@ Verification Agent outcome vocabulary (a dispatched Verification Agent emits one
 Routing on the Verification Agent's signal:
 - `Verification passed`: every before-merging item was confirmed automatically.
   This *before-merging requirements* process is complete; the PR may be merged.
+  Apply this transition to the PR:
+
+  | Remove label | Add label |
+  |---|---|
+  | `verification needed` | `verified` |
+
 - `Verification revealed an error`: route the PR back to a new Author round (goto newAuthor).
   The Verification Agent leaves its diagnosis as a PR comment, which the Author reads from GitHub; the Orchestrator does not relay it.
+  Apply this transition to the PR:
+
+  | Remove label | Add label |
+  |---|---|
+  | `verification needed` | `changes requested` |
+
 - `Verification incomplete`: no item failed, but one or more before-merging items could not be automated and remain open for a human to verify.
   Do not treat the PR as cleared and do not start a new Author round.
   Inform the user that manual verification is still required, and that the PR may be merged once every open before-merging tracking issue is resolved.
+  Apply this transition to the PR (`verification needed` stays applied):
 
-When the Verifier returns, apply the transition matching its signal to the PR:
-
-| Signal | Remove label | Add label |
-|---|---|---|
-| `Verification passed` | `verification needed` | `verified` |
-| `Verification revealed an error` | `verification needed` | `changes requested` |
-| `Verification incomplete` | -- | -- (leave `verification needed` applied) |
+  | Remove label | Add label |
+  |---|---|
+  | -- | -- |
 
 ## Assigning a Programmer
 
@@ -198,11 +210,18 @@ If the Author disagrees with a review point, they should make their case in PR c
 After the Reviewer exits and delivers its decision, the Orchestrator acts as follows.
 Monitor output lines are relayed to the user verbatim; this is user-facing status reporting and is not governed by the say-nothing rule (which covers sub-agent messages only).
 
-When the Reviewer returns, apply this transition to the PR:
+When the Reviewer returns, apply this transition to the PR before branching on its decision:
 
 | Remove label | Add label |
 |---|---|
-| `changes done` (always) | `changes requested` (only if the Reviewer requested changes) |
+| `changes done` | -- |
+
+Then branch on the Reviewer's decision.
+In the `goto newAuthor` branch below (the Reviewer requested changes), also apply this transition to the PR:
+
+| Remove label | Add label |
+|---|---|
+| -- | `changes requested` |
 
 ```text
   if Reviewer requested changes → goto newAuthor
@@ -226,16 +245,14 @@ When the Reviewer returns, apply this transition to the PR:
       Dispatch a Verification Planner sub-agent using the dispatch template.
       The planner assembles the before-merging list and, for each item, files a tracking issue linked to the PR (see verification_planning.md). It does not consult the user.
       If the Planner reports its before-merging list is empty, then this *before-merging requirements* process is complete, and the Orchestrator should exit this step.
-      Otherwise, relay the planner's reported before-merging list to the user verbatim.
-      → PR may be merged once every issue the planner filed for its before-merging list is resolved.
-
-      When the Verification Planner returns, apply this transition to the PR, depending on its answer:
+      (The Planner itself applies `verified` to both the PR and the issue in this case, so the Orchestrator has no label move to make.)
+      Otherwise, relay the planner's reported before-merging list to the user verbatim, and apply this transition to the PR:
 
       | Remove label | Add label |
       |---|---|
-      | -- | `verification needed` (only if the before-merging list is not empty) |
+      | -- | `verification needed` |
 
-      (When the before-merging list is empty, the Planner itself applies `verified` to both the PR and the issue, so the Orchestrator has nothing to add in that case. The Orchestrator's only added duty here is applying `verification needed` to the PR when the list is not empty.)
+      → PR may be merged once every issue the planner filed for its before-merging list is resolved.
 
 undiagnosedTerminal:
   // Issue #410 (Run G, issue #402): "drain poll found no new diagnostic
