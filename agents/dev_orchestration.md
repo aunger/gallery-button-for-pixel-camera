@@ -152,11 +152,11 @@ Routing on the Verification Agent's signal:
 - `Verification incomplete`: no item failed, but one or more before-merging items could not be automated and remain open for a human to verify.
   Do not treat the PR as cleared and do not start a new Author round.
   Inform the user that manual verification is still required, and that the PR may be merged once every open before-merging tracking issue is resolved.
-  Apply this transition to the PR (`verification needed` stays applied):
+  Apply this transition to the PR only if needed. The `verification needed` label is probably already applied:
 
   | Remove label | Add label |
   |---|---|
-  | -- | -- |
+  | -- | `verification needed` |
 
 ## Assigning a Programmer
 
