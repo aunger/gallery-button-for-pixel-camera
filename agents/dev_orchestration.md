@@ -93,7 +93,7 @@ This section lists them together for reference:
 - Starting to orchestrate a PR (see "Starting to orchestrate a PR")
 - Author returns (see "Assigning a Programmer")
 - Reviewer returns (see "CI checking after a Reviewer exits", both at the top and in the requested-changes branch)
-- Verification Planner returns (see "CI checking after a Reviewer exits", non-empty before-merging branch)
+- Verification Planner returns (see "CI checking after a Reviewer exits", both the empty and non-empty before-merging branches)
 - Verifier returns (see "Decision-signal templates", Verification Agent routing branches)
 - Concluding PR orchestration (see "Concluding PR orchestration")
 
@@ -245,7 +245,12 @@ If the Reviewer requested changes, apply this transition to the PR:
       Dispatch a Verification Planner sub-agent using the dispatch template.
       The planner assembles the before-merging list and, for each item, files a tracking issue linked to the PR (see verification_planning.md). It does not consult the user.
       If the Planner reports its before-merging list is empty, then this *before-merging requirements* process is complete, and the Orchestrator should exit this step.
-      (The Planner itself applies `verified` to both the PR and the issue in this case, so the Orchestrator has no label move to make.)
+      In that case, apply this transition to **both the issue and the PR**:
+
+      | Remove label | Add label |
+      |---|---|
+      | -- | `verified` |
+
       Otherwise, relay the planner's reported before-merging list to the user verbatim, and apply this transition to the PR:
 
       | Remove label | Add label |
