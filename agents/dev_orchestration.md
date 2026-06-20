@@ -73,30 +73,6 @@ The Orchestrator is not a Reviewer or a Programmer.
 
 - See `inaugurate.md` for the full protocol when starting fresh work.
 
-## Label management
-
-The Orchestrator keeps the labels on the issue and its PR in step with the development cycle.
-At each transition below, a small Markdown table records the label move so the FSM is easy to spot when reviewing this file.
-Read each table as: remove the label in the "Remove label" column, add the label in the "Add label" column.
-A `--` cell means there is nothing to remove or add.
-
-Every table is unconditional: when control reaches the table, apply the whole table.
-There are no conditions or signals inside a table.
-Each table is placed at the exact point in the existing instruction sequence where that move applies, so the surrounding branch (not the table) already decides whether you are there.
-
-Unless a table says otherwise, the move applies **only to the PR**.
-Tables that act on the issue say *issue* explicitly.
-
-The transition tables appear inline at the point in the sequence where each transition occurs (see the sections below).
-This section lists them together for reference:
-
-- Starting to orchestrate a PR (see "Starting to orchestrate a PR")
-- Author returns (see "Assigning a Programmer")
-- Reviewer returns (see "CI checking after a Reviewer exits", both at the top and in the requested-changes branch)
-- Verification Planner returns (see "CI checking after a Reviewer exits", both the empty and non-empty before-merging branches)
-- Verifier returns (see "Decision-signal templates", Verification Agent routing branches)
-- Concluding PR orchestration (see "Concluding PR orchestration")
-
 ## Starting to orchestrate a PR
 
 When you begin orchestrating a PR (the first thing you do once you have entered the Orchestrator role for a given issue and its PR), apply this transition to **both the issue and the PR**:
