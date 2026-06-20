@@ -79,7 +79,7 @@ When declining to open a PR, the Author must:
 - Post a comment on the **issue** (not on a PR, since none exists) that explains its position.
   Begin the comment with the `🤖 Author` attribution line, then state which of the three circumstances applies and the reasoning behind it.
   If circumstance 1 applies and the issue is resolved by an action outside the repo (for example, a setting change) or by an answer (for example, the issue is really asking a question), describe that action or give that answer in the comment.
-- Tell the Orchestrator that it opened no PR and posted its position as an **issue comment** instead, using the review-target vocabulary in `dev_orchestration.md`.
+- Tell the Orchestrator that it opened no PR and posted its position as an **issue comment** instead, using the status vocabulary in `dev_orchestration.md`.
   The Orchestrator then points a Reviewer at the issue.
 
 This no-PR path changes only the artifact under review; the rest of the review cycle is unchanged.

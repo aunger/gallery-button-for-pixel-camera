@@ -102,18 +102,18 @@ Role assignment statements (copy the applicable line exactly):
 - Verification planner: "You are a Verification Planner: scan the linked issue and PR for outstanding before-merging requirements and file a tracking issue, linked to the PR, for each one. You *must* start your turn by re-fetching the description and all comments on the issue and on the PR."
 
 The Programmer statement names the decline path so the dispatched Programmer receives it in the copied line, not only by reading `pr_participation.md`.
-An Author that legitimately declines satisfies its exit obligation by posting the explanatory issue comment and emitting `Review the issue comment` (see the Author review-target vocabulary below) instead of creating a PR.
+An Author that legitimately declines satisfies its exit obligation by posting the explanatory issue comment and emitting `No PR; position posted on the issue` (see the Author status vocabulary below) instead of creating a PR.
 
 ## Decision-signal templates
 
 When routing control signals, use these exact lines and no others.
 Fill only the tokens in braces.
 
-Author-to-Orchestrator review-target vocabulary (the Programmer emits one when it finishes a round):
-- `Review the PR` -- the Author opened a PR.
-- `Review the issue comment` -- the Author opened no PR and posted its position as an explanatory comment on the issue (see "Declining to open a PR" in `pr_participation.md`).
+Author-to-Orchestrator status vocabulary (the Programmer emits one when it finishes a round, reporting only what it did):
+- `PR opened` -- the Author opened a PR.
+- `No PR; position posted on the issue` -- the Author opened no PR and posted its position as an explanatory comment on the issue (see "Declining to open a PR" in `pr_participation.md`).
 
-When the Author emits `Review the issue comment`, dispatch the Reviewer pointed at the **issue**, not a PR (see "Assigning a Reviewer").
+When the Author emits `No PR; position posted on the issue`, dispatch the Reviewer pointed at the **issue**, not a PR (see "Assigning a Reviewer").
 The Orchestrator does not read or judge the Author's explanation; it only notes which artifact the Reviewer must examine.
 
 Reviewer-to-Orchestrator outcome vocabulary (the Reviewer emits one):
@@ -157,7 +157,7 @@ Routing on the Verification Agent's signal:
 
 - Create a sub-agent at the Reviewer model (see Model selection above)
 - Dispatch using the dispatch template above, with the Reviewer role assignment statement and the literal issue number token.
-- If the Author emitted `Review the issue comment` (no PR was opened), the Reviewer examines the Author's explanatory comment on the **issue** rather than a PR.
+- If the Author emitted `No PR; position posted on the issue` (no PR was opened), the Reviewer examines the Author's explanatory comment on the **issue** rather than a PR.
   The dispatch template's issue token already points the Reviewer there; the Reviewer follows "Reviewing an Author who declined to open a PR" in `pr_participation.md`.
 
 ## Author disagreement
@@ -170,8 +170,8 @@ When the round is running on the no-PR path (the Author declined to open a PR), 
 After the Reviewer exits and delivers its decision, the Orchestrator acts as follows.
 Monitor output lines are relayed to the user verbatim; this is user-facing status reporting and is not governed by the say-nothing rule (which covers sub-agent messages only).
 
-The Author's review-target signal from the prior round decides which fence applies.
-If the Author emitted `Review the issue comment`, there is no diff or CI to run, so follow the no-PR routing fence; if it emitted `Review the PR`, follow the Monitor loop fence.
+The Author's status signal from the prior round decides which fence applies.
+If the Author emitted `No PR; position posted on the issue`, there is no diff or CI to run, so follow the no-PR routing fence; if it emitted `PR opened`, follow the Monitor loop fence.
 
 No-PR routing:
 
