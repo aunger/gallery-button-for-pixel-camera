@@ -1,5 +1,12 @@
 # PR creation
 
+## A PR is not always required
+
+Before creating a PR, confirm one is warranted.
+An Author may legitimately decline to open a PR when addressing the issue needs no code change, when it cannot fix the issue, or when the issue is flawed or should not be acted upon.
+In those cases, follow "Declining to open a PR" in `pr_participation.md` instead of creating a PR.
+The rest of this document applies only once you have decided a PR is the right artifact.
+
 ## One topic per PR
 
 Do not combine unrelated work in a single PR. You may resolve multiple issues with one PR, but *only* if they're both symptoms of the same technical issue.

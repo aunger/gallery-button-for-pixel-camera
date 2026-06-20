@@ -99,10 +99,21 @@ Role assignment statements (copy the applicable line exactly):
 - Reviewer: "You are a Reviewer ensuring high quality and adherence to the development plan for the linked issue. You *must* start your turn by re-fetching the description and all comments on the issue and on the PR."
 - Verification planner: "You are a Verification Planner: scan the linked issue and PR for outstanding before-merging requirements and file a tracking issue, linked to the PR, for each one. You *must* start your turn by re-fetching the description and all comments on the issue and on the PR."
 
+The Programmer statement's "create the PR before you exit" is the default.
+It does not override the Author's right to decline to open a PR in the three circumstances described under "Declining to open a PR" in `pr_participation.md`.
+An Author that legitimately declines satisfies its exit obligation by posting the explanatory issue comment and emitting `Review the issue comment` (see the Author review-target vocabulary below) instead of creating a PR.
+
 ## Decision-signal templates
 
 When routing control signals, use these exact lines and no others.
 Fill only the tokens in braces.
+
+Author-to-Orchestrator review-target vocabulary (the Programmer emits one when it finishes a round):
+- `Review the PR` -- a PR exists; review it.
+- `Review the issue comment` -- the Author opened no PR and is requesting a review on its explanatory comment on the issue (see "Declining to open a PR" in `pr_participation.md`).
+
+When the Author emits `Review the issue comment`, dispatch the Reviewer pointed at the **issue**, not a PR (see "Assigning a Reviewer").
+The Orchestrator does not read or judge the Author's explanation; it only notes which artifact the Reviewer must examine.
 
 Reviewer-to-Orchestrator outcome vocabulary (the Reviewer emits one):
 - `LGTM`
@@ -145,15 +156,32 @@ Routing on the Verification Agent's signal:
 
 - Create a sub-agent at the Reviewer model (see Model selection above)
 - Dispatch using the dispatch template above, with the Reviewer role assignment statement and the literal issue number token.
+- If the Author emitted `Review the issue comment` (no PR was opened), the Reviewer examines the Author's explanatory comment on the **issue** rather than a PR.
+  The dispatch template's issue token already points the Reviewer there; the Reviewer follows "Reviewing an Author who declined to open a PR" in `pr_participation.md`.
 
 ## Author disagreement
 
 If the Author disagrees with a review point, they should make their case in PR comments rather than acquiescing.
+When the round is running on the no-PR path (the Author declined to open a PR), the Author makes its case in **issue** comments instead, since that is where the review lives.
 
 ## CI checking after a Reviewer exits (Monitor loop)
 
 After the Reviewer exits and delivers its decision, the Orchestrator acts as follows.
 Monitor output lines are relayed to the user verbatim; this is user-facing status reporting and is not governed by the say-nothing rule (which covers sub-agent messages only).
+
+There are two shapes the round can take, decided by the Author's review-target signal from the prior round:
+
+- **No PR (the Author emitted `Review the issue comment`).**
+  There is no diff, no branch to merge, and no CI to run.
+    if Reviewer requested changes → goto newAuthor
+    if Reviewer gave LGTM:
+      The issue is resolved without a code change, and the Reviewer agreed.
+      Do NOT launch the CI Monitor and do NOT dispatch a Verification Planner; both presuppose a PR.
+      Inform the user that the Author and Reviewer agreed the issue needs no PR, and that the loop is complete.
+      The issue may now be closed by the user (the Orchestrator does not close it).
+      stop
+- **PR (the Author emitted `Review the PR`).**
+  Proceed with the Monitor loop below.
 
 ```text
   if Reviewer requested changes → goto newAuthor
