@@ -5,8 +5,8 @@ name: Block merge when a blocking label is present
 #
 # Blocking labels:
 #   - verification needed
-#   - change requested
-#   - change done
+#   - changes requested
+#   - changes done
 #   - orchestrating
 #
 # Triggers on the full set of PR events so the check always reflects the
@@ -30,7 +30,7 @@ jobs:
         env:
           LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
         run: |
-          BLOCKING_LABELS='["verification needed","change requested","change done","orchestrating"]'
+          BLOCKING_LABELS='["verification needed","changes requested","changes done","orchestrating"]'
           PRESENT=$(echo "$LABELS" | jq --argjson blocking "$BLOCKING_LABELS" \
             '[.[] | ascii_downcase] as $pr | $blocking | map(. as $b | $pr | any(. == $b)) | any')
           if [ "$PRESENT" = "true" ]; then

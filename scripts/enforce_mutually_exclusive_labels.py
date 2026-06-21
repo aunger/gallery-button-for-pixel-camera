@@ -7,8 +7,8 @@ member of each set is present at any time.
 
 Mutually exclusive sets (fixed):
     [p1, p2, p3]
-    [needs verification, verified]
-    [change requested, change done]
+    [verification needed, verified]
+    [changes requested, changes done]
     [for ai to do, orchestrating]
 
 Mutually exclusive prefix groups (any label sharing a prefix is exclusive):
@@ -42,8 +42,8 @@ import urllib.request
 
 MUTUALLY_EXCLUSIVE_SETS: list[frozenset[str]] = [
     frozenset({"p1", "p2", "p3"}),
-    frozenset({"needs verification", "verified"}),
-    frozenset({"change requested", "change done"}),
+    frozenset({"verification needed", "verified"}),
+    frozenset({"changes requested", "changes done"}),
     frozenset({"for ai to do", "orchestrating"}),
 ]
 

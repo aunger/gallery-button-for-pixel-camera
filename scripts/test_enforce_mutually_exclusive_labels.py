@@ -63,26 +63,26 @@ class TestFindConflictingSet(unittest.TestCase):
         self.assertIsNotNone(emxl.find_conflicting_set("P3"))
 
     def test_verification_labels_found(self):
-        result = emxl.find_conflicting_set("needs verification")
+        result = emxl.find_conflicting_set("verification needed")
         self.assertIsNotNone(result)
-        self.assertIn("needs verification", result)
+        self.assertIn("verification needed", result)
         self.assertIn("verified", result)
 
     def test_verified_label_found(self):
         result = emxl.find_conflicting_set("verified")
         self.assertIsNotNone(result)
-        self.assertIn("needs verification", result)
+        self.assertIn("verification needed", result)
 
-    def test_change_requested_found(self):
-        result = emxl.find_conflicting_set("change requested")
+    def test_changes_requested_found(self):
+        result = emxl.find_conflicting_set("changes requested")
         self.assertIsNotNone(result)
-        self.assertIn("change requested", result)
-        self.assertIn("change done", result)
+        self.assertIn("changes requested", result)
+        self.assertIn("changes done", result)
 
-    def test_change_done_found(self):
-        result = emxl.find_conflicting_set("change done")
+    def test_changes_done_found(self):
+        result = emxl.find_conflicting_set("changes done")
         self.assertIsNotNone(result)
-        self.assertIn("change requested", result)
+        self.assertIn("changes requested", result)
 
     def test_for_ai_to_do_found(self):
         result = emxl.find_conflicting_set("for ai to do")
@@ -234,13 +234,13 @@ class TestLabelsToRemove(unittest.TestCase):
         self.assertEqual(result, ["P2"])
 
     def test_non_set_labels_are_not_returned(self):
-        verification_set = frozenset({"needs verification", "verified"})
+        verification_set = frozenset({"verification needed", "verified"})
         result = emxl.labels_to_remove(
             "verified",
-            ["needs verification", "ci", "p1", "bug"],
+            ["verification needed", "ci", "p1", "bug"],
             verification_set,
         )
-        self.assertEqual(result, ["needs verification"])
+        self.assertEqual(result, ["verification needed"])
 
 
 # ---------------------------------------------------------------------------
@@ -311,9 +311,9 @@ class TestRemoveLabels(unittest.TestCase):
             call_paths.append(path)
 
         with patch.object(emxl, "gh_api", side_effect=fake_api):
-            emxl.remove_labels(5, ["needs verification"], "owner/repo", "tok")
+            emxl.remove_labels(5, ["verification needed"], "owner/repo", "tok")
 
-        self.assertTrue(any("needs%20verification" in p for p in call_paths))
+        self.assertTrue(any("verification%20needed" in p for p in call_paths))
 
 
 # ---------------------------------------------------------------------------
@@ -409,23 +409,23 @@ class TestMain(unittest.TestCase):
                 emxl,
                 "gh_api",
                 side_effect=[
-                    self._make_issue_response(["needs verification", "ci"]),
-                    None,  # DELETE needs verification
+                    self._make_issue_response(["verification needed", "ci"]),
+                    None,  # DELETE verification needed
                 ],
             ) as mock_api:
                 result = emxl.main()
 
         self.assertEqual(result, 0)
         delete_call = mock_api.call_args_list[1]
-        self.assertIn("needs%20verification", delete_call[0][0])
+        self.assertIn("verification%20needed", delete_call[0][0])
 
     def test_removes_for_change_set(self):
-        with patch.dict(os.environ, {"ADDED_LABEL": "change done", "ISSUE_NUMBER": "7"}):
+        with patch.dict(os.environ, {"ADDED_LABEL": "changes done", "ISSUE_NUMBER": "7"}):
             with patch.object(
                 emxl,
                 "gh_api",
                 side_effect=[
-                    self._make_issue_response(["change requested", "bug"]),
+                    self._make_issue_response(["changes requested", "bug"]),
                     None,
                 ],
             ) as mock_api:
@@ -433,7 +433,7 @@ class TestMain(unittest.TestCase):
 
         self.assertEqual(result, 0)
         delete_call = mock_api.call_args_list[1]
-        self.assertIn("change%20requested", delete_call[0][0])
+        self.assertIn("changes%20requested", delete_call[0][0])
 
     def test_removes_for_ai_workflow_set(self):
         with patch.dict(os.environ, {"ADDED_LABEL": "orchestrating", "ISSUE_NUMBER": "3"}):
