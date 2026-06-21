@@ -12,44 +12,42 @@ automation (as happened with the stale spellings in issue #477).
 Sources:
   scripts/enforce_mutually_exclusive_labels.py -- MUTUALLY_EXCLUSIVE_SETS
   scripts/file_test_failure_issues.py          -- LABELS constant
-  scripts/archive_stale_test_failures.py       -- label swap (test-failure-archive)
-  .github/workflows/block-merge-on-blocking-labels.yml -- BLOCKING_LABELS
-  .github/workflows/remove-verified-on-push.yml -- 'verified' label
+  scripts/archive_stale_test_failures.py       -- LABEL_TEST_FAILURE_ARCHIVE constant
 """
 
 import json
 import os
+import sys
 import unittest
 import urllib.error
 import urllib.request
 
+# Scripts live in the same directory as this file; make them importable.
+sys.path.insert(0, os.path.dirname(__file__))
+
+from archive_stale_test_failures import LABEL_TEST_FAILURE_ARCHIVE  # noqa: E402
+from enforce_mutually_exclusive_labels import MUTUALLY_EXCLUSIVE_SETS  # noqa: E402
+from file_test_failure_issues import LABELS as _TEST_FAILURE_LABELS  # noqa: E402
+
 # ---------------------------------------------------------------------------
-# Labels that must exist in the GitHub repository.
-# All names are lowercase; existence checks are case-insensitive because the
-# enforcement automation lowercases label names before comparing them.
-# Add here whenever a new label name is hardcoded into automation.
+# Derive the set of required labels from their authoritative sources.
+# When a new label is added to automation, updating the source constant
+# (or MUTUALLY_EXCLUSIVE_SETS) is sufficient; this test picks it up
+# automatically.
 # ---------------------------------------------------------------------------
 
-REQUIRED_LABELS: frozenset[str] = frozenset(
-    {
-        # Mutually exclusive priority set (enforce_mutually_exclusive_labels.py)
-        "p1",
-        "p2",
-        "p3",
-        # Mutually exclusive verification set
-        "verification needed",
-        "verified",
-        # Mutually exclusive changes set
-        "changes requested",
-        "changes done",
-        # Mutually exclusive AI workflow set
-        "for ai to do",
-        "orchestrating",
-        # Test-failure lifecycle (file_test_failure_issues.py,
-        # archive_stale_test_failures.py)
-        "test-failure",
-        "test-failure-archive",
-    }
+REQUIRED_LABELS: frozenset[str] = (
+    # All labels in every mutually-exclusive set defined in
+    # enforce_mutually_exclusive_labels.py.
+    frozenset().union(*MUTUALLY_EXCLUSIVE_SETS)
+    # Label(s) applied to new test-failure issues.
+    | frozenset(_TEST_FAILURE_LABELS)
+    # Label swapped in when a test-failure issue goes stale.
+    | frozenset({LABEL_TEST_FAILURE_ARCHIVE})
+    # Note: the labels referenced in block-merge-on-blocking-labels.yml
+    # (verification needed, changes requested, changes done, orchestrating)
+    # and remove-verified-on-push.yml (verified) are all already members of
+    # MUTUALLY_EXCLUSIVE_SETS, so no additional entries are needed here.
 )
 
 
