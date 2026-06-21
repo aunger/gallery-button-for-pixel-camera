@@ -422,19 +422,6 @@ jobs:
           echo "Exiting 1 to keep the merge gate blocked."
           exit 1
 
-  file-issues:
-    # EXPERIMENT BRANCH (issue #494): no test results are produced by
-    # build-and-test, so the artifact downloads and issue-filing script
-    # are replaced with a no-op to avoid bogus "artifact not found" warnings.
-    needs: [build-and-test]
-    runs-on: ubuntu-latest
-    if: always() && needs.build-and-test.result != 'cancelled'
-    permissions:
-      issues: write
-    steps:
-      - name: No test results to file (experiment branch)
-        run: echo "Experiment branch -- no test-result artifacts to download or file."
-
   # Surface the build-and-test job's pass/fail summary directly on the PR
   # (issue #331): post or update a sticky comment linking to the job's
   # "Summary" section, e.g. .../actions/runs/<run_id>#summary-<job_id>.
