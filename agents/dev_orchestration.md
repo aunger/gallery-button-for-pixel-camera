@@ -100,11 +100,11 @@ GitHub repository: {owner-slash-repo or URL}
 Issue: {#xxx or "None"}
 PR: {#xxx or "None"}
 Git branch: {branch name or "None"}
-Verification Planner comment: {#issuecomment-xxx, a comment URL, or "None"}
+Verification Planner comment: {numeric comment id, or "None"}
 ```
 
 Fill the `PR:` token with the PR number whenever a PR already exists for the work item; otherwise use "None".
-Fill the `Verification Planner comment:` token only when dispatching a Verification Agent and the planner's comment id (or URL) is known; otherwise use "None".
+Fill the `Verification Planner comment:` token only when dispatching a Verification Agent and the planner's numeric comment id is known; otherwise use "None".
 Both are literal tokens supplied by the Orchestrator (the PR number, and the comment id the Verification Planner reported); the Orchestrator does not read the PR or the comment to obtain them.
 
 Role assignment statements (copy the applicable line exactly):
@@ -114,7 +114,7 @@ Role assignment statements (copy the applicable line exactly):
   If no PR exists, create one before you exit, unless the issue warrants declining to open a PR (see "Declining to open a PR" in `pr_participation.md`)."
 - Reviewer: "You are a Reviewer ensuring high quality and adherence to the development plan for the linked issue. You *must* start your turn by re-fetching the description and all comments on the issue and on the PR."
 - Verification planner: "You are a Verification Planner: scan the linked issue and PR for outstanding before-merging requirements and file a tracking issue, linked to the PR, for each one. You *must* start your turn by re-fetching the description and all comments on the issue and on the PR."
-- Verification agent: "You are a Verification Agent: carry out the before-merging steps from the Verification Planner report on the linked PR, automating them where possible, and report results. You *must* start your turn by re-fetching the Verification Planner comment named above (if none was named, locate it on the PR via its HTML marker) and each before-merging tracking issue it lists."
+- Verification agent: "You are a Verification Agent: carry out the before-merging steps from the Verification Planner report on the linked PR, automating them where possible, and report results. You *must* start your turn by re-fetching the Verification Planner comment supplied in the `Verification Planner comment:` token (if none was supplied, locate it on the PR via its HTML marker) and each before-merging tracking issue it lists."
 
 The Programmer statement names the decline path so the dispatched Programmer receives it in the copied line, not only by reading `pr_participation.md`.
 An Author that legitimately declines satisfies its exit obligation by posting the explanatory issue comment and emitting `No PR; position posted on the issue` (see the Author status vocabulary below) instead of creating a PR.
