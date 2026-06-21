@@ -103,15 +103,27 @@ Git branch: {branch name or "None"}
 
 Role assignment statements (copy the applicable line exactly):
 
-- Programmer: "You are a Programmer resolving the linked issue. You *must* start your turn by re-fetching the description and all comments on the issue and, if it exists, on the PR. If it does *not* exist, create the PR before you exit."
+- Programmer: "You are a Programmer resolving the linked issue.
+  You *must* start your turn by re-fetching the description and all comments on the issue and, if it exists, on the PR.
+  If no PR exists, create one before you exit, unless the issue warrants declining to open a PR (see "Declining to open a PR" in `pr_participation.md`)."
 - Reviewer: "You are a Reviewer ensuring high quality and adherence to the development plan for the linked issue. You *must* start your turn by re-fetching the description and all comments on the issue and on the PR."
 - Verification planner: "You are a Verification Planner: scan the linked issue and PR for outstanding before-merging requirements and file a tracking issue, linked to the PR, for each one. You *must* start your turn by re-fetching the description and all comments on the issue and on the PR."
 - Verification agent: "You are a Verification Agent: carry out the before-merging steps from the Verification Planner report on the linked PR, automating them where possible, and report results. You *must* start your turn by re-fetching the Verification Planner comment on the PR and each before-merging tracking issue it lists."
+
+The Programmer statement names the decline path so the dispatched Programmer receives it in the copied line, not only by reading `pr_participation.md`.
+An Author that legitimately declines satisfies its exit obligation by posting the explanatory issue comment and emitting `No PR; position posted on the issue` (see the Author status vocabulary below) instead of creating a PR.
 
 ## Decision-signal templates
 
 When routing control signals, use these exact lines and no others.
 Fill only the tokens in braces.
+
+Author-to-Orchestrator status vocabulary (the Programmer emits one when it finishes a round, reporting only what it did):
+- `PR opened`: the Author opened a PR.
+- `No PR; position posted on the issue`: the Author opened no PR and posted its position as an explanatory comment on the issue (see "Declining to open a PR" in `pr_participation.md`).
+
+When the Author emits `No PR; position posted on the issue`, dispatch the Reviewer pointed at the **issue**, not a PR (see "Assigning a Reviewer").
+The Orchestrator does not read or judge the Author's explanation; it only notes which artifact the Reviewer must examine.
 
 Reviewer-to-Orchestrator outcome vocabulary (the Reviewer emits one):
 - `LGTM`
@@ -167,7 +179,8 @@ Routing on the Verification Agent's signal:
   Never direct two Programmers for unrelated issues to the same branch.
 - Dispatch using the dispatch template above, with the Programmer role assignment statement and the literal issue number and branch name tokens.
 
-When the Author returns, apply this transition to the PR:
+When the Author returns, apply this transition.
+Apply it to the PR if the Author emitted `PR opened`; apply it to the issue if the Author emitted `No PR; position posted on the issue`, since that is where the work's labels live when there is no PR:
 
 | Remove label | Add label |
 |---|---|
@@ -177,27 +190,48 @@ When the Author returns, apply this transition to the PR:
 
 - Create a sub-agent at the Reviewer model (see Model selection above)
 - Dispatch using the dispatch template above, with the Reviewer role assignment statement and the literal issue number token.
+- If the Author emitted `No PR; position posted on the issue` (no PR was opened), the Reviewer examines the Author's explanatory comment on the **issue** rather than a PR.
+  The dispatch template's issue token already points the Reviewer there; the Reviewer follows "Reviewing an Author who declined to open a PR" in `pr_participation.md`.
 
 ## Author disagreement
 
 If the Author disagrees with a review point, they should make their case in PR comments rather than acquiescing.
+When the round is running on the no-PR path (the Author declined to open a PR), the Author makes its case in **issue** comments instead, since that is where the review lives.
 
 ## CI checking after a Reviewer exits (Monitor loop)
 
 After the Reviewer exits and delivers its decision, the Orchestrator acts as follows.
 Monitor output lines are relayed to the user verbatim; this is user-facing status reporting and is not governed by the say-nothing rule (which covers sub-agent messages only).
 
-When the Reviewer returns, apply this transition to the PR:
+When the Reviewer returns, apply this transition.
+Apply it to the PR if one was opened (the Author emitted `PR opened`); apply it to the issue on the no-PR path (the Author emitted `No PR; position posted on the issue`), since that is where the work's labels live when there is no PR:
 
 | Remove label | Add label |
 |---|---|
 | `changes done` | -- |
 
-If the Reviewer requested changes, additionally apply this transition to the PR:
+If the Reviewer requested changes, additionally apply this transition to the same artifact (PR or issue):
 
 | Remove label | Add label |
 |---|---|
 | -- | `changes requested` |
+
+The Author's status signal from the prior round decides which routing fence applies.
+If the Author emitted `No PR; position posted on the issue`, there is no diff or CI to run, so follow the no-PR routing fence; if it emitted `PR opened`, follow the Monitor loop fence.
+
+No-PR routing:
+
+```text
+  if Reviewer requested changes → goto newAuthor
+  if Reviewer gave LGTM:
+    The issue is resolved without a code change, and the Reviewer agreed.
+    Do NOT launch the CI Monitor and do NOT dispatch a Verification Planner; both presuppose a PR.
+    Inform the user that the Author and Reviewer agreed the issue needs no PR, and that the loop is complete.
+    The issue may now be closed by the user (the Orchestrator does not close it).
+    stop
+```
+
+PR routing (Monitor loop):
 
 ```text
   if Reviewer requested changes → goto newAuthor

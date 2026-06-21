@@ -21,6 +21,8 @@
 
   Review pattern:
 
+  (This is the PR-path mechanism. If the Author opened no PR, see "Reviewing an Author who declined to open a PR" below.)
+
   ``` no
   (ReviewText, IsReviewApproval) := <review the diff; form your verdict and review text>
   post review: mcp__github__pull_request_review_write(ReviewText, IsReviewApproval)
@@ -34,6 +36,27 @@
   There is no middle option.
   If you want any change made before merge, request changes so the full review cycle continues.
 
+### Reviewing an Author who declined to open a PR
+
+Sometimes the Author opens no PR and instead posts its position as an **issue comment** (see "Declining to open a PR" in the Author section).
+The artifact under review is then that issue comment and the Author's stated position, not a diff.
+The Orchestrator will point you at the issue rather than a PR.
+
+Because there is no PR, post your review as an ordinary comment on the **issue** (begin it with the `🤖 Reviewer` line), not via the PR review tool.
+Your verdict vocabulary is unchanged: `LGTM` or `Changes requested`.
+Choose among three stances and map each to a verdict:
+
+- **Agree and approve.** You are convinced the Author is right that no PR is warranted (the issue needs no code change, cannot be fixed, or should not be acted upon).
+  Say so plainly and emit `LGTM`.
+  An `LGTM` here means the issue is resolved without a code change; there is nothing to merge.
+- **Point out a blocking flaw.** You accept the Author's general direction but find a flaw in its reasoning or in the out-of-repo action it proposed (for example, the suggested setting is wrong, or the answer it gave is incomplete).
+  Explain the flaw fully and emit `Changes requested` so the Author revises its issue comment or its proposed action.
+- **Fundamentally disagree.** You believe the Author is wrong, the issue is valid, and a change is required and possible.
+  Make the case that code is needed, citing what behavior is missing or broken, and emit `Changes requested`.
+  This sends the Author back to either rebut your case in the issue comments or, if convinced, open a PR with the needed code.
+
+As always, do not hold back, and do not make the change yourself; convince the Author.
+
 ## Author / Programmer
 
 Terminology: In most cases, the *Author* is also referred to as *Programmer*. In this document, we use the term *Author* to allow for PRs that don't involve code changes.
@@ -41,6 +64,38 @@ Terminology: In most cases, the *Author* is also referred to as *Programmer*. In
 - An *Author* should consider review comments with a degree of skepticism, and should not instantly or automatically accede to a Reviewer's opinion. If the Author becomes convinced of the need to change the PR, then it should do so. Otherwise, it should enter a debate with the Reviewer.
 - The Author should reply to Reviewer comments to provide justification for refusing a Reviewer's requested changes.
 - When a Reviewer requests a change that is out of scope for the current PR, the Author should decline to make it here, file a new issue to track it, and cite the issue number in their reply to the Reviewer.
+
+### Declining to open a PR
+
+An Author is not obligated to open a PR.
+In any of the following three circumstances, the Author should *not* open a PR:
+
+1. Addressing the issue does not require a code change.
+2. The Author believes it cannot fix the issue.
+3. The issue is flawed, invalid, or otherwise should not be acted upon.
+
+When declining to open a PR, the Author must:
+
+- Post a comment on the **issue** (not on a PR, since none exists) that explains its position.
+  Begin the comment with the `🤖 Author` attribution line, then state which of the three circumstances applies and the reasoning behind it.
+  If circumstance 1 applies and the issue is resolved by an action outside the repo (for example, a setting change) or by an answer (for example, the issue is really asking a question), describe that action or give that answer in the comment.
+- Tell the Orchestrator that it opened no PR and posted its position as an **issue comment** instead, using the status vocabulary in `dev_orchestration.md`.
+  The Orchestrator then points a Reviewer at the issue.
+
+This no-PR path changes only the artifact under review; the rest of the review cycle is unchanged.
+The Reviewer still renders an `LGTM` or `Changes requested` verdict (see the Reviewer section), and the Author still defends its position or revises it across rounds.
+
+### Changing position
+
+An Author may change its position between rounds, in either direction:
+
+- An Author that opened a PR may, after a review, conclude that no code change is warranted or that the issue should not be acted upon.
+  In that case it should close its PR and switch to the declining-to-open-a-PR path above, explaining the change on the issue.
+- An Author that declined to open a PR may later become convinced and switch to authoring a PR.
+  It opens the PR as usual (see `pr_creation.md`), and the review then proceeds against the PR.
+
+Because each round begins by re-reading the issue, the PR (if any), and all comments, an Author is free to adopt whichever position the evidence supports; it is not bound by a position it took in an earlier round.
+The Author should not flip-flop merely to appease the Reviewer: change position only when genuinely convinced (see the skepticism guidance above).
 
 ## Code review cycles should be overseen by an Orchestrator.
 
