@@ -328,9 +328,10 @@ jobs:
           "$ADB" shell input swipe 540 50 540 1400
           sleep 2
           echo "  scroll notification list downward within the shade"
-          # A downward swipe (top-to-bottom) scrolls the notification list
-          # toward the bottom while keeping the shade open.
-          # An upward swipe would collapse the shade, not scroll it.
+          # The finger moves upward on screen (y=900 to y=300), which scrolls
+          # the notification list content downward, keeping the shade open.
+          # A downward finger gesture from the top-of-shade area would collapse
+          # the shade instead of scrolling its list.
           "$ADB" shell input swipe 540 900 540 300
           sleep 2
           # Dismiss notification shade
