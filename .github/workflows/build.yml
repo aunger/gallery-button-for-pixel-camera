@@ -1,5 +1,11 @@
 name: Build & Test
 
+# EXPERIMENT BRANCH -- issue #494
+# This workflow is modified to capture screenshot and screen-recording demo
+# artifacts instead of running the normal test suites.
+# DO NOT MERGE this branch: the "Block accidental merge" step at the end of
+# build-and-test always exits 1, so the merge gate will block.
+
 on:
   push:
     branches: [main]
@@ -11,21 +17,15 @@ permissions:
   issues: read
 
 jobs:
-  # Gate for PRs and merges: compiles, runs unit tests, then E2E tests on an emulator.
-  # Unit tests run first so a fast failure skips the slower emulator phase.
-  # On success the single debug build is reused for both test suites.
-  #
-  # E2E background: the real Pixel Camera APK refuses to start on non-Pixel emulators
-  # (PairIP device-compatibility check). The e2e-mock-camera module has the same
-  # applicationId ("com.google.android.GoogleCamera") and opens the camera hardware
-  # on resume, so GB4PC's CameraManager callback and UsageStats-based foreground
-  # detection are exercised identically to the real app.
+  # Modified for issue #494: captures demo media (screenshots + screen recordings)
+  # instead of running the normal E2E and unit test suites.
+  # The emulator lifecycle and artifact upload scaffolding are kept unchanged.
   #
   # We manage the emulator lifecycle ourselves rather than using
   # reactivecircus/android-emulator-runner@v2 because the runner action
   # unconditionally runs `adb shell input keyevent 82` immediately after
   # sys.boot_completed=1, before system services accept binder connections on
-  # the slow API-35 emulator — causing exit code 224 (Broken Pipe) before our
+  # the slow API-35 emulator -- causing exit code 224 (Broken Pipe) before our
   # script ever starts. The explicit steps below poll for true service readiness.
   build-and-test:
     # ubuntu-latest has KVM hardware acceleration (available since April 2024).
@@ -112,58 +112,17 @@ jobs:
           echo "==> emulator -list-avds:"
           ANDROID_AVD_HOME="$AVD_HOME" $ANDROID_HOME/emulator/emulator -list-avds
 
-      - name: Install Python script dependencies
-        if: steps.diff_check.outputs.needs_full_build == 'true'
-        run: pip install -r scripts/requirements.txt
-
-      - name: Run Python script unit tests
-        if: steps.diff_check.outputs.needs_full_build == 'true'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-        run: python3 -m unittest discover -s scripts -p "test_*.py" -v
-
-      - name: Run shell script unit tests
-        if: steps.diff_check.outputs.needs_full_build == 'true'
-        run: |
-          for test_script in scripts/test_*.sh; do
-            echo "==> Running $test_script"
-            bash "$test_script"
-          done
-
       - name: Grant execute permission for gradlew
         if: steps.diff_check.outputs.needs_full_build == 'true'
         run: chmod +x gradlew
 
-      - name: Build and run unit tests
+      - name: Build debug APKs
         if: steps.diff_check.outputs.needs_full_build == 'true'
         env:
           BUILD_NUMBER: ${{ github.run_number }}
         run: |
-          mkdir -p results
-          set -o pipefail
-          ./gradlew assembleDebug assembleDebugAndroidTest :e2e-mock-camera:assembleDebug \
-            :e2e-mock-gallery:assembleDebug \
-            testDebugUnitTest -PversionName=dev.${{ github.run_number }} \
-            | tee >(grep '^##GB4PC_TEST##' > results/unit.ndjson)
-
-      - name: Upload unit test results
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
-        uses: actions/upload-artifact@v7
-        with:
-          name: unit-test-results
-          path: |
-            app/build/test-results/testDebugUnitTest/
-            app/build/reports/tests/
-          retention-days: 14
-
-      - name: Upload unit test markers
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
-        uses: actions/upload-artifact@v7
-        with:
-          name: testresults-unit
-          path: results/unit.ndjson
-          retention-days: 14
+          ./gradlew assembleDebug :e2e-mock-camera:assembleDebug \
+            -PversionName=dev.${{ github.run_number }}
 
       - name: Start emulator
         if: steps.diff_check.outputs.needs_full_build == 'true'
@@ -248,228 +207,194 @@ jobs:
           "$ADB" shell settings put global transition_animation_scale 0
           "$ADB" shell settings put global animator_duration_scale 0
 
-      - name: CI pre-flight — MockCameraActivity smoke check
-        if: steps.diff_check.outputs.needs_full_build == 'true'
-        id: preflight
-        run: |
-          ADB="$ANDROID_HOME/platform-tools/adb"
-
-          # Install mock Pixel Camera and grant CAMERA permission before the smoke check.
-          echo "==> Installing mock Pixel Camera for pre-flight check..."
-          "$ADB" install -r \
-            e2e-mock-camera/build/outputs/apk/debug/e2e-mock-camera-debug.apk
-          # Adaptive ANR watcher: waits for Pixel Launcher to settle after install (Issue #194)
-          chmod +x scripts/dismiss_anr.sh
-          scripts/dismiss_anr.sh --adb "$ADB" &
-          SETTLE_PID=$!
-          echo "==> Granting CAMERA permission..."
-          "$ADB" shell pm grant com.google.android.GoogleCamera \
-            android.permission.CAMERA
-
-          # Wake the display and dismiss the swipe keyguard before launching the
-          # activity. An upward swipe is used instead of wm dismiss-keyguard:
-          # wm dismiss-keyguard did not reliably dismiss the swipe-type lock
-          # screen on the API-35 CI emulator (all retries returned #E9E8EF).
-          # sleep 2 lets the swipe animation complete before am start -W fires.
-          echo "==> Waking display and dismissing keyguard..."
-          "$ADB" shell input keyevent KEYCODE_WAKEUP
-          "$ADB" shell input swipe 300 1000 300 300
-          sleep 2
-
-          # Launch MockCameraActivity and wait for it to be displayed.
-          # am start -W blocks until the activity is on screen, so no polling needed.
-          echo "==> Launching MockCameraActivity..."
-          "$ADB" shell am start -W -n \
-            com.google.android.GoogleCamera/com.gb4pc.mockcamera.MockCameraActivity
-
-          # Re-wake after am start -W: adb install above can take 10-30 s and
-          # the screen may sleep in that window. am start -W and
-          # setTurnScreenOn(true) usually recover, but this is a cheap extra
-          # guarantee that the green view is visible before screencap. Use the
-          # same swipe unlock to stay consistent.
-          "$ADB" shell input keyevent KEYCODE_WAKEUP
-          "$ADB" shell input swipe 300 1000 300 300
-          sleep 2
-
-          wait "$SETTLE_PID" || true
-
-          python3 scripts/check_green_feed.py --adb "$ADB" preflight.png
-
-      - name: Upload preflight screenshot on failure
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true' && steps.preflight.outcome == 'failure'
-        uses: actions/upload-artifact@v7
-        with:
-          name: preflight-screenshot
-          path: preflight.png
-          retention-days: 14
-
-      - name: Run E2E emulator setup
+      - name: Emulator setup (permissions, PIN, dismiss keyguard)
         if: steps.diff_check.outputs.needs_full_build == 'true'
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
 
           chmod +x scripts/setup-e2e-emulator.sh
-          # --post-boot skips AVD creation/boot; AVD is already running from the
-          # boot step above. MockCameraActivity (solid-green View) is the camera.
+          # --post-boot skips AVD creation/boot; AVD is already running.
           scripts/setup-e2e-emulator.sh --post-boot
 
-          # Install mock Pixel Camera before invoking the Gradle task. The Gradle
-          # task's doLast block also installs it (for local dev convenience), but
-          # that install has not proven reliable on its own in CI; this pre-install
-          # is the verified stable path that guarantees mock-camera is on-device.
-          echo "==> Installing mock Pixel Camera..."
+      - name: Install apps and grant permissions
+        if: steps.diff_check.outputs.needs_full_build == 'true'
+        run: |
+          ADB="$ANDROID_HOME/platform-tools/adb"
+
+          echo "==> Installing GB4PC debug APK..."
+          "$ADB" install -r app/build/outputs/apk/debug/app-debug.apk
+
+          echo "==> Installing mock Pixel Camera APK..."
           "$ADB" install -r \
             e2e-mock-camera/build/outputs/apk/debug/e2e-mock-camera-debug.apk
+
           echo "==> Granting CAMERA permission to mock Pixel Camera..."
           "$ADB" shell pm grant com.google.android.GoogleCamera \
             android.permission.CAMERA
 
-          echo "==> Mock PC resolve check:"
-          "$ADB" shell pm resolve-activity --brief \
-            -a android.media.action.STILL_IMAGE_CAMERA \
-            -p com.google.android.GoogleCamera 2>/dev/null || true
+          # Grant overlay and usage-stats permissions to GB4PC so the service
+          # can be started via the settings screen switch.
+          echo "==> Granting SYSTEM_ALERT_WINDOW to GB4PC..."
+          "$ADB" shell appops set com.gb4pc SYSTEM_ALERT_WINDOW allow || true
+          echo "==> Granting GET_USAGE_STATS to GB4PC..."
+          "$ADB" shell appops set com.gb4pc GET_USAGE_STATS allow || \
+            "$ADB" shell appops set com.gb4pc PACKAGE_USAGE_STATS allow || true
 
-      - name: Run instrumented tests
-        # We deliberately do NOT use `continue-on-error` here (see issue #309):
-        # it swallowed *every* error, including non-test breakage, so CI went
-        # green while real failures hid. Instead we record this step's real exit
-        # status as an output and let later steps run; the final
-        # "Gate on test failures" step is the single authority on pass/fail,
-        # consulting both the JUnit XML and this recorded outcome against the
-        # red-to-green allowlist (.github/allowed-test-failures.txt).
-        id: run_instrumented
-        if: steps.diff_check.outputs.needs_full_build == 'true'
-        run: |
-          ADB="$ANDROID_HOME/platform-tools/adb"
-          # Wake and dismiss the swipe keyguard before starting the test suite.
-          # The E2E setup (including mock-camera install) can take 10-30 s, and the
-          # screen may sleep or re-lock in that window. This mirrors
-          # E2EFixture.wakeAndDismissKeyguard() (issue #344 / #341).
-          # sleep 2 lets the swipe animation complete before Gradle's am start fires
-          # (same reasoning as the pre-flight step's post-swipe sleep 2).
-          "$ADB" shell input keyevent KEYCODE_WAKEUP
-          "$ADB" shell input swipe 300 1000 300 300
-          sleep 2
-          if ./gradlew connectedDebugAndroidTest; then
-            echo "outcome=success" >> "$GITHUB_OUTPUT"
-          else
-            echo "outcome=failure" >> "$GITHUB_OUTPUT"
-          fi
+          # Pre-seed GB4PC SharedPreferences so MainActivity shows the settings
+          # screen directly instead of launching SetupActivity.
+          # The file is written as the app user via run-as; the XML is a minimal
+          # valid SharedPreferences document with the two boolean keys GB4PC reads
+          # at startup (PREF_SETUP_COMPLETED and PREF_SERVICE_ENABLED).
+          echo "==> Pre-seeding GB4PC SharedPreferences (setup_completed=true)..."
+          # Write the prefs XML to a local temp file, push it to /sdcard, then
+          # copy it into the app's private data directory via run-as.
+          # printf is used instead of a heredoc to avoid the YAML << merge-key ambiguity.
+          printf '%s\n' \
+            "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>" \
+            "<map>" \
+            "    <boolean name=\"setup_completed\" value=\"true\" />" \
+            "    <boolean name=\"service_enabled\" value=\"false\" />" \
+            "</map>" \
+            > /tmp/gb4pc_prefs.xml
+          "$ADB" push /tmp/gb4pc_prefs.xml /sdcard/gb4pc_prefs.xml
+          "$ADB" shell run-as com.gb4pc sh -c \
+            'mkdir -p shared_prefs && cp /sdcard/gb4pc_prefs.xml shared_prefs/gb4pc_prefs.xml'
+          "$ADB" shell rm /sdcard/gb4pc_prefs.xml
 
-      - name: Copy instrumented test results
+      - name: Capture screenshot and screen-recording demos
         if: steps.diff_check.outputs.needs_full_build == 'true'
         continue-on-error: true
         run: |
-          mkdir -p app/build/outputs/androidTest-results/instrumented
-          cp -r app/build/outputs/androidTest-results/connected/debug/. \
-            app/build/outputs/androidTest-results/instrumented/
-
-      - name: Run PixelCameraOverlayE2ETest
-        # No `continue-on-error` (issue #309): record the real outcome and defer
-        # the pass/fail verdict to the "Gate on test failures" step.
-        id: run_overlay_e2e
-        if: steps.diff_check.outputs.needs_full_build == 'true'
-        run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
-          # Wake and dismiss the swipe keyguard before starting the test suite.
-          # The instrumented tests can run for several minutes, and the screen may
-          # sleep or re-lock before this step starts. This mirrors
-          # E2EFixture.wakeAndDismissKeyguard() (issue #344 / #341).
-          # sleep 2 lets the swipe animation complete before Gradle's am start fires
-          # (same reasoning as the pre-flight step's post-swipe sleep 2).
+          MEDIA=/tmp/demo-media
+          mkdir -p "$MEDIA"
+
+          # ── Ensure we are on the home screen, unlocked ────────────────────
           "$ADB" shell input keyevent KEYCODE_WAKEUP
           "$ADB" shell input swipe 300 1000 300 300
           sleep 2
-          mkdir -p results
-          set -o pipefail
-          LOGCAT_SINCE=$("$ADB" shell "date '+%m-%d %H:%M:%S.000'" | tr -d '\r')
-          if ./gradlew connectedE2EAndroidTest \
-            -Pe2eClass=com.gb4pc.e2e.PixelCameraOverlayE2ETest \
-            | tee >(grep '^##GB4PC_TEST##' > results/e2e-overlay.ndjson); then
-            echo "outcome=success" >> "$GITHUB_OUTPUT"
+          "$ADB" shell input keyevent KEYCODE_HOME
+          sleep 1
+
+          # ── Screenshot 1: PNG (-p flag, baseline) ─────────────────────────
+          echo "==> Screenshot 1: PNG"
+          "$ADB" shell screencap -p /sdcard/screenshot-png.png
+          "$ADB" pull /sdcard/screenshot-png.png "$MEDIA/screenshot-png.png"
+
+          # ── Screenshot 2: native bitmap (no format flag) ─────────────────
+          echo "==> Screenshot 2: native bitmap"
+          "$ADB" shell screencap /sdcard/screenshot-native.raw
+          "$ADB" pull /sdcard/screenshot-native.raw "$MEDIA/screenshot-native.raw"
+
+          # ── Screenshot 3: JPG probe (vendor extension --format jpg) ──────
+          echo "==> Screenshot 3: JPG probe (skipped gracefully if unsupported)"
+          if "$ADB" shell screencap --format jpg /sdcard/screenshot-jpg.jpg 2>/dev/null; then
+            "$ADB" pull /sdcard/screenshot-jpg.jpg "$MEDIA/screenshot-jpg.jpg"
+            echo "JPG screenshot collected."
           else
-            echo "outcome=failure" >> "$GITHUB_OUTPUT"
+            echo "JPG format not supported by this screencap; skipping."
           fi
-          # Capture the filtered logcat regardless of pass/fail (issues #364/#365).
-          # The GB4PC_E2E diagnostic lines from E2EFixture.launchPixelCamera() are
-          # what make the issue #233 bounded-relaunch path observable, but they are
-          # only useful if they survive a *green* run too -- on a pass the retry
-          # either fired and recovered or never fired, and only the logcat can tell
-          # the two apart. Dumping it only in the failure branch discarded that
-          # evidence on every passing run, so always tee it to a file and upload it.
-          echo "=== LOGCAT (since test start) ==="
-          "$ADB" logcat -d -T "$LOGCAT_SINCE" | \
-            bash scripts/filter_logcat.sh | tee results/e2e-overlay-logcat.txt
 
-      - name: Upload overlay E2E markers
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
-        uses: actions/upload-artifact@v7
-        with:
-          name: testresults-e2e-overlay
-          path: |
-            results/e2e-overlay.ndjson
-            results/e2e-overlay-logcat.txt
-          retention-days: 14
+          # ── Video 1: Home Screen sequence ────────────────────────────────
+          # Start from the Home Screen (already there after KEYCODE_HOME above).
+          echo "==> Video 1: Home Screen sequence -- starting screenrecord"
+          "$ADB" shell screenrecord /sdcard/video-home.mp4 &
+          RECPID=$!
+          sleep 2
 
-      - name: Run GalleryButtonVisualE2ETest
-        # No `continue-on-error` (issue #309): record the real outcome and defer
-        # the pass/fail verdict to the "Gate on test failures" step.
-        id: run_gallery_e2e
-        if: steps.diff_check.outputs.needs_full_build == 'true'
-        run: |
-          ADB="$ANDROID_HOME/platform-tools/adb"
-          # Wake and dismiss the swipe keyguard before starting the test suite.
-          # The previous E2E suite (PixelCameraOverlayE2ETest) can run for several
-          # minutes, and the screen may sleep or re-lock before this step starts.
-          # This mirrors E2EFixture.wakeAndDismissKeyguard() (issue #344 / #341).
-          # sleep 2 lets the swipe animation complete before Gradle's am start fires
-          # (same reasoning as the pre-flight step's post-swipe sleep 2).
+          # Open app drawer (swipe up from bottom of screen)
+          echo "  open app drawer"
+          "$ADB" shell input swipe 540 1800 540 400
+          sleep 2
+          # Close app drawer (press Back)
+          echo "  close app drawer"
+          "$ADB" shell input keyevent KEYCODE_BACK
+          sleep 1
+
+          # Launch GB4PC to the settings screen
+          echo "  launch GB4PC settings"
+          "$ADB" shell am start -W -n \
+            com.gb4pc/com.gb4pc.ui.settings.MainActivity
+          sleep 3
+
+          # Enable service via the switch: tap the toggle area
+          # The MainActivity switch is near the top of the screen; tap at ~(540, 400).
+          echo "  tap service toggle to enable"
+          "$ADB" shell input tap 540 400
+          sleep 2
+
+          # Pull down notification shade and scroll to bottom
+          echo "  pull down notification shade"
+          "$ADB" shell input swipe 540 50 540 1400
+          sleep 2
+          echo "  scroll notification shade to bottom"
+          "$ADB" shell input swipe 540 1400 540 200
+          sleep 2
+          # Dismiss notification shade
+          "$ADB" shell input keyevent KEYCODE_BACK
+          sleep 1
+
+          # Launch mock Pixel Camera
+          echo "  launch mock Pixel Camera"
+          "$ADB" shell am start -W -n \
+            com.google.android.GoogleCamera/com.gb4pc.mockcamera.MockCameraActivity
+          sleep 3
+
+          # Stop screenrecord: send SIGINT to the device-side process so the MP4
+          # container is finalized before we pull the file.
+          echo "  stopping screenrecord"
+          "$ADB" shell killall -2 screenrecord 2>/dev/null || true
+          # Also reap the host-side adb shell wrapper
+          kill "$RECPID" 2>/dev/null || true
+          sleep 3
+
+          "$ADB" pull /sdcard/video-home.mp4 "$MEDIA/video-home.mp4"
+
+          # ── Video 2: Lock Screen sequence ────────────────────────────────
+          # Return to Home Screen, then put the device to sleep so the lock
+          # screen engages (PIN is set to 1234 by setup-e2e-emulator.sh).
+          echo "==> Video 2: Lock Screen sequence -- locking device"
+          "$ADB" shell input keyevent KEYCODE_HOME
+          sleep 1
+          "$ADB" shell input keyevent KEYCODE_SLEEP
+          sleep 2
+
+          echo "  starting screenrecord on locked display"
+          "$ADB" shell screenrecord /sdcard/video-lock.mp4 &
+          RECPID2=$!
+          sleep 1
+
+          # Wake the display to show the lock screen
           "$ADB" shell input keyevent KEYCODE_WAKEUP
+          sleep 2
+
+          # Dismiss lock screen: swipe up, then enter PIN 1234 and press Enter
+          echo "  swipe up to reach PIN prompt"
           "$ADB" shell input swipe 300 1000 300 300
           sleep 2
-          mkdir -p results
-          set -o pipefail
-          LOGCAT_SINCE=$("$ADB" shell "date '+%m-%d %H:%M:%S.000'" | tr -d '\r')
-          if ./gradlew connectedE2EAndroidTest \
-            -Pe2eClass=com.gb4pc.e2e.GalleryButtonVisualE2ETest \
-            | tee >(grep '^##GB4PC_TEST##' > results/e2e-gallery.ndjson); then
-            echo "outcome=success" >> "$GITHUB_OUTPUT"
-          else
-            echo "outcome=failure" >> "$GITHUB_OUTPUT"
-            echo "=== LOGCAT (since test start) ==="
-            "$ADB" logcat -d -T "$LOGCAT_SINCE" | \
-              bash scripts/filter_logcat.sh
-          fi
+          echo "  enter PIN 1234"
+          "$ADB" shell input text 1234
+          "$ADB" shell input keyevent KEYCODE_ENTER
+          sleep 2
 
-      - name: Upload gallery E2E markers
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
-        uses: actions/upload-artifact@v7
-        with:
-          name: testresults-e2e-gallery
-          path: results/e2e-gallery.ndjson
-          retention-days: 14
+          # Open app drawer and close it
+          echo "  open app drawer"
+          "$ADB" shell input swipe 540 1800 540 400
+          sleep 2
+          echo "  close app drawer"
+          "$ADB" shell input keyevent KEYCODE_BACK
+          sleep 1
 
-      - name: Copy E2E test results
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
-        continue-on-error: true
-        run: |
-          # The E2E Gradle task writes TEST-com.gb4pc.e2e.*.xml into the shared
-          # connected/debug directory (alongside the earlier instrumented results).
-          # Snapshot only the E2E XML into a dedicated directory so the summary
-          # and issue-filing pipelines see E2E results without the instrumented
-          # ones mixed in.
-          mkdir -p app/build/outputs/androidTest-results/e2e
-          cp -r app/build/outputs/androidTest-results/connected/debug/TEST-com.gb4pc.e2e.*.xml \
-            app/build/outputs/androidTest-results/e2e/
+          # Stop screenrecord
+          echo "  stopping screenrecord"
+          "$ADB" shell killall -2 screenrecord 2>/dev/null || true
+          kill "$RECPID2" 2>/dev/null || true
+          sleep 3
 
-      - name: Pull and upload E2E screenshots on failure
-        id: pull_e2e_screenshots
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true' && (steps.run_overlay_e2e.outputs.outcome == 'failure' || steps.run_gallery_e2e.outputs.outcome == 'failure')
-        run: |
-          ADB="$ANDROID_HOME/platform-tools/adb"
-          mkdir -p /tmp/e2e-screenshots
-          "$ADB" pull /sdcard/Android/data/com.gb4pc/files/screenshots/ \
-            /tmp/e2e-screenshots/ || echo "No screenshots to pull (directory may not exist)"
+          "$ADB" pull /sdcard/video-lock.mp4 "$MEDIA/video-lock.mp4"
+
+          echo "==> Demo media collected:"
+          ls -lh "$MEDIA/"
 
       - name: Kill emulator
         if: always() && steps.diff_check.outputs.needs_full_build == 'true'
@@ -477,71 +402,22 @@ jobs:
           $ANDROID_HOME/platform-tools/adb emu kill 2>/dev/null || true
           [[ -n "${EMULATOR_PID:-}" ]] && kill "$EMULATOR_PID" 2>/dev/null || true
 
-      - name: Upload instrumented test results
+      - name: Upload demo media
         if: always() && steps.diff_check.outputs.needs_full_build == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: instrumented-test-results
-          path: app/build/outputs/androidTest-results/instrumented/
+          name: demo-media
+          path: /tmp/demo-media/
           retention-days: 14
 
-      - name: Upload E2E test results
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
-        uses: actions/upload-artifact@v7
-        with:
-          name: e2e-test-results
-          path: app/build/outputs/androidTest-results/e2e/
-          retention-days: 14
-
-      - name: OCR on E2E screenshots
-        if: always() && steps.pull_e2e_screenshots.outcome == 'success'
+      # Always-failing step to prevent accidental merge.
+      # if: always() ensures this runs even when previous steps fail or are skipped.
+      - name: Block accidental merge
+        if: always()
         run: |
-          sudo apt-get install -y tesseract-ocr > /dev/null 2>&1
-          chmod +x scripts/ocr_screenshots.sh
-          scripts/ocr_screenshots.sh /tmp/e2e-screenshots
-
-      - name: Upload E2E screenshots on failure
-        if: always() && steps.pull_e2e_screenshots.outcome == 'success'
-        uses: actions/upload-artifact@v7
-        with:
-          name: e2e-screenshots
-          path: /tmp/e2e-screenshots/
-          retention-days: 14
-
-      - name: Write test-result summary
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
-        run: |
-          python3 scripts/summarize_test_results.py \
-            app/build/test-results/testDebugUnitTest \
-              --suite-label "Unit Tests" \
-            app/build/outputs/androidTest-results/instrumented \
-              --suite-label "Instrumented Tests" \
-              --outcome "${{ steps.run_instrumented.outcome }}" \
-            app/build/outputs/androidTest-results/e2e \
-              --suite-label "E2E Tests" \
-              --outcome "${{ (steps.run_overlay_e2e.outcome == 'skipped' && steps.run_gallery_e2e.outcome == 'skipped') && 'skipped' || ((steps.run_overlay_e2e.outcome == 'failure' || steps.run_gallery_e2e.outcome == 'failure') && 'failure' || 'success') }}"
-
-      # Single authority on whether the test phase passed (issue #309). Replaces
-      # the old blanket `continue-on-error` on the test steps: any failing test
-      # fails the build EXCEPT those named in .github/allowed-test-failures.txt
-      # (a temporary red-to-green allowlist). The --outcome flags carry each test
-      # step's real exit status, so a step that broke without writing a failing
-      # test result (e.g. the `date` breakage in #307) is reported as an
-      # infrastructure failure and still fails the build. This runs last so it
-      # cannot suppress artifact upload, the summary, or issue filing.
-      - name: Gate on test failures
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
-        run: |
-          python3 scripts/check_allowed_failures.py \
-            --allowlist .github/allowed-test-failures.txt \
-            app/build/test-results/testDebugUnitTest \
-              --suite-label "Unit Tests" \
-            app/build/outputs/androidTest-results/instrumented \
-              --suite-label "Instrumented Tests" \
-              --outcome "${{ steps.run_instrumented.outputs.outcome }}" \
-            app/build/outputs/androidTest-results/e2e \
-              --suite-label "E2E Tests" \
-              --outcome "${{ (steps.run_overlay_e2e.outputs.outcome == 'failure' || steps.run_gallery_e2e.outputs.outcome == 'failure') && 'failure' || 'success' }}"
+          echo "This branch is an experiment (issue #494) and must not be merged."
+          echo "Exiting 1 to keep the merge gate blocked."
+          exit 1
 
   file-issues:
     needs: [build-and-test]
