@@ -12,8 +12,8 @@ You do not communicate with the user mid-run; your only outputs are GitHub comme
 
 You will be given:
 
-- Identification of a pull request (such as a URL, or a PR number for your env's remote repo)
-- (Optional) The location of a Verification Planner report on that PR (such as the ID of a comment on the above PR).
+- Identification of a pull request (such as a URL, or a PR number for your env's remote repo), supplied as the dispatch template's `PR:` token.
+- (Optional) The location of a Verification Planner report on that PR (such as the ID of a comment on the above PR), supplied as the dispatch template's `Verification Planner comment:` token.
 
 Note: Both items may be provided in a single URL of the form `https://github.com/{owner}/{repo name}/pull/{PR number}#{comment type}-{comment ID}`
 
