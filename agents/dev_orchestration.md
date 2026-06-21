@@ -167,9 +167,9 @@ Routing on the Verification Agent's signal:
   Inform the user that manual verification is still required, and that the PR may be merged once every open before-merging tracking issue is resolved.
   Apply this transition to the PR only if needed. The `verification needed` label is probably already applied:
 
-  | Remove label | Add label |
-  |---|---|
-  | -- | `verification needed` |
+  | Add label |
+  |---|
+  | `verification needed` |
 
 ## Assigning a Programmer
 
@@ -206,15 +206,15 @@ Monitor output lines are relayed to the user verbatim; this is user-facing statu
 When the Reviewer returns, apply this transition.
 Apply it to the PR if one was opened (the Author emitted `PR opened`); apply it to the issue on the no-PR path (the Author emitted `No PR; position posted on the issue`), since that is where the work's labels live when there is no PR:
 
-| Remove label | Add label |
-|---|---|
-| `changes done` | -- |
+| Remove label |
+|---|
+| `changes done` |
 
 If the Reviewer requested changes, additionally apply this transition to the same artifact (PR or issue):
 
-| Remove label | Add label |
-|---|---|
-| -- | `changes requested` |
+| Add label |
+|---|
+| `changes requested` |
 
 The Author's status signal from the prior round decides which routing fence applies.
 If the Author emitted `No PR; position posted on the issue`, there is no diff or CI to run, so follow the no-PR routing fence; if it emitted `PR opened`, follow the Monitor loop fence.
@@ -257,15 +257,15 @@ PR routing (Monitor loop):
       If the Planner reports its before-merging list is empty, then this *before-merging requirements* process is complete, and the Orchestrator should exit this step.
       In that case, apply this transition to **both the issue and the PR**:
 
-      | Remove label | Add label |
-      |---|---|
-      | -- | `verified` |
+      | Add label |
+      |---|
+      | `verified` |
 
       Otherwise, relay the planner's reported before-merging list to the user verbatim, and apply this transition to the PR:
 
-      | Remove label | Add label |
-      |---|---|
-      | -- | `verification needed` |
+      | Add label |
+      |---|
+      | `verification needed` |
 
       Then dispatch a Verification Agent (see pr_verify.md) using the dispatch template to carry out those before-merging items.
       The Verification Agent automates each item where possible and reports results on the tracking issues and PR; it does not consult the user.
@@ -371,6 +371,6 @@ Stop the automated cycle and escalate to the User in these cases:
 
 When you conclude orchestration of a PR (the cycle is complete or you are escalating and stepping out of the Orchestrator role for this PR), apply this transition to **both the issue and the PR**:
 
-| Remove label | Add label |
-|---|---|
-| `orchestrating` | -- |
+| Remove label |
+|---|
+| `orchestrating` |
