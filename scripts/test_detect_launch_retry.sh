@@ -27,11 +27,23 @@
 #   (j) Comment body has real newlines and an intact code fence (Bug 1)
 #   (k) Logcat with quotes, backslashes, tabs -> valid, correctly escaped JSON (Bug 2)
 #   (l) No GITHUB_RUN_ID -> shorter comment body, still valid JSON
-#   (m) GITHUB_ACTIONS unset -> no curl is invoked at all
+#   (m) GITHUB_ACTIONS cleared -> no curl is invoked at all
 #
 # Always exits 0 on success, non-zero on failure.
 
 set -uo pipefail
+
+# Isolate the whole suite from the ambient environment. A real GitHub Actions
+# runner always exports GITHUB_ACTIONS=true and GITHUB_REPOSITORY (and may export
+# a GITHUB_TOKEN), and this suite runs in that very environment via the
+# `for test_script in scripts/test_*.sh` sweep in .github/workflows/build.yml.
+# Clearing these here means the detection tests (a)-(g) never reach the
+# issue-filing path, and every test asserts the script's GITHUB_ACTIONS-gated
+# behavior on its own terms rather than by accident of what CI happens to set.
+# The notification tests (h)-(l) set the variables they need explicitly in
+# run_notify, and (m) clears them again for its own invocation, so this global
+# reset does not weaken any of them.
+unset GITHUB_ACTIONS GITHUB_TOKEN GITHUB_REPOSITORY
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DETECT="$SCRIPT_DIR/detect_launch_retry.sh"
@@ -291,21 +303,29 @@ else
   fail "comment body unexpectedly mentions a run when no run id is set: $BODY"
 fi
 
-# ── (m) GITHUB_ACTIONS unset -> no curl is invoked at all ─────────────────────
+# ── (m) GITHUB_ACTIONS cleared -> no curl is invoked at all ───────────────────
 echo ""
-echo "=== (m) GITHUB_ACTIONS unset -> no curl is invoked ==="
+echo "=== (m) GITHUB_ACTIONS cleared -> no curl is invoked ==="
 : > "$CURL_LOG"
 rm -f "$POST_BODY_FILE"
-# Run with the fake curl on PATH but without GITHUB_ACTIONS: the gated block
-# must not execute, so the fake curl must never be touched.
-PATH="$FAKE_BIN:$PATH" CURL_LOG="$CURL_LOG" POST_BODY_FILE="$POST_BODY_FILE" \
+# Run with the fake curl on PATH but with the GITHUB_ACTIONS gate cleared: the
+# gated block must not execute, so the fake curl must never be touched. We use
+# `env -u` to actively remove GITHUB_ACTIONS (and the token/repo it implies) from
+# the child's environment rather than merely omitting them from a prefix
+# assignment. A prefix assignment leaves inherited variables in place, so on a
+# real GitHub Actions runner (which always exports GITHUB_ACTIONS=true and
+# GITHUB_REPOSITORY) they would otherwise leak in and the gate would fire. This
+# asserts the actual GITHUB_ACTIONS-gated behavior regardless of the ambient CI
+# environment.
+env -u GITHUB_ACTIONS -u GITHUB_TOKEN -u GITHUB_REPOSITORY \
+  PATH="$FAKE_BIN:$PATH" CURL_LOG="$CURL_LOG" POST_BODY_FILE="$POST_BODY_FILE" \
   bash "$DETECT" "$TMP/h.txt" > /dev/null 2>&1
 RC=$?
-if [[ "$RC" -eq 10 ]]; then pass "detection still exits 10 with GITHUB_ACTIONS unset"; else fail "expected exit 10, got $RC"; fi
+if [[ "$RC" -eq 10 ]]; then pass "detection still exits 10 with GITHUB_ACTIONS cleared"; else fail "expected exit 10, got $RC"; fi
 if [[ -s "$CURL_LOG" ]]; then
-  fail "curl was invoked even though GITHUB_ACTIONS was unset: $(cat "$CURL_LOG")"
+  fail "curl was invoked even though GITHUB_ACTIONS was cleared: $(cat "$CURL_LOG")"
 else
-  pass "no curl invoked when GITHUB_ACTIONS is unset"
+  pass "no curl invoked when GITHUB_ACTIONS is cleared"
 fi
 
 # ── Summary ──────────────────────────────────────────────────────────────────
