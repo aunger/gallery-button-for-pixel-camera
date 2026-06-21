@@ -107,8 +107,11 @@ Role assignment statements (copy the applicable line exactly):
 
 - Programmer: "You are a Programmer resolving the linked issue.
   You *must* start your turn by re-fetching the description and all comments on the issue and, if it exists, on the PR.
+  The PR number, when one exists, is the `PR:` token in this dispatch message.
   If no PR exists, create one before you exit, unless the issue warrants declining to open a PR (see "Declining to open a PR" in `pr_participation.md`)."
-- Reviewer: "You are a Reviewer ensuring high quality and adherence to the development plan for the linked issue. You *must* start your turn by re-fetching the description and all comments on the issue and on the PR."
+- Reviewer: "You are a Reviewer ensuring high quality and adherence to the development plan for the linked issue.
+  You *must* start your turn by re-fetching the description and all comments on the issue and on the PR.
+  The PR number is the `PR:` token in this dispatch message."
 - Verification planner: "You are a Verification Planner: scan the linked issue and PR for outstanding before-merging requirements and file a tracking issue, linked to the PR, for each one. You *must* start your turn by re-fetching the description and all comments on the issue and on the PR."
 - Verification agent: "You are a Verification Agent: carry out the before-merging steps from the Verification Planner report on the linked PR, automating them where possible, and report results. You *must* start your turn by re-fetching the Verification Planner comment on the PR and each before-merging tracking issue it lists."
 
