@@ -73,6 +73,14 @@ The Orchestrator is not a Reviewer or a Programmer.
 
 - See `inaugurate.md` for the full protocol when starting fresh work.
 
+## Starting to orchestrate a PR
+
+When you begin orchestrating a PR (the first thing you do once you have entered the Orchestrator role for a given issue and its PR), apply this transition to **both the issue and the PR**:
+
+| Remove label | Add label |
+|---|---|
+| `for ai to do` | `orchestrating` |
+
 ## Model selection
 
 For each sub-agent role, use the first rule that applies:
@@ -128,11 +136,28 @@ Verification Agent outcome vocabulary (a dispatched Verification Agent emits one
 Routing on the Verification Agent's signal:
 - `Verification passed`: every before-merging item was confirmed automatically.
   This *before-merging requirements* process is complete; the PR may be merged.
+  Apply this transition to the PR:
+
+  | Remove label | Add label |
+  |---|---|
+  | `verification needed` | `verified` |
+
 - `Verification revealed an error`: route the PR back to a new Author round (goto newAuthor).
   The Verification Agent leaves its diagnosis as a PR comment, which the Author reads from GitHub; the Orchestrator does not relay it.
+  Apply this transition to the PR:
+
+  | Remove label | Add label |
+  |---|---|
+  | `verification needed` | `changes requested` |
+
 - `Verification incomplete`: no item failed, but one or more before-merging items could not be automated and remain open for a human to verify.
   Do not treat the PR as cleared and do not start a new Author round.
   Inform the user that manual verification is still required, and that the PR may be merged once every open before-merging tracking issue is resolved.
+  Apply this transition to the PR only if needed. The `verification needed` label is probably already applied:
+
+  | Remove label | Add label |
+  |---|---|
+  | -- | `verification needed` |
 
 ## Assigning a Programmer
 
@@ -141,6 +166,12 @@ Routing on the Verification Agent's signal:
   Branch names should follow the pattern `fix/issue-N-short-description` for bug fixes or `feature/issue-N-short-description` for new features.
   Never direct two Programmers for unrelated issues to the same branch.
 - Dispatch using the dispatch template above, with the Programmer role assignment statement and the literal issue number and branch name tokens.
+
+When the Author returns, apply this transition to the PR:
+
+| Remove label | Add label |
+|---|---|
+| `changes requested` | `changes done` |
 
 ## Assigning a Reviewer
 
@@ -155,6 +186,18 @@ If the Author disagrees with a review point, they should make their case in PR c
 
 After the Reviewer exits and delivers its decision, the Orchestrator acts as follows.
 Monitor output lines are relayed to the user verbatim; this is user-facing status reporting and is not governed by the say-nothing rule (which covers sub-agent messages only).
+
+When the Reviewer returns, apply this transition to the PR:
+
+| Remove label | Add label |
+|---|---|
+| `changes done` | -- |
+
+If the Reviewer requested changes, additionally apply this transition to the PR:
+
+| Remove label | Add label |
+|---|---|
+| -- | `changes requested` |
 
 ```text
   if Reviewer requested changes → goto newAuthor
@@ -178,7 +221,19 @@ Monitor output lines are relayed to the user verbatim; this is user-facing statu
       Dispatch a Verification Planner sub-agent using the dispatch template.
       The planner assembles the before-merging list and, for each item, files a tracking issue linked to the PR (see verification_planning.md). It does not consult the user.
       If the Planner reports its before-merging list is empty, then this *before-merging requirements* process is complete, and the Orchestrator should exit this step.
-      Otherwise, relay the planner's reported before-merging list to the user verbatim, then dispatch a Verification Agent (see pr_verify.md) using the dispatch template to carry out those before-merging items.
+      In that case, apply this transition to **both the issue and the PR**:
+
+      | Remove label | Add label |
+      |---|---|
+      | -- | `verified` |
+
+      Otherwise, relay the planner's reported before-merging list to the user verbatim, and apply this transition to the PR:
+
+      | Remove label | Add label |
+      |---|---|
+      | -- | `verification needed` |
+
+      Then dispatch a Verification Agent (see pr_verify.md) using the dispatch template to carry out those before-merging items.
       The Verification Agent automates each item where possible and reports results on the tracking issues and PR; it does not consult the user.
       Route on the Verification Agent's terminal signal per "Routing on the Verification Agent's signal" above.
       → PR may be merged once every issue the planner filed for its before-merging list is resolved.
@@ -277,3 +332,11 @@ Stop the automated cycle and escalate to the User in these cases:
 
 - **After four rounds** of the Programmer / Reviewer loop not reaching consensus (unless the user gave a different threshold)
 - **If the Programmer gives up** or claims the issue cannot be solved as stated
+
+## Concluding PR orchestration
+
+When you conclude orchestration of a PR (the cycle is complete or you are escalating and stepping out of the Orchestrator role for this PR), apply this transition to **both the issue and the PR**:
+
+| Remove label | Add label |
+|---|---|
+| `orchestrating` | -- |
