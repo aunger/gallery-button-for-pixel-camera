@@ -103,10 +103,6 @@ Git branch: {branch name or "None"}
 Verification Planner comment: {numeric comment id, or "None"}
 ```
 
-Fill the `PR:` token with the PR number whenever a PR already exists for the work item; otherwise use "None".
-Fill the `Verification Planner comment:` token only when dispatching a Verification Agent and the planner's numeric comment id is known; otherwise use "None".
-Both are literal tokens supplied by the Orchestrator (the PR number, and the comment id the Verification Planner reported); the Orchestrator does not read the PR or the comment to obtain them.
-
 Role assignment statements (copy the applicable line exactly):
 
 - Programmer: "You are a Programmer resolving the linked issue.
@@ -114,7 +110,7 @@ Role assignment statements (copy the applicable line exactly):
   If no PR exists, create one before you exit, unless the issue warrants declining to open a PR (see "Declining to open a PR" in `pr_participation.md`)."
 - Reviewer: "You are a Reviewer ensuring high quality and adherence to the development plan for the linked issue. You *must* start your turn by re-fetching the description and all comments on the issue and on the PR."
 - Verification planner: "You are a Verification Planner: scan the linked issue and PR for outstanding before-merging requirements and file a tracking issue, linked to the PR, for each one. You *must* start your turn by re-fetching the description and all comments on the issue and on the PR."
-- Verification agent: "You are a Verification Agent: carry out the before-merging steps from the Verification Planner report on the linked PR, automating them where possible, and report results. You *must* start your turn by re-fetching the Verification Planner comment supplied in the `Verification Planner comment:` token (if none was supplied, locate it on the PR via its HTML marker) and each before-merging tracking issue it lists."
+- Verification agent: "You are a Verification Agent: carry out the before-merging steps from the Verification Planner report on the linked PR, automating them where possible, and report results. You *must* start your turn by re-fetching the Verification Planner comment on the PR and each before-merging tracking issue it lists."
 
 The Programmer statement names the decline path so the dispatched Programmer receives it in the copied line, not only by reading `pr_participation.md`.
 An Author that legitimately declines satisfies its exit obligation by posting the explanatory issue comment and emitting `No PR; position posted on the issue` (see the Author status vocabulary below) instead of creating a PR.
@@ -258,9 +254,8 @@ PR routing (Monitor loop):
       // Triggered after Reviewer approval AND CI clears (Monitor emits Clear).
       // Dispatch the verification planner (see verification_planning.md).
       // The Orchestrator does not scan the issue or PR itself.
-      Dispatch a Verification Planner sub-agent using the dispatch template, filling the `PR:` token with this PR's number (its `Verification Planner comment:` token is "None"; the planner posts that comment).
+      Dispatch a Verification Planner sub-agent using the dispatch template.
       The planner assembles the before-merging list and, for each item, files a tracking issue linked to the PR (see verification_planning.md). It does not consult the user.
-      Record the id of the verification-plan comment the planner reports, for the Verification Agent dispatch below.
       If the Planner reports its before-merging list is empty, then this *before-merging requirements* process is complete, and the Orchestrator should exit this step.
       In that case, apply this transition to **both the issue and the PR**:
 
@@ -274,7 +269,7 @@ PR routing (Monitor loop):
       |---|
       | `verification needed` |
 
-      Then dispatch a Verification Agent (see pr_verify.md) using the dispatch template to carry out those before-merging items, filling the `PR:` token with this PR's number and the `Verification Planner comment:` token with the planner's reported comment id (so the agent goes straight to the right PR and plan without a discovery search).
+      Then dispatch a Verification Agent (see pr_verify.md) using the dispatch template to carry out those before-merging items.
       The Verification Agent automates each item where possible and reports results on the tracking issues and PR; it does not consult the user.
       Route on the Verification Agent's terminal signal per "Routing on the Verification Agent's signal" above.
       → PR may be merged once every issue the planner filed for its before-merging list is resolved.

@@ -96,8 +96,9 @@ Only the before-merging list controls the merge gate.
    To replace it, use the GitHub REST API to edit the existing comment body:
    `curl -sX PATCH -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/{owner}/{repo}/issues/comments/{comment_id} -d '{"body": "..."}'`,
    where `{comment_id}` is the id of the existing verification-plan comment, and `{body}` is the markdown that will completely replace the existing body.
-7. Report both lists to the Orchestrator and exit.
-   When the *before merging* list is non-empty, also report the numeric id of the verification-plan comment you posted (or replaced) in step 6 (the bare numeric id used as `{comment_id}` in step 6, not a URL or `#issuecomment-` fragment), so the Orchestrator can hand it to the Verification Agent as a literal token rather than making the agent rediscover it.
+7. Report the following to the Orchestrator and exit:
+    a. the comment ID of the comment you just posted or updated
+    b. both lists
    The PR may be merged once every item on the *before merging* list is resolved.
    Follow-on issues do not gate the merge.
 

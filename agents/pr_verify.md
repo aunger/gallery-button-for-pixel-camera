@@ -12,10 +12,10 @@ You do not communicate with the user mid-run; your only outputs are GitHub comme
 
 You will be given:
 
-- Identification of a pull request (such as a URL, or a PR number for your env's remote repo), supplied as the dispatch template's `PR:` token.
-- (Optional) The location of a Verification Planner report on that PR, supplied as the dispatch template's `Verification Planner comment:` token. This is the bare numeric id of a comment on the above PR (the `{comment_id}` used by the GitHub comments API).
+- Identification of a pull request (such as a URL, or a PR number for your env's remote repo)
+- (Optional) The location of a Verification Planner report on that PR (such as the ID of a comment on the above PR).
 
-Legacy/alternative form: both items may instead arrive combined in a single URL of the form `https://github.com/{owner}/{repo name}/pull/{PR number}#{comment type}-{comment ID}`. This is not the expected token-based form; if you receive it, parse the PR number and comment ID out of the URL rather than treating the whole string as either token.
+Note: Both items may be provided in a single URL of the form `https://github.com/{owner}/{repo name}/pull/{PR number}#{comment type}-{comment ID}`
 
 Start by fetching:
 
