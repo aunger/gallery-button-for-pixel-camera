@@ -98,7 +98,9 @@ Fill only the tokens in braces; do not add any other words.
 **{Role assignment statement}**
 GitHub repository: {owner-slash-repo or URL}
 Issue: {#xxx or "None"}
+PR: {#xxx or "None"}
 Git branch: {branch name or "None"}
+Verification Planner comment: {numeric comment id, or "None"}
 ```
 
 Role assignment statements (copy the applicable line exactly):
