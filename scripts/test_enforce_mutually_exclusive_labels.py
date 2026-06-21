@@ -105,6 +105,92 @@ class TestFindConflictingSet(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# find_conflicting_prefix tests
+# ---------------------------------------------------------------------------
+
+
+class TestFindConflictingPrefix(unittest.TestCase):
+    def test_c_a_label_returns_prefix(self):
+        self.assertEqual(emxl.find_conflicting_prefix("c-a-sonnet"), "c-a-")
+
+    def test_c_a_opus_returns_prefix(self):
+        self.assertEqual(emxl.find_conflicting_prefix("c-a-opus"), "c-a-")
+
+    def test_c_r_label_returns_prefix(self):
+        self.assertEqual(emxl.find_conflicting_prefix("c-r-haiku"), "c-r-")
+
+    def test_c_r_opus_returns_prefix(self):
+        self.assertEqual(emxl.find_conflicting_prefix("c-r-opus"), "c-r-")
+
+    def test_case_insensitive_c_a(self):
+        self.assertEqual(emxl.find_conflicting_prefix("C-A-Opus"), "c-a-")
+
+    def test_case_insensitive_c_r(self):
+        self.assertEqual(emxl.find_conflicting_prefix("C-R-Haiku"), "c-r-")
+
+    def test_unrelated_label_returns_none(self):
+        self.assertIsNone(emxl.find_conflicting_prefix("ci"))
+        self.assertIsNone(emxl.find_conflicting_prefix("p1"))
+        self.assertIsNone(emxl.find_conflicting_prefix("bug"))
+
+    def test_empty_string_returns_none(self):
+        self.assertIsNone(emxl.find_conflicting_prefix(""))
+
+    def test_partial_prefix_not_matched(self):
+        # "c-a" without trailing dash should not match "c-a-"
+        self.assertIsNone(emxl.find_conflicting_prefix("c-a"))
+        self.assertIsNone(emxl.find_conflicting_prefix("c-r"))
+
+
+# ---------------------------------------------------------------------------
+# labels_to_remove_by_prefix tests
+# ---------------------------------------------------------------------------
+
+
+class TestLabelsByPrefix(unittest.TestCase):
+    def test_removes_conflicting_c_a_label(self):
+        result = emxl.labels_to_remove_by_prefix("c-a-opus", ["c-a-sonnet", "ci"], "c-a-")
+        self.assertEqual(result, ["c-a-sonnet"])
+
+    def test_does_not_remove_added_label_itself(self):
+        result = emxl.labels_to_remove_by_prefix("c-a-opus", ["c-a-opus", "c-a-sonnet"], "c-a-")
+        self.assertNotIn("c-a-opus", result)
+        self.assertIn("c-a-sonnet", result)
+
+    def test_removes_conflicting_c_r_label(self):
+        result = emxl.labels_to_remove_by_prefix("c-r-haiku", ["c-r-opus", "bug"], "c-r-")
+        self.assertEqual(result, ["c-r-opus"])
+
+    def test_returns_empty_when_no_prefix_conflicts(self):
+        result = emxl.labels_to_remove_by_prefix("c-a-sonnet", ["ci", "p1", "c-r-haiku"], "c-a-")
+        self.assertEqual(result, [])
+
+    def test_returns_empty_when_current_labels_empty(self):
+        result = emxl.labels_to_remove_by_prefix("c-a-sonnet", [], "c-a-")
+        self.assertEqual(result, [])
+
+    def test_case_insensitive_added_label(self):
+        """C-A-Opus should be treated as c-a-opus and not remove itself."""
+        result = emxl.labels_to_remove_by_prefix("C-A-Opus", ["c-a-opus", "c-a-sonnet"], "c-a-")
+        self.assertNotIn("c-a-opus", result)
+        self.assertIn("c-a-sonnet", result)
+
+    def test_case_insensitive_current_label(self):
+        """Current label C-A-Sonnet should be matched and returned."""
+        result = emxl.labels_to_remove_by_prefix("c-a-opus", ["C-A-Sonnet", "ci"], "c-a-")
+        self.assertEqual(result, ["C-A-Sonnet"])
+
+    def test_does_not_remove_labels_from_other_prefix(self):
+        """c-r-* labels must not be removed when enforcing c-a-*."""
+        result = emxl.labels_to_remove_by_prefix(
+            "c-a-sonnet", ["c-a-haiku", "c-r-opus", "ci"], "c-a-"
+        )
+        self.assertIn("c-a-haiku", result)
+        self.assertNotIn("c-r-opus", result)
+        self.assertNotIn("ci", result)
+
+
+# ---------------------------------------------------------------------------
 # labels_to_remove tests
 # ---------------------------------------------------------------------------
 
@@ -378,6 +464,108 @@ class TestMain(unittest.TestCase):
         self.assertEqual(result, 0)
         # Only the GET was attempted; no DELETE follows a bad response.
         self.assertEqual(mock_api.call_count, 1)
+
+    # ------------------------------------------------------------------
+    # Prefix group tests
+    # ------------------------------------------------------------------
+
+    def test_c_a_opus_removes_c_a_sonnet(self):
+        """Adding c-a-opus when c-a-sonnet is present removes c-a-sonnet."""
+        with patch.dict(os.environ, {"ADDED_LABEL": "c-a-opus"}):
+            with patch.object(
+                emxl,
+                "gh_api",
+                side_effect=[
+                    self._make_issue_response(["c-a-sonnet", "ci"]),
+                    None,  # DELETE c-a-sonnet
+                ],
+            ) as mock_api:
+                result = emxl.main()
+
+        self.assertEqual(result, 0)
+        delete_call = mock_api.call_args_list[1]
+        self.assertIn("c-a-sonnet", delete_call[0][0])
+        self.assertEqual(delete_call[1]["method"], "DELETE")
+
+    def test_c_r_haiku_removes_c_r_opus(self):
+        """Adding c-r-haiku when c-r-opus is present removes c-r-opus."""
+        with patch.dict(os.environ, {"ADDED_LABEL": "c-r-haiku"}):
+            with patch.object(
+                emxl,
+                "gh_api",
+                side_effect=[
+                    self._make_issue_response(["c-r-opus", "bug"]),
+                    None,  # DELETE c-r-opus
+                ],
+            ) as mock_api:
+                result = emxl.main()
+
+        self.assertEqual(result, 0)
+        delete_call = mock_api.call_args_list[1]
+        self.assertIn("c-r-opus", delete_call[0][0])
+        self.assertEqual(delete_call[1]["method"], "DELETE")
+
+    def test_c_a_sonnet_no_conflict_does_nothing(self):
+        """Adding c-a-sonnet when no other c-a-* label is present does nothing."""
+        with patch.dict(os.environ, {"ADDED_LABEL": "c-a-sonnet"}):
+            with patch.object(
+                emxl,
+                "gh_api",
+                side_effect=[self._make_issue_response(["ci", "c-r-haiku"])],
+            ) as mock_api:
+                result = emxl.main()
+
+        self.assertEqual(result, 0)
+        # Only the GET should have been called.
+        self.assertEqual(mock_api.call_count, 1)
+
+    def test_unrelated_label_unaffected_by_prefix_groups(self):
+        """Adding 'ci' should not trigger any prefix-group enforcement."""
+        with patch.dict(os.environ, {"ADDED_LABEL": "ci"}):
+            with patch.object(emxl, "gh_api") as mock_api:
+                result = emxl.main()
+
+        self.assertEqual(result, 0)
+        mock_api.assert_not_called()
+
+    def test_c_a_prefix_case_insensitive(self):
+        """C-A-Opus is treated as c-a-opus and removes c-a-sonnet."""
+        with patch.dict(os.environ, {"ADDED_LABEL": "C-A-Opus"}):
+            with patch.object(
+                emxl,
+                "gh_api",
+                side_effect=[
+                    self._make_issue_response(["c-a-sonnet", "ci"]),
+                    None,  # DELETE c-a-sonnet
+                ],
+            ) as mock_api:
+                result = emxl.main()
+
+        self.assertEqual(result, 0)
+        delete_call = mock_api.call_args_list[1]
+        self.assertIn("c-a-sonnet", delete_call[0][0])
+
+    def test_c_r_prefix_does_not_remove_c_a_labels(self):
+        """Enforcing c-r-* must not touch c-a-* labels."""
+        with patch.dict(os.environ, {"ADDED_LABEL": "c-r-sonnet"}):
+            with patch.object(
+                emxl,
+                "gh_api",
+                side_effect=[
+                    self._make_issue_response(["c-r-haiku", "c-a-opus", "ci"]),
+                    None,  # DELETE c-r-haiku only
+                ],
+            ) as mock_api:
+                result = emxl.main()
+
+        self.assertEqual(result, 0)
+        # Exactly two calls: one GET, one DELETE (for c-r-haiku only)
+        self.assertEqual(mock_api.call_count, 2)
+        delete_call = mock_api.call_args_list[1]
+        self.assertIn("c-r-haiku", delete_call[0][0])
+        # c-a-opus must not appear in any DELETE call
+        delete_paths = [c[0][0] for c in mock_api.call_args_list[1:]]
+        self.assertFalse(any("c-a-opus" in p for p in delete_paths))
 
 
 if __name__ == "__main__":

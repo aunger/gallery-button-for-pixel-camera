@@ -32,8 +32,9 @@ Only the before-merging list controls the merge gate.
    Assemble two lists:
    - the *before merging* list, labeling each item as either an unautomated verification step or a change outside the repo, and noting for each item the URL of the specific PR comment that called for it; and
    - the *follow-on* list, noting for each item the URL of the source comment or description and a brief reason it is not a merge blocker (e.g., "explicitly deferred in PR comment," "out of scope for this PR").
-2. If the *before merging* list is empty, apply the `verified` label to both the PR and the issue it resolves, report this success to the Orchestrator (no unautomated steps or outside-the-repo requirements were identified; the PR may be merged) and exit.
-   A non-empty follow-on list does not prevent you from applying the `verified` label; apply it anyway and also report the follow-on list.
+2. If the *before merging* list is empty, report this success to the Orchestrator (no unautomated steps or outside-the-repo requirements were identified; the PR may be merged) and exit.
+   The Orchestrator owns all label moves, so do not apply any label yourself; it applies `verified` to the PR and the issue on your empty-list report.
+   A non-empty follow-on list does not change this report; report the follow-on list as well.
 3. **Before filing any issues**, check whether the PR already has a verification-plan comment from a prior run.
    Search the PR's comments for one that contains the exact HTML marker `<!-- gb4pc-verification-plan -->`.
    If such a comment exists, parse it to extract the list of already-filed issues (each line with a `- [ ]` or `- [x]` checkbox carries an issue number of the form `#{issue number}`).
