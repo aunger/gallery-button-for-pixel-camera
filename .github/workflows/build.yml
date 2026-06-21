@@ -423,56 +423,17 @@ jobs:
           exit 1
 
   file-issues:
+    # EXPERIMENT BRANCH (issue #494): no test results are produced by
+    # build-and-test, so the artifact downloads and issue-filing script
+    # are replaced with a no-op to avoid bogus "artifact not found" warnings.
     needs: [build-and-test]
     runs-on: ubuntu-latest
     if: always() && needs.build-and-test.result != 'cancelled'
     permissions:
       issues: write
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v6
-
-      - name: Download unit test results
-        uses: actions/download-artifact@v7
-        with:
-          name: unit-test-results
-          path: downloaded-artifacts/unit-test-results
-        continue-on-error: true
-
-      - name: Download E2E test results
-        uses: actions/download-artifact@v7
-        with:
-          name: e2e-test-results
-          path: downloaded-artifacts/e2e-test-results
-        continue-on-error: true
-
-      - name: Download instrumented test results
-        uses: actions/download-artifact@v7
-        with:
-          name: instrumented-test-results
-          path: downloaded-artifacts/instrumented-test-results
-        continue-on-error: true
-
-      - name: Install Python script dependencies
-        run: pip install -r scripts/requirements.txt
-
-      - name: File issues for failed tests
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_SERVER_URL: ${{ github.server_url }}
-          GITHUB_RUN_ID: ${{ github.run_id }}
-          WORKFLOW_RUN_SHA: ${{ github.sha }}
-          WORKFLOW_RUN_BRANCH: ${{ github.head_ref || github.ref_name }}
-          WORKFLOW_RUN_PR_URL: ${{ github.event.pull_request.html_url }}
-        run: |
-          python3 scripts/file_test_failure_issues.py \
-            downloaded-artifacts/unit-test-results \
-              --suite-label "Unit Tests" \
-            downloaded-artifacts/instrumented-test-results \
-              --suite-label "Instrumented Tests" \
-            downloaded-artifacts/e2e-test-results \
-              --suite-label "E2E Tests"
+      - name: No test results to file (experiment branch)
+        run: echo "Experiment branch -- no test-result artifacts to download or file."
 
   # Surface the build-and-test job's pass/fail summary directly on the PR
   # (issue #331): post or update a sticky comment linking to the job's
