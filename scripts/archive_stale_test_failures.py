@@ -35,6 +35,14 @@ import urllib.error
 
 
 # ---------------------------------------------------------------------------
+# Label name constants
+# ---------------------------------------------------------------------------
+
+LABEL_TEST_FAILURE: str = "test-failure"
+LABEL_TEST_FAILURE_ARCHIVE: str = "test-failure-archive"
+
+
+# ---------------------------------------------------------------------------
 # GitHub API helper
 # ---------------------------------------------------------------------------
 
@@ -74,7 +82,7 @@ def fetch_stale_issues(repo: str, token: str, cutoff: datetime.datetime) -> list
     page = 1
     while True:
         batch = gh_api(
-            f"repos/{repo}/issues?labels=test-failure&per_page=100&page={page}",
+            f"repos/{repo}/issues?labels={LABEL_TEST_FAILURE}&per_page=100&page={page}",
             token=token,
         )
         if not batch:
@@ -93,8 +101,10 @@ def fetch_stale_issues(repo: str, token: str, cutoff: datetime.datetime) -> list
 def archive_issue(issue: dict, repo: str, token: str) -> None:
     """Swap labels on *issue*: remove test-failure, add test-failure-archive."""
     n = issue["number"]
-    current_labels = [label["name"] for label in issue["labels"] if label["name"] != "test-failure"]
-    current_labels.append("test-failure-archive")
+    current_labels = [
+        label["name"] for label in issue["labels"] if label["name"] != LABEL_TEST_FAILURE
+    ]
+    current_labels.append(LABEL_TEST_FAILURE_ARCHIVE)
     gh_api(
         f"repos/{repo}/issues/{n}",
         token=token,

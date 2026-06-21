@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  issues: read
 
 jobs:
   # Gate for PRs and merges: compiles, runs unit tests, then E2E tests on an emulator.
@@ -117,6 +118,9 @@ jobs:
 
       - name: Run Python script unit tests
         if: steps.diff_check.outputs.needs_full_build == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: python3 -m unittest discover -s scripts -p "test_*.py" -v
 
       - name: Run shell script unit tests
