@@ -257,8 +257,8 @@ jobs:
             "</map>" \
             > /tmp/gb4pc_prefs.xml
           "$ADB" push /tmp/gb4pc_prefs.xml /sdcard/gb4pc_prefs.xml
-          "$ADB" shell run-as com.gb4pc sh -c \
-            'mkdir -p shared_prefs && cp /sdcard/gb4pc_prefs.xml shared_prefs/gb4pc_prefs.xml'
+          "$ADB" shell run-as com.gb4pc mkdir -p shared_prefs
+          "$ADB" shell run-as com.gb4pc cp /sdcard/gb4pc_prefs.xml shared_prefs/gb4pc_prefs.xml
           "$ADB" shell rm /sdcard/gb4pc_prefs.xml
 
       - name: Capture screenshot and screen-recording demos
