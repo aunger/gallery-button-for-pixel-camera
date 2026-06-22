@@ -20,12 +20,8 @@
 # issue #309 removed it.  Each already has a tracking issue and must be
 # removed from this list as it is fixed.
 
-# test5a is an intentional red-light test for the secure-camera overlay
-# regression tracked by issue #156 (a separate, larger fix than #231/#232).
-# Its doc comment in GalleryButtonVisualE2ETest.kt explicitly requires it to
-# "remain a visible red" until #156 lands in its own PR. PR #400 fixed the
-# captureOnePhoto()/clearCameraRoll() preconditions that #232 actually
-# reported, so the test now reaches its real, documented-as-failing GREEN
-# coverage assertion instead of timing out earlier. Remove this entry only
-# when #156 is fixed.
-com.gb4pc.e2e.GalleryButtonVisualE2ETest#test5a_secureCameraLockedPopulatedGalleryShowsGreen    # issue #156
+# (No entries: test5a was rewritten under issue #486 — Option A to exercise
+# real locked-path product behaviour, capturing the GREEN photo inside the
+# secure session so the locked tap's SecureViewer can display it, rather than
+# asserting the impossible "mock gallery green" the old capture-then-lock
+# version expected. It is now a green-light test and no longer allowlisted.)

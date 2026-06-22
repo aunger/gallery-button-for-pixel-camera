@@ -350,42 +350,60 @@ class GalleryButtonVisualE2ETest {
         }
     }
 
-    // ── test5a — Secure camera + populated gallery: EXPECTED TO FAIL ─────────
+    // ── test5a — Secure camera + populated session: SecureViewer shows GREEN ─
 
     /**
-     * RED-LIGHT TEST — intentional failure at baseline.
+     * Verifies the real locked-path product behaviour: tapping the overlay in secure-camera
+     * mode (screen locked) when the in-progress secure session contains a GREEN photo opens
+     * the app's own [com.gb4pc.viewer.SecureViewerActivity] and displays that photo
+     * (full-screen GREEN coverage > 40%).
      *
-     * Verifies that tapping the overlay in secure-camera mode (screen locked) when the camera
-     * roll contains a GREEN photo opens the gallery and displays the photo (coverage > 40%).
+     * **Why the capture happens after the session starts (issue #486 — Option A).**
      *
-     * This test is a regression marker for the known secure-camera overlay issue: the overlay
-     * is currently not rendered (or not tappable) in secure-camera mode, so the tap is a no-op
-     * and the screen stays on the camera feed, failing the GREEN coverage assertion.
+     * A locked tap does NOT launch the configured gallery package; production
+     * [com.gb4pc.overlay.TapActionResolver] resolves the locked case to
+     * `TapAction.LaunchSecureViewer`, so the screen that opens is `SecureViewerActivity`, not
+     * the mock gallery. `SecureViewerActivity` renders only the current secure session's media
+     * ([com.gb4pc.viewer.SessionTracker.getSessionMedia]); it does not query MediaStore directly.
      *
-     * Tracking issue: #156 — Do NOT skip, ignore, or quarantine this test. It must remain
-     * a visible red until the secure-camera overlay path is restored in a separate PR.
+     * The secure session is (re)started when the overlay activates while locked
+     * ([com.gb4pc.service.OverlayServiceLogic.showOverlay] → `SessionTracker.startSession()`),
+     * and `startSession()` clears any prior media. The session is then populated only by the
+     * OverlayService `ContentObserver`, which adds MediaStore rows whose `DATE_ADDED` is at or
+     * after session start. A photo captured *before* locking is therefore structurally excluded
+     * from the session — which is why the earlier version of this test (capture-then-lock) could
+     * never make the assertion pass and was filed as a red-light test against the mis-cited
+     * issue #156 (a plan-tracking checklist, not a bug report).
+     *
+     * This version mirrors the genuine secure-camera use case: lock, launch the secure camera so
+     * the overlay activates and the session begins, then capture the GREEN photo *inside* that
+     * session. The ContentObserver adds it to the session, so the locked tap's `SecureViewer`
+     * has a green item to show and the coverage assertion is satisfiable by real product code.
      */
     @Test
     fun test5a_secureCameraLockedPopulatedGalleryShowsGreen() {
         fixture.seedGalleryPrefs(MOCK_GALLERY_PACKAGE)
         fixture.clearCameraRoll()
-        // Capture the photo while the camera activity is running — MockCameraActivity's
-        // BroadcastReceiver is only registered in onResume(), so launching the camera first
-        // is required. After capture, return to home and stop the camera before locking.
-        fixture.launchPixelCamera()
-        fixture.waitForOverlayActive()
-        fixture.captureOnePhoto() // GREEN JPEG now in MediaStore
-        fixture.goHome()
-        fixture.stopPixelCamera()
         fixture.lockScreen()
+        // Launch the secure camera so the overlay activates while locked. showOverlay() starts
+        // the secure session and registers the MediaStore ContentObserver, so the capture below
+        // lands inside the session. waitForOverlayActive() confirms the session has begun before
+        // capturing — MockCameraActivity also only registers its shutter receiver in onResume(),
+        // so it must be foregrounded first.
         fixture.launchSecureCamera()
-        fixture.pause(1000)
+        fixture.waitForOverlayActive()
+        fixture.captureOnePhoto() // GREEN JPEG captured during the secure session
 
         val s1 = Screenshot.captureScreen()
         Screenshot.saveForArtifact(s1, "5a-s1.png")
 
-        fixture.tapOverlay() // taps overlay position; no-op at baseline (overlay blocked)
-        fixture.pause(1000)
+        fixture.tapOverlay() // locked tap → SecureViewer renders the session's GREEN photo
+
+        // Poll up to 15 s for SecureViewer's photo to render — like test3a, a fixed pause races
+        // the activity's cold start (process spawn + image decode). waitForGreenCoverage's return
+        // value is discarded; the assertion below re-measures full-screen coverage on a fresh
+        // screenshot against the 40% threshold.
+        fixture.waitForGreenCoverage(minCoverage = 0.40f, timeoutMs = 15_000L)
 
         val s2 = Screenshot.captureScreen()
         Screenshot.saveForArtifact(s2, "5a-s2.png")
@@ -398,9 +416,10 @@ class GalleryButtonVisualE2ETest {
             fail(
                 "test5a_secureCameraLockedPopulatedGalleryShowsGreen: GREEN coverage after tap " +
                     "is ${coverage * 100f}% — expected > 40%. " +
-                    "This is the expected baseline failure for the secure-camera overlay regression " +
-                    "(issue #156). The overlay is not rendered or not tappable while the keyguard " +
-                    "is active, so the gallery did not open.",
+                    "The locked tap should open SecureViewerActivity showing the GREEN photo " +
+                    "captured during the secure session, but the screen is not green. Check the " +
+                    "5a-s1/5a-s2 artifacts and the GB4PC_Overlay / Logic: logcat: the session may " +
+                    "be empty (capture did not land in-session) or the overlay was not tappable.",
             )
         }
     }
