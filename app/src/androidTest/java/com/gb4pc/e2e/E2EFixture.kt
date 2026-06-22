@@ -469,20 +469,35 @@ class E2EFixture(
     }
 
     /**
-     * Launches the mock camera via the secure-camera action and asserts the keyguard is locked.
+     * Launches the mock camera via the secure-camera action, waits for the overlay to activate
+     * over the keyguard, and asserts the keyguard is still locked.
      *
-     * Sends `am start -a android.media.action.STILL_IMAGE_CAMERA_SECURE` then immediately
-     * checks [KeyguardManager.isKeyguardLocked]. If the keyguard is not locked the fixture
-     * fails before any screenshot is taken — a silent keyguard dismissal would make Tests
-     * 4a/5a pass for the wrong reason.
+     * Targets the mock-camera package explicitly with `-p $pcPackage`. Without `-p`, an
+     * `am start -a android.media.action.STILL_IMAGE_CAMERA_SECURE` lands on the system intent
+     * resolver / disambiguation chooser instead of launching [com.gb4pc.mockcamera.MockCameraActivity]
+     * directly (the CI logcat shows a `ResolverListAdapter` entry and *no* `CameraDevice.onOpened`),
+     * so the activity never reaches onResume(), the camera never opens,
+     * `CameraManager.AvailabilityCallback.onCameraUnavailable` never fires, and the overlay never
+     * activates — `waitForOverlayActive()` then times out. Pinning the package launches the mock
+     * camera the same way [launchPixelCamera] does for the non-secure action.
      *
-     * Call [lockScreen] before this method to guarantee the device is locked first.
+     * Uses the same bounded relaunch-until-overlay-active path as [launchPixelCamera] (issue #233):
+     * the first secure launch can also be torn down before onResume(), and a re-issued `am start`
+     * recovers it. The retry's `onBeforeRetry` is a no-op here so the keyguard this secure flow
+     * relies on is left in place (unlike the non-secure launch, which re-dismisses the swipe
+     * keyguard between attempts).
+     *
+     * After the launch, [KeyguardManager.isKeyguardLocked] must still be true: a silent keyguard
+     * dismissal would make Tests 4a/5a pass for the wrong reason. Call [lockScreen] before this
+     * method to guarantee the device is locked first.
      */
     fun launchSecureCamera() {
-        uiAutomation
-            .executeShellCommand(
-                "am start -a android.media.action.STILL_IMAGE_CAMERA_SECURE",
-            ).close()
+        launchAndAwaitOverlay(
+            label = "launchSecureCamera",
+            amCommand = "am start -a android.media.action.STILL_IMAGE_CAMERA_SECURE -p $pcPackage",
+            // Do NOT dismiss the keyguard between attempts: this secure flow requires it locked.
+            onBeforeRetry = {},
+        )
 
         val keyguard = context.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
         if (!keyguard.isKeyguardLocked) {

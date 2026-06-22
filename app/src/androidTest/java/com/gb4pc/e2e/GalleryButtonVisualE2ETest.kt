@@ -423,11 +423,12 @@ class GalleryButtonVisualE2ETest {
         fixture.seedGalleryPrefs(MOCK_GALLERY_PACKAGE)
         fixture.clearCameraRoll()
         fixture.lockScreen()
-        // Launch the secure camera so the overlay activates while locked. showOverlay() starts
-        // the secure session and registers the MediaStore ContentObserver, so the capture below
-        // lands inside the session. waitForOverlayActive() confirms the session has begun before
-        // capturing — MockCameraActivity also only registers its shutter receiver in onResume(),
-        // so it must be foregrounded first.
+        // Launch the secure camera so the overlay activates while locked. launchSecureCamera()
+        // pins the mock-camera package and waits for the overlay to activate; showOverlay() then
+        // starts the secure session and registers the MediaStore ContentObserver, so the capture
+        // below lands inside the session. The explicit waitForOverlayActive() re-confirms the
+        // session has begun before capturing — MockCameraActivity also only registers its shutter
+        // receiver in onResume(), so it must be foregrounded first.
         fixture.launchSecureCamera()
         fixture.waitForOverlayActive()
         fixture.captureOnePhoto() // GREEN JPEG captured during the secure session
