@@ -246,20 +246,21 @@ jobs:
           # valid SharedPreferences document with the two boolean keys GB4PC reads
           # at startup (PREF_SETUP_COMPLETED and PREF_SERVICE_ENABLED).
           echo "==> Pre-seeding GB4PC SharedPreferences (setup_completed=true)..."
-          # Write the prefs XML to a local temp file, push it to /sdcard, then
-          # copy it into the app's private data directory via run-as.
-          # printf is used instead of a heredoc to avoid the YAML << merge-key ambiguity.
+          # Pipe the XML directly into the app's private data directory via
+          # run-as + tee.  This avoids /sdcard/ entirely: on API-35 the app
+          # user (via run-as) cannot read files pushed by adb to /sdcard/ root
+          # due to scoped-storage enforcement.
+          # printf is used instead of a heredoc to avoid the YAML << merge-key
+          # ambiguity.  The mkdir and tee are separate run-as invocations to
+          # avoid compound-command quoting issues across the adb transport.
+          "$ADB" shell run-as com.gb4pc mkdir -p shared_prefs
           printf '%s\n' \
             "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>" \
             "<map>" \
             "    <boolean name=\"setup_completed\" value=\"true\" />" \
             "    <boolean name=\"service_enabled\" value=\"false\" />" \
             "</map>" \
-            > /tmp/gb4pc_prefs.xml
-          "$ADB" push /tmp/gb4pc_prefs.xml /sdcard/gb4pc_prefs.xml
-          "$ADB" shell run-as com.gb4pc mkdir -p shared_prefs
-          "$ADB" shell run-as com.gb4pc cp /sdcard/gb4pc_prefs.xml shared_prefs/gb4pc_prefs.xml
-          "$ADB" shell rm /sdcard/gb4pc_prefs.xml
+            | "$ADB" shell "run-as com.gb4pc tee shared_prefs/gb4pc_prefs.xml" > /dev/null
 
       - name: Capture screenshot and screen-recording demos
         if: steps.diff_check.outputs.needs_full_build == 'true'
