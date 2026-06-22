@@ -119,4 +119,4 @@ The Author should not flip-flop merely to appease the Reviewer: change position 
 
 - Reviewer and Author **both** must push back against scope-creep as a shared responsibility.
 - Either agent (Author or Reviewer) may add a section to their PR comment regarding follow-up suggestions.
-  These will be automatically filed as issues for future consideration after this PR.
+  These will be filed as issues for future consideration after this PR.
