@@ -569,6 +569,40 @@ class E2EFixture(
         return lastCoverage
     }
 
+    /**
+     * Polls screenshots until the GREEN (#00C853) region forms a band whose bounding box spans
+     * at least [minWidthFraction] of the screen width, or [timeoutMs] elapses. Returns the final
+     * measured width fraction regardless of whether the threshold was reached.
+     *
+     * Used by the secure-camera test: `SecureViewerActivity` renders the photo with a
+     * center-inside `SubsamplingScaleImageView`, so a 16:9 capture letterboxes to full screen
+     * width but only a fraction of the height. A central-region coverage poll (as in
+     * [waitForGreenCoverage]) does not predict that band, so this poll measures the band's width
+     * directly, matching the band-shaped assertion in `test5a`.
+     *
+     * @param minWidthFraction  Fraction of screen width the green bbox must span before stopping.
+     * @param timeoutMs         Maximum wait time in milliseconds.
+     * @param intervalMs        Sleep between successive capture attempts.
+     */
+    fun waitForGreenBand(
+        minWidthFraction: Float = 0.80f,
+        timeoutMs: Long = 15_000L,
+        intervalMs: Long = 500L,
+    ): Float {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        var lastWidthFraction = 0f
+        while (System.currentTimeMillis() < deadline) {
+            val screen = Screenshot.captureScreen()
+            val greenMask = ColorMatch.mask(screen, Rgb.GREEN)
+            val widthFraction =
+                if (greenMask.width > 0) greenMask.bbox.width().toFloat() / greenMask.width else 0f
+            lastWidthFraction = widthFraction
+            if (widthFraction >= minWidthFraction) return widthFraction
+            Thread.sleep(intervalMs)
+        }
+        return lastWidthFraction
+    }
+
     // ── Private helpers ───────────────────────────────────────────────────────
 
     /**

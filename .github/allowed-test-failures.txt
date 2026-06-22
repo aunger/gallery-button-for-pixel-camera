@@ -20,7 +20,7 @@
 # issue #309 removed it.  Each already has a tracking issue and must be
 # removed from this list as it is fixed.
 
-# (No entries: test5a was rewritten under issue #486 — Option A to exercise
+# (No entries: test5a was rewritten under issue #486, Option A, to exercise
 # real locked-path product behaviour, capturing the GREEN photo inside the
 # secure session so the locked tap's SecureViewer can display it, rather than
 # asserting the impossible "mock gallery green" the old capture-then-lock

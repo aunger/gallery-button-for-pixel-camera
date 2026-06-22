@@ -355,8 +355,7 @@ class GalleryButtonVisualE2ETest {
     /**
      * Verifies the real locked-path product behaviour: tapping the overlay in secure-camera
      * mode (screen locked) when the in-progress secure session contains a GREEN photo opens
-     * the app's own [com.gb4pc.viewer.SecureViewerActivity] and displays that photo
-     * (full-screen GREEN coverage > 40%).
+     * the app's own [com.gb4pc.viewer.SecureViewerActivity] and displays that photo.
      *
      * **Why the capture happens after the session starts (issue #486 — Option A).**
      *
@@ -378,7 +377,28 @@ class GalleryButtonVisualE2ETest {
      * This version mirrors the genuine secure-camera use case: lock, launch the secure camera so
      * the overlay activates and the session begins, then capture the GREEN photo *inside* that
      * session. The ContentObserver adds it to the session, so the locked tap's `SecureViewer`
-     * has a green item to show and the coverage assertion is satisfiable by real product code.
+     * has a green item to show.
+     *
+     * **Why this asserts the GREEN *band*, not full-screen 40% like test3a.**
+     *
+     * test3a opens the mock gallery, whose `LastPhotoActivity` ImageView uses `centerCrop`
+     * (`e2e-mock-gallery/.../activity_last_photo.xml`), so the green photo fills ~100% of the
+     * screen and full-screen coverage > 40% is reachable. The locked path here opens
+     * `SecureViewerActivity`, which renders with `SubsamplingScaleImageView` and never calls
+     * `setMinimumScaleType(...)`, so it uses the library default `SCALE_TYPE_CENTER_INSIDE`
+     * (letterbox-fit, not crop). The capture is 1920×1080 (16:9 landscape;
+     * `MockCameraActivity.CAPTURE_WIDTH/HEIGHT`); on the Pixel 6 CI device (1080×2400 portrait)
+     * it fits to full width with a band ≈ 1080×608 px centred against the viewer's solid-black
+     * background, i.e. only ≈ 25% of the full screen. A full-screen > 40% assertion is therefore
+     * structurally unreachable on this render path regardless of overlay/session correctness.
+     *
+     * Instead we assert two geometry-justified properties of the displayed green region, both of
+     * which a correctly displayed letterboxed photo satisfies with margin and an empty/black
+     * SecureViewer (or a no-op tap that leaves the lock screen or black secure-camera screen up)
+     * fails outright:
+     *  1. The green region spans most of the screen *width* (the letterbox fits to full width).
+     *  2. Within the green region's own bounding box, coverage is high (the photo is solid green).
+     * The empty cases produce an empty green mask, so both checks report 0 and fail.
      */
     @Test
     fun test5a_secureCameraLockedPopulatedGalleryShowsGreen() {
@@ -399,11 +419,11 @@ class GalleryButtonVisualE2ETest {
 
         fixture.tapOverlay() // locked tap → SecureViewer renders the session's GREEN photo
 
-        // Poll up to 15 s for SecureViewer's photo to render — like test3a, a fixed pause races
-        // the activity's cold start (process spawn + image decode). waitForGreenCoverage's return
-        // value is discarded; the assertion below re-measures full-screen coverage on a fresh
-        // screenshot against the 40% threshold.
-        fixture.waitForGreenCoverage(minCoverage = 0.40f, timeoutMs = 15_000L)
+        // Poll up to 15 s for a wide GREEN band to appear — SecureViewer's cold start (process
+        // spawn + SubsamplingScaleImageView decode) races a fixed pause. The poll's threshold and
+        // region match the band-shaped assertion below (it measures the same wide-band metric),
+        // unlike a central-region poll which would not predict a full-width letterboxed band.
+        fixture.waitForGreenBand(minWidthFraction = 0.80f, timeoutMs = 15_000L)
 
         val s2 = Screenshot.captureScreen()
         Screenshot.saveForArtifact(s2, "5a-s2.png")
@@ -411,15 +431,25 @@ class GalleryButtonVisualE2ETest {
         val greenMask = ColorMatch.mask(s2, Rgb.GREEN)
         Screenshot.saveForArtifact(maskToBitmap(greenMask), "5a-green-mask.png")
 
-        val coverage = ColorMatch.coverageFraction(greenMask)
-        if (coverage <= 0.40f) {
+        // The displayed photo is a solid-green 16:9 image letterboxed to full width by
+        // SecureViewer's center-inside SubsamplingScaleImageView (see kdoc above).
+        val bandWidthFraction = greenMask.bbox.width().toFloat() / greenMask.width
+        val bboxArea = greenMask.bbox.width() * greenMask.bbox.height()
+        val withinBandCoverage = if (bboxArea > 0) greenMask.pixelCount.toFloat() / bboxArea else 0f
+
+        if (bandWidthFraction <= 0.80f || withinBandCoverage <= 0.80f) {
             fail(
-                "test5a_secureCameraLockedPopulatedGalleryShowsGreen: GREEN coverage after tap " +
-                    "is ${coverage * 100f}% — expected > 40%. " +
-                    "The locked tap should open SecureViewerActivity showing the GREEN photo " +
-                    "captured during the secure session, but the screen is not green. Check the " +
-                    "5a-s1/5a-s2 artifacts and the GB4PC_Overlay / Logic: logcat: the session may " +
-                    "be empty (capture did not land in-session) or the overlay was not tappable.",
+                "test5a_secureCameraLockedPopulatedGalleryShowsGreen: the locked tap should open " +
+                    "SecureViewerActivity showing the GREEN photo captured during the secure " +
+                    "session, but the displayed green region is not a solid full-width band. " +
+                    "Measured: band spans ${bandWidthFraction * 100f}% of screen width " +
+                    "(expected > 80%), green coverage within its bounding box is " +
+                    "${withinBandCoverage * 100f}% (expected > 80%); green pixels=" +
+                    "${greenMask.pixelCount}, bbox=${greenMask.bbox}, " +
+                    "screen=${greenMask.width}x${greenMask.height}. " +
+                    "Check the 5a-s1/5a-s2 artifacts and the GB4PC_Overlay / Logic: logcat: the " +
+                    "session may be empty (capture did not land in-session) or the overlay was " +
+                    "not tappable.",
             )
         }
     }
