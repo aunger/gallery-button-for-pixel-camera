@@ -120,6 +120,10 @@ The Author should not flip-flop merely to appease the Reviewer: change position 
 
 - Do not append any Claude attribution byline, session URL, or footer to commit messages or issue or PR description text or comment text.
 
+> [!NOTE]
+> Reviewers: Do not enforce the attribution rules.
+> Claude Code's inbuilt tools make this a hassle, and it's not worth an extra PR round.
+
 ## Scope
 
 - Reviewer and Author **both** must push back against scope-creep as a shared responsibility.
