@@ -345,13 +345,22 @@ jobs:
             com.google.android.GoogleCamera/com.gb4pc.mockcamera.MockCameraActivity
           sleep 3
 
-          # Stop screenrecord: send SIGINT to the device-side process so the MP4
-          # container is finalized before we pull the file.
-          echo "  stopping screenrecord"
-          "$ADB" shell killall -2 screenrecord 2>/dev/null || true
-          # Also reap the host-side adb shell wrapper
-          kill "$RECPID" 2>/dev/null || true
-          sleep 3
+          # Stop screenrecord cleanly so AMediaMuxer_stop() writes the moov atom
+          # that finalizes the MP4.  SIGINT (-2) is the only signal screenrecord
+          # handles; SIGTERM (kill default) leaves the file unfinalized.
+          # Do NOT kill $RECPID (the host-side adb shell client): tearing down
+          # the adb transport races the muxer flush and can truncate the moov
+          # atom.  Instead, wait for the device-side process to exit on its own,
+          # then let the backgrounded adb shell return naturally and reap it with
+          # `wait`.
+          echo "  stopping screenrecord (SIGINT)"
+          "$ADB" shell pkill -INT -x screenrecord 2>/dev/null || true
+          echo "  waiting for screenrecord to finalize the MP4"
+          for i in $(seq 1 30); do
+            "$ADB" shell pidof screenrecord > /dev/null 2>&1 || break
+            sleep 1
+          done
+          wait "$RECPID" 2>/dev/null || true
 
           "$ADB" pull /sdcard/video-home.mp4 "$MEDIA/video-home.mp4"
 
@@ -392,11 +401,15 @@ jobs:
           "$ADB" shell input keyevent KEYCODE_BACK
           sleep 1
 
-          # Stop screenrecord
-          echo "  stopping screenrecord"
-          "$ADB" shell killall -2 screenrecord 2>/dev/null || true
-          kill "$RECPID2" 2>/dev/null || true
-          sleep 3
+          # Stop screenrecord cleanly (same pattern as video-home above).
+          echo "  stopping screenrecord (SIGINT)"
+          "$ADB" shell pkill -INT -x screenrecord 2>/dev/null || true
+          echo "  waiting for screenrecord to finalize the MP4"
+          for i in $(seq 1 30); do
+            "$ADB" shell pidof screenrecord > /dev/null 2>&1 || break
+            sleep 1
+          done
+          wait "$RECPID2" 2>/dev/null || true
 
           "$ADB" pull /sdcard/video-lock.mp4 "$MEDIA/video-lock.mp4"
 
