@@ -39,8 +39,7 @@
 ### CI checks during the development cycle
 
 Not all CI checks can pass while the development cycle is active, and that is expected.
-Some required checks validate the post-cycle state of a PR and fail by design whenever Orchestrator bookkeeping labels (such as `changes requested`) are present.
-An example is a "No blocking labels" check, which fails whenever any blocking label is on the PR.
+Some required checks, such as "No blocking labels", validate the post-cycle state of a PR and fail by design during agentic reviews.
 
 ### Reviewing an Author who declined to open a PR
 
