@@ -36,6 +36,11 @@
   There is no middle option.
   If you want any change made before merge, request changes so the full review cycle continues.
 
+### CI checks during the development cycle
+
+Not all CI checks can pass while the development cycle is active, and that is expected.
+Some required checks, such as "No blocking labels", validate the post-cycle state of a PR and fail by design during agentic reviews.
+
 ### Reviewing an Author who declined to open a PR
 
 Sometimes the Author opens no PR and instead posts its position as an **issue comment** (see "Declining to open a PR" in the Author section).
