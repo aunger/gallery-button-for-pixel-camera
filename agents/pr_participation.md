@@ -17,6 +17,20 @@
 - Our agents share the User's GitHub account, so you won't use GitHub's code review features, which require separate accounts. Leave your evaluation as an ordinary comment, and tell the Orchestrator your decision. The user and other agents know to expect this.
 - **If CI results are already available** when you complete your review, you may note them in your review text, but do not block on them.
   The Orchestrator runs the CI Monitor script after you exit; you do not need to poll.
+
+### CI checks during the development cycle
+
+Not all CI checks can pass while the development cycle is active, and that is expected.
+Some required checks validate the post-cycle state of a PR and fail by design whenever Orchestrator bookkeeping labels (such as `changes requested`) are present.
+A canonical example is a "No blocking labels" check, which fails whenever any blocking label is on the PR.
+Because the Orchestrator applies and removes these labels as part of normal routing, such checks will be red throughout the active review cycle.
+
+**Consequence for the Orchestrator:** a `Blocked` signal from the CI Monitor that carries no diagnostic signals (`drain poll found no new diagnostic signals`) and that corresponds to no code-or-test failure is almost certainly caused by an Orchestrator-managed label, not by a defect in the Author's work.
+In that situation, do not route to a new Author round.
+Instead, remove any blocking bookkeeping labels you applied, conclude the development cycle, and inform the user that full CI validation--including label-gating checks--is only meaningful after all bookkeeping labels have been removed.
+
+**Consequence for Authors and Reviewers:** do not treat a label-gated CI failure as evidence of a code defect.
+The Author has no way to fix it by changing code, and the Reviewer should not request changes on that basis.
 - **Do not return before posting your review.** Posting your review is the only valid exit condition. After forming your verdict, call the review-submission tool before stopping.
 
   Review pattern:
