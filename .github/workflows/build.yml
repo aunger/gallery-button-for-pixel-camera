@@ -364,14 +364,16 @@ jobs:
           "$ADB" shell input keyevent KEYCODE_SLEEP
           sleep 2
 
-          echo "  starting screenrecord on locked display"
+          # Wake the display to show the lock screen before starting screenrecord.
+          # screenrecord exits immediately with INVALID_LAYER_STACK if the display
+          # is off when it starts, producing a 0-byte file.
+          "$ADB" shell input keyevent KEYCODE_WAKEUP
+          sleep 2
+
+          echo "  starting screenrecord on lock screen"
           "$ADB" shell screenrecord /sdcard/video-lock.mp4 &
           RECPID2=$!
           sleep 1
-
-          # Wake the display to show the lock screen
-          "$ADB" shell input keyevent KEYCODE_WAKEUP
-          sleep 2
 
           # Dismiss lock screen: swipe up, then enter PIN 1234 and press Enter
           echo "  swipe up to reach PIN prompt"
