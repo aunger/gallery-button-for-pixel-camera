@@ -17,7 +17,6 @@
 - Our agents share the User's GitHub account, so you won't use GitHub's code review features, which require separate accounts. Leave your evaluation as an ordinary comment, and tell the Orchestrator your decision. The user and other agents know to expect this.
 - **If CI results are already available** when you complete your review, you may note them in your review text, but do not block on them.
   The Orchestrator runs the CI Monitor script after you exit; you do not need to poll.
-
 - **Do not return before posting your review.** Posting your review is the only valid exit condition. After forming your verdict, call the review-submission tool before stopping.
 
   Review pattern:
@@ -41,8 +40,7 @@
 
 Not all CI checks can pass while the development cycle is active, and that is expected.
 Some required checks validate the post-cycle state of a PR and fail by design whenever Orchestrator bookkeeping labels (such as `changes requested`) are present.
-A canonical example is a "No blocking labels" check, which fails whenever any blocking label is on the PR.
-Because the Orchestrator applies and removes these labels as part of normal routing, such checks will be red throughout the active review cycle.
+An example is a "No blocking labels" check, which fails whenever any blocking label is on the PR.
 
 ### Reviewing an Author who declined to open a PR
 
