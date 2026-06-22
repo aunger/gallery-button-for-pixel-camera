@@ -129,33 +129,54 @@ class E2EFixture(
         // dismissal must run on every launch, not only once in setUp().
         wakeAndDismissKeyguard()
 
-        // Issue #233: On the API-35 CI emulator the *first* STILL_IMAGE_CAMERA launch of a
-        // suite is frequently torn down inside its own OPEN window-transition before the
-        // activity reaches onResume(). WindowManager force-removes the just-created
-        // ActivityRecord ("Force removing ActivityRecord{... MockCameraActivity}" / "Attempted
-        // to add application window with unknown token ... Aborting"), so MockCameraActivity
-        // never calls openCamera(), CameraManager.AvailabilityCallback.onCameraUnavailable
-        // never fires, and the overlay never activates -- the test then times out at 30 s.
-        // A re-issued `am start` after the transition has settled reliably brings the activity
-        // up (every non-first launch in CI opens the camera within ~30 ms), so retry the launch
-        // until the overlay activates, which is the observable proof the camera reached
-        // onResume() and opened. The retry is bounded so a genuinely broken launch still fails
-        // the caller's own activation assertion rather than hanging.
-        //
-        // The activation check below treats isOverlayActive becoming true as proof that *this*
-        // launch reached onResume(). That proof is only sound from a known-inactive baseline: if
-        // a previous test's overlay is still active when launchPixelCamera() is called (setUp()'s
-        // waitForOverlayInactive() and the mid-test goHome()/stopPixelCamera() flows do not assert
-        // deactivation), waitForCondition would read the stale true on its first poll and return
-        // before this launch's `am start` had any effect. Wait for a clean inactive baseline first
-        // so each attempt observes a genuine false -> true transition. Bounded so it cannot hang.
+        // Issue #233: the first STILL_IMAGE_CAMERA launch of a suite is frequently torn down before
+        // the activity reaches onResume(), so the overlay never activates. launchAndAwaitOverlay
+        // retries the launch (bounded) until the overlay activates; see its kdoc for the rationale.
+        launchAndAwaitOverlay(
+            label = "launchPixelCamera",
+            amCommand = "am start -a android.media.action.STILL_IMAGE_CAMERA -p $pcPackage",
+            // The screen can re-sleep between attempts, so re-dismiss the swipe keyguard before
+            // re-issuing `am start` on this non-secure launch.
+            onBeforeRetry = { wakeAndDismissKeyguard() },
+        )
+    }
+
+    /**
+     * Issues [amCommand] up to [LAUNCH_ATTEMPTS] times, returning as soon as
+     * [OverlayService.isOverlayActive] becomes true (the observable proof that the mock camera
+     * reached onResume() and opened the camera, firing onCameraUnavailable).
+     *
+     * Issue #233: On the API-35 CI emulator the *first* camera launch of a suite is frequently
+     * torn down inside its own OPEN window-transition before the activity reaches onResume().
+     * WindowManager force-removes the just-created ActivityRecord ("Force removing
+     * ActivityRecord{... MockCameraActivity}"), so MockCameraActivity never calls openCamera(),
+     * CameraManager.AvailabilityCallback.onCameraUnavailable never fires, and the overlay never
+     * activates. A re-issued `am start` after the transition has settled reliably brings the
+     * activity up (every non-first launch in CI opens the camera within ~30 ms), so this retries
+     * until the overlay activates. The retry is bounded so a genuinely broken launch still fails
+     * the caller's own activation assertion rather than hanging.
+     *
+     * The activation check treats isOverlayActive becoming true as proof that *this* launch
+     * reached onResume(). That proof is only sound from a known-inactive baseline: if a previous
+     * test's overlay is still active when this is called, waitForCondition would read the stale
+     * true on its first poll and return before this launch's `am start` had any effect. So a
+     * clean inactive baseline is awaited first (bounded, so it cannot hang).
+     *
+     * @param label        Prefix for the diagnostic logcat lines (the calling helper's name).
+     * @param amCommand    The full `am start ...` shell command to (re-)issue each attempt.
+     * @param onBeforeRetry Run before each *re-issued* attempt (not before the first), e.g. to
+     *                      re-dismiss a swipe keyguard. The secure-camera path passes a no-op so
+     *                      the keyguard it relies on is left in place.
+     */
+    private fun launchAndAwaitOverlay(
+        label: String,
+        amCommand: String,
+        onBeforeRetry: () -> Unit,
+    ) {
         waitForCondition(LAUNCH_BASELINE_MS) { !OverlayService.isOverlayActive }
         repeat(LAUNCH_ATTEMPTS) { attempt ->
-            Log.i(TAG, "launchPixelCamera: am start attempt ${attempt + 1}/$LAUNCH_ATTEMPTS")
-            uiAutomation
-                .executeShellCommand(
-                    "am start -a android.media.action.STILL_IMAGE_CAMERA -p $pcPackage",
-                ).close()
+            Log.i(TAG, "$label: am start attempt ${attempt + 1}/$LAUNCH_ATTEMPTS")
+            uiAutomation.executeShellCommand(amCommand).close()
             // The first attempt gets the full healthy-activation window so a slow-but-healthy
             // launch is never mistaken for a failed one and re-issued (which would itself race the
             // OPEN transition). Only the teardown failure mode survives that window, and recovery
@@ -163,22 +184,21 @@ class E2EFixture(
             // companion-object note for the budget rationale.
             val verifyMs = if (attempt == 0) LAUNCH_FIRST_VERIFY_MS else LAUNCH_RETRY_VERIFY_MS
             if (waitForCondition(verifyMs) { OverlayService.isOverlayActive }) {
-                Log.i(TAG, "launchPixelCamera: overlay active on attempt ${attempt + 1}")
+                Log.i(TAG, "$label: overlay active on attempt ${attempt + 1}")
                 return
             }
             if (attempt < LAUNCH_ATTEMPTS - 1) {
-                // The previous launch was torn down before the camera opened. Re-dismiss the
-                // keyguard (the screen can re-sleep between attempts) and try again.
+                // The previous launch was torn down before the camera opened. Try again.
                 Log.w(
                     TAG,
-                    "launchPixelCamera: overlay still inactive after $verifyMs ms on attempt " +
+                    "$label: overlay still inactive after $verifyMs ms on attempt " +
                         "${attempt + 1} (first-launch teardown race); re-issuing am start",
                 )
-                wakeAndDismissKeyguard()
+                onBeforeRetry()
             } else {
                 Log.w(
                     TAG,
-                    "launchPixelCamera: overlay still inactive after $LAUNCH_ATTEMPTS attempts; " +
+                    "$label: overlay still inactive after $LAUNCH_ATTEMPTS attempts; " +
                         "letting the caller's own assertion fail",
                 )
             }
