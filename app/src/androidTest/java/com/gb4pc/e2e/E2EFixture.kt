@@ -129,33 +129,54 @@ class E2EFixture(
         // dismissal must run on every launch, not only once in setUp().
         wakeAndDismissKeyguard()
 
-        // Issue #233: On the API-35 CI emulator the *first* STILL_IMAGE_CAMERA launch of a
-        // suite is frequently torn down inside its own OPEN window-transition before the
-        // activity reaches onResume(). WindowManager force-removes the just-created
-        // ActivityRecord ("Force removing ActivityRecord{... MockCameraActivity}" / "Attempted
-        // to add application window with unknown token ... Aborting"), so MockCameraActivity
-        // never calls openCamera(), CameraManager.AvailabilityCallback.onCameraUnavailable
-        // never fires, and the overlay never activates -- the test then times out at 30 s.
-        // A re-issued `am start` after the transition has settled reliably brings the activity
-        // up (every non-first launch in CI opens the camera within ~30 ms), so retry the launch
-        // until the overlay activates, which is the observable proof the camera reached
-        // onResume() and opened. The retry is bounded so a genuinely broken launch still fails
-        // the caller's own activation assertion rather than hanging.
-        //
-        // The activation check below treats isOverlayActive becoming true as proof that *this*
-        // launch reached onResume(). That proof is only sound from a known-inactive baseline: if
-        // a previous test's overlay is still active when launchPixelCamera() is called (setUp()'s
-        // waitForOverlayInactive() and the mid-test goHome()/stopPixelCamera() flows do not assert
-        // deactivation), waitForCondition would read the stale true on its first poll and return
-        // before this launch's `am start` had any effect. Wait for a clean inactive baseline first
-        // so each attempt observes a genuine false -> true transition. Bounded so it cannot hang.
+        // Issue #233: the first STILL_IMAGE_CAMERA launch of a suite is frequently torn down before
+        // the activity reaches onResume(), so the overlay never activates. launchAndAwaitOverlay
+        // retries the launch (bounded) until the overlay activates; see its kdoc for the rationale.
+        launchAndAwaitOverlay(
+            label = "launchPixelCamera",
+            amCommand = "am start -a android.media.action.STILL_IMAGE_CAMERA -p $pcPackage",
+            // The screen can re-sleep between attempts, so re-dismiss the swipe keyguard before
+            // re-issuing `am start` on this non-secure launch.
+            onBeforeRetry = { wakeAndDismissKeyguard() },
+        )
+    }
+
+    /**
+     * Issues [amCommand] up to [LAUNCH_ATTEMPTS] times, returning as soon as
+     * [OverlayService.isOverlayActive] becomes true (the observable proof that the mock camera
+     * reached onResume() and opened the camera, firing onCameraUnavailable).
+     *
+     * Issue #233: On the API-35 CI emulator the *first* camera launch of a suite is frequently
+     * torn down inside its own OPEN window-transition before the activity reaches onResume().
+     * WindowManager force-removes the just-created ActivityRecord ("Force removing
+     * ActivityRecord{... MockCameraActivity}"), so MockCameraActivity never calls openCamera(),
+     * CameraManager.AvailabilityCallback.onCameraUnavailable never fires, and the overlay never
+     * activates. A re-issued `am start` after the transition has settled reliably brings the
+     * activity up (every non-first launch in CI opens the camera within ~30 ms), so this retries
+     * until the overlay activates. The retry is bounded so a genuinely broken launch still fails
+     * the caller's own activation assertion rather than hanging.
+     *
+     * The activation check treats isOverlayActive becoming true as proof that *this* launch
+     * reached onResume(). That proof is only sound from a known-inactive baseline: if a previous
+     * test's overlay is still active when this is called, waitForCondition would read the stale
+     * true on its first poll and return before this launch's `am start` had any effect. So a
+     * clean inactive baseline is awaited first (bounded, so it cannot hang).
+     *
+     * @param label        Prefix for the diagnostic logcat lines (the calling helper's name).
+     * @param amCommand    The full `am start ...` shell command to (re-)issue each attempt.
+     * @param onBeforeRetry Run before each *re-issued* attempt (not before the first), e.g. to
+     *                      re-dismiss a swipe keyguard. The secure-camera path passes a no-op so
+     *                      the keyguard it relies on is left in place.
+     */
+    private fun launchAndAwaitOverlay(
+        label: String,
+        amCommand: String,
+        onBeforeRetry: () -> Unit,
+    ) {
         waitForCondition(LAUNCH_BASELINE_MS) { !OverlayService.isOverlayActive }
         repeat(LAUNCH_ATTEMPTS) { attempt ->
-            Log.i(TAG, "launchPixelCamera: am start attempt ${attempt + 1}/$LAUNCH_ATTEMPTS")
-            uiAutomation
-                .executeShellCommand(
-                    "am start -a android.media.action.STILL_IMAGE_CAMERA -p $pcPackage",
-                ).close()
+            Log.i(TAG, "$label: am start attempt ${attempt + 1}/$LAUNCH_ATTEMPTS")
+            uiAutomation.executeShellCommand(amCommand).close()
             // The first attempt gets the full healthy-activation window so a slow-but-healthy
             // launch is never mistaken for a failed one and re-issued (which would itself race the
             // OPEN transition). Only the teardown failure mode survives that window, and recovery
@@ -163,22 +184,21 @@ class E2EFixture(
             // companion-object note for the budget rationale.
             val verifyMs = if (attempt == 0) LAUNCH_FIRST_VERIFY_MS else LAUNCH_RETRY_VERIFY_MS
             if (waitForCondition(verifyMs) { OverlayService.isOverlayActive }) {
-                Log.i(TAG, "launchPixelCamera: overlay active on attempt ${attempt + 1}")
+                Log.i(TAG, "$label: overlay active on attempt ${attempt + 1}")
                 return
             }
             if (attempt < LAUNCH_ATTEMPTS - 1) {
-                // The previous launch was torn down before the camera opened. Re-dismiss the
-                // keyguard (the screen can re-sleep between attempts) and try again.
+                // The previous launch was torn down before the camera opened. Try again.
                 Log.w(
                     TAG,
-                    "launchPixelCamera: overlay still inactive after $verifyMs ms on attempt " +
+                    "$label: overlay still inactive after $verifyMs ms on attempt " +
                         "${attempt + 1} (first-launch teardown race); re-issuing am start",
                 )
-                wakeAndDismissKeyguard()
+                onBeforeRetry()
             } else {
                 Log.w(
                     TAG,
-                    "launchPixelCamera: overlay still inactive after $LAUNCH_ATTEMPTS attempts; " +
+                    "$label: overlay still inactive after $LAUNCH_ATTEMPTS attempts; " +
                         "letting the caller's own assertion fail",
                 )
             }
@@ -449,20 +469,35 @@ class E2EFixture(
     }
 
     /**
-     * Launches the mock camera via the secure-camera action and asserts the keyguard is locked.
+     * Launches the mock camera via the secure-camera action, waits for the overlay to activate
+     * over the keyguard, and asserts the keyguard is still locked.
      *
-     * Sends `am start -a android.media.action.STILL_IMAGE_CAMERA_SECURE` then immediately
-     * checks [KeyguardManager.isKeyguardLocked]. If the keyguard is not locked the fixture
-     * fails before any screenshot is taken — a silent keyguard dismissal would make Tests
-     * 4a/5a pass for the wrong reason.
+     * Targets the mock-camera package explicitly with `-p $pcPackage`. Without `-p`, an
+     * `am start -a android.media.action.STILL_IMAGE_CAMERA_SECURE` lands on the system intent
+     * resolver / disambiguation chooser instead of launching [com.gb4pc.mockcamera.MockCameraActivity]
+     * directly (the CI logcat shows a `ResolverListAdapter` entry and *no* `CameraDevice.onOpened`),
+     * so the activity never reaches onResume(), the camera never opens,
+     * `CameraManager.AvailabilityCallback.onCameraUnavailable` never fires, and the overlay never
+     * activates — `waitForOverlayActive()` then times out. Pinning the package launches the mock
+     * camera the same way [launchPixelCamera] does for the non-secure action.
      *
-     * Call [lockScreen] before this method to guarantee the device is locked first.
+     * Uses the same bounded relaunch-until-overlay-active path as [launchPixelCamera] (issue #233):
+     * the first secure launch can also be torn down before onResume(), and a re-issued `am start`
+     * recovers it. The retry's `onBeforeRetry` is a no-op here so the keyguard this secure flow
+     * relies on is left in place (unlike the non-secure launch, which re-dismisses the swipe
+     * keyguard between attempts).
+     *
+     * After the launch, [KeyguardManager.isKeyguardLocked] must still be true: a silent keyguard
+     * dismissal would make Tests 4a/5a pass for the wrong reason. Call [lockScreen] before this
+     * method to guarantee the device is locked first.
      */
     fun launchSecureCamera() {
-        uiAutomation
-            .executeShellCommand(
-                "am start -a android.media.action.STILL_IMAGE_CAMERA_SECURE",
-            ).close()
+        launchAndAwaitOverlay(
+            label = "launchSecureCamera",
+            amCommand = "am start -a android.media.action.STILL_IMAGE_CAMERA_SECURE -p $pcPackage",
+            // Do NOT dismiss the keyguard between attempts: this secure flow requires it locked.
+            onBeforeRetry = {},
+        )
 
         val keyguard = context.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
         if (!keyguard.isKeyguardLocked) {
@@ -567,6 +602,53 @@ class E2EFixture(
             Thread.sleep(intervalMs)
         }
         return lastCoverage
+    }
+
+    /**
+     * Polls screenshots until the GREEN (#00C853) region forms a *letterboxed* band: its bounding
+     * box spans at least [minWidthFraction] of the screen width while occupying at most
+     * [maxHeightFraction] of the screen height. Returns true if such a band appeared before
+     * [timeoutMs] elapsed, false otherwise.
+     *
+     * Used by the secure-camera test. `SecureViewerActivity` renders the photo with a center-inside
+     * `SubsamplingScaleImageView`, so a 16:9 capture letterboxes to full screen width but only a
+     * fraction of the height (~25% on the Pixel 6 CI device). A central-region coverage poll (as in
+     * [waitForGreenCoverage]) does not predict that band, so this poll measures the band's geometry
+     * directly, matching the band-shaped assertion in `test5a`.
+     *
+     * The height bound is load-bearing, not cosmetic. Before the locked tap fires, the solid-green
+     * `MockCameraActivity` is in the foreground, so the green region already spans the *full* width
+     * (and the full height). A width-only poll would return immediately on that pre-tap frame and
+     * never wait for `SecureViewerActivity` to come to front; the assertion would then run against
+     * the mock-camera screenshot. Requiring the band to be *letterboxed* (full width but not full
+     * height) makes the poll wait for the SecureViewer render specifically: the full-height
+     * mock-camera green does not satisfy [maxHeightFraction], while the ~25%-tall SecureViewer band
+     * does.
+     *
+     * @param minWidthFraction  Fraction of screen width the green bbox must span before stopping.
+     * @param maxHeightFraction Maximum fraction of screen height the green bbox may span (excludes
+     *                          the full-screen mock-camera green that precedes the tap).
+     * @param timeoutMs         Maximum wait time in milliseconds.
+     * @param intervalMs        Sleep between successive capture attempts.
+     */
+    fun waitForGreenBand(
+        minWidthFraction: Float = 0.80f,
+        maxHeightFraction: Float = 0.70f,
+        timeoutMs: Long = 15_000L,
+        intervalMs: Long = 500L,
+    ): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            val screen = Screenshot.captureScreen()
+            val greenMask = ColorMatch.mask(screen, Rgb.GREEN)
+            val widthFraction =
+                if (greenMask.width > 0) greenMask.bbox.width().toFloat() / greenMask.width else 0f
+            val heightFraction =
+                if (greenMask.height > 0) greenMask.bbox.height().toFloat() / greenMask.height else 0f
+            if (widthFraction >= minWidthFraction && heightFraction <= maxHeightFraction) return true
+            Thread.sleep(intervalMs)
+        }
+        return false
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────

@@ -350,42 +350,101 @@ class GalleryButtonVisualE2ETest {
         }
     }
 
-    // ── test5a — Secure camera + populated gallery: EXPECTED TO FAIL ─────────
+    // ── test5a — Secure camera + populated session: SecureViewer shows GREEN ─
 
     /**
-     * RED-LIGHT TEST — intentional failure at baseline.
+     * Verifies the real locked-path product behaviour: tapping the overlay in secure-camera
+     * mode (screen locked) when the in-progress secure session contains a GREEN photo opens
+     * the app's own [com.gb4pc.viewer.SecureViewerActivity] and displays that photo.
      *
-     * Verifies that tapping the overlay in secure-camera mode (screen locked) when the camera
-     * roll contains a GREEN photo opens the gallery and displays the photo (coverage > 40%).
+     * **Why the capture happens after the session starts (issue #486 — Option A).**
      *
-     * This test is a regression marker for the known secure-camera overlay issue: the overlay
-     * is currently not rendered (or not tappable) in secure-camera mode, so the tap is a no-op
-     * and the screen stays on the camera feed, failing the GREEN coverage assertion.
+     * A locked tap does NOT launch the configured gallery package; production
+     * [com.gb4pc.overlay.TapActionResolver] resolves the locked case to
+     * `TapAction.LaunchSecureViewer`, so the screen that opens is `SecureViewerActivity`, not
+     * the mock gallery. `SecureViewerActivity` renders only the current secure session's media
+     * ([com.gb4pc.viewer.SessionTracker.getSessionMedia]); it does not query MediaStore directly.
      *
-     * Tracking issue: #156 — Do NOT skip, ignore, or quarantine this test. It must remain
-     * a visible red until the secure-camera overlay path is restored in a separate PR.
+     * The secure session is (re)started when the overlay activates while locked
+     * ([com.gb4pc.service.OverlayServiceLogic.showOverlay] → `SessionTracker.startSession()`),
+     * and `startSession()` clears any prior media. The session is then populated only by the
+     * OverlayService `ContentObserver`, which adds MediaStore rows whose `DATE_ADDED` is at or
+     * after session start. A photo captured *before* locking is therefore structurally excluded
+     * from the session — which is why the earlier version of this test (capture-then-lock) could
+     * never make the assertion pass and was filed as a red-light test against the mis-cited
+     * issue #156 (a plan-tracking checklist, not a bug report).
+     *
+     * This version mirrors the genuine secure-camera use case: lock, launch the secure camera so
+     * the overlay activates and the session begins, then capture the GREEN photo *inside* that
+     * session. The ContentObserver adds it to the session, so the locked tap's `SecureViewer`
+     * has a green item to show.
+     *
+     * **Why this asserts a letterboxed GREEN *band*, not full-screen 40% like test3a.**
+     *
+     * test3a opens the mock gallery, whose `LastPhotoActivity` ImageView uses `centerCrop`
+     * (`e2e-mock-gallery/.../activity_last_photo.xml`), so the green photo fills ~100% of the
+     * screen and full-screen coverage > 40% is reachable. The locked path here opens
+     * `SecureViewerActivity`, which renders with `SubsamplingScaleImageView` and never calls
+     * `setMinimumScaleType(...)`, so it uses the library default `SCALE_TYPE_CENTER_INSIDE`
+     * (letterbox-fit, not crop). The capture is 1920×1080 (16:9 landscape;
+     * `MockCameraActivity.CAPTURE_WIDTH/HEIGHT`); on the Pixel 6 CI device (1080×2400 portrait)
+     * it fits to full width with a band ≈ 1080×608 px centred against the viewer's solid-black
+     * background, i.e. ≈ 100% of the width but only ≈ 25% of the height (≈ 25% of the full
+     * screen). A full-screen > 40% assertion is therefore structurally unreachable on this render
+     * path regardless of overlay/session correctness.
+     *
+     * **Why the assertion must check the band *height*, not just its width and solidity.**
+     *
+     * The screen on view at the moment of the tap is *not* the lock screen or a black screen — it
+     * is the solid-green `MockCameraActivity` (the secure camera, foregrounded above), which is the
+     * same `Rgb.GREEN` as the captured photo. So the relevant failure case for this flow is a
+     * *no-op tap*: if the overlay is not composited / not tappable over the secure-camera keyguard,
+     * `tapOverlay()` silently does nothing, `SecureViewerActivity` never opens, and the green mock
+     * camera stays on screen — full width *and* full height. Width-only + within-bbox-solidity
+     * checks would both pass on that full-screen green, so the test would go green for a tap that
+     * did nothing. The discriminator is the band *height*: the real SecureViewer render is
+     * letterboxed to ≈ 25% of the screen height with black bars above and below, whereas the
+     * leftover mock-camera green fills ≈ 100% of the height. We therefore additionally require the
+     * green band to occupy only a minority of the screen height (a letterbox, not a fill) and
+     * confirm the letterbox positively by checking that the strip above the band is essentially
+     * green-free (SecureViewer's black background, not more mock-camera green).
+     *
+     * The three geometry-justified checks, all satisfied with margin by a correct letterboxed
+     * render and failed by the no-op / empty cases:
+     *  1. The green region spans most of the screen *width* (the letterbox fits to full width).
+     *  2. Within the green region's own bounding box, coverage is high (the photo is solid green).
+     *  3. The green region occupies only a minority of the screen *height* (it is letterboxed, not
+     *     a full-screen fill), and the strip above it is green-free (the black letterbox bar).
+     * An empty/black SecureViewer produces an empty mask, failing 1 and 2. A no-op tap leaving the
+     * full-screen mock-camera green up fails 3 (full height, and no black bar above the band).
      */
     @Test
     fun test5a_secureCameraLockedPopulatedGalleryShowsGreen() {
         fixture.seedGalleryPrefs(MOCK_GALLERY_PACKAGE)
         fixture.clearCameraRoll()
-        // Capture the photo while the camera activity is running — MockCameraActivity's
-        // BroadcastReceiver is only registered in onResume(), so launching the camera first
-        // is required. After capture, return to home and stop the camera before locking.
-        fixture.launchPixelCamera()
-        fixture.waitForOverlayActive()
-        fixture.captureOnePhoto() // GREEN JPEG now in MediaStore
-        fixture.goHome()
-        fixture.stopPixelCamera()
         fixture.lockScreen()
+        // Launch the secure camera so the overlay activates while locked. launchSecureCamera()
+        // pins the mock-camera package and waits for the overlay to activate; showOverlay() then
+        // starts the secure session and registers the MediaStore ContentObserver, so the capture
+        // below lands inside the session. The explicit waitForOverlayActive() re-confirms the
+        // session has begun before capturing — MockCameraActivity also only registers its shutter
+        // receiver in onResume(), so it must be foregrounded first.
         fixture.launchSecureCamera()
-        fixture.pause(1000)
+        fixture.waitForOverlayActive()
+        fixture.captureOnePhoto() // GREEN JPEG captured during the secure session
 
         val s1 = Screenshot.captureScreen()
         Screenshot.saveForArtifact(s1, "5a-s1.png")
 
-        fixture.tapOverlay() // taps overlay position; no-op at baseline (overlay blocked)
-        fixture.pause(1000)
+        fixture.tapOverlay() // locked tap → SecureViewer renders the session's GREEN photo
+
+        // Poll up to 15 s for the letterboxed GREEN band to appear — SecureViewer's cold start
+        // (process spawn + SubsamplingScaleImageView decode) races a fixed pause. The poll requires
+        // the same letterbox geometry as the assertion below (full width, height a minority of the
+        // screen), so it does not short-circuit on the full-screen mock-camera green that is on
+        // screen before the tap, and it predicts the assertion rather than measuring a different
+        // quantity.
+        fixture.waitForGreenBand(minWidthFraction = 0.80f, maxHeightFraction = 0.70f, timeoutMs = 15_000L)
 
         val s2 = Screenshot.captureScreen()
         Screenshot.saveForArtifact(s2, "5a-s2.png")
@@ -393,14 +452,45 @@ class GalleryButtonVisualE2ETest {
         val greenMask = ColorMatch.mask(s2, Rgb.GREEN)
         Screenshot.saveForArtifact(maskToBitmap(greenMask), "5a-green-mask.png")
 
-        val coverage = ColorMatch.coverageFraction(greenMask)
-        if (coverage <= 0.40f) {
+        // The displayed photo is a solid-green 16:9 image letterboxed to full width by
+        // SecureViewer's center-inside SubsamplingScaleImageView (see kdoc above).
+        val bandWidthFraction = greenMask.bbox.width().toFloat() / greenMask.width
+        val bandHeightFraction = greenMask.bbox.height().toFloat() / greenMask.height
+        val bboxArea = greenMask.bbox.width() * greenMask.bbox.height()
+        val withinBandCoverage = if (bboxArea > 0) greenMask.pixelCount.toFloat() / bboxArea else 0f
+
+        // The black letterbox bar above the band positively confirms SecureViewer's background
+        // rather than leftover full-screen mock-camera green. Measure the green coverage of the top
+        // strip (the screen above where the ~25%-tall centred band starts). With the band centred,
+        // its top edge sits at ~37% of the screen height, so the top 25% strip is entirely within
+        // the upper letterbox bar and must be essentially green-free.
+        val topStrip = android.graphics.Rect(0, 0, greenMask.width, (greenMask.height * 0.25f).toInt())
+        val topStripGreen = ColorMatch.coverageFraction(greenMask, topStrip)
+
+        if (bandWidthFraction <= 0.80f ||
+            withinBandCoverage <= 0.80f ||
+            bandHeightFraction >= 0.70f ||
+            topStripGreen >= 0.10f
+        ) {
             fail(
-                "test5a_secureCameraLockedPopulatedGalleryShowsGreen: GREEN coverage after tap " +
-                    "is ${coverage * 100f}% — expected > 40%. " +
-                    "This is the expected baseline failure for the secure-camera overlay regression " +
-                    "(issue #156). The overlay is not rendered or not tappable while the keyguard " +
-                    "is active, so the gallery did not open.",
+                "test5a_secureCameraLockedPopulatedGalleryShowsGreen: the locked tap should open " +
+                    "SecureViewerActivity showing the GREEN photo captured during the secure " +
+                    "session as a letterboxed band over a black background, but the displayed green " +
+                    "region is not a solid, full-width, letterboxed band. " +
+                    "Measured: band spans ${bandWidthFraction * 100f}% of screen width " +
+                    "(expected > 80%), green coverage within its bounding box is " +
+                    "${withinBandCoverage * 100f}% (expected > 80%), band height is " +
+                    "${bandHeightFraction * 100f}% of the screen (expected < 70%, i.e. a letterbox " +
+                    "not a full-screen fill), and the top strip is ${topStripGreen * 100f}% green " +
+                    "(expected < 10%, i.e. a black letterbox bar, not leftover mock-camera green); " +
+                    "green pixels=${greenMask.pixelCount}, bbox=${greenMask.bbox}, " +
+                    "screen=${greenMask.width}x${greenMask.height}. " +
+                    "A full-height green band with no black bar above it means the locked tap was a " +
+                    "no-op and the secure camera is still in front (overlay not composited / not " +
+                    "tappable over the keyguard). " +
+                    "Check the 5a-s1/5a-s2 artifacts and the GB4PC_Overlay / Logic: logcat: the " +
+                    "session may be empty (capture did not land in-session) or the overlay was " +
+                    "not tappable.",
             )
         }
     }
