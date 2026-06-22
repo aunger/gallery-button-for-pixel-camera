@@ -570,37 +570,50 @@ class E2EFixture(
     }
 
     /**
-     * Polls screenshots until the GREEN (#00C853) region forms a band whose bounding box spans
-     * at least [minWidthFraction] of the screen width, or [timeoutMs] elapses. Returns the final
-     * measured width fraction regardless of whether the threshold was reached.
+     * Polls screenshots until the GREEN (#00C853) region forms a *letterboxed* band: its bounding
+     * box spans at least [minWidthFraction] of the screen width while occupying at most
+     * [maxHeightFraction] of the screen height. Returns true if such a band appeared before
+     * [timeoutMs] elapsed, false otherwise.
      *
-     * Used by the secure-camera test: `SecureViewerActivity` renders the photo with a
-     * center-inside `SubsamplingScaleImageView`, so a 16:9 capture letterboxes to full screen
-     * width but only a fraction of the height. A central-region coverage poll (as in
-     * [waitForGreenCoverage]) does not predict that band, so this poll measures the band's width
+     * Used by the secure-camera test. `SecureViewerActivity` renders the photo with a center-inside
+     * `SubsamplingScaleImageView`, so a 16:9 capture letterboxes to full screen width but only a
+     * fraction of the height (~25% on the Pixel 6 CI device). A central-region coverage poll (as in
+     * [waitForGreenCoverage]) does not predict that band, so this poll measures the band's geometry
      * directly, matching the band-shaped assertion in `test5a`.
      *
+     * The height bound is load-bearing, not cosmetic. Before the locked tap fires, the solid-green
+     * `MockCameraActivity` is in the foreground, so the green region already spans the *full* width
+     * (and the full height). A width-only poll would return immediately on that pre-tap frame and
+     * never wait for `SecureViewerActivity` to come to front; the assertion would then run against
+     * the mock-camera screenshot. Requiring the band to be *letterboxed* (full width but not full
+     * height) makes the poll wait for the SecureViewer render specifically: the full-height
+     * mock-camera green does not satisfy [maxHeightFraction], while the ~25%-tall SecureViewer band
+     * does.
+     *
      * @param minWidthFraction  Fraction of screen width the green bbox must span before stopping.
+     * @param maxHeightFraction Maximum fraction of screen height the green bbox may span (excludes
+     *                          the full-screen mock-camera green that precedes the tap).
      * @param timeoutMs         Maximum wait time in milliseconds.
      * @param intervalMs        Sleep between successive capture attempts.
      */
     fun waitForGreenBand(
         minWidthFraction: Float = 0.80f,
+        maxHeightFraction: Float = 0.70f,
         timeoutMs: Long = 15_000L,
         intervalMs: Long = 500L,
-    ): Float {
+    ): Boolean {
         val deadline = System.currentTimeMillis() + timeoutMs
-        var lastWidthFraction = 0f
         while (System.currentTimeMillis() < deadline) {
             val screen = Screenshot.captureScreen()
             val greenMask = ColorMatch.mask(screen, Rgb.GREEN)
             val widthFraction =
                 if (greenMask.width > 0) greenMask.bbox.width().toFloat() / greenMask.width else 0f
-            lastWidthFraction = widthFraction
-            if (widthFraction >= minWidthFraction) return widthFraction
+            val heightFraction =
+                if (greenMask.height > 0) greenMask.bbox.height().toFloat() / greenMask.height else 0f
+            if (widthFraction >= minWidthFraction && heightFraction <= maxHeightFraction) return true
             Thread.sleep(intervalMs)
         }
-        return lastWidthFraction
+        return false
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
