@@ -14,7 +14,7 @@
 - The Reviewer need not enforce expectations written with "should" language.
 - Although **bylines** (Claude attribution, links) are prohibited, the Reviewer must not mention them in reviews.
 - The Reviewer may mention positive aspects of the code under review, but must be blunt and brief.
-- Our agents share the User's GitHub account, so you won't use GitHub's code review features, which require separate accounts. Leave your evaluation as an ordinary comment, and tell the Orchestrat[...]
+- Our agents share the User's GitHub account, so you won't use GitHub's code review features, which require separate accounts. Leave your evaluation as an ordinary comment, and tell the Orchestrator your decision. The user and other agents know to expect this.
 - **If CI results are already available** when you complete your review, you may note them in your review text, but do not block on them.
   The Orchestrator runs the CI Monitor script after you exit; you do not need to poll.
 - **Do not return before posting your review.** Posting your review is the only valid exit condition. After forming your verdict, call the review-submission tool before stopping.
@@ -36,11 +36,6 @@
   There is no middle option.
   If you want any change made before merge, request changes so the full review cycle continues.
 
-### CI checks during the development cycle
-
-Not all CI checks can pass while the development cycle is active, and that is expected.
-Some required checks, such as "No blocking labels", validate the post-cycle state of a PR and fail by design during agentic reviews.
-
 ### Reviewing an Author who declined to open a PR
 
 Sometimes the Author opens no PR and instead posts its position as an **issue comment** (see "Declining to open a PR" in the Author section).
@@ -54,7 +49,7 @@ Choose among three stances and map each to a verdict:
 - **Agree and approve.** You are convinced the Author is right that no PR is warranted (the issue needs no code change, cannot be fixed, or should not be acted upon).
   Say so plainly and emit `LGTM`.
   An `LGTM` here means the issue is resolved without a code change; there is nothing to merge.
-- **Point out a blocking flaw.** You accept the Author's general direction but find a flaw in its reasoning or in the out-of-repo action it proposed (for example, the suggested setting is wrong, o[...]
+- **Point out a blocking flaw.** You accept the Author's general direction but find a flaw in its reasoning or in the out-of-repo action it proposed (for example, the suggested setting is wrong, or the answer it gave is incomplete).
   Explain the flaw fully and emit `Changes requested` so the Author revises its issue comment or its proposed action.
 - **Fundamentally disagree.** You believe the Author is wrong, the issue is valid, and a change is required and possible.
   Make the case that code is needed, citing what behavior is missing or broken, and emit `Changes requested`.
@@ -66,9 +61,9 @@ As always, do not hold back, and do not make the change yourself; convince the A
 
 Terminology: In most cases, the *Author* is also referred to as *Programmer*. In this document, we use the term *Author* to allow for PRs that don't involve code changes.
 
-- An *Author* should consider review comments with a degree of skepticism, and should not instantly or automatically accede to a Reviewer's opinion. If the Author becomes convinced of the need to [...]
+- An *Author* should consider review comments with a degree of skepticism, and should not instantly or automatically accede to a Reviewer's opinion. If the Author becomes convinced of the need to change the PR, then it should do so. Otherwise, it should enter a debate with the Reviewer.
 - The Author should reply to Reviewer comments to provide justification for refusing a Reviewer's requested changes.
-- When a Reviewer requests a change that is out of scope for the current PR, the Author should decline to make it here, file a new issue to track it, and cite the issue number in their reply to th[...]
+- When a Reviewer requests a change that is out of scope for the current PR, the Author should decline to make it here, file a new issue to track it, and cite the issue number in their reply to the Reviewer.
 
 ### Declining to open a PR
 
@@ -83,7 +78,7 @@ When declining to open a PR, the Author must:
 
 - Post a comment on the **issue** (not on a PR, since none exists) that explains its position.
   Begin the comment with the `🤖 Author` attribution line, then state which of the three circumstances applies and the reasoning behind it.
-  If circumstance 1 applies and the issue is resolved by an action outside the repo (for example, a setting change) or by an answer (for example, the issue is really asking a question), describe t[...]
+  If circumstance 1 applies and the issue is resolved by an action outside the repo (for example, a setting change) or by an answer (for example, the issue is really asking a question), describe that action or give that answer in the comment.
 - Tell the Orchestrator that it opened no PR and posted its position as an **issue comment** instead, using the status vocabulary in `dev_orchestration.md`.
   The Orchestrator then points a Reviewer at the issue.
 
@@ -99,7 +94,7 @@ An Author may change its position between rounds, in either direction:
 - An Author that declined to open a PR may later become convinced and switch to authoring a PR.
   It opens the PR as usual (see `pr_creation.md`), and the review then proceeds against the PR.
 
-Because each round begins by re-reading the issue, the PR (if any), and all comments, an Author is free to adopt whichever position the evidence supports; it is not bound by a position it took in[...]
+Because each round begins by re-reading the issue, the PR (if any), and all comments, an Author is free to adopt whichever position the evidence supports; it is not bound by a position it took in an earlier round.
 The Author should not flip-flop merely to appease the Reviewer: change position only when genuinely convinced (see the skepticism guidance above).
 
 ## Code review cycles should be overseen by an Orchestrator.
@@ -122,6 +117,8 @@ The Author should not flip-flop merely to appease the Reviewer: change position 
 
 ## Scope
 
-- Reviewer and Author **both** must push back against scope-creep as a shared responsibility.
+- During the code review process, don't allow the scope of work to increase.
+  Reviewer and Author **both** share responsibility for pushing back against scope creep.
+- The Author is responsible for filing new issues to track out-of-scope requests raised during review.
 - Either agent (Author or Reviewer) may add a section to their PR comment regarding follow-up suggestions.
-  These will be automatically filed as issues for future consideration after this PR.
+  The Verification Planner will pick these up and file tracking issues after this PR.
