@@ -311,14 +311,16 @@ class GalleryButtonVisualE2ETest {
      * `test3a` (which runs alphabetically before this test) captures a GREEN photo owned by
      * `com.google.android.GoogleCamera` (the mock camera). Earlier, [E2EFixture.clearCameraRoll]
      * could only delete rows owned by `com.gb4pc`, so that cross-package photo survived into
-     * this test and would have made the "empty gallery" assumption false once #156 was fixed.
+     * this test and would have made the "empty gallery" assumption false once the secure-camera
+     * overlay was fixed.
      * [E2EFixture.clearCameraRoll] now also runs a `content delete` shell command under the
      * `shell` UID, which removes rows owned by *any* package, so this test's `clearCameraRoll()`
      * genuinely empties the roll before the tap. The empty-gallery assumption therefore holds
-     * independently of `test3a`, and a failure here after #156 lands reflects the secure-camera
-     * path itself, not a leftover MediaStore row.
+     * independently of `test3a`, and a failure here reflects the secure-camera path itself,
+     * not a leftover MediaStore row.
      *
-     * Tracking issue: #156 — same as test5a. Do NOT skip, ignore, or quarantine this test.
+     * Tracking issue: #81 (locked-screen path: no new photos detected, SecureViewer shows black).
+     * Do NOT skip, ignore, or quarantine this test.
      */
     @Test
     fun test4a_secureCameraLockedEmptyGalleryNoGreen() {
