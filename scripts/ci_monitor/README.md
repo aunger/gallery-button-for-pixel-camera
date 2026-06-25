@@ -16,6 +16,9 @@ python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER> [filter flags]
 `OWNER`/`REPO` default to this repo at the top of the script, and it reads `$GITHUB_TOKEN` from the environment (required).
 The script catches transient REST/parse failures per call so they cannot kill the resilient poll loop.
 
+The Monitor discovers which workflow run(s) and job(s) to track from the `/commits/{sha}/check-runs` payload, by parsing each GitHub Actions check run's `details_url` for its `(run_id, job_id)` (gated on `app.slug == "github-actions"`, with a `/actions/runs/` URL-pattern fallback when the `app` block is absent).
+It does not name a workflow or job; the run/job to follow is derived from the same check-runs data that produces the verdict.
+
 ## Per-test outcome filters
 
 By default the monitor reports **all FAIL markers**, **all SKIP markers**, and **no PASS markers**.
@@ -43,6 +46,30 @@ python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER> --include-pass 'MyFeat
 This emits a `PASS` line when the matching test passes and a `SKIP` line if it was skipped (which would be a false-validation trap: the code path was never exercised).
 With no pattern (`--include-pass ''`), every passing test is reported.
 
+## Configuration
+
+`ci_monitor.config.json` (next to the script) tunes three behaviors as regexes.
+The monitor loads it once at startup; each value is optional, and a missing file, unreadable file, invalid JSON, or non-compiling regex falls back to the in-code default for that key without aborting the resilient poll loop.
+
+| Config key | Default (in code) | Matched against | Purpose |
+|---|---|---|---|
+| `artifact_name_regex` | `^testresults-` | each run artifact's `name` (via `re.search`) | Selects which artifacts are downloaded and parsed for per-test markers. |
+| `interesting_step_regex` | `(?!)` (never matches) | each completed step's `name` | Selects which steps emit a `step "..." -> ...` line on a *non-failing* conclusion. A genuine step failure (`failure`/`cancelled`/`timed_out`/`action_required`) always surfaces regardless of this regex, so the never-match default means "out of the box, surface a step only when it failed". |
+| `test_marker_regex` | `##TEST##` | each raw ndjson line (via `re.search`) | Locates the marker that prefixes each test's JSON payload. The payload is parsed from the *end* of the matched span. |
+
+This repo's committed `ci_monitor.config.json` sets:
+
+- `artifact_name_regex`: `^testresults-` (matches `testresults-unit`, `testresults-e2e-overlay`, `testresults-e2e-gallery`).
+- `interesting_step_regex`: `Build and run unit tests|E2ETest` (reproduces the named-step reporting on success).
+- `test_marker_regex`: `##GB4PC_TEST##|##TEST##` (back-compat dual marker, see below).
+
+**Back-compat dual marker.**
+The default read marker is `##TEST##`, but this repo's CI still emits `##GB4PC_TEST##` (see `build.yml`), so the committed config matches both (`##GB4PC_TEST##|##TEST##`).
+The payload offset is computed from the end of whichever alternative matched (`re.search(...).end()`), so both markers parse correctly.
+Alternation order does not matter for this pair: neither marker is a prefix of the other (`##GB4PC_TEST##` has `G` after the leading `##`, while `##TEST##` has `T`), so they can never match at the same start position, and `##TEST##` does not appear inside `##GB4PC_TEST##` at all.
+The full marker is simply listed first as a readable convention.
+Switching the *emit* side to `##TEST##` (the Gradle/test reporters plus the `build.yml` greps) is a separate, larger change and out of scope here; the dual-marker config is the bridge, not an end state.
+
 ## Outcome vocabulary
 
 | Line emitted          | Meaning                                                                                               |
@@ -51,7 +78,7 @@ With no pattern (`--include-pass ''`), every passing test is reported.
 | `PR#N: Blocked ...`   | A check failed (`failure`/`action_required`) or `mergeable_state` is `behind`/`dirty`. |
 | `PR#N: Infra ...`     | A CI infrastructure problem (`cancelled`, `timed_out`, `stale`, `startup_failure`, or `mergeable_state=blocked`); escalate to user. |
 | `PR#N: in_progress`   | CI still running; emitted only after >120 s of silence (no other output); relay to user as a brief status update. |
-| `PR#N: step "..." -> ...` | A `build-and-test` step reached a conclusion: one of the three named test steps (`Build and run unit tests`, `Run *E2ETest`), or any genuine step failure. **Informational**; surfaces *which group* finished/failed and when; never ends the loop. |
+| `PR#N: step "..." -> ...` | A step of a tracked CI job reached a conclusion: a step whose name matches the configured `interesting_step_regex` (this repo: `Build and run unit tests`, `Run *E2ETest`), or any genuine step failure. **Informational**; surfaces *which group* finished/failed and when; never ends the loop. |
 | `PR#N: FAIL [suite] name: ...` | A per-test failure (message + truncated trace) parsed from a `testresults-<group>` artifact, possibly followed by indented trace lines. **Informational**; emitted by default; suppress with `--no-include-fail`; never ends the loop. |
 | `PR#N: SKIP [suite] name: ...` | A per-test skip parsed from a `testresults-<group>` artifact. **Informational**; emitted by default; suppress with `--no-include-skip`; never ends the loop. A skipped task-relevant test is a false-validation trap. |
 | `PR#N: PASS [suite] name: ...` | A per-test pass parsed from a `testresults-<group>` artifact. **Informational**; suppressed by default; enable with `--include-pass [PATTERN]`; never ends the loop. |

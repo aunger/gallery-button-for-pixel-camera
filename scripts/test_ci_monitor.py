@@ -28,6 +28,15 @@ Covers:
   (u) #402 Gap E (review): drain_then_print's bounded retry recovers a two-poll lag
   (v) #415: Clear from parse_check_result (no checks) breaks the loop exactly once
   (w) #419: two endpoints settle on different drain attempts; both signals surfaced
+  (x) #500 parse_actions_targets: derives (run_id, job_id) pairs from check-runs data
+  (y) #500 parse_steps: filters reported steps by job id
+  (z) #500 parse_steps: configurable interesting_step_regex; genuine failures unconditional
+  (aa) #500 parse_new_artifacts: configurable artifact_name_regex
+  (ab) #500 parse_fails: dual-marker back-compat and the ##TEST## default behavior
+  (ac) #500 load_config: present/absent/invalid/partial/bad-regex fallbacks; repo config
+  (ad) #499/#500: the failing build run is tracked among multiple Actions checks (wiring b)
+  (ae) #500 doc-sync: no legacy hardcoded workflow/job/marker literals remain
+  (af) #500 poll_signals: a run-only target does not widen another run's job-id filter
 
 No network calls required; no GITHUB_TOKEN needed.
 Always exits 0 on success, non-zero on failure.
@@ -156,10 +165,38 @@ PASS_ONLY_NDJSON = [
     '##GB4PC_TEST## {"suite":"com.gb4pc.e2e.GalleryButtonVisualE2ETest","name":"test3b","outcome":"PASS","ms":110,"msg":"","trace":""}',
 ]
 
+# This repo's committed config values (scripts/ci_monitor/ci_monitor.config.json).
+# The parser-direct tests pass these explicitly so they exercise the same regexes
+# main() loads from the config file (issue #500).
+REPO_STEP_REGEX = "Build and run unit tests|E2ETest"
+REPO_MARKER_REGEX = "##GB4PC_TEST##|##TEST##"
+REPO_ARTIFACT_REGEX = "^testresults-"
+
+
+def check_runs_payload(*pairs):
+    """Build a /commits/{sha}/check-runs payload from (run_id, job_id) pairs.
+
+    Each pair becomes a github-actions check run whose details_url encodes the
+    run id and (when job_id is not None) the job id, as parse_actions_targets
+    reads them. Mirrors the run/job discovery wiring (b) main() uses (issue #500),
+    replacing the old {"workflow_runs": [...]} fixtures.
+    """
+    runs = []
+    for run_id, job_id in pairs:
+        url = "https://github.com/%s/%s/actions/runs/%s" % (OWNER_T, REPO_T, run_id)
+        if job_id is not None:
+            url += "/job/%s" % job_id
+        runs.append({"app": {"slug": "github-actions"}, "details_url": url})
+    return {"total_count": len(runs), "check_runs": runs}
+
+
+OWNER_T = ci_monitor.OWNER
+REPO_T = ci_monitor.REPO
+
 
 # ── (a) All-success: exactly 3 test-step lines emitted ─────────────────────────
 print("\n=== (a) Signal 1: all-success build-and-test emits exactly 3 test-step lines ===")
-out_a = ci_monitor.parse_steps(ALL_SUCCESS_JOBS, set())
+out_a = ci_monitor.parse_steps(ALL_SUCCESS_JOBS, set(), None, REPO_STEP_REGEX)
 step_lines_a = [ln for ln in out_a if ln.startswith("step ")]
 check(
     len(step_lines_a) == 3,
@@ -184,7 +221,7 @@ check(
 
 # ── (b) Genuine failure step is emitted ────────────────────────────────────────
 print("\n=== (b) Signal 1: a genuine failure step is emitted ===")
-out_b = ci_monitor.parse_steps(FAILURE_JOBS, set())
+out_b = ci_monitor.parse_steps(FAILURE_JOBS, set(), None, REPO_STEP_REGEX)
 check(
     any('step "Download AVD" -> failure' == ln for ln in out_b),
     "failed step 'Download AVD' is emitted",
@@ -198,7 +235,7 @@ check(
 
 # ── (c) Setup and skipped conditional steps are suppressed ─────────────────────
 print("\n=== (c) Signal 1: successful setup steps and skipped conditional steps are suppressed ===")
-out_c = ci_monitor.parse_steps(ALL_SUCCESS_JOBS, set())
+out_c = ci_monitor.parse_steps(ALL_SUCCESS_JOBS, set(), None, REPO_STEP_REGEX)
 check(
     not any('"Set up job"' in ln for ln in out_c),
     "'Set up job' suppressed",
@@ -228,8 +265,8 @@ check(
 # ── (d) Deduplication across two iterations ─────────────────────────────────────
 print("\n=== (d) Signal 1: deduplication — same steps not re-emitted on second iteration ===")
 seen_d = set()
-out_d1 = ci_monitor.parse_steps(ALL_SUCCESS_JOBS, seen_d)
-out_d2 = ci_monitor.parse_steps(ALL_SUCCESS_JOBS, seen_d)
+out_d1 = ci_monitor.parse_steps(ALL_SUCCESS_JOBS, seen_d, None, REPO_STEP_REGEX)
+out_d2 = ci_monitor.parse_steps(ALL_SUCCESS_JOBS, seen_d, None, REPO_STEP_REGEX)
 check(
     out_d2 == [],
     "second iteration emits nothing (all steps already seen)",
@@ -244,7 +281,7 @@ check(
 
 # ── (e) FAIL with multi-line trace emitted with indented trace ──────────────────
 print("\n=== (e) Signal 2: FAIL with multi-line trace is emitted with indented trace ===")
-out_e = ci_monitor.parse_fails(FAIL_NDJSON, set())
+out_e = ci_monitor.parse_fails(FAIL_NDJSON, set(), test_marker_regex=REPO_MARKER_REGEX)
 joined_e = "\n".join(out_e)
 check(
     "FAIL [com.gb4pc.e2e.GalleryButtonVisualE2ETest] test1a:" in joined_e,
@@ -264,7 +301,7 @@ check(
 
 # ── (f) All-PASS artifact emits nothing ────────────────────────────────────────
 print("\n=== (f) Signal 2: all-PASS artifact emits nothing ===")
-out_f = ci_monitor.parse_fails(PASS_ONLY_NDJSON, set())
+out_f = ci_monitor.parse_fails(PASS_ONLY_NDJSON, set(), test_marker_regex=REPO_MARKER_REGEX)
 check(
     out_f == [],
     "all-PASS artifact produces no output",
@@ -274,13 +311,13 @@ check(
 # ── (g) Deduplication by suite#name across two calls ───────────────────────────
 print("\n=== (g) Signal 2: deduplication by suite#name across two calls ===")
 seen_g = set()
-out_g1 = ci_monitor.parse_fails(FAIL_NDJSON, seen_g)
+out_g1 = ci_monitor.parse_fails(FAIL_NDJSON, seen_g, test_marker_regex=REPO_MARKER_REGEX)
 check(
     any("FAIL [com.gb4pc.e2e.GalleryButtonVisualE2ETest] test1a:" in ln for ln in out_g1),
     "first call emits FAIL",
     "first call did not emit FAIL; output: %r" % out_g1,
 )
-out_g2 = ci_monitor.parse_fails(FAIL_NDJSON, seen_g)
+out_g2 = ci_monitor.parse_fails(FAIL_NDJSON, seen_g, test_marker_regex=REPO_MARKER_REGEX)
 check(
     out_g2 == [],
     "second call produces no output (FAIL already seen)",
@@ -332,6 +369,7 @@ CHECK_BLOCKED = {
 JOBS_FAIL = {
     "jobs": [
         {
+            "id": 42,
             "name": "build-and-test",
             "steps": [
                 {"number": 1, "name": "Set up job", "status": "completed", "conclusion": "success"},
@@ -346,44 +384,48 @@ JOBS_FAIL = {
     ]
 }
 ARTS_JSON = {"artifacts": [{"id": 9001, "name": "testresults-unit", "expired": False}]}
+# Diagnostic check-runs payload poll_signals self-fetches under wiring (b)
+# (issue #500): one github-actions check run pointing at run 555, job 42.
+DIAG_CHECK_I = check_runs_payload(("555", "42"))
 ZIP_BYTES = make_zip_ndjson(
     [
         '##GB4PC_TEST## {"suite":"com.gb4pc.unit.GalleryButtonTest","name":"testClick","outcome":"FAIL","ms":3,"msg":"java.lang.AssertionError: boom","trace":"java.lang.AssertionError: boom\\n\\tat com.gb4pc.unit.GalleryButtonTest.testClick(GalleryButtonTest.kt:21)"}',
     ]
 )
 
-# Per iteration the request order is: pulls (sha), check-runs, runs, jobs,
+# Per iteration the request order under wiring (b) (issue #500) is: pulls (sha),
+# verdict check-runs, diagnostic check-runs (poll_signals self-fetch), jobs,
 # artifacts, [zip per new artifact]. Iteration 1 (in_progress) downloads the
 # zip; iteration 2 (Blocked, terminal) finds the artifact already seen and
-# skips the zip call, then drain_then_print (Gap E) re-polls runs/jobs/artifacts
-# up to DRAIN_MAX_ATTEMPTS times before printing the terminal line. Every drain
-# attempt here finds the step/artifact already seen (nothing new), so all
-# DRAIN_MAX_ATTEMPTS=3 attempts run. 6 + 5 + 3*3 = 20 entries; the deque must be
-# exactly drained.
+# skips the zip call, then drain_then_print (Gap E) re-polls
+# check-runs/jobs/artifacts up to DRAIN_MAX_ATTEMPTS times before printing the
+# terminal line. Every drain attempt here finds the step/artifact already seen
+# (nothing new), so all DRAIN_MAX_ATTEMPTS=3 attempts run. 6 + 5 + 3*3 = 20
+# entries; the deque must be exactly drained.
 side_effects_i = collections.deque(
     [
         # iteration 1
         PR_JSON,  # pulls -> sha
-        CHECK_INPROGRESS,  # check-runs -> in_progress
-        {"workflow_runs": [{"id": 555, "status": "in_progress"}]},  # runs -> run_id
+        CHECK_INPROGRESS,  # verdict check-runs -> in_progress
+        DIAG_CHECK_I,  # diagnostic check-runs -> run 555, job 42
         JOBS_FAIL,  # jobs -> step failure
         ARTS_JSON,  # artifacts -> one new artifact
         ZIP_BYTES,  # zip (raw) -> FAIL line
         # iteration 2
         PR_JSON,  # pulls -> sha
-        CHECK_BLOCKED,  # check-runs -> Blocked (terminal)
-        {"workflow_runs": [{"id": 555, "status": "in_progress"}]},  # runs -> run_id
+        CHECK_BLOCKED,  # verdict check-runs -> Blocked (terminal)
+        DIAG_CHECK_I,  # diagnostic check-runs -> run 555, job 42
         JOBS_FAIL,  # jobs -> step already seen, nothing new
         ARTS_JSON,  # artifacts -> artifact already seen, no zip call
         # drain_then_print (Gap E) — up to DRAIN_MAX_ATTEMPTS extra signal polls
         # before the terminal line; all attempts find nothing new here.
-        {"workflow_runs": [{"id": 555, "status": "in_progress"}]},  # drain attempt 1: runs
+        DIAG_CHECK_I,  # drain attempt 1: diagnostic check-runs
         JOBS_FAIL,  # drain attempt 1: jobs -> nothing new
         ARTS_JSON,  # drain attempt 1: artifacts -> nothing new
-        {"workflow_runs": [{"id": 555, "status": "in_progress"}]},  # drain attempt 2: runs
+        DIAG_CHECK_I,  # drain attempt 2: diagnostic check-runs
         JOBS_FAIL,  # drain attempt 2: jobs -> nothing new
         ARTS_JSON,  # drain attempt 2: artifacts -> nothing new
-        {"workflow_runs": [{"id": 555, "status": "in_progress"}]},  # drain attempt 3: runs
+        DIAG_CHECK_I,  # drain attempt 3: diagnostic check-runs
         JOBS_FAIL,  # drain attempt 3: jobs -> nothing new
         ARTS_JSON,  # drain attempt 3: artifacts -> nothing new
     ]
@@ -466,7 +508,10 @@ CHECK_BL = {
     "total_count": 1,
     "check_runs": [{"status": "completed", "conclusion": "failure"}],
 }
-RUNS_J = {"workflow_runs": [{"id": 777, "status": "in_progress"}]}
+# Diagnostic check-runs payload poll_signals self-fetches under wiring (b)
+# (issue #500): a run-only details_url (no job id), so parse_steps applies no
+# job filter and the unnamed build-and-test job fixtures below still match.
+DIAG_CHECK_J = check_runs_payload(("777", None))
 JOBS_EMPTY = {"jobs": [{"name": "build-and-test", "steps": []}]}
 JOBS_STEP7 = {
     "jobs": [
@@ -485,12 +530,13 @@ JOBS_STEP7 = {
 }
 ARTS_EMPTY = {"artifacts": []}
 
-# Each iteration issues exactly 5 requests (pulls, check-runs, runs, jobs,
-# artifacts); no zip is ever downloaded (artifacts empty). 13 iterations -> 65,
-# plus the single pre-loop clock startup read makes the time deque 66 entries.
-# The 13 iterations supply check-runs in_progress for 1..12 and Blocked at 13.
-# Iteration 13 also triggers drain_then_print (Gap E), which re-polls
-# runs/jobs/artifacts up to DRAIN_MAX_ATTEMPTS times (3 extra requests per
+# Each iteration issues exactly 5 requests under wiring (b) (issue #500): pulls,
+# verdict check-runs, diagnostic check-runs, jobs, artifacts; no zip is ever
+# downloaded (artifacts empty). 13 iterations -> 65, plus the single pre-loop
+# clock startup read makes the time deque 66 entries. The 13 iterations supply
+# the verdict check-runs in_progress for 1..12 and Blocked at 13. Iteration 13
+# also triggers drain_then_print (Gap E), which re-polls
+# check-runs/jobs/artifacts up to DRAIN_MAX_ATTEMPTS times (3 extra requests per
 # attempt, no zip) before the terminal; every attempt finds nothing new here.
 jobs_for_iter = [JOBS_STEP7 if n == 7 else JOBS_EMPTY for n in range(1, 14)]
 checks_for_iter = [CHECK_BL if n == 13 else CHECK_IP for n in range(1, 14)]
@@ -498,14 +544,14 @@ checks_for_iter = [CHECK_BL if n == 13 else CHECK_IP for n in range(1, 14)]
 req_j = collections.deque()
 for n in range(13):
     req_j.append(PR_J)  # pulls -> sha
-    req_j.append(checks_for_iter[n])  # check-runs
-    req_j.append(RUNS_J)  # runs -> run_id
+    req_j.append(checks_for_iter[n])  # verdict check-runs
+    req_j.append(DIAG_CHECK_J)  # diagnostic check-runs -> run 777
     req_j.append(jobs_for_iter[n])  # jobs
     req_j.append(ARTS_EMPTY)  # artifacts (no zip)
 # drain_then_print (Gap E) on the terminal Blocked iteration: DRAIN_MAX_ATTEMPTS
 # attempts, each finding nothing new (step already seen, artifacts empty).
 for _ in range(3):
-    req_j.append(RUNS_J)  # runs -> run_id
+    req_j.append(DIAG_CHECK_J)  # diagnostic check-runs -> run 777
     req_j.append(JOBS_EMPTY)  # jobs -> step already seen, nothing new
     req_j.append(ARTS_EMPTY)  # artifacts (no zip)
 
@@ -609,16 +655,17 @@ check(
 # Integration: iteration 1 is in_progress, iteration 2 the PR is merged. The
 # terminal check runs right after the SHA fetch (before check-runs), so on
 # iteration 2 main() emits 'PR#N: Merged' and breaks without issuing the
-# check-runs/runs/jobs/artifacts calls. Per-iteration request order is:
-#   pulls (sha), check-runs, runs, jobs, artifacts, [zip per new artifact].
-# Iteration 1 (open + in_progress, empty artifacts) issues 5 requests; iteration
-# 2 short-circuits after the single pulls fetch. 5 + 1 = 6 entries, drained.
+# check-runs/jobs/artifacts calls. Per-iteration request order under wiring (b)
+# (issue #500) is: pulls (sha), verdict check-runs, diagnostic check-runs, jobs,
+# artifacts, [zip per new artifact]. Iteration 1 (open + in_progress, empty
+# artifacts) issues 5 requests; iteration 2 short-circuits after the single
+# pulls fetch. 5 + 1 = 6 entries, drained.
 print("\n=== (k) main(): merged PR emits terminal 'Merged' and exits cleanly ===")
 
 PR_OPEN_K = {"head": {"sha": "feedface"}, "merged": False, "state": "open"}
 PR_MERGED_K = {"head": {"sha": "feedface"}, "merged": True, "state": "closed"}
 CHECK_IP_K = {"total_count": 1, "check_runs": [{"status": "in_progress", "conclusion": None}]}
-RUNS_K = {"workflow_runs": [{"id": 888, "status": "in_progress"}]}
+DIAG_CHECK_K = check_runs_payload(("888", None))  # diagnostic check-runs (wiring b)
 JOBS_EMPTY_K = {"jobs": [{"name": "build-and-test", "steps": []}]}
 ARTS_EMPTY_K = {"artifacts": []}
 
@@ -626,8 +673,8 @@ side_effects_k = collections.deque(
     [
         # iteration 1 — open, in_progress (no heartbeat: clock frozen at start)
         PR_OPEN_K,  # pulls -> sha, terminal == ''
-        CHECK_IP_K,  # check-runs -> in_progress
-        RUNS_K,  # runs -> run_id
+        CHECK_IP_K,  # verdict check-runs -> in_progress
+        DIAG_CHECK_K,  # diagnostic check-runs -> run 888
         JOBS_EMPTY_K,  # jobs -> nothing
         ARTS_EMPTY_K,  # artifacts -> nothing
         # iteration 2 — merged: terminal short-circuit before check-runs
@@ -846,11 +893,12 @@ print(
 # A step delta and a per-test FAIL arrive on separate polls; each signal resets
 # the silence timer, so with a 30s-per-poll advancing clock the 120s heartbeat
 # threshold is never crossed and no in_progress line is emitted. Per-poll request
-# order: pulls (sha), check-runs, runs, jobs, artifacts, [zip per new artifact].
+# order under wiring (b): pulls (sha), verdict check-runs, diagnostic
+# check-runs, jobs, artifacts, [zip per new artifact].
 PR_M = {"head": {"sha": "5ca1ab1e"}}
 CHECK_IP_M = {"total_count": 1, "check_runs": [{"status": "in_progress", "conclusion": None}]}
 CHECK_BL_M = {"total_count": 1, "check_runs": [{"status": "completed", "conclusion": "failure"}]}
-RUNS_M = {"workflow_runs": [{"id": 606, "status": "in_progress"}]}
+RUNS_M = check_runs_payload(("606", None))  # diagnostic check-runs (wiring b, issue #500)
 JOBS_UNIT_FAIL_M = {
     "jobs": [
         {
@@ -878,7 +926,7 @@ ZIP_UNIT_M = make_zip_ndjson(
 # Poll 1 (5): step delta only (artifacts empty). Poll 2 (6): step already seen,
 # artifact appears -> zip downloaded -> FAIL emitted. Poll 3 terminal (5):
 # Blocked; artifact already seen so no zip call. Then drain_then_print (Gap E)
-# re-polls runs/jobs/artifacts up to DRAIN_MAX_ATTEMPTS times (3 each),
+# re-polls check-runs/jobs/artifacts up to DRAIN_MAX_ATTEMPTS times (3 each),
 # everything already seen on every attempt, no zip.
 # 5 + 6 + 5 + 3*3 = 25, drained.
 side_effects_m = collections.deque(
@@ -886,20 +934,20 @@ side_effects_m = collections.deque(
         # poll 1 — step delta only
         PR_M,  # pulls -> sha
         CHECK_IP_M,  # check-runs -> in_progress
-        RUNS_M,  # runs -> run_id
+        RUNS_M,  # diagnostic check-runs
         JOBS_UNIT_FAIL_M,  # jobs -> step "Build and run unit tests" -> failure
         ARTS_EMPTY_M,  # artifacts -> none yet
         # poll 2 — FAIL detail
         PR_M,  # pulls -> sha
         CHECK_IP_M,  # check-runs -> in_progress
-        RUNS_M,  # runs -> run_id
+        RUNS_M,  # diagnostic check-runs
         JOBS_UNIT_FAIL_M,  # jobs -> step already seen, nothing new
         ARTS_UNIT_M,  # artifacts -> one new artifact
         ZIP_UNIT_M,  # zip (raw) -> FAIL line with trace
         # poll 3 — terminal Blocked
         PR_M,  # pulls -> sha
         CHECK_BL_M,  # check-runs -> Blocked (terminal)
-        RUNS_M,  # runs -> run_id
+        RUNS_M,  # diagnostic check-runs
         JOBS_UNIT_FAIL_M,  # jobs -> step already seen, nothing new
         ARTS_UNIT_M,  # artifacts -> artifact already seen, no zip call
         # drain_then_print (Gap E) — up to DRAIN_MAX_ATTEMPTS extra signal polls
@@ -1011,7 +1059,7 @@ print("\n=== (n) main(): quiet polls emit two adjacent in_progress heartbeats, t
 PR_N = {"head": {"sha": "c0ffee11"}}
 CHECK_IP_N = {"total_count": 1, "check_runs": [{"status": "in_progress", "conclusion": None}]}
 CHECK_PASS_N = {"total_count": 1, "check_runs": [{"status": "completed", "conclusion": "success"}]}
-RUNS_N = {"workflow_runs": [{"id": 909, "status": "in_progress"}]}
+RUNS_N = check_runs_payload(("909", None))  # diagnostic check-runs (wiring b, issue #500)
 JOBS_EMPTY_N = {"jobs": [{"name": "build-and-test", "steps": []}]}
 ARTS_EMPTY_N = {"artifacts": []}
 MPR_CLEAN_N = {
@@ -1032,13 +1080,13 @@ req_n = collections.deque()
 for _ in range(11):
     req_n.append(PR_N)  # pulls -> sha
     req_n.append(CHECK_IP_N)  # check-runs -> in_progress
-    req_n.append(RUNS_N)  # runs -> run_id
+    req_n.append(RUNS_N)  # diagnostic check-runs
     req_n.append(JOBS_EMPTY_N)  # jobs -> nothing
     req_n.append(ARTS_EMPTY_N)  # artifacts -> nothing
 # final all_passed poll
 req_n.append(PR_N)  # pulls -> sha
 req_n.append(CHECK_PASS_N)  # check-runs -> all_passed
-req_n.append(RUNS_N)  # runs -> run_id
+req_n.append(RUNS_N)  # diagnostic check-runs
 req_n.append(JOBS_EMPTY_N)  # jobs -> nothing
 req_n.append(ARTS_EMPTY_N)  # artifacts -> nothing
 req_n.append(MPR_CLEAN_N)  # pulls (mergeable_state) -> clean -> Clear
@@ -1211,7 +1259,7 @@ REAL_UNIT_ZIP = _buf.getvalue()
 PR_P = {"head": {"sha": "deadc0de"}}
 CHECK_IP_P = {"total_count": 1, "check_runs": [{"status": "in_progress", "conclusion": None}]}
 CHECK_BL_P = {"total_count": 1, "check_runs": [{"status": "completed", "conclusion": "failure"}]}
-RUNS_P = {"workflow_runs": [{"id": 4242, "status": "in_progress"}]}
+RUNS_P = check_runs_payload(("4242", None))  # diagnostic check-runs (wiring b, issue #500)
 JOBS_UNIT_FAIL_P = {
     "jobs": [
         {
@@ -1235,7 +1283,7 @@ ARTS_REAL_UNIT_P = {"artifacts": [{"id": 4243, "name": "testresults-unit", "expi
 # Poll 1 (5): step delta, artifact not yet present. Poll 2 (6): step seen,
 # artifact appears -> real-shaped zip downloaded -> FAIL emitted. Poll 3 (5):
 # terminal Blocked, artifact already seen so no zip call. Then drain_then_print
-# (Gap E) re-polls runs/jobs/artifacts up to DRAIN_MAX_ATTEMPTS times (3 each),
+# (Gap E) re-polls check-runs/jobs/artifacts up to DRAIN_MAX_ATTEMPTS times (3 each),
 # already seen on every attempt, no zip.
 # 5 + 6 + 5 + 3*3 = 25.
 side_effects_p = collections.deque(
@@ -1353,7 +1401,7 @@ SLEEP_Q = 0.25  # per-poll real sleep, comfortably > WINDOW_Q so each quiet poll
 PR_Q = {"head": {"sha": "ab1eca11"}}
 CHECK_IP_Q = {"total_count": 1, "check_runs": [{"status": "in_progress", "conclusion": None}]}
 CHECK_BL_Q = {"total_count": 1, "check_runs": [{"status": "completed", "conclusion": "failure"}]}
-RUNS_Q = {"workflow_runs": [{"id": 31337, "status": "in_progress"}]}
+RUNS_Q = check_runs_payload(("31337", None))  # diagnostic check-runs (wiring b, issue #500)
 JOBS_EMPTY_Q = {"jobs": [{"name": "build-and-test", "steps": []}]}
 JOBS_STEP_Q = {
     "jobs": [
@@ -1372,7 +1420,8 @@ JOBS_STEP_Q = {
 }
 ARTS_EMPTY_Q = {"artifacts": []}
 
-# 5 polls (each: pulls, check-runs, runs, jobs, artifacts; then a real sleep).
+# 5 polls (each under wiring (b): pulls, verdict check-runs, diagnostic
+# check-runs, jobs, artifacts; then a real sleep).
 # main() reads last_output_ts = time.time() at startup, BEFORE poll 1, and each
 # poll's silence check runs before that poll's own sleep — so a heartbeat needs a
 # prior quiet sleep to have elapsed:
@@ -1381,7 +1430,7 @@ ARTS_EMPTY_Q = {"artifacts": []}
 #   poll 3: emits a step delta -> resets the real timer    -> NO heartbeat this poll
 #   poll 4: quiet; one SLEEP_Q elapsed since the step      -> heartbeat #2, resets timer
 #   poll 5: Blocked terminal, then drain_then_print (Gap E) re-polls
-#           runs/jobs/artifacts up to DRAIN_MAX_ATTEMPTS times (everything
+#           check-runs/jobs/artifacts up to DRAIN_MAX_ATTEMPTS times (everything
 #           already seen on every attempt) before printing the terminal line.
 JOBS_SCHEDULE_Q = [JOBS_EMPTY_Q, JOBS_EMPTY_Q, JOBS_STEP_Q, JOBS_EMPTY_Q, JOBS_EMPTY_Q]
 CHECK_SCHEDULE_Q = [CHECK_IP_Q, CHECK_IP_Q, CHECK_IP_Q, CHECK_IP_Q, CHECK_BL_Q]
@@ -1476,13 +1525,16 @@ check(rc_q == 0, "main() returned 0", "main() returned %r" % rc_q)
 # ── (r) #260 outcome filters: parse_fails with explicit outcome_filters ────────
 print("\n=== (r) #260 outcome filters: parse_fails obeys outcome_filters for FAIL/PASS/SKIP ===")
 
+# These markers use the new default ##TEST## marker (issue #500): group (r)
+# exercises the outcome_filters mechanism, so the calls below rely on the
+# DEFAULT_TEST_MARKER_REGEX and need no explicit test_marker_regex argument.
 FILTER_NDJSON = [
-    '##GB4PC_TEST## {"suite":"com.gb4pc.unit.FooTest","name":"test_fail","outcome":"FAIL","ms":1,"msg":"boom","trace":""}',
-    '##GB4PC_TEST## {"suite":"com.gb4pc.unit.FooTest","name":"test_pass","outcome":"PASS","ms":2,"msg":"","trace":""}',
-    '##GB4PC_TEST## {"suite":"com.gb4pc.unit.FooTest","name":"test_skip","outcome":"SKIP","ms":0,"msg":"","trace":""}',
-    '##GB4PC_TEST## {"suite":"com.gb4pc.unit.BarTest","name":"test_fail_bar","outcome":"FAIL","ms":3,"msg":"kaboom","trace":""}',
-    '##GB4PC_TEST## {"suite":"com.gb4pc.unit.BarTest","name":"test_pass_bar","outcome":"PASS","ms":4,"msg":"","trace":""}',
-    '##GB4PC_TEST## {"suite":"com.gb4pc.unit.BarTest","name":"test_skip_bar","outcome":"SKIP","ms":0,"msg":"","trace":""}',
+    '##TEST## {"suite":"com.gb4pc.unit.FooTest","name":"test_fail","outcome":"FAIL","ms":1,"msg":"boom","trace":""}',
+    '##TEST## {"suite":"com.gb4pc.unit.FooTest","name":"test_pass","outcome":"PASS","ms":2,"msg":"","trace":""}',
+    '##TEST## {"suite":"com.gb4pc.unit.FooTest","name":"test_skip","outcome":"SKIP","ms":0,"msg":"","trace":""}',
+    '##TEST## {"suite":"com.gb4pc.unit.BarTest","name":"test_fail_bar","outcome":"FAIL","ms":3,"msg":"kaboom","trace":""}',
+    '##TEST## {"suite":"com.gb4pc.unit.BarTest","name":"test_pass_bar","outcome":"PASS","ms":4,"msg":"","trace":""}',
+    '##TEST## {"suite":"com.gb4pc.unit.BarTest","name":"test_skip_bar","outcome":"SKIP","ms":0,"msg":"","trace":""}',
 ]
 
 # Default behavior: all FAIL, all SKIP, no PASS
@@ -1749,12 +1801,12 @@ ZIP_MIXED = make_zip_ndjson(FILTER_NDJSON_MIXED)
 PR_S = {"head": {"sha": "5ce5c0de"}}
 CHECK_IP_S = {"total_count": 1, "check_runs": [{"status": "in_progress", "conclusion": None}]}
 CHECK_BL_S = {"total_count": 1, "check_runs": [{"status": "completed", "conclusion": "failure"}]}
-RUNS_S = {"workflow_runs": [{"id": 1111, "status": "in_progress"}]}
+RUNS_S = check_runs_payload(("1111", None))  # diagnostic check-runs (wiring b, issue #500)
 JOBS_EMPTY_S = {"jobs": [{"name": "build-and-test", "steps": []}]}
 ARTS_MIX_S = {"artifacts": [{"id": 2222, "name": "testresults-mix", "expired": False}]}
 
 # Poll 1 (6): artifact available, zip downloaded; poll 2 (5): terminal Blocked,
-# then drain_then_print (Gap E) re-polls runs/jobs/artifacts up to
+# then drain_then_print (Gap E) re-polls check-runs/jobs/artifacts up to
 # DRAIN_MAX_ATTEMPTS times (3 each), artifact already seen on every attempt so
 # no zip call.
 side_effects_s = collections.deque(
@@ -2017,7 +2069,7 @@ print("\n=== (t) Gap E (#402): drain poll surfaces step+FAIL that lag behind Blo
 # up, surfacing the step failure and FAIL marker before the terminal line.
 PR_T = {"head": {"sha": "9001dead"}}
 CHECK_BL_T = {"total_count": 1, "check_runs": [{"status": "completed", "conclusion": "failure"}]}
-RUNS_T = {"workflow_runs": [{"id": 9001, "status": "completed"}]}
+RUNS_T = check_runs_payload(("9001", None))  # diagnostic check-runs (wiring b, issue #500)
 JOBS_EMPTY_T = {"jobs": [{"name": "build-and-test", "steps": []}]}
 JOBS_GATE_FAIL_T = {
     "jobs": [
@@ -2063,7 +2115,7 @@ ZIP_E2E_T = make_zip_ndjson(
 
 # Poll 1 (5): check-runs already Blocked (terminal), but jobs/artifacts not yet
 # caught up -> no step/FAIL lines from poll_signals. drain_then_print then
-# sleeps DRAIN_DELAY_SECONDS and re-polls runs/jobs/artifacts: attempt 1 (3 +
+# sleeps DRAIN_DELAY_SECONDS and re-polls check-runs/jobs/artifacts: attempt 1 (3 +
 # zip) finds the caught-up jobs/artifacts -> step + FAIL emitted. Per issue
 # #419 the drain no longer stops at the first fruitful attempt, so attempts 2
 # and 3 (3 each) also run, finding everything already seen -> nothing new, no
@@ -2072,11 +2124,11 @@ side_effects_t = collections.deque(
     [
         PR_T,  # pulls -> sha
         CHECK_BL_T,  # check-runs -> Blocked (terminal), decided on poll 1
-        RUNS_T,  # runs -> run_id
+        RUNS_T,  # diagnostic check-runs
         JOBS_EMPTY_T,  # jobs -> not yet caught up, nothing new
         ARTS_EMPTY_T,  # artifacts -> not yet listed
         # drain attempt 1 -- caught up: step + FAIL surface
-        RUNS_T,  # runs -> run_id
+        RUNS_T,  # diagnostic check-runs
         JOBS_GATE_FAIL_T,  # jobs -> "Gate on test failures" -> failure
         ARTS_E2E_T,  # artifacts -> testresults-e2e-gallery now listed
         ZIP_E2E_T,  # zip (raw) -> FAIL line for test1a
@@ -2159,7 +2211,7 @@ print(
 # NOT printed (drain attempt 2 found something new).
 PR_U = {"head": {"sha": "900110ng"}}
 CHECK_BL_U = {"total_count": 1, "check_runs": [{"status": "completed", "conclusion": "failure"}]}
-RUNS_U = {"workflow_runs": [{"id": 9002, "status": "completed"}]}
+RUNS_U = check_runs_payload(("9002", None))  # diagnostic check-runs (wiring b, issue #500)
 JOBS_EMPTY_U = {"jobs": [{"name": "build-and-test", "steps": []}]}
 JOBS_GATE_FAIL_U = {
     "jobs": [
@@ -2213,15 +2265,15 @@ side_effects_u = collections.deque(
     [
         PR_U,  # pulls -> sha
         CHECK_BL_U,  # check-runs -> Blocked (terminal), decided on poll 1
-        RUNS_U,  # runs -> run_id
+        RUNS_U,  # diagnostic check-runs
         JOBS_EMPTY_U,  # jobs -> not yet caught up, nothing new
         ARTS_EMPTY_U,  # artifacts -> not yet listed
         # drain attempt 1 -- still not caught up
-        RUNS_U,  # runs -> run_id
+        RUNS_U,  # diagnostic check-runs
         JOBS_EMPTY_U,  # jobs -> still not yet caught up, nothing new
         ARTS_EMPTY_U,  # artifacts -> still not yet listed
         # drain attempt 2 -- now caught up
-        RUNS_U,  # runs -> run_id
+        RUNS_U,  # diagnostic check-runs
         JOBS_GATE_FAIL_U,  # jobs -> "Gate on test failures" -> failure
         ARTS_E2E_U,  # artifacts -> testresults-e2e-gallery now listed
         ZIP_E2E_U,  # zip (raw) -> FAIL line for test1a
@@ -2303,21 +2355,23 @@ print("\n=== (v) #415: Clear (no check runs) emits exactly one Clear terminal an
 # after printing the terminal line exactly once, without a drain (no failing
 # signals exist when there are no check runs).
 #
-# Scenario: poll 1 fetches the SHA (open PR), check-runs returns no checks
-# (total_count=0 -> parse_check_result='Clear') -> terminal Clear emitted, loop
-# exits. Per-iteration request order: pulls (sha), check-runs; poll_signals is
-# called but finds no run_id (no workflow_runs) so issues only the runs request
-# (1 extra call) before check-runs result is evaluated and the loop breaks.
+# Scenario: poll 1 fetches the SHA (open PR), the verdict check-runs returns no
+# checks (total_count=0 -> parse_check_result='Clear') -> terminal Clear emitted,
+# loop exits. Per-iteration request order under wiring (b) (issue #500): pulls
+# (sha), verdict check-runs; poll_signals(sha) is called before the verdict is
+# evaluated and self-fetches its own check-runs, which also has no Actions
+# targets (parse_actions_targets yields nothing), so it issues no jobs/artifacts
+# requests and returns False. The loop then evaluates Clear and breaks.
 # 2 + 1 = 3 entries in the deque.
 PR_V = {"head": {"sha": "00c1ea12"}, "merged": False, "state": "open"}
 CHECK_CLEAR_V = {"total_count": 0, "check_runs": []}
-RUNS_EMPTY_V = {"workflow_runs": []}
+DIAG_CHECK_EMPTY_V = {"total_count": 0, "check_runs": []}  # diagnostic check-runs: no targets
 
 side_effects_v = collections.deque(
     [
         PR_V,  # pulls -> sha, terminal == '' (open)
-        CHECK_CLEAR_V,  # check-runs -> total_count=0 -> Clear (terminal)
-        RUNS_EMPTY_V,  # runs -> no run_id -> poll_signals returns False
+        CHECK_CLEAR_V,  # verdict check-runs -> total_count=0 -> Clear (terminal)
+        DIAG_CHECK_EMPTY_V,  # diagnostic check-runs -> no targets -> poll_signals False
     ]
 )
 
@@ -2369,7 +2423,7 @@ print(
 # signal recovered here, not a re-emit of an already-seen one.
 PR_W = {"head": {"sha": "519c0de1"}}
 CHECK_BL_W = {"total_count": 1, "check_runs": [{"status": "completed", "conclusion": "failure"}]}
-RUNS_W = {"workflow_runs": [{"id": 9419, "status": "completed"}]}
+RUNS_W = check_runs_payload(("9419", None))  # diagnostic check-runs (wiring b, issue #500)
 JOBS_EMPTY_W = {"jobs": [{"name": "build-and-test", "steps": []}]}
 JOBS_GATE_FAIL_W = {
     "jobs": [
@@ -2404,15 +2458,15 @@ side_effects_w = collections.deque(
     [
         PR_W,  # pulls -> sha
         CHECK_BL_W,  # check-runs -> Blocked (terminal), decided on poll 1
-        RUNS_W,  # runs -> run_id
+        RUNS_W,  # diagnostic check-runs
         JOBS_EMPTY_W,  # jobs -> not yet caught up, nothing new
         ARTS_EMPTY_W,  # artifacts -> not yet listed
         # drain attempt 1 -- STEP caught up, ARTIFACT still lagging
-        RUNS_W,  # runs -> run_id
+        RUNS_W,  # diagnostic check-runs
         JOBS_GATE_FAIL_W,  # jobs -> "Gate on test failures" -> failure (emits)
         ARTS_EMPTY_W,  # artifacts -> still not listed
         # drain attempt 2 -- ARTIFACT now caught up
-        RUNS_W,  # runs -> run_id
+        RUNS_W,  # diagnostic check-runs
         JOBS_GATE_FAIL_W,  # jobs -> step already seen, nothing new
         ARTS_E2E_W,  # artifacts -> testresults-e2e-gallery now listed
         ZIP_E2E_W,  # zip (raw) -> FAIL line for test1a
@@ -2479,6 +2533,667 @@ check(
     "request deque not drained; %d entries left" % len(side_effects_w),
 )
 check(rc_w == 0, "main() returned 0", "main() returned %r" % rc_w)
+
+
+# ── (x) #500 parse_actions_targets: derives (run_id, job_id) from check-runs ───
+print("\n=== (x) #500 parse_actions_targets: discovers run/job ids from check-runs data ===")
+
+# A check run from github-actions whose details_url carries run + job id.
+targets_basic = ci_monitor.parse_actions_targets(
+    {
+        "check_runs": [
+            {
+                "app": {"slug": "github-actions"},
+                "details_url": "https://github.com/aunger/gallery-button-for-pixel-camera/actions/runs/555/job/42",
+            }
+        ]
+    }
+)
+check(
+    targets_basic == [("555", "42")],
+    "parses (run_id, job_id) from an Actions check run's details_url",
+    "expected [('555','42')]; got %r" % (targets_basic,),
+)
+
+# Non-Actions checks (e.g. a coverage app) are skipped; only github-actions
+# runs are returned. A run-only URL yields a None job id. Duplicates collapse.
+targets_mixed = ci_monitor.parse_actions_targets(
+    {
+        "check_runs": [
+            {
+                "app": {"slug": "github-actions"},
+                "details_url": "https://github.com/o/r/actions/runs/555/job/42",
+            },
+            {
+                "app": {"slug": "github-actions"},
+                "details_url": "https://github.com/o/r/actions/runs/555/job/42",
+            },
+            {"app": {"slug": "codecov"}, "details_url": "https://codecov.io/gh/o/r/whatever"},
+            {
+                "app": {"slug": "github-actions"},
+                "details_url": "https://github.com/o/r/actions/runs/999",
+            },
+        ]
+    }
+)
+check(
+    targets_mixed == [("555", "42"), ("999", None)],
+    "skips non-Actions checks, de-dupes, and yields None job id for run-only URLs",
+    "expected [('555','42'),('999',None)]; got %r" % (targets_mixed,),
+)
+
+# Missing app block: fall back to recognizing the /actions/runs/ URL shape.
+targets_noapp = ci_monitor.parse_actions_targets(
+    {"check_runs": [{"details_url": "https://github.com/o/r/actions/runs/777/job/7"}]}
+)
+check(
+    targets_noapp == [("777", "7")],
+    "falls back to the /actions/runs/ URL shape when the app block is absent",
+    "expected [('777','7')]; got %r" % (targets_noapp,),
+)
+
+# html_url fallback when details_url is absent.
+targets_html = ci_monitor.parse_actions_targets(
+    {
+        "check_runs": [
+            {
+                "app": {"slug": "github-actions"},
+                "html_url": "https://github.com/o/r/actions/runs/321/job/9",
+            }
+        ]
+    }
+)
+check(
+    targets_html == [("321", "9")],
+    "uses html_url when details_url is missing",
+    "expected [('321','9')]; got %r" % (targets_html,),
+)
+
+# Empty check_runs -> empty result (preserves #415 Clear on total_count == 0).
+check(
+    ci_monitor.parse_actions_targets({"check_runs": []}) == [],
+    "empty check_runs yields no targets",
+    "expected []; got %r" % (ci_monitor.parse_actions_targets({"check_runs": []}),),
+)
+
+# The same run id appearing both run-only and with a job id must not crash the
+# None-safe sort (None is not orderable against a str job id).
+targets_mixed_jobnone = ci_monitor.parse_actions_targets(
+    {
+        "check_runs": [
+            {"app": {"slug": "github-actions"}, "details_url": "https://x/actions/runs/555"},
+            {"app": {"slug": "github-actions"}, "details_url": "https://x/actions/runs/555/job/42"},
+        ]
+    }
+)
+check(
+    targets_mixed_jobnone == [("555", None), ("555", "42")],
+    "a run appearing both run-only and with a job id sorts without raising",
+    "None-safe sort failed; got %r" % (targets_mixed_jobnone,),
+)
+
+
+# ── (y) #500 parse_steps job-id filter ─────────────────────────────────────────
+print("\n=== (y) #500 parse_steps filters by job id ===")
+
+TWO_JOBS = {
+    "jobs": [
+        {
+            "id": 42,
+            "name": "build-and-test",
+            "steps": [
+                {
+                    "number": 4,
+                    "name": "Build and run unit tests",
+                    "status": "completed",
+                    "conclusion": "success",
+                }
+            ],
+        },
+        {
+            "id": 77,
+            "name": "some-other-job",
+            "steps": [
+                {
+                    "number": 1,
+                    "name": "Build and run unit tests",
+                    "status": "completed",
+                    "conclusion": "success",
+                }
+            ],
+        },
+    ]
+}
+out_y_match = ci_monitor.parse_steps(TWO_JOBS, set(), {"42"}, REPO_STEP_REGEX)
+check(
+    out_y_match == ['step "Build and run unit tests" -> success'],
+    "job-id filter {42} reports only job 42's step",
+    "expected exactly job 42's step; got %r" % out_y_match,
+)
+out_y_none = ci_monitor.parse_steps(TWO_JOBS, set(), None, REPO_STEP_REGEX)
+check(
+    len(out_y_none) == 2,
+    "job_ids=None applies no filter (both jobs' steps reported)",
+    "expected 2 step lines with no filter; got %r" % out_y_none,
+)
+
+
+# ── (z) #500 configurable interesting-step regex ───────────────────────────────
+print("\n=== (z) #500 interesting_step_regex configures which steps surface on success ===")
+
+CUSTOM_STEP_JOBS = {
+    "jobs": [
+        {
+            "id": 1,
+            "name": "j",
+            "steps": [
+                {
+                    "number": 1,
+                    "name": "MyCustomStep",
+                    "status": "completed",
+                    "conclusion": "success",
+                },
+                {
+                    "number": 2,
+                    "name": "Boring setup",
+                    "status": "completed",
+                    "conclusion": "success",
+                },
+                {
+                    "number": 3,
+                    "name": "Boring failing step",
+                    "status": "completed",
+                    "conclusion": "failure",
+                },
+            ],
+        }
+    ]
+}
+out_z_custom = ci_monitor.parse_steps(CUSTOM_STEP_JOBS, set(), None, "MyCustomStep")
+check(
+    'step "MyCustomStep" -> success' in out_z_custom,
+    "a step matching interesting_step_regex surfaces on a success conclusion",
+    "custom interesting step not surfaced; got %r" % out_z_custom,
+)
+check(
+    not any("Boring setup" in ln for ln in out_z_custom),
+    "a non-matching successful step stays suppressed",
+    "non-matching success step leaked; got %r" % out_z_custom,
+)
+check(
+    'step "Boring failing step" -> failure' in out_z_custom,
+    "a genuine failure surfaces regardless of interesting_step_regex (unconditional clause)",
+    "genuine failure step not surfaced; got %r" % out_z_custom,
+)
+# In-code default (never-match): only the genuine failure surfaces.
+out_z_default = ci_monitor.parse_steps(CUSTOM_STEP_JOBS, set(), None)
+check(
+    out_z_default == ['step "Boring failing step" -> failure'],
+    "the in-code default interesting_step_regex surfaces only genuine failures",
+    "default interesting-step behavior wrong; got %r" % out_z_default,
+)
+
+
+# ── (aa) #500 configurable artifact-name regex ─────────────────────────────────
+print("\n=== (aa) #500 artifact_name_regex configures which artifacts are downloaded ===")
+
+ARTS_FIXTURE = {
+    "artifacts": [
+        {"id": 1, "name": "testresults-unit", "expired": False},
+        {"id": 2, "name": "unit-test-results", "expired": False},
+        {"id": 3, "name": "myresults-foo", "expired": False},
+    ]
+}
+out_aa_default = ci_monitor.parse_new_artifacts(ARTS_FIXTURE, set(), REPO_ARTIFACT_REGEX)
+check(
+    out_aa_default == [("1", "testresults-unit")],
+    "default ^testresults- regex includes testresults-unit, excludes unit-test-results",
+    "default artifact regex wrong; got %r" % out_aa_default,
+)
+out_aa_custom = ci_monitor.parse_new_artifacts(ARTS_FIXTURE, set(), "^myresults-")
+check(
+    out_aa_custom == [("3", "myresults-foo")],
+    "a custom artifact regex selects myresults-foo and excludes testresults-unit",
+    "custom artifact regex wrong; got %r" % out_aa_custom,
+)
+
+
+# ── (ab) #500 dual-marker back-compat and default-marker behavior ──────────────
+print("\n=== (ab) #500 test_marker_regex: dual-marker back-compat and ##TEST## default ===")
+
+LINE_TEST = '##TEST## {"suite":"S","name":"n_new","outcome":"FAIL","ms":1,"msg":"new","trace":""}'
+LINE_GB4PC = (
+    'x ##GB4PC_TEST## {"suite":"S","name":"n_old","outcome":"FAIL","ms":1,"msg":"old","trace":""}'
+)
+
+# The repo config regex (##GB4PC_TEST##|##TEST##) parses BOTH marker forms, each
+# with the correct JSON payload offset (computed from the matched span's end).
+out_ab_new = ci_monitor.parse_fails([LINE_TEST], set(), test_marker_regex=REPO_MARKER_REGEX)
+check(
+    out_ab_new == ["FAIL [S] n_new: new"],
+    "dual-marker regex parses a ##TEST## line",
+    "dual-marker on ##TEST## wrong; got %r" % out_ab_new,
+)
+out_ab_old = ci_monitor.parse_fails([LINE_GB4PC], set(), test_marker_regex=REPO_MARKER_REGEX)
+check(
+    out_ab_old == ["FAIL [S] n_old: old"],
+    "dual-marker regex parses a legacy ##GB4PC_TEST## line with the correct offset",
+    "dual-marker on ##GB4PC_TEST## wrong (offset bug?); got %r" % out_ab_old,
+)
+out_ab_both = ci_monitor.parse_fails(
+    [LINE_TEST, LINE_GB4PC], set(), test_marker_regex=REPO_MARKER_REGEX
+)
+check(
+    out_ab_both == ["FAIL [S] n_new: new", "FAIL [S] n_old: old"],
+    "a mixed stream with both marker forms parses both lines",
+    "mixed-marker stream wrong; got %r" % out_ab_both,
+)
+
+# The in-code default (##TEST##) parses a ##TEST## line but does NOT parse a
+# ##GB4PC_TEST##-only line: ##TEST## does not match anywhere in the legacy
+# marker (the char after the leading ## is G, not T), so re.search returns None
+# and the line is skipped. This pins "switch by default, keep both only in this
+# repo's config".
+out_ab_def_new = ci_monitor.parse_fails([LINE_TEST], set())
+check(
+    out_ab_def_new == ["FAIL [S] n_new: new"],
+    "the default ##TEST## regex parses a ##TEST## line",
+    "default marker on ##TEST## wrong; got %r" % out_ab_def_new,
+)
+out_ab_def_old = ci_monitor.parse_fails([LINE_GB4PC], set())
+check(
+    out_ab_def_old == [],
+    "the default ##TEST## regex does NOT parse a legacy ##GB4PC_TEST##-only line",
+    "default marker unexpectedly parsed a ##GB4PC_TEST## line; got %r" % out_ab_def_old,
+)
+
+
+# ── (ac) #500 load_config: file present / absent / invalid / partial / bad regex ─
+print("\n=== (ac) #500 load_config: defaults, absence, invalid JSON, partial keys, bad regex ===")
+
+import tempfile  # noqa: E402
+
+_DEFAULTS = {
+    "artifact_name_regex": ci_monitor.DEFAULT_ARTIFACT_NAME_REGEX,
+    "interesting_step_regex": ci_monitor.DEFAULT_INTERESTING_STEP_REGEX,
+    "test_marker_regex": ci_monitor.DEFAULT_TEST_MARKER_REGEX,
+}
+
+
+def _write_tmp(text):
+    fd, path = tempfile.mkstemp(suffix=".json")
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    return path
+
+
+# Present file with all three keys.
+_p_full = _write_tmp(
+    json.dumps(
+        {
+            "artifact_name_regex": "^foo-",
+            "interesting_step_regex": "bar",
+            "test_marker_regex": "##BAZ##",
+        }
+    )
+)
+cfg_full = ci_monitor.load_config(_p_full)
+os.remove(_p_full)
+check(
+    cfg_full
+    == {
+        "artifact_name_regex": "^foo-",
+        "interesting_step_regex": "bar",
+        "test_marker_regex": "##BAZ##",
+    },
+    "present file returns all three configured regexes",
+    "present-file config wrong; got %r" % cfg_full,
+)
+
+# Absent file -> all defaults.
+cfg_absent = ci_monitor.load_config(os.path.join(tempfile.gettempdir(), "no-such-ci-config.json"))
+check(
+    cfg_absent == _DEFAULTS,
+    "absent file falls back to all in-code defaults",
+    "absent-file config wrong; got %r" % cfg_absent,
+)
+
+# Invalid JSON -> all defaults, no raise.
+_p_bad = _write_tmp("{ this is not json ")
+cfg_bad = ci_monitor.load_config(_p_bad)
+os.remove(_p_bad)
+check(
+    cfg_bad == _DEFAULTS,
+    "invalid JSON falls back to all defaults without raising",
+    "invalid-JSON config wrong; got %r" % cfg_bad,
+)
+
+# Partial file (one key) -> that key from file, others default.
+_p_partial = _write_tmp(json.dumps({"test_marker_regex": "##ONLY##"}))
+cfg_partial = ci_monitor.load_config(_p_partial)
+os.remove(_p_partial)
+check(
+    cfg_partial["test_marker_regex"] == "##ONLY##"
+    and cfg_partial["artifact_name_regex"] == ci_monitor.DEFAULT_ARTIFACT_NAME_REGEX
+    and cfg_partial["interesting_step_regex"] == ci_monitor.DEFAULT_INTERESTING_STEP_REGEX,
+    "a partial file uses the file value for its key and defaults for the rest",
+    "partial config wrong; got %r" % cfg_partial,
+)
+
+# Non-compiling regex for one key -> that key falls back to its default.
+_p_badre = _write_tmp(json.dumps({"artifact_name_regex": "([unclosed"}))
+cfg_badre = ci_monitor.load_config(_p_badre)
+os.remove(_p_badre)
+check(
+    cfg_badre["artifact_name_regex"] == ci_monitor.DEFAULT_ARTIFACT_NAME_REGEX,
+    "a non-compiling regex value falls back to that key's default",
+    "bad-regex fallback wrong; got %r" % cfg_badre,
+)
+
+# The committed repo config carries this repo's values, including the dual marker.
+_repo_cfg_path = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "ci_monitor", "ci_monitor.config.json"
+)
+cfg_repo = ci_monitor.load_config(_repo_cfg_path)
+check(
+    cfg_repo["test_marker_regex"] == REPO_MARKER_REGEX
+    and cfg_repo["artifact_name_regex"] == REPO_ARTIFACT_REGEX
+    and cfg_repo["interesting_step_regex"] == REPO_STEP_REGEX,
+    "the committed ci_monitor.config.json carries this repo's regexes (incl. dual marker)",
+    "committed repo config wrong; got %r" % cfg_repo,
+)
+
+
+# ── (ad) #499 wrong-run regression + multi-run discovery via main() ────────────
+print("\n=== (ad) #499/#500: the failing build run is tracked among multiple Actions checks ===")
+
+# #499: an auxiliary Actions workflow's check run appears first in check-runs (its
+# own run id, no testresults-* artifact, an unrelated job id), and the real build
+# check appears later (failing gate step + a testresults-* artifact). Discovering
+# targets from check-runs (not a hardcoded workflow/job name) must track the build
+# run so its step failure and FAIL surface. Two distinct run ids also exercise
+# multi-run fan-out.
+PR_AD = {"head": {"sha": "499f1xed"}}
+# Verdict check-runs: Blocked. Diagnostic check-runs lists BOTH Actions runs.
+CHECK_BL_AD = {"total_count": 2, "check_runs": [{"status": "completed", "conclusion": "failure"}]}
+DIAG_CHECK_AD = check_runs_payload(("700", "70"), ("800", "80"))  # aux run 700, build run 800
+# Aux run 700/job 70: a successful unrelated step, no testresults-* artifact.
+JOBS_AUX_AD = {
+    "jobs": [
+        {
+            "id": 70,
+            "name": "aux-workflow",
+            "steps": [
+                {"number": 1, "name": "Lint", "status": "completed", "conclusion": "success"},
+            ],
+        }
+    ]
+}
+ARTS_AUX_AD = {"artifacts": [{"id": 7000, "name": "lint-report", "expired": False}]}
+# Build run 800/job 80: the failing gate step + a testresults-* artifact.
+JOBS_BUILD_AD = {
+    "jobs": [
+        {
+            "id": 80,
+            "name": "build-and-test",
+            "steps": [
+                {
+                    "number": 7,
+                    "name": "Gate on test failures",
+                    "status": "completed",
+                    "conclusion": "failure",
+                },
+            ],
+        }
+    ]
+}
+ARTS_BUILD_AD = {"artifacts": [{"id": 8000, "name": "testresults-e2e-gallery", "expired": False}]}
+ZIP_BUILD_AD = make_zip_ndjson(
+    [
+        '##GB4PC_TEST## {"suite":"com.gb4pc.e2e.GalleryButtonVisualE2ETest","name":"test1a","outcome":"FAIL","ms":9,"msg":"button not green","trace":""}',
+    ]
+)
+
+# Single poll, terminal Blocked. poll_signals self-fetches the diagnostic
+# check-runs (run 700 then 800) and, per run, fetches jobs+artifacts; the build
+# run's artifact downloads its zip. Then drain_then_print runs DRAIN_MAX_ATTEMPTS
+# times, finding everything already seen.
+# Poll: pulls, verdict check-runs, diagnostic check-runs, (jobs+arts for 700),
+#       (jobs+arts+zip for 800) = 1+1+1+2+3 = 8.
+# Each drain attempt: diagnostic check-runs, (jobs+arts x2) = 1+4 = 5; x3 = 15.
+# 8 + 15 = 23.
+side_effects_ad = collections.deque(
+    [
+        PR_AD,  # pulls -> sha
+        CHECK_BL_AD,  # verdict check-runs -> Blocked (terminal)
+        DIAG_CHECK_AD,  # diagnostic check-runs -> runs 700, 800
+        JOBS_AUX_AD,  # run 700 jobs -> unrelated success step (suppressed)
+        ARTS_AUX_AD,  # run 700 artifacts -> no testresults-* match, no zip
+        JOBS_BUILD_AD,  # run 800 jobs -> gate step failure
+        ARTS_BUILD_AD,  # run 800 artifacts -> testresults-e2e-gallery
+        ZIP_BUILD_AD,  # run 800 zip -> FAIL line
+    ]
+)
+for _ in range(3):
+    side_effects_ad.append(DIAG_CHECK_AD)  # drain: diagnostic check-runs
+    side_effects_ad.append(JOBS_AUX_AD)  # run 700 jobs (seen)
+    side_effects_ad.append(ARTS_AUX_AD)  # run 700 artifacts (no match)
+    side_effects_ad.append(JOBS_BUILD_AD)  # run 800 jobs (seen)
+    side_effects_ad.append(ARTS_BUILD_AD)  # run 800 artifacts (seen)
+
+
+def fake_request_ad(url, token, raw=False):
+    return side_effects_ad.popleft()
+
+
+buf_ad = io.StringIO()
+with (
+    unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_ad),
+    unittest.mock.patch.object(ci_monitor.time, "time", return_value=6000.0),
+    unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None),
+    unittest.mock.patch("sys.stdout", new=buf_ad),
+):
+    rc_ad = ci_monitor.main(["ci_monitor.py", "--pr", "499"])
+
+out_ad = buf_ad.getvalue()
+lines_ad = out_ad.splitlines()
+gate_step_ad = 'PR#499: step "Gate on test failures" -> failure'
+fail_line_ad = "PR#499: FAIL [com.gb4pc.e2e.GalleryButtonVisualE2ETest] test1a: button not green"
+blocked_line_ad = "PR#499: Blocked"
+
+check(
+    gate_step_ad in lines_ad,
+    "the build run's failing gate step is tracked despite an auxiliary Actions check appearing first",
+    "build gate step missing; output: %r" % out_ad,
+)
+check(
+    fail_line_ad in lines_ad,
+    "the build run's per-test FAIL is surfaced (multi-run discovery from check-runs)",
+    "build FAIL missing; output: %r" % out_ad,
+)
+check(
+    not any("Lint" in ln for ln in lines_ad),
+    "the auxiliary run's unrelated success step is suppressed",
+    "auxiliary step leaked; output: %r" % out_ad,
+)
+check(
+    gate_step_ad in lines_ad
+    and fail_line_ad in lines_ad
+    and blocked_line_ad in lines_ad
+    and lines_ad.index(gate_step_ad) < lines_ad.index(blocked_line_ad)
+    and lines_ad.index(fail_line_ad) < lines_ad.index(blocked_line_ad),
+    "ordering: discovered build signals precede the terminal Blocked line",
+    "ordering wrong; lines: %r" % lines_ad,
+)
+check(
+    len(side_effects_ad) == 0,
+    "all 23 mocked requests consumed (two runs fanned out, build zip once)",
+    "request deque not drained; %d entries left" % len(side_effects_ad),
+)
+check(rc_ad == 0, "main() returned 0", "main() returned %r" % rc_ad)
+
+
+# ── (ae) #500 doc-sync grep: no legacy hardcoded couplings remain ──────────────
+print(
+    "\n=== (ae) #500 doc-sync: ci_monitor.py has no legacy hardcoded workflow/job/marker literals ==="
+)
+
+_MONITOR_SRC = open(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "ci_monitor", "ci_monitor.py"),
+    encoding="utf-8",
+).read()
+
+# Strip docstrings/comments would be heavy; instead assert the load-bearing
+# legacy literals do not appear as code. These are gone entirely from the source
+# (including comments), having been replaced by config-driven regexes (#500).
+for legacy in (
+    '"build-and-test"',
+    "head_sha=",
+    "event=pull_request",
+    "workflow_runs",
+    "parse_run_id",
+):
+    check(
+        legacy not in _MONITOR_SRC,
+        "no legacy literal %r remains in ci_monitor.py" % legacy,
+        "legacy literal %r still present in ci_monitor.py" % legacy,
+    )
+# The hardcoded named-step heuristic ("Build and run unit tests" / "E2ETest" as
+# code) is gone; those names now live only in the config file.
+check(
+    'name == "Build and run unit tests"' not in _MONITOR_SRC,
+    "the hardcoded 'Build and run unit tests' name-equality heuristic is gone",
+    "hardcoded unit-test step name still in ci_monitor.py",
+)
+# The legacy emit marker is no longer hardcoded as a contract; only the
+# DEFAULT_TEST_MARKER_REGEX (##TEST##) and explanatory text remain. Assert the
+# literal ##GB4PC_TEST## does not appear as a Python string constant assignment.
+check(
+    'TEST_MARKER = "##GB4PC_TEST##"' not in _MONITOR_SRC,
+    "the module-level TEST_MARKER = ##GB4PC_TEST## constant is gone",
+    "TEST_MARKER constant still present in ci_monitor.py",
+)
+
+
+# ── (af) #500 poll_signals scopes the job-id filter per run ────────────────────
+print("\n=== (af) #500 poll_signals: a run-only target does not widen another run's job filter ===")
+
+# Two Actions runs in one poll: run 100 exposes only a run id (no job id), run 200
+# exposes job 22. The job filter must be scoped per run: run 200's steps are
+# filtered to job 22 (so a step in its *other* job 23 is suppressed), even though
+# run 100 is run-only. Before the per-run scoping fix, a single run-only target
+# set job_ids=None globally and run 200's job-23 step would have leaked.
+PR_AF = {"head": {"sha": "5c0pe1d1"}}
+CHECK_BL_AF = {"total_count": 2, "check_runs": [{"status": "completed", "conclusion": "failure"}]}
+DIAG_CHECK_AF = check_runs_payload(("100", None), ("200", "22"))  # run 100 run-only, run 200 job 22
+# Run 100 (run-only): a named unit-test step that should surface (no job filter).
+JOBS_100_AF = {
+    "jobs": [
+        {
+            "id": 11,
+            "name": "run-only-job",
+            "steps": [
+                {
+                    "number": 1,
+                    "name": "Build and run unit tests",
+                    "status": "completed",
+                    "conclusion": "success",
+                }
+            ],
+        }
+    ]
+}
+# Run 200: job 22 has a named E2E step (should surface); job 23 has a named step
+# that must be SUPPRESSED because the filter is scoped to job 22 only.
+JOBS_200_AF = {
+    "jobs": [
+        {
+            "id": 22,
+            "name": "build-and-test",
+            "steps": [
+                {
+                    "number": 1,
+                    "name": "Run PixelCameraOverlayE2ETest",
+                    "status": "completed",
+                    "conclusion": "success",
+                }
+            ],
+        },
+        {
+            "id": 23,
+            "name": "unrelated-job",
+            "steps": [
+                {
+                    "number": 1,
+                    "name": "Run GalleryButtonVisualE2ETest",
+                    "status": "completed",
+                    "conclusion": "success",
+                }
+            ],
+        },
+    ]
+}
+ARTS_EMPTY_AF = {"artifacts": []}
+
+# Single poll, terminal Blocked. poll_signals self-fetches the diagnostic
+# check-runs and, per run, fetches jobs+artifacts (no zip: artifacts empty).
+# Poll: pulls, verdict check-runs, diagnostic check-runs, (jobs+arts x2) = 7.
+# Each drain attempt: diagnostic check-runs, (jobs+arts x2) = 5; x3 = 15. 7+15=22.
+side_effects_af = collections.deque(
+    [
+        PR_AF,
+        CHECK_BL_AF,
+        DIAG_CHECK_AF,
+        JOBS_100_AF,
+        ARTS_EMPTY_AF,
+        JOBS_200_AF,
+        ARTS_EMPTY_AF,
+    ]
+)
+for _ in range(3):
+    side_effects_af.append(DIAG_CHECK_AF)
+    side_effects_af.append(JOBS_100_AF)
+    side_effects_af.append(ARTS_EMPTY_AF)
+    side_effects_af.append(JOBS_200_AF)
+    side_effects_af.append(ARTS_EMPTY_AF)
+
+
+def fake_request_af(url, token, raw=False):
+    return side_effects_af.popleft()
+
+
+buf_af = io.StringIO()
+with (
+    unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_af),
+    unittest.mock.patch.object(ci_monitor.time, "time", return_value=7000.0),
+    unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None),
+    unittest.mock.patch("sys.stdout", new=buf_af),
+):
+    rc_af = ci_monitor.main(["ci_monitor.py", "--pr", "500"])
+
+out_af = buf_af.getvalue()
+lines_af = out_af.splitlines()
+check(
+    'PR#500: step "Build and run unit tests" -> success' in lines_af,
+    "the run-only run's named step surfaces (no job filter for that run)",
+    "run-only run's step missing; output: %r" % out_af,
+)
+check(
+    'PR#500: step "Run PixelCameraOverlayE2ETest" -> success' in lines_af,
+    "run 200's filtered job (22) reports its named step",
+    "run 200 job-22 step missing; output: %r" % out_af,
+)
+check(
+    not any("GalleryButtonVisualE2ETest" in ln for ln in lines_af),
+    "run 200's other job (23) is suppressed: the run-only target did not widen run 200's filter",
+    "job-23 step leaked (per-run scoping failed); output: %r" % out_af,
+)
+check(
+    len(side_effects_af) == 0,
+    "all 22 mocked requests consumed (two runs fanned out, no zips)",
+    "request deque not drained; %d entries left" % len(side_effects_af),
+)
+check(rc_af == 0, "main() returned 0", "main() returned %r" % rc_af)
 
 
 # ── Summary ────────────────────────────────────────────────────────────────────
