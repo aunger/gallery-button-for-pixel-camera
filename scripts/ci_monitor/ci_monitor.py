@@ -55,9 +55,9 @@ DEFAULT_ARTIFACT_NAME_REGEX = r"^testresults-"
 DEFAULT_INTERESTING_STEP_REGEX = r"(?!)"
 
 # Locate the per-test marker prefix in a raw ndjson line. The JSON payload begins
-# at the end of the matched span, so a multi-alternative regex must list the
-# longer marker first (see ci_monitor.config.json). Default switched to ##TEST##
-# per issue #500; this repo's config matches both markers for back-compat.
+# at the end of the matched span (re.search(...).end()), which is correct for any
+# marker the regex matches. Default switched to ##TEST## per issue #500; this
+# repo's config matches both markers for back-compat (see ci_monitor.config.json).
 DEFAULT_TEST_MARKER_REGEX = r"##TEST##"
 
 
@@ -140,7 +140,9 @@ def parse_steps(
     """Emit step-delta lines for the tracked CI job(s).
 
     Reads parsed jobs JSON (a dict, as from /actions/runs/{id}/jobs) and a
-    `seen` set of already-reported step numbers (mutated in place). When
+    `seen` set of already-reported "<job id>#<step number>" keys (mutated in
+    place; step numbers are per-job, so the job id keeps them distinct across
+    multiple jobs/runs). When
     `job_ids` is a set, only jobs whose id is in it are considered; `job_ids` of
     None applies no job filter. Emits a line when a step reaches 'completed' if
     its name matches `interesting_step_regex` (on any conclusion) or it genuinely
@@ -157,10 +159,12 @@ def parse_steps(
         for s in j.get("steps", []):
             if s.get("status") != "completed":
                 continue
-            num = str(s.get("number"))
-            if num in seen:
+            # Dedup by job id + step number: step numbers are per-job, so across
+            # multiple jobs/runs (issue #500) a bare number would collide.
+            key = "%s#%s" % (j.get("id"), s.get("number"))
+            if key in seen:
                 continue
-            seen.add(num)
+            seen.add(key)
             name = s.get("name", "?")
             concl = s.get("conclusion") or "?"
             if re.search(interesting_step_regex, name) or concl in (
@@ -182,10 +186,10 @@ def parse_fails(lines, seen, outcome_filters=None, test_marker_regex=DEFAULT_TES
     suite#name#outcome.
 
     `test_marker_regex` locates the marker that prefixes each test's JSON payload.
-    The payload is parsed from the end of the matched span, so a multi-alternative
-    regex must list the longer marker first (e.g. `##GB4PC_TEST##|##TEST##`):
-    `##TEST##` is a substring of `##GB4PC_TEST##`, so a bare `##TEST##` search on a
-    `##GB4PC_TEST##` line would match mid-marker and corrupt the JSON offset.
+    The payload is parsed from the end of the matched span (re.search(...).end()),
+    which keeps the offset correct for any marker the regex matches, including a
+    multi-alternative regex like `##GB4PC_TEST##|##TEST##`. A line whose marker
+    the regex does not match at all is skipped.
 
     `outcome_filters` is a dict mapping outcome names ('FAIL', 'PASS', 'SKIP') to
     (enabled, pattern) tuples, where `enabled` is a bool and `pattern` is either
@@ -585,19 +589,22 @@ def main(argv):
         if not targets:
             return emitted[0]
 
-        # Distinct run ids to fetch, and the job ids to filter steps to. A None
-        # job id (run-only URL) widens the filter to all jobs in that run.
-        run_ids = []
-        job_ids = set()
+        # Map each distinct run id to the set of job ids to filter its steps to,
+        # scoped per run: a run-only target (job id None) widens the filter to
+        # all jobs of that run only, without affecting any other run's filter.
+        run_job_ids = {}
+        run_order = []
         for run_id, job_id in targets:
-            if run_id not in run_ids:
-                run_ids.append(run_id)
+            if run_id not in run_job_ids:
+                run_job_ids[run_id] = set()
+                run_order.append(run_id)
             if job_id is None:
-                job_ids = None
-            elif job_ids is not None:
-                job_ids.add(job_id)
+                run_job_ids[run_id] = None
+            elif run_job_ids[run_id] is not None:
+                run_job_ids[run_id].add(job_id)
 
-        for run_id in run_ids:
+        for run_id in run_order:
+            job_ids = run_job_ids[run_id]
             # Signal 1 — per-step conclusion deltas for the tracked job(s).
             jobs_json = _request(
                 "%s/repos/%s/%s/actions/runs/%s/jobs?per_page=30" % (API_BASE, OWNER, REPO, run_id),

@@ -64,9 +64,10 @@ This repo's committed `ci_monitor.config.json` sets:
 - `test_marker_regex`: `##GB4PC_TEST##|##TEST##` (back-compat dual marker, see below).
 
 **Back-compat dual marker.**
-The default read marker is `##TEST##`, but this repo's CI still emits `##GB4PC_TEST##` (see `build.yml`), so the committed config matches both.
-The longer alternative is listed *first* (`##GB4PC_TEST##|##TEST##`): `##TEST##` is a substring of `##GB4PC_TEST##` (not a prefix), so a bare `##TEST##` search on a `##GB4PC_TEST##` line would match mid-marker and corrupt the JSON payload offset.
-Listing the full marker first makes the regex engine prefer it, so the matched span (and thus the payload offset, computed from the span's end) is correct for both forms.
+The default read marker is `##TEST##`, but this repo's CI still emits `##GB4PC_TEST##` (see `build.yml`), so the committed config matches both (`##GB4PC_TEST##|##TEST##`).
+The payload offset is computed from the end of whichever alternative matched (`re.search(...).end()`), so both markers parse correctly.
+Alternation order does not matter for this pair: neither marker is a prefix of the other (`##GB4PC_TEST##` has `G` after the leading `##`, while `##TEST##` has `T`), so they can never match at the same start position, and `##TEST##` does not appear inside `##GB4PC_TEST##` at all.
+The full marker is simply listed first as a readable convention.
 Switching the *emit* side to `##TEST##` (the Gradle/test reporters plus the `build.yml` greps) is a separate, larger change and out of scope here; the dual-marker config is the bridge, not an end state.
 
 ## Outcome vocabulary

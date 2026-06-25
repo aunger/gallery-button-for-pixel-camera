@@ -36,6 +36,7 @@ Covers:
   (ac) #500 load_config: present/absent/invalid/partial/bad-regex fallbacks; repo config
   (ad) #499/#500: the failing build run is tracked among multiple Actions checks (wiring b)
   (ae) #500 doc-sync: no legacy hardcoded workflow/job/marker literals remain
+  (af) #500 poll_signals: a run-only target does not widen another run's job-id filter
 
 No network calls required; no GITHUB_TOKEN needed.
 Always exits 0 on success, non-zero on failure.
@@ -2765,8 +2766,8 @@ LINE_GB4PC = (
     'x ##GB4PC_TEST## {"suite":"S","name":"n_old","outcome":"FAIL","ms":1,"msg":"old","trace":""}'
 )
 
-# Repo config regex (longer alternative first) parses BOTH marker forms with the
-# correct JSON payload offset.
+# The repo config regex (##GB4PC_TEST##|##TEST##) parses BOTH marker forms, each
+# with the correct JSON payload offset (computed from the matched span's end).
 out_ab_new = ci_monitor.parse_fails([LINE_TEST], set(), test_marker_regex=REPO_MARKER_REGEX)
 check(
     out_ab_new == ["FAIL [S] n_new: new"],
@@ -2788,10 +2789,11 @@ check(
     "mixed-marker stream wrong; got %r" % out_ab_both,
 )
 
-# The in-code default (##TEST##) parses a ##TEST## line but does NOT correctly
-# parse a ##GB4PC_TEST##-only line: ##TEST## matches mid-marker there, so the
-# JSON offset is corrupt and the line is skipped. This pins "switch by default,
-# keep both only in this repo's config".
+# The in-code default (##TEST##) parses a ##TEST## line but does NOT parse a
+# ##GB4PC_TEST##-only line: ##TEST## does not match anywhere in the legacy
+# marker (the char after the leading ## is G, not T), so re.search returns None
+# and the line is skipped. This pins "switch by default, keep both only in this
+# repo's config".
 out_ab_def_new = ci_monitor.parse_fails([LINE_TEST], set())
 check(
     out_ab_def_new == ["FAIL [S] n_new: new"],
@@ -3071,6 +3073,127 @@ check(
     "the module-level TEST_MARKER = ##GB4PC_TEST## constant is gone",
     "TEST_MARKER constant still present in ci_monitor.py",
 )
+
+
+# ── (af) #500 poll_signals scopes the job-id filter per run ────────────────────
+print("\n=== (af) #500 poll_signals: a run-only target does not widen another run's job filter ===")
+
+# Two Actions runs in one poll: run 100 exposes only a run id (no job id), run 200
+# exposes job 22. The job filter must be scoped per run: run 200's steps are
+# filtered to job 22 (so a step in its *other* job 23 is suppressed), even though
+# run 100 is run-only. Before the per-run scoping fix, a single run-only target
+# set job_ids=None globally and run 200's job-23 step would have leaked.
+PR_AF = {"head": {"sha": "5c0pe1d1"}}
+CHECK_BL_AF = {"total_count": 2, "check_runs": [{"status": "completed", "conclusion": "failure"}]}
+DIAG_CHECK_AF = check_runs_payload(("100", None), ("200", "22"))  # run 100 run-only, run 200 job 22
+# Run 100 (run-only): a named unit-test step that should surface (no job filter).
+JOBS_100_AF = {
+    "jobs": [
+        {
+            "id": 11,
+            "name": "run-only-job",
+            "steps": [
+                {
+                    "number": 1,
+                    "name": "Build and run unit tests",
+                    "status": "completed",
+                    "conclusion": "success",
+                }
+            ],
+        }
+    ]
+}
+# Run 200: job 22 has a named E2E step (should surface); job 23 has a named step
+# that must be SUPPRESSED because the filter is scoped to job 22 only.
+JOBS_200_AF = {
+    "jobs": [
+        {
+            "id": 22,
+            "name": "build-and-test",
+            "steps": [
+                {
+                    "number": 1,
+                    "name": "Run PixelCameraOverlayE2ETest",
+                    "status": "completed",
+                    "conclusion": "success",
+                }
+            ],
+        },
+        {
+            "id": 23,
+            "name": "unrelated-job",
+            "steps": [
+                {
+                    "number": 1,
+                    "name": "Run GalleryButtonVisualE2ETest",
+                    "status": "completed",
+                    "conclusion": "success",
+                }
+            ],
+        },
+    ]
+}
+ARTS_EMPTY_AF = {"artifacts": []}
+
+# Single poll, terminal Blocked. poll_signals self-fetches the diagnostic
+# check-runs and, per run, fetches jobs+artifacts (no zip: artifacts empty).
+# Poll: pulls, verdict check-runs, diagnostic check-runs, (jobs+arts x2) = 7.
+# Each drain attempt: diagnostic check-runs, (jobs+arts x2) = 5; x3 = 15. 7+15=22.
+side_effects_af = collections.deque(
+    [
+        PR_AF,
+        CHECK_BL_AF,
+        DIAG_CHECK_AF,
+        JOBS_100_AF,
+        ARTS_EMPTY_AF,
+        JOBS_200_AF,
+        ARTS_EMPTY_AF,
+    ]
+)
+for _ in range(3):
+    side_effects_af.append(DIAG_CHECK_AF)
+    side_effects_af.append(JOBS_100_AF)
+    side_effects_af.append(ARTS_EMPTY_AF)
+    side_effects_af.append(JOBS_200_AF)
+    side_effects_af.append(ARTS_EMPTY_AF)
+
+
+def fake_request_af(url, token, raw=False):
+    return side_effects_af.popleft()
+
+
+buf_af = io.StringIO()
+with (
+    unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_af),
+    unittest.mock.patch.object(ci_monitor.time, "time", return_value=7000.0),
+    unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None),
+    unittest.mock.patch("sys.stdout", new=buf_af),
+):
+    rc_af = ci_monitor.main(["ci_monitor.py", "--pr", "500"])
+
+out_af = buf_af.getvalue()
+lines_af = out_af.splitlines()
+check(
+    'PR#500: step "Build and run unit tests" -> success' in lines_af,
+    "the run-only run's named step surfaces (no job filter for that run)",
+    "run-only run's step missing; output: %r" % out_af,
+)
+check(
+    'PR#500: step "Run PixelCameraOverlayE2ETest" -> success' in lines_af,
+    "run 200's filtered job (22) reports its named step",
+    "run 200 job-22 step missing; output: %r" % out_af,
+)
+check(
+    not any("GalleryButtonVisualE2ETest" in ln for ln in lines_af),
+    "run 200's other job (23) is suppressed: the run-only target did not widen run 200's filter",
+    "job-23 step leaked (per-run scoping failed); output: %r" % out_af,
+)
+check(
+    len(side_effects_af) == 0,
+    "all 22 mocked requests consumed (two runs fanned out, no zips)",
+    "request deque not drained; %d entries left" % len(side_effects_af),
+)
+check(rc_af == 0, "main() returned 0", "main() returned %r" % rc_af)
 
 
 # ── Summary ────────────────────────────────────────────────────────────────────
