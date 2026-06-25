@@ -1,0 +1,7 @@
+{
+  "_comment": "CI Monitor configuration. Each value is a regex; absent keys fall back to in-code defaults (see README.md). artifact_name_regex selects which run artifacts carry test-result markers worth downloading. interesting_step_regex selects which step names surface on a non-failing conclusion (genuine failures always surface regardless). test_marker_regex locates the per-test ndjson marker.",
+  "_comment_test_marker": "This repo matches BOTH ##GB4PC_TEST## and ##TEST## for back-compatibility while the emit side still writes ##GB4PC_TEST##. The longer alternative is listed first so the regex engine prefers it and the matched span ends at the true marker boundary, keeping the JSON payload offset correct.",
+  "artifact_name_regex": "^testresults-",
+  "interesting_step_regex": "Build and run unit tests|E2ETest",
+  "test_marker_regex": "##GB4PC_TEST##|##TEST##"
+}

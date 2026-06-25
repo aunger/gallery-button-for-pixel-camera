@@ -25,6 +25,7 @@ import argparse
 import io
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -35,7 +36,71 @@ OWNER = "aunger"
 REPO = "gallery-button-for-pixel-camera"
 API_BASE = "https://api.github.com"
 
-TEST_MARKER = "##GB4PC_TEST##"
+# Configurable behavior (issue #500). Each tunable is a regex with an in-code
+# default; the committed scripts/ci_monitor/ci_monitor.config.json overrides the
+# defaults with this repo's specifics. load_config() reads that file, falling
+# back to these defaults when the file is absent, unreadable, invalid, or missing
+# a key, so the resilient poll loop never aborts on configuration.
+
+# Match (re.search) against an artifact's `name` to decide whether it carries
+# per-test ndjson markers worth downloading. Preserves the historical
+# testresults-* contract by default.
+DEFAULT_ARTIFACT_NAME_REGEX = r"^testresults-"
+
+# Match (re.search) against a step's `name` to decide whether to surface a
+# `step "..." -> ...` line on a non-failing conclusion. The never-match default
+# keeps the generic, repo-agnostic rule "a step is interesting if it failed"
+# (the genuine-failure clause in parse_steps is unconditional); named-step
+# reporting on success is project-specific and supplied via the config file.
+DEFAULT_INTERESTING_STEP_REGEX = r"(?!)"
+
+# Locate the per-test marker prefix in a raw ndjson line. The JSON payload begins
+# at the end of the matched span, so a multi-alternative regex must list the
+# longer marker first (see ci_monitor.config.json). Default switched to ##TEST##
+# per issue #500; this repo's config matches both markers for back-compat.
+DEFAULT_TEST_MARKER_REGEX = r"##TEST##"
+
+
+def load_config(path=None):
+    """Load the CI Monitor config, falling back to in-code defaults.
+
+    Returns a dict with keys artifact_name_regex, interesting_step_regex, and
+    test_marker_regex. A missing file, unreadable file, or invalid JSON falls
+    back entirely to the DEFAULT_* regexes (the Monitor must never abort on
+    config). Each key independently defaults if absent, and a value that does not
+    compile as a regex falls back to that key's default rather than crashing.
+    """
+    defaults = {
+        "artifact_name_regex": DEFAULT_ARTIFACT_NAME_REGEX,
+        "interesting_step_regex": DEFAULT_INTERESTING_STEP_REGEX,
+        "test_marker_regex": DEFAULT_TEST_MARKER_REGEX,
+    }
+    if path is None:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ci_monitor.config.json")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            raw = json.load(fh)
+    except (OSError, ValueError) as e:
+        sys.stderr.write("config load failed (%s): %s; using defaults\n" % (path, e))
+        sys.stderr.flush()
+        return dict(defaults)
+
+    cfg = {}
+    for key, default in defaults.items():
+        value = raw.get(key, default)
+        if not isinstance(value, str):
+            sys.stderr.write("config key %s is not a string; using default\n" % key)
+            sys.stderr.flush()
+            value = default
+        try:
+            re.compile(value)
+        except re.error as e:
+            sys.stderr.write("config key %s is not a valid regex (%s); using default\n" % (key, e))
+            sys.stderr.flush()
+            value = default
+        cfg[key] = value
+    return cfg
+
 
 # Suppress repeated informational lines (in_progress heartbeat, "could not fetch
 # SHA", "still computing") until this many seconds have elapsed with no output of
@@ -69,18 +134,25 @@ DRAIN_MAX_ATTEMPTS = 3
 # ── Parsers ───────────────────────────────────────────────────────────────────
 
 
-def parse_steps(jobs_json, seen):
-    """Emit step-delta lines for the build-and-test job.
+def parse_steps(
+    jobs_json, seen, job_ids=None, interesting_step_regex=DEFAULT_INTERESTING_STEP_REGEX
+):
+    """Emit step-delta lines for the tracked CI job(s).
 
     Reads parsed jobs JSON (a dict, as from /actions/runs/{id}/jobs) and a
-    `seen` set of already-reported step numbers (mutated in place). Emits a line
-    when a step reaches 'completed' if it is one of the named test steps (on any
-    conclusion) or genuinely failed; successful setup steps and skipped
-    conditional steps are suppressed. Returns a list of step-delta lines.
+    `seen` set of already-reported step numbers (mutated in place). When
+    `job_ids` is a set, only jobs whose id is in it are considered; `job_ids` of
+    None applies no job filter. Emits a line when a step reaches 'completed' if
+    its name matches `interesting_step_regex` (on any conclusion) or it genuinely
+    failed; successful setup steps and skipped conditional steps are otherwise
+    suppressed. Returns a list of step-delta lines.
+
+    The genuine-failure clause is unconditional, so a failing step always
+    surfaces regardless of the regex.
     """
     out = []
     for j in jobs_json.get("jobs", []):
-        if j.get("name") != "build-and-test":
+        if job_ids is not None and str(j.get("id")) not in job_ids:
             continue
         for s in j.get("steps", []):
             if s.get("status") != "completed":
@@ -91,30 +163,35 @@ def parse_steps(jobs_json, seen):
             seen.add(num)
             name = s.get("name", "?")
             concl = s.get("conclusion") or "?"
-            if (
-                name == "Build and run unit tests"
-                or "E2ETest" in name
-                or concl in ("failure", "cancelled", "timed_out", "action_required")
+            if re.search(interesting_step_regex, name) or concl in (
+                "failure",
+                "cancelled",
+                "timed_out",
+                "action_required",
             ):
                 out.append('step "%s" -> %s' % (name, concl))
     return out
 
 
-def parse_fails(lines, seen, outcome_filters=None):
-    """Emit FAIL/PASS/SKIP lines from ##GB4PC_TEST## ndjson markers.
+def parse_fails(lines, seen, outcome_filters=None, test_marker_regex=DEFAULT_TEST_MARKER_REGEX):
+    """Emit FAIL/PASS/SKIP lines from per-test ndjson markers.
 
     `lines` is an iterable of raw text lines; `seen` is a set of already-reported
     suite#name#outcome keys (mutated in place). Returns a list of output lines, each
     possibly carrying an indented (truncated) trace. Deduped across calls by
     suite#name#outcome.
 
+    `test_marker_regex` locates the marker that prefixes each test's JSON payload.
+    The payload is parsed from the end of the matched span, so a multi-alternative
+    regex must list the longer marker first (e.g. `##GB4PC_TEST##|##TEST##`):
+    `##TEST##` is a substring of `##GB4PC_TEST##`, so a bare `##TEST##` search on a
+    `##GB4PC_TEST##` line would match mid-marker and corrupt the JSON offset.
+
     `outcome_filters` is a dict mapping outcome names ('FAIL', 'PASS', 'SKIP') to
     (enabled, pattern) tuples, where `enabled` is a bool and `pattern` is either
     None (match all) or a regex string (match only markers whose `name` matches).
     Default behavior (outcome_filters=None): report all FAIL, all SKIP, no PASS.
     """
-    import re as _re
-
     if outcome_filters is None:
         outcome_filters = {
             "FAIL": (True, None),
@@ -124,11 +201,11 @@ def parse_fails(lines, seen, outcome_filters=None):
 
     out = []
     for raw in lines:
-        i = raw.find(TEST_MARKER)
-        if i == -1:
+        marker = re.search(test_marker_regex, raw)
+        if marker is None:
             continue
         try:
-            m = json.loads(raw[i + len(TEST_MARKER) :].strip())
+            m = json.loads(raw[marker.end() :].strip())
         except Exception:
             continue
         outcome = m.get("outcome", "")
@@ -139,7 +216,7 @@ def parse_fails(lines, seen, outcome_filters=None):
             continue
         # Pattern is matched against the marker's `name` field.
         name = m.get("name", "")
-        if pattern is not None and not _re.search(pattern, name):
+        if pattern is not None and not re.search(pattern, name):
             continue
         key = m.get("suite", "") + "#" + name + "#" + outcome
         if key in seen:
@@ -199,26 +276,58 @@ def parse_check_result(check_json):
     return "in_progress"
 
 
-def parse_run_id(runs_json):
-    """Return the first non-cancelled workflow run id, or '' if none."""
-    for r in runs_json.get("workflow_runs", []):
-        if r.get("status") != "cancelled":
-            return str(r["id"])
-    return ""
+# Extract the run id (and optional job id) from an Actions check run's URL.
+_RUN_JOB_URL_RE = re.compile(r"/actions/runs/(\d+)(?:/job/(\d+))?")
 
 
-def parse_new_artifacts(artifacts_json, seen):
-    """Return [(id, name)] for new, unexpired testresults-* artifacts.
+def parse_actions_targets(check_json):
+    """Return sorted, de-duplicated (run_id, job_id) tuples from check-runs data.
 
-    `seen` is a set of already-downloaded artifact ids (read-only here). The
-    caller is responsible for adding an id to `seen` only after the artifact has
-    been successfully downloaded and parsed, so a transient download failure
-    leaves the artifact unseen and eligible for retry on the next poll.
+    Iterates the check runs in a /commits/{sha}/check-runs payload and, for each
+    one produced by GitHub Actions, parses the `(run_id, job_id)` pair out of its
+    `details_url` (falling back to `html_url`). A check run is treated as an
+    Actions run when `app.slug == "github-actions"`; when the `app` block is
+    missing, it falls back to "the URL matched /actions/runs/". `job_id` is None
+    when the URL carries only a run id.
+
+    Replaces the old workflow-name / head_sha-based run discovery (issue #500):
+    the run(s)/job(s) to track are derived from the same check-runs data the
+    verdict reads, rather than from a hardcoded workflow or job name. An empty
+    `check_runs` list yields an empty result.
+    """
+    targets = set()
+    for r in check_json.get("check_runs", []):
+        app = r.get("app")
+        if isinstance(app, dict):
+            if app.get("slug") != "github-actions":
+                continue
+        # No app block: fall back to recognizing the URL shape below.
+        url = r.get("details_url") or r.get("html_url") or ""
+        match = _RUN_JOB_URL_RE.search(url)
+        if not match:
+            continue
+        run_id, job_id = match.group(1), match.group(2)
+        targets.add((run_id, job_id))
+    # Sort with a None-safe key: the same run could appear both run-only
+    # (job_id=None) and with a job id, and None is not orderable against str.
+    return sorted(targets, key=lambda t: (t[0], t[1] is not None, t[1] or ""))
+
+
+def parse_new_artifacts(artifacts_json, seen, artifact_name_regex=DEFAULT_ARTIFACT_NAME_REGEX):
+    """Return [(id, name)] for new, unexpired artifacts matching the name regex.
+
+    `artifact_name_regex` is matched (re.search) against each artifact's `name`
+    to decide whether it carries per-test markers worth downloading; it replaces
+    the old hardcoded testresults-* prefix (issue #500). `seen` is a set of
+    already-downloaded artifact ids (read-only here). The caller is responsible
+    for adding an id to `seen` only after the artifact has been successfully
+    downloaded and parsed, so a transient download failure leaves the artifact
+    unseen and eligible for retry on the next poll.
     """
     out = []
     for a in artifacts_json.get("artifacts", []):
         n = a.get("name", "")
-        if n.startswith("testresults-") and not a.get("expired") and str(a["id"]) not in seen:
+        if re.search(artifact_name_regex, n) and not a.get("expired") and str(a["id"]) not in seen:
             out.append((str(a["id"]), n))
     return out
 
@@ -418,6 +527,14 @@ def main(argv):
     token = os.environ.get("GITHUB_TOKEN", "")
     outcome_filters = _parse_outcome_filters(args)
 
+    # Configurable run/artifact/step/marker behavior (issue #500). Loaded once at
+    # startup and threaded into the parsers below; a missing or invalid config
+    # falls back to the DEFAULT_* regexes without aborting the loop.
+    config = load_config()
+    artifact_name_regex = config["artifact_name_regex"]
+    interesting_step_regex = config["interesting_step_regex"]
+    test_marker_regex = config["test_marker_regex"]
+
     last_output_ts = time.time()
 
     # In-memory dedup state for the streamed test-result signals.
@@ -441,10 +558,18 @@ def main(argv):
 
         Mirrors the streamed test-result signals described in the module
         docstring: per-step conclusion deltas (Signal 1, via parse_steps) and
-        per-test FAIL/SKIP/PASS markers from testresults-<group> artifacts
+        per-test FAIL/SKIP/PASS markers from the test-result artifacts
         (Signal 2, via parse_fails). Both are purely informational — they reset
         the silence timer via emit_block but never end the loop. Returns True if
         any line was emitted this call.
+
+        Wiring (b) (issue #500): poll_signals fetches its own
+        /commits/{sha}/check-runs each poll and discovers the run(s)/job(s) to
+        track from it via parse_actions_targets. This re-fetches the payload the
+        main loop also fetches for the verdict (one extra request per poll, plus
+        one per drain attempt). The more efficient/robust option (a) -- fetch
+        check-runs once and pass it into both the verdict and poll_signals -- is
+        tracked in issue #512.
         """
         emitted = [False]
 
@@ -453,32 +578,46 @@ def main(argv):
                 emitted[0] = True
             emit_block(lines)
 
-        runs_json = _request(
-            "%s/repos/%s/%s/actions/runs?head_sha=%s&event=pull_request&per_page=5"
-            % (API_BASE, OWNER, REPO, sha),
-            token,
+        check_json = _request(
+            "%s/repos/%s/%s/commits/%s/check-runs" % (API_BASE, OWNER, REPO, sha), token
         )
-        run_id = parse_run_id(runs_json) if runs_json else ""
+        targets = parse_actions_targets(check_json) if check_json else []
+        if not targets:
+            return emitted[0]
 
-        if run_id:
-            # Signal 1 — per-step conclusion deltas for the build-and-test job.
+        # Distinct run ids to fetch, and the job ids to filter steps to. A None
+        # job id (run-only URL) widens the filter to all jobs in that run.
+        run_ids = []
+        job_ids = set()
+        for run_id, job_id in targets:
+            if run_id not in run_ids:
+                run_ids.append(run_id)
+            if job_id is None:
+                job_ids = None
+            elif job_ids is not None:
+                job_ids.add(job_id)
+
+        for run_id in run_ids:
+            # Signal 1 — per-step conclusion deltas for the tracked job(s).
             jobs_json = _request(
                 "%s/repos/%s/%s/actions/runs/%s/jobs?per_page=30" % (API_BASE, OWNER, REPO, run_id),
                 token,
             )
             if jobs_json:
-                _emit(parse_steps(jobs_json, seen_steps))
+                _emit(parse_steps(jobs_json, seen_steps, job_ids, interesting_step_regex))
 
-            # Signal 2 — per-test FAIL detail from the testresults-<group>
-            # artifacts. Download each new artifact once, parse its
-            # ##GB4PC_TEST## ndjson markers, and emit new FAIL entries.
+            # Signal 2 — per-test FAIL detail from the test-result artifacts.
+            # Download each new artifact once, parse its per-test ndjson markers,
+            # and emit new FAIL entries.
             artifacts_json = _request(
                 "%s/repos/%s/%s/actions/runs/%s/artifacts?per_page=100"
                 % (API_BASE, OWNER, REPO, run_id),
                 token,
             )
             if artifacts_json:
-                for aid, _name in parse_new_artifacts(artifacts_json, seen_arts):
+                for aid, _name in parse_new_artifacts(
+                    artifacts_json, seen_arts, artifact_name_regex
+                ):
                     zip_bytes = _request(
                         "%s/repos/%s/%s/actions/artifacts/%s/zip" % (API_BASE, OWNER, REPO, aid),
                         token,
@@ -490,7 +629,7 @@ def main(argv):
                         lines = list(extract_ndjson_lines(zip_bytes))
                     except (zipfile.BadZipFile, OSError):
                         continue
-                    _emit(parse_fails(lines, seen_fails, outcome_filters))
+                    _emit(parse_fails(lines, seen_fails, outcome_filters, test_marker_regex))
                     # Mark the artifact seen only after a successful download
                     # and parse: a transient failure above hits `continue` and
                     # leaves the id unseen, so it is retried on the next poll.
