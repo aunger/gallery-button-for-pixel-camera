@@ -350,7 +350,7 @@ def format_check_summary(rows):
             line += "   [BLOCKING]"
             if r["label_gate"]:
                 line += " [label gate]"
-    lines.append(line)
+        lines.append(line)
     return lines
 
 
