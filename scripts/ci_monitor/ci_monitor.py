@@ -60,6 +60,12 @@ DEFAULT_INTERESTING_STEP_REGEX = r"(?!)"
 # repo's config matches both markers for back-compat (see ci_monitor.config.json).
 DEFAULT_TEST_MARKER_REGEX = r"##TEST##"
 
+# Match (re.search) against a check-run's `name` to identify it as a process-label
+# gate rather than a substantive code/test block. The never-match default keeps the
+# rule repo-agnostic; the project-specific name is supplied via config, mirroring
+# how `interesting_step_regex` defaults to never-match.
+DEFAULT_LABEL_GATE_CHECK_REGEX = r"(?!)"
+
 
 def load_config(path=None):
     """Load the CI Monitor config, falling back to in-code defaults.
@@ -74,6 +80,7 @@ def load_config(path=None):
         "artifact_name_regex": DEFAULT_ARTIFACT_NAME_REGEX,
         "interesting_step_regex": DEFAULT_INTERESTING_STEP_REGEX,
         "test_marker_regex": DEFAULT_TEST_MARKER_REGEX,
+        "label_gate_check_regex": DEFAULT_LABEL_GATE_CHECK_REGEX,
     }
     if path is None:
         path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ci_monitor.config.json")
@@ -278,6 +285,89 @@ def parse_check_result(check_json):
             return "Blocked"
         return "all_passed"
     return "in_progress"
+
+
+def parse_check_summary(check_json, label_gate_check_regex=DEFAULT_LABEL_GATE_CHECK_REGEX):
+    """Extract per-check (name, conclusion, blocking, label_gate) rows from check-runs data.
+
+    Returns a list of dicts (one per check run, preserving order):
+      {"name": str, "conclusion": str, "blocking": bool, "label_gate": bool}
+
+    Conclusions in the "blocking" set match what parse_check_result treats as
+    Blocked/Infra. The label_gate_check_regex is matched (re.search) against
+    each check run's name; a True label_gate lets the consumer annotate a
+    process-label block distinctly from a substantive code/test failure.
+
+    Returns [] when check_runs is absent or empty. Does not make any HTTP
+    requests; reads only from the already-fetched check_json payload.
+    """
+    _BLOCKING_CONCLUSIONS = frozenset(
+        ("failure", "action_required", "cancelled", "timed_out", "stale", "startup_failure")
+    )
+    rows = []
+    for r in check_json.get("check_runs", []):
+        name = r.get("name") or "?"
+        status = r.get("status", "")
+        conclusion = r.get("conclusion") or ""
+        # For completed checks use the conclusion; otherwise use the in-progress status
+        # so the summary renders e.g. "in_progress" rather than a blank slot.
+        effective = conclusion if status == "completed" else status
+        blocking = status == "completed" and conclusion in _BLOCKING_CONCLUSIONS
+        label_gate = bool(re.search(label_gate_check_regex, name))
+        rows.append(
+            {
+                "name": name,
+                "conclusion": effective,
+                "blocking": blocking,
+                "label_gate": label_gate,
+            }
+        )
+    return rows
+
+
+def format_check_summary(rows):
+    """Format per-check rows into a summary block (without the PR#N: prefix).
+
+    Returns [] when rows is empty. The first line is "summary", followed by one
+    aligned dotted line per check. Blocking rows carry [BLOCKING]; a label-gate
+    blocking row additionally carries [label gate]. Column width is capped at 60
+    characters to avoid pathological output on long check names.
+    """
+    if not rows:
+        return []
+    _MAX_COL = 60
+    name_width = min(max(len(r["name"]) for r in rows), _MAX_COL)
+    lines = ["summary"]
+    for r in rows:
+        name = r["name"]
+        conclusion = r["conclusion"]
+        # Truncate long names so the dotfill stays within the column ceiling.
+        display_name = name[:_MAX_COL] if len(name) > _MAX_COL else name
+        dots = "." * (name_width - len(display_name) + 4)
+        line = "  %s %s %s" % (display_name, dots, conclusion)
+        if r["blocking"]:
+            line += "   [BLOCKING]"
+            if r["label_gate"]:
+                line += " [label gate]"
+        lines.append(line)
+    return lines
+
+
+def blocking_suffix(rows):
+    """Return the attributed terminal suffix for a set of per-check rows.
+
+    Returns "" when no row is blocking (caller emits the bare terminal token).
+    Returns " by: <names> [label gate]" when every blocking row is a label gate.
+    Returns " by: <names>" otherwise (mixed or non-gate blocker).
+    """
+    blocking = [r for r in rows if r["blocking"]]
+    if not blocking:
+        return ""
+    names = [r["name"] for r in blocking]
+    suffix = " by: %s" % ", ".join(names)
+    if all(r["label_gate"] for r in blocking):
+        suffix += " [label gate]"
+    return suffix
 
 
 # Extract the run id (and optional job id) from an Actions check run's URL.
@@ -538,6 +628,7 @@ def main(argv):
     artifact_name_regex = config["artifact_name_regex"]
     interesting_step_regex = config["interesting_step_regex"]
     test_marker_regex = config["test_marker_regex"]
+    label_gate_check_regex = config["label_gate_check_regex"]
 
     last_output_ts = time.time()
 
@@ -644,7 +735,13 @@ def main(argv):
 
         return emitted[0]
 
-    def drain_then_print(sha, terminal_line):
+    def print_summary(rows):
+        """Emit the per-check summary block prefixed with the PR tag."""
+        for ln in format_check_summary(rows):
+            print("PR#%s: %s" % (pr, ln))
+        sys.stdout.flush()
+
+    def drain_then_print(sha, terminal_prefix, terminal_tail, rows):
         """Gap E (issue #402) — drain lagging signal polls before a terminal line.
 
         Pauses DRAIN_DELAY_SECONDS and re-polls the step/artifact signals, so
@@ -656,20 +753,27 @@ def main(argv):
         lagging endpoints (the gate step from /actions/runs/{id}/jobs and the
         testresults-<group> artifact from /actions/runs/{id}/artifacts) can
         settle on different attempts, so stopping at the first fruitful attempt
-        would drop the later-arriving signal for this process's lifetime. If
-        every attempt comes up empty, prints a line saying so, so a
-        `Blocked`/`Infra` terminal with no diagnostics is distinguishable from
-        one where the drain simply found nothing new to report. Then prints
-        `terminal_line` and flushes.
+        would drop the later-arriving signal for this process's lifetime.
+
+        If every attempt comes up empty AND no check already explains the
+        terminal (no row is blocking), prints a diagnostic-absence line.
+        That line is suppressed when a named check already concluded a blocking
+        conclusion (the terminal is diagnosed).
+
+        Then emits the per-check summary block and the attributed terminal line.
+        The terminal is `terminal_prefix + blocking_suffix(rows) + terminal_tail`.
         """
         drained = False
         for _ in range(DRAIN_MAX_ATTEMPTS):
             time.sleep(DRAIN_DELAY_SECONDS)
             if poll_signals(sha):
                 drained = True
-        if not drained:
+        diagnosed = any(r["blocking"] for r in rows)
+        if not drained and not diagnosed:
             print("PR#%s: drain poll found no new diagnostic signals" % pr)
             sys.stdout.flush()
+        print_summary(rows)
+        terminal_line = terminal_prefix + blocking_suffix(rows) + terminal_tail
         print(terminal_line)
         sys.stdout.flush()
 
@@ -711,6 +815,7 @@ def main(argv):
             "%s/repos/%s/%s/commits/%s/check-runs" % (API_BASE, OWNER, REPO, sha), token
         )
         result = parse_check_result(check_json) if check_json else None
+        summary_rows = parse_check_summary(check_json, label_gate_check_regex) if check_json else []
 
         # --- Streamed test-result signals -------------------------------------
         # Emitted independent of the overall check conclusion, so E2E failures
@@ -730,16 +835,24 @@ def main(argv):
             mpr_json = _request("%s/repos/%s/%s/pulls/%s" % (API_BASE, OWNER, REPO, pr), token)
             mergeable = mpr_json.get("mergeable_state", "unknown") if mpr_json else "unknown"
             if mergeable in ("clean", "unstable"):
+                print_summary(summary_rows)
                 print("PR#%s: Clear (mergeable_state=%s)" % (pr, mergeable))
                 sys.stdout.flush()
                 break
             elif mergeable in ("behind", "dirty"):
                 # Gap E (issue #402) — drain lagging step/FAIL signals before
                 # the terminal line; see drain_then_print and DRAIN_DELAY_SECONDS.
-                drain_then_print(sha, "PR#%s: Blocked (mergeable_state=%s)" % (pr, mergeable))
+                drain_then_print(
+                    sha,
+                    "PR#%s: Blocked" % pr,
+                    " (mergeable_state=%s)" % mergeable,
+                    summary_rows,
+                )
                 break
             elif mergeable == "blocked":
-                drain_then_print(sha, "PR#%s: Infra (mergeable_state=blocked)" % pr)
+                drain_then_print(
+                    sha, "PR#%s: Infra" % pr, " (mergeable_state=blocked)", summary_rows
+                )
                 break
             else:
                 # Gap B — throttle "still computing" to >120s of silence, just
@@ -754,7 +867,7 @@ def main(argv):
         elif result in ("Blocked", "Infra"):
             # Gap E (issue #402) — drain lagging step/FAIL signals before the
             # terminal line; see drain_then_print and DRAIN_DELAY_SECONDS.
-            drain_then_print(sha, "PR#%s: %s" % (pr, result))
+            drain_then_print(sha, "PR#%s: %s" % (pr, result), "", summary_rows)
             break
         elif result == "Clear":
             # No check runs registered (total_count == 0) — PR is already clear.

@@ -240,9 +240,11 @@ PR routing (Monitor loop):
   if Reviewer gave LGTM:
     Orchestrator launches a Monitor tool call running `python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER>` from the repo root (run_in_background: true, timeout_ms: 1800000). Record the task ID returned by the Monitor tool call for use in silentVanish recovery, and clear the silentVanish re-launch flag (this original launch is not a re-launch).
     Each stdout line arrives as a task-notification event; relay each line to the user verbatim.
-    Act only on the terminal lines Clear, Blocked, or Infra. Relay in_progress lines to the user as brief status updates (the script suppresses these unless no other output has been emitted for over 120 seconds).
-    Relay `step "..." -> ...` and `FAIL [...] ...` lines to the user as informational test-result deltas; they do NOT end the loop or start a new Author round.
+    Act only on the terminal lines Clear, Blocked (including the attributed `Blocked by: <name>` form), or Infra. Relay in_progress lines to the user as brief status updates (the script suppresses these unless no other output has been emitted for over 120 seconds).
+    Relay `step "..." -> ...`, `FAIL [...] ...`, `summary`, and per-check summary rows to the user as informational test-result deltas; they do NOT end the loop or start a new Author round.
     if Monitor emits `drain poll found no new diagnostic signals` immediately followed by a Blocked or Infra line → goto undiagnosedTerminal
+    (Note: the attributed `Blocked by: <name>` form already names the blocking check in the per-check summary block and the terminal suffix, so the Monitor suppresses the drain flag in that case. The `goto undiagnosedTerminal` branch therefore applies only to a bare `Blocked`/`Infra` line that the Monitor itself flagged as undiagnosed.)
+    if Monitor emits a Blocked line where the terminal ends with `[label gate]` (the ` by: ...` suffix names only label-gate checks) → clear the silentVanish re-launch flag; inform the user that only a process-label gate is blocking (not a code/test failure) and that removing the blocking label should unblock the merge; stop (do NOT route to a new Author round)
     if Monitor emits a Blocked line  → clear the silentVanish re-launch flag; goto newAuthor
     if Monitor emits an Infra line   → clear the silentVanish re-launch flag; escalate to user; stop
     if Monitor times out (30 min)    → escalate to user; stop
@@ -279,7 +281,13 @@ undiagnosedTerminal:
   // signals" right before Blocked/Infra means the bounded in-process drain
   // (see ci_monitor/README.md) found nothing this process, but the
   // underlying lag can resolve minutes later, outliving that one Monitor
-  // process. Give it one out-of-process recheck before treating it as real.
+  // process.
+  // Note: the Monitor only emits this flag when no named check-run is
+  // identified as a blocker. An attributed "Blocked by: <name>" terminal
+  // (issue #516) already names the cause via the per-check summary block
+  // and the terminal suffix, so in that case the drain flag is suppressed
+  // and this detour is never entered for that terminal shape.
+  // Give it one out-of-process recheck before treating it as real.
   Relay the flagged terminal line to the user, noting that a one-time recheck follows.
   Wait 5 minutes without a sleep loop: issue a Bash tool call running `sleep 300` (run_in_background: true), and treat its completion notification as the wake-up.
   Re-launch the Monitor tool call (same command as the original, fresh invocation).
@@ -334,8 +342,9 @@ The poll loop lives in [`scripts/ci_monitor/ci_monitor.py`](../scripts/ci_monito
 
 Orchestrator-specific notes:
 
-- The 30-minute escalation threshold is enforced by `timeout_ms: 1800000` on the Monitor call — no elapsed-time tracking needed.
-- `step`/`FAIL`/`SKIP`/`PASS` lines are informational test-result deltas, not terminal outcomes: relay them to the user but do not start a new Author round. Only a `Blocked` line does that.
+- The 30-minute escalation threshold is enforced by `timeout_ms: 1800000` on the Monitor call -- no elapsed-time tracking needed.
+- `step`/`FAIL`/`SKIP`/`PASS` lines, `summary` header lines, and per-check summary rows are informational test-result deltas, not terminal outcomes: relay them to the user but do not start a new Author round. Only a `Blocked` (or `Blocked by: ...`) line does that.
+- The `Blocked by: <name>` attributed form (issue #516) names which check-run blocked CI. A terminal ending with `[label gate]` means only a process-label gate (not a code/test failure) is blocking; see the label-gate branch in the Monitor loop above.
 - Do not subscribe to PR events or delay dispatching the Reviewer while waiting for CI; the Monitor loop replaces that pattern.
 
 ## Delegation rules
