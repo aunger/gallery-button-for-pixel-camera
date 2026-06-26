@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ci_monitor.py — Poll a PR's CI and stream a terminal outcome plus per-test signals.
+"""ci_monitor.py -- Poll a PR's CI and stream a terminal outcome plus per-test signals.
 
 Invoked by the Orchestrator's Monitor tool call (see agents/dev_orchestration.md).
 Each stdout line is consumed as a task-notification event, so output is the
@@ -70,11 +70,12 @@ DEFAULT_LABEL_GATE_CHECK_REGEX = r"(?!)"
 def load_config(path=None):
     """Load the CI Monitor config, falling back to in-code defaults.
 
-    Returns a dict with keys artifact_name_regex, interesting_step_regex, and
-    test_marker_regex. A missing file, unreadable file, or invalid JSON falls
-    back entirely to the DEFAULT_* regexes (the Monitor must never abort on
-    config). Each key independently defaults if absent, and a value that does not
-    compile as a regex falls back to that key's default rather than crashing.
+    Returns a dict with keys artifact_name_regex, interesting_step_regex,
+    test_marker_regex, and label_gate_check_regex. A missing file, unreadable
+    file, or invalid JSON falls back entirely to the DEFAULT_* regexes (the
+    Monitor must never abort on config). Each key independently defaults if
+    absent, and a value that does not compile as a regex falls back to that
+    key's default rather than crashing.
     """
     defaults = {
         "artifact_name_regex": DEFAULT_ARTIFACT_NAME_REGEX,
@@ -114,7 +115,7 @@ def load_config(path=None):
 # any kind, so a quiet poll loop stays quiet. Every emitted line resets the timer.
 SILENCE_SECONDS = 120
 
-# Gap E (issue #402) — before emitting a Blocked/Infra terminal line, re-poll
+# Gap E (issue #402) -- before emitting a Blocked/Infra terminal line, re-poll
 # the step/artifact signals a few more times. /actions/runs/{id}/jobs and
 # /actions/runs/{id}/artifacts can lag behind /commits/{sha}/check-runs: the
 # poll where check-runs first reports the failing conclusion may still show the
@@ -138,7 +139,7 @@ DRAIN_DELAY_SECONDS = 5
 DRAIN_MAX_ATTEMPTS = 3
 
 
-# ── Parsers ───────────────────────────────────────────────────────────────────
+# -- Parsers -------------------------------------------------------------------
 
 
 def parse_steps(
@@ -349,7 +350,7 @@ def format_check_summary(rows):
             line += "   [BLOCKING]"
             if r["label_gate"]:
                 line += " [label gate]"
-        lines.append(line)
+    lines.append(line)
     return lines
 
 
@@ -436,7 +437,7 @@ def extract_ndjson_lines(zip_bytes):
                         yield line
 
 
-# ── HTTP (stdlib urllib) ────────────────────────────────────────────────────────
+# -- HTTP (stdlib urllib) ------------------------------------------------------
 
 
 def _err_detail(e):
@@ -538,7 +539,7 @@ def fetch_pr_with_retry(pr, token, attempts=3, base_delay=2):
     return None
 
 
-# ── Main poll loop ────────────────────────────────────────────────────────────
+# -- Main poll loop ------------------------------------------------------------
 
 
 def _parse_outcome_filters(args):
@@ -558,7 +559,7 @@ def _parse_outcome_filters(args):
         if no_flag:
             return (False, None)
         if include_flag is None:
-            # flag was not provided at all — use default
+            # flag was not provided at all -- use default
             return (default_enabled, None)
         # flag was provided; include_flag is either '' (no pattern) or a pattern string
         return (True, include_flag if include_flag != "" else None)
@@ -654,7 +655,7 @@ def main(argv):
         Mirrors the streamed test-result signals described in the module
         docstring: per-step conclusion deltas (Signal 1, via parse_steps) and
         per-test FAIL/SKIP/PASS markers from the test-result artifacts
-        (Signal 2, via parse_fails). Both are purely informational — they reset
+        (Signal 2, via parse_fails). Both are purely informational -- they reset
         the silence timer via emit_block but never end the loop. Returns True if
         any line was emitted this call.
 
@@ -696,7 +697,7 @@ def main(argv):
 
         for run_id in run_order:
             job_ids = run_job_ids[run_id]
-            # Signal 1 — per-step conclusion deltas for the tracked job(s).
+            # Signal 1 -- per-step conclusion deltas for the tracked job(s).
             jobs_json = _request(
                 "%s/repos/%s/%s/actions/runs/%s/jobs?per_page=30" % (API_BASE, OWNER, REPO, run_id),
                 token,
@@ -704,7 +705,7 @@ def main(argv):
             if jobs_json:
                 _emit(parse_steps(jobs_json, seen_steps, job_ids, interesting_step_regex))
 
-            # Signal 2 — per-test FAIL detail from the test-result artifacts.
+            # Signal 2 -- per-test FAIL detail from the test-result artifacts.
             # Download each new artifact once, parse its per-test ndjson markers,
             # and emit new FAIL entries.
             artifacts_json = _request(
@@ -742,7 +743,7 @@ def main(argv):
         sys.stdout.flush()
 
     def drain_then_print(sha, terminal_prefix, terminal_tail, rows):
-        """Gap E (issue #402) — drain lagging signal polls before a terminal line.
+        """Gap E (issue #402) -- drain lagging signal polls before a terminal line.
 
         Pauses DRAIN_DELAY_SECONDS and re-polls the step/artifact signals, so
         any step or FAIL/SKIP/PASS line that was still lagging on the poll that
@@ -777,16 +778,16 @@ def main(argv):
         print(terminal_line)
         sys.stdout.flush()
 
-    # Gap D — advertise our PID so the Orchestrator can stop us out-of-band
+    # Gap D -- advertise our PID so the Orchestrator can stop us out-of-band
     # (e.g. `kill -TERM <PID>`) if the Monitor tool's TaskStop is unavailable.
     print(
-        "monitor PID %d — if TaskStop is unavailable, send SIGTERM to this PID to stop me"
+        "monitor PID %d -- if TaskStop is unavailable, send SIGTERM to this PID to stop me"
         % os.getpid()
     )
     sys.stdout.flush()
 
     while True:
-        # Gap C — retry the SHA fetch with backoff and rate-limit awareness
+        # Gap C -- retry the SHA fetch with backoff and rate-limit awareness
         # instead of a flat 30s retry, so transient blips and 403/429 throttles
         # are handled without hammering the API.
         pr_json = fetch_pr_with_retry(pr, token)
@@ -803,7 +804,7 @@ def main(argv):
             time.sleep(30)
             continue
 
-        # Gap A — a closed or merged PR leaves mergeable_state "unknown"
+        # Gap A -- a closed or merged PR leaves mergeable_state "unknown"
         # forever; emit a terminal line and stop instead of spinning.
         terminal = parse_pr_terminal(pr_json)
         if terminal:
@@ -840,7 +841,7 @@ def main(argv):
                 sys.stdout.flush()
                 break
             elif mergeable in ("behind", "dirty"):
-                # Gap E (issue #402) — drain lagging step/FAIL signals before
+                # Gap E (issue #402) -- drain lagging step/FAIL signals before
                 # the terminal line; see drain_then_print and DRAIN_DELAY_SECONDS.
                 drain_then_print(
                     sha,
@@ -855,7 +856,7 @@ def main(argv):
                 )
                 break
             else:
-                # Gap B — throttle "still computing" to >120s of silence, just
+                # Gap B -- throttle "still computing" to >120s of silence, just
                 # like the in_progress heartbeat, so it does not print every poll.
                 now = time.time()
                 if now - last_output_ts > SILENCE_SECONDS:
@@ -865,12 +866,12 @@ def main(argv):
                     sys.stdout.flush()
                     last_output_ts = now
         elif result in ("Blocked", "Infra"):
-            # Gap E (issue #402) — drain lagging step/FAIL signals before the
+            # Gap E (issue #402) -- drain lagging step/FAIL signals before the
             # terminal line; see drain_then_print and DRAIN_DELAY_SECONDS.
             drain_then_print(sha, "PR#%s: %s" % (pr, result), "", summary_rows)
             break
         elif result == "Clear":
-            # No check runs registered (total_count == 0) — PR is already clear.
+            # No check runs registered (total_count == 0) -- PR is already clear.
             # Break immediately; no drain needed (there are no failing signals).
             print("PR#%s: Clear" % pr)
             sys.stdout.flush()
