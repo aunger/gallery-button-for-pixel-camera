@@ -364,7 +364,7 @@ CHECK_INPROGRESS = {
 }
 CHECK_BLOCKED = {
     "total_count": 1,
-    "check_runs": [{"status": "completed", "conclusion": "failure"}],
+    "check_runs": [{"name": "build-and-test", "status": "completed", "conclusion": "failure"}],
 }
 JOBS_FAIL = {
     "jobs": [
@@ -451,7 +451,9 @@ step_line_i = 'PR#285: step "Build and run unit tests" -> failure'
 fail_line_i = (
     "PR#285: FAIL [com.gb4pc.unit.GalleryButtonTest] testClick: java.lang.AssertionError: boom"
 )
-blocked_line_i = "PR#285: Blocked"
+# Terminal is now attributed with the blocking check name.
+blocked_line_i = "PR#285: Blocked by: build-and-test"
+summary_hdr_i = "PR#285: summary"
 
 check(
     lines_i.count(step_line_i) == 1,
@@ -465,8 +467,8 @@ check(
 )
 check(
     lines_i.count(blocked_line_i) == 1,
-    "Blocked terminal line emitted exactly once",
-    "Blocked terminal line count != 1; output: %r" % out_i,
+    "Blocked attributed terminal line emitted exactly once",
+    "Blocked attributed terminal line count != 1; output: %r" % out_i,
 )
 check(
     step_line_i in lines_i
@@ -482,11 +484,25 @@ check(
     "FAIL line precedes terminal Blocked",
     "FAIL line not before Blocked; output: %r" % out_i,
 )
+# drain flag is suppressed because the check (build-and-test) is blocking/diagnosed.
 no_new_line_i = "PR#285: drain poll found no new diagnostic signals"
 check(
-    no_new_line_i in lines_i and lines_i.index(no_new_line_i) < lines_i.index(blocked_line_i),
-    "drain poll found nothing new -> flagged immediately before terminal Blocked",
-    "'drain poll found no new diagnostic signals' missing or misordered; output: %r" % out_i,
+    no_new_line_i not in lines_i,
+    "drain flag suppressed (named blocking check diagnoses the terminal)",
+    "'drain poll found no new diagnostic signals' unexpectedly present; output: %r" % out_i,
+)
+# Summary block appears before the terminal.
+check(
+    summary_hdr_i in lines_i
+    and blocked_line_i in lines_i
+    and lines_i.index(summary_hdr_i) < lines_i.index(blocked_line_i),
+    "summary header appears before terminal Blocked",
+    "summary header missing or after terminal; output: %r" % out_i,
+)
+check(
+    any("build-and-test" in ln and "failure" in ln and "[BLOCKING]" in ln for ln in lines_i),
+    "summary row for build-and-test shows failure and [BLOCKING]",
+    "summary row for build-and-test missing or incorrect; output: %r" % out_i,
 )
 check(
     len(side_effects_i) == 0,
@@ -506,7 +522,7 @@ CHECK_IP = {
 }
 CHECK_BL = {
     "total_count": 1,
-    "check_runs": [{"status": "completed", "conclusion": "failure"}],
+    "check_runs": [{"name": "build-and-test", "status": "completed", "conclusion": "failure"}],
 }
 # Diagnostic check-runs payload poll_signals self-fetches under wiring (b)
 # (issue #500): a run-only details_url (no job id), so parse_steps applies no
@@ -589,7 +605,8 @@ out_j = buf_j.getvalue()
 lines_j = out_j.splitlines()
 ip_line = "PR#285: in_progress"
 step_line_j = 'PR#285: step "Build and run unit tests" -> success'
-blocked_line_j = "PR#285: Blocked"
+# Terminal is now attributed with the blocking check name.
+blocked_line_j = "PR#285: Blocked by: build-and-test"
 
 check(
     lines_j.count(ip_line) == 2,
@@ -603,8 +620,8 @@ check(
 )
 check(
     lines_j.count(blocked_line_j) == 1,
-    "Blocked terminal line emitted exactly once",
-    "Blocked terminal line count != 1; output: %r" % out_j,
+    "Blocked attributed terminal line emitted exactly once",
+    "Blocked attributed terminal line count != 1; output: %r" % out_j,
 )
 
 ip_idx = [k for k, ln in enumerate(lines_j) if ln == ip_line]
@@ -618,11 +635,12 @@ check(
     "ordering: first in_progress, step, second in_progress, Blocked",
     "ordering wrong; lines: %r" % lines_j,
 )
+# drain flag suppressed because the check (build-and-test) is blocking/diagnosed.
 no_new_line_j = "PR#285: drain poll found no new diagnostic signals"
 check(
-    no_new_line_j in lines_j and lines_j.index(no_new_line_j) < bl_idx,
-    "drain poll found nothing new -> flagged immediately before terminal Blocked",
-    "'drain poll found no new diagnostic signals' missing or misordered; output: %r" % out_j,
+    no_new_line_j not in lines_j,
+    "drain flag suppressed (named blocking check diagnoses the terminal)",
+    "'drain poll found no new diagnostic signals' unexpectedly present; output: %r" % out_j,
 )
 check(
     len(req_j) == 0,
@@ -897,7 +915,10 @@ print(
 # check-runs, jobs, artifacts, [zip per new artifact].
 PR_M = {"head": {"sha": "5ca1ab1e"}}
 CHECK_IP_M = {"total_count": 1, "check_runs": [{"status": "in_progress", "conclusion": None}]}
-CHECK_BL_M = {"total_count": 1, "check_runs": [{"status": "completed", "conclusion": "failure"}]}
+CHECK_BL_M = {
+    "total_count": 1,
+    "check_runs": [{"name": "build-and-test", "status": "completed", "conclusion": "failure"}],
+}
 RUNS_M = check_runs_payload(("606", None))  # diagnostic check-runs (wiring b, issue #500)
 JOBS_UNIT_FAIL_M = {
     "jobs": [
@@ -995,7 +1016,8 @@ step_line_m = 'PR#272: step "Build and run unit tests" -> failure'
 fail_line_m = (
     "PR#272: FAIL [com.gb4pc.unit.GalleryButtonTest] testIcon: java.lang.AssertionError: kaboom"
 )
-blocked_line_m = "PR#272: Blocked"
+# Terminal is now attributed with the blocking check name.
+blocked_line_m = "PR#272: Blocked by: build-and-test"
 ip_line_m = "PR#272: in_progress"
 
 check(
@@ -1010,8 +1032,8 @@ check(
 )
 check(
     lines_m.count(blocked_line_m) == 1,
-    "Blocked terminal line emitted exactly once",
-    "Blocked terminal line count != 1; output: %r" % out_m,
+    "Blocked attributed terminal line emitted exactly once",
+    "Blocked attributed terminal line count != 1; output: %r" % out_m,
 )
 check(
     lines_m.count(ip_line_m) == 0,
@@ -1034,11 +1056,12 @@ check(
     "FAIL carries an indented trace line",
     "indented trace line missing; output: %r" % out_m,
 )
+# drain flag suppressed because the check (build-and-test) is blocking/diagnosed.
 no_new_line_m = "PR#272: drain poll found no new diagnostic signals"
 check(
-    no_new_line_m in lines_m and lines_m.index(no_new_line_m) < lines_m.index(blocked_line_m),
-    "drain poll found nothing new -> flagged immediately before terminal Blocked",
-    "'drain poll found no new diagnostic signals' missing or misordered; output: %r" % out_m,
+    no_new_line_m not in lines_m,
+    "drain flag suppressed (named blocking check diagnoses the terminal)",
+    "'drain poll found no new diagnostic signals' unexpectedly present; output: %r" % out_m,
 )
 check(
     len(side_effects_m) == 0,
@@ -1058,7 +1081,10 @@ print("\n=== (n) main(): quiet polls emit two adjacent in_progress heartbeats, t
 # PR#N line between them). The final all_passed poll emits Clear.
 PR_N = {"head": {"sha": "c0ffee11"}}
 CHECK_IP_N = {"total_count": 1, "check_runs": [{"status": "in_progress", "conclusion": None}]}
-CHECK_PASS_N = {"total_count": 1, "check_runs": [{"status": "completed", "conclusion": "success"}]}
+CHECK_PASS_N = {
+    "total_count": 1,
+    "check_runs": [{"name": "build-and-test", "status": "completed", "conclusion": "success"}],
+}
 RUNS_N = check_runs_payload(("909", None))  # diagnostic check-runs (wiring b, issue #500)
 JOBS_EMPTY_N = {"jobs": [{"name": "build-and-test", "steps": []}]}
 ARTS_EMPTY_N = {"artifacts": []}
@@ -1120,6 +1146,7 @@ out_n = buf_n.getvalue()
 lines_n = out_n.splitlines()
 heartbeat_line_n = "PR#272: in_progress"
 clear_lines_n = [ln for ln in lines_n if ln.startswith("PR#272: Clear")]
+summary_hdr_n = "PR#272: summary"
 
 hb_idx = [k for k, ln in enumerate(lines_n) if ln == heartbeat_line_n]
 check(
@@ -1132,6 +1159,8 @@ check(
     "the two heartbeats are adjacent (no PR# line between them)",
     "heartbeats not adjacent; indices %r; output: %r" % (hb_idx, out_n),
 )
+# After the summary block is added, the first PR# line is still a heartbeat
+# (the summary only prints on the final all_passed poll).
 pr_lines_n = [ln for ln in lines_n if ln.startswith("PR#272:")]
 check(
     len(pr_lines_n) > 0 and pr_lines_n[0] == heartbeat_line_n,
@@ -1147,6 +1176,19 @@ check(
     len(clear_lines_n) == 1 and lines_n[-1] == clear_lines_n[0],
     "Clear is the last PR# line",
     "Clear is not the last line; output: %r" % out_n,
+)
+# Summary block emitted before Clear on the passing all_passed poll.
+check(
+    summary_hdr_n in lines_n
+    and len(clear_lines_n) == 1
+    and lines_n.index(summary_hdr_n) < lines_n.index(clear_lines_n[0]),
+    "summary header appears before Clear terminal",
+    "summary header missing or after Clear; output: %r" % out_n,
+)
+check(
+    any("build-and-test" in ln and "success" in ln for ln in lines_n),
+    "summary row for build-and-test shows success",
+    "summary row for build-and-test missing; output: %r" % out_n,
 )
 check(
     len(req_n) == 0,
@@ -1258,7 +1300,10 @@ REAL_UNIT_ZIP = _buf.getvalue()
 
 PR_P = {"head": {"sha": "deadc0de"}}
 CHECK_IP_P = {"total_count": 1, "check_runs": [{"status": "in_progress", "conclusion": None}]}
-CHECK_BL_P = {"total_count": 1, "check_runs": [{"status": "completed", "conclusion": "failure"}]}
+CHECK_BL_P = {
+    "total_count": 1,
+    "check_runs": [{"name": "build-and-test", "status": "completed", "conclusion": "failure"}],
+}
 RUNS_P = check_runs_payload(("4242", None))  # diagnostic check-runs (wiring b, issue #500)
 JOBS_UNIT_FAIL_P = {
     "jobs": [
@@ -1336,7 +1381,8 @@ out_p = buf_p.getvalue()
 lines_p = out_p.splitlines()
 step_line_p = 'PR#258: step "Build and run unit tests" -> failure'
 fail_line_p = "PR#258: FAIL [com.gb4pc.unit.GalleryButtonTest] renders_icon: java.lang.AssertionError: icon not tinted"
-blocked_line_p = "PR#258: Blocked"
+# Terminal is now attributed with the blocking check name.
+blocked_line_p = "PR#258: Blocked by: build-and-test"
 
 check(
     lines_p.count(step_line_p) == 1,
@@ -1358,14 +1404,15 @@ check(
     and fail_line_p in lines_p
     and blocked_line_p in lines_p
     and lines_p.index(step_line_p) < lines_p.index(fail_line_p) < lines_p.index(blocked_line_p),
-    "ordering: step, then FAIL, then terminal Blocked — both signals before the job concludes",
+    "ordering: step, then FAIL, then terminal Blocked -- both signals before the job concludes",
     "ordering wrong; lines: %r" % lines_p,
 )
+# drain flag suppressed because the check (build-and-test) is blocking/diagnosed.
 no_new_line_p = "PR#258: drain poll found no new diagnostic signals"
 check(
-    no_new_line_p in lines_p and lines_p.index(no_new_line_p) < lines_p.index(blocked_line_p),
-    "drain poll found nothing new -> flagged immediately before terminal Blocked",
-    "'drain poll found no new diagnostic signals' missing or misordered; output: %r" % out_p,
+    no_new_line_p not in lines_p,
+    "drain flag suppressed (named blocking check diagnoses the terminal)",
+    "'drain poll found no new diagnostic signals' unexpectedly present; output: %r" % out_p,
 )
 check(
     len(side_effects_p) == 0,
@@ -1400,7 +1447,10 @@ SLEEP_Q = 0.25  # per-poll real sleep, comfortably > WINDOW_Q so each quiet poll
 
 PR_Q = {"head": {"sha": "ab1eca11"}}
 CHECK_IP_Q = {"total_count": 1, "check_runs": [{"status": "in_progress", "conclusion": None}]}
-CHECK_BL_Q = {"total_count": 1, "check_runs": [{"status": "completed", "conclusion": "failure"}]}
+CHECK_BL_Q = {
+    "total_count": 1,
+    "check_runs": [{"name": "build-and-test", "status": "completed", "conclusion": "failure"}],
+}
 RUNS_Q = check_runs_payload(("31337", None))  # diagnostic check-runs (wiring b, issue #500)
 JOBS_EMPTY_Q = {"jobs": [{"name": "build-and-test", "steps": []}]}
 JOBS_STEP_Q = {
@@ -1480,7 +1530,8 @@ out_q = buf_q.getvalue()
 lines_q = out_q.splitlines()
 ip_line_q = "PR#259: in_progress"
 step_line_q = 'PR#259: step "Build and run unit tests" -> success'
-blocked_line_q = "PR#259: Blocked"
+# Terminal is now attributed with the blocking check name.
+blocked_line_q = "PR#259: Blocked by: build-and-test"
 
 check(
     lines_q.count(ip_line_q) == 2,
@@ -1503,15 +1554,16 @@ check(
     "an emitted step line resets the real-time silence timer (no heartbeat on the step poll)",
     "step did not reset the real-time timer; lines: %r" % lines_q,
 )
+# drain flag suppressed because the check (build-and-test) is blocking/diagnosed.
 no_new_line_q = "PR#259: drain poll found no new diagnostic signals"
 check(
-    no_new_line_q in lines_q and lines_q.index(no_new_line_q) < lines_q.index(blocked_line_q),
-    "drain poll found nothing new -> flagged immediately before terminal Blocked",
-    "'drain poll found no new diagnostic signals' missing or misordered; output: %r" % out_q,
+    no_new_line_q not in lines_q,
+    "drain flag suppressed (named blocking check diagnoses the terminal)",
+    "'drain poll found no new diagnostic signals' unexpectedly present; output: %r" % out_q,
 )
 check(
     lines_q.count(blocked_line_q) == 1 and lines_q[-1] == blocked_line_q,
-    "Blocked terminal emitted once as the final line",
+    "Blocked attributed terminal emitted once as the final line",
     "terminal Blocked wrong; output: %r" % out_q,
 )
 check(
@@ -1800,7 +1852,10 @@ ZIP_MIXED = make_zip_ndjson(FILTER_NDJSON_MIXED)
 
 PR_S = {"head": {"sha": "5ce5c0de"}}
 CHECK_IP_S = {"total_count": 1, "check_runs": [{"status": "in_progress", "conclusion": None}]}
-CHECK_BL_S = {"total_count": 1, "check_runs": [{"status": "completed", "conclusion": "failure"}]}
+CHECK_BL_S = {
+    "total_count": 1,
+    "check_runs": [{"name": "build-and-test", "status": "completed", "conclusion": "failure"}],
+}
 RUNS_S = check_runs_payload(("1111", None))  # diagnostic check-runs (wiring b, issue #500)
 JOBS_EMPTY_S = {"jobs": [{"name": "build-and-test", "steps": []}]}
 ARTS_MIX_S = {"artifacts": [{"id": 2222, "name": "testresults-mix", "expired": False}]}
@@ -1867,9 +1922,9 @@ check(
 )
 no_new_line_s = "PR#260: drain poll found no new diagnostic signals"
 check(
-    no_new_line_s in lines_s,
-    "main() --include-pass '': drain poll found nothing new -> flagged before terminal",
-    "main() --include-pass '': 'drain poll found no new diagnostic signals' missing; output: %r"
+    no_new_line_s not in lines_s,
+    "main() --include-pass '': drain flag suppressed (named blocking check diagnoses the terminal)",
+    "main() --include-pass '': 'drain poll found no new diagnostic signals' unexpectedly present; output: %r"
     % out_s,
 )
 check(
@@ -2068,7 +2123,12 @@ print("\n=== (t) Gap E (#402): drain poll surfaces step+FAIL that lag behind Blo
 # (DRAIN_DELAY_SECONDS later) where the jobs/artifacts endpoints have caught
 # up, surfacing the step failure and FAIL marker before the terminal line.
 PR_T = {"head": {"sha": "9001dead"}}
-CHECK_BL_T = {"total_count": 1, "check_runs": [{"status": "completed", "conclusion": "failure"}]}
+CHECK_BL_T = {
+    "total_count": 1,
+    "check_runs": [
+        {"name": "Gate on test failures", "status": "completed", "conclusion": "failure"}
+    ],
+}
 RUNS_T = check_runs_payload(("9001", None))  # diagnostic check-runs (wiring b, issue #500)
 JOBS_EMPTY_T = {"jobs": [{"name": "build-and-test", "steps": []}]}
 JOBS_GATE_FAIL_T = {
@@ -2161,7 +2221,8 @@ out_t = buf_t.getvalue()
 lines_t = out_t.splitlines()
 gate_step_line_t = 'PR#402: step "Gate on test failures" -> failure'
 fail_line_t = "PR#402: FAIL [com.gb4pc.e2e.GalleryButtonVisualE2ETest] test1a: java.lang.AssertionError: button not green"
-blocked_line_t = "PR#402: Blocked"
+# Terminal is now attributed with the blocking check name.
+blocked_line_t = "PR#402: Blocked by: Gate on test failures"
 
 check(
     gate_step_line_t in lines_t,
@@ -2175,8 +2236,8 @@ check(
 )
 check(
     lines_t.count(blocked_line_t) == 1,
-    "Blocked terminal line emitted exactly once",
-    "Blocked terminal line count != 1; output: %r" % out_t,
+    "Blocked attributed terminal line emitted exactly once",
+    "Blocked attributed terminal line count != 1; output: %r" % out_t,
 )
 check(
     gate_step_line_t in lines_t
@@ -2210,7 +2271,12 @@ print(
 # terminal line, and the "drain poll found no new diagnostic signals" line is
 # NOT printed (drain attempt 2 found something new).
 PR_U = {"head": {"sha": "900110ng"}}
-CHECK_BL_U = {"total_count": 1, "check_runs": [{"status": "completed", "conclusion": "failure"}]}
+CHECK_BL_U = {
+    "total_count": 1,
+    "check_runs": [
+        {"name": "Gate on test failures", "status": "completed", "conclusion": "failure"}
+    ],
+}
 RUNS_U = check_runs_payload(("9002", None))  # diagnostic check-runs (wiring b, issue #500)
 JOBS_EMPTY_U = {"jobs": [{"name": "build-and-test", "steps": []}]}
 JOBS_GATE_FAIL_U = {
@@ -2302,7 +2368,8 @@ out_u = buf_u.getvalue()
 lines_u = out_u.splitlines()
 gate_step_line_u = 'PR#402: step "Gate on test failures" -> failure'
 fail_line_u = "PR#402: FAIL [com.gb4pc.e2e.GalleryButtonVisualE2ETest] test1a: java.lang.AssertionError: button not green"
-blocked_line_u = "PR#402: Blocked"
+# Terminal is now attributed with the blocking check name.
+blocked_line_u = "PR#402: Blocked by: Gate on test failures"
 no_new_line_u = "PR#402: drain poll found no new diagnostic signals"
 
 check(
@@ -2422,7 +2489,12 @@ print(
 # artifact is actually downloaded, so the lagging artifact is the genuine
 # signal recovered here, not a re-emit of an already-seen one.
 PR_W = {"head": {"sha": "519c0de1"}}
-CHECK_BL_W = {"total_count": 1, "check_runs": [{"status": "completed", "conclusion": "failure"}]}
+CHECK_BL_W = {
+    "total_count": 1,
+    "check_runs": [
+        {"name": "Gate on test failures", "status": "completed", "conclusion": "failure"}
+    ],
+}
 RUNS_W = check_runs_payload(("9419", None))  # diagnostic check-runs (wiring b, issue #500)
 JOBS_EMPTY_W = {"jobs": [{"name": "build-and-test", "steps": []}]}
 JOBS_GATE_FAIL_W = {
@@ -2495,7 +2567,8 @@ out_w = buf_w.getvalue()
 lines_w = out_w.splitlines()
 gate_step_line_w = 'PR#419: step "Gate on test failures" -> failure'
 fail_line_w = "PR#419: FAIL [com.gb4pc.e2e.GalleryButtonVisualE2ETest] test1a: java.lang.AssertionError: button not green"
-blocked_line_w = "PR#419: Blocked"
+# Terminal is now attributed with the blocking check name.
+blocked_line_w = "PR#419: Blocked by: Gate on test failures"
 no_new_line_w = "PR#419: drain poll found no new diagnostic signals"
 
 check(
@@ -2817,6 +2890,7 @@ _DEFAULTS = {
     "artifact_name_regex": ci_monitor.DEFAULT_ARTIFACT_NAME_REGEX,
     "interesting_step_regex": ci_monitor.DEFAULT_INTERESTING_STEP_REGEX,
     "test_marker_regex": ci_monitor.DEFAULT_TEST_MARKER_REGEX,
+    "label_gate_check_regex": ci_monitor.DEFAULT_LABEL_GATE_CHECK_REGEX,
 }
 
 
@@ -2827,13 +2901,14 @@ def _write_tmp(text):
     return path
 
 
-# Present file with all three keys.
+# Present file with all four keys.
 _p_full = _write_tmp(
     json.dumps(
         {
             "artifact_name_regex": "^foo-",
             "interesting_step_regex": "bar",
             "test_marker_regex": "##BAZ##",
+            "label_gate_check_regex": "MyGate",
         }
     )
 )
@@ -2845,8 +2920,9 @@ check(
         "artifact_name_regex": "^foo-",
         "interesting_step_regex": "bar",
         "test_marker_regex": "##BAZ##",
+        "label_gate_check_regex": "MyGate",
     },
-    "present file returns all three configured regexes",
+    "present file returns all four configured regexes",
     "present-file config wrong; got %r" % cfg_full,
 )
 
@@ -2915,7 +2991,10 @@ print("\n=== (ad) #499/#500: the failing build run is tracked among multiple Act
 # multi-run fan-out.
 PR_AD = {"head": {"sha": "499f1xed"}}
 # Verdict check-runs: Blocked. Diagnostic check-runs lists BOTH Actions runs.
-CHECK_BL_AD = {"total_count": 2, "check_runs": [{"status": "completed", "conclusion": "failure"}]}
+CHECK_BL_AD = {
+    "total_count": 2,
+    "check_runs": [{"name": "build-and-test", "status": "completed", "conclusion": "failure"}],
+}
 DIAG_CHECK_AD = check_runs_payload(("700", "70"), ("800", "80"))  # aux run 700, build run 800
 # Aux run 700/job 70: a successful unrelated step, no testresults-* artifact.
 JOBS_AUX_AD = {
@@ -2999,7 +3078,8 @@ out_ad = buf_ad.getvalue()
 lines_ad = out_ad.splitlines()
 gate_step_ad = 'PR#499: step "Gate on test failures" -> failure'
 fail_line_ad = "PR#499: FAIL [com.gb4pc.e2e.GalleryButtonVisualE2ETest] test1a: button not green"
-blocked_line_ad = "PR#499: Blocked"
+# Terminal is now attributed with the blocking check name.
+blocked_line_ad = "PR#499: Blocked by: build-and-test"
 
 check(
     gate_step_ad in lines_ad,
@@ -3084,7 +3164,10 @@ print("\n=== (af) #500 poll_signals: a run-only target does not widen another ru
 # run 100 is run-only. Before the per-run scoping fix, a single run-only target
 # set job_ids=None globally and run 200's job-23 step would have leaked.
 PR_AF = {"head": {"sha": "5c0pe1d1"}}
-CHECK_BL_AF = {"total_count": 2, "check_runs": [{"status": "completed", "conclusion": "failure"}]}
+CHECK_BL_AF = {
+    "total_count": 2,
+    "check_runs": [{"name": "build-and-test", "status": "completed", "conclusion": "failure"}],
+}
 DIAG_CHECK_AF = check_runs_payload(("100", None), ("200", "22"))  # run 100 run-only, run 200 job 22
 # Run 100 (run-only): a named unit-test step that should surface (no job filter).
 JOBS_100_AF = {
@@ -3194,6 +3277,385 @@ check(
     "request deque not drained; %d entries left" % len(side_effects_af),
 )
 check(rc_af == 0, "main() returned 0", "main() returned %r" % rc_af)
+
+
+# ── (ag) #516 parse_check_summary: per-check rows, blocking, label_gate ─────────
+print("\n=== (ag) #516 parse_check_summary: rows with correct fields ===")
+
+# Payload with a failing 'No blocking labels' check plus three passing checks.
+# The label_gate_check_regex is passed explicitly to test the function directly.
+LABEL_GATE_REGEX = "No blocking labels"
+SUMMARY_PAYLOAD = {
+    "total_count": 4,
+    "check_runs": [
+        {"name": "No blocking labels", "status": "completed", "conclusion": "failure"},
+        {"name": "Build and run unit tests", "status": "completed", "conclusion": "success"},
+        {"name": "Run PixelCameraOverlayE2ETest", "status": "completed", "conclusion": "success"},
+        {"name": "Run GalleryButtonVisualE2ETest", "status": "completed", "conclusion": "success"},
+    ],
+}
+rows_ag = ci_monitor.parse_check_summary(SUMMARY_PAYLOAD, LABEL_GATE_REGEX)
+
+check(
+    len(rows_ag) == 4,
+    "parse_check_summary returns one row per check run (got %d)" % len(rows_ag),
+    "expected 4 rows; got %d" % len(rows_ag),
+)
+blocking_rows_ag = [r for r in rows_ag if r["blocking"]]
+check(
+    len(blocking_rows_ag) == 1,
+    "exactly one blocking row (the 'No blocking labels' check)",
+    "expected 1 blocking row; got %d: %r" % (len(blocking_rows_ag), blocking_rows_ag),
+)
+check(
+    len(blocking_rows_ag) == 1 and blocking_rows_ag[0]["name"] == "No blocking labels",
+    "blocking row is named 'No blocking labels'",
+    "blocking row name wrong; got %r" % (blocking_rows_ag,),
+)
+check(
+    len(blocking_rows_ag) == 1 and blocking_rows_ag[0]["label_gate"],
+    "the blocking row is also label_gate=True",
+    "label_gate not set on blocking row; got %r" % (blocking_rows_ag,),
+)
+passing_rows_ag = [r for r in rows_ag if not r["blocking"]]
+check(
+    all(not r["label_gate"] for r in passing_rows_ag),
+    "no passing row is label_gate",
+    "unexpected label_gate on passing row; got %r" % (passing_rows_ag,),
+)
+check(
+    all(r["conclusion"] == "success" for r in passing_rows_ag),
+    "all passing rows have conclusion 'success'",
+    "wrong conclusion on passing rows; got %r" % (passing_rows_ag,),
+)
+
+# All-passing payload: no blocking rows, no label_gate rows.
+ALL_PASS_PAYLOAD = {
+    "total_count": 2,
+    "check_runs": [
+        {"name": "check-1", "status": "completed", "conclusion": "success"},
+        {"name": "check-2", "status": "completed", "conclusion": "success"},
+    ],
+}
+rows_ag_pass = ci_monitor.parse_check_summary(ALL_PASS_PAYLOAD)
+check(
+    not any(r["blocking"] for r in rows_ag_pass),
+    "all-passing payload produces no blocking rows",
+    "unexpected blocking rows; got %r" % (rows_ag_pass,),
+)
+
+# Infra conclusion (cancelled): that row is blocking=True, label_gate=False.
+INFRA_PAYLOAD = {
+    "total_count": 1,
+    "check_runs": [{"name": "build-job", "status": "completed", "conclusion": "cancelled"}],
+}
+rows_ag_infra = ci_monitor.parse_check_summary(INFRA_PAYLOAD)
+check(
+    len(rows_ag_infra) == 1 and rows_ag_infra[0]["blocking"],
+    "a cancelled check is blocking",
+    "cancelled check not marked blocking; got %r" % (rows_ag_infra,),
+)
+check(
+    not rows_ag_infra[0]["label_gate"],
+    "a cancelled non-gate check is not label_gate",
+    "unexpected label_gate on cancelled non-gate check; got %r" % (rows_ag_infra,),
+)
+
+# Empty check_runs yields [].
+check(
+    ci_monitor.parse_check_summary({"total_count": 0, "check_runs": []}) == [],
+    "empty check_runs yields []",
+    "expected []; got non-empty from empty payload",
+)
+
+# In-progress check: conclusion field is blank, but effective is the status string.
+INPROG_PAYLOAD = {
+    "total_count": 1,
+    "check_runs": [{"name": "job", "status": "in_progress", "conclusion": None}],
+}
+rows_ag_ip = ci_monitor.parse_check_summary(INPROG_PAYLOAD)
+check(
+    len(rows_ag_ip) == 1 and rows_ag_ip[0]["conclusion"] == "in_progress",
+    "an in-progress check's effective conclusion is 'in_progress'",
+    "in-progress conclusion wrong; got %r" % (rows_ag_ip,),
+)
+check(
+    not rows_ag_ip[0]["blocking"],
+    "an in-progress check is not blocking",
+    "in-progress check wrongly marked blocking; got %r" % (rows_ag_ip,),
+)
+
+
+# ── (ah) #516 format_check_summary and blocking_suffix ───────────────────────
+print("\n=== (ah) #516 format_check_summary and blocking_suffix ===")
+
+# Basic format: first line is 'summary', rows are aligned, blocking row carries
+# [BLOCKING], a label-gate blocking row also carries [label gate].
+ROWS_AH = [
+    {"name": "No blocking labels", "conclusion": "failure", "blocking": True, "label_gate": True},
+    {
+        "name": "Build and run unit tests",
+        "conclusion": "success",
+        "blocking": False,
+        "label_gate": False,
+    },
+    {
+        "name": "Run PixelCameraOverlayE2ETest",
+        "conclusion": "success",
+        "blocking": False,
+        "label_gate": False,
+    },
+]
+lines_ah = ci_monitor.format_check_summary(ROWS_AH)
+check(
+    len(lines_ah) == 4 and lines_ah[0] == "summary",
+    "first line of format_check_summary is 'summary'",
+    "wrong first line; got %r" % (lines_ah,),
+)
+check(
+    any(
+        "No blocking labels" in ln
+        and "failure" in ln
+        and "[BLOCKING]" in ln
+        and "[label gate]" in ln
+        for ln in lines_ah
+    ),
+    "label-gate blocking row carries [BLOCKING] and [label gate]",
+    "label-gate row format wrong; got %r" % (lines_ah,),
+)
+check(
+    any(
+        "Build and run unit tests" in ln and "success" in ln and "[BLOCKING]" not in ln
+        for ln in lines_ah
+    ),
+    "passing row carries no [BLOCKING]",
+    "passing row format wrong; got %r" % (lines_ah,),
+)
+check(
+    ci_monitor.format_check_summary([]) == [],
+    "empty rows yields []",
+    "expected [] from empty rows",
+)
+
+# blocking_suffix: no blocking rows -> "".
+check(
+    ci_monitor.blocking_suffix(
+        [{"name": "x", "conclusion": "success", "blocking": False, "label_gate": False}]
+    )
+    == "",
+    "blocking_suffix returns '' when no row is blocking",
+    "expected ''; got %r"
+    % ci_monitor.blocking_suffix(
+        [{"name": "x", "conclusion": "success", "blocking": False, "label_gate": False}]
+    ),
+)
+
+# One non-label-gate blocking row.
+suffix_code = ci_monitor.blocking_suffix(
+    [{"name": "build-and-test", "conclusion": "failure", "blocking": True, "label_gate": False}]
+)
+check(
+    suffix_code == " by: build-and-test",
+    "blocking_suffix for a non-gate blocker: ' by: build-and-test'",
+    "got %r" % suffix_code,
+)
+
+# Only label-gate blocking rows: carries [label gate].
+suffix_gate = ci_monitor.blocking_suffix(
+    [{"name": "No blocking labels", "conclusion": "failure", "blocking": True, "label_gate": True}]
+)
+check(
+    suffix_gate == " by: No blocking labels [label gate]",
+    "blocking_suffix for a label-gate-only blocker: ' by: No blocking labels [label gate]'",
+    "got %r" % suffix_gate,
+)
+
+# Mixed (code/test failure plus label gate): no [label gate] flag.
+suffix_mixed = ci_monitor.blocking_suffix(
+    [
+        {"name": "build-and-test", "conclusion": "failure", "blocking": True, "label_gate": False},
+        {
+            "name": "No blocking labels",
+            "conclusion": "failure",
+            "blocking": True,
+            "label_gate": True,
+        },
+    ]
+)
+check(
+    suffix_mixed == " by: build-and-test, No blocking labels",
+    "mixed blocker: no [label gate] since not all-label-gate; got %r" % suffix_mixed,
+    "mixed suffix wrong; got %r" % suffix_mixed,
+)
+
+
+# ── (ai) #516 load_config: label_gate_check_regex key ────────────────────────
+print("\n=== (ai) #516 load_config: label_gate_check_regex defaults and repo config ===")
+
+import tempfile as _tempfile  # noqa: E402 (already imported in ac, re-using module)
+
+# Default: key absent in file -> DEFAULT_LABEL_GATE_CHECK_REGEX (never-match).
+_p_ai_partial = _tempfile.mkstemp(suffix=".json")[1]
+with open(_p_ai_partial, "w", encoding="utf-8") as _fh:
+    _fh.write(json.dumps({"artifact_name_regex": "^testresults-"}))
+cfg_ai_partial = ci_monitor.load_config(_p_ai_partial)
+os.remove(_p_ai_partial)
+check(
+    cfg_ai_partial.get("label_gate_check_regex") == ci_monitor.DEFAULT_LABEL_GATE_CHECK_REGEX,
+    "absent label_gate_check_regex falls back to DEFAULT_LABEL_GATE_CHECK_REGEX",
+    "fallback wrong; got %r" % cfg_ai_partial.get("label_gate_check_regex"),
+)
+
+# Absent file -> DEFAULT_LABEL_GATE_CHECK_REGEX.
+cfg_ai_absent = ci_monitor.load_config(
+    os.path.join(_tempfile.gettempdir(), "no-such-ci-config-ai.json")
+)
+check(
+    cfg_ai_absent.get("label_gate_check_regex") == ci_monitor.DEFAULT_LABEL_GATE_CHECK_REGEX,
+    "absent file -> label_gate_check_regex is the in-code default",
+    "absent-file fallback wrong; got %r" % cfg_ai_absent.get("label_gate_check_regex"),
+)
+
+# Committed repo config carries 'No blocking labels'.
+_repo_cfg_path_ai = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "ci_monitor", "ci_monitor.config.json"
+)
+cfg_ai_repo = ci_monitor.load_config(_repo_cfg_path_ai)
+check(
+    cfg_ai_repo.get("label_gate_check_regex") == "No blocking labels",
+    "committed config carries label_gate_check_regex = 'No blocking labels'",
+    "committed config wrong; got %r" % cfg_ai_repo.get("label_gate_check_regex"),
+)
+
+
+# ── (aj) #516 end-to-end: label-gate Blocked scenario (the #513 / #514 case) ─
+print(
+    "\n=== (aj) #516 end-to-end: label-gate Blocked -> 'Blocked by: No blocking labels [label gate]' ==="
+)
+
+# Mirrors the #513 scenario: verdict check-runs contains a 'No blocking labels'
+# failure plus three passing checks. The summary shows all four; the terminal is
+# attributed to the label-gate check; the drain flag is suppressed (diagnosed).
+# The label_gate_check_regex config key is set to 'No blocking labels' in the
+# committed ci_monitor.config.json, so main() loads it automatically (no patch needed
+# beyond the standard _request mock).
+PR_AJ = {"head": {"sha": "513c0de1"}}
+CHECK_BL_GATE_AJ = {
+    "total_count": 4,
+    "check_runs": [
+        {"name": "No blocking labels", "status": "completed", "conclusion": "failure"},
+        {"name": "Build and run unit tests", "status": "completed", "conclusion": "success"},
+        {"name": "Run PixelCameraOverlayE2ETest", "status": "completed", "conclusion": "success"},
+        {"name": "Run GalleryButtonVisualE2ETest", "status": "completed", "conclusion": "success"},
+    ],
+}
+# Diagnostic check-runs: no Actions targets -> poll_signals returns False immediately.
+DIAG_EMPTY_AJ = {"total_count": 0, "check_runs": []}
+
+# Single-poll run: pulls, verdict check-runs, diagnostic check-runs (no targets ->
+# no jobs/artifacts). Then drain_then_print: DRAIN_MAX_ATTEMPTS attempts each with
+# diagnostic check-runs -> no targets -> 3 requests. 3 + 3 = 6.
+side_effects_aj = collections.deque(
+    [
+        PR_AJ,  # pulls -> sha
+        CHECK_BL_GATE_AJ,  # verdict check-runs -> Blocked (label gate)
+        DIAG_EMPTY_AJ,  # diagnostic check-runs -> no targets -> poll_signals fast-exits
+    ]
+)
+for _ in range(3):  # DRAIN_MAX_ATTEMPTS drain attempts
+    side_effects_aj.append(DIAG_EMPTY_AJ)  # each drain poll: no targets
+
+
+def fake_request_aj(url, token, raw=False):
+    return side_effects_aj.popleft()
+
+
+buf_aj = io.StringIO()
+with (
+    unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_aj),
+    unittest.mock.patch.object(ci_monitor.time, "time", return_value=9000.0),
+    unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None),
+    unittest.mock.patch("sys.stdout", new=buf_aj),
+):
+    rc_aj = ci_monitor.main(["ci_monitor.py", "--pr", "513"])
+
+out_aj = buf_aj.getvalue()
+lines_aj = out_aj.splitlines()
+terminal_aj = "PR#513: Blocked by: No blocking labels [label gate]"
+summary_hdr_aj = "PR#513: summary"
+no_new_aj = "PR#513: drain poll found no new diagnostic signals"
+
+check(
+    terminal_aj in lines_aj,
+    "terminal line is exactly 'PR#513: Blocked by: No blocking labels [label gate]'",
+    "terminal line wrong; output: %r" % out_aj,
+)
+check(
+    no_new_aj not in lines_aj,
+    "drain flag suppressed (No blocking labels is a blocking/diagnosed check)",
+    "'drain poll found no new diagnostic signals' unexpectedly present; output: %r" % out_aj,
+)
+check(
+    summary_hdr_aj in lines_aj and lines_aj.index(summary_hdr_aj) < lines_aj.index(terminal_aj),
+    "summary header appears before the terminal line",
+    "summary header missing or after terminal; output: %r" % out_aj,
+)
+check(
+    any(
+        "No blocking labels" in ln
+        and "failure" in ln
+        and "[BLOCKING]" in ln
+        and "[label gate]" in ln
+        for ln in lines_aj
+    ),
+    "summary row for 'No blocking labels' shows failure, [BLOCKING], and [label gate]",
+    "label-gate summary row wrong; output: %r" % out_aj,
+)
+check(
+    any("Build and run unit tests" in ln and "success" in ln for ln in lines_aj),
+    "summary row for 'Build and run unit tests' shows success",
+    "passing summary row missing; output: %r" % out_aj,
+)
+check(
+    any("Run PixelCameraOverlayE2ETest" in ln and "success" in ln for ln in lines_aj),
+    "summary row for 'Run PixelCameraOverlayE2ETest' shows success",
+    "passing summary row missing; output: %r" % out_aj,
+)
+check(
+    any("Run GalleryButtonVisualE2ETest" in ln and "success" in ln for ln in lines_aj),
+    "summary row for 'Run GalleryButtonVisualE2ETest' shows success",
+    "passing summary row missing; output: %r" % out_aj,
+)
+# Summary lines precede the terminal; terminal is the last PR#N: line.
+pr_lines_aj = [ln for ln in lines_aj if ln.startswith("PR#513:")]
+check(
+    len(pr_lines_aj) > 0 and pr_lines_aj[-1] == terminal_aj,
+    "terminal line is the last PR#513: line",
+    "terminal is not the last PR#513: line; output: %r" % out_aj,
+)
+check(
+    len(side_effects_aj) == 0,
+    "all 6 mocked requests consumed (1 poll + 3 drain attempts, no jobs/artifacts fetched)",
+    "request deque not drained; %d entries left" % len(side_effects_aj),
+)
+check(rc_aj == 0, "main() returned 0", "main() returned %r" % rc_aj)
+
+
+# ── (ak) #516 doc-sync: 'No blocking labels' not hardcoded in ci_monitor.py ──
+print(
+    "\n=== (ak) #516 doc-sync: 'No blocking labels' lives only in the config, not in ci_monitor.py ==="
+)
+
+_MONITOR_SRC_AK = open(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "ci_monitor", "ci_monitor.py"),
+    encoding="utf-8",
+).read()
+
+check(
+    "No blocking labels" not in _MONITOR_SRC_AK,
+    "the string 'No blocking labels' does not appear in ci_monitor.py (config-driven only)",
+    "'No blocking labels' hardcoded in ci_monitor.py -- must live only in ci_monitor.config.json",
+)
 
 
 # ── Summary ────────────────────────────────────────────────────────────────────

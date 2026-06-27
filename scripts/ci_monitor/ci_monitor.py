@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ci_monitor.py — Poll a PR's CI and stream a terminal outcome plus per-test signals.
+"""ci_monitor.py -- Poll a PR's CI and stream a terminal outcome plus per-test signals.
 
 Invoked by the Orchestrator's Monitor tool call (see agents/dev_orchestration.md).
 Each stdout line is consumed as a task-notification event, so output is the
@@ -60,20 +60,28 @@ DEFAULT_INTERESTING_STEP_REGEX = r"(?!)"
 # repo's config matches both markers for back-compat (see ci_monitor.config.json).
 DEFAULT_TEST_MARKER_REGEX = r"##TEST##"
 
+# Match (re.search) against a check-run's `name` to identify it as a process-label
+# gate rather than a substantive code/test block. The never-match default keeps the
+# rule repo-agnostic; the project-specific name is supplied via config, mirroring
+# how `interesting_step_regex` defaults to never-match.
+DEFAULT_LABEL_GATE_CHECK_REGEX = r"(?!)"
+
 
 def load_config(path=None):
     """Load the CI Monitor config, falling back to in-code defaults.
 
-    Returns a dict with keys artifact_name_regex, interesting_step_regex, and
-    test_marker_regex. A missing file, unreadable file, or invalid JSON falls
-    back entirely to the DEFAULT_* regexes (the Monitor must never abort on
-    config). Each key independently defaults if absent, and a value that does not
-    compile as a regex falls back to that key's default rather than crashing.
+    Returns a dict with keys artifact_name_regex, interesting_step_regex,
+    test_marker_regex, and label_gate_check_regex. A missing file, unreadable
+    file, or invalid JSON falls back entirely to the DEFAULT_* regexes (the
+    Monitor must never abort on config). Each key independently defaults if
+    absent, and a value that does not compile as a regex falls back to that
+    key's default rather than crashing.
     """
     defaults = {
         "artifact_name_regex": DEFAULT_ARTIFACT_NAME_REGEX,
         "interesting_step_regex": DEFAULT_INTERESTING_STEP_REGEX,
         "test_marker_regex": DEFAULT_TEST_MARKER_REGEX,
+        "label_gate_check_regex": DEFAULT_LABEL_GATE_CHECK_REGEX,
     }
     if path is None:
         path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ci_monitor.config.json")
@@ -107,7 +115,7 @@ def load_config(path=None):
 # any kind, so a quiet poll loop stays quiet. Every emitted line resets the timer.
 SILENCE_SECONDS = 120
 
-# Gap E (issue #402) — before emitting a Blocked/Infra terminal line, re-poll
+# Gap E (issue #402) -- before emitting a Blocked/Infra terminal line, re-poll
 # the step/artifact signals a few more times. /actions/runs/{id}/jobs and
 # /actions/runs/{id}/artifacts can lag behind /commits/{sha}/check-runs: the
 # poll where check-runs first reports the failing conclusion may still show the
@@ -131,7 +139,7 @@ DRAIN_DELAY_SECONDS = 5
 DRAIN_MAX_ATTEMPTS = 3
 
 
-# ── Parsers ───────────────────────────────────────────────────────────────────
+# -- Parsers -------------------------------------------------------------------
 
 
 def parse_steps(
@@ -280,6 +288,89 @@ def parse_check_result(check_json):
     return "in_progress"
 
 
+def parse_check_summary(check_json, label_gate_check_regex=DEFAULT_LABEL_GATE_CHECK_REGEX):
+    """Extract per-check (name, conclusion, blocking, label_gate) rows from check-runs data.
+
+    Returns a list of dicts (one per check run, preserving order):
+      {"name": str, "conclusion": str, "blocking": bool, "label_gate": bool}
+
+    Conclusions in the "blocking" set match what parse_check_result treats as
+    Blocked/Infra. The label_gate_check_regex is matched (re.search) against
+    each check run's name; a True label_gate lets the consumer annotate a
+    process-label block distinctly from a substantive code/test failure.
+
+    Returns [] when check_runs is absent or empty. Does not make any HTTP
+    requests; reads only from the already-fetched check_json payload.
+    """
+    _BLOCKING_CONCLUSIONS = frozenset(
+        ("failure", "action_required", "cancelled", "timed_out", "stale", "startup_failure")
+    )
+    rows = []
+    for r in check_json.get("check_runs", []):
+        name = r.get("name") or "?"
+        status = r.get("status", "")
+        conclusion = r.get("conclusion") or ""
+        # For completed checks use the conclusion; otherwise use the in-progress status
+        # so the summary renders e.g. "in_progress" rather than a blank slot.
+        effective = conclusion if status == "completed" else status
+        blocking = status == "completed" and conclusion in _BLOCKING_CONCLUSIONS
+        label_gate = bool(re.search(label_gate_check_regex, name))
+        rows.append(
+            {
+                "name": name,
+                "conclusion": effective,
+                "blocking": blocking,
+                "label_gate": label_gate,
+            }
+        )
+    return rows
+
+
+def format_check_summary(rows):
+    """Format per-check rows into a summary block (without the PR#N: prefix).
+
+    Returns [] when rows is empty. The first line is "summary", followed by one
+    aligned dotted line per check. Blocking rows carry [BLOCKING]; a label-gate
+    blocking row additionally carries [label gate]. Column width is capped at 60
+    characters to avoid pathological output on long check names.
+    """
+    if not rows:
+        return []
+    _MAX_COL = 60
+    name_width = min(max(len(r["name"]) for r in rows), _MAX_COL)
+    lines = ["summary"]
+    for r in rows:
+        name = r["name"]
+        conclusion = r["conclusion"]
+        # Truncate long names so the dotfill stays within the column ceiling.
+        display_name = name[:_MAX_COL] if len(name) > _MAX_COL else name
+        dots = "." * (name_width - len(display_name) + 4)
+        line = "  %s %s %s" % (display_name, dots, conclusion)
+        if r["blocking"]:
+            line += "   [BLOCKING]"
+            if r["label_gate"]:
+                line += " [label gate]"
+        lines.append(line)
+    return lines
+
+
+def blocking_suffix(rows):
+    """Return the attributed terminal suffix for a set of per-check rows.
+
+    Returns "" when no row is blocking (caller emits the bare terminal token).
+    Returns " by: <names> [label gate]" when every blocking row is a label gate.
+    Returns " by: <names>" otherwise (mixed or non-gate blocker).
+    """
+    blocking = [r for r in rows if r["blocking"]]
+    if not blocking:
+        return ""
+    names = [r["name"] for r in blocking]
+    suffix = " by: %s" % ", ".join(names)
+    if all(r["label_gate"] for r in blocking):
+        suffix += " [label gate]"
+    return suffix
+
+
 # Extract the run id (and optional job id) from an Actions check run's URL.
 _RUN_JOB_URL_RE = re.compile(r"/actions/runs/(\d+)(?:/job/(\d+))?")
 
@@ -346,7 +437,7 @@ def extract_ndjson_lines(zip_bytes):
                         yield line
 
 
-# ── HTTP (stdlib urllib) ────────────────────────────────────────────────────────
+# -- HTTP (stdlib urllib) ------------------------------------------------------
 
 
 def _err_detail(e):
@@ -448,7 +539,7 @@ def fetch_pr_with_retry(pr, token, attempts=3, base_delay=2):
     return None
 
 
-# ── Main poll loop ────────────────────────────────────────────────────────────
+# -- Main poll loop ------------------------------------------------------------
 
 
 def _parse_outcome_filters(args):
@@ -468,7 +559,7 @@ def _parse_outcome_filters(args):
         if no_flag:
             return (False, None)
         if include_flag is None:
-            # flag was not provided at all — use default
+            # flag was not provided at all -- use default
             return (default_enabled, None)
         # flag was provided; include_flag is either '' (no pattern) or a pattern string
         return (True, include_flag if include_flag != "" else None)
@@ -538,6 +629,7 @@ def main(argv):
     artifact_name_regex = config["artifact_name_regex"]
     interesting_step_regex = config["interesting_step_regex"]
     test_marker_regex = config["test_marker_regex"]
+    label_gate_check_regex = config["label_gate_check_regex"]
 
     last_output_ts = time.time()
 
@@ -563,7 +655,7 @@ def main(argv):
         Mirrors the streamed test-result signals described in the module
         docstring: per-step conclusion deltas (Signal 1, via parse_steps) and
         per-test FAIL/SKIP/PASS markers from the test-result artifacts
-        (Signal 2, via parse_fails). Both are purely informational — they reset
+        (Signal 2, via parse_fails). Both are purely informational -- they reset
         the silence timer via emit_block but never end the loop. Returns True if
         any line was emitted this call.
 
@@ -605,7 +697,7 @@ def main(argv):
 
         for run_id in run_order:
             job_ids = run_job_ids[run_id]
-            # Signal 1 — per-step conclusion deltas for the tracked job(s).
+            # Signal 1 -- per-step conclusion deltas for the tracked job(s).
             jobs_json = _request(
                 "%s/repos/%s/%s/actions/runs/%s/jobs?per_page=30" % (API_BASE, OWNER, REPO, run_id),
                 token,
@@ -613,7 +705,7 @@ def main(argv):
             if jobs_json:
                 _emit(parse_steps(jobs_json, seen_steps, job_ids, interesting_step_regex))
 
-            # Signal 2 — per-test FAIL detail from the test-result artifacts.
+            # Signal 2 -- per-test FAIL detail from the test-result artifacts.
             # Download each new artifact once, parse its per-test ndjson markers,
             # and emit new FAIL entries.
             artifacts_json = _request(
@@ -644,8 +736,14 @@ def main(argv):
 
         return emitted[0]
 
-    def drain_then_print(sha, terminal_line):
-        """Gap E (issue #402) — drain lagging signal polls before a terminal line.
+    def print_summary(rows):
+        """Emit the per-check summary block prefixed with the PR tag."""
+        for ln in format_check_summary(rows):
+            print("PR#%s: %s" % (pr, ln))
+        sys.stdout.flush()
+
+    def drain_then_print(sha, terminal_prefix, terminal_tail, rows):
+        """Gap E (issue #402) -- drain lagging signal polls before a terminal line.
 
         Pauses DRAIN_DELAY_SECONDS and re-polls the step/artifact signals, so
         any step or FAIL/SKIP/PASS line that was still lagging on the poll that
@@ -656,33 +754,40 @@ def main(argv):
         lagging endpoints (the gate step from /actions/runs/{id}/jobs and the
         testresults-<group> artifact from /actions/runs/{id}/artifacts) can
         settle on different attempts, so stopping at the first fruitful attempt
-        would drop the later-arriving signal for this process's lifetime. If
-        every attempt comes up empty, prints a line saying so, so a
-        `Blocked`/`Infra` terminal with no diagnostics is distinguishable from
-        one where the drain simply found nothing new to report. Then prints
-        `terminal_line` and flushes.
+        would drop the later-arriving signal for this process's lifetime.
+
+        If every attempt comes up empty AND no check already explains the
+        terminal (no row is blocking), prints a diagnostic-absence line.
+        That line is suppressed when a named check already concluded a blocking
+        conclusion (the terminal is diagnosed).
+
+        Then emits the per-check summary block and the attributed terminal line.
+        The terminal is `terminal_prefix + blocking_suffix(rows) + terminal_tail`.
         """
         drained = False
         for _ in range(DRAIN_MAX_ATTEMPTS):
             time.sleep(DRAIN_DELAY_SECONDS)
             if poll_signals(sha):
                 drained = True
-        if not drained:
+        diagnosed = any(r["blocking"] for r in rows)
+        if not drained and not diagnosed:
             print("PR#%s: drain poll found no new diagnostic signals" % pr)
             sys.stdout.flush()
+        print_summary(rows)
+        terminal_line = terminal_prefix + blocking_suffix(rows) + terminal_tail
         print(terminal_line)
         sys.stdout.flush()
 
-    # Gap D — advertise our PID so the Orchestrator can stop us out-of-band
+    # Gap D -- advertise our PID so the Orchestrator can stop us out-of-band
     # (e.g. `kill -TERM <PID>`) if the Monitor tool's TaskStop is unavailable.
     print(
-        "monitor PID %d — if TaskStop is unavailable, send SIGTERM to this PID to stop me"
+        "monitor PID %d -- if TaskStop is unavailable, send SIGTERM to this PID to stop me"
         % os.getpid()
     )
     sys.stdout.flush()
 
     while True:
-        # Gap C — retry the SHA fetch with backoff and rate-limit awareness
+        # Gap C -- retry the SHA fetch with backoff and rate-limit awareness
         # instead of a flat 30s retry, so transient blips and 403/429 throttles
         # are handled without hammering the API.
         pr_json = fetch_pr_with_retry(pr, token)
@@ -699,7 +804,7 @@ def main(argv):
             time.sleep(30)
             continue
 
-        # Gap A — a closed or merged PR leaves mergeable_state "unknown"
+        # Gap A -- a closed or merged PR leaves mergeable_state "unknown"
         # forever; emit a terminal line and stop instead of spinning.
         terminal = parse_pr_terminal(pr_json)
         if terminal:
@@ -711,6 +816,7 @@ def main(argv):
             "%s/repos/%s/%s/commits/%s/check-runs" % (API_BASE, OWNER, REPO, sha), token
         )
         result = parse_check_result(check_json) if check_json else None
+        summary_rows = parse_check_summary(check_json, label_gate_check_regex) if check_json else []
 
         # --- Streamed test-result signals -------------------------------------
         # Emitted independent of the overall check conclusion, so E2E failures
@@ -730,19 +836,27 @@ def main(argv):
             mpr_json = _request("%s/repos/%s/%s/pulls/%s" % (API_BASE, OWNER, REPO, pr), token)
             mergeable = mpr_json.get("mergeable_state", "unknown") if mpr_json else "unknown"
             if mergeable in ("clean", "unstable"):
+                print_summary(summary_rows)
                 print("PR#%s: Clear (mergeable_state=%s)" % (pr, mergeable))
                 sys.stdout.flush()
                 break
             elif mergeable in ("behind", "dirty"):
-                # Gap E (issue #402) — drain lagging step/FAIL signals before
+                # Gap E (issue #402) -- drain lagging step/FAIL signals before
                 # the terminal line; see drain_then_print and DRAIN_DELAY_SECONDS.
-                drain_then_print(sha, "PR#%s: Blocked (mergeable_state=%s)" % (pr, mergeable))
+                drain_then_print(
+                    sha,
+                    "PR#%s: Blocked" % pr,
+                    " (mergeable_state=%s)" % mergeable,
+                    summary_rows,
+                )
                 break
             elif mergeable == "blocked":
-                drain_then_print(sha, "PR#%s: Infra (mergeable_state=blocked)" % pr)
+                drain_then_print(
+                    sha, "PR#%s: Infra" % pr, " (mergeable_state=blocked)", summary_rows
+                )
                 break
             else:
-                # Gap B — throttle "still computing" to >120s of silence, just
+                # Gap B -- throttle "still computing" to >120s of silence, just
                 # like the in_progress heartbeat, so it does not print every poll.
                 now = time.time()
                 if now - last_output_ts > SILENCE_SECONDS:
@@ -752,12 +866,12 @@ def main(argv):
                     sys.stdout.flush()
                     last_output_ts = now
         elif result in ("Blocked", "Infra"):
-            # Gap E (issue #402) — drain lagging step/FAIL signals before the
+            # Gap E (issue #402) -- drain lagging step/FAIL signals before the
             # terminal line; see drain_then_print and DRAIN_DELAY_SECONDS.
-            drain_then_print(sha, "PR#%s: %s" % (pr, result))
+            drain_then_print(sha, "PR#%s: %s" % (pr, result), "", summary_rows)
             break
         elif result == "Clear":
-            # No check runs registered (total_count == 0) — PR is already clear.
+            # No check runs registered (total_count == 0) -- PR is already clear.
             # Break immediately; no drain needed (there are no failing signals).
             print("PR#%s: Clear" % pr)
             sys.stdout.flush()
