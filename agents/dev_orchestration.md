@@ -129,7 +129,10 @@ The Orchestrator does not read or judge the Author's explanation; it only notes 
 
 Reviewer-to-Orchestrator outcome vocabulary (the Reviewer emits one):
 - `LGTM`
-- `Changes requested`
+- `Changes requested`: in-repo changes the Author can make.
+  Use only when the feedback is addressable by editing the repository.
+- `LGTM; out-of-repo action required`: the code is correct and needs no in-repo change, but something outside the repository (e.g. renaming a label, updating external config) must happen before the PR can merge.
+  The Reviewer describes the specifics in a PR comment for the user to read.
 
 Orchestrator-to-user terminal CI lines:
 - `CI cleared on PR #{N}.`
@@ -237,6 +240,8 @@ PR routing (Monitor loop):
 
 ```text
   if Reviewer requested changes -> goto newAuthor
+  if Reviewer gave `LGTM; out-of-repo action required` -> escalate to user; stop
+    (do NOT launch the CI Monitor and do NOT route to a new Author round; the Reviewer's PR comment describes what the user must do)
   if Reviewer gave LGTM:
     Orchestrator launches a Monitor tool call running `python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER>` from the repo root (run_in_background: true, timeout_ms: 1800000). Record the task ID returned by the Monitor tool call for use in silentVanish recovery, and clear the silentVanish re-launch flag (this original launch is not a re-launch).
     Each stdout line arrives as a task-notification event; relay each line to the user verbatim.
