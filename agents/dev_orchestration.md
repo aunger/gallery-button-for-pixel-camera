@@ -79,7 +79,7 @@ When you begin orchestrating a PR (the first thing you do once you have entered 
 
 | Remove label | Add label |
 |---|---|
-| `for ai to do` | `orchestrating` |
+| `orchestrate` | `orchestrating` |
 
 ## Model selection
 
