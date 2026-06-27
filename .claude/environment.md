@@ -95,7 +95,7 @@ so the `labels` field is never sent and all existing labels remain.
 
 **Evidence (empirically verified 2026-05):**
 - `labels: ["planning needed"]` → correctly replaces ALL labels with just that one
-  (REPLACE semantics — "for ai to do" was removed in the same call). Non-empty arrays work.
+  (REPLACE semantics — "orchestrate" was removed in the same call). Non-empty arrays work.
 - `labels: []` → no change; all labels remain. Confirmed by a follow-up `get_labels` read.
 
 **Implication:** There is no way to remove *all* labels from an issue using

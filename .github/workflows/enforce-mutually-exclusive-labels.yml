@@ -8,7 +8,7 @@ name: Enforce mutually exclusive labels
 #   [p1, p2, p3]
 #   [needs verification, verified]
 #   [change requested, change done]
-#   [for ai to do, orchestrating]
+#   [orchestrate, orchestrating]
 #
 # Mutually exclusive prefix groups:
 #   c-a-*   (author model, e.g. c-a-haiku, c-a-sonnet, c-a-opus)

@@ -84,16 +84,16 @@ class TestFindConflictingSet(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertIn("changes requested", result)
 
-    def test_for_ai_to_do_found(self):
-        result = emxl.find_conflicting_set("for ai to do")
+    def test_orchestrate_found(self):
+        result = emxl.find_conflicting_set("orchestrate")
         self.assertIsNotNone(result)
-        self.assertIn("for ai to do", result)
+        self.assertIn("orchestrate", result)
         self.assertIn("orchestrating", result)
 
     def test_orchestrating_found(self):
         result = emxl.find_conflicting_set("orchestrating")
         self.assertIsNotNone(result)
-        self.assertIn("for ai to do", result)
+        self.assertIn("orchestrate", result)
 
     def test_unknown_label_returns_none(self):
         self.assertIsNone(emxl.find_conflicting_set("bug"))
@@ -435,13 +435,13 @@ class TestMain(unittest.TestCase):
         delete_call = mock_api.call_args_list[1]
         self.assertIn("changes%20requested", delete_call[0][0])
 
-    def test_removes_for_ai_workflow_set(self):
+    def test_removes_orchestrate_workflow_set(self):
         with patch.dict(os.environ, {"ADDED_LABEL": "orchestrating", "ISSUE_NUMBER": "3"}):
             with patch.object(
                 emxl,
                 "gh_api",
                 side_effect=[
-                    self._make_issue_response(["for ai to do", "ci"]),
+                    self._make_issue_response(["orchestrate", "ci"]),
                     None,
                 ],
             ) as mock_api:
@@ -449,7 +449,7 @@ class TestMain(unittest.TestCase):
 
         self.assertEqual(result, 0)
         delete_call = mock_api.call_args_list[1]
-        self.assertIn("for%20ai%20to%20do", delete_call[0][0])
+        self.assertIn("orchestrate", delete_call[0][0])
 
     def test_exit_0_when_fetch_raises(self):
         with patch.object(emxl, "gh_api", side_effect=Exception("network error")):

@@ -209,7 +209,7 @@ class TestArchiveIssue(unittest.TestCase):
             42,
             "Old failure",
             _CUTOFF - timedelta(days=1),
-            ["test-failure", "ci", "for ai to do"],
+            ["test-failure", "ci", "orchestrate"],
         )
 
         with patch.object(astf, "gh_api") as mock_api:
@@ -220,7 +220,7 @@ class TestArchiveIssue(unittest.TestCase):
         self.assertIn("test-failure-archive", body["labels"])
         self.assertNotIn("test-failure", body["labels"])
         self.assertIn("ci", body["labels"])
-        self.assertIn("for ai to do", body["labels"])
+        self.assertIn("orchestrate", body["labels"])
 
     def test_archive_label_added_even_when_only_label(self):
         issue = _make_issue(

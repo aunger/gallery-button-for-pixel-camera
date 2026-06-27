@@ -9,7 +9,7 @@ Mutually exclusive sets (fixed):
     [p1, p2, p3]
     [verification needed, verified]
     [changes requested, changes done]
-    [for ai to do, orchestrating]
+    [orchestrate, orchestrating]
 
 Mutually exclusive prefix groups (any label sharing a prefix is exclusive):
     c-a-*   (author model, e.g. c-a-haiku, c-a-sonnet, c-a-opus)
@@ -44,7 +44,7 @@ MUTUALLY_EXCLUSIVE_SETS: list[frozenset[str]] = [
     frozenset({"p1", "p2", "p3"}),
     frozenset({"verification needed", "verified"}),
     frozenset({"changes requested", "changes done"}),
-    frozenset({"for ai to do", "orchestrating"}),
+    frozenset({"orchestrate", "orchestrating"}),
 ]
 
 # Prefix-based exclusive groups: any two labels sharing a prefix are exclusive.
