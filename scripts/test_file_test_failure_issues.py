@@ -341,6 +341,69 @@ class TestMakeIssueBody(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# make_summary_body tests
+# ---------------------------------------------------------------------------
+
+
+class TestMakeSummaryBody(unittest.TestCase):
+    def setUp(self):
+        self.failure = ftfi.FailedTest(
+            class_name="com.example.BarTest",
+            method_name="testD",
+            failure_message="AssertionError: Expected true",
+            stack_trace="Expected true but was false",
+            suite_label="Unit Tests",
+            artifact_name="unit-test-results",
+        )
+
+    def _make_summary(self, **kwargs):
+        defaults = dict(
+            failure=self.failure,
+            github_server_url="https://github.com",
+            github_repository="aunger/gallery-button-for-pixel-camera",
+            workflow_run_branch="main",
+        )
+        defaults.update(kwargs)
+        return ftfi.make_summary_body(**defaults)
+
+    def test_has_automated_test_failure_heading(self):
+        self.assertIn("# Automated test failure", self._make_summary())
+
+    def test_contains_suite_label_as_job(self):
+        self.assertIn("Unit Tests", self._make_summary())
+
+    def test_contains_class_and_method(self):
+        body = self._make_summary()
+        self.assertIn("com.example.BarTest", body)
+        self.assertIn("testD", body)
+
+    def test_links_job_to_workflow_file_on_branch(self):
+        body = self._make_summary(workflow_run_branch="feature/foo")
+        self.assertIn(
+            "https://github.com/aunger/gallery-button-for-pixel-camera/blob/feature/foo/.github/workflows/build.yml",
+            body,
+        )
+
+    def test_workflow_link_falls_back_to_head_without_branch(self):
+        body = self._make_summary(workflow_run_branch="")
+        self.assertIn("/blob/HEAD/.github/workflows/build.yml", body)
+
+    def test_mentions_comments_aggregation(self):
+        self.assertIn(
+            "Failed runs will be added as comments on this ticket over time.",
+            self._make_summary(),
+        )
+
+    def test_excludes_per_run_details(self):
+        """The summary body must not contain timestamp, stack trace, or run-specific info."""
+        body = self._make_summary()
+        self.assertNotIn("### Stack trace", body)
+        self.assertNotIn("### Failure message", body)
+        self.assertNotIn("Detected at", body)
+        self.assertNotIn("### Failed on", body)
+
+
+# ---------------------------------------------------------------------------
 # _find_ocr_text tests
 # ---------------------------------------------------------------------------
 
@@ -541,6 +604,38 @@ class TestProcessFailure(unittest.TestCase):
         mock_create.return_value = 77
         self._call_process_failure()
         mock_create.assert_called_once()
+        # The first occurrence's per-run details go into a comment too (issue #504).
+        mock_comment.assert_called_once()
+        self.assertEqual(mock_comment.call_args[0][2], 77)
+        comment_body = mock_comment.call_args[0][3]
+        self.assertIn("### Failed on", comment_body)
+
+    @patch("file_test_failure_issues.add_issue_comment")
+    @patch("file_test_failure_issues.create_issue")
+    @patch("file_test_failure_issues.find_existing_issue")
+    def test_new_issue_body_is_aggregate_summary_not_run_details(
+        self, mock_find, mock_create, mock_comment
+    ):
+        """The created issue body is the aggregate summary, not per-run details (issue #504)."""
+        mock_find.return_value = None
+        mock_create.return_value = 77
+        self._call_process_failure()
+        created_body = mock_create.call_args[0][3]
+        self.assertIn("# Automated test failure", created_body)
+        self.assertIn("Failed runs will be added as comments", created_body)
+        # Per-run details (timestamp, sha, stack trace) must NOT be in the body.
+        self.assertNotIn("### Failed on", created_body)
+        self.assertNotIn(_FIXED_SHA[:7], created_body)
+        self.assertNotIn("### Stack trace", created_body)
+
+    @patch("file_test_failure_issues.add_issue_comment")
+    @patch("file_test_failure_issues.create_issue")
+    @patch("file_test_failure_issues.find_existing_issue")
+    def test_no_comment_when_issue_creation_fails(self, mock_find, mock_create, mock_comment):
+        """If the issue can't be created, don't try to comment on a nonexistent issue."""
+        mock_find.return_value = None
+        mock_create.return_value = None  # creation failed
+        self._call_process_failure()
         mock_comment.assert_not_called()
 
     @patch("file_test_failure_issues.reopen_issue")
