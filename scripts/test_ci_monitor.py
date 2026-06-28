@@ -178,15 +178,28 @@ def check_runs_payload(*pairs):
 
     Each pair becomes a github-actions check run whose details_url encodes the
     run id and (when job_id is not None) the job id, as parse_actions_targets
-    reads them. Mirrors the run/job discovery wiring (b) main() uses (issue #500),
-    replacing the old {"workflow_runs": [...]} fixtures.
+    reads them. Used for both the combined verdict+diagnostic payload (wiring (a),
+    issue #512) and the drain self-fetch payloads, replacing the old
+    {"workflow_runs": [...]} fixtures.
+
+    Each entry includes status/conclusion so parse_check_result can iterate the
+    full combined payload without KeyError. The github-actions job check runs
+    are always completed/success here; the verdict is determined by the
+    non-Actions status check run(s) also present in combined payloads.
     """
     runs = []
     for run_id, job_id in pairs:
         url = "https://github.com/%s/%s/actions/runs/%s" % (OWNER_T, REPO_T, run_id)
         if job_id is not None:
             url += "/job/%s" % job_id
-        runs.append({"app": {"slug": "github-actions"}, "details_url": url})
+        runs.append(
+            {
+                "app": {"slug": "github-actions"},
+                "details_url": url,
+                "status": "completed",
+                "conclusion": "success",
+            }
+        )
     return {"total_count": len(runs), "check_runs": runs}
 
 
@@ -384,8 +397,8 @@ JOBS_FAIL = {
     ]
 }
 ARTS_JSON = {"artifacts": [{"id": 9001, "name": "testresults-unit", "expired": False}]}
-# Diagnostic check-runs payload poll_signals self-fetches under wiring (b)
-# (issue #500): one github-actions check run pointing at run 555, job 42.
+# Drain self-fetch payload: one github-actions check run pointing at run 555,
+# job 42. Under wiring (a), drain attempts still self-fetch (check_json=None).
 DIAG_CHECK_I = check_runs_payload(("555", "42"))
 ZIP_BYTES = make_zip_ndjson(
     [
@@ -393,28 +406,39 @@ ZIP_BYTES = make_zip_ndjson(
     ]
 )
 
-# Per iteration the request order under wiring (b) (issue #500) is: pulls (sha),
-# verdict check-runs, diagnostic check-runs (poll_signals self-fetch), jobs,
-# artifacts, [zip per new artifact]. Iteration 1 (in_progress) downloads the
-# zip; iteration 2 (Blocked, terminal) finds the artifact already seen and
-# skips the zip call, then drain_then_print (Gap E) re-polls
-# check-runs/jobs/artifacts up to DRAIN_MAX_ATTEMPTS times before printing the
-# terminal line. Every drain attempt here finds the step/artifact already seen
-# (nothing new), so all DRAIN_MAX_ATTEMPTS=3 attempts run. 6 + 5 + 3*3 = 20
-# entries; the deque must be exactly drained.
+# Under wiring (a) the same check-runs payload drives both the verdict and
+# poll_signals. The combined payloads for test (i) include both the status
+# check (in_progress or failure, for parse_check_result) and the Actions check
+# run pointing at run 555/job 42 (for parse_actions_targets / poll_signals).
+CHECK_IP_WITH_RUN_I = {
+    "total_count": 2,
+    "check_runs": CHECK_INPROGRESS["check_runs"] + DIAG_CHECK_I["check_runs"],
+}
+CHECK_BL_WITH_RUN_I = {
+    "total_count": 2,
+    "check_runs": CHECK_BLOCKED["check_runs"] + DIAG_CHECK_I["check_runs"],
+}
+
+# Per iteration the request order under wiring (a) (issue #512) is: pulls (sha),
+# verdict check-runs (reused by poll_signals), jobs, artifacts, [zip per new
+# artifact]. Iteration 1 (in_progress) downloads the zip; iteration 2 (Blocked,
+# terminal) finds the artifact already seen and skips the zip call, then
+# drain_then_print (Gap E) re-polls check-runs/jobs/artifacts up to
+# DRAIN_MAX_ATTEMPTS times before printing the terminal line. Every drain attempt
+# here finds the step/artifact already seen (nothing new), so all
+# DRAIN_MAX_ATTEMPTS=3 attempts run. 5 + 4 + 3*3 = 18 entries; the deque must be
+# exactly drained.
 side_effects_i = collections.deque(
     [
         # iteration 1
         PR_JSON,  # pulls -> sha
-        CHECK_INPROGRESS,  # verdict check-runs -> in_progress
-        DIAG_CHECK_I,  # diagnostic check-runs -> run 555, job 42
+        CHECK_IP_WITH_RUN_I,  # verdict check-runs -> in_progress (reused by poll_signals)
         JOBS_FAIL,  # jobs -> step failure
         ARTS_JSON,  # artifacts -> one new artifact
         ZIP_BYTES,  # zip (raw) -> FAIL line
         # iteration 2
         PR_JSON,  # pulls -> sha
-        CHECK_BLOCKED,  # verdict check-runs -> Blocked (terminal)
-        DIAG_CHECK_I,  # diagnostic check-runs -> run 555, job 42
+        CHECK_BL_WITH_RUN_I,  # verdict check-runs -> Blocked (terminal, reused by poll_signals)
         JOBS_FAIL,  # jobs -> step already seen, nothing new
         ARTS_JSON,  # artifacts -> artifact already seen, no zip call
         # drain_then_print (Gap E) — up to DRAIN_MAX_ATTEMPTS extra signal polls
@@ -506,7 +530,7 @@ check(
 )
 check(
     len(side_effects_i) == 0,
-    "all 20 mocked requests consumed (zip skipped in iteration 2 and all 3 drain attempts)",
+    "all 18 mocked requests consumed (zip skipped in iteration 2 and all 3 drain attempts)",
     "request deque not drained; %d entries left" % len(side_effects_i),
 )
 check(rc_i == 0, "main() returned 0", "main() returned %r" % rc_i)
@@ -524,9 +548,9 @@ CHECK_BL = {
     "total_count": 1,
     "check_runs": [{"name": "build-and-test", "status": "completed", "conclusion": "failure"}],
 }
-# Diagnostic check-runs payload poll_signals self-fetches under wiring (b)
-# (issue #500): a run-only details_url (no job id), so parse_steps applies no
-# job filter and the unnamed build-and-test job fixtures below still match.
+# Drain self-fetch payload: a run-only details_url (no job id), so parse_steps
+# applies no job filter and the unnamed build-and-test job fixtures below still
+# match. Under wiring (a), drain attempts still self-fetch (check_json=None).
 DIAG_CHECK_J = check_runs_payload(("777", None))
 JOBS_EMPTY = {"jobs": [{"name": "build-and-test", "steps": []}]}
 JOBS_STEP7 = {
@@ -546,22 +570,33 @@ JOBS_STEP7 = {
 }
 ARTS_EMPTY = {"artifacts": []}
 
-# Each iteration issues exactly 5 requests under wiring (b) (issue #500): pulls,
-# verdict check-runs, diagnostic check-runs, jobs, artifacts; no zip is ever
-# downloaded (artifacts empty). 13 iterations -> 65, plus the single pre-loop
-# clock startup read makes the time deque 66 entries. The 13 iterations supply
+# Under wiring (a) the verdict payload is reused by poll_signals. Combined
+# payloads for test (j) include the Actions check run (run 777, run-only) so
+# parse_actions_targets discovers the target from the same fetch used for the
+# verdict.
+CHECK_IP_WITH_RUN_J = {
+    "total_count": 2,
+    "check_runs": CHECK_IP["check_runs"] + DIAG_CHECK_J["check_runs"],
+}
+CHECK_BL_WITH_RUN_J = {
+    "total_count": 2,
+    "check_runs": CHECK_BL["check_runs"] + DIAG_CHECK_J["check_runs"],
+}
+
+# Each iteration issues exactly 4 requests under wiring (a) (issue #512): pulls,
+# verdict check-runs (reused by poll_signals), jobs, artifacts; no zip is ever
+# downloaded (artifacts empty). 13 iterations -> 52. The 13 iterations supply
 # the verdict check-runs in_progress for 1..12 and Blocked at 13. Iteration 13
 # also triggers drain_then_print (Gap E), which re-polls
 # check-runs/jobs/artifacts up to DRAIN_MAX_ATTEMPTS times (3 extra requests per
 # attempt, no zip) before the terminal; every attempt finds nothing new here.
 jobs_for_iter = [JOBS_STEP7 if n == 7 else JOBS_EMPTY for n in range(1, 14)]
-checks_for_iter = [CHECK_BL if n == 13 else CHECK_IP for n in range(1, 14)]
+checks_for_iter = [CHECK_BL_WITH_RUN_J if n == 13 else CHECK_IP_WITH_RUN_J for n in range(1, 14)]
 
 req_j = collections.deque()
 for n in range(13):
     req_j.append(PR_J)  # pulls -> sha
-    req_j.append(checks_for_iter[n])  # verdict check-runs
-    req_j.append(DIAG_CHECK_J)  # diagnostic check-runs -> run 777
+    req_j.append(checks_for_iter[n])  # verdict check-runs (reused by poll_signals)
     req_j.append(jobs_for_iter[n])  # jobs
     req_j.append(ARTS_EMPTY)  # artifacts (no zip)
 # drain_then_print (Gap E) on the terminal Blocked iteration: DRAIN_MAX_ATTEMPTS
@@ -644,7 +679,7 @@ check(
 )
 check(
     len(req_j) == 0,
-    "all mocked requests consumed (65 + 9 drain entries drained)",
+    "all mocked requests consumed (52 + 9 drain entries drained)",
     "request deque not drained; %d entries left" % len(req_j),
 )
 check(rc_j == 0, "main() returned 0", "main() returned %r" % rc_j)
@@ -673,17 +708,23 @@ check(
 # Integration: iteration 1 is in_progress, iteration 2 the PR is merged. The
 # terminal check runs right after the SHA fetch (before check-runs), so on
 # iteration 2 main() emits 'PR#N: Merged' and breaks without issuing the
-# check-runs/jobs/artifacts calls. Per-iteration request order under wiring (b)
-# (issue #500) is: pulls (sha), verdict check-runs, diagnostic check-runs, jobs,
-# artifacts, [zip per new artifact]. Iteration 1 (open + in_progress, empty
-# artifacts) issues 5 requests; iteration 2 short-circuits after the single
-# pulls fetch. 5 + 1 = 6 entries, drained.
+# check-runs/jobs/artifacts calls. Per-iteration request order under wiring (a)
+# (issue #512) is: pulls (sha), verdict check-runs (reused by poll_signals),
+# jobs, artifacts, [zip per new artifact]. Iteration 1 (open + in_progress, empty
+# artifacts) issues 4 requests; iteration 2 short-circuits after the single
+# pulls fetch. 4 + 1 = 5 entries, drained.
 print("\n=== (k) main(): merged PR emits terminal 'Merged' and exits cleanly ===")
 
 PR_OPEN_K = {"head": {"sha": "feedface"}, "merged": False, "state": "open"}
 PR_MERGED_K = {"head": {"sha": "feedface"}, "merged": True, "state": "closed"}
-CHECK_IP_K = {"total_count": 1, "check_runs": [{"status": "in_progress", "conclusion": None}]}
-DIAG_CHECK_K = check_runs_payload(("888", None))  # diagnostic check-runs (wiring b)
+# Under wiring (a), CHECK_IP_K is reused by poll_signals; include an Actions
+# check run (run 888) so parse_actions_targets discovers the target and
+# poll_signals fetches jobs+artifacts.
+_diag_k = check_runs_payload(("888", None))
+CHECK_IP_K = {
+    "total_count": 2,
+    "check_runs": [{"status": "in_progress", "conclusion": None}] + _diag_k["check_runs"],
+}
 JOBS_EMPTY_K = {"jobs": [{"name": "build-and-test", "steps": []}]}
 ARTS_EMPTY_K = {"artifacts": []}
 
@@ -691,8 +732,7 @@ side_effects_k = collections.deque(
     [
         # iteration 1 — open, in_progress (no heartbeat: clock frozen at start)
         PR_OPEN_K,  # pulls -> sha, terminal == ''
-        CHECK_IP_K,  # verdict check-runs -> in_progress
-        DIAG_CHECK_K,  # diagnostic check-runs -> run 888
+        CHECK_IP_K,  # verdict check-runs -> in_progress (reused by poll_signals)
         JOBS_EMPTY_K,  # jobs -> nothing
         ARTS_EMPTY_K,  # artifacts -> nothing
         # iteration 2 — merged: terminal short-circuit before check-runs
@@ -729,7 +769,7 @@ check(
 )
 check(
     len(side_effects_k) == 0,
-    "all 6 mocked requests consumed (merged short-circuits iteration 2)",
+    "all 5 mocked requests consumed (merged short-circuits iteration 2)",
     "request deque not drained; %d entries left" % len(side_effects_k),
 )
 check(rc_k == 0, "main() returned 0 after merged terminal", "main() returned %r" % rc_k)
@@ -911,15 +951,22 @@ print(
 # A step delta and a per-test FAIL arrive on separate polls; each signal resets
 # the silence timer, so with a 30s-per-poll advancing clock the 120s heartbeat
 # threshold is never crossed and no in_progress line is emitted. Per-poll request
-# order under wiring (b): pulls (sha), verdict check-runs, diagnostic
-# check-runs, jobs, artifacts, [zip per new artifact].
+# order under wiring (a): pulls (sha), verdict check-runs (reused by
+# poll_signals), jobs, artifacts, [zip per new artifact].
 PR_M = {"head": {"sha": "5ca1ab1e"}}
-CHECK_IP_M = {"total_count": 1, "check_runs": [{"status": "in_progress", "conclusion": None}]}
-CHECK_BL_M = {
-    "total_count": 1,
-    "check_runs": [{"name": "build-and-test", "status": "completed", "conclusion": "failure"}],
+RUNS_M = check_runs_payload(("606", None))  # drain self-fetch payload (wiring a, issue #512)
+# Under wiring (a), the verdict payload is reused by poll_signals. Combined
+# payloads include the Actions check run (run 606, run-only) so poll_signals
+# discovers the target from the same fetch used for the verdict.
+CHECK_IP_M = {
+    "total_count": 2,
+    "check_runs": [{"status": "in_progress", "conclusion": None}] + RUNS_M["check_runs"],
 }
-RUNS_M = check_runs_payload(("606", None))  # diagnostic check-runs (wiring b, issue #500)
+CHECK_BL_M = {
+    "total_count": 2,
+    "check_runs": [{"name": "build-and-test", "status": "completed", "conclusion": "failure"}]
+    + RUNS_M["check_runs"],
+}
 JOBS_UNIT_FAIL_M = {
     "jobs": [
         {
@@ -944,31 +991,28 @@ ZIP_UNIT_M = make_zip_ndjson(
     ]
 )
 
-# Poll 1 (5): step delta only (artifacts empty). Poll 2 (6): step already seen,
-# artifact appears -> zip downloaded -> FAIL emitted. Poll 3 terminal (5):
+# Poll 1 (4): step delta only (artifacts empty). Poll 2 (5): step already seen,
+# artifact appears -> zip downloaded -> FAIL emitted. Poll 3 terminal (4):
 # Blocked; artifact already seen so no zip call. Then drain_then_print (Gap E)
 # re-polls check-runs/jobs/artifacts up to DRAIN_MAX_ATTEMPTS times (3 each),
 # everything already seen on every attempt, no zip.
-# 5 + 6 + 5 + 3*3 = 25, drained.
+# 4 + 5 + 4 + 3*3 = 22, drained.
 side_effects_m = collections.deque(
     [
         # poll 1 — step delta only
         PR_M,  # pulls -> sha
-        CHECK_IP_M,  # check-runs -> in_progress
-        RUNS_M,  # diagnostic check-runs
+        CHECK_IP_M,  # check-runs -> in_progress (reused by poll_signals)
         JOBS_UNIT_FAIL_M,  # jobs -> step "Build and run unit tests" -> failure
         ARTS_EMPTY_M,  # artifacts -> none yet
         # poll 2 — FAIL detail
         PR_M,  # pulls -> sha
-        CHECK_IP_M,  # check-runs -> in_progress
-        RUNS_M,  # diagnostic check-runs
+        CHECK_IP_M,  # check-runs -> in_progress (reused by poll_signals)
         JOBS_UNIT_FAIL_M,  # jobs -> step already seen, nothing new
         ARTS_UNIT_M,  # artifacts -> one new artifact
         ZIP_UNIT_M,  # zip (raw) -> FAIL line with trace
         # poll 3 — terminal Blocked
         PR_M,  # pulls -> sha
-        CHECK_BL_M,  # check-runs -> Blocked (terminal)
-        RUNS_M,  # diagnostic check-runs
+        CHECK_BL_M,  # check-runs -> Blocked (terminal, reused by poll_signals)
         JOBS_UNIT_FAIL_M,  # jobs -> step already seen, nothing new
         ARTS_UNIT_M,  # artifacts -> artifact already seen, no zip call
         # drain_then_print (Gap E) — up to DRAIN_MAX_ATTEMPTS extra signal polls
@@ -1065,7 +1109,7 @@ check(
 )
 check(
     len(side_effects_m) == 0,
-    "all 25 mocked requests consumed (zip only on poll 2)",
+    "all 22 mocked requests consumed (zip only on poll 2)",
     "request deque not drained; %d entries left" % len(side_effects_m),
 )
 check(rc_m == 0, "main() returned 0", "main() returned %r" % rc_m)
@@ -1080,12 +1124,18 @@ print("\n=== (n) main(): quiet polls emit two adjacent in_progress heartbeats, t
 # enough polls; the heartbeats are therefore adjacent in the output (no other
 # PR#N line between them). The final all_passed poll emits Clear.
 PR_N = {"head": {"sha": "c0ffee11"}}
-CHECK_IP_N = {"total_count": 1, "check_runs": [{"status": "in_progress", "conclusion": None}]}
-CHECK_PASS_N = {
-    "total_count": 1,
-    "check_runs": [{"name": "build-and-test", "status": "completed", "conclusion": "success"}],
+RUNS_N = check_runs_payload(("909", None))  # drain self-fetch payload (wiring a, issue #512)
+CHECK_IP_N = {
+    "total_count": 2,
+    "check_runs": [{"status": "in_progress", "conclusion": None}] + RUNS_N["check_runs"],
 }
-RUNS_N = check_runs_payload(("909", None))  # diagnostic check-runs (wiring b, issue #500)
+CHECK_PASS_N = {
+    "total_count": 2,
+    "check_runs": [
+        {"name": "build-and-test", "status": "completed", "conclusion": "success"},
+    ]
+    + RUNS_N["check_runs"],
+}
 JOBS_EMPTY_N = {"jobs": [{"name": "build-and-test", "steps": []}]}
 ARTS_EMPTY_N = {"artifacts": []}
 MPR_CLEAN_N = {
@@ -1095,24 +1145,22 @@ MPR_CLEAN_N = {
     "mergeable_state": "clean",
 }
 
-# 11 quiet in_progress polls (5 requests each) then a final all_passed poll. The
-# heartbeat fires only when now - last_output_ts > 120: first at poll 6 (t=150,
-# >120 since start), which resets the timer, then again at poll 11 (t=300,
-# >150+120). No quiet poll emits anything else, so the two heartbeats land on
-# adjacent output lines. The all_passed terminal poll issues 6 requests: the
-# usual 5 plus the mergeable-state /pulls fetch (mpr_json). 11*5 + 6 = 61
-# entries, drained.
+# 11 quiet in_progress polls (4 requests each under wiring (a)) then a final
+# all_passed poll. The heartbeat fires only when now - last_output_ts > 120:
+# first at poll 6 (t=150, >120 since start), which resets the timer, then again
+# at poll 11 (t=300, >150+120). No quiet poll emits anything else, so the two
+# heartbeats land on adjacent output lines. The all_passed terminal poll issues 5
+# requests: the usual 4 plus the mergeable-state /pulls fetch (mpr_json).
+# 11*4 + 5 = 49 entries, drained.
 req_n = collections.deque()
 for _ in range(11):
     req_n.append(PR_N)  # pulls -> sha
-    req_n.append(CHECK_IP_N)  # check-runs -> in_progress
-    req_n.append(RUNS_N)  # diagnostic check-runs
+    req_n.append(CHECK_IP_N)  # check-runs -> in_progress (reused by poll_signals)
     req_n.append(JOBS_EMPTY_N)  # jobs -> nothing
     req_n.append(ARTS_EMPTY_N)  # artifacts -> nothing
 # final all_passed poll
 req_n.append(PR_N)  # pulls -> sha
-req_n.append(CHECK_PASS_N)  # check-runs -> all_passed
-req_n.append(RUNS_N)  # diagnostic check-runs
+req_n.append(CHECK_PASS_N)  # check-runs -> all_passed (reused by poll_signals)
 req_n.append(JOBS_EMPTY_N)  # jobs -> nothing
 req_n.append(ARTS_EMPTY_N)  # artifacts -> nothing
 req_n.append(MPR_CLEAN_N)  # pulls (mergeable_state) -> clean -> Clear
@@ -1192,7 +1240,7 @@ check(
 )
 check(
     len(req_n) == 0,
-    "all 61 mocked requests consumed (terminal poll includes mpr fetch)",
+    "all 49 mocked requests consumed (terminal poll includes mpr fetch)",
     "request deque not drained; %d entries left" % len(req_n),
 )
 check(rc_n == 0, "main() returned 0", "main() returned %r" % rc_n)
@@ -1299,12 +1347,18 @@ with zipfile.ZipFile(_buf, "w", zipfile.ZIP_DEFLATED) as _zf:
 REAL_UNIT_ZIP = _buf.getvalue()
 
 PR_P = {"head": {"sha": "deadc0de"}}
-CHECK_IP_P = {"total_count": 1, "check_runs": [{"status": "in_progress", "conclusion": None}]}
-CHECK_BL_P = {
-    "total_count": 1,
-    "check_runs": [{"name": "build-and-test", "status": "completed", "conclusion": "failure"}],
+RUNS_P = check_runs_payload(("4242", None))  # drain self-fetch payload (wiring a, issue #512)
+CHECK_IP_P = {
+    "total_count": 2,
+    "check_runs": [{"status": "in_progress", "conclusion": None}] + RUNS_P["check_runs"],
 }
-RUNS_P = check_runs_payload(("4242", None))  # diagnostic check-runs (wiring b, issue #500)
+CHECK_BL_P = {
+    "total_count": 2,
+    "check_runs": [
+        {"name": "build-and-test", "status": "completed", "conclusion": "failure"},
+    ]
+    + RUNS_P["check_runs"],
+}
 JOBS_UNIT_FAIL_P = {
     "jobs": [
         {
@@ -1325,28 +1379,25 @@ JOBS_UNIT_FAIL_P = {
 # keys on the 'testresults-' prefix and id, so the real name is exercised.
 ARTS_REAL_UNIT_P = {"artifacts": [{"id": 4243, "name": "testresults-unit", "expired": False}]}
 
-# Poll 1 (5): step delta, artifact not yet present. Poll 2 (6): step seen,
-# artifact appears -> real-shaped zip downloaded -> FAIL emitted. Poll 3 (5):
+# Poll 1 (4): step delta, artifact not yet present. Poll 2 (5): step seen,
+# artifact appears -> real-shaped zip downloaded -> FAIL emitted. Poll 3 (4):
 # terminal Blocked, artifact already seen so no zip call. Then drain_then_print
 # (Gap E) re-polls check-runs/jobs/artifacts up to DRAIN_MAX_ATTEMPTS times (3 each),
 # already seen on every attempt, no zip.
-# 5 + 6 + 5 + 3*3 = 25.
+# 4 + 5 + 4 + 3*3 = 22.
 side_effects_p = collections.deque(
     [
         PR_P,
         CHECK_IP_P,
-        RUNS_P,
         JOBS_UNIT_FAIL_P,
         {"artifacts": []},
         PR_P,
         CHECK_IP_P,
-        RUNS_P,
         JOBS_UNIT_FAIL_P,
         ARTS_REAL_UNIT_P,
         REAL_UNIT_ZIP,
         PR_P,
         CHECK_BL_P,
-        RUNS_P,
         JOBS_UNIT_FAIL_P,
         ARTS_REAL_UNIT_P,
         # drain_then_print (Gap E) — up to DRAIN_MAX_ATTEMPTS extra signal polls
@@ -1416,7 +1467,7 @@ check(
 )
 check(
     len(side_effects_p) == 0,
-    "all 25 mocked requests consumed (zip only on poll 2)",
+    "all 22 mocked requests consumed (zip only on poll 2)",
     "request deque not drained; %d entries left" % len(side_effects_p),
 )
 check(rc_p == 0, "main() returned 0", "main() returned %r" % rc_p)
@@ -1446,12 +1497,18 @@ WINDOW_Q = 0.05  # silence window (s); real elapsed time gates the heartbeat
 SLEEP_Q = 0.25  # per-poll real sleep, comfortably > WINDOW_Q so each quiet poll crosses it
 
 PR_Q = {"head": {"sha": "ab1eca11"}}
-CHECK_IP_Q = {"total_count": 1, "check_runs": [{"status": "in_progress", "conclusion": None}]}
-CHECK_BL_Q = {
-    "total_count": 1,
-    "check_runs": [{"name": "build-and-test", "status": "completed", "conclusion": "failure"}],
+RUNS_Q = check_runs_payload(("31337", None))  # drain self-fetch payload (wiring a, issue #512)
+CHECK_IP_Q = {
+    "total_count": 2,
+    "check_runs": [{"status": "in_progress", "conclusion": None}] + RUNS_Q["check_runs"],
 }
-RUNS_Q = check_runs_payload(("31337", None))  # diagnostic check-runs (wiring b, issue #500)
+CHECK_BL_Q = {
+    "total_count": 2,
+    "check_runs": [
+        {"name": "build-and-test", "status": "completed", "conclusion": "failure"},
+    ]
+    + RUNS_Q["check_runs"],
+}
 JOBS_EMPTY_Q = {"jobs": [{"name": "build-and-test", "steps": []}]}
 JOBS_STEP_Q = {
     "jobs": [
@@ -1470,8 +1527,8 @@ JOBS_STEP_Q = {
 }
 ARTS_EMPTY_Q = {"artifacts": []}
 
-# 5 polls (each under wiring (b): pulls, verdict check-runs, diagnostic
-# check-runs, jobs, artifacts; then a real sleep).
+# 5 polls (each under wiring (a): pulls, verdict check-runs (reused by
+# poll_signals), jobs, artifacts; then a real sleep).
 # main() reads last_output_ts = time.time() at startup, BEFORE poll 1, and each
 # poll's silence check runs before that poll's own sleep — so a heartbeat needs a
 # prior quiet sleep to have elapsed:
@@ -1489,7 +1546,6 @@ req_q = collections.deque()
 for n in range(5):
     req_q.append(PR_Q)
     req_q.append(CHECK_SCHEDULE_Q[n])
-    req_q.append(RUNS_Q)
     req_q.append(JOBS_SCHEDULE_Q[n])
     req_q.append(ARTS_EMPTY_Q)
 # drain_then_print (Gap E) on the terminal Blocked poll: DRAIN_MAX_ATTEMPTS
@@ -1851,30 +1907,34 @@ FILTER_NDJSON_MIXED = [
 ZIP_MIXED = make_zip_ndjson(FILTER_NDJSON_MIXED)
 
 PR_S = {"head": {"sha": "5ce5c0de"}}
-CHECK_IP_S = {"total_count": 1, "check_runs": [{"status": "in_progress", "conclusion": None}]}
-CHECK_BL_S = {
-    "total_count": 1,
-    "check_runs": [{"name": "build-and-test", "status": "completed", "conclusion": "failure"}],
+RUNS_S = check_runs_payload(("1111", None))  # drain self-fetch payload (wiring a, issue #512)
+CHECK_IP_S = {
+    "total_count": 2,
+    "check_runs": [{"status": "in_progress", "conclusion": None}] + RUNS_S["check_runs"],
 }
-RUNS_S = check_runs_payload(("1111", None))  # diagnostic check-runs (wiring b, issue #500)
+CHECK_BL_S = {
+    "total_count": 2,
+    "check_runs": [
+        {"name": "build-and-test", "status": "completed", "conclusion": "failure"},
+    ]
+    + RUNS_S["check_runs"],
+}
 JOBS_EMPTY_S = {"jobs": [{"name": "build-and-test", "steps": []}]}
 ARTS_MIX_S = {"artifacts": [{"id": 2222, "name": "testresults-mix", "expired": False}]}
 
-# Poll 1 (6): artifact available, zip downloaded; poll 2 (5): terminal Blocked,
+# Poll 1 (5): artifact available, zip downloaded; poll 2 (4): terminal Blocked,
 # then drain_then_print (Gap E) re-polls check-runs/jobs/artifacts up to
 # DRAIN_MAX_ATTEMPTS times (3 each), artifact already seen on every attempt so
-# no zip call.
+# no zip call. 5 + 4 + 3*3 = 18.
 side_effects_s = collections.deque(
     [
         PR_S,
         CHECK_IP_S,
-        RUNS_S,
         JOBS_EMPTY_S,
         ARTS_MIX_S,
         ZIP_MIXED,
         PR_S,
         CHECK_BL_S,
-        RUNS_S,
         JOBS_EMPTY_S,
         ARTS_MIX_S,
         RUNS_S,
@@ -1929,7 +1989,7 @@ check(
 )
 check(
     len(side_effects_s) == 0,
-    "main() --include-pass '': all 20 mocked requests consumed",
+    "main() --include-pass '': all 18 mocked requests consumed",
     "request deque not drained; %d entries left" % len(side_effects_s),
 )
 check(rc_s == 0, "main() --include-pass '' returned 0", "main() returned %r" % rc_s)
@@ -1939,13 +1999,11 @@ side_effects_s2 = collections.deque(
     [
         PR_S,
         CHECK_IP_S,
-        RUNS_S,
         JOBS_EMPTY_S,
         ARTS_MIX_S,
         ZIP_MIXED,
         PR_S,
         CHECK_BL_S,
-        RUNS_S,
         JOBS_EMPTY_S,
         ARTS_MIX_S,
         RUNS_S,
@@ -1993,7 +2051,7 @@ check(
 )
 check(
     len(side_effects_s2) == 0,
-    "main() no flags: all 20 mocked requests consumed",
+    "main() no flags: all 18 mocked requests consumed",
     "request deque not drained; %d entries left" % len(side_effects_s2),
 )
 
@@ -2005,13 +2063,11 @@ side_effects_s3 = collections.deque(
     [
         PR_S,
         CHECK_IP_S,
-        RUNS_S,
         JOBS_EMPTY_S,
         ARTS_MIX_S,
         ZIP_MIXED,
         PR_S,
         CHECK_BL_S,
-        RUNS_S,
         JOBS_EMPTY_S,
         ARTS_MIX_S,
         RUNS_S,
@@ -2061,13 +2117,11 @@ side_effects_s4 = collections.deque(
     [
         PR_S,
         CHECK_IP_S,
-        RUNS_S,
         JOBS_EMPTY_S,
         ARTS_MIX_S,
         ZIP_MIXED,
         PR_S,
         CHECK_BL_S,
-        RUNS_S,
         JOBS_EMPTY_S,
         ARTS_MIX_S,
         RUNS_S,
@@ -2123,13 +2177,14 @@ print("\n=== (t) Gap E (#402): drain poll surfaces step+FAIL that lag behind Blo
 # (DRAIN_DELAY_SECONDS later) where the jobs/artifacts endpoints have caught
 # up, surfacing the step failure and FAIL marker before the terminal line.
 PR_T = {"head": {"sha": "9001dead"}}
+RUNS_T = check_runs_payload(("9001", None))  # drain self-fetch payload (wiring a, issue #512)
 CHECK_BL_T = {
-    "total_count": 1,
+    "total_count": 2,
     "check_runs": [
-        {"name": "Gate on test failures", "status": "completed", "conclusion": "failure"}
-    ],
+        {"name": "Gate on test failures", "status": "completed", "conclusion": "failure"},
+    ]
+    + RUNS_T["check_runs"],
 }
-RUNS_T = check_runs_payload(("9001", None))  # diagnostic check-runs (wiring b, issue #500)
 JOBS_EMPTY_T = {"jobs": [{"name": "build-and-test", "steps": []}]}
 JOBS_GATE_FAIL_T = {
     "jobs": [
@@ -2173,18 +2228,18 @@ ZIP_E2E_T = make_zip_ndjson(
     ]
 )
 
-# Poll 1 (5): check-runs already Blocked (terminal), but jobs/artifacts not yet
-# caught up -> no step/FAIL lines from poll_signals. drain_then_print then
-# sleeps DRAIN_DELAY_SECONDS and re-polls check-runs/jobs/artifacts: attempt 1 (3 +
-# zip) finds the caught-up jobs/artifacts -> step + FAIL emitted. Per issue
-# #419 the drain no longer stops at the first fruitful attempt, so attempts 2
-# and 3 (3 each) also run, finding everything already seen -> nothing new, no
-# further zip. Then the Blocked terminal line. 5 + 4 + 3 + 3 = 15.
+# Poll 1 (4): check-runs already Blocked (terminal, reused by poll_signals),
+# but jobs/artifacts not yet caught up -> no step/FAIL lines from poll_signals.
+# drain_then_print then sleeps DRAIN_DELAY_SECONDS and re-polls
+# check-runs/jobs/artifacts: attempt 1 (3 + zip) finds the caught-up
+# jobs/artifacts -> step + FAIL emitted. Per issue #419 the drain no longer
+# stops at the first fruitful attempt, so attempts 2 and 3 (3 each) also run,
+# finding everything already seen -> nothing new, no further zip. Then the
+# Blocked terminal line. 4 + 4 + 3 + 3 = 14.
 side_effects_t = collections.deque(
     [
         PR_T,  # pulls -> sha
-        CHECK_BL_T,  # check-runs -> Blocked (terminal), decided on poll 1
-        RUNS_T,  # diagnostic check-runs
+        CHECK_BL_T,  # check-runs -> Blocked (terminal, reused by poll_signals)
         JOBS_EMPTY_T,  # jobs -> not yet caught up, nothing new
         ARTS_EMPTY_T,  # artifacts -> not yet listed
         # drain attempt 1 -- caught up: step + FAIL surface
@@ -2250,7 +2305,7 @@ check(
 )
 check(
     len(side_effects_t) == 0,
-    "all 15 mocked requests consumed (drain attempt 1 downloads the zip; attempts 2-3 find nothing new)",
+    "all 14 mocked requests consumed (drain attempt 1 downloads the zip; attempts 2-3 find nothing new)",
     "request deque not drained; %d entries left" % len(side_effects_t),
 )
 check(rc_t == 0, "main() returned 0", "main() returned %r" % rc_t)
@@ -2271,13 +2326,14 @@ print(
 # terminal line, and the "drain poll found no new diagnostic signals" line is
 # NOT printed (drain attempt 2 found something new).
 PR_U = {"head": {"sha": "900110ng"}}
+RUNS_U = check_runs_payload(("9002", None))  # drain self-fetch payload (wiring a, issue #512)
 CHECK_BL_U = {
-    "total_count": 1,
+    "total_count": 2,
     "check_runs": [
-        {"name": "Gate on test failures", "status": "completed", "conclusion": "failure"}
-    ],
+        {"name": "Gate on test failures", "status": "completed", "conclusion": "failure"},
+    ]
+    + RUNS_U["check_runs"],
 }
-RUNS_U = check_runs_payload(("9002", None))  # diagnostic check-runs (wiring b, issue #500)
 JOBS_EMPTY_U = {"jobs": [{"name": "build-and-test", "steps": []}]}
 JOBS_GATE_FAIL_U = {
     "jobs": [
@@ -2321,17 +2377,16 @@ ZIP_E2E_U = make_zip_ndjson(
     ]
 )
 
-# Poll 1 (5): check-runs already Blocked (terminal), jobs/artifacts not caught
-# up. Drain attempt 1 (3): still nothing new. Drain attempt 2 (3 + zip): jobs
-# now shows the failing gate step and the artifact is listed -> step + FAIL
-# emitted. Per issue #419 the drain no longer stops at the first fruitful
-# attempt, so attempt 3 (3) also runs, finding everything already seen ->
-# nothing new. 5 + 3 + 4 + 3 = 15.
+# Poll 1 (4): check-runs already Blocked (terminal, reused by poll_signals),
+# jobs/artifacts not caught up. Drain attempt 1 (3): still nothing new. Drain
+# attempt 2 (3 + zip): jobs now shows the failing gate step and the artifact is
+# listed -> step + FAIL emitted. Per issue #419 the drain no longer stops at
+# the first fruitful attempt, so attempt 3 (3) also runs, finding everything
+# already seen -> nothing new. 4 + 3 + 4 + 3 = 14.
 side_effects_u = collections.deque(
     [
         PR_U,  # pulls -> sha
-        CHECK_BL_U,  # check-runs -> Blocked (terminal), decided on poll 1
-        RUNS_U,  # diagnostic check-runs
+        CHECK_BL_U,  # check-runs -> Blocked (terminal, reused by poll_signals)
         JOBS_EMPTY_U,  # jobs -> not yet caught up, nothing new
         ARTS_EMPTY_U,  # artifacts -> not yet listed
         # drain attempt 1 -- still not caught up
@@ -2403,7 +2458,7 @@ check(
 )
 check(
     len(side_effects_u) == 0,
-    "all 15 mocked requests consumed (drain attempt 1 empty, attempt 2 downloads the zip, attempt 3 finds nothing new)",
+    "all 14 mocked requests consumed (drain attempt 1 empty, attempt 2 downloads the zip, attempt 3 finds nothing new)",
     "request deque not drained; %d entries left" % len(side_effects_u),
 )
 check(rc_u == 0, "main() returned 0", "main() returned %r" % rc_u)
@@ -2424,21 +2479,17 @@ print("\n=== (v) #415: Clear (no check runs) emits exactly one Clear terminal an
 #
 # Scenario: poll 1 fetches the SHA (open PR), the verdict check-runs returns no
 # checks (total_count=0 -> parse_check_result='Clear') -> terminal Clear emitted,
-# loop exits. Per-iteration request order under wiring (b) (issue #500): pulls
-# (sha), verdict check-runs; poll_signals(sha) is called before the verdict is
-# evaluated and self-fetches its own check-runs, which also has no Actions
-# targets (parse_actions_targets yields nothing), so it issues no jobs/artifacts
-# requests and returns False. The loop then evaluates Clear and breaks.
-# 2 + 1 = 3 entries in the deque.
+# loop exits. Per-iteration request order under wiring (a) (issue #512): pulls
+# (sha), verdict check-runs (passed to poll_signals which finds no Actions
+# targets, issues no jobs/artifacts requests, and returns False). The loop then
+# evaluates Clear and breaks. 2 entries in the deque.
 PR_V = {"head": {"sha": "00c1ea12"}, "merged": False, "state": "open"}
 CHECK_CLEAR_V = {"total_count": 0, "check_runs": []}
-DIAG_CHECK_EMPTY_V = {"total_count": 0, "check_runs": []}  # diagnostic check-runs: no targets
 
 side_effects_v = collections.deque(
     [
         PR_V,  # pulls -> sha, terminal == '' (open)
-        CHECK_CLEAR_V,  # verdict check-runs -> total_count=0 -> Clear (terminal)
-        DIAG_CHECK_EMPTY_V,  # diagnostic check-runs -> no targets -> poll_signals False
+        CHECK_CLEAR_V,  # verdict check-runs -> total_count=0 -> Clear (reused by poll_signals)
     ]
 )
 
@@ -2467,7 +2518,7 @@ check(
 )
 check(
     len(side_effects_v) == 0,
-    "all 3 mocked requests consumed (loop exits after first Clear)",
+    "all 2 mocked requests consumed (loop exits after first Clear)",
     "request deque not drained; %d entries left" % len(side_effects_v),
 )
 check(rc_v == 0, "main() returned 0", "main() returned %r" % rc_v)
@@ -2489,13 +2540,14 @@ print(
 # artifact is actually downloaded, so the lagging artifact is the genuine
 # signal recovered here, not a re-emit of an already-seen one.
 PR_W = {"head": {"sha": "519c0de1"}}
+RUNS_W = check_runs_payload(("9419", None))  # drain self-fetch payload (wiring a, issue #512)
 CHECK_BL_W = {
-    "total_count": 1,
+    "total_count": 2,
     "check_runs": [
-        {"name": "Gate on test failures", "status": "completed", "conclusion": "failure"}
-    ],
+        {"name": "Gate on test failures", "status": "completed", "conclusion": "failure"},
+    ]
+    + RUNS_W["check_runs"],
 }
-RUNS_W = check_runs_payload(("9419", None))  # diagnostic check-runs (wiring b, issue #500)
 JOBS_EMPTY_W = {"jobs": [{"name": "build-and-test", "steps": []}]}
 JOBS_GATE_FAIL_W = {
     "jobs": [
@@ -2521,16 +2573,15 @@ ZIP_E2E_W = make_zip_ndjson(
     ]
 )
 
-# Poll 1 (5): Blocked terminal, nothing caught up. Drain attempt 1 (3): jobs now
-# shows the failing gate step (emits something) but artifacts still empty.
-# Drain attempt 2 (3 + zip): artifact now listed -> FAIL emitted; the step is
-# already seen. Drain attempt 3 (3): everything already seen, nothing new.
-# 5 + 3 + 4 + 3 = 15.
+# Poll 1 (4): Blocked terminal (reused by poll_signals), nothing caught up.
+# Drain attempt 1 (3): jobs now shows the failing gate step (emits something)
+# but artifacts still empty. Drain attempt 2 (3 + zip): artifact now listed ->
+# FAIL emitted; the step is already seen. Drain attempt 3 (3): everything
+# already seen, nothing new. 4 + 3 + 4 + 3 = 14.
 side_effects_w = collections.deque(
     [
         PR_W,  # pulls -> sha
-        CHECK_BL_W,  # check-runs -> Blocked (terminal), decided on poll 1
-        RUNS_W,  # diagnostic check-runs
+        CHECK_BL_W,  # check-runs -> Blocked (terminal, reused by poll_signals)
         JOBS_EMPTY_W,  # jobs -> not yet caught up, nothing new
         ARTS_EMPTY_W,  # artifacts -> not yet listed
         # drain attempt 1 -- STEP caught up, ARTIFACT still lagging
@@ -2602,7 +2653,7 @@ check(
 )
 check(
     len(side_effects_w) == 0,
-    "all 15 mocked requests consumed (step on attempt 1, artifact+zip on attempt 2, attempt 3 empty)",
+    "all 14 mocked requests consumed (step on attempt 1, artifact+zip on attempt 2, attempt 3 empty)",
     "request deque not drained; %d entries left" % len(side_effects_w),
 )
 check(rc_w == 0, "main() returned 0", "main() returned %r" % rc_w)
@@ -2990,12 +3041,20 @@ print("\n=== (ad) #499/#500: the failing build run is tracked among multiple Act
 # run so its step failure and FAIL surface. Two distinct run ids also exercise
 # multi-run fan-out.
 PR_AD = {"head": {"sha": "499f1xed"}}
-# Verdict check-runs: Blocked. Diagnostic check-runs lists BOTH Actions runs.
+# Under wiring (a) the verdict and diagnostic payloads are unified: one
+# check-runs fetch drives both parse_check_result (verdict) and
+# parse_actions_targets (run/job discovery). CHECK_BL_AD combines the failing
+# status check (for the Blocked verdict) and the two Actions check runs (for
+# multi-run fan-out: aux run 700/job 70 and build run 800/job 80).
+_diag_ad = check_runs_payload(("700", "70"), ("800", "80"))
 CHECK_BL_AD = {
-    "total_count": 2,
-    "check_runs": [{"name": "build-and-test", "status": "completed", "conclusion": "failure"}],
+    "total_count": 3,
+    "check_runs": [
+        {"name": "build-and-test", "status": "completed", "conclusion": "failure"},
+    ]
+    + _diag_ad["check_runs"],
 }
-DIAG_CHECK_AD = check_runs_payload(("700", "70"), ("800", "80"))  # aux run 700, build run 800
+DIAG_CHECK_AD = _diag_ad  # drain attempts still self-fetch (aux run 700, build run 800)
 # Aux run 700/job 70: a successful unrelated step, no testresults-* artifact.
 JOBS_AUX_AD = {
     "jobs": [
@@ -3033,19 +3092,19 @@ ZIP_BUILD_AD = make_zip_ndjson(
     ]
 )
 
-# Single poll, terminal Blocked. poll_signals self-fetches the diagnostic
-# check-runs (run 700 then 800) and, per run, fetches jobs+artifacts; the build
-# run's artifact downloads its zip. Then drain_then_print runs DRAIN_MAX_ATTEMPTS
-# times, finding everything already seen.
-# Poll: pulls, verdict check-runs, diagnostic check-runs, (jobs+arts for 700),
-#       (jobs+arts+zip for 800) = 1+1+1+2+3 = 8.
+# Single poll, terminal Blocked. Under wiring (a), poll_signals receives the
+# same CHECK_BL_AD payload (which includes both Actions check runs), discovers
+# runs 700 and 800, and fetches jobs+artifacts; the build run's artifact
+# downloads its zip. Then drain_then_print runs DRAIN_MAX_ATTEMPTS times,
+# finding everything already seen (drain self-fetches DIAG_CHECK_AD).
+# Poll: pulls, verdict check-runs (reused by poll_signals), (jobs+arts for 700),
+#       (jobs+arts+zip for 800) = 1+1+2+3 = 7.
 # Each drain attempt: diagnostic check-runs, (jobs+arts x2) = 1+4 = 5; x3 = 15.
-# 8 + 15 = 23.
+# 7 + 15 = 22.
 side_effects_ad = collections.deque(
     [
         PR_AD,  # pulls -> sha
-        CHECK_BL_AD,  # verdict check-runs -> Blocked (terminal)
-        DIAG_CHECK_AD,  # diagnostic check-runs -> runs 700, 800
+        CHECK_BL_AD,  # verdict check-runs -> Blocked (terminal, reused by poll_signals)
         JOBS_AUX_AD,  # run 700 jobs -> unrelated success step (suppressed)
         ARTS_AUX_AD,  # run 700 artifacts -> no testresults-* match, no zip
         JOBS_BUILD_AD,  # run 800 jobs -> gate step failure
@@ -3107,7 +3166,7 @@ check(
 )
 check(
     len(side_effects_ad) == 0,
-    "all 23 mocked requests consumed (two runs fanned out, build zip once)",
+    "all 22 mocked requests consumed (two runs fanned out, build zip once)",
     "request deque not drained; %d entries left" % len(side_effects_ad),
 )
 check(rc_ad == 0, "main() returned 0", "main() returned %r" % rc_ad)
@@ -3164,11 +3223,18 @@ print("\n=== (af) #500 poll_signals: a run-only target does not widen another ru
 # run 100 is run-only. Before the per-run scoping fix, a single run-only target
 # set job_ids=None globally and run 200's job-23 step would have leaked.
 PR_AF = {"head": {"sha": "5c0pe1d1"}}
+# Under wiring (a) the verdict and diagnostic payloads are unified. CHECK_BL_AF
+# combines the failing status check (for the Blocked verdict) and the two
+# Actions check runs (run 100 run-only, run 200 job 22) for per-run scoping.
+_diag_af = check_runs_payload(("100", None), ("200", "22"))
 CHECK_BL_AF = {
-    "total_count": 2,
-    "check_runs": [{"name": "build-and-test", "status": "completed", "conclusion": "failure"}],
+    "total_count": 3,
+    "check_runs": [
+        {"name": "build-and-test", "status": "completed", "conclusion": "failure"},
+    ]
+    + _diag_af["check_runs"],
 }
-DIAG_CHECK_AF = check_runs_payload(("100", None), ("200", "22"))  # run 100 run-only, run 200 job 22
+DIAG_CHECK_AF = _diag_af  # drain attempts still self-fetch (run 100 run-only, run 200 job 22)
 # Run 100 (run-only): a named unit-test step that should surface (no job filter).
 JOBS_100_AF = {
     "jobs": [
@@ -3218,15 +3284,16 @@ JOBS_200_AF = {
 }
 ARTS_EMPTY_AF = {"artifacts": []}
 
-# Single poll, terminal Blocked. poll_signals self-fetches the diagnostic
-# check-runs and, per run, fetches jobs+artifacts (no zip: artifacts empty).
-# Poll: pulls, verdict check-runs, diagnostic check-runs, (jobs+arts x2) = 7.
-# Each drain attempt: diagnostic check-runs, (jobs+arts x2) = 5; x3 = 15. 7+15=22.
+# Single poll, terminal Blocked. Under wiring (a), poll_signals receives
+# CHECK_BL_AF (which includes both Actions check runs), so no separate
+# diagnostic fetch is needed; per run, fetches jobs+artifacts (no zip: artifacts
+# empty). Poll: pulls, verdict check-runs (reused by poll_signals),
+# (jobs+arts x2) = 6. Each drain attempt: diagnostic check-runs, (jobs+arts x2)
+# = 5; x3 = 15. 6+15=21.
 side_effects_af = collections.deque(
     [
         PR_AF,
         CHECK_BL_AF,
-        DIAG_CHECK_AF,
         JOBS_100_AF,
         ARTS_EMPTY_AF,
         JOBS_200_AF,
@@ -3273,7 +3340,7 @@ check(
 )
 check(
     len(side_effects_af) == 0,
-    "all 22 mocked requests consumed (two runs fanned out, no zips)",
+    "all 21 mocked requests consumed (two runs fanned out, no zips)",
     "request deque not drained; %d entries left" % len(side_effects_af),
 )
 check(rc_af == 0, "main() returned 0", "main() returned %r" % rc_af)
@@ -3552,14 +3619,13 @@ CHECK_BL_GATE_AJ = {
 # Diagnostic check-runs: no Actions targets -> poll_signals returns False immediately.
 DIAG_EMPTY_AJ = {"total_count": 0, "check_runs": []}
 
-# Single-poll run: pulls, verdict check-runs, diagnostic check-runs (no targets ->
-# no jobs/artifacts). Then drain_then_print: DRAIN_MAX_ATTEMPTS attempts each with
-# diagnostic check-runs -> no targets -> 3 requests. 3 + 3 = 6.
+# Single-poll run (wiring a): pulls, verdict check-runs (reused by poll_signals;
+# no Actions targets -> fast exit). Then drain_then_print: DRAIN_MAX_ATTEMPTS
+# attempts each with a self-fetch of check-runs -> no targets -> 3 requests. 2 + 3 = 5.
 side_effects_aj = collections.deque(
     [
         PR_AJ,  # pulls -> sha
-        CHECK_BL_GATE_AJ,  # verdict check-runs -> Blocked (label gate)
-        DIAG_EMPTY_AJ,  # diagnostic check-runs -> no targets -> poll_signals fast-exits
+        CHECK_BL_GATE_AJ,  # verdict check-runs -> Blocked (label gate, reused by poll_signals)
     ]
 )
 for _ in range(3):  # DRAIN_MAX_ATTEMPTS drain attempts
@@ -3635,7 +3701,7 @@ check(
 )
 check(
     len(side_effects_aj) == 0,
-    "all 6 mocked requests consumed (1 poll + 3 drain attempts, no jobs/artifacts fetched)",
+    "all 5 mocked requests consumed (1 poll (no diag self-fetch) + 3 drain attempts, no jobs/artifacts fetched)",
     "request deque not drained; %d entries left" % len(side_effects_aj),
 )
 check(rc_aj == 0, "main() returned 0", "main() returned %r" % rc_aj)

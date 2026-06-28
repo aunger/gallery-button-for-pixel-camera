@@ -649,7 +649,7 @@ def main(argv):
         sys.stdout.flush()
         last_output_ts = time.time()
 
-    def poll_signals(sha):
+    def poll_signals(sha, check_json=None):
         """Fetch and emit the per-step and per-test informational signals for `sha`.
 
         Mirrors the streamed test-result signals described in the module
@@ -659,13 +659,14 @@ def main(argv):
         the silence timer via emit_block but never end the loop. Returns True if
         any line was emitted this call.
 
-        Wiring (b) (issue #500): poll_signals fetches its own
-        /commits/{sha}/check-runs each poll and discovers the run(s)/job(s) to
-        track from it via parse_actions_targets. This re-fetches the payload the
-        main loop also fetches for the verdict (one extra request per poll, plus
-        one per drain attempt). The more efficient/robust option (a) -- fetch
-        check-runs once and pass it into both the verdict and poll_signals -- is
-        tracked in issue #512.
+        Wiring (a) (issue #512): the run(s)/job(s) to track are discovered from a
+        /commits/{sha}/check-runs payload via parse_actions_targets. When the
+        caller passes `check_json` (the main loop passes the same payload it read
+        for the verdict), that single snapshot drives both the verdict and these
+        diagnostics, so verdict and diagnostics never disagree and no extra
+        check-runs request is issued. When `check_json` is None (e.g. the drain
+        in drain_then_print, which must re-fetch to observe the jobs/artifacts
+        endpoints catching up), poll_signals self-fetches the payload as before.
         """
         emitted = [False]
 
@@ -674,9 +675,10 @@ def main(argv):
                 emitted[0] = True
             emit_block(lines)
 
-        check_json = _request(
-            "%s/repos/%s/%s/commits/%s/check-runs" % (API_BASE, OWNER, REPO, sha), token
-        )
+        if check_json is None:
+            check_json = _request(
+                "%s/repos/%s/%s/commits/%s/check-runs" % (API_BASE, OWNER, REPO, sha), token
+            )
         targets = parse_actions_targets(check_json) if check_json else []
         if not targets:
             return emitted[0]
@@ -823,7 +825,7 @@ def main(argv):
         # surface even while the check stays green via continue-on-error. Both
         # signals are purely informational: they reset the silence timer but
         # never end the loop.
-        poll_signals(sha)
+        poll_signals(sha, check_json=check_json)
         # ----------------------------------------------------------------------
 
         if result == "in_progress":
