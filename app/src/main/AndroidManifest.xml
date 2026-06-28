@@ -14,6 +14,11 @@
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
 
+    <!-- Media read permissions for querying photos taken by Pixel Camera via MediaStore -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+
     <!-- Runtime permission (API 33+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
