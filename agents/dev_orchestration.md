@@ -383,7 +383,12 @@ If the stall cannot be explained by a known recoverable cause (e.g., a Monitor t
 
 ## When to abort
 
-Stop the automated cycle and escalate to the User **after four rounds** of the Programmer / Reviewer loop not reaching consensus (unless the user gave a different threshold)--the fallback when the loop stalls but neither party has explicitly given up.
+Stop the automated cycle and escalate to the User in either of these cases:
+
+- A sub-agent emits `Cannot implement` (see the routing fences above): escalate immediately, without waiting for further rounds.
+  This covers a Programmer that gives up or an issue that cannot be solved as stated; the Reviewer confirms it by emitting `Cannot implement`.
+- The Programmer / Reviewer loop runs **four rounds** without reaching consensus (unless the user gave a different threshold).
+  This is the fallback for a loop that stalls in disagreement; once four rounds are reached the cap applies unconditionally, even when both parties are still actively disputing.
 
 ## Concluding PR orchestration
 
