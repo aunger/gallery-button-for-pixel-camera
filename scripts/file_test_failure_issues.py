@@ -137,6 +137,47 @@ def _find_ocr_text(directory: Path, class_name: str, method_name: str) -> str | 
     return None
 
 
+# Workflow file that runs the test suites and files these issues. Used to link
+# the "Job" line in the issue summary body to the workflow definition.
+_WORKFLOW_FILE_PATH = ".github/workflows/build.yml"
+
+
+def make_summary_body(
+    failure: FailedTest,
+    github_server_url: str,
+    github_repository: str,
+    workflow_run_branch: str,
+) -> str:
+    """Build the aggregate summary body for a test-failure issue.
+
+    The issue description is reserved for information that applies to the whole
+    group of failures accumulated over time, not to any single run.
+    Per-run failure details (timestamp, message, stack trace) live in comments
+    instead, including the first occurrence (issue #504).
+
+    The "Job" field links to the workflow file that runs the suite and files
+    these issues.
+    The link targets the workflow on the failing branch when known, so it points
+    at the version that produced the failure.
+    """
+    ref = workflow_run_branch or "HEAD"
+    workflow_url = (
+        f"{github_server_url}/{github_repository}/blob/{ref}/{_WORKFLOW_FILE_PATH}"
+    )
+
+    return f"""\
+# Automated test failure
+
+| Field | Value |
+|-------|-------|
+| Job | [{failure.suite_label}]({workflow_url}) |
+| Class | `{failure.class_name}` |
+| Test | `{failure.method_name}` |
+
+Failed runs will be added as comments on this ticket over time.
+"""
+
+
 def make_issue_body(
     failure: FailedTest,
     directory: Path,
@@ -346,6 +387,7 @@ def process_failure(
 
     short_sha = sha[:7] if sha else "unknown"
     ts_str = timestamp.strftime("%Y-%m-%d %H:%M UTC")
+    comment_body = f"### Failed on {short_sha} @ {ts_str}\n\n{body}"
 
     found = find_existing_issue(token, repository, failure.class_name, failure.method_name)
     if found is not None:
@@ -357,12 +399,21 @@ def process_failure(
         )
         if state == "closed":
             reopen_issue(token, repository, existing)
-        comment_body = f"### Failed on {short_sha} @ {ts_str}\n\n{body}"
         add_issue_comment(token, repository, existing, comment_body)
     else:
-        issue_num = create_issue(token, repository, title, body)
+        # Reserve the issue body for the aggregate summary (issue #504); even the
+        # first occurrence's per-run details go into a comment, matching the
+        # treatment of subsequent failures above.
+        summary_body = make_summary_body(
+            failure=failure,
+            github_server_url=github_server_url,
+            github_repository=repository,
+            workflow_run_branch=workflow_run_branch,
+        )
+        issue_num = create_issue(token, repository, title, summary_body)
         if issue_num is not None:
             print(f"  Created issue #{issue_num}: {title}", file=sys.stderr)
+            add_issue_comment(token, repository, issue_num, comment_body)
         else:
             print(f"  Failed to create issue for: {title}", file=sys.stderr)
 
