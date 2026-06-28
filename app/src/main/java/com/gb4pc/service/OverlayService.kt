@@ -95,7 +95,7 @@ class OverlayService : Service() {
                 handler = handler,
                 retryDelayMs = mediaRetryDelayMs,
                 query = ::queryAllMedia,
-                isSuccess = { items -> items.isNotEmpty() },
+                isSuccess = { false },
                 handleResult = { items, isRetry ->
                     items.forEach { item ->
                         SessionTracker.instance.addMedia(item)
@@ -130,7 +130,7 @@ class OverlayService : Service() {
                             },
                         )
                     } else {
-                        DebugLog.log("Thumbnail query returned null — scheduling retry in ${mediaRetryDelayMs}ms")
+                        DebugLog.log("Thumbnail query returned null")
                     }
                 },
             )

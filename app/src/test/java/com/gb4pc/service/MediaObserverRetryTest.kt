@@ -274,6 +274,10 @@ class MediaObserverRetryTest {
     /**
      * Mirrors how OverlayService wires the session-media observer (List<MediaItem> result).
      * Previously covered by MediaChangeDispatcherTest.
+     *
+     * The session observer uses isSuccess = { false } so the retry always fires, even when the
+     * session already contains earlier photos. A non-empty list from stale items must not mask
+     * the still-pending new shot.
      */
     @Test
     fun `list-result wiring matches former MediaChangeDispatcher contract`() {
@@ -287,7 +291,7 @@ class MediaObserverRetryTest {
                 handler = handler,
                 // Call 0: nothing committed yet (IS_PENDING race); call 1 (retry): both committed.
                 query = { if (callCount++ == 0) emptyList() else listOf(item1, item2) },
-                isSuccess = { it.isNotEmpty() },
+                isSuccess = { false },
                 handleResult = { items, _ -> items.forEach { added.add(it.uri) } },
                 retryDelayMs = retryDelayMs,
             )
@@ -300,6 +304,40 @@ class MediaObserverRetryTest {
         // Nothing added on the empty initial call; item1 + item2 added on the retry (de-dup is
         // the SessionTracker's job, not this helper's).
         assertEquals(listOf("content://1", "content://2"), added)
+    }
+
+    /**
+     * Regression for the blocking review finding: when the session already holds a prior photo,
+     * the query returns a non-empty list on the initial call even though the new shot is still
+     * IS_PENDING. isSuccess = { false } must still schedule a retry so the new item is captured.
+     */
+    @Test
+    fun `list-result - retry fires even when initial result is non-empty (prior session media)`() {
+        val prior = MediaItem(uri = "content://prior", dateTaken = 1L, isVideo = false)
+        val newItem = MediaItem(uri = "content://new", dateTaken = 2L, isVideo = false)
+        var callCount = 0
+        val added = mutableListOf<String>()
+
+        val retry =
+            MediaObserverRetry<List<MediaItem>>(
+                handler = handler,
+                // Call 0: only prior item committed (new shot still IS_PENDING).
+                // Call 1 (retry): both are committed.
+                query = { if (callCount++ == 0) listOf(prior) else listOf(prior, newItem) },
+                isSuccess = { false },
+                handleResult = { items, _ -> items.forEach { added.add(it.uri) } },
+                retryDelayMs = retryDelayMs,
+            )
+
+        retry.onChange(startMs = 999_000L)
+        val runnableCaptor = argumentCaptor<Runnable>()
+        // Retry must be scheduled even though the initial result was non-empty.
+        verify(handler).postDelayed(runnableCaptor.capture(), eq(retryDelayMs))
+        runnableCaptor.firstValue.run()
+
+        // Both the prior item (initial) and both items (retry) are delivered; de-dup is
+        // the SessionTracker's job, not this helper's.
+        assertEquals(listOf("content://prior", "content://prior", "content://new"), added)
     }
 
     /**

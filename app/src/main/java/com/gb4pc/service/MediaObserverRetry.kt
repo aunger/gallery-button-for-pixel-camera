@@ -2,6 +2,7 @@ package com.gb4pc.service
 
 import android.os.Handler
 import com.gb4pc.Constants
+import com.gb4pc.util.DebugLog
 
 /**
  * Generic "ContentObserver onChange + delayed retry" scaffold used by the session-media and
@@ -27,7 +28,9 @@ import com.gb4pc.Constants
  *
  * [T] is whatever the query returns (e.g. `List<MediaItem>` for the session observer, or
  * `MediaItem?` for the overlay-thumbnail observer). [isSuccess] tells the helper when a result is
- * good enough to stop retrying (e.g. a non-null item, or a non-empty list). [handleResult]
+ * good enough to stop retrying: for the thumbnail observer, `{ it != null }` stops once the item
+ * commits; for the session observer, `{ false }` retries unconditionally, because a non-empty
+ * list may reflect only previously-committed items while the new shot is still pending. [handleResult]
  * receives the query result along with a flag indicating whether this call is the initial one or
  * the retry, so callers can log/dedup as appropriate.
  */
@@ -57,7 +60,10 @@ class MediaObserverRetry<T>(
     }
 
     private fun scheduleRetry(startMs: Long) {
-        if (attempts >= maxAttempts) return
+        if (attempts >= maxAttempts) {
+            DebugLog.log("MediaObserverRetry: retry budget exhausted after $attempts attempts")
+            return
+        }
         attempts++
         val runnable =
             Runnable {
