@@ -129,10 +129,10 @@ The Orchestrator does not read or judge the Author's explanation; it only notes 
 
 Reviewer-to-Orchestrator outcome vocabulary (the Reviewer emits one):
 - `LGTM`: the committed changes are correct and complete.
-  If extra work outside the repo is require before merging, it should be explained clearly in a PR comment.
+  If extra work outside the repo is required before merging, it should be explained clearly in a PR comment.
 - `Changes requested`: the Author is asked to take another turn, to correct or complete its prior work.
 - `Cannot implement`: the coding phase cannot be completed--the requirements are incomplete, unattainable, or self-contradictory, or no code change could address the issue.
-  The Reviewer describes the specifics in a PR comment.
+  The Reviewer describes the specifics in a PR comment, or in an issue comment on the no-PR path (where there is no PR to comment on).
 
 Orchestrator-to-user terminal CI lines:
 - `CI cleared on PR #{N}.`
