@@ -95,6 +95,7 @@ class OverlayService : Service() {
                 handler = handler,
                 retryDelayMs = mediaRetryDelayMs,
                 query = ::queryAllMedia,
+                isSuccess = { items -> items.isNotEmpty() },
                 handleResult = { items, isRetry ->
                     items.forEach { item ->
                         SessionTracker.instance.addMedia(item)
@@ -117,6 +118,7 @@ class OverlayService : Service() {
                 handler = handler,
                 retryDelayMs = mediaRetryDelayMs,
                 query = ::queryLatestMedia,
+                isSuccess = { item -> item != null },
                 handleResult = { item, isRetry ->
                     if (item != null) {
                         overlayManager.showLatestPhotoThumbnail(item.uri)
@@ -127,7 +129,7 @@ class OverlayService : Service() {
                                 "Thumbnail updated: ${item.uri}"
                             },
                         )
-                    } else if (!isRetry) {
+                    } else {
                         DebugLog.log("Thumbnail query returned null — scheduling retry in ${mediaRetryDelayMs}ms")
                     }
                 },
