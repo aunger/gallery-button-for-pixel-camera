@@ -241,8 +241,7 @@ PR routing (Monitor loop):
 
 ```text
   if Reviewer requested changes -> goto newAuthor
-  if Reviewer gave `Cannot implement` -> escalate to user; stop
-    (do NOT route to a new Author round; the Reviewer's PR comment describes why)
+  if Reviewer gave `Cannot implement` -> escalate to user; stop (do NOT route to a new Author round; leave the PR open for the user to close; the Reviewer's PR comment describes why)
   if Reviewer gave LGTM:
     Orchestrator launches a Monitor tool call running `python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER>` from the repo root (run_in_background: true, timeout_ms: 1800000). Record the task ID returned by the Monitor tool call for use in silentVanish recovery, and clear the silentVanish re-launch flag (this original launch is not a re-launch).
     Each stdout line arrives as a task-notification event; relay each line to the user verbatim.
