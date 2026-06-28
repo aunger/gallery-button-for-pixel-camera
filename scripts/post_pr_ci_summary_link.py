@@ -58,17 +58,18 @@ def _github_headers(token: str) -> dict[str, str]:
     }
 
 
-def find_job_id(
+def find_job(
     token: str,
     repository: str,
     run_id: str,
     run_attempt: str,
     job_name: str,
-) -> str | None:
-    """Return the numeric ID of *job_name* in this run's current attempt.
+) -> dict | None:
+    """Return the job dict for *job_name* in this run's current attempt.
 
     Filters on `run_attempt` (when known) so a re-run picks the job from the
     attempt actually in flight, not a stale one from an earlier attempt.
+    Returns the full job dict (including `id` and `conclusion`), or None.
     """
     url = f"https://api.github.com/repos/{repository}/actions/runs/{run_id}/jobs"
     try:
@@ -94,7 +95,22 @@ def find_job_id(
 
     if not candidates:
         return None
-    return str(candidates[0]["id"])
+    return candidates[0]
+
+
+def find_job_id(
+    token: str,
+    repository: str,
+    run_id: str,
+    run_attempt: str,
+    job_name: str,
+) -> str | None:
+    """Return the numeric ID of *job_name* in this run's current attempt.
+
+    Thin wrapper around find_job for callers that only need the job ID.
+    """
+    job = find_job(token, repository, run_id, run_attempt, job_name)
+    return str(job["id"]) if job is not None else None
 
 
 def build_comment_body(summary_url: str, summary_written: bool) -> str:
@@ -111,8 +127,13 @@ def build_comment_body(summary_url: str, summary_written: bool) -> str:
     return body
 
 
-def find_existing_comment(token: str, repository: str, pr_number: str) -> int | None:
-    """Return the ID of our prior sticky comment on the PR, if any."""
+def find_existing_comment(
+    token: str, repository: str, pr_number: str
+) -> tuple[int, str] | tuple[None, None]:
+    """Return (id, body) of our prior sticky comment on the PR, if any.
+
+    Returns (None, None) when no marker comment is found or on API error.
+    """
     url = f"https://api.github.com/repos/{repository}/issues/{pr_number}/comments"
     try:
         resp = requests.get(
@@ -123,20 +144,26 @@ def find_existing_comment(token: str, repository: str, pr_number: str) -> int | 
         )
         resp.raise_for_status()
         for comment in resp.json():
-            if MARKER in (comment.get("body") or ""):
-                return comment["id"]
+            body = comment.get("body") or ""
+            if MARKER in body:
+                return comment["id"], body
     except Exception as exc:  # noqa: BLE001
         print(f"Warning: failed to list comments on PR #{pr_number}: {exc}", file=sys.stderr)
-    return None
+    return None, None
 
 
-def upsert_comment(token: str, repository: str, pr_number: str, body: str) -> bool:
-    """Create the sticky comment, or edit it in place if it already exists."""
-    existing = find_existing_comment(token, repository, pr_number)
+def upsert_comment(
+    token: str, repository: str, pr_number: str, body: str, existing_id: int | None = None
+) -> bool:
+    """Create the sticky comment, or edit it in place if it already exists.
+
+    When *existing_id* is provided the caller has already fetched the comment;
+    pass it here so we do not make a redundant list-comments API call.
+    """
     headers = _github_headers(token)
     try:
-        if existing is not None:
-            url = f"https://api.github.com/repos/{repository}/issues/comments/{existing}"
+        if existing_id is not None:
+            url = f"https://api.github.com/repos/{repository}/issues/comments/{existing_id}"
             resp = requests.patch(url, headers=headers, json={"body": body}, timeout=30)
         else:
             url = f"https://api.github.com/repos/{repository}/issues/{pr_number}/comments"
@@ -144,7 +171,7 @@ def upsert_comment(token: str, repository: str, pr_number: str, body: str) -> bo
         resp.raise_for_status()
         return True
     except Exception as exc:  # noqa: BLE001
-        verb = "update" if existing is not None else "post"
+        verb = "update" if existing_id is not None else "post"
         print(f"Warning: failed to {verb} CI summary link comment: {exc}", file=sys.stderr)
         return False
 
@@ -196,7 +223,8 @@ def main(argv: list[str] | None = None) -> int:
         summary_url = run_url
 
     body = build_comment_body(summary_url, summary_written)
-    if upsert_comment(token, repository, pr_number, body):
+    existing_id, _existing_body = find_existing_comment(token, repository, pr_number)
+    if upsert_comment(token, repository, pr_number, body, existing_id):
         print(f"Posted CI summary link to PR #{pr_number}: {summary_url}")
     return 0
 
