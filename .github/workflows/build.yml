@@ -380,6 +380,16 @@ jobs:
           "$ADB" shell input keyevent KEYCODE_WAKEUP
           "$ADB" shell input swipe 300 1000 300 300
           sleep 2
+          # Start screen recording for the overlay E2E suite (issue #520).
+          # screenrecord must start AFTER KEYCODE_WAKEUP: if the display is off the
+          # process exits immediately with INVALID_LAYER_STACK and the output is 0 bytes.
+          # The moov atom (required for a playable MP4) is only written on a clean SIGINT
+          # exit; SIGTERM is not handled by screenrecord and leaves the file unplayable.
+          # Do NOT kill the host-side adb shell wrapper ($RECPID_OVERLAY): tearing down
+          # the adb transport races the muxer flush and can truncate the moov atom.
+          "$ADB" shell screenrecord /sdcard/e2e-overlay.mp4 &
+          RECPID_OVERLAY=$!
+          sleep 1
           mkdir -p results
           set -o pipefail
           LOGCAT_SINCE=$("$ADB" shell "date '+%m-%d %H:%M:%S.000'" | tr -d '\r')
@@ -390,6 +400,19 @@ jobs:
           else
             echo "outcome=failure" >> "$GITHUB_OUTPUT"
           fi
+          # Stop screenrecord cleanly so the moov atom is written and the MP4 is playable.
+          # pkill -INT -x screenrecord sends SIGINT to the device-side process by exact
+          # name (-x prevents partial-name matches on toybox). Poll with pidof until the
+          # process exits, confirming the muxer finished flushing, before reaping the
+          # host-side wrapper with wait. A fixed sleep is not sufficient.
+          echo "  stopping screenrecord (overlay suite)"
+          "$ADB" shell pkill -INT -x screenrecord 2>/dev/null || true
+          echo "  waiting for screenrecord to finalize the MP4"
+          for i in $(seq 1 30); do
+            "$ADB" shell pidof screenrecord > /dev/null 2>&1 || break
+            sleep 1
+          done
+          wait "$RECPID_OVERLAY" 2>/dev/null || true
           # Capture the filtered logcat regardless of pass/fail (issues #364/#365).
           # The GB4PC_E2E diagnostic lines from E2EFixture.launchPixelCamera() are
           # what make the issue #233 bounded-relaunch path observable, but they are
@@ -400,6 +423,24 @@ jobs:
           echo "=== LOGCAT (since test start) ==="
           "$ADB" logcat -d -T "$LOGCAT_SINCE" | \
             bash scripts/filter_logcat.sh | tee results/e2e-overlay-logcat.txt
+
+      - name: Pull and upload overlay E2E video on failure
+        # Only pull and upload the recording when the overlay E2E suite failed (issue #520).
+        # On a green run the file is left on the device and discarded when the emulator exits.
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true' && steps.run_overlay_e2e.outputs.outcome == 'failure'
+        run: |
+          ADB="$ANDROID_HOME/platform-tools/adb"
+          mkdir -p /tmp/e2e-videos
+          "$ADB" pull /sdcard/e2e-overlay.mp4 /tmp/e2e-videos/e2e-overlay.mp4 || \
+            echo "WARNING: could not pull e2e-overlay.mp4"
+
+      - name: Upload overlay E2E video artifact
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true' && steps.run_overlay_e2e.outputs.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-overlay-video
+          path: /tmp/e2e-videos/e2e-overlay.mp4
+          retention-days: 14
 
       - name: Upload overlay E2E markers
         if: always() && steps.diff_check.outputs.needs_full_build == 'true'
@@ -427,6 +468,13 @@ jobs:
           "$ADB" shell input keyevent KEYCODE_WAKEUP
           "$ADB" shell input swipe 300 1000 300 300
           sleep 2
+          # Start screen recording for the gallery E2E suite (issue #520).
+          # See the overlay E2E step above for the rationale on display-on-first,
+          # SIGINT-only stop, and why the host-side adb shell wrapper must not be
+          # killed before muxer flush.
+          "$ADB" shell screenrecord /sdcard/e2e-gallery.mp4 &
+          RECPID_GALLERY=$!
+          sleep 1
           mkdir -p results
           set -o pipefail
           LOGCAT_SINCE=$("$ADB" shell "date '+%m-%d %H:%M:%S.000'" | tr -d '\r')
@@ -440,6 +488,33 @@ jobs:
             "$ADB" logcat -d -T "$LOGCAT_SINCE" | \
               bash scripts/filter_logcat.sh
           fi
+          # Stop screenrecord cleanly so the moov atom is written and the MP4 is playable.
+          echo "  stopping screenrecord (gallery suite)"
+          "$ADB" shell pkill -INT -x screenrecord 2>/dev/null || true
+          echo "  waiting for screenrecord to finalize the MP4"
+          for i in $(seq 1 30); do
+            "$ADB" shell pidof screenrecord > /dev/null 2>&1 || break
+            sleep 1
+          done
+          wait "$RECPID_GALLERY" 2>/dev/null || true
+
+      - name: Pull and upload gallery E2E video on failure
+        # Only pull and upload the recording when the gallery E2E suite failed (issue #520).
+        # On a green run the file is left on the device and discarded when the emulator exits.
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true' && steps.run_gallery_e2e.outputs.outcome == 'failure'
+        run: |
+          ADB="$ANDROID_HOME/platform-tools/adb"
+          mkdir -p /tmp/e2e-videos
+          "$ADB" pull /sdcard/e2e-gallery.mp4 /tmp/e2e-videos/e2e-gallery.mp4 || \
+            echo "WARNING: could not pull e2e-gallery.mp4"
+
+      - name: Upload gallery E2E video artifact
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true' && steps.run_gallery_e2e.outputs.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-gallery-video
+          path: /tmp/e2e-videos/e2e-gallery.mp4
+          retention-days: 14
 
       - name: Upload gallery E2E markers
         if: always() && steps.diff_check.outputs.needs_full_build == 'true'
