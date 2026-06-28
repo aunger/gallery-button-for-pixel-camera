@@ -128,8 +128,9 @@ When the Author emits `No PR; position posted on the issue`, dispatch the Review
 The Orchestrator does not read or judge the Author's explanation; it only notes which artifact the Reviewer must examine.
 
 Reviewer-to-Orchestrator outcome vocabulary (the Reviewer emits one):
-- `LGTM`
-- `Changes requested`
+- `LGTM`: the committed changes are correct and complete.
+  If extra work outside the repo is require before merging, it should be explained clearly in a PR comment.
+- `Changes requested`: the Author is asked to take another turn, to correct or complete its prior work.
 - `Cannot implement`: the coding phase cannot be completed--the requirements are incomplete, unattainable, or self-contradictory, or no code change could address the issue.
   The Reviewer describes the specifics in a PR comment.
 
