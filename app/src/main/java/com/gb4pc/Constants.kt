@@ -5,8 +5,8 @@ object Constants {
 
     // Default overlay position (PS-02)
     const val DEFAULT_X_PERCENT = 20.0f
-    const val DEFAULT_Y_PERCENT = 69.0f
-    const val DEFAULT_SIZE_PERCENT = 16.0f
+    const val DEFAULT_Y_PERCENT = 75.0f
+    const val DEFAULT_SIZE_PERCENT = 15.0f
 
     // Overlay size bounds
     const val MIN_SIZE_PERCENT = 1.0f

@@ -136,11 +136,11 @@ class OverlayManagerTest {
         val xPx = calculateOverlayXPx(pos.xPercent, displayWidth, sizePx)
         val yPx = calculateOverlayYPx(pos.yPercent, displayHeight, sizePx)
 
-        // Size: 1080 * 16.0 / 100 = 172.8 → 173
-        assertEquals(173, sizePx)
-        // X: 1080 * 20.0 / 100 - 86 = 216 - 86 = 130
-        assertEquals(130, xPx)
-        // Y: 2400 * 69.0 / 100 - 86 = 1656 - 86 = 1570
-        assertEquals(1570, yPx)
+        // Size: 1080 * 15.0 / 100 = 162.0 → 162
+        assertEquals(162, sizePx)
+        // X: 1080 * 20.0 / 100 - 81 = 216 - 81 = 135
+        assertEquals(135, xPx)
+        // Y: 2400 * 75.0 / 100 - 81 = 1800 - 81 = 1719
+        assertEquals(1719, yPx)
     }
 }
