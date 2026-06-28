@@ -127,6 +127,10 @@ class TestParseExistingItems(unittest.TestCase):
 
 
 class TestBuildCommentBody(unittest.TestCase):
+    def test_raises_on_empty_items(self):
+        with self.assertRaises(ValueError):
+            link.build_comment_body([])
+
     def test_includes_marker_and_heading(self):
         items = [link.CIItem("build-and-test", "1234", "pass", "https://example.com")]
         body = link.build_comment_body(items)
@@ -294,25 +298,28 @@ class TestFindExistingComment(unittest.TestCase):
             {"id": 2, "body": old_body},
         ]
         mock_requests.get.return_value = mock_resp
-        comment_id, body = link.find_existing_comment("token", "owner/repo", "42")
-        self.assertEqual(comment_id, 2)
-        self.assertEqual(body, old_body)
+        result = link.find_existing_comment("token", "owner/repo", "42")
+        self.assertTrue(result.fetch_ok)
+        self.assertEqual(result.comment_id, 2)
+        self.assertEqual(result.body, old_body)
 
     @patch("post_pr_ci_summary_link.requests")
-    def test_returns_none_none_when_no_marker_present(self, mock_requests):
+    def test_returns_fetch_ok_with_none_when_no_marker_present(self, mock_requests):
         mock_resp = MagicMock()
         mock_resp.json.return_value = [{"id": 1, "body": "unrelated comment"}]
         mock_requests.get.return_value = mock_resp
-        comment_id, body = link.find_existing_comment("token", "owner/repo", "42")
-        self.assertIsNone(comment_id)
-        self.assertIsNone(body)
+        result = link.find_existing_comment("token", "owner/repo", "42")
+        self.assertTrue(result.fetch_ok)
+        self.assertIsNone(result.comment_id)
+        self.assertIsNone(result.body)
 
     @patch("post_pr_ci_summary_link.requests")
-    def test_returns_none_none_on_api_error(self, mock_requests):
+    def test_returns_fetch_ok_false_on_api_error(self, mock_requests):
         mock_requests.get.side_effect = Exception("network error")
-        comment_id, body = link.find_existing_comment("token", "owner/repo", "42")
-        self.assertIsNone(comment_id)
-        self.assertIsNone(body)
+        result = link.find_existing_comment("token", "owner/repo", "42")
+        self.assertFalse(result.fetch_ok)
+        self.assertIsNone(result.comment_id)
+        self.assertIsNone(result.body)
 
 
 class TestUpsertComment(unittest.TestCase):
@@ -388,7 +395,9 @@ class TestMergeLogic(unittest.TestCase):
         self, mock_requests, mock_upsert, mock_find_existing
     ):
         mock_requests.get.return_value = self._job_resp("success")
-        mock_find_existing.return_value = (None, None)
+        mock_find_existing.return_value = link.CommentLookup(
+            fetch_ok=True, comment_id=None, body=None
+        )
         mock_upsert.return_value = True
         with patch.dict(os.environ, self._env(), clear=True):
             self.assertEqual(link.main([]), 0)
@@ -409,7 +418,9 @@ class TestMergeLogic(unittest.TestCase):
             "(https://github.com/owner/repo/actions/runs/998#summary-111)\n"
         )
         mock_requests.get.return_value = self._job_resp("failure")
-        mock_find_existing.return_value = (55, existing_body)
+        mock_find_existing.return_value = link.CommentLookup(
+            fetch_ok=True, comment_id=55, body=existing_body
+        )
         mock_upsert.return_value = True
         with patch.dict(
             os.environ, self._env(GITHUB_RUN_NUMBER="42", GITHUB_RUN_ID="999"), clear=True
@@ -436,7 +447,9 @@ class TestMergeLogic(unittest.TestCase):
             "(https://github.com/owner/repo/actions/runs/999#summary-111)\n"
         )
         mock_requests.get.return_value = self._job_resp("success")
-        mock_find_existing.return_value = (55, existing_body)
+        mock_find_existing.return_value = link.CommentLookup(
+            fetch_ok=True, comment_id=55, body=existing_body
+        )
         mock_upsert.return_value = True
         with patch.dict(os.environ, self._env(GITHUB_RUN_NUMBER="42"), clear=True):
             self.assertEqual(link.main([]), 0)
@@ -457,7 +470,9 @@ class TestMergeLogic(unittest.TestCase):
         )
         existing_body = f"{link.MARKER}\n### CI test summary\n\n{existing_lines}\n"
         mock_requests.get.return_value = self._job_resp("success")
-        mock_find_existing.return_value = (55, existing_body)
+        mock_find_existing.return_value = link.CommentLookup(
+            fetch_ok=True, comment_id=55, body=existing_body
+        )
         mock_upsert.return_value = True
         new_run = str(link.MAX_ITEMS + 1)
         with patch.dict(os.environ, self._env(GITHUB_RUN_NUMBER=new_run), clear=True):
@@ -512,7 +527,9 @@ class TestMain(unittest.TestCase):
         self, mock_requests, mock_upsert, mock_find_existing
     ):
         mock_requests.get.return_value = self._job_resp(111, "success")
-        mock_find_existing.return_value = (None, None)
+        mock_find_existing.return_value = link.CommentLookup(
+            fetch_ok=True, comment_id=None, body=None
+        )
         mock_upsert.return_value = True
         with patch.dict(os.environ, self._env(), clear=True):
             self.assertEqual(link.main([]), 0)
@@ -526,7 +543,9 @@ class TestMain(unittest.TestCase):
         self, mock_requests, mock_upsert, mock_find_existing
     ):
         mock_requests.get.return_value = self._job_resp(111, "success")
-        mock_find_existing.return_value = (None, None)
+        mock_find_existing.return_value = link.CommentLookup(
+            fetch_ok=True, comment_id=None, body=None
+        )
         mock_upsert.return_value = True
         with patch.dict(os.environ, self._env(), clear=True):
             self.assertEqual(link.main([]), 0)
@@ -540,7 +559,9 @@ class TestMain(unittest.TestCase):
         self, mock_requests, mock_upsert, mock_find_existing
     ):
         mock_requests.get.return_value = self._job_resp(111, "failure")
-        mock_find_existing.return_value = (None, None)
+        mock_find_existing.return_value = link.CommentLookup(
+            fetch_ok=True, comment_id=None, body=None
+        )
         mock_upsert.return_value = True
         with patch.dict(os.environ, self._env(), clear=True):
             self.assertEqual(link.main([]), 0)
@@ -556,7 +577,9 @@ class TestMain(unittest.TestCase):
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"jobs": []}
         mock_requests.get.return_value = mock_resp
-        mock_find_existing.return_value = (None, None)
+        mock_find_existing.return_value = link.CommentLookup(
+            fetch_ok=True, comment_id=None, body=None
+        )
         mock_upsert.return_value = True
         with patch.dict(os.environ, self._env(), clear=True):
             self.assertEqual(link.main([]), 0)
@@ -570,7 +593,9 @@ class TestMain(unittest.TestCase):
     def test_docs_only_pr_shows_skip_result(self, mock_requests, mock_upsert, mock_find_existing):
         """Docs-only PRs (SUMMARY_WRITTEN=false) show 'skip' as the result."""
         mock_requests.get.return_value = self._job_resp(111, "success")
-        mock_find_existing.return_value = (None, None)
+        mock_find_existing.return_value = link.CommentLookup(
+            fetch_ok=True, comment_id=None, body=None
+        )
         mock_upsert.return_value = True
         with patch.dict(os.environ, self._env(SUMMARY_WRITTEN="false"), clear=True):
             self.assertEqual(link.main([]), 0)
@@ -585,7 +610,9 @@ class TestMain(unittest.TestCase):
         self, mock_requests, mock_upsert, mock_find_existing
     ):
         mock_requests.get.return_value = self._job_resp(111, "success")
-        mock_find_existing.return_value = (None, None)
+        mock_find_existing.return_value = link.CommentLookup(
+            fetch_ok=True, comment_id=None, body=None
+        )
         mock_upsert.return_value = True
         env = self._env()
         del env["SUMMARY_WRITTEN"]
@@ -601,7 +628,9 @@ class TestMain(unittest.TestCase):
     def test_reads_github_run_number(self, mock_requests, mock_upsert, mock_find_existing):
         """The run number should appear as the second token in the list item."""
         mock_requests.get.return_value = self._job_resp(111, "success")
-        mock_find_existing.return_value = (None, None)
+        mock_find_existing.return_value = link.CommentLookup(
+            fetch_ok=True, comment_id=None, body=None
+        )
         mock_upsert.return_value = True
         with patch.dict(os.environ, self._env(GITHUB_RUN_NUMBER="1337"), clear=True):
             self.assertEqual(link.main([]), 0)
@@ -611,19 +640,18 @@ class TestMain(unittest.TestCase):
     @patch("post_pr_ci_summary_link.find_existing_comment")
     @patch("post_pr_ci_summary_link.upsert_comment")
     def test_does_not_clobber_history_when_fetch_fails(self, mock_upsert, mock_find_existing):
-        """When find_existing_comment fails (returns (None, None)) and no prior
-        comment is known, a fresh POST is made rather than a PATCH that would
-        overwrite unknown prior content."""
-        mock_find_existing.return_value = (None, None)
-        mock_upsert.return_value = True
+        """When find_existing_comment returns fetch_ok=False (API error), main
+        must not call upsert_comment at all.
+        Posting a fresh comment when the prior one may exist would orphan the
+        prior history."""
+        mock_find_existing.return_value = link.CommentLookup(
+            fetch_ok=False, comment_id=None, body=None
+        )
         with patch("post_pr_ci_summary_link.find_job") as mock_find_job:
             mock_find_job.return_value = {"id": 111, "conclusion": "success"}
             with patch.dict(os.environ, self._env(), clear=True):
                 self.assertEqual(link.main([]), 0)
-        # upsert_comment should be called with existing_id=None (POST, not PATCH).
-        call_args = mock_upsert.call_args
-        existing_id = call_args[0][4] if len(call_args[0]) > 4 else call_args[1].get("existing_id")
-        self.assertIsNone(existing_id)
+        mock_upsert.assert_not_called()
 
     @patch("post_pr_ci_summary_link.upsert_comment")
     def test_skips_when_not_a_pull_request_run(self, mock_upsert):

@@ -59,8 +59,8 @@ DEFAULT_JOB_NAME = "build-and-test"
 MAX_ITEMS = 20
 
 # Regex matching a single Markdown list item as written by build_comment_body.
-# Captures: job_name, run_number (str), result, url.
-_ITEM_RE = re.compile(r"^- \[([^\s\]]+) (\d+) ([^\]]+)\]\(([^)]+)\)\s*$")
+# Captures: job_name, run_number (str), result (single non-whitespace token), url.
+_ITEM_RE = re.compile(r"^- \[([^\s\]]+) (\d+) (\S+)\]\(([^)]+)\)\s*$")
 
 
 class CIItem(NamedTuple):
@@ -70,6 +70,20 @@ class CIItem(NamedTuple):
     run_number: str  # kept as str to avoid integer-parsing surprises
     result: str
     url: str
+
+
+class CommentLookup(NamedTuple):
+    """Result of a find_existing_comment call.
+
+    Distinguishes three outcomes:
+      - Found:     fetch_ok=True,  comment_id=<int>, body=<str>
+      - Not found: fetch_ok=True,  comment_id=None,  body=None
+      - API error: fetch_ok=False, comment_id=None,  body=None
+    """
+
+    fetch_ok: bool
+    comment_id: int | None
+    body: str | None
 
 
 def _github_headers(token: str) -> dict[str, str]:
@@ -171,18 +185,29 @@ def parse_existing_items(body: str) -> list[CIItem]:
 
 
 def build_comment_body(items: list[CIItem]) -> str:
-    """Render the sticky comment body from a list of CIItem entries."""
+    """Render the sticky comment body from a list of CIItem entries.
+
+    *items* must be non-empty; callers are responsible for ensuring at least
+    one entry is present before calling this function.
+    """
+    if not items:
+        raise ValueError("build_comment_body requires at least one item")
     lines = [f"- [{item.job_name} {item.run_number} {item.result}]({item.url})" for item in items]
     list_block = "\n".join(lines)
     return f"{MARKER}\n### CI test summary\n\n{list_block}\n"
 
 
-def find_existing_comment(
-    token: str, repository: str, pr_number: str
-) -> tuple[int, str] | tuple[None, None]:
-    """Return (id, body) of our prior sticky comment on the PR, if any.
+def find_existing_comment(token: str, repository: str, pr_number: str) -> CommentLookup:
+    """Locate our prior sticky comment on the PR.
 
-    Returns (None, None) when no marker comment is found or on API error.
+    Returns a CommentLookup with three possible states:
+      - Found:     fetch_ok=True,  comment_id=<int>, body=<str>
+      - Not found: fetch_ok=True,  comment_id=None,  body=None
+      - API error: fetch_ok=False, comment_id=None,  body=None
+
+    Distinguishing "not found" from "API error" lets callers skip the upsert
+    safely when the fetch failed rather than posting a new comment that would
+    orphan any existing history.
     """
     url = f"https://api.github.com/repos/{repository}/issues/{pr_number}/comments"
     try:
@@ -196,10 +221,11 @@ def find_existing_comment(
         for comment in resp.json():
             body = comment.get("body") or ""
             if MARKER in body:
-                return comment["id"], body
+                return CommentLookup(fetch_ok=True, comment_id=comment["id"], body=body)
     except Exception as exc:  # noqa: BLE001
         print(f"Warning: failed to list comments on PR #{pr_number}: {exc}", file=sys.stderr)
-    return None, None
+        return CommentLookup(fetch_ok=False, comment_id=None, body=None)
+    return CommentLookup(fetch_ok=True, comment_id=None, body=None)
 
 
 def upsert_comment(
@@ -289,11 +315,22 @@ def main(argv: list[str] | None = None) -> int:
         url=item_url,
     )
 
-    # Fetch existing comment (id and body) once, so we can preserve prior items
-    # and avoid a second list-comments call in upsert_comment.
-    existing_id, existing_body = find_existing_comment(token, repository, pr_number)
+    # Fetch existing comment once so we can preserve prior items and pass the
+    # comment ID directly to upsert_comment, avoiding a redundant API call.
+    lookup = find_existing_comment(token, repository, pr_number)
 
-    prior_items = parse_existing_items(existing_body) if existing_body is not None else []
+    if not lookup.fetch_ok:
+        # The list-comments API call failed. We cannot safely determine whether
+        # a prior sticky comment already exists, so we must not POST a new one:
+        # doing so would create an orphaned comment that loses the prior history.
+        # Leave whatever comment is already there untouched and skip this run.
+        print(
+            "Warning: skipping CI summary link comment: could not fetch existing comments.",
+            file=sys.stderr,
+        )
+        return 0
+
+    prior_items = parse_existing_items(lookup.body) if lookup.body is not None else []
 
     # Merge: replace any existing item for the same (job_name, run_number) pair,
     # otherwise append. This makes the script idempotent within a run.
@@ -313,16 +350,7 @@ def main(argv: list[str] | None = None) -> int:
         merged = merged[-MAX_ITEMS:]
 
     body = build_comment_body(merged)
-
-    # When existing_body fetch failed (existing_id is None but we know a prior
-    # comment exists): prefer not to post a fresh comment that would skip history.
-    # However we cannot distinguish "no prior comment" from "fetch failed" when
-    # existing_id is None and existing_body is None. The safe path: if
-    # existing_id is None we either POST (first run) or POST again (fetch
-    # failed). The latter risks a duplicate comment, but preserves history in
-    # the existing comment and only adds a new one. This matches the recommended
-    # policy: do not PATCH without the existing id.
-    if upsert_comment(token, repository, pr_number, body, existing_id):
+    if upsert_comment(token, repository, pr_number, body, lookup.comment_id):
         print(f"Posted CI summary link to PR #{pr_number}: {item_url}")
     return 0
 
