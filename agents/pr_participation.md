@@ -23,7 +23,7 @@
 
   (This is the PR-path mechanism. If the Author opened no PR, see "Reviewing an Author who declined to open a PR" below.)
 
-  ``` no
+  ```
   (ReviewText, IsReviewApproval) := <review the diff; form your verdict and review text>
   post review: mcp__github__pull_request_review_write(ReviewText, IsReviewApproval)
   ```
