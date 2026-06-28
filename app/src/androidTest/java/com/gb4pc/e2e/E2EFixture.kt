@@ -22,6 +22,7 @@ import com.gb4pc.e2e.visual.ColorMatch
 import com.gb4pc.e2e.visual.Rgb
 import com.gb4pc.e2e.visual.Screenshot
 import com.gb4pc.service.OverlayService
+import com.gb4pc.viewer.SessionTracker
 import org.junit.Assert.assertEquals
 import org.junit.Assert.fail
 import java.util.concurrent.CountDownLatch
@@ -420,6 +421,36 @@ class E2EFixture(
                         "(even after MediaScannerConnection.scanFile fallback)",
                 )
             }
+        }
+    }
+
+    /**
+     * Waits for the current secure session to contain at least one media item.
+     *
+     * The [OverlayService]'s MediaStore [android.database.ContentObserver] calls
+     * [SessionTracker.addMedia] asynchronously after a photo is committed.
+     * [captureOnePhoto] returns as soon as the MediaStore row exists, but the
+     * ContentObserver's [android.database.ContentObserver.onChange] may not have
+     * fired yet. Calling this helper after [captureOnePhoto] ensures the session is
+     * populated before the caller acts on it (e.g. tapping the overlay to open
+     * SecureViewer), avoiding a race that causes SecureViewer to open with an empty
+     * session.
+     *
+     * @param timeoutMs Maximum time to wait. Default is 5 s, which is well above the
+     *   service's 500 ms ContentObserver retry delay.
+     * @throws AssertionError if the session remains empty after [timeoutMs].
+     */
+    fun waitForSessionMedia(timeoutMs: Long = 5_000L) {
+        val appeared =
+            waitForCondition(timeoutMs) {
+                SessionTracker.instance.getSessionMedia().isNotEmpty()
+            }
+        if (!appeared) {
+            fail(
+                "waitForSessionMedia(): session media did not appear within ${timeoutMs}ms. " +
+                    "The ContentObserver may not have fired, or the captured photo was not " +
+                    "added to the active secure session.",
+            )
         }
     }
 

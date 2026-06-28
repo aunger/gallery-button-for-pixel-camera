@@ -53,6 +53,12 @@ object Constants {
     // Retry delay when ContentObserver fires before MediaStore commits the new item (IS_PENDING race)
     const val MEDIA_OBSERVER_RETRY_MS = 500L
 
+    // Maximum number of MediaStore-commit retries per ContentObserver onChange event. The
+    // IS_PENDING -> 0 transition can take longer than a single MEDIA_OBSERVER_RETRY_MS interval
+    // (or never fire while locked), so the retry re-schedules itself up to this many times instead
+    // of giving up after one attempt. Total retry budget = MEDIA_OBSERVER_RETRY_MS x this value.
+    const val MEDIA_OBSERVER_RETRY_MAX_ATTEMPTS = 5
+
     // Snackbar undo timeout
     const val UNDO_TIMEOUT_MS = 5000L
 
