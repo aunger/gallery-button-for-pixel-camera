@@ -33,24 +33,130 @@ class TestPrNumberFromUrl(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# result_label
+# ---------------------------------------------------------------------------
+
+
+class TestResultLabel(unittest.TestCase):
+    def test_success_maps_to_pass(self):
+        self.assertEqual(link.result_label("success"), "pass")
+
+    def test_failure_maps_to_fail(self):
+        self.assertEqual(link.result_label("failure"), "fail")
+
+    def test_timed_out_maps_to_fail(self):
+        self.assertEqual(link.result_label("timed_out"), "fail")
+
+    def test_cancelled_maps_to_fail(self):
+        self.assertEqual(link.result_label("cancelled"), "fail")
+
+    def test_skipped_maps_to_skip(self):
+        self.assertEqual(link.result_label("skipped"), "skip")
+
+    def test_none_maps_to_unknown(self):
+        self.assertEqual(link.result_label(None), "unknown")
+
+    def test_unexpected_string_maps_to_unknown(self):
+        self.assertEqual(link.result_label("action_required"), "unknown")
+
+    def test_neutral_maps_to_unknown(self):
+        self.assertEqual(link.result_label("neutral"), "unknown")
+
+
+# ---------------------------------------------------------------------------
+# parse_existing_items
+# ---------------------------------------------------------------------------
+
+
+class TestParseExistingItems(unittest.TestCase):
+    def test_empty_body_returns_empty_list(self):
+        self.assertEqual(link.parse_existing_items(""), [])
+
+    def test_parses_single_item(self):
+        body = (
+            f"{link.MARKER}\n### CI test summary\n\n"
+            "- [build-and-test 1234 pass](https://example.com/run#summary-111)\n"
+        )
+        items = link.parse_existing_items(body)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0].job_name, "build-and-test")
+        self.assertEqual(items[0].run_number, "1234")
+        self.assertEqual(items[0].result, "pass")
+        self.assertEqual(items[0].url, "https://example.com/run#summary-111")
+
+    def test_parses_multiple_items(self):
+        body = (
+            f"{link.MARKER}\n### CI test summary\n\n"
+            "- [build-and-test 1 pass](https://example.com/1)\n"
+            "- [build-and-test 2 fail](https://example.com/2)\n"
+            "- [build-and-test 3 skip](https://example.com/3)\n"
+        )
+        items = link.parse_existing_items(body)
+        self.assertEqual(len(items), 3)
+        self.assertEqual(items[0].run_number, "1")
+        self.assertEqual(items[1].result, "fail")
+        self.assertEqual(items[2].result, "skip")
+
+    def test_ignores_header_and_non_list_lines(self):
+        body = (
+            f"{link.MARKER}\n### CI test summary\n\n"
+            "Some random prose line.\n"
+            "- [build-and-test 42 pass](https://example.com)\n"
+            "Another prose line.\n"
+        )
+        items = link.parse_existing_items(body)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0].run_number, "42")
+
+    def test_tolerates_trailing_whitespace(self):
+        body = "- [build-and-test 7 fail](https://example.com)  \n"
+        items = link.parse_existing_items(body)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0].run_number, "7")
+
+    def test_parses_bare_run_url_without_anchor(self):
+        body = "- [build-and-test 5 skip](https://github.com/owner/repo/actions/runs/999)\n"
+        items = link.parse_existing_items(body)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0].result, "skip")
+
+
+# ---------------------------------------------------------------------------
 # build_comment_body
 # ---------------------------------------------------------------------------
 
 
 class TestBuildCommentBody(unittest.TestCase):
-    def test_includes_marker_and_link_when_summary_written(self):
-        body = link.build_comment_body("https://example.com/run#summary-1", True)
+    def test_includes_marker_and_heading(self):
+        items = [link.CIItem("build-and-test", "1234", "pass", "https://example.com")]
+        body = link.build_comment_body(items)
         self.assertIn(link.MARKER, body)
-        self.assertIn("https://example.com/run#summary-1", body)
-        self.assertIn("View the build-and-test summary for this PR", body)
+        self.assertIn("### CI test summary", body)
 
-    def test_notes_missing_summary_when_not_written(self):
-        body = link.build_comment_body("https://example.com/run", False)
-        self.assertIn(link.MARKER, body)
-        self.assertIn("https://example.com/run", body)
-        # Should not claim there is a pass/fail summary to view.
-        self.assertNotIn("build-and-test summary", body)
-        self.assertIn("did not need a full build", body)
+    def test_renders_list_item_with_job_run_result(self):
+        items = [link.CIItem("build-and-test", "1234", "pass", "https://example.com/run")]
+        body = link.build_comment_body(items)
+        self.assertIn("- [build-and-test 1234 pass](https://example.com/run)", body)
+
+    def test_renders_multiple_items_in_order(self):
+        items = [
+            link.CIItem("build-and-test", "1", "pass", "https://example.com/1"),
+            link.CIItem("build-and-test", "2", "fail", "https://example.com/2"),
+        ]
+        body = link.build_comment_body(items)
+        pos1 = body.index("1 pass")
+        pos2 = body.index("2 fail")
+        self.assertLess(pos1, pos2)
+
+    def test_renders_fail_result(self):
+        items = [link.CIItem("build-and-test", "99", "fail", "https://example.com")]
+        body = link.build_comment_body(items)
+        self.assertIn("99 fail", body)
+
+    def test_renders_skip_result(self):
+        items = [link.CIItem("build-and-test", "5", "skip", "https://example.com")]
+        body = link.build_comment_body(items)
+        self.assertIn("5 skip", body)
 
 
 # ---------------------------------------------------------------------------
@@ -240,7 +346,133 @@ class TestUpsertComment(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# main
+# merge / append / dedup logic (exercised via main)
+# ---------------------------------------------------------------------------
+
+
+class TestMergeLogic(unittest.TestCase):
+    """Integration-style tests for the merge/append/dedup behaviour in main."""
+
+    def _env(self, **overrides):
+        env = {
+            "GITHUB_TOKEN": "token",
+            "GITHUB_REPOSITORY": "owner/repo",
+            "GITHUB_SERVER_URL": "https://github.com",
+            "GITHUB_RUN_ID": "999",
+            "GITHUB_RUN_NUMBER": "42",
+            "GITHUB_RUN_ATTEMPT": "1",
+            "WORKFLOW_RUN_PR_URL": "https://github.com/owner/repo/pull/7",
+            "SUMMARY_WRITTEN": "true",
+        }
+        env.update(overrides)
+        return env
+
+    def _job_resp(self, conclusion="success"):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "jobs": [
+                {
+                    "id": 111,
+                    "name": "build-and-test",
+                    "run_attempt": 1,
+                    "conclusion": conclusion,
+                }
+            ]
+        }
+        return mock_resp
+
+    @patch("post_pr_ci_summary_link.find_existing_comment")
+    @patch("post_pr_ci_summary_link.upsert_comment")
+    @patch("post_pr_ci_summary_link.requests")
+    def test_first_run_creates_single_item_list(
+        self, mock_requests, mock_upsert, mock_find_existing
+    ):
+        mock_requests.get.return_value = self._job_resp("success")
+        mock_find_existing.return_value = (None, None)
+        mock_upsert.return_value = True
+        with patch.dict(os.environ, self._env(), clear=True):
+            self.assertEqual(link.main([]), 0)
+        body = mock_upsert.call_args[0][3]
+        items = link.parse_existing_items(body)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0].run_number, "42")
+        self.assertEqual(items[0].result, "pass")
+
+    @patch("post_pr_ci_summary_link.find_existing_comment")
+    @patch("post_pr_ci_summary_link.upsert_comment")
+    @patch("post_pr_ci_summary_link.requests")
+    def test_second_push_appends_new_item(self, mock_requests, mock_upsert, mock_find_existing):
+        """A new push (different run number) appends a second list item."""
+        existing_body = (
+            f"{link.MARKER}\n### CI test summary\n\n"
+            "- [build-and-test 41 pass]"
+            "(https://github.com/owner/repo/actions/runs/998#summary-111)\n"
+        )
+        mock_requests.get.return_value = self._job_resp("failure")
+        mock_find_existing.return_value = (55, existing_body)
+        mock_upsert.return_value = True
+        with patch.dict(
+            os.environ, self._env(GITHUB_RUN_NUMBER="42", GITHUB_RUN_ID="999"), clear=True
+        ):
+            self.assertEqual(link.main([]), 0)
+        body = mock_upsert.call_args[0][3]
+        items = link.parse_existing_items(body)
+        self.assertEqual(len(items), 2)
+        self.assertEqual(items[0].run_number, "41")
+        self.assertEqual(items[0].result, "pass")
+        self.assertEqual(items[1].run_number, "42")
+        self.assertEqual(items[1].result, "fail")
+
+    @patch("post_pr_ci_summary_link.find_existing_comment")
+    @patch("post_pr_ci_summary_link.upsert_comment")
+    @patch("post_pr_ci_summary_link.requests")
+    def test_same_run_number_replaces_in_place(
+        self, mock_requests, mock_upsert, mock_find_existing
+    ):
+        """Re-running the same run number replaces the item, not duplicates it."""
+        existing_body = (
+            f"{link.MARKER}\n### CI test summary\n\n"
+            "- [build-and-test 42 fail]"
+            "(https://github.com/owner/repo/actions/runs/999#summary-111)\n"
+        )
+        mock_requests.get.return_value = self._job_resp("success")
+        mock_find_existing.return_value = (55, existing_body)
+        mock_upsert.return_value = True
+        with patch.dict(os.environ, self._env(GITHUB_RUN_NUMBER="42"), clear=True):
+            self.assertEqual(link.main([]), 0)
+        body = mock_upsert.call_args[0][3]
+        items = link.parse_existing_items(body)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0].run_number, "42")
+        self.assertEqual(items[0].result, "pass")
+
+    @patch("post_pr_ci_summary_link.find_existing_comment")
+    @patch("post_pr_ci_summary_link.upsert_comment")
+    @patch("post_pr_ci_summary_link.requests")
+    def test_list_capped_to_max_items(self, mock_requests, mock_upsert, mock_find_existing):
+        """When existing items exceed MAX_ITEMS, oldest are dropped."""
+        existing_lines = "\n".join(
+            f"- [build-and-test {i} pass](https://example.com/{i})"
+            for i in range(1, link.MAX_ITEMS + 1)
+        )
+        existing_body = f"{link.MARKER}\n### CI test summary\n\n{existing_lines}\n"
+        mock_requests.get.return_value = self._job_resp("success")
+        mock_find_existing.return_value = (55, existing_body)
+        mock_upsert.return_value = True
+        new_run = str(link.MAX_ITEMS + 1)
+        with patch.dict(os.environ, self._env(GITHUB_RUN_NUMBER=new_run), clear=True):
+            self.assertEqual(link.main([]), 0)
+        body = mock_upsert.call_args[0][3]
+        items = link.parse_existing_items(body)
+        self.assertEqual(len(items), link.MAX_ITEMS)
+        # Oldest (run 1) should be gone; newest should be present.
+        run_numbers = [item.run_number for item in items]
+        self.assertNotIn("1", run_numbers)
+        self.assertIn(new_run, run_numbers)
+
+
+# ---------------------------------------------------------------------------
+# main: environment variable handling
 # ---------------------------------------------------------------------------
 
 
@@ -251,6 +483,7 @@ class TestMain(unittest.TestCase):
             "GITHUB_REPOSITORY": "owner/repo",
             "GITHUB_SERVER_URL": "https://github.com",
             "GITHUB_RUN_ID": "999",
+            "GITHUB_RUN_NUMBER": "42",
             "GITHUB_RUN_ATTEMPT": "1",
             "WORKFLOW_RUN_PR_URL": "https://github.com/owner/repo/pull/42",
             "SUMMARY_WRITTEN": "true",
@@ -258,15 +491,29 @@ class TestMain(unittest.TestCase):
         env.update(overrides)
         return env
 
+    def _job_resp(self, job_id=111, conclusion="success"):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "jobs": [
+                {
+                    "id": job_id,
+                    "name": "build-and-test",
+                    "run_attempt": 1,
+                    "conclusion": conclusion,
+                }
+            ]
+        }
+        return mock_resp
+
     @patch("post_pr_ci_summary_link.find_existing_comment")
     @patch("post_pr_ci_summary_link.upsert_comment")
-    @patch("post_pr_ci_summary_link.find_job_id")
+    @patch("post_pr_ci_summary_link.requests")
     def test_posts_link_with_summary_anchor_when_job_id_found(
-        self, mock_find_job, mock_upsert, mock_find_existing
+        self, mock_requests, mock_upsert, mock_find_existing
     ):
-        mock_find_job.return_value = "111"
-        mock_upsert.return_value = True
+        mock_requests.get.return_value = self._job_resp(111, "success")
         mock_find_existing.return_value = (None, None)
+        mock_upsert.return_value = True
         with patch.dict(os.environ, self._env(), clear=True):
             self.assertEqual(link.main([]), 0)
         body = mock_upsert.call_args[0][3]
@@ -274,13 +521,43 @@ class TestMain(unittest.TestCase):
 
     @patch("post_pr_ci_summary_link.find_existing_comment")
     @patch("post_pr_ci_summary_link.upsert_comment")
-    @patch("post_pr_ci_summary_link.find_job_id")
-    def test_falls_back_to_run_url_when_job_id_missing(
-        self, mock_find_job, mock_upsert, mock_find_existing
+    @patch("post_pr_ci_summary_link.requests")
+    def test_posts_pass_result_when_job_succeeded(
+        self, mock_requests, mock_upsert, mock_find_existing
     ):
-        mock_find_job.return_value = None
-        mock_upsert.return_value = True
+        mock_requests.get.return_value = self._job_resp(111, "success")
         mock_find_existing.return_value = (None, None)
+        mock_upsert.return_value = True
+        with patch.dict(os.environ, self._env(), clear=True):
+            self.assertEqual(link.main([]), 0)
+        body = mock_upsert.call_args[0][3]
+        self.assertIn("42 pass", body)
+
+    @patch("post_pr_ci_summary_link.find_existing_comment")
+    @patch("post_pr_ci_summary_link.upsert_comment")
+    @patch("post_pr_ci_summary_link.requests")
+    def test_posts_fail_result_when_job_failed(
+        self, mock_requests, mock_upsert, mock_find_existing
+    ):
+        mock_requests.get.return_value = self._job_resp(111, "failure")
+        mock_find_existing.return_value = (None, None)
+        mock_upsert.return_value = True
+        with patch.dict(os.environ, self._env(), clear=True):
+            self.assertEqual(link.main([]), 0)
+        body = mock_upsert.call_args[0][3]
+        self.assertIn("42 fail", body)
+
+    @patch("post_pr_ci_summary_link.find_existing_comment")
+    @patch("post_pr_ci_summary_link.upsert_comment")
+    @patch("post_pr_ci_summary_link.requests")
+    def test_falls_back_to_run_url_when_job_id_missing(
+        self, mock_requests, mock_upsert, mock_find_existing
+    ):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"jobs": []}
+        mock_requests.get.return_value = mock_resp
+        mock_find_existing.return_value = (None, None)
+        mock_upsert.return_value = True
         with patch.dict(os.environ, self._env(), clear=True):
             self.assertEqual(link.main([]), 0)
         body = mock_upsert.call_args[0][3]
@@ -289,39 +566,64 @@ class TestMain(unittest.TestCase):
 
     @patch("post_pr_ci_summary_link.find_existing_comment")
     @patch("post_pr_ci_summary_link.upsert_comment")
-    @patch("post_pr_ci_summary_link.find_job_id")
-    def test_links_to_bare_run_and_explains_when_summary_not_written(
-        self, mock_find_job, mock_upsert, mock_find_existing
-    ):
-        """Docs-only PRs skip the summary step; do not claim one exists."""
-        mock_upsert.return_value = True
+    @patch("post_pr_ci_summary_link.requests")
+    def test_docs_only_pr_shows_skip_result(self, mock_requests, mock_upsert, mock_find_existing):
+        """Docs-only PRs (SUMMARY_WRITTEN=false) show 'skip' as the result."""
+        mock_requests.get.return_value = self._job_resp(111, "success")
         mock_find_existing.return_value = (None, None)
+        mock_upsert.return_value = True
         with patch.dict(os.environ, self._env(SUMMARY_WRITTEN="false"), clear=True):
             self.assertEqual(link.main([]), 0)
         body = mock_upsert.call_args[0][3]
-        self.assertIn("https://github.com/owner/repo/actions/runs/999", body)
+        self.assertIn("skip", body)
         self.assertNotIn("#summary-", body)
-        self.assertNotIn("build-and-test summary", body)
-        self.assertIn("did not need a full build", body)
-        # The job-ID lookup is unnecessary work when there's no summary to
-        # link to anyway.
-        mock_find_job.assert_not_called()
 
     @patch("post_pr_ci_summary_link.find_existing_comment")
     @patch("post_pr_ci_summary_link.upsert_comment")
-    @patch("post_pr_ci_summary_link.find_job_id")
+    @patch("post_pr_ci_summary_link.requests")
     def test_treats_missing_summary_written_as_false(
-        self, mock_find_job, mock_upsert, mock_find_existing
+        self, mock_requests, mock_upsert, mock_find_existing
     ):
-        mock_upsert.return_value = True
+        mock_requests.get.return_value = self._job_resp(111, "success")
         mock_find_existing.return_value = (None, None)
+        mock_upsert.return_value = True
         env = self._env()
         del env["SUMMARY_WRITTEN"]
         with patch.dict(os.environ, env, clear=True):
             self.assertEqual(link.main([]), 0)
         body = mock_upsert.call_args[0][3]
         self.assertNotIn("#summary-", body)
-        mock_find_job.assert_not_called()
+        self.assertIn("skip", body)
+
+    @patch("post_pr_ci_summary_link.find_existing_comment")
+    @patch("post_pr_ci_summary_link.upsert_comment")
+    @patch("post_pr_ci_summary_link.requests")
+    def test_reads_github_run_number(self, mock_requests, mock_upsert, mock_find_existing):
+        """The run number should appear as the second token in the list item."""
+        mock_requests.get.return_value = self._job_resp(111, "success")
+        mock_find_existing.return_value = (None, None)
+        mock_upsert.return_value = True
+        with patch.dict(os.environ, self._env(GITHUB_RUN_NUMBER="1337"), clear=True):
+            self.assertEqual(link.main([]), 0)
+        body = mock_upsert.call_args[0][3]
+        self.assertIn("1337", body)
+
+    @patch("post_pr_ci_summary_link.find_existing_comment")
+    @patch("post_pr_ci_summary_link.upsert_comment")
+    def test_does_not_clobber_history_when_fetch_fails(self, mock_upsert, mock_find_existing):
+        """When find_existing_comment fails (returns (None, None)) and no prior
+        comment is known, a fresh POST is made rather than a PATCH that would
+        overwrite unknown prior content."""
+        mock_find_existing.return_value = (None, None)
+        mock_upsert.return_value = True
+        with patch("post_pr_ci_summary_link.find_job") as mock_find_job:
+            mock_find_job.return_value = {"id": 111, "conclusion": "success"}
+            with patch.dict(os.environ, self._env(), clear=True):
+                self.assertEqual(link.main([]), 0)
+        # upsert_comment should be called with existing_id=None (POST, not PATCH).
+        call_args = mock_upsert.call_args
+        existing_id = call_args[0][4] if len(call_args[0]) > 4 else call_args[1].get("existing_id")
+        self.assertIsNone(existing_id)
 
     @patch("post_pr_ci_summary_link.upsert_comment")
     def test_skips_when_not_a_pull_request_run(self, mock_upsert):
