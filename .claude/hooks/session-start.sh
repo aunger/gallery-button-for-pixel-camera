@@ -21,7 +21,7 @@ GRADLE_INIT="$HOME/.gradle/init.d/proxy-auth.gradle"
 
 echo "[session-start] GB4PC environment setup…"
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ───────────────────────────────────────────────────────────────────────────────
 # STEP 0 — Fix JAVA_TOOL_OPTIONS proxy / DNS issue.
 #
 # The container's JAVA_TOOL_OPTIONS lists *.google.com and *.googleapis.com in
@@ -30,7 +30,7 @@ echo "[session-start] GB4PC environment setup…"
 # those entries makes Java route them through the proxy, the same way wget/curl
 # already do.  The fixed value is exported via $CLAUDE_ENV_FILE so it persists
 # for all subsequent tool invocations in this session.
-# ─────────────────────────────────────────────────────────────────────────────
+# ───────────────────────────────────────────────────────────────────────────────
 if echo "${JAVA_TOOL_OPTIONS:-}" | grep -qE '\*\.(google|googleapis)\.com'; then
     # Strip each entry independently — order in the container value is not guaranteed.
     FIXED_JTO=$(echo "$JAVA_TOOL_OPTIONS" \
@@ -46,12 +46,12 @@ else
     echo "[session-start] Step 0: JAVA_TOOL_OPTIONS already clean — skip"
 fi
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ───────────────────────────────────────────────────────────────────────────────
 # STEP 1 — Gradle proxy authenticator.
 #
 # Java 9+ no longer auto-registers http.proxyUser/proxyPassword as an
 # Authenticator, so proxied HTTPS CONNECT tunnels get HTTP 407.
-# ─────────────────────────────────────────────────────────────────────────────
+# ───────────────────────────────────────────────────────────────────────────────
 if [[ -f "$GRADLE_INIT" ]]; then
     echo "[session-start] Step 1: Gradle proxy-auth init.d present — skip"
 else
@@ -74,9 +74,9 @@ GROOVY
     echo "[session-start] Step 1: Gradle proxy-auth init.d written"
 fi
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ───────────────────────────────────────────────────────────────────────────────
 # STEP 2a — Android SDK command-line tools.
-# ─────────────────────────────────────────────────────────────────────────────
+# ───────────────────────────────────────────────────────────────────────────────
 if [[ -x "$SDKMANAGER" ]]; then
     echo "[session-start] Step 2a: sdkmanager present — skip"
 else
@@ -103,9 +103,9 @@ if [[ -n "${CLAUDE_ENV_FILE:-}" ]] \
         >> "$CLAUDE_ENV_FILE"
 fi
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ───────────────────────────────────────────────────────────────────────────────
 # STEP 2b — SDK licenses.
-# ─────────────────────────────────────────────────────────────────────────────
+# ───────────────────────────────────────────────────────────────────────────────
 if [[ -f "$ANDROID_HOME_DIR/licenses/android-sdk-license" ]]; then
     echo "[session-start] Step 2b: SDK licenses present — skip"
 else
@@ -118,10 +118,10 @@ else
     echo "[session-start] Step 2b: licenses written"
 fi
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ───────────────────────────────────────────────────────────────────────────────
 # STEP 2c — SDK packages (only installs what is missing).
 # build-tools;34.0.0 is required by AGP 8.7.3 even though the project targets 35.
-# ─────────────────────────────────────────────────────────────────────────────
+# ───────────────────────────────────────────────────────────────────────────────
 declare -A SDK_PACKAGES=(
     ["platforms;android-35"]="$ANDROID_HOME_DIR/platforms/android-35"
     ["build-tools;35.0.0"]="$ANDROID_HOME_DIR/build-tools/35.0.0"
@@ -146,9 +146,9 @@ else
     echo "[session-start] Step 2c: all SDK packages present — skip"
 fi
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ───────────────────────────────────────────────────────────────────────────────
 # STEP 3 — Linting tools (pre-commit framework + ktlint).
-# ─────────────────────────────────────────────────────────────────────────────
+# ───────────────────────────────────────────────────────────────────────────────
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 LOCAL_BIN="$HOME/.local/bin"
 mkdir -p "$LOCAL_BIN"
@@ -197,5 +197,18 @@ else
     (cd "$REPO_ROOT" && "$PRECOMMIT_BIN" install)
     echo "[session-start] Step 3c: pre-commit hook wired"
 fi
+
+# ───────────────────────────────────────────────────────────────────────────────
+# STEP 4 -- Fetch remote refs.
+#
+# Keep local knowledge of the remote up to date at the start of every session.
+# git fetch is always safe (it never modifies the working tree), so no skip
+# guard is needed.  Failures are logged as warnings rather than aborting the
+# hook, so a transient network outage does not prevent the session from starting.
+# ───────────────────────────────────────────────────────────────────────────────
+echo "[session-start] Step 4: git fetch..."
+git -C "$REPO_ROOT" fetch --prune --quiet \
+    && echo "[session-start] Step 4: fetch complete" \
+    || echo "[session-start] Step 4: warning: git fetch failed (offline? -- continuing)"
 
 echo "[session-start] Complete. ANDROID_HOME=$ANDROID_HOME"
