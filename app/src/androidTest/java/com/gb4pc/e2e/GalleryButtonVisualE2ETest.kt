@@ -434,6 +434,11 @@ class GalleryButtonVisualE2ETest {
         fixture.launchSecureCamera()
         fixture.waitForOverlayActive()
         fixture.captureOnePhoto() // GREEN JPEG captured during the secure session
+        // Wait for the session to contain the photo before tapping: captureOnePhoto() returns
+        // as soon as the MediaStore row exists, but the OverlayService ContentObserver processes
+        // it asynchronously. Without this gate the tap can race ahead of the observer, leaving
+        // SecureViewer with an empty session (issue #509 / PR #527 race).
+        fixture.waitForSessionMedia()
 
         val s1 = Screenshot.captureScreen()
         Screenshot.saveForArtifact(s1, "5a-s1.png")
