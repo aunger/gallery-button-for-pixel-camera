@@ -128,8 +128,11 @@ When the Author emits `No PR; position posted on the issue`, dispatch the Review
 The Orchestrator does not read or judge the Author's explanation; it only notes which artifact the Reviewer must examine.
 
 Reviewer-to-Orchestrator outcome vocabulary (the Reviewer emits one):
-- `LGTM`
-- `Changes requested`
+- `LGTM`: the committed changes are correct and complete.
+  If extra work outside the repo is required before merging, it should be explained clearly in a PR comment.
+- `Changes requested`: the Author is asked to take another turn, to correct or complete its prior work.
+- `Cannot implement`: the coding phase cannot be completed--the requirements are incomplete, unattainable, or self-contradictory, or no code change could address the issue.
+  The Reviewer describes the specifics in a PR comment, or in an issue comment on the no-PR path (where there is no PR to comment on).
 
 Orchestrator-to-user terminal CI lines:
 - `CI cleared on PR #{N}.`
@@ -225,6 +228,7 @@ No-PR routing:
 
 ```text
   if Reviewer requested changes -> goto newAuthor
+  if Reviewer gave `Cannot implement` -> escalate to user; stop
   if Reviewer gave LGTM:
     The issue is resolved without a code change, and the Reviewer agreed.
     Do NOT launch the CI Monitor and do NOT dispatch a Verification Planner; both presuppose a PR.
@@ -237,6 +241,7 @@ PR routing (Monitor loop):
 
 ```text
   if Reviewer requested changes -> goto newAuthor
+  if Reviewer gave `Cannot implement` -> escalate to user; stop (do NOT route to a new Author round; leave the PR open for the user to close; the Reviewer's PR comment describes why)
   if Reviewer gave LGTM:
     Orchestrator launches a Monitor tool call running `python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER>` from the repo root (run_in_background: true, timeout_ms: 1800000). Record the task ID returned by the Monitor tool call for use in silentVanish recovery, and clear the silentVanish re-launch flag (this original launch is not a re-launch).
     Each stdout line arrives as a task-notification event; relay each line to the user verbatim.
@@ -377,10 +382,12 @@ If the stall cannot be explained by a known recoverable cause (e.g., a Monitor t
 
 ## When to abort
 
-Stop the automated cycle and escalate to the User in these cases:
+Stop the automated cycle and escalate to the User in either of these cases:
 
-- **After four rounds** of the Programmer / Reviewer loop not reaching consensus (unless the user gave a different threshold)
-- **If the Programmer gives up** or claims the issue cannot be solved as stated
+- A sub-agent emits `Cannot implement` (see the routing fences above): escalate immediately, without waiting for further rounds.
+  This covers a Programmer that gives up or an issue that cannot be solved as stated; the Reviewer confirms it by emitting `Cannot implement`.
+- The Programmer / Reviewer loop runs **four rounds** without reaching consensus (unless the user gave a different threshold).
+  This is the fallback for a loop that stalls in disagreement; once four rounds are reached the cap applies unconditionally, even when both parties are still actively disputing.
 
 ## Concluding PR orchestration
 
