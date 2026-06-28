@@ -382,10 +382,7 @@ If the stall cannot be explained by a known recoverable cause (e.g., a Monitor t
 
 ## When to abort
 
-Stop the automated cycle and escalate to the User in these cases:
-
-- **If the Programmer gives up** or claims the issue cannot be solved as stated--escalate immediately, without waiting for additional rounds.
-- **After four rounds** of the Programmer / Reviewer loop not reaching consensus (unless the user gave a different threshold)--the fallback when the loop stalls but neither party has explicitly given up.
+Stop the automated cycle and escalate to the User **after four rounds** of the Programmer / Reviewer loop not reaching consensus (unless the user gave a different threshold)--the fallback when the loop stalls but neither party has explicitly given up.
 
 ## Concluding PR orchestration
 
