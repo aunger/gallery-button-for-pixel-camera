@@ -47,6 +47,10 @@ class SessionTracker {
         listeners.add(listener)
     }
 
+    /**
+     * Deregister a previously registered listener.
+     * Thread-safe; no-op if the listener is not currently registered.
+     */
     fun removeListener(listener: SessionListener) {
         listeners.remove(listener)
     }
@@ -71,13 +75,17 @@ class SessionTracker {
 
     /**
      * SF-01: End the session, clearing all media (SF-05).
+     * No-op (and no notification) if the session is already inactive.
      */
     fun endSession() {
-        synchronized(lock) {
-            isSessionActive = false
-            mediaItems.clear()
-        }
-        notifyListeners()
+        val changed =
+            synchronized(lock) {
+                if (!isSessionActive) return
+                isSessionActive = false
+                mediaItems.clear()
+                true
+            }
+        if (changed) notifyListeners()
     }
 
     fun addMedia(item: MediaItem) {

@@ -150,6 +150,17 @@ class SessionTrackerTest {
     }
 
     @Test
+    fun `endSession does not notify when session is already inactive`() {
+        // endSession on a tracker that was never started must not fire listeners.
+        var notifications = 0
+        tracker.addListener { notifications++ }
+
+        tracker.endSession()
+
+        assertEquals(0, notifications)
+    }
+
+    @Test
     fun `removeMedia notifies only when an item is actually removed`() {
         tracker.startSession()
         tracker.addMedia(MediaItem(uri = "content://media/1", dateTaken = 1000L, isVideo = false))
