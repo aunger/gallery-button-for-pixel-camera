@@ -140,13 +140,6 @@ const noTypographyChars = {
 // Rule GB002: no-spaced-dash
 // ---------------------------------------------------------------------------
 
-// Matches " - " or " -- " (space, one or two hyphens, space), but only when
-// preceded by a non-whitespace character so that list-bullet syntax
-// ("  - item") and blockquote bullets at the start of a line are not flagged.
-// The lookbehind `(?<=\S)` requires a non-space character immediately before
-// the leading space that is part of the match.
-const SPACED_DASH_RE = /(?<=\S) (--?) /g;
-
 /** @type {import("markdownlint").Rule} */
 const noSpacedDash = {
   names: ["GB002", "no-spaced-dash"],
@@ -155,6 +148,14 @@ const noSpacedDash = {
     "(see .claude/rules/prose-style.md)",
   tags: ["prose-style"],
   function: function GB002(params, onError) {
+    // Matches " - " or " -- " (space, one or two hyphens, space), but only
+    // when preceded by a non-whitespace character so that list-bullet syntax
+    // ("  - item") and blockquote bullets at the start of a line are not
+    // flagged.  Defined inside the function to avoid module-level stateful
+    // regex (the `g` flag mutates lastIndex, which makes module-level regexes
+    // fragile across calls).
+    const spacedDashRe = /(?<=\S) (--?) /g;
+
     const blocked = fencedCodeLineNumbers(params.tokens || []);
     const lines = params.lines;
 
@@ -164,16 +165,17 @@ const noSpacedDash = {
         continue;
       }
       const line = eraseInlineCode(lines[lineIdx]);
-      SPACED_DASH_RE.lastIndex = 0;
+      spacedDashRe.lastIndex = 0;
 
       let match;
-      while ((match = SPACED_DASH_RE.exec(line)) !== null) {
+      while ((match = spacedDashRe.exec(line)) !== null) {
         const dashes = match[1];
         onError({
           lineNumber,
           detail:
             '"' + dashes + '" must not be surrounded by spaces; ' +
-            'write "' + dashes + '" with no surrounding spaces',
+            "prefer restructuring the sentence (comma, semicolon, or " +
+            'parentheses), or write "' + dashes + '" with no surrounding spaces',
           context: lines[lineIdx].slice(
             Math.max(0, match.index - 8),
             match.index + match[0].length + 8
@@ -181,7 +183,7 @@ const noSpacedDash = {
           range: [match.index + 1, match[0].length],
         });
         // Advance by 1 to allow overlapping matches like " - - ".
-        SPACED_DASH_RE.lastIndex = match.index + 1;
+        spacedDashRe.lastIndex = match.index + 1;
       }
     }
   },

@@ -24,5 +24,8 @@ jobs:
       - name: Install markdownlint-cli2
         run: npm install -g markdownlint-cli2@0.14.0
 
+      - name: Run custom rule unit tests
+        run: node markdownlint-rules/prose-style.test.js
+
       - name: Run markdownlint
         run: markdownlint-cli2
