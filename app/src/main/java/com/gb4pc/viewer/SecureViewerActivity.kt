@@ -48,6 +48,16 @@ class SecureViewerActivity : ComponentActivity() {
 
     private val sessionTracker get() = SessionTracker.instance
 
+    // Issue #537: react to session media populating after onCreate()'s one-shot read.
+    // The viewer can open in the brief window before the OverlayService's ContentObserver
+    // has added the captured photo to the session; without this observer the activity would
+    // render a black "no photos" state and never recover. Listener callbacks may arrive on a
+    // background thread, so the refresh is marshaled onto the UI thread.
+    private val sessionListener =
+        SessionTracker.SessionListener {
+            runOnUiThread { refreshMedia() }
+        }
+
     // L4: BroadcastReceiver to finish the activity when the device unlocks (SF-15)
     private val userPresentReceiver =
         object : BroadcastReceiver() {
@@ -87,13 +97,19 @@ class SecureViewerActivity : ComponentActivity() {
         setTurnScreenOn(true)
 
         setupLayout()
-        refreshMedia()
+        // Issue #537: the initial read happens in onStart(), which always runs right after
+        // onCreate() and also registers the session observer; refreshing here too would be
+        // redundant.
     }
 
     override fun onStart() {
         super.onStart()
         // L4: Register receiver for device-unlock events
         registerReceiver(userPresentReceiver, IntentFilter(Intent.ACTION_USER_PRESENT))
+        // Issue #537: observe the session so a late-arriving photo refreshes the viewer.
+        // Refresh once on registration to pick up any change between onCreate() and now.
+        sessionTracker.addListener(sessionListener)
+        refreshMedia()
     }
 
     override fun onStop() {
@@ -104,6 +120,8 @@ class SecureViewerActivity : ComponentActivity() {
         } catch (e: IllegalArgumentException) {
             DebugLog.log("userPresentReceiver was not registered: ${e.message}")
         }
+        // Issue #537: stop observing the session while the viewer is not started.
+        sessionTracker.removeListener(sessionListener)
     }
 
     override fun onResume() {
