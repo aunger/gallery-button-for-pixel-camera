@@ -20,4 +20,5 @@
 # issue #309 removed it.  Each already has a tracking issue and must be
 # removed from this list as it is fixed.
 
-# (No entries.)
+# Tracking issue: #243
+com.gb4pc.e2e.GalleryButtonVisualE2ETest#test5a_secureCameraLockedPopulatedGalleryShowsGreen
