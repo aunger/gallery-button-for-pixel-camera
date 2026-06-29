@@ -214,6 +214,45 @@ test("column offset reported correctly (em-dash at col 6)", () => {
   assert(errors[0].errorRange[0] === 6, "column should be 6, got " + errors[0].errorRange[0]);
 });
 
+test("fixInfo is set for ellipsis (auto-fixable)", () => {
+  const errors = forRule(lint("Wait…"), "GB001");
+  assertCount(errors.length, 1);
+  assert(errors[0].fixInfo !== null && errors[0].fixInfo !== undefined,
+    "expected fixInfo to be set for ellipsis");
+  assert(errors[0].fixInfo.insertText === "...",
+    "expected insertText '...', got " + errors[0].fixInfo.insertText);
+});
+
+test("fixInfo is set for left single quote (auto-fixable)", () => {
+  const errors = forRule(lint("‘hello"), "GB001");
+  assertCount(errors.length, 1);
+  assert(errors[0].fixInfo !== null && errors[0].fixInfo !== undefined,
+    "expected fixInfo to be set for left single quote");
+});
+
+test("fixInfo is set for left double quote (auto-fixable)", () => {
+  const errors = forRule(lint("“hello"), "GB001");
+  assertCount(errors.length, 1);
+  assert(errors[0].fixInfo !== null && errors[0].fixInfo !== undefined,
+    "expected fixInfo to be set for left double quote");
+  assert(errors[0].fixInfo.insertText === '"',
+    "expected insertText '\"', got " + errors[0].fixInfo.insertText);
+});
+
+test("fixInfo is NOT set for em-dash (not auto-fixable)", () => {
+  const errors = forRule(lint("Hello—world"), "GB001");
+  assertCount(errors.length, 1);
+  assert(errors[0].fixInfo === null || errors[0].fixInfo === undefined,
+    "expected fixInfo to be null/undefined for em-dash, got: " + JSON.stringify(errors[0].fixInfo));
+});
+
+test("fixInfo is NOT set for en-dash (not auto-fixable)", () => {
+  const errors = forRule(lint("pages 3–5"), "GB001");
+  assertCount(errors.length, 1);
+  assert(errors[0].fixInfo === null || errors[0].fixInfo === undefined,
+    "expected fixInfo to be null/undefined for en-dash, got: " + JSON.stringify(errors[0].fixInfo));
+});
+
 // ---------------------------------------------------------------------------
 // GB002: no-spaced-dash
 // ---------------------------------------------------------------------------

@@ -84,14 +84,18 @@ function eraseInlineCode(line) {
 // Rule GB001: no-typography-chars
 // ---------------------------------------------------------------------------
 
+// `autofix: true` means markdownlint’s --fix mode will replace the character
+// with `suggestion` automatically.  Dashes are intentionally NOT auto-fixed
+// because the author must make a grammatical decision (comma, semicolon,
+// parentheses, or double-hyphen) rather than having the tool pick one.
 const TYPOGRAPHY_CHARS = [
-  { char: "—", name: "em-dash",            suggestion: "--" },
-  { char: "–", name: "en-dash",            suggestion: "-" },
-  { char: "…", name: "ellipsis character", suggestion: "..." },
-  { char: "‘", name: "left single quote",  suggestion: "'" },
-  { char: "’", name: "right single quote", suggestion: "'" },
-  { char: "“", name: "left double quote",  suggestion: '"' },
-  { char: "”", name: "right double quote", suggestion: '"' },
+  { char: "\u2014", name: "em-dash",            suggestion: "--",  autofix: false },
+  { char: "\u2013", name: "en-dash",            suggestion: "-",   autofix: false },
+  { char: "\u2026", name: "ellipsis character", suggestion: "...", autofix: true  },
+  { char: "\u2018", name: "left single quote",  suggestion: "'",   autofix: true  },
+  { char: "\u2019", name: "right single quote", suggestion: "'",   autofix: true  },
+  { char: "\u201C", name: "left double quote",  suggestion: '"', autofix: true },
+  { char: "\u201D", name: "right double quote", suggestion: '"', autofix: true },
 ];
 
 /** @type {import("markdownlint").Rule} */
@@ -113,7 +117,7 @@ const noTypographyChars = {
       // Erase inline code spans before scanning.
       const line = eraseInlineCode(lines[lineIdx]);
 
-      for (const { char, name, suggestion } of TYPOGRAPHY_CHARS) {
+      for (const { char, name, suggestion, autofix } of TYPOGRAPHY_CHARS) {
         let idx = line.indexOf(char);
         while (idx !== -1) {
           const cp = char.codePointAt(0);
@@ -128,6 +132,11 @@ const noTypographyChars = {
               "); use " + suggestion + " instead",
             context: lines[lineIdx].slice(Math.max(0, idx - 10), idx + 11),
             range: [idx + 1, char.length],
+            // fixInfo is only set for characters with a single unambiguous
+            // replacement.  Dashes are omitted so the author must decide.
+            fixInfo: autofix
+              ? { editColumn: idx + 1, deleteCount: char.length, insertText: suggestion }
+              : undefined,
           });
           idx = line.indexOf(char, idx + 1);
         }
