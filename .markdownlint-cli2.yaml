@@ -1,0 +1,18 @@
+# markdownlint-cli2 configuration
+# Extends the base rule set in .markdownlint.yaml with custom prose-style rules.
+# See .claude/rules/prose-style.md for the style guide these rules enforce.
+
+# Load custom rules that enforce .claude/rules/prose-style.md.
+# Paths are relative to this config file (the repo root).
+customRules:
+  - "./markdownlint-rules/prose-style.js"
+
+# Glob patterns to lint (in addition to any passed on the command line).
+globs:
+  - "**/*.md"
+  - "**/*.markdown"
+  - "!node_modules"
+  - "!.git"
+  - "!.gradle"
+  - "!build"
+  - "!.claude/worktrees"
