@@ -123,6 +123,83 @@ class SessionTrackerTest {
         assertEquals("content://media/2", tracker.getSessionMedia()[0].uri)
     }
 
+    // -------------------------------------------------------------------------
+    // Issue #537: session-change observer
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `addMedia notifies listener so a late photo can refresh the viewer`() {
+        tracker.startSession()
+        var notifications = 0
+        tracker.addListener { notifications++ }
+
+        tracker.addMedia(MediaItem(uri = "content://media/1", dateTaken = 1000L, isVideo = false))
+
+        assertEquals(1, notifications)
+    }
+
+    @Test
+    fun `startSession and endSession notify listener`() {
+        var notifications = 0
+        tracker.addListener { notifications++ }
+
+        tracker.startSession()
+        tracker.endSession()
+
+        assertEquals(2, notifications)
+    }
+
+    @Test
+    fun `removeMedia notifies only when an item is actually removed`() {
+        tracker.startSession()
+        tracker.addMedia(MediaItem(uri = "content://media/1", dateTaken = 1000L, isVideo = false))
+        var notifications = 0
+        tracker.addListener { notifications++ }
+
+        tracker.removeMedia("content://media/1")
+        assertEquals(1, notifications)
+
+        // Removing a URI that is not present must not notify.
+        tracker.removeMedia("content://media/absent")
+        assertEquals(1, notifications)
+    }
+
+    @Test
+    fun `addMedia does not notify when no active session`() {
+        var notifications = 0
+        tracker.addListener { notifications++ }
+
+        tracker.addMedia(MediaItem(uri = "content://media/1", dateTaken = 1000L, isVideo = false))
+
+        assertEquals(0, notifications)
+    }
+
+    @Test
+    fun `addMedia does not notify for a duplicate URI`() {
+        tracker.startSession()
+        val item = MediaItem(uri = "content://media/1", dateTaken = 1000L, isVideo = false)
+        tracker.addMedia(item)
+        var notifications = 0
+        tracker.addListener { notifications++ }
+
+        tracker.addMedia(item)
+
+        assertEquals(0, notifications)
+    }
+
+    @Test
+    fun `removed listener is no longer notified`() {
+        tracker.startSession()
+        var notifications = 0
+        val listener = SessionTracker.SessionListener { notifications++ }
+        tracker.addListener(listener)
+        tracker.removeListener(listener)
+
+        tracker.addMedia(MediaItem(uri = "content://media/1", dateTaken = 1000L, isVideo = false))
+
+        assertEquals(0, notifications)
+    }
+
     @Test
     fun `getSessionMedia returns most recent first per SF-07`() {
         tracker.startSession()

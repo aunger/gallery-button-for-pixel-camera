@@ -19,6 +19,45 @@ class SessionTracker {
     private val mediaItems = mutableListOf<MediaItem>()
 
     /**
+     * Observers notified whenever the session's media set changes (start, end, add, remove).
+     *
+     * Issue #537: [SecureViewerActivity] reads the session once in `onCreate()`. When the
+     * activity opens in the brief window before the OverlayService's ContentObserver has
+     * populated the session, that one-shot read sees an empty session and renders a black
+     * "no photos" state. A reactive observer lets the viewer auto-refresh as soon as media
+     * arrives, rather than relying solely on the startup read.
+     *
+     * Backed by a [CopyOnWriteArraySet] so registration/deregistration and notification are
+     * thread-safe without holding [lock] while invoking listeners (which would risk a
+     * re-entrant deadlock if a listener called back into the tracker).
+     */
+    private val listeners = java.util.concurrent.CopyOnWriteArraySet<SessionListener>()
+
+    /** Listener for session media changes. See [addListener]. */
+    fun interface SessionListener {
+        fun onSessionMediaChanged()
+    }
+
+    /**
+     * Register a listener for session media changes. Re-registering the same instance is a no-op.
+     * Listeners are invoked on the thread that mutates the session; UI consumers must marshal
+     * any view updates onto the main thread themselves.
+     */
+    fun addListener(listener: SessionListener) {
+        listeners.add(listener)
+    }
+
+    fun removeListener(listener: SessionListener) {
+        listeners.remove(listener)
+    }
+
+    private fun notifyListeners() {
+        for (listener in listeners) {
+            listener.onSessionMediaChanged()
+        }
+    }
+
+    /**
      * SF-01: Begin a new session, recording the start timestamp (SF-02).
      */
     fun startSession() {
@@ -27,6 +66,7 @@ class SessionTracker {
             sessionStartTimestamp = System.currentTimeMillis()
             mediaItems.clear()
         }
+        notifyListeners()
     }
 
     /**
@@ -37,21 +77,29 @@ class SessionTracker {
             isSessionActive = false
             mediaItems.clear()
         }
+        notifyListeners()
     }
 
     fun addMedia(item: MediaItem) {
-        synchronized(lock) {
-            if (!isSessionActive) return
-            if (mediaItems.none { it.uri == item.uri }) {
-                mediaItems.add(item)
+        val changed =
+            synchronized(lock) {
+                if (!isSessionActive) return
+                if (mediaItems.none { it.uri == item.uri }) {
+                    mediaItems.add(item)
+                    true
+                } else {
+                    false
+                }
             }
-        }
+        if (changed) notifyListeners()
     }
 
     fun removeMedia(uri: String) {
-        synchronized(lock) {
-            mediaItems.removeAll { it.uri == uri }
-        }
+        val changed =
+            synchronized(lock) {
+                mediaItems.removeAll { it.uri == uri }
+            }
+        if (changed) notifyListeners()
     }
 
     /**
