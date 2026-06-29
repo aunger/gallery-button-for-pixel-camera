@@ -1,4 +1,4 @@
-# GB4PC — Claude Code for Web: Environment Setup
+# GB4PC--Claude Code for Web: Environment Setup
 
 ## Quick start
 
@@ -12,7 +12,7 @@ cd gallery-button-for-pixel-camera
 
 The `SessionStart` hook (`.claude/hooks/session-start.sh`) runs automatically
 at session start and sets up the Android SDK and proxy configuration. See the
-script for implementation details — each step is commented.
+script for implementation details--each step is commented.
 
 ---
 
@@ -21,13 +21,13 @@ script for implementation details — each step is commented.
 | Variable           | Value                        | Set by            | Notes                                                        |
 |--------------------|------------------------------|-------------------|--------------------------------------------------------------|
 | `ANDROID_HOME`     | `/home/user/android-sdk`     | hook + `~/.bashrc`| Required by Gradle Android plugin and `adb`                  |
-| `JAVA_TOOL_OPTIONS`| *(modified, not replaced)*   | hook + `~/.bashrc`| Strips `*.google.com` from `nonProxyHosts` — see script §0   |
+| `JAVA_TOOL_OPTIONS`| *(modified, not replaced)*   | hook + `~/.bashrc`| Strips `*.google.com` from `nonProxyHosts`--see script §0   |
 | `PATH`             | `+$ANDROID_HOME/…`           | hook + `~/.bashrc`| Adds `sdkmanager`, `adb` to path                            |
 | `GITHUB_TOKEN`     | *(fine-grained PAT)*         | container         | Use with `curl` to query the GitHub REST API                 |
 
 `~/.bashrc` carries the same fixes for interactive terminal sessions.
 The proxy credentials in `JAVA_TOOL_OPTIONS` are a session-scoped JWT injected
-by the container — never hard-code them.
+by the container--never hard-code them.
 
 ---
 
@@ -55,7 +55,7 @@ No manual setup is needed.
 | `ktlint` | 3a | `~/.local/bin/ktlint` | Kotlin formatting and style (official Kotlin style guide) |
 | `pre-commit` | 3b | `~/.local/bin/pre-commit` | Hook framework; manages ruff, markdownlint, and ktlint |
 | git hook | 3c | `.git/hooks/pre-commit` | Runs all hooks automatically on every `git commit` |
-| hook envs | -- | `~/.cache/pre-commit/` | Populated on first commit (not pre-warmed at startup) |
+| hook envs |--| `~/.cache/pre-commit/` | Populated on first commit (not pre-warmed at startup) |
 
 ### Hooks configured in `.pre-commit-config.yaml`
 
@@ -95,13 +95,13 @@ so the `labels` field is never sent and all existing labels remain.
 
 **Evidence (empirically verified 2026-05):**
 - `labels: ["planning needed"]` → correctly replaces ALL labels with just that one
-  (REPLACE semantics — "orchestrate" was removed in the same call). Non-empty arrays work.
+  (REPLACE semantics--"orchestrate" was removed in the same call). Non-empty arrays work.
 - `labels: []` → no change; all labels remain. Confirmed by a follow-up `get_labels` read.
 
 **Implication:** There is no way to remove *all* labels from an issue using
 `mcp__github__issue_write` alone. To drop N−1 labels, set `labels` to the one label
 you want to keep. The last remaining label cannot be removed via this tool, and the
-`GITHUB_TOKEN` environment variable also cannot help — it is read-only for the Issues
+`GITHUB_TOKEN` environment variable also cannot help--it is read-only for the Issues
 API (write attempts return 403).
 
 ### Always verify writes with a follow-up read

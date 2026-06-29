@@ -47,8 +47,8 @@ An empty allowlist means no failure is tolerated, which is the steady state.
 
 ### Related files
 
-- `.github/workflows/build.yml` — the CI configuration, including the `Gate on test failures` step.
-- `.github/allowed-test-failures.txt` — the red-to-green allowlist.
-- `scripts/check_allowed_failures.py` — the gate script (unit-tested in `scripts/test_check_allowed_failures.py`).
-- `scripts/file_test_failure_issues.py` — auto-files issues for failed tests.
-- `.github/workflows/archive-stale-test-failures.yml` — archives test failure issues when tests pass.
+- `.github/workflows/build.yml`--the CI configuration, including the `Gate on test failures` step.
+- `.github/allowed-test-failures.txt`--the red-to-green allowlist.
+- `scripts/check_allowed_failures.py`--the gate script (unit-tested in `scripts/test_check_allowed_failures.py`).
+- `scripts/file_test_failure_issues.py`--auto-files issues for failed tests.
+- `.github/workflows/archive-stale-test-failures.yml`--archives test failure issues when tests pass.
