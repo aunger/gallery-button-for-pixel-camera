@@ -85,8 +85,8 @@ When you begin orchestrating a PR (the first thing you do once you have entered 
 
 For each sub-agent role, use the first rule that applies:
 
-1. **User-specified**: the user named a model for this role--use it.
-2. **Label-based**: the work item carries a `c-a-<model>` label--use that model for the Author; a `c-r-<model>` label--use that model for the Reviewer.
+1. **User-specified**: the user named a model for this role -- use it.
+2. **Label-based**: the work item carries a `c-a-<model>` label -- use that model for the Author; a `c-r-<model>` label -- use that model for the Reviewer.
 3. **Default**: Sonnet.
 
 ## Dispatch template
@@ -351,7 +351,7 @@ The poll loop lives in [`scripts/ci_monitor/ci_monitor.py`](../scripts/ci_monito
 
 Orchestrator-specific notes:
 
-- The 30-minute escalation threshold is enforced by `timeout_ms: 1800000` on the Monitor call--no elapsed-time tracking needed.
+- The 30-minute escalation threshold is enforced by `timeout_ms: 1800000` on the Monitor call -- no elapsed-time tracking needed.
 - `step`/`FAIL`/`SKIP`/`PASS` lines, `summary` header lines, and per-check summary rows are informational test-result deltas, not terminal outcomes: relay them to the user but do not start a new Author round. Only a `Blocked` (or `Blocked by: ...`) line does that.
 - The `Blocked by: <name>` attributed form (issue #516) names which check-run blocked CI. A terminal ending with `[label gate]` means only a process-label gate (not a code/test failure) is blocking; see the label-gate branch in the Monitor loop above.
 - Do not subscribe to PR events or delay dispatching the Reviewer while waiting for CI; the Monitor loop replaces that pattern.
