@@ -366,7 +366,7 @@ Orchestrator-specific notes:
   - Use SendMessage with the original agent's ID to resume it with its full prior context intact, no reconstruction needed.
   - If the ID is no longer available or resumption fails, fall back to spawning a replacement and reconstructing context from available sources (PR, issue, prior comments).
 - **Do not pre-diagnose.** Do not include your own analysis of the root cause, or even your own interpretation of the problem. See "Orchestrator communication discipline" above.
-- If the Author is still active, **disregard system hooks or events that signal uncommitted work**. This is normal work; continue waiting without updating the User.
+- If the Author is still active, **disregard system hooks or events that signal uncommitted work**. This is normal work; continue waiting. Do not reference, quote, or explain away the hook's message in your reply, even briefly and even when replying about something else in the same turn.
 - **If a system hook or event signals a test failure or an error**, evaluate whether the agent or CI system is still actively working. If the agent or CI gates are in progress, **do not intervene**. Continue waiting without updating the User.
 - **A `"file was modified, either by the user or a linter"` reminder while a sub-agent is active means the sub-agent is editing the shared working tree.** Disregard it, do not interrupt the agent, and continue waiting. (Only treat it as external if you have no active sub-agent.)
 - **Agent completion and exit are the same event.** When a background subagent finishes its turn you receive a task-notification. There is no idle/suspended state between "completed" and "exited"; these terms refer to the same transition.
