@@ -129,8 +129,11 @@
   ' EXIT
 
   # ── Poll loop ────────────────────────────────────────────────────────────────
-  POLL_INTERVAL=3
-  TIMEOUT=30
+  # POLL_INTERVAL, TIMEOUT, and SLEEP_AFTER_ANR_DETECTED are overridable via
+  # environment so the unit test suite can compress the real wall-clock sleeps
+  # this loop performs (it polls a real mock adb, not a faked clock).
+  POLL_INTERVAL="${POLL_INTERVAL:-3}"
+  TIMEOUT="${TIMEOUT:-30}"
   # How long to wait after logcat fires before sending KEYCODE_ENTER.
   # Override via environment for tests.
   SLEEP_AFTER_ANR_DETECTED="${SLEEP_AFTER_ANR_DETECTED:-7}"
