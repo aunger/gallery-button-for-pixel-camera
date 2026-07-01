@@ -249,41 +249,54 @@ PR routing (Monitor loop):
     Relay `step "..." -> ...`, `FAIL [...] ...`, `summary`, and per-check summary rows to the user as informational test-result deltas; they do NOT end the loop or start a new Author round.
     if Monitor emits `drain poll found no new diagnostic signals` immediately followed by a Blocked or Infra line -> goto undiagnosedTerminal
     (Note: the attributed `Blocked by: <name>` form already names the blocking check in the per-check summary block and the terminal suffix, so the Monitor suppresses the drain flag in that case. The `goto undiagnosedTerminal` branch therefore applies only to a bare `Blocked`/`Infra` line that the Monitor itself flagged as undiagnosed.)
-    if Monitor emits a Blocked line where the terminal ends with `[label gate]` (the ` by: ...` suffix names only label-gate checks) -> clear the silentVanish re-launch flag; inform the user that only a process-label gate is blocking (not a code/test failure) and that removing the blocking label should unblock the merge; stop (do NOT route to a new Author round)
+    if Monitor emits a Blocked line where the terminal ends with `[label gate]` (the ` by: ...` suffix names only label-gate checks) -> clear the silentVanish re-launch flag; inform the user that only a process-label gate is blocking (not a code/test failure), that the code is review-approved, and that removing the blocking label plus resolving any before-merging tracking issues will unblock the merge; do NOT route to a new Author round; goto surfaceBeforeMergingRequirements (entered on the label-gate path)
     // Note: the implementation plan (issue #516, Step 8a) proposed that the Orchestrator autonomously remove the blocking label and re-launch the Monitor.
     // That approach was not adopted because the blocking label is a user-controlled process label that the Orchestrator does not own;
     // its removal requires human judgment about whether the process condition is actually satisfied.
-    // Informing the user and stopping is simpler and safer.
+    // Informing the user and continuing into the shared before-merging sub-routine is simpler and safer; the cycle does not conclude at this branch.
     if Monitor emits a Blocked line  -> clear the silentVanish re-launch flag; goto newAuthor
     if Monitor emits an Infra line   -> clear the silentVanish re-launch flag; escalate to user; stop
     if Monitor times out (30 min)    -> escalate to user; stop
     if a user message wakes the session before Monitor delivers any terminal line -> goto silentVanish
     if Monitor emits a Clear line:
       clear the silentVanish re-launch flag
-      // Step: Surface outstanding before-merging requirements
-      //   (unautomated verification tests and changes outside the repo, such as an issue that needs to be filed)
-      // Triggered after Reviewer approval AND CI clears (Monitor emits Clear).
-      // Dispatch the verification planner (see verification_planning.md).
-      // The Orchestrator does not scan the issue or PR itself.
-      Dispatch a Verification Planner sub-agent using the dispatch template.
-      The planner assembles the before-merging list and, for each item, files a tracking issue linked to the PR (see verification_planning.md). It does not consult the user.
-      If the Planner reports its before-merging list is empty, then this *before-merging requirements* process is complete, and the Orchestrator should exit this step.
-      In that case, apply this transition to **both the issue and the PR**:
+      goto surfaceBeforeMergingRequirements (entered on the Clear path)
+
+surfaceBeforeMergingRequirements:
+  // Step: Surface outstanding before-merging requirements
+  //   (unautomated verification tests and changes outside the repo, such as an issue that needs to be filed)
+  // Entered from two paths: the Clear path (Monitor emitted a Clear line) and the label-gate path
+  //   (Monitor emitted a Blocked line whose terminal ends with `[label gate]`). On the label-gate path
+  //   the Reviewer already gave LGTM before the Monitor loop was entered, so the code is review-approved
+  //   even though a process label still blocks the merge.
+  // Dispatch the verification planner (see verification_planning.md).
+  // The Orchestrator does not scan the issue or PR itself.
+  Dispatch a Verification Planner sub-agent using the dispatch template.
+  The planner assembles the before-merging list and, for each item, files a tracking issue linked to the PR (see verification_planning.md). It does not consult the user.
+  If the Planner reports its before-merging list is empty:
+    if entered on the Clear path:
+      This *before-merging requirements* process is complete, and the Orchestrator should exit this step.
+      Apply this transition to **both the issue and the PR**:
 
       | Add label |
       |---|
       | `verified` |
 
-      Otherwise, relay the planner's reported before-merging list to the user verbatim, and apply this transition to the PR:
+    if entered on the label-gate path:
+      This *before-merging requirements* process is complete, but the merge is still gated by the process label.
+      Do NOT apply `verified`; a human must still remove the blocking label before the PR may merge.
+      Inform the user that no before-merging items remain and that the merge unblocks once the process label is removed.
+  Otherwise (the before-merging list is non-empty, on either path), relay the planner's reported before-merging list to the user verbatim, and apply this transition to the PR:
 
-      | Add label |
-      |---|
-      | `verification needed` |
+  | Add label |
+  |---|
+  | `verification needed` |
 
-      Then dispatch a Verification Agent (see pr_verify.md) using the dispatch template to carry out those before-merging items.
-      The Verification Agent automates each item where possible and reports results on the tracking issues and PR; it does not consult the user.
-      Route on the Verification Agent's terminal signal per "Routing on the Verification Agent's signal" above.
-      -> PR may be merged once every issue the planner filed for its before-merging list is resolved.
+  Then dispatch a Verification Agent (see pr_verify.md) using the dispatch template to carry out those before-merging items.
+  The Verification Agent automates each item where possible and reports results on the tracking issues and PR; it does not consult the user.
+  Route on the Verification Agent's terminal signal per "Routing on the Verification Agent's signal" above.
+  On the Clear path: PR may be merged once every issue the planner filed for its before-merging list is resolved.
+  On the label-gate path: PR may be merged only once (a) a human removes the blocking process label, AND (b) every issue the planner filed for its before-merging list is resolved. These are two independent gates; a green Verification Agent alone does not clear a label-gated PR.
 
 undiagnosedTerminal:
   // Issue #410 (Run G, issue #402): "drain poll found no new diagnostic
