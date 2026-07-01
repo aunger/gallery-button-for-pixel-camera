@@ -1,6 +1,9 @@
 package com.gb4pc.viewer
 
 import com.gb4pc.Constants
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * Tracks the current secure camera session and its media items (§5.1).
@@ -18,6 +21,15 @@ class SessionTracker {
 
     private val mediaItems = mutableListOf<MediaItem>()
 
+    private val _sessionMedia = MutableStateFlow<List<MediaItem>>(emptyList())
+
+    /**
+     * SF-07: Observable, most-recent-first view of the current session media.
+     * Emits a fresh list on every mutation so collectors (e.g. SecureViewerActivity)
+     * re-render when the session is populated, reset, or edited (#537).
+     */
+    val sessionMedia: StateFlow<List<MediaItem>> = _sessionMedia.asStateFlow()
+
     /**
      * SF-01: Begin a new session, recording the start timestamp (SF-02).
      */
@@ -26,6 +38,7 @@ class SessionTracker {
             isSessionActive = true
             sessionStartTimestamp = System.currentTimeMillis()
             mediaItems.clear()
+            emitSnapshot()
         }
     }
 
@@ -36,6 +49,7 @@ class SessionTracker {
         synchronized(lock) {
             isSessionActive = false
             mediaItems.clear()
+            emitSnapshot()
         }
     }
 
@@ -44,13 +58,16 @@ class SessionTracker {
             if (!isSessionActive) return
             if (mediaItems.none { it.uri == item.uri }) {
                 mediaItems.add(item)
+                emitSnapshot()
             }
         }
     }
 
     fun removeMedia(uri: String) {
         synchronized(lock) {
-            mediaItems.removeAll { it.uri == uri }
+            if (mediaItems.removeAll { it.uri == uri }) {
+                emitSnapshot()
+            }
         }
     }
 
@@ -67,6 +84,16 @@ class SessionTracker {
      * Callers must already hold [lock].
      */
     private fun sortedSnapshot(): List<MediaItem> = mediaItems.sortedByDescending { it.dateTaken }
+
+    /**
+     * Publishes a fresh snapshot to [sessionMedia]. Callers must already hold [lock]
+     * so the emitted list is consistent with the state under the lock.
+     * A new list instance is emitted so StateFlow structural-equality de-duplication
+     * compares contents rather than the same mutable reference.
+     */
+    private fun emitSnapshot() {
+        _sessionMedia.value = sortedSnapshot()
+    }
 
     /**
      * SF-04: Check if a media item belongs to the current session.

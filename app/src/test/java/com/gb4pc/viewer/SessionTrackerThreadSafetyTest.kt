@@ -52,6 +52,9 @@ class SessionTrackerThreadSafetyTest {
         // All items should have been added
         val media = tracker.getSessionMedia()
         assertEquals(threadCount * iterations, media.size)
+        // #537: the emitted StateFlow snapshot must agree with getSessionMedia()
+        // after concurrent mutations (and emission under lock must not deadlock).
+        assertEquals(media, tracker.sessionMedia.value)
     }
 
     @Test
