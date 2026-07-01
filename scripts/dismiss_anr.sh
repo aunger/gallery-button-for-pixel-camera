@@ -21,6 +21,10 @@
 #                  $ANDROID_HOME/platform-tools/adb.
 #
 # Environment:
+#   POLL_INTERVAL              Seconds between poll iterations (default: 3).
+#                              Override in tests.
+#   TIMEOUT                    Seconds before the poll loop gives up and exits
+#                              0 anyway (default: 30). Override in tests.
 #   SLEEP_AFTER_ANR_DETECTED   Seconds to wait after logcat fires before sending
 #                              KEYCODE_ENTER (default: 7). Override in tests.
 
