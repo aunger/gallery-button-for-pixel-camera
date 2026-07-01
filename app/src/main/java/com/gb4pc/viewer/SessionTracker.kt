@@ -59,8 +59,14 @@ class SessionTracker {
      */
     fun getSessionMedia(): List<MediaItem> =
         synchronized(lock) {
-            mediaItems.sortedByDescending { it.dateTaken }
+            sortedSnapshot()
         }
+
+    /**
+     * SF-07: Builds a fresh, most-recent-first snapshot of the current media.
+     * Callers must already hold [lock].
+     */
+    private fun sortedSnapshot(): List<MediaItem> = mediaItems.sortedByDescending { it.dateTaken }
 
     /**
      * SF-04: Check if a media item belongs to the current session.

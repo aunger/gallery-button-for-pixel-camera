@@ -87,7 +87,7 @@ class SecureViewerActivity : ComponentActivity() {
         setTurnScreenOn(true)
 
         setupLayout()
-        refreshMedia()
+        renderMedia(sessionTracker.getSessionMedia())
     }
 
     override fun onStart() {
@@ -114,7 +114,7 @@ class SecureViewerActivity : ComponentActivity() {
             finish()
             return
         }
-        refreshMedia()
+        renderMedia(sessionTracker.getSessionMedia())
     }
 
     // H4: ContentObserver registration/unregistration has been removed.
@@ -222,7 +222,7 @@ class SecureViewerActivity : ComponentActivity() {
     ) {
         // Remove from session immediately
         sessionTracker.removeMedia(media.uri)
-        refreshMedia()
+        renderMedia(sessionTracker.getSessionMedia())
 
         // SF-10: Show undo snackbar
         val rootView = findViewById<View>(android.R.id.content)
@@ -234,7 +234,7 @@ class SecureViewerActivity : ComponentActivity() {
             ).setAction(R.string.viewer_undo) {
                 // Undo: re-add to session
                 sessionTracker.addMedia(media)
-                refreshMedia()
+                renderMedia(sessionTracker.getSessionMedia())
             }.addCallback(
                 object : Snackbar.Callback() {
                     override fun onDismissed(
@@ -281,8 +281,7 @@ class SecureViewerActivity : ComponentActivity() {
         )
     }
 
-    private fun refreshMedia() {
-        val media = sessionTracker.getSessionMedia()
+    private fun renderMedia(media: List<MediaItem>) {
         adapter.submitList(media)
         emptyMessage.visibility = if (media.isEmpty()) View.VISIBLE else View.GONE
         viewPager.visibility = if (media.isEmpty()) View.GONE else View.VISIBLE
