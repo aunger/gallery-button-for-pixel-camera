@@ -73,14 +73,14 @@ class SetupActivityTest {
     fun setupScreen_skipThroughAllSteps_completesSetup() {
         // Clicking Skip four times covers all steps and marks setup complete.
         // If the activity finishes before four clicks (all permissions already granted)
-        // the loop exits early — that is also a valid passing state.
+        // the loop exits early; that is also a valid passing state.
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         repeat(4) {
             try {
                 composeRule.onNodeWithText("Skip").performClick()
                 composeRule.waitForIdle()
             } catch (_: AssertionError) {
-                // Activity finished — verify setup is actually marked complete
+                // Activity finished; verify setup is actually marked complete
                 assert(PrefsManager(context).isSetupCompleted) {
                     "Activity finished but isSetupCompleted is still false"
                 }

@@ -19,7 +19,7 @@ import org.junit.runner.RunWith
  *   - PACKAGE_USAGE_STATS and SYSTEM_ALERT_WINDOW must be granted (done by setup script)
  *
  * These tests exercise the real OverlayService, real ForegroundDetector (UsageStatsManager),
- * and real CameraManager.AvailabilityCallback — not OverlayServiceLogic wired by hand.
+ * and real CameraManager.AvailabilityCallback; not OverlayServiceLogic wired by hand.
  *
  * Run with: ./gradlew connectedE2EAndroidTest
  *
@@ -114,7 +114,7 @@ class PixelCameraOverlayE2ETest {
      */
     @Test
     fun overlayAppearsAfterUsageStatsLag() {
-        // Launch PC — camera unavailable fires quickly; UsageStats may lag behind.
+        // Launch PC; camera unavailable fires quickly; UsageStats may lag behind.
         // launchPixelCamera() already waits (internally) for isOverlayActive to become true; see
         // the class-level note above.
         fixture.launchPixelCamera()

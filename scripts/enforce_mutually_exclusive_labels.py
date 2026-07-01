@@ -19,7 +19,7 @@ Usage:
     python3 scripts/enforce_mutually_exclusive_labels.py
 
 Exit code:
-    0  always -- API failures are logged but do not fail the CI run.
+    0  always--API failures are logged but do not fail the CI run.
 
 Required environment variables:
     GITHUB_TOKEN        Personal access token or Actions secret with
@@ -186,16 +186,16 @@ def main() -> int:
     added_label = os.environ.get("ADDED_LABEL", "")
 
     if not token:
-        print("Warning: GITHUB_TOKEN not set -- skipping enforcement.", file=sys.stderr)
+        print("Warning: GITHUB_TOKEN not set--skipping enforcement.", file=sys.stderr)
         return 0
     if not repo:
-        print("Warning: GITHUB_REPOSITORY not set -- skipping enforcement.", file=sys.stderr)
+        print("Warning: GITHUB_REPOSITORY not set--skipping enforcement.", file=sys.stderr)
         return 0
     if not issue_number_str:
-        print("Warning: ISSUE_NUMBER not set -- skipping enforcement.", file=sys.stderr)
+        print("Warning: ISSUE_NUMBER not set--skipping enforcement.", file=sys.stderr)
         return 0
     if not added_label:
-        print("Warning: ADDED_LABEL not set -- skipping enforcement.", file=sys.stderr)
+        print("Warning: ADDED_LABEL not set--skipping enforcement.", file=sys.stderr)
         return 0
 
     try:
@@ -211,7 +211,7 @@ def main() -> int:
     conflicting_prefix = find_conflicting_prefix(added_label)
 
     if label_set is None and conflicting_prefix is None:
-        print(f"Label '{added_label}' is not in any mutually exclusive set -- nothing to do.")
+        print(f"Label '{added_label}' is not in any mutually exclusive set--nothing to do.")
         return 0
 
     try:
@@ -239,7 +239,7 @@ def main() -> int:
 
     if not to_remove:
         print(
-            f"No conflicting labels found for '{added_label}' on #{issue_number} -- nothing to do."
+            f"No conflicting labels found for '{added_label}' on #{issue_number}--nothing to do."
         )
         return 0
 

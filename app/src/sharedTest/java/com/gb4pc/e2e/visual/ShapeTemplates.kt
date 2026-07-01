@@ -6,7 +6,7 @@ import kotlin.math.pow
 /**
  * Generates ground-truth [MaskData]s for shape-classification templates.
  *
- * All methods are pure JVM — no android.* dependencies — so they run in both
+ * All methods are pure JVM (no android.* dependencies), so they run in both
  * JVM unit tests and Android instrumented tests.
  */
 object ShapeTemplates {

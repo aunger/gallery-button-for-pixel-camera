@@ -25,7 +25,7 @@ import android.util.Log
  * onPause   → releases the camera             → fires CameraManager.onCameraAvailable
  *             after the debounce delay         → overlay should disappear.
  *
- * Renders a solid #00C853 (GREEN) full-bleed View — no real camera preview is shown.
+ * Renders a solid #00C853 (GREEN) full-bleed View; no real camera preview is shown.
  * This is intentional (Alternative 1 from the E2E plan): the emulator's virtual-scene
  * camera renderer is incompatible with -gpu swiftshader_indirect, so we render green
  * directly in the activity rather than relying on the camera feed.

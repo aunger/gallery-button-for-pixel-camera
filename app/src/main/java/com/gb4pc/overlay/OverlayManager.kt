@@ -207,7 +207,7 @@ class OverlayManager(
         val imageView =
             object : ImageView(context) {
                 /**
-                 * Do not consume key events — pass them through to the camera app.
+                 * Do not consume key events; pass them through to the camera app.
                  *
                  * NOTE (Issue #55 open question): Even with dispatchKeyEvent returning false, a
                  * focusable TYPE_APPLICATION_OVERLAY window may steal input focus from the camera
@@ -241,14 +241,14 @@ class OverlayManager(
                     super.onWindowFocusChanged(hasFocus)
                     // Only invoke focus callbacks when the focusable-overlay mode is active.
                     // With FLAG_NOT_FOCUSABLE (default), the window never receives focus, so
-                    // onWindowFocusChanged(false) fires immediately after show() — calling
+                    // onWindowFocusChanged(false) fires immediately after show(); calling
                     // onFocusLost() here would hide the overlay the instant it appears (Issue #66).
                     if (!prefsManager.focusableOverlay) return
                     if (hasFocus) {
                         DebugLog.log("Overlay gained window focus")
                         onFocusGained()
                     } else {
-                        DebugLog.log("Overlay lost window focus — task switcher or system surface active")
+                        DebugLog.log("Overlay lost window focus; task switcher or system surface active")
                         onFocusLost()
                     }
                 }
@@ -298,19 +298,19 @@ class OverlayManager(
                 // Pre-API 26 or non-adaptive icon: fall back to getApplicationIcon().
                 return context.packageManager.getApplicationIcon(packageName)
             } catch (_: PackageManager.NameNotFoundException) {
-                // Gallery app uninstalled — fall through to warning placeholder (AC-04)
+                // Gallery app uninstalled; fall through to warning placeholder (AC-04)
             } catch (_: Exception) {
-                // Resource load failed — fall back to getApplicationIcon()
+                // Resource load failed; fall back to getApplicationIcon()
                 try {
                     return context.packageManager.getApplicationIcon(packageName)
                 } catch (_: PackageManager.NameNotFoundException) {
-                    // Gallery app uninstalled — fall through to warning placeholder (AC-04)
+                    // Gallery app uninstalled; fall through to warning placeholder (AC-04)
                 }
             }
-            // AC-04/M3: Gallery configured but uninstalled — show placeholder with warning badge.
+            // AC-04/M3: Gallery configured but uninstalled; show placeholder with warning badge.
             return buildWarningPlaceholder()
         }
-        // AC-03: No gallery configured — plain placeholder.
+        // AC-03: No gallery configured; plain placeholder.
         // L7: guarantee non-null via fallback chain.
         return ContextCompat.getDrawable(context, R.drawable.ic_gallery_placeholder)
             ?: ContextCompat.getDrawable(context, android.R.drawable.ic_menu_gallery)!!
@@ -438,7 +438,7 @@ class OverlayManager(
         val xPx = calculateOverlayXPx(position.xPercent, displayWidth, sizePx)
         val yPx = calculateOverlayYPx(position.yPercent, displayHeight, sizePx)
 
-        // FLAG_NOT_FOCUSABLE: safe default — overlay never steals input focus.
+        // FLAG_NOT_FOCUSABLE: safe default; overlay never steals input focus.
         // Experimental focusable path: omit FLAG_NOT_FOCUSABLE so the window can receive focus
         // events, enabling onWindowFocusChanged(false) as a task-switcher signal.
         // FLAG_NOT_TOUCH_MODAL is also set to keep touch events outside the overlay's bounds
@@ -448,7 +448,7 @@ class OverlayManager(
         // FLAG_LAYOUT_IN_SCREEN: without this flag, a TYPE_APPLICATION_OVERLAY window's
         // Gravity.TOP|START origin is offset below the system status bar, so x/y (computed
         // above relative to the full display size) land the overlay too far down the screen
-        // (Issue #229 — the overlay rendered ~128 px lower than the configured yPercent).
+        // (Issue #229: the overlay rendered ~128 px lower than the configured yPercent).
         // This flag makes (x, y) relative to the true physical-screen origin (0, 0), matching
         // calculateOverlayXPx/calculateOverlayYPx's assumptions, and on its own is sufficient to
         // place the surface correctly (test1a confirms this; it does not require

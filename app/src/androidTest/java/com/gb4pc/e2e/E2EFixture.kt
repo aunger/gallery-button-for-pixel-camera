@@ -46,7 +46,7 @@ import java.util.concurrent.TimeUnit
  *   `@Before fun setUp() = fixture.setUp()`
  *
  * The shell-command helpers (`launchPixelCamera`, `goHome`, `stopPixelCamera`) and the
- * polling helper (`waitForCondition`) live here too — they are used by every E2E test
+ * polling helper (`waitForCondition`) live here too; they are used by every E2E test
  * and have no other natural home.
  */
 class E2EFixture(
@@ -83,7 +83,7 @@ class E2EFixture(
         //
         // Worst-case budget for a genuinely broken launch:
         //   baseline inactive wait (LAUNCH_BASELINE_MS, only consumed if a prior overlay is still
-        //   active going in -- itself a separate failure, not the healthy path)
+        //   active going in--itself a separate failure, not the healthy path)
         //   + LAUNCH_FIRST_VERIFY_MS + (LAUNCH_ATTEMPTS - 1) x LAUNCH_RETRY_VERIFY_MS
         //   = 3 + 12 + 2 x 6 = 27 s, under the 30 s overlayAppearsWhenViewfinderOpens assertion,
         // so launchPixelCamera() returns and lets the caller's own assertion fail rather than hang.
@@ -375,7 +375,7 @@ class E2EFixture(
             // ACTION_SHUTTER_DONE across UIDs back into this test process (com.gb4pc).
             // On API 33+ RECEIVER_NOT_EXPORTED silently drops cross-UID broadcasts,
             // which would cause the latch to time out and the test to fall back to
-            // MediaStore/MediaScanner polling — defeating the intent of the
+            // MediaStore/MediaScanner polling; defeating the intent of the
             // ACTION_SHUTTER_DONE handshake. The receiver is only registered inside
             // the instrumented E2E test process and ACTION_SHUTTER_DONE is a private
             // action string, so exporting the receiver carries no production risk.
@@ -459,10 +459,10 @@ class E2EFixture(
      *
      * Reads the active [com.gb4pc.data.OverlayPosition] from [PrefsManager], computes pixel
      * coordinates from [android.view.WindowMetrics] (API 30+) or [android.util.DisplayMetrics]
-     * (API 26–29), then dispatches a tap via [UiDevice].
+     * (API 26-29), then dispatches a tap via [UiDevice].
      *
      * If the overlay is not rendered (e.g. blocked in secure-camera mode) this call taps empty
-     * screen space and has no visible effect — the plan requires this silent behaviour for
+     * screen space and has no visible effect; the plan requires this silent behaviour for
      * Tests 4a/5a's baseline-failure scenario.
      */
     fun tapOverlay() {
@@ -509,7 +509,7 @@ class E2EFixture(
      * directly (the CI logcat shows a `ResolverListAdapter` entry and *no* `CameraDevice.onOpened`),
      * so the activity never reaches onResume(), the camera never opens,
      * `CameraManager.AvailabilityCallback.onCameraUnavailable` never fires, and the overlay never
-     * activates — `waitForOverlayActive()` then times out. Pinning the package launches the mock
+     * activates; `waitForOverlayActive()` then times out. Pinning the package launches the mock
      * camera the same way [launchPixelCamera] does for the non-secure action.
      *
      * Uses the same bounded relaunch-until-overlay-active path as [launchPixelCamera] (issue #233):
@@ -534,7 +534,7 @@ class E2EFixture(
         if (!keyguard.isKeyguardLocked) {
             fail(
                 "launchSecureCamera(): KeyguardManager.isKeyguardLocked == false after launching " +
-                    "STILL_IMAGE_CAMERA_SECURE — the adb path dismissed the keyguard. " +
+                    "STILL_IMAGE_CAMERA_SECURE; the adb path dismissed the keyguard. " +
                     "Call lockScreen() before launchSecureCamera() and confirm the emulator " +
                     "honours the secure-camera launch path.",
             )
@@ -544,7 +544,7 @@ class E2EFixture(
     /**
      * Pauses the current thread for [ms] milliseconds.
      *
-     * Explicit helper for the spec's "pause N ms" steps — wraps [Thread.sleep] so test code
+     * Explicit helper for the spec's "pause N ms" steps; wraps [Thread.sleep] so test code
      * stays readable without raw sleep calls.
      */
     fun pause(ms: Long) {
@@ -557,7 +557,7 @@ class E2EFixture(
      * Call this after [stopPixelCamera] (or in [setUp]) to guarantee the overlay is inactive
      * before launching the camera in each test. Without this guard, a stale
      * [OverlayService.isOverlayActive] == true from a previous test causes
-     * [waitForOverlayActive] to return immediately — before the camera is actually running —
+     * [waitForOverlayActive] to return immediately, before the camera is actually running,
      * making subsequent screenshot assertions unreliable.
      *
      * Tolerates the case where the overlay was never active (returns immediately when already

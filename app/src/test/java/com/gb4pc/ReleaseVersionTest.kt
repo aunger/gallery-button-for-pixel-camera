@@ -10,7 +10,7 @@ import java.time.format.DateTimeParseException
 /**
  * Automated release test suite (issue #16).
  *
- * These tests read [BuildConfig] constants that are baked in at compile time — they
+ * These tests read [BuildConfig] constants that are baked in at compile time; they
  * validate the build that produced this APK, not future builds.
  *
  * Verifies:
@@ -56,6 +56,6 @@ class ReleaseVersionTest {
                 buildDate.isAfter(tomorrow),
             )
         }
-        // else: CI build — github.run_number is any positive integer, already checked above.
+        // else: CI build; github.run_number is any positive integer, already checked above.
     }
 }

@@ -8,7 +8,7 @@ import org.junit.Test
 /**
  * Unit tests for overlay positioning logic (pure Kotlin, no Android framework needed).
  *
- * -- Issue #45: thumbnail overwrite by repeated show() calls --
+ *--Issue #45: thumbnail overwrite by repeated show() calls--
  *
  * OverlayManager.show() previously called updateIcon() when the overlay was already
  * showing, which reset the ImageView to the gallery app icon and discarded any thumbnail

@@ -31,7 +31,7 @@ data class ClassifyResult(
  * Classifies a [MaskData] as one of SQUARE / CIRCLE / SQUIRCLE by comparing it against
  * ground-truth templates from [ShapeTemplates] using Intersection-over-Union (IoU).
  *
- * All code is pure JVM — no android.* API dependencies — so it runs in both JVM unit
+ * All code is pure JVM (no android.* API dependencies), so it runs in both JVM unit
  * tests (app/src/test) and Android instrumented tests (app/src/androidTest).
  */
 object ShapeMatcher {

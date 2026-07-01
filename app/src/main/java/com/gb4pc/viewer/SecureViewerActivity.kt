@@ -193,7 +193,7 @@ class SecureViewerActivity : ComponentActivity() {
     private fun setupSwipeToDelete() {
         val recyclerView = viewPager.getChildAt(0) as? RecyclerView
         if (recyclerView == null) {
-            DebugLog.log("setupSwipeToDelete: ViewPager2 child is not a RecyclerView — swipe-to-delete unavailable")
+            DebugLog.log("setupSwipeToDelete: ViewPager2 child is not a RecyclerView; swipe-to-delete unavailable")
             return
         }
         val swipeCallback =
@@ -415,7 +415,7 @@ class SecureViewerActivity : ComponentActivity() {
     }
 
     companion object {
-        // L6: DiffUtil callback — items are the same if they share the same URI
+        // L6: DiffUtil callback; items are the same if they share the same URI
         val DIFF_CALLBACK =
             object : DiffUtil.ItemCallback<MediaItem>() {
                 override fun areItemsTheSame(

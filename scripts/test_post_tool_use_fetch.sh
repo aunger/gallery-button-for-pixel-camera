@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test_post_tool_use_fetch.sh -- Shell-based tests for
+# test_post_tool_use_fetch.sh--Shell-based tests for
 # .claude/hooks/post-tool-use-fetch.sh.
 #
 # The hook runs "git fetch --prune --quiet" in the repo root.
@@ -9,7 +9,7 @@
 # Covers:
 #   (a) Invokes git with the expected arguments (-C <repo> fetch --prune --quiet)
 #   (b) Exits 0 when git fetch succeeds
-#   (c) Exits 0 even when git fetch fails (offline-safe -- never aborts session)
+#   (c) Exits 0 even when git fetch fails (offline-safe--never aborts session)
 #   (d) Prints a warning line when git fetch fails
 #
 # Always exits 0 on success, non-zero on failure.
@@ -31,7 +31,7 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 
 GIT_ARGS_FILE="$TMP_DIR/git_args"
 
-# -- (a) & (b) Verify git is called with expected args and hook exits 0 --------
+# (a) & (b) Verify git is called with expected args and hook exits 0----------
 echo ""
 echo "=== (a)+(b) git called with correct args; exits 0 on success ==="
 
@@ -62,7 +62,7 @@ else
     fail "(b) expected exit 0, got $EXIT_CODE"
 fi
 
-# -- (c) & (d) Verify hook exits 0 even when git fetch fails ------------------
+# (c) & (d) Verify hook exits 0 even when git fetch fails--------------------
 echo ""
 echo "=== (c)+(d) exits 0 and prints warning when git fetch fails ==="
 
@@ -95,7 +95,7 @@ else
     fail "(d) no warning message found in output: '$OUTPUT'"
 fi
 
-# -- Summary ------------------------------------------------------------------
+# Summary--------------------------------------------------------------------
 echo ""
 echo "Results: $PASS passed, $FAIL failed."
 if [[ $FAIL -gt 0 ]]; then

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test_dismiss_anr.sh — Shell-based tests for dismiss_anr.sh.
+# test_dismiss_anr.sh--Shell-based tests for dismiss_anr.sh.
 #
 # Covers:
 #   (a) --adb argument is used for both logcat and shell subcommands
@@ -166,7 +166,7 @@ call_count="$(cat "$IDLE_CALL_COUNT_FILE")"
 if [[ $call_count -ge 2 ]]; then
   pass "cpuinfo was polled at least twice (idle_count reached 2); got $call_count"
 else
-  fail "cpuinfo polled only $call_count time(s) — idle_count never reached 2"
+  fail "cpuinfo polled only $call_count time(s); idle_count never reached 2"
 fi
 
 # ── (d) Launcher absent treated as idle ──────────────────────────────────────
@@ -194,9 +194,9 @@ else
   fail "script exited $status when Launcher process was absent"
 fi
 
-# ── (e) Persistent ANR — timeout exits 0 within wall-clock budget ─────────────
+# (e) Persistent ANR: timeout exits 0 within wall-clock budget----------------
 echo ""
-echo "=== (e) Persistent ANR — script exits 0 within timeout (≤ 35 s) ==="
+echo "=== (e) Persistent ANR: script exits 0 within timeout (<= 35 s) ==="
 
 # Logcat fires immediately (ANR detected), cpuinfo always reports high CPU so
 # idle_count never reaches 2, and the script must time out after TIMEOUT=30 s.
@@ -234,15 +234,15 @@ end_ts="$(date +%s)"
 elapsed_wall=$((end_ts - start_ts))
 
 if [[ $persistent_status -eq 0 ]]; then
-  pass "persistent ANR: script exits 0 (not hanging) — wall time ${elapsed_wall}s"
+  pass "persistent ANR: script exits 0 (not hanging); wall time ${elapsed_wall}s"
 else
-  fail "persistent ANR: script exited $persistent_status (expected 0) — wall time ${elapsed_wall}s"
+  fail "persistent ANR: script exited $persistent_status (expected 0); wall time ${elapsed_wall}s"
 fi
 
 if [[ $elapsed_wall -le 35 ]]; then
   pass "persistent ANR: completed within 35 s wall-clock budget (${elapsed_wall}s)"
 else
-  fail "persistent ANR: took ${elapsed_wall}s — exceeded 35 s budget"
+  fail "persistent ANR: took ${elapsed_wall}s; exceeded 35 s budget"
 fi
 
 # ── (f) Second-ANR scenario ──────────────────────────────────────────────────
@@ -310,12 +310,12 @@ keyevent_count="$(cat "$SECOND_ANR_KEYEVENT_COUNT_FILE")"
 if [[ $keyevent_count -ge 2 ]]; then
   pass "second ANR: KEYCODE_ENTER sent at least twice (got $keyevent_count)"
 else
-  fail "second ANR: KEYCODE_ENTER sent only $keyevent_count time(s) — expected at least 2"
+  fail "second ANR: KEYCODE_ENTER sent only $keyevent_count time(s); expected at least 2"
 fi
 
 # ── (g) idle_count=2 but ANR dialog still present (dumpsys window fallback) ───
 echo ""
-echo "=== (g) idle_count=2 but ANR dialog still present — dumpsys window fallback ==="
+echo "=== (g) idle_count=2 but ANR dialog still present: dumpsys window fallback ==="
 
 # Scenario: logcat never fires (CPU settled without logcat trigger), but the ANR
 # dialog is still on screen.  dumpsys window returns the ANR window title on the
@@ -339,7 +339,7 @@ case \"\$*\" in
     exit 0
     ;;
   *'logcat'*)
-    # Hang silently — logcat never fires.
+    # Hang silently; logcat never fires.
     exec sleep 60
     ;;
   *'dumpsys cpuinfo'*)
@@ -384,9 +384,9 @@ fi
 
 dumpsys_call_count="$(cat "$DUMPSYS_WINDOW_CALL_COUNT_FILE")"
 if [[ $dumpsys_call_count -ge 2 ]]; then
-  pass "dumpsys window fallback: dumpsys window was checked more than once (got $dumpsys_call_count) — loop continued after first dialog detection"
+  pass "dumpsys window fallback: dumpsys window was checked more than once (got $dumpsys_call_count); loop continued after first dialog detection"
 else
-  fail "dumpsys window fallback: dumpsys window checked only $dumpsys_call_count time(s) — loop should have continued"
+  fail "dumpsys window fallback: dumpsys window checked only $dumpsys_call_count time(s); loop should have continued"
 fi
 
 # ── (h) Unknown CPU reading does not increment idle_count ────────────────────
@@ -398,7 +398,7 @@ echo "=== (h) Unknown CPU reading does not increment idle_count ==="
 # The script should NOT treat this as idle and should NOT exit after two such
 # readings.  Instead it skips those iterations, waiting for a known reading.
 # After two unparseable readings followed by two known-low readings the script
-# exits 0 — confirming that idle_count was not incremented during the unknown
+# exits 0; confirming that idle_count was not incremented during the unknown
 # readings.
 #
 # To verify the "skip" behaviour we count how many times cpuinfo is polled:
@@ -454,7 +454,7 @@ unknown_call_count="$(cat "$UNKNOWN_CPU_CALL_COUNT_FILE")"
 if [[ $unknown_call_count -ge 4 ]]; then
   pass "unknown CPU: cpuinfo polled at least 4 times (unknown readings did not increment idle_count); got $unknown_call_count"
 else
-  fail "unknown CPU: cpuinfo polled only $unknown_call_count time(s) — unknown readings must have incorrectly incremented idle_count (expected >= 4)"
+  fail "unknown CPU: cpuinfo polled only $unknown_call_count time(s); unknown readings must have incorrectly incremented idle_count (expected >= 4)"
 fi
 
 # ── (i) Fallback: cmd package resolve-activity returns nothing ────────────────
@@ -472,7 +472,7 @@ echo 0 > "$FALLBACK_CPUINFO_COUNT_FILE"
 mock_adb_fallback="$(make_mock_adb "adb_fallback" "
 case \"\$*\" in
   *'cmd package resolve-activity'*)
-    # Return nothing — forces pattern fallback.
+    # Return nothing; forces pattern fallback.
     exit 0
     ;;
   *'logcat -c'*)
@@ -516,7 +516,7 @@ fi
 if [[ -f "$FALLBACK_KEYEVENT_FILE" ]]; then
   pass "pattern fallback: KEYCODE_ENTER sent when launcher3 ANR detected via pattern"
 else
-  fail "pattern fallback: KEYCODE_ENTER was NOT sent for launcher3 ANR — pattern fallback may be broken"
+  fail "pattern fallback: KEYCODE_ENTER was NOT sent for launcher3 ANR; pattern fallback may be broken"
 fi
 
 # ── (j) Fallback: nexuslauncher arm of pattern ────────────────────────────────
@@ -537,7 +537,7 @@ echo 0 > "$FALLBACK_NEXUS_CPUINFO_COUNT_FILE"
 mock_adb_fallback_nexus="$(make_mock_adb "adb_fallback_nexus" "
 case \"\$*\" in
   *'cmd package resolve-activity'*)
-    # Return nothing — forces pattern fallback.
+    # Return nothing; forces pattern fallback.
     exit 0
     ;;
   *'logcat -c'*)
@@ -581,7 +581,7 @@ fi
 if [[ -f "$FALLBACK_NEXUS_KEYEVENT_FILE" ]]; then
   pass "nexuslauncher fallback: KEYCODE_ENTER sent when nexuslauncher ANR detected via pattern"
 else
-  fail "nexuslauncher fallback: KEYCODE_ENTER was NOT sent for nexuslauncher ANR — fallback pattern may be wrong (e.g. pixellauncher typo)"
+  fail "nexuslauncher fallback: KEYCODE_ENTER was NOT sent for nexuslauncher ANR; fallback pattern may be wrong (e.g. pixellauncher typo)"
 fi
 
 # ── Summary ──────────────────────────────────────────────────────────────────

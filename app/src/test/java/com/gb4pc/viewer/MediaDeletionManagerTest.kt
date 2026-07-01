@@ -21,7 +21,7 @@ import org.mockito.kotlin.whenever
 /**
  * Unit tests for [MediaDeletionManager].
  *
- * Covers the API 26–29 code paths and the result-callback retry. The API 30+ path
+ * Covers the API 26-29 code paths and the result-callback retry. The API 30+ path
  * uses the static [android.provider.MediaStore.createDeleteRequest] which can't be
  * stubbed in plain JVM unit tests; it is exercised on emulator via the existing E2E
  * coverage.
@@ -122,7 +122,7 @@ class MediaDeletionManagerTest {
         manager.onDeleteRequestResult(resultOk = true)
 
         verify(contentResolver, times(2)).delete(eq(uri), anyOrNull(), anyOrNull())
-        assertEquals("Retry succeeded — onFailure should not fire", 0, failureCount)
+        assertEquals("Retry succeeded, onFailure should not fire", 0, failureCount)
     }
 
     @Test

@@ -20,7 +20,7 @@ import com.gb4pc.util.DebugLog
  *   - **API 29** can throw `RecoverableSecurityException` for items the app
  *     doesn't own; the exception carries an `IntentSender` that we hand off
  *     the same way.
- *   - **API 26–28** never throws `RecoverableSecurityException`; a direct
+ *   - **API 26-28** never throws `RecoverableSecurityException`; a direct
  *     `ContentResolver.delete` either succeeds or fails outright.
  *
  * Extracted from `SecureViewerActivity` so the version dispatch is testable in

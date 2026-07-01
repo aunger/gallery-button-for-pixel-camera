@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test_detect_launch_retry.sh -- Shell-based tests for detect_launch_retry.sh.
+# test_detect_launch_retry.sh--Shell-based tests for detect_launch_retry.sh.
 #
 # The detection/exit-code tests (a)-(g) run without GITHUB_ACTIONS=true, so the
 # issue-filing and ::warning path is not exercised by them.

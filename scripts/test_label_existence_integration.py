@@ -10,9 +10,9 @@ These are the labels whose absence would cause silent misbehavior in the
 automation (as happened with the stale spellings in issue #477).
 
 Sources:
-  scripts/enforce_mutually_exclusive_labels.py -- MUTUALLY_EXCLUSIVE_SETS
-  scripts/file_test_failure_issues.py          -- LABELS constant
-  scripts/archive_stale_test_failures.py       -- LABEL_TEST_FAILURE_ARCHIVE constant
+  scripts/enforce_mutually_exclusive_labels.py: MUTUALLY_EXCLUSIVE_SETS
+  scripts/file_test_failure_issues.py:          LABELS constant
+  scripts/archive_stale_test_failures.py:       LABEL_TEST_FAILURE_ARCHIVE constant
 """
 
 import json

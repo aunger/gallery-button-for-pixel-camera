@@ -10,7 +10,7 @@ import com.gb4pc.util.DebugLog
  *
  * @param selfPackage The package name of this app (com.gb4pc). Foreground events for
  *   this package are ignored because the overlay window causes Android to report GB4PC itself
- *   as the foreground app — which would displace the camera from the detected foreground app
+ *   as the foreground app, which would displace the camera from the detected foreground app
  *   and hide the overlay (Issue #80).
  */
 class ForegroundDetector(
@@ -35,7 +35,7 @@ class ForegroundDetector(
 
         val events = usageStatsManager.queryEvents(beginTime, endTime)
         if (events == null) {
-            DebugLog.log("ForegroundDetector: queryEvents returned null — usage-stats permission missing?")
+            DebugLog.log("ForegroundDetector: queryEvents returned null; usage-stats permission missing?")
             return null
         }
 

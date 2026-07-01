@@ -40,7 +40,7 @@ object ServiceChecker {
         if (!prefs.isServiceEnabled) return
 
         if (!isServiceRunning(context)) {
-            DebugLog.log("Service should be running but isn't — starting it now")
+            DebugLog.log("Service should be running but isn't; starting it now")
             OverlayService.start(context)
         }
     }

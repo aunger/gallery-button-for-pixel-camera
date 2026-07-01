@@ -4,7 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * Unit tests for [ScreenshotNaming] — the pure naming-logic helpers that associate
+ * Unit tests for [ScreenshotNaming]: the pure naming-logic helpers that associate
  * screenshot filenames with the test that produced them (issue #201).
  */
 class ScreenshotNamingTest {
@@ -39,7 +39,7 @@ class ScreenshotNamingTest {
         assertEquals("UnknownClass_someMethod", prefix)
     }
 
-    // ── resolvedName — with prefix ────────────────────────────────────────────
+    // resolvedName: with prefix ------------------------------------------------
 
     @Test
     fun `resolvedName with prefix prepends prefix and underscore`() {
@@ -82,7 +82,7 @@ class ScreenshotNamingTest {
         )
     }
 
-    // ── resolvedName — without prefix ─────────────────────────────────────────
+    // resolvedName: without prefix ---------------------------------------------
 
     @Test
     fun `resolvedName with null prefix returns base name unchanged`() {

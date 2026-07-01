@@ -17,7 +17,7 @@ import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 
 /**
- * Unit tests for [MediaObserverRetry] — the generic ContentObserver onChange + retry
+ * Unit tests for [MediaObserverRetry]: the generic ContentObserver onChange + retry
  * scaffold previously duplicated across MediaChangeDispatcher and ThumbnailChangeDispatcher.
  *
  * Tests use `Int` results to keep type plumbing minimal, plus a couple of integration
@@ -367,7 +367,7 @@ class MediaObserverRetryTest {
             )
 
         retry.onChange(startMs = 999_000L)
-        // showThumbnail not yet called — initial query returned null.
+        // showThumbnail not yet called; initial query returned null.
         verify(showThumbnail, never()).invoke(any())
 
         val runnableCaptor = argumentCaptor<Runnable>()

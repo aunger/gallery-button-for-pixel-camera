@@ -4,24 +4,24 @@ package com.gb4pc.overlay
  * Represents the action to take when the overlay is tapped (AC-01 through AC-04).
  */
 sealed class TapAction {
-    /** AC-01: Device unlocked, gallery configured and installed — launch gallery */
+    /** AC-01: Device unlocked, gallery configured and installed: launch gallery */
     data class LaunchGallery(
         val packageName: String,
     ) : TapAction()
 
-    /** AC-02: Device locked, gallery configured and installed — open secure viewer */
+    /** AC-02: Device locked, gallery configured and installed: open secure viewer */
     object LaunchSecureViewer : TapAction()
 
-    /** AC-03: No gallery configured, device unlocked — open picker */
+    /** AC-03: No gallery configured, device unlocked: open picker */
     object LaunchPicker : TapAction()
 
-    /** AC-03: No gallery configured, device locked — show toast */
+    /** AC-03: No gallery configured, device locked: show toast */
     object ShowUnlockToSetupToast : TapAction()
 
-    /** AC-04: Gallery uninstalled, device unlocked — open picker */
+    /** AC-04: Gallery uninstalled, device unlocked: open picker */
     object LaunchPickerGalleryMissing : TapAction()
 
-    /** AC-04: Gallery uninstalled, device locked — show toast */
+    /** AC-04: Gallery uninstalled, device locked: show toast */
     object ShowGalleryNotFoundToast : TapAction()
 }
 
@@ -54,12 +54,12 @@ object TapActionResolver {
                 }
             }
 
-            // AC-02: Device locked — open secure viewer
+            // AC-02: Device locked: open secure viewer
             isLocked -> {
                 TapAction.LaunchSecureViewer
             }
 
-            // AC-01: Device unlocked — launch gallery app
+            // AC-01: Device unlocked: launch gallery app
             else -> {
                 TapAction.LaunchGallery(galleryPackage)
             }

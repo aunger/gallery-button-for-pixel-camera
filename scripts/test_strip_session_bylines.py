@@ -13,7 +13,7 @@ import strip_session_bylines as ssb  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
-# strip_bylines -- pure text transformation
+# strip_bylines--pure text transformation
 # ---------------------------------------------------------------------------
 
 
@@ -296,7 +296,7 @@ class TestHandlePullRequestReview(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# main -- environment and dispatch
+# main--environment and dispatch
 # ---------------------------------------------------------------------------
 
 

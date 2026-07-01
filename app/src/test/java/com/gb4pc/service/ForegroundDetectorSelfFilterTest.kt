@@ -16,7 +16,7 @@ import org.robolectric.RobolectricTestRunner
  *
  * UsageEvents.Event is a real Android framework class with public fields in Robolectric
  * (mPackage, mEventType, mTimeStamp). Robolectric is required so those fields are
- * accessible — they are stubs with default values under the plain JVM test runner.
+ * accessible; they are stubs with default values under the plain JVM test runner.
  */
 @Suppress("DEPRECATION") // MOVE_TO_FOREGROUND / MOVE_TO_BACKGROUND are deprecated by the SDK
 // but are valid event types still exercised in mixed-event tests here.
@@ -77,7 +77,7 @@ class ForegroundDetectorSelfFilterTest {
 
     @Test
     fun `self MOVE_TO_FOREGROUND alone returns null`() {
-        // Only GB4PC itself appears in events — overlay is visible, no camera event.
+        // Only GB4PC itself appears in events; overlay is visible, no camera event.
         eventsOf(Triple(selfPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 1000L))
 
         assertNull(
@@ -88,7 +88,7 @@ class ForegroundDetectorSelfFilterTest {
 
     @Test
     fun `self MOVE_TO_FOREGROUND does not displace earlier camera event`() {
-        // Camera opened first, then GB4PC overlay fired its own event — camera should remain.
+        // Camera opened first, then GB4PC overlay fired its own event; camera should remain.
         eventsOf(
             Triple(cameraPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 1000L),
             Triple(selfPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 2000L),
@@ -103,7 +103,7 @@ class ForegroundDetectorSelfFilterTest {
 
     @Test
     fun `self MOVE_TO_FOREGROUND between two other apps is skipped`() {
-        // Some other app, then GB4PC overlay, then camera — camera wins on timestamp.
+        // Some other app, then GB4PC overlay, then camera; camera wins on timestamp.
         eventsOf(
             Triple(otherPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 1000L),
             Triple(selfPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 2000L),
@@ -121,7 +121,7 @@ class ForegroundDetectorSelfFilterTest {
 
     @Test
     fun `user navigating to another app is still detected`() {
-        // Camera first, then user opens another app — that app should be returned.
+        // Camera first, then user opens another app; that app should be returned.
         eventsOf(
             Triple(cameraPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 1000L),
             Triple(otherPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 2000L),
@@ -166,7 +166,7 @@ class ForegroundDetectorSelfFilterTest {
 
     @Test
     fun `non-foreground events for self package are not affected`() {
-        // Self fires a non-foreground event type — should not interfere with detection.
+        // Self fires a non-foreground event type; should not interfere with detection.
         eventsOf(
             Triple(cameraPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 1000L),
             Triple(selfPkg, UsageEvents.Event.MOVE_TO_BACKGROUND, 2000L),

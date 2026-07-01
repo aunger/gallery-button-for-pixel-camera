@@ -171,7 +171,7 @@ def render_suite(label: str, classes: dict[str, TestClass], outcome: str = "") -
     if not classes:
         if outcome == "skipped":
             lines.append(
-                "⏭ SKIPPED -- the test step did not run "
+                "⏭ SKIPPED--the test step did not run "
                 "(e.g. a pre-flight failure skipped the test phase)."
             )
         else:

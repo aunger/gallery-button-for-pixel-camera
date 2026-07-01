@@ -16,7 +16,7 @@ import kotlin.math.pow
  * independent of the device launcher's adaptive-icon mask.
  *
  * On the [google_apis] API-35 emulator the launcher clips adaptive icons to a circle.
- * [AdaptiveIconDrawable.draw] internally applies that mask before we can do anything — so
+ * [AdaptiveIconDrawable.draw] internally applies that mask before we can do anything, so
  * [android.view.View.clipToOutline] with a rounded-rect outline has no visible effect (the
  * content is already a circle that fits inside the rounded-rect, leaving the outer boundary
  * circular).

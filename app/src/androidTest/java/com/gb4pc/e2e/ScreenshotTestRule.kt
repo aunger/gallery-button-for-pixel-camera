@@ -12,7 +12,7 @@ import java.io.File
  * JUnit [TestWatcher] rule that associates every screenshot produced during a test with
  * the test that produced it.
  *
- * ## Option B — deterministic prefix (primary)
+ * ## Option B: deterministic prefix (primary)
  *
  * At the start of each test [starting] sets [Screenshot.currentTestPrefix] to
  * `"<ClassName>_<methodName>"`. [Screenshot.saveForArtifact] reads this prefix and
@@ -21,7 +21,7 @@ import java.io.File
  * The prefix is cleared in [finished] so screenshots saved outside of any test body
  * are never mistakenly attributed.
  *
- * ## Option A — straggler detection (safety net)
+ * ## Option A: straggler detection (safety net)
  *
  * In [starting], a snapshot of all files currently in the screenshot directory is
  * recorded. In [finished], any new files that appeared during the test but were NOT
@@ -33,7 +33,7 @@ import java.io.File
  * ## Failure screenshot
  *
  * On test failure [failed] captures a device screenshot and saves it as
- * `"<ClassName>_<methodName>_failure.png"` in the same directory — the test name is
+ * `"<ClassName>_<methodName>_failure.png"` in the same directory; the test name is
  * embedded in the filename directly. [Screenshot.currentTestPrefix] is still live when
  * [failed] runs; it is cleared in [finished], which [TestWatcher] calls after [failed].
  *
@@ -111,7 +111,7 @@ class ScreenshotTestRule : TestWatcher() {
      * Renames any new files that appeared during the test and are not already prefixed
      * with the test name (i.e. were not saved through [Screenshot.saveForArtifact]).
      *
-     * New files whose names already start with the test prefix are left untouched —
+     * New files whose names already start with the test prefix are left untouched;
      * they were already attributed by the Option B path.
      */
     private fun renameStragglersForTest(description: Description) {

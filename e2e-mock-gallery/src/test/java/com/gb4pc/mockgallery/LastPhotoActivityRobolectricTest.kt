@@ -15,7 +15,7 @@ import org.robolectric.RobolectricTestRunner
  * with "IllegalArgumentException: Invalid token LIMIT". That crashed the activity in
  * onCreate the instant the gallery was opened, so every test that tapped the overlay
  * (empty or populated roll) saw the gallery die and the green camera get restored to
- * the foreground -- which is why test2a measured ~87% green when it expected an empty
+ * the foreground--which is why test2a measured ~87% green when it expected an empty
  * gallery, and why the populated-roll tests never actually displayed the captured photo.
  *
  * The CI logcat for the failing run showed the crash directly:
