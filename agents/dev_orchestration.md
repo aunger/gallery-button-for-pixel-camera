@@ -294,9 +294,11 @@ surfaceBeforeMergingRequirements:
 
   Then dispatch a Verification Agent (see pr_verify.md) using the dispatch template to carry out those before-merging items.
   The Verification Agent automates each item where possible and reports results on the tracking issues and PR; it does not consult the user.
-  Route on the Verification Agent's terminal signal per "Routing on the Verification Agent's signal" above.
+  Route on the Verification Agent's terminal signal per "Routing on the Verification Agent's signal" above, with this path-conditional override on that section's `Verification passed` handling:
+    if entered on the Clear path: follow "Routing on the Verification Agent's signal" unmodified. Applying `verified` and treating the PR as mergeable on `Verification passed` is correct here.
+    if entered on the label-gate path: apply only the label change in that section's `Verification passed` row (remove `verification needed`); do NOT add `verified`, and do NOT treat the PR as mergeable yet. A human must still remove the blocking process label before the PR may merge, even after `Verification passed`.
   On the Clear path: PR may be merged once every issue the planner filed for its before-merging list is resolved.
-  On the label-gate path: PR may be merged only once (a) a human removes the blocking process label, AND (b) every issue the planner filed for its before-merging list is resolved. These are two independent gates; a green Verification Agent alone does not clear a label-gated PR.
+  On the label-gate path: PR may be merged only once (a) a human removes the blocking process label, AND (b) every issue the planner filed for its before-merging list is resolved. These are two independent gates; a green Verification Agent alone does not clear a label-gated PR, per the override above.
 
 undiagnosedTerminal:
   // Issue #410 (Run G, issue #402): "drain poll found no new diagnostic
