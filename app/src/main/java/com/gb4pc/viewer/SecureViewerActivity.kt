@@ -20,7 +20,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.ListAdapter
@@ -87,7 +89,18 @@ class SecureViewerActivity : ComponentActivity() {
         setTurnScreenOn(true)
 
         setupLayout()
-        renderMedia(sessionTracker.getSessionMedia())
+
+        // #537: Render reactively from the session's StateFlow rather than a one-shot read.
+        // The replayed initial value covers the first render, and any later population
+        // (or repopulation after a transient reset) re-renders automatically, closing the
+        // race where the viewer opened before SessionTracker was populated.
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                sessionTracker.sessionMedia.collect { media ->
+                    renderMedia(media)
+                }
+            }
+        }
     }
 
     override fun onStart() {
@@ -114,7 +127,8 @@ class SecureViewerActivity : ComponentActivity() {
             finish()
             return
         }
-        renderMedia(sessionTracker.getSessionMedia())
+        // #537: No explicit render here; the lifecycle-scoped collector started in
+        // onCreate() re-collects the StateFlow's current value on returning to STARTED.
     }
 
     // H4: ContentObserver registration/unregistration has been removed.
@@ -220,9 +234,8 @@ class SecureViewerActivity : ComponentActivity() {
         media: MediaItem,
         position: Int,
     ) {
-        // Remove from session immediately
+        // Remove from session immediately; the sessionMedia collector re-renders (#537).
         sessionTracker.removeMedia(media.uri)
-        renderMedia(sessionTracker.getSessionMedia())
 
         // SF-10: Show undo snackbar
         val rootView = findViewById<View>(android.R.id.content)
@@ -232,9 +245,8 @@ class SecureViewerActivity : ComponentActivity() {
                 com.gb4pc.Constants.UNDO_TIMEOUT_MS
                     .toInt(),
             ).setAction(R.string.viewer_undo) {
-                // Undo: re-add to session
+                // Undo: re-add to session; the sessionMedia collector re-renders (#537).
                 sessionTracker.addMedia(media)
-                renderMedia(sessionTracker.getSessionMedia())
             }.addCallback(
                 object : Snackbar.Callback() {
                     override fun onDismissed(
