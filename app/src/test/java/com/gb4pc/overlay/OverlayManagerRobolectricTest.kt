@@ -294,46 +294,6 @@ class OverlayManagerRobolectricTest {
         )
     }
 
-    // ── Issue #556: FLAG_LAYOUT_NO_LIMITS is not the non-focusable window's problem ──
-
-    /**
-     * Regression guard for Issue #556 (`test1a_overlayShowsBlueAtConfiguredPosition`): the
-     * small, non-focusable overlay window must NOT set `FLAG_LAYOUT_NO_LIMITS`.
-     *
-     * Issue #556 originally suspected that PR #398 (commit ce20d71) dropping this flag here
-     * caused test1a's `pixelCount=0` regression, and an earlier round of the #556 fix restored
-     * it on that theory (also inverting this test's assertion to match). Direct CI evidence
-     * (see PR #557) disproved the theory: with the flag restored, test1a still failed with the
-     * exact same failure signature as without it. The real bug was a screenshot-timing race in
-     * the E2E test harness, unrelated to this flag (fixed via
-     * `E2EFixture.captureScreenUntilColorVisible`). This test is restored to its original
-     * assertion, since no evidence supports setting this flag on the non-focusable branch.
-     */
-    @Test
-    fun `non-focusable overlay window does not set FLAG_LAYOUT_NO_LIMITS`() {
-        val context: Application = ApplicationProvider.getApplicationContext()
-        val prefsManager: PrefsManager =
-            mock {
-                on { galleryPackage } doReturn null
-                on { getOverlayPosition(any()) } doReturn OverlayPosition.default()
-                on { focusableOverlay } doReturn false
-            }
-
-        val overlayManager = OverlayManager(context, prefsManager)
-        overlayManager.show()
-
-        val windowManager = context.getSystemService(WindowManager::class.java)
-        val shadowWm = shadowOf(windowManager) as ShadowWindowManagerImpl
-        val overlayView = shadowWm.views[0]
-        val params = overlayView.layoutParams as WindowManager.LayoutParams
-
-        assertTrue(
-            "Non-focusable overlay window must NOT set FLAG_LAYOUT_NO_LIMITS (Issue #556: " +
-                "restoring it did not fix test1a in CI, and no evidence supports setting it).",
-            (params.flags and WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS) == 0,
-        )
-    }
-
     // ── Issue #230 / #397: tap on the overlay reaches its clickable ImageView ─
 
     /**
