@@ -294,24 +294,27 @@ class OverlayManagerRobolectricTest {
         )
     }
 
-    // ── Issue #230 / #397: small window keeps its touchable region on-screen ──
+    // ── Issue #556: overlay surface must not be clipped by display insets ────
 
     /**
-     * Regression guard for Issue #230 / #397
-     * (`test2a_emptyGalleryNoGreenAfterTap`): the small, non-focusable overlay window must NOT set
-     * `FLAG_LAYOUT_NO_LIMITS`.
+     * Regression guard for Issue #556 (`test1a_overlayShowsBlueAtConfiguredPosition`): the
+     * small, non-focusable overlay window must set `FLAG_LAYOUT_NO_LIMITS`.
      *
-     * The icon is small and positioned well inside the display (default 20% / 69%, ~16% of the
-     * min dimension), so it never needs to extend past the screen limits. With
-     * `FLAG_LAYOUT_NO_LIMITS` the frame the WindowManager uses to derive the touchable input
-     * region can diverge from the on-screen surface for such a small window, so an in-bounds tap
-     * is not routed to the window and `handleTap()` never fires. CI observed exactly that: even
-     * with `FLAG_NOT_TOUCH_MODAL` set, the tap stayed a no-op (~87% green) while the surface
-     * position was correct (test1a passed). Dropping `FLAG_LAYOUT_NO_LIMITS` keeps the frame
-     * within screen limits so the touchable region matches the surface.
+     * PR #398 (commit ce20d71) dropped this flag from the non-focusable branch on the theory
+     * that keeping the window's frame within screen limits would align its touchable region
+     * with the `FLAG_LAYOUT_IN_SCREEN`-placed surface for `test2a_emptyGalleryNoGreenAfterTap`,
+     * and justified the drop by citing `test1a` as still passing under the resulting flag set.
+     * Neither claim held up: `test2a`'s real fix was unrelated (a `LastPhotoActivity` MediaStore
+     * query crash, not these flags), and `test1a` in fact regressed on every CI run since,
+     * to a more severe failure mode (`pixelCount=0`: the overlay was not rendering on screen at
+     * all, consistent with the window being clipped by display insets without this flag).
+     *
+     * This test previously asserted the opposite (that this flag must NOT be set); that
+     * assertion encoded the disproven theory above and is inverted here to match the corrected
+     * understanding (Issue #556).
      */
     @Test
-    fun `non-focusable overlay window does not set FLAG_LAYOUT_NO_LIMITS`() {
+    fun `non-focusable overlay window sets FLAG_LAYOUT_NO_LIMITS`() {
         val context: Application = ApplicationProvider.getApplicationContext()
         val prefsManager: PrefsManager =
             mock {
@@ -329,11 +332,10 @@ class OverlayManagerRobolectricTest {
         val params = overlayView.layoutParams as WindowManager.LayoutParams
 
         assertTrue(
-            "Non-focusable overlay window must NOT set FLAG_LAYOUT_NO_LIMITS so its small " +
-                "touchable input region stays within screen limits and matches the " +
-                "FLAG_LAYOUT_IN_SCREEN-placed surface, letting in-bounds taps reach the icon " +
-                "(Issue #230 / #397).",
-            (params.flags and WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS) == 0,
+            "Non-focusable overlay window must set FLAG_LAYOUT_NO_LIMITS, combined with " +
+                "FLAG_LAYOUT_IN_SCREEN, so the surface is not clipped by display insets and " +
+                "renders at the configured position (Issue #556).",
+            (params.flags and WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS) != 0,
         )
     }
 

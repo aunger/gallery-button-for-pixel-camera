@@ -450,32 +450,25 @@ class OverlayManager(
         // above relative to the full display size) land the overlay too far down the screen
         // (Issue #229 — the overlay rendered ~128 px lower than the configured yPercent).
         // This flag makes (x, y) relative to the true physical-screen origin (0, 0), matching
-        // calculateOverlayXPx/calculateOverlayYPx's assumptions, and on its own is sufficient to
-        // place the surface correctly (test1a confirms this; it does not require
-        // FLAG_LAYOUT_NO_LIMITS). The focusable branch additionally keeps FLAG_LAYOUT_NO_LIMITS,
-        // but only because that path is not exercised by the failing default-prefs test, not
-        // because positioning needs it.
+        // calculateOverlayXPx/calculateOverlayYPx's assumptions.
         //
         // FLAG_NOT_TOUCH_MODAL (both branches): the overlay is a small (sizePx x sizePx)
         // window. This flag forwards pointer events that fall *outside* the window bounds to the
         // windows behind it (so the surrounding camera-app touches pass through), while in-bounds
         // touches go to this window's clickable ImageView.
         //
-        // FLAG_LAYOUT_NO_LIMITS is not set on the non-focusable branch. The overlay icon is small
-        // and positioned well inside the display (default 20% / 69%, ~16% of the min dimension), so
-        // it never needs to extend past the screen limits; keeping the frame within screen limits
-        // aligns its touchable region with the FLAG_LAYOUT_IN_SCREEN-placed surface.
-        //
-        // Historical note (Issue #230 / #397): earlier rounds dropped FLAG_LAYOUT_NO_LIMITS here on
-        // the theory that test2a_emptyGalleryNoGreenAfterTap's tap was not reaching this window. CI
-        // logcat (after the diagnostics below were made to emit) disproved that theory: the tap DOES
-        // fire handleTap() and DOES launch the gallery. test2a's ~87% green was actually the gallery
-        // activity crashing on launch and the green camera being restored to the foreground; the
-        // real fix was in the mock gallery's MediaStore query, not these flags. The flag set is kept
-        // because test1a confirms the surface position is correct under it.
-        //
-        // The focusable branch keeps FLAG_LAYOUT_NO_LIMITS unchanged (it is not exercised by the
-        // failing default-prefs test path).
+        // FLAG_LAYOUT_NO_LIMITS (both branches, Issue #556): combined with FLAG_LAYOUT_IN_SCREEN,
+        // this keeps the window's surface unclipped by display insets (status/nav bars, cutouts),
+        // so it renders at the exact physical-screen coordinates calculateOverlayXPx/
+        // calculateOverlayYPx computed. PR #398 (commit ce20d71) dropped this flag from the
+        // non-focusable branch on the theory that keeping the frame within screen limits would
+        // align the touchable region with the surface for test2a, and justified keeping it dropped
+        // by citing test1a as still passing under that flag set. Neither claim held up: test2a's
+        // real fix was unrelated (the LastPhotoActivity MediaStore query crash, not these flags),
+        // and test1a in fact regressed to a more severe failure (pixelCount=0 — the overlay wasn't
+        // rendering on screen at all, apparently clipped by display insets without this flag) on
+        // every CI run since (see issue #556). Restoring FLAG_LAYOUT_NO_LIMITS here matches the
+        // focusable branch, which kept it the whole time.
         val windowFlags =
             if (prefsManager.focusableOverlay) {
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
@@ -485,6 +478,7 @@ class OverlayManager(
             } else {
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
                     WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                     showWhenLockedFlag
             }
