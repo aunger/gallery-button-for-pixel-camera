@@ -249,41 +249,39 @@ PR routing (Monitor loop):
     Relay `step "..." -> ...`, `FAIL [...] ...`, `summary`, and per-check summary rows to the user as informational test-result deltas; they do NOT end the loop or start a new Author round.
     if Monitor emits `drain poll found no new diagnostic signals` immediately followed by a Blocked or Infra line -> goto undiagnosedTerminal
     (Note: the attributed `Blocked by: <name>` form already names the blocking check in the per-check summary block and the terminal suffix, so the Monitor suppresses the drain flag in that case. The `goto undiagnosedTerminal` branch therefore applies only to a bare `Blocked`/`Infra` line that the Monitor itself flagged as undiagnosed.)
-    if Monitor emits a Blocked line where the terminal ends with `[label gate]` (the ` by: ...` suffix names only label-gate checks) -> clear the silentVanish re-launch flag; inform the user that only a process-label gate is blocking (not a code/test failure) and that removing the blocking label should unblock the merge; stop (do NOT route to a new Author round)
-    // Note: the implementation plan (issue #516, Step 8a) proposed that the Orchestrator autonomously remove the blocking label and re-launch the Monitor.
-    // That approach was not adopted because the blocking label is a user-controlled process label that the Orchestrator does not own;
-    // its removal requires human judgment about whether the process condition is actually satisfied.
-    // Informing the user and stopping is simpler and safer.
+    if Monitor emits a Blocked line where the terminal ends with `[label gate]` (the ` by: ...` suffix names only label-gate checks) -> clear the silentVanish re-launch flag; inform the user only a process-label gate blocks the merge (code is review-approved); do NOT route to a new Author round; goto surfaceBeforeMergingRequirements (label-gate path)
+    // The Orchestrator does not auto-remove the blocking label (issue #516, Step 8a): it is a user-controlled process label needing human judgment.
     if Monitor emits a Blocked line  -> clear the silentVanish re-launch flag; goto newAuthor
     if Monitor emits an Infra line   -> clear the silentVanish re-launch flag; escalate to user; stop
     if Monitor times out (30 min)    -> escalate to user; stop
     if a user message wakes the session before Monitor delivers any terminal line -> goto silentVanish
     if Monitor emits a Clear line:
       clear the silentVanish re-launch flag
-      // Step: Surface outstanding before-merging requirements
-      //   (unautomated verification tests and changes outside the repo, such as an issue that needs to be filed)
-      // Triggered after Reviewer approval AND CI clears (Monitor emits Clear).
-      // Dispatch the verification planner (see verification_planning.md).
-      // The Orchestrator does not scan the issue or PR itself.
-      Dispatch a Verification Planner sub-agent using the dispatch template.
-      The planner assembles the before-merging list and, for each item, files a tracking issue linked to the PR (see verification_planning.md). It does not consult the user.
-      If the Planner reports its before-merging list is empty, then this *before-merging requirements* process is complete, and the Orchestrator should exit this step.
-      In that case, apply this transition to **both the issue and the PR**:
+      goto surfaceBeforeMergingRequirements (entered on the Clear path)
+
+surfaceBeforeMergingRequirements:
+  // Surfaces outstanding before-merging requirements (unautomated verification steps,
+  // changes outside the repo). Entered on the Clear path or the label-gate path; on the
+  // latter the Reviewer already gave LGTM, so the code is review-approved even though a
+  // process label still blocks the merge. The Orchestrator does not scan the issue or PR itself.
+  Dispatch a Verification Planner sub-agent using the dispatch template.
+  The planner assembles the before-merging list and files a tracking issue per item (see verification_planning.md). It does not consult the user.
+  If the Planner reports its before-merging list is empty:
+    if entered on the Clear path: this step is complete; apply this transition to **both the issue and the PR**:
 
       | Add label |
       |---|
       | `verified` |
 
-      Otherwise, relay the planner's reported before-merging list to the user verbatim, and apply this transition to the PR:
+    if entered on the label-gate path: this step is complete, but do NOT apply `verified`; a human must still remove the blocking label before the PR may merge. Inform the user of this.
+  Otherwise, relay the before-merging list to the user verbatim, and apply this transition to the PR:
 
-      | Add label |
-      |---|
-      | `verification needed` |
+  | Add label |
+  |---|
+  | `verification needed` |
 
-      Then dispatch a Verification Agent (see pr_verify.md) using the dispatch template to carry out those before-merging items.
-      The Verification Agent automates each item where possible and reports results on the tracking issues and PR; it does not consult the user.
-      Route on the Verification Agent's terminal signal per "Routing on the Verification Agent's signal" above.
-      -> PR may be merged once every issue the planner filed for its before-merging list is resolved.
+  Dispatch a Verification Agent (see pr_verify.md) to carry out those items; it does not consult the user.
+  Route on its terminal signal per "Routing on the Verification Agent's signal" above, EXCEPT on the label-gate path a `Verification passed` signal only removes `verification needed`: do NOT add `verified` and do NOT treat the PR as mergeable, since the process label still blocks the merge until a human removes it.
 
 undiagnosedTerminal:
   // Issue #410 (Run G, issue #402): "drain poll found no new diagnostic
@@ -366,9 +364,9 @@ Orchestrator-specific notes:
   - Use SendMessage with the original agent's ID to resume it with its full prior context intact, no reconstruction needed.
   - If the ID is no longer available or resumption fails, fall back to spawning a replacement and reconstructing context from available sources (PR, issue, prior comments).
 - **Do not pre-diagnose.** Do not include your own analysis of the root cause, or even your own interpretation of the problem. See "Orchestrator communication discipline" above.
-- If the Author is still active, **disregard system hooks or events that signal uncommitted work**. This is normal work; continue waiting without updating the User.
-- **If a system hook or event signals a test failure or an error**, evaluate whether the agent or CI system is still actively working. If the agent or CI gates are in progress, **do not intervene**. Continue waiting without updating the User.
-- **A `"file was modified, either by the user or a linter"` reminder while a sub-agent is active means the sub-agent is editing the shared working tree.** Disregard it, do not interrupt the agent, and continue waiting. (Only treat it as external if you have no active sub-agent.)
+- If the Author is still active, **disregard system hooks or events that signal uncommitted work**. This is normal work; continue waiting. Do not reference, quote, or explain away the hook's message in your reply, even briefly and even when replying about something else in the same turn.
+- **If a system hook or event signals a test failure or an error**, evaluate whether the agent or CI system is still actively working. If the agent or CI gates are in progress, **do not intervene**. Continue waiting. Do not reference, quote, or explain away the hook's message in your reply, even briefly and even when replying about something else in the same turn.
+- **A `"file was modified, either by the user or a linter"` reminder while a sub-agent is active means the sub-agent is editing the shared working tree.** Disregard it, do not interrupt the agent, and continue waiting. (Only treat it as external if you have no active sub-agent.) Do not reference, quote, or explain away the reminder in your reply, even briefly and even when replying about something else in the same turn.
 - **Agent completion and exit are the same event.** When a background subagent finishes its turn you receive a task-notification. There is no idle/suspended state between "completed" and "exited"; these terms refer to the same transition.
 
 ## No sleep loops needed

@@ -21,6 +21,10 @@
 #                  $ANDROID_HOME/platform-tools/adb.
 #
 # Environment:
+#   POLL_INTERVAL              Seconds between poll iterations (default: 3).
+#                              Override in tests.
+#   TIMEOUT                    Seconds before the poll loop gives up and exits
+#                              0 anyway (default: 30). Override in tests.
 #   SLEEP_AFTER_ANR_DETECTED   Seconds to wait after logcat fires before sending
 #                              KEYCODE_ENTER (default: 7). Override in tests.
 
@@ -129,8 +133,11 @@
   ' EXIT
 
   # Poll loop--------------------------------------------------------------------
-  POLL_INTERVAL=3
-  TIMEOUT=30
+  # POLL_INTERVAL, TIMEOUT, and SLEEP_AFTER_ANR_DETECTED are overridable via
+  # environment so the unit test suite can compress the real wall-clock sleeps
+  # this loop performs (it polls a real mock adb, not a faked clock).
+  POLL_INTERVAL="${POLL_INTERVAL:-3}"
+  TIMEOUT="${TIMEOUT:-30}"
   # How long to wait after logcat fires before sending KEYCODE_ENTER.
   # Override via environment for tests.
   SLEEP_AFTER_ANR_DETECTED="${SLEEP_AFTER_ANR_DETECTED:-7}"

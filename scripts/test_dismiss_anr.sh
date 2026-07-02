@@ -6,10 +6,20 @@
 #   (b) ANR-detection branch: logcat fires → KEYCODE_BACK sent → exits 0
 #   (c) idle-count exit path: logcat hangs, CPU goes idle → exits 0
 #   (d) Absent Launcher process treated as idle → exits 0
-#   (e) Persistent ANR: logcat fires but BACK never clears; 30 s timeout → exits 0
+#   (e) Persistent ANR: logcat fires but BACK never clears; timeout → exits 0
 #   (j) Pattern fallback exercises the nexuslauncher arm of nexuslauncher|launcher3
 #
 # Always exits 0 on success, non-zero on failure.
+#
+# dismiss_anr.sh's poll loop performs real wall-clock sleeps against a mock
+# adb, and its elapsed-time bookkeeping is bash integer arithmetic, so
+# POLL_INTERVAL and TIMEOUT must stay whole seconds. They are exported here
+# at compressed values (real default: 3 s / 30 s) to keep this suite fast
+# without changing the number of polls, or the pass/fail outcome, any
+# scenario exercises. TIMEOUT=8 leaves headroom for the scenarios below that
+# need several poll iterations (g, h) or a deliberate timeout (e).
+export POLL_INTERVAL=1
+export TIMEOUT=8
 
 set -euo pipefail
 
@@ -196,10 +206,13 @@ fi
 
 # (e) Persistent ANR: timeout exits 0 within wall-clock budget----------------
 echo ""
-echo "=== (e) Persistent ANR: script exits 0 within timeout (<= 35 s) ==="
+echo "=== (e) Persistent ANR: script exits 0 within timeout (≤ 10 s) ==="
 
 # Logcat fires immediately (ANR detected), cpuinfo always reports high CPU so
-# idle_count never reaches 2, and the script must time out after TIMEOUT=30 s.
+# idle_count never reaches 2, and the script must time out.  This scenario
+# overrides TIMEOUT down to 3 s (below the suite-wide 8 s default) since it
+# deliberately pays the full timeout and doesn't need the extra headroom (g)
+# and (h) require for their longer poll sequences.
 # We use SLEEP_AFTER_ANR_DETECTED=1 to avoid spending 7 s waiting for the dialog.
 PERSISTENT_ANR_ADB="$(make_mock_adb "adb_persistent_anr" "
 case \"\$*\" in
@@ -228,7 +241,7 @@ esac
 ")"
 
 start_ts="$(date +%s)"
-SLEEP_AFTER_ANR_DETECTED=1 timeout 35 bash "$DISMISS_ANR" --adb "$PERSISTENT_ANR_ADB"
+SLEEP_AFTER_ANR_DETECTED=1 TIMEOUT=3 timeout 10 bash "$DISMISS_ANR" --adb "$PERSISTENT_ANR_ADB"
 persistent_status=$?
 end_ts="$(date +%s)"
 elapsed_wall=$((end_ts - start_ts))
@@ -239,10 +252,10 @@ else
   fail "persistent ANR: script exited $persistent_status (expected 0); wall time ${elapsed_wall}s"
 fi
 
-if [[ $elapsed_wall -le 35 ]]; then
-  pass "persistent ANR: completed within 35 s wall-clock budget (${elapsed_wall}s)"
+if [[ $elapsed_wall -le 10 ]]; then
+  pass "persistent ANR: completed within 10 s wall-clock budget (${elapsed_wall}s)"
 else
-  fail "persistent ANR: took ${elapsed_wall}s; exceeded 35 s budget"
+  fail "persistent ANR: took ${elapsed_wall}s; exceeded 10 s budget"
 fi
 
 # ── (f) Second-ANR scenario ──────────────────────────────────────────────────
@@ -251,11 +264,13 @@ echo "=== (f) Second ANR after first is dismissed ==="
 
 # The mock logcat emits the first ANR line immediately, then waits long enough
 # for the poll loop to process and dismiss it (SLEEP_AFTER_ANR_DETECTED=1 plus
-# the 3 s POLL_INTERVAL), before emitting the second ANR line.  A 5 s gap is
-# sufficient: it guarantees the first flag has been consumed and cleared before
-# the second ANR is written.  The mock then hangs so the consumer while-read
-# loop stays open.  The mock cpuinfo returns high CPU until KEYCODE_ENTER has
-# been sent twice, then returns low CPU so idle_count reaches 2.
+# the compressed 1 s POLL_INTERVAL exported above), before emitting the second
+# ANR line.  A 3 s gap is sufficient: it guarantees the first flag has been
+# consumed and cleared before the second ANR is written, while staying well
+# under the compressed TIMEOUT=8 s budget once the post-second-ANR dismiss and
+# idle polls are added.  The mock then hangs so the consumer while-read loop
+# stays open.  The mock cpuinfo returns high CPU until KEYCODE_ENTER has been
+# sent twice, then returns low CPU so idle_count reaches 2.
 # We verify that KEYCODE_ENTER is sent at least twice and the script exits 0.
 
 SECOND_ANR_KEYEVENT_COUNT_FILE="$TMPDIR_TESTS/second_anr_keyevent_count"
@@ -274,7 +289,7 @@ case \"\$*\" in
     ;;
   *'logcat'*)
     echo 'E/ActivityManager: ANR in com.google.android.apps.nexuslauncher'
-    sleep 5
+    sleep 3
     echo 'E/ActivityManager: ANR in com.google.android.apps.nexuslauncher'
     exec sleep 60
     ;;
