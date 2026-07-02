@@ -16,7 +16,7 @@
 #
 # Always exits 0 on success, non-zero on failure.
 
-set -uo pipefail
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CHECK="$SCRIPT_DIR/check_non_docs_changes.sh"

@@ -28,21 +28,34 @@
 set -uo pipefail
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" || -z "${1:-}" ]]; then
-  grep '^#' "$0" | sed 's/^# \{0,1\}//'
+  # Skip line 1 (the shebang): it also matches '^#' but isn't part of the
+  # usage text, and the sed below only strips a bare '#', not '#!'.
+  tail -n +2 "$0" | grep '^#' | sed 's/^# \{0,1\}//'
   exit 1
 fi
 
 BASE_REF="$1"
 HEAD_REF="${2:-HEAD}"
 
-MERGE_BASE="$(git merge-base "$BASE_REF" "$HEAD_REF" 2>/dev/null)"
+MERGE_BASE_ERR_FILE="$(mktemp)"
+MERGE_BASE="$(git merge-base "$BASE_REF" "$HEAD_REF" 2>"$MERGE_BASE_ERR_FILE")"
+MERGE_BASE_ERR="$(cat "$MERGE_BASE_ERR_FILE")"
+rm -f "$MERGE_BASE_ERR_FILE"
 if [[ -z "$MERGE_BASE" ]]; then
-  echo "::warning::Could not find a merge base with $BASE_REF (its history may have been rewritten); running the full build as a safe default." >&2
+  echo "::warning::Could not find a merge base between $BASE_REF and $HEAD_REF (${MERGE_BASE_ERR:-no diagnostic output from git}); running the full build as a safe default." >&2
   echo "true"
   exit 0
 fi
 
-CHANGED="$(git diff --name-only "$MERGE_BASE" "$HEAD_REF" | grep -v '\.md$' || true)"
+DIFF_OUTPUT="$(git diff --name-only "$MERGE_BASE" "$HEAD_REF")"
+DIFF_RC=$?
+if [[ $DIFF_RC -ne 0 ]]; then
+  echo "::warning::git diff between $MERGE_BASE and $HEAD_REF failed unexpectedly (exit $DIFF_RC); running the full build as a safe default." >&2
+  echo "true"
+  exit 0
+fi
+
+CHANGED="$(printf '%s\n' "$DIFF_OUTPUT" | grep -v '\.md$' || true)"
 if [[ -n "$CHANGED" ]]; then
   echo "true"
 else
