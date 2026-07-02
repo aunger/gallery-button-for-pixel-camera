@@ -636,6 +636,43 @@ class E2EFixture(
     }
 
     /**
+     * Polls screenshots until at least one pixel matches [color], or [timeoutMs] elapses.
+     * Returns the last captured screenshot regardless of whether the color appeared, so the
+     * caller's own assertion (built from that screenshot) still produces a meaningful diagnostic
+     * on a genuine failure.
+     *
+     * Issue #556: [waitForOverlayActive] only observes [OverlayService.isOverlayActive], an
+     * internal UsageStats-based flag that can flip true before the corresponding frame (camera
+     * feed plus overlay) is actually composited by the WindowManager -- especially on a
+     * cold-started activity, which briefly shows Android's mandatory splash-screen frame first.
+     * A fixed post-activation pause is a guess at how long compositing takes and silently stops
+     * being enough as CI load changes (e.g. issue #520's concurrent `screenrecord`). Polling for
+     * the actual pixel evidence removes that guess: `ScreenshotTestRule.failed()` proved the
+     * content was correct just moments after a fixed-pause capture went stale (it takes its own
+     * screenshot after the assertion throws and consistently shows the overlay rendered exactly
+     * at the configured position), so the content was never wrong -- only the single early
+     * capture was.
+     *
+     * @param color      The [Rgb] color to poll for.
+     * @param timeoutMs  Maximum wait time in milliseconds.
+     * @param intervalMs Sleep between successive capture attempts.
+     */
+    fun waitForColorVisible(
+        color: Rgb,
+        timeoutMs: Long = 5_000L,
+        intervalMs: Long = 200L,
+    ): android.graphics.Bitmap {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (true) {
+            val screen = Screenshot.captureScreen()
+            if (ColorMatch.mask(screen, color).pixelCount > 0 || System.currentTimeMillis() >= deadline) {
+                return screen
+            }
+            Thread.sleep(intervalMs)
+        }
+    }
+
+    /**
      * Polls screenshots until the GREEN (#00C853) region forms a *letterboxed* band: its bounding
      * box spans at least [minWidthFraction] of the screen width while occupying at most
      * [maxHeightFraction] of the screen height. Returns true if such a band appeared before

@@ -109,12 +109,13 @@ class GalleryButtonVisualE2ETest {
         fixture.seedGalleryPrefs(MOCK_GALLERY_PACKAGE)
         fixture.clearCameraRoll()
         fixture.launchPixelCamera()
-        // Wait for UsageStats-based foreground detection to activate the overlay, then
-        // allow one additional frame for the WM to composite the overlay window on screen.
+        // Wait for UsageStats-based foreground detection to activate the overlay, then poll
+        // screenshots until BLUE pixels actually appear on screen (Issue #556). A fixed pause
+        // is only a guess at how long WM compositing takes after activation, and a cold-started
+        // activity briefly shows Android's mandatory splash-screen frame first; a single capture
+        // taken too early sees that stale frame instead of the real content.
         fixture.waitForOverlayActive()
-        fixture.pause(500)
-
-        val screen = Screenshot.captureScreen()
+        val screen = fixture.waitForColorVisible(Rgb.BLUE)
         val blue = ColorMatch.mask(screen, Rgb.BLUE)
         Screenshot.saveForArtifact(screen, "1a-screen.png")
         Screenshot.saveForArtifact(maskToBitmap(blue), "1a-blue-mask.png")
@@ -155,12 +156,11 @@ class GalleryButtonVisualE2ETest {
         fixture.seedGalleryPrefs(MOCK_GALLERY_PACKAGE)
         fixture.clearCameraRoll()
         fixture.launchPixelCamera()
-        // Wait for UsageStats-based foreground detection to activate the overlay, then
-        // allow one additional frame for the WM to composite the overlay window on screen.
+        // Wait for UsageStats-based foreground detection to activate the overlay, then poll
+        // screenshots until BLUE pixels actually appear on screen (Issue #556). See test1a's
+        // comment for why a fixed post-activation pause is not reliable here.
         fixture.waitForOverlayActive()
-        fixture.pause(500)
-
-        val screen = Screenshot.captureScreen()
+        val screen = fixture.waitForColorVisible(Rgb.BLUE)
         val blue = ColorMatch.mask(screen, Rgb.BLUE)
         Screenshot.saveForArtifact(screen, "1b-screen.png")
         Screenshot.saveForArtifact(maskToBitmap(blue), "1b-blue-mask.png")
@@ -181,12 +181,12 @@ class GalleryButtonVisualE2ETest {
         fixture.seedGalleryPrefs(MOCK_GALLERY_PACKAGE)
         fixture.clearCameraRoll()
         fixture.launchPixelCamera()
-        // Wait for UsageStats-based foreground detection to activate the overlay, then
-        // allow one additional frame for the WM to composite the overlay window on screen.
+        // Wait for UsageStats-based foreground detection to activate the overlay, then poll
+        // screenshots until BLUE pixels actually appear on screen (Issue #556). See test1a's
+        // comment for why a fixed post-activation pause is not reliable here. YELLOW is part of
+        // the same overlay icon draw, so BLUE's appearance is a reliable proxy for it too.
         fixture.waitForOverlayActive()
-        fixture.pause(500)
-
-        val screen = Screenshot.captureScreen()
+        val screen = fixture.waitForColorVisible(Rgb.BLUE)
         val outer =
             ColorMatch.union(
                 ColorMatch.mask(screen, Rgb.BLUE),
