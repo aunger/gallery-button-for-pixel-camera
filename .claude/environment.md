@@ -22,7 +22,7 @@ script for implementation details; each step is commented.
 |--------------------|------------------------------|-------------------|--------------------------------------------------------------|
 | `ANDROID_HOME`     | `/home/user/android-sdk`     | hook + `~/.bashrc`| Required by Gradle Android plugin and `adb`                  |
 | `JAVA_TOOL_OPTIONS`| *(modified, not replaced)*   | hook + `~/.bashrc`| Strips `*.google.com` from `nonProxyHosts` (see script §0)   |
-| `PATH`             | `+$ANDROID_HOME/...`           | hook + `~/.bashrc`| Adds `sdkmanager`, `adb` to path                            |
+| `PATH`             | `+$ANDROID_HOME/...`         | hook + `~/.bashrc`| Adds `sdkmanager`, `adb` to path                            |
 | `GITHUB_TOKEN`     | *(fine-grained PAT)*         | container         | Use with `curl` to query the GitHub REST API                 |
 
 `~/.bashrc` carries the same fixes for interactive terminal sessions.
