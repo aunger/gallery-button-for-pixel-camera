@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check_non_docs_changes.sh -- decide whether CI's full build/test phase is
+# check_non_docs_changes.sh: decide whether CI's full build/test phase is
 # needed for a pull request, based on whether it touches anything besides
 # Markdown files.
 #
