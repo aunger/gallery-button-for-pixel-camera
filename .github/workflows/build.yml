@@ -51,8 +51,7 @@ jobs:
           else
             BASE_REF="${{ github.base_ref }}"
             git fetch origin "$BASE_REF" --depth=1
-            CHANGED=$(git diff --name-only "origin/$BASE_REF"...HEAD | grep -v '\.md$' || true)
-            echo "needs_full_build=$([ -n "$CHANGED" ] && echo true || echo false)" >> $GITHUB_OUTPUT
+            echo "needs_full_build=$(scripts/check_non_docs_changes.sh "origin/$BASE_REF")" >> $GITHUB_OUTPUT
           fi
 
       - name: Set up JDK 17
