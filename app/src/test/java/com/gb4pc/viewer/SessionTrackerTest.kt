@@ -1,6 +1,7 @@
 package com.gb4pc.viewer
 
 import com.gb4pc.Constants
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
@@ -122,6 +123,57 @@ class SessionTrackerTest {
         assertEquals(1, tracker.getSessionMedia().size)
         assertEquals("content://media/2", tracker.getSessionMedia()[0].uri)
     }
+
+    // ---------------------------------------------------------------------------
+    // sessionMedia StateFlow (#537): reactive observable surface
+    // ---------------------------------------------------------------------------
+
+    @Test
+    fun `sessionMedia starts empty`() {
+        assertTrue(tracker.sessionMedia.value.isEmpty())
+    }
+
+    @Test
+    fun `sessionMedia emits added item`() =
+        runTest {
+            tracker.startSession()
+            val item = MediaItem(uri = "content://media/1", dateTaken = 1000L, isVideo = false)
+            tracker.addMedia(item)
+
+            assertEquals(listOf(item), tracker.sessionMedia.value)
+        }
+
+    @Test
+    fun `sessionMedia emits empty after endSession`() =
+        runTest {
+            tracker.startSession()
+            tracker.addMedia(MediaItem(uri = "content://media/1", dateTaken = 1000L, isVideo = false))
+            tracker.endSession()
+
+            assertTrue(tracker.sessionMedia.value.isEmpty())
+        }
+
+    @Test
+    fun `sessionMedia emits reduced list after removeMedia`() =
+        runTest {
+            tracker.startSession()
+            tracker.addMedia(MediaItem(uri = "content://media/1", dateTaken = 1000L, isVideo = false))
+            tracker.addMedia(MediaItem(uri = "content://media/2", dateTaken = 2000L, isVideo = false))
+            tracker.removeMedia("content://media/1")
+
+            assertEquals(listOf("content://media/2"), tracker.sessionMedia.value.map { it.uri })
+        }
+
+    @Test
+    fun `sessionMedia ordering matches getSessionMedia`() =
+        runTest {
+            tracker.startSession()
+            tracker.addMedia(MediaItem(uri = "content://media/1", dateTaken = 1000L, isVideo = false))
+            tracker.addMedia(MediaItem(uri = "content://media/2", dateTaken = 3000L, isVideo = false))
+            tracker.addMedia(MediaItem(uri = "content://media/3", dateTaken = 2000L, isVideo = false))
+
+            assertEquals(tracker.getSessionMedia(), tracker.sessionMedia.value)
+        }
 
     @Test
     fun `getSessionMedia returns most recent first per SF-07`() {
