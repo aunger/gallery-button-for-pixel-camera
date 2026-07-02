@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test_check_non_docs_changes.sh -- Shell-based tests for check_non_docs_changes.sh.
+# test_check_non_docs_changes.sh: Shell-based tests for check_non_docs_changes.sh.
 #
 # Builds small throwaway git repos in a temp dir so each test controls the
 # exact commit graph (and, for the no-merge-base case, forces the two graphs
