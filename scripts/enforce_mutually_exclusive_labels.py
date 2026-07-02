@@ -238,9 +238,7 @@ def main() -> int:
         )
 
     if not to_remove:
-        print(
-            f"No conflicting labels found for '{added_label}' on #{issue_number}--nothing to do."
-        )
+        print(f"No conflicting labels found for '{added_label}' on #{issue_number}--nothing to do.")
         return 0
 
     remove_labels(issue_number, to_remove, repo, token)
