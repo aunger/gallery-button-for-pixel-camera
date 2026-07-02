@@ -27,7 +27,7 @@ import kotlin.math.sqrt
  * Visual E2E tests for the gallery button overlay (Phase 5).
  *
  * Tests are ordered alphabetically by method name via [FixMethodOrder] with
- * [MethodSorters.NAME_ASCENDING]. The prefix scheme (`test0_`, `test1a_`, …, `test5a_`)
+ * [MethodSorters.NAME_ASCENDING]. The prefix scheme (`test0_`, `test1a_`, ..., `test5a_`)
  * guarantees the correct numeric order.
  *
  * Each test is fully self-contained: it sets its own device state in per-test setup
@@ -61,13 +61,13 @@ class GalleryButtonVisualE2ETest {
     @Before
     fun setUp() = fixture.setUp()
 
-    // ── test0 — Smoke: camera feed is GREEN ──────────────────────────────────
+    // test0: Smoke: camera feed is GREEN----------------------------------------
 
     /**
      * Verifies that the mock camera produces a visually GREEN feed by asserting that the
      * central 60% of the screen is at least 70% covered by GREEN (#00C853) pixels.
      *
-     * Under Alternative 1, MockCameraActivity renders a solid-green (#00C853) View — no camera
+     * Under Alternative 1, MockCameraActivity renders a solid-green (#00C853) View; no camera
      * hardware and no virtualscene poster are required. This is the first line of defence: if
      * this test fails, either the mock-camera APK is not installed under [MOCK_CAMERA_PACKAGE]
      * or MockCameraActivity is not in the foreground.
@@ -76,7 +76,7 @@ class GalleryButtonVisualE2ETest {
     fun test0_smokeGreenFeedVisible() {
         fixture.launchPixelCamera()
 
-        // Poll up to 30 s for the camera feed to render — a fixed 1 s pause is too short
+        // Poll up to 30 s for the camera feed to render; a fixed 1 s pause is too short
         // on a cold-started emulator. waitForGreenCoverage returns the last measured coverage.
         val coverage = fixture.waitForGreenCoverage(minCoverage = 0.70f, timeoutMs = 30_000L)
 
@@ -86,14 +86,14 @@ class GalleryButtonVisualE2ETest {
         if (coverage <= 0.70f) {
             fail(
                 "test0_smokeGreenFeedVisible: GREEN coverage in central 60% of screen is " +
-                    "${coverage * 100f}% — expected > 70%. " +
+                    "${coverage * 100f}%--expected > 70%. " +
                     "Check that the mock-camera APK is installed under $MOCK_CAMERA_PACKAGE " +
                     "and MockCameraActivity is in the foreground.",
             )
         }
     }
 
-    // ── test1a — Overlay BLUE pixel centroid is at the configured position ───
+    // test1a: Overlay BLUE pixel centroid is at the configured position---------
 
     /**
      * Verifies that the gallery icon's BLUE foreground square is centred at the configured
@@ -101,7 +101,7 @@ class GalleryButtonVisualE2ETest {
      * one icon radius of (xPercent, yPercent).
      *
      * xPercent / yPercent refer to the **centre** of the overlay (confirmed from OverlayManager
-     * — it computes `centerX = displayWidth * xPercent / 100f` and subtracts half the icon size
+     * (it computes `centerX = displayWidth * xPercent / 100f` and subtracts half the icon size
      * to get the left edge). No correction is needed.
      */
     @Test
@@ -126,7 +126,7 @@ class GalleryButtonVisualE2ETest {
 
         val minDim = minOf(screen.width, screen.height).toFloat()
         // sizePercent is the icon's edge length as a fraction of minDim.
-        // iconRadiusPx = half the icon's pixel diameter — the centroid should be within this.
+        // iconRadiusPx = half the icon's pixel diameter; the centroid should be within this.
         val iconRadiusPx = (pos.sizePercent / 200f) * minDim
 
         // xPercent / yPercent are the overlay's centre (see OverlayManager.calculateOverlayXPx).
@@ -145,7 +145,7 @@ class GalleryButtonVisualE2ETest {
         }
     }
 
-    // ── test1b — Overlay BLUE region is square ───────────────────────────────
+    // test1b: Overlay BLUE region is square----------------------------------
 
     /**
      * Verifies that the gallery icon's BLUE foreground square renders as a square shape,
@@ -169,7 +169,7 @@ class GalleryButtonVisualE2ETest {
         ShapeMatcher.requireShape(croppedBlue.toMaskData(), Shape.SQUARE)
     }
 
-    // ── test1c — Overlay outer silhouette (BLUE ∪ YELLOW) is a squircle ─────
+    // test1c: Overlay outer silhouette (BLUE ∪ YELLOW) is a squircle----------
 
     /**
      * Verifies that the outer silhouette of the gallery icon (the union of BLUE foreground
@@ -198,7 +198,7 @@ class GalleryButtonVisualE2ETest {
         ShapeMatcher.requireShape(ColorMatch.crop(outer).toMaskData(), Shape.SQUIRCLE)
     }
 
-    // ── test2a — Empty gallery: tapping overlay shows no GREEN ───────────────
+    // test2a: Empty gallery: tapping overlay shows no GREEN-------------------
 
     /**
      * Verifies that tapping the overlay when the camera roll is empty does not open a
@@ -211,7 +211,7 @@ class GalleryButtonVisualE2ETest {
         fixture.seedGalleryPrefs(MOCK_GALLERY_PACKAGE)
         fixture.clearCameraRoll()
         fixture.launchPixelCamera()
-        // Wait for the overlay to be active before tapping — a fixed 1 s pause is too short.
+        // Wait for the overlay to be active before tapping; a fixed 1 s pause is too short.
         fixture.waitForOverlayActive()
 
         val s1 = Screenshot.captureScreen()
@@ -230,13 +230,13 @@ class GalleryButtonVisualE2ETest {
         if (coverage >= 0.10f) {
             fail(
                 "test2a_emptyGalleryNoGreenAfterTap: GREEN coverage after tap is " +
-                    "${coverage * 100f}% — expected < 10%. " +
+                    "${coverage * 100f}%--expected < 10%. " +
                     "The gallery opened showing unexpected green content with an empty roll.",
             )
         }
     }
 
-    // ── test3a — Populated gallery: tapping overlay shows GREEN ──────────────
+    // test3a: Populated gallery: tapping overlay shows GREEN------------------
 
     /**
      * Verifies that tapping the overlay when the camera roll contains one GREEN photo opens
@@ -247,7 +247,7 @@ class GalleryButtonVisualE2ETest {
         fixture.seedGalleryPrefs(MOCK_GALLERY_PACKAGE)
         fixture.clearCameraRoll()
         // Launch the camera first so MockCameraActivity's BroadcastReceiver is registered
-        // before the ACTION_SHUTTER broadcast is sent — sending it before onResume() means
+        // before the ACTION_SHUTTER broadcast is sent; sending it before onResume() means
         // the receiver is not yet registered and the broadcast is silently dropped.
         fixture.launchPixelCamera()
         fixture.waitForOverlayActive()
@@ -258,7 +258,7 @@ class GalleryButtonVisualE2ETest {
 
         fixture.tapOverlay()
 
-        // Poll up to 15 s for the gallery's photo to render — a fixed 1 s pause races
+        // Poll up to 15 s for the gallery's photo to render; a fixed 1 s pause races
         // LastPhotoActivity's cold start (process spawn + MediaStore query + JPEG decode),
         // which the CI logcat shows can take ~1.4 s. waitForGreenCoverage's return value is
         // discarded: it only gates the wait, and the assertion below re-measures full-screen
@@ -275,19 +275,19 @@ class GalleryButtonVisualE2ETest {
         if (coverage <= 0.40f) {
             fail(
                 "test3a_populatedGalleryShowsGreenAfterTap: GREEN coverage after tap is " +
-                    "${coverage * 100f}% — expected > 40%. " +
+                    "${coverage * 100f}%--expected > 40%. " +
                     "The gallery did not open, or the captured photo is not green.",
             )
         }
     }
 
-    // ── test4a — Secure camera + empty gallery: no GREEN after tap ───────────
+    // test4a: Secure camera + empty gallery: no GREEN after tap---------------
 
     /**
      * Verifies that tapping the overlay in secure-camera mode (screen locked) with an empty
      * camera roll does not show GREEN content (coverage < 10%).
      *
-     * **Alternative 1 note — this is a RED-LIGHT test, not a baseline pass.**
+     * **Alternative 1 note: this is a RED-LIGHT test, not a baseline pass.**
      *
      * The original plan claimed this test "passes regardless of the regression" because an
      * empty gallery produces a black empty state → no GREEN. That reasoning assumed the camera
@@ -295,7 +295,7 @@ class GalleryButtonVisualE2ETest {
      * Alternative 1, MockCameraActivity's background is solid green (#00C853).
      *
      * When the secure-camera overlay regression is present (overlay is blocked / not tappable),
-     * `tapOverlay()` is a no-op and the green MockCameraActivity stays on screen — giving ~100%
+     * `tapOverlay()` is a no-op and the green MockCameraActivity stays on screen, giving ~100%
      * GREEN coverage. This means `coverage >= 0.10f` and the assertion FAILS.
      *
      * Conversely, once the regression is fixed (overlay renders correctly in secure-camera mode),
@@ -306,7 +306,7 @@ class GalleryButtonVisualE2ETest {
      * it fails when the regression is present and MockCameraActivity is green, and passes when
      * the overlay works and the empty gallery is shown. Do not change the assertion.
      *
-     * **Cross-package roll cleanup (issue #406 — resolves the PR #400 caveat).**
+     * **Cross-package roll cleanup (issue #406, resolves the PR #400 caveat).**
      *
      * `test3a` (which runs alphabetically before this test) captures a GREEN photo owned by
      * `com.google.android.GoogleCamera` (the mock camera). Earlier, [E2EFixture.clearCameraRoll]
@@ -346,20 +346,20 @@ class GalleryButtonVisualE2ETest {
         if (coverage >= 0.10f) {
             fail(
                 "test4a_secureCameraLockedEmptyGalleryNoGreen: GREEN coverage after tap is " +
-                    "${coverage * 100f}% — expected < 10%. " +
+                    "${coverage * 100f}%--expected < 10%. " +
                     "The gallery opened showing unexpected green content with an empty roll.",
             )
         }
     }
 
-    // ── test5a — Secure camera + populated session: SecureViewer shows GREEN ─
+    // test5a: Secure camera + populated session: SecureViewer shows GREEN---
 
     /**
      * Verifies the real locked-path product behaviour: tapping the overlay in secure-camera
      * mode (screen locked) when the in-progress secure session contains a GREEN photo opens
      * the app's own [com.gb4pc.viewer.SecureViewerActivity] and displays that photo.
      *
-     * **Why the capture happens after the session starts (issue #486 — Option A).**
+     * **Why the capture happens after the session starts (issue #486, Option A).**
      *
      * A locked tap does NOT launch the configured gallery package; production
      * [com.gb4pc.overlay.TapActionResolver] resolves the locked case to
@@ -372,7 +372,7 @@ class GalleryButtonVisualE2ETest {
      * and `startSession()` clears any prior media. The session is then populated only by the
      * OverlayService `ContentObserver`, which adds MediaStore rows whose `DATE_ADDED` is at or
      * after session start. A photo captured *before* locking is therefore structurally excluded
-     * from the session — which is why the earlier version of this test (capture-then-lock) could
+     * from the session, which is why the earlier version of this test (capture-then-lock) could
      * never make the assertion pass and was filed as a red-light test against the mis-cited
      * issue #156 (a plan-tracking checklist, not a bug report).
      *
@@ -397,12 +397,12 @@ class GalleryButtonVisualE2ETest {
      *
      * **Why the assertion must check the band *height*, not just its width and solidity.**
      *
-     * The screen on view at the moment of the tap is *not* the lock screen or a black screen — it
+     * The screen on view at the moment of the tap is *not* the lock screen or a black screen; it
      * is the solid-green `MockCameraActivity` (the secure camera, foregrounded above), which is the
      * same `Rgb.GREEN` as the captured photo. So the relevant failure case for this flow is a
      * *no-op tap*: if the overlay is not composited / not tappable over the secure-camera keyguard,
      * `tapOverlay()` silently does nothing, `SecureViewerActivity` never opens, and the green mock
-     * camera stays on screen — full width *and* full height. Width-only + within-bbox-solidity
+     * camera stays on screen: full width *and* full height. Width-only + within-bbox-solidity
      * checks would both pass on that full-screen green, so the test would go green for a tap that
      * did nothing. The discriminator is the band *height*: the real SecureViewer render is
      * letterboxed to ≈ 25% of the screen height with black bars above and below, whereas the
@@ -429,7 +429,7 @@ class GalleryButtonVisualE2ETest {
         // pins the mock-camera package and waits for the overlay to activate; showOverlay() then
         // starts the secure session and registers the MediaStore ContentObserver, so the capture
         // below lands inside the session. The explicit waitForOverlayActive() re-confirms the
-        // session has begun before capturing — MockCameraActivity also only registers its shutter
+        // session has begun before capturing; MockCameraActivity also only registers its shutter
         // receiver in onResume(), so it must be foregrounded first.
         fixture.launchSecureCamera()
         fixture.waitForOverlayActive()
@@ -445,7 +445,7 @@ class GalleryButtonVisualE2ETest {
 
         fixture.tapOverlay() // locked tap → SecureViewer renders the session's GREEN photo
 
-        // Poll up to 15 s for the letterboxed GREEN band to appear — SecureViewer's cold start
+        // Poll up to 15 s for the letterboxed GREEN band to appear; SecureViewer's cold start
         // (process spawn + SubsamplingScaleImageView decode) races a fixed pause. The poll requires
         // the same letterbox geometry as the assertion below (full width, height a minority of the
         // screen), so it does not short-circuit on the full-screen mock-camera green that is on

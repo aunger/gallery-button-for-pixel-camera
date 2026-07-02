@@ -163,7 +163,7 @@ def _window_has_anr(adb: str) -> bool | None:
 
     Runs `dumpsys window` with a timeout.  A timeout or any other adb error
     returns None so callers can distinguish "no ANR" (False) from "could not
-    tell" (None) — on a wedged emulator the dumpsys call itself times out, and
+    tell" (None); on a wedged emulator the dumpsys call itself times out, and
     treating that as "no ANR" would skip dismissal entirely (Issue #256).
     """
     try:
@@ -205,14 +205,14 @@ def _dismiss_anr_if_present(adb: str) -> None:
     loop.  dismiss_anr.sh exits as soon as Launcher CPU goes idle, but an ANR
     dialog can appear during or after the `am start -W` call (which takes 3+ s),
     after the watcher has already exited.  The dialog is not always the
-    launcher's — on an overloaded emulator SystemUI itself can ANR (Issue #256) —
+    launcher's; on an overloaded emulator SystemUI itself can ANR (Issue #256),
     so this matches any "Application Not Responding" window.
 
     After sending KEYCODE_ENTER, polls dumpsys window to confirm the dialog has
     actually disappeared before returning, retrying up to _ANR_DISMISS_MAX_RETRIES
     times.  Each adb call is individually timeout-tolerant: when the emulator is
     wedged, a single `input`/`dumpsys` command can time out, but that must not
-    abort the whole dismiss routine — the loop keeps retrying so a late-clearing
+    abort the whole dismiss routine; the loop keeps retrying so a late-clearing
     dialog still gets dismissed (Issue #256).
     """
     if _window_has_anr(adb) is not True:
@@ -221,7 +221,7 @@ def _dismiss_anr_if_present(adb: str) -> None:
 
     ts = time.strftime("%H:%M:%S")
     print(
-        f"[check_green_feed] {ts} ANR dialog detected before screencap — sending KEYCODE_ENTER.",
+        f"[check_green_feed] {ts} ANR dialog detected before screencap; sending KEYCODE_ENTER.",
         file=sys.stderr,
     )
     for attempt in range(1, _ANR_DISMISS_MAX_RETRIES + 1):
@@ -240,7 +240,7 @@ def _dismiss_anr_if_present(adb: str) -> None:
         )
     print(
         f"[check_green_feed] {time.strftime('%H:%M:%S')} ANR dialog persisted after "
-        f"{_ANR_DISMISS_MAX_RETRIES} KEYCODE_ENTER sends — proceeding to screencap anyway.",
+        f"{_ANR_DISMISS_MAX_RETRIES} KEYCODE_ENTER sends; proceeding to screencap anyway.",
         file=sys.stderr,
     )
 
@@ -263,7 +263,7 @@ def _dump_first_failure_diagnostics(
         file=sys.stderr,
     )
 
-    # Dump window focus / dialog state — filtered for the most relevant lines.
+    # Dump window focus / dialog state; filtered for the most relevant lines.
     try:
         window_result = subprocess.run(
             [adb, "shell", "dumpsys", "window"],
@@ -355,7 +355,7 @@ def check_image(path: str) -> int:
 
     print(
         f"MockCameraActivity smoke check: {green_count}/{total} pixels match #00C853 "
-        f"(tolerance={TOLERANCE}) — coverage={coverage:.1%}"
+        f"(tolerance={TOLERANCE}); coverage={coverage:.1%}"
     )
 
     if coverage >= MIN_COVERAGE:

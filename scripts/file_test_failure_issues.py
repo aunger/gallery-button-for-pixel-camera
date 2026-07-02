@@ -11,7 +11,7 @@ Usage:
         path/to/e2e-results           --suite-label "E2E Tests"
 
 Each directory path must be immediately followed by --suite-label <name>.
-Exit code is always 0 — API failures are logged but do not fail the CI run.
+Exit code is always 0; API failures are logged but do not fail the CI run.
 
 Required environment variables:
     GITHUB_TOKEN        Personal access token or Actions secret with issues: write
@@ -393,7 +393,7 @@ def process_failure(
     if found is not None:
         existing, state = found
         print(
-            f"  Duplicate found: #{existing} — appending comment for "
+            f"  Duplicate found: #{existing}; appending comment for "
             f"{failure.class_name}.{failure.method_name}",
             file=sys.stderr,
         )
@@ -512,10 +512,10 @@ def main(argv: list[str] | None = None) -> int:
     pr_url = os.environ.get("WORKFLOW_RUN_PR_URL", "")
 
     if not token:
-        print("Warning: GITHUB_TOKEN not set — skipping issue filing.", file=sys.stderr)
+        print("Warning: GITHUB_TOKEN not set; skipping issue filing.", file=sys.stderr)
         return 0
     if not repository:
-        print("Warning: GITHUB_REPOSITORY not set — skipping issue filing.", file=sys.stderr)
+        print("Warning: GITHUB_REPOSITORY not set; skipping issue filing.", file=sys.stderr)
         return 0
 
     timestamp = datetime.now(tz=timezone.utc)

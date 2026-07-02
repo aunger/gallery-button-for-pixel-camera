@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""test_ci_monitor.py — Tests for ci_monitor.py.
+"""test_ci_monitor.py: Tests for ci_monitor.py.
 
 Calls the parser functions directly (no subprocess shims). Plus a mocked-HTTP
 smoke test that exercises the request helper without touching the network.
@@ -276,7 +276,7 @@ check(
 )
 
 # ── (d) Deduplication across two iterations ─────────────────────────────────────
-print("\n=== (d) Signal 1: deduplication — same steps not re-emitted on second iteration ===")
+print("\n=== (d) Signal 1: deduplication: same steps not re-emitted on second iteration ===")
 seen_d = set()
 out_d1 = ci_monitor.parse_steps(ALL_SUCCESS_JOBS, seen_d, None, REPO_STEP_REGEX)
 out_d2 = ci_monitor.parse_steps(ALL_SUCCESS_JOBS, seen_d, None, REPO_STEP_REGEX)
@@ -441,7 +441,7 @@ side_effects_i = collections.deque(
         CHECK_BL_WITH_RUN_I,  # verdict check-runs -> Blocked (terminal, reused by poll_signals)
         JOBS_FAIL,  # jobs -> step already seen, nothing new
         ARTS_JSON,  # artifacts -> artifact already seen, no zip call
-        # drain_then_print (Gap E) — up to DRAIN_MAX_ATTEMPTS extra signal polls
+        # drain_then_print (Gap E): up to DRAIN_MAX_ATTEMPTS extra signal polls
         # before the terminal line; all attempts find nothing new here.
         DIAG_CHECK_I,  # drain attempt 1: diagnostic check-runs
         JOBS_FAIL,  # drain attempt 1: jobs -> nothing new
@@ -730,12 +730,12 @@ ARTS_EMPTY_K = {"artifacts": []}
 
 side_effects_k = collections.deque(
     [
-        # iteration 1 — open, in_progress (no heartbeat: clock frozen at start)
+        # iteration 1: open, in_progress (no heartbeat: clock frozen at start)
         PR_OPEN_K,  # pulls -> sha, terminal == ''
         CHECK_IP_K,  # verdict check-runs -> in_progress (reused by poll_signals)
         JOBS_EMPTY_K,  # jobs -> nothing
         ARTS_EMPTY_K,  # artifacts -> nothing
-        # iteration 2 — merged: terminal short-circuit before check-runs
+        # iteration 2: merged: terminal short-circuit before check-runs
         PR_MERGED_K,  # pulls -> sha, terminal == 'Merged' -> break
     ]
 )
@@ -999,23 +999,23 @@ ZIP_UNIT_M = make_zip_ndjson(
 # 4 + 5 + 4 + 3*3 = 22, drained.
 side_effects_m = collections.deque(
     [
-        # poll 1 — step delta only
+        # poll 1: step delta only
         PR_M,  # pulls -> sha
         CHECK_IP_M,  # check-runs -> in_progress (reused by poll_signals)
         JOBS_UNIT_FAIL_M,  # jobs -> step "Build and run unit tests" -> failure
         ARTS_EMPTY_M,  # artifacts -> none yet
-        # poll 2 — FAIL detail
+        # poll 2: FAIL detail
         PR_M,  # pulls -> sha
         CHECK_IP_M,  # check-runs -> in_progress (reused by poll_signals)
         JOBS_UNIT_FAIL_M,  # jobs -> step already seen, nothing new
         ARTS_UNIT_M,  # artifacts -> one new artifact
         ZIP_UNIT_M,  # zip (raw) -> FAIL line with trace
-        # poll 3 — terminal Blocked
+        # poll 3: terminal Blocked
         PR_M,  # pulls -> sha
         CHECK_BL_M,  # check-runs -> Blocked (terminal, reused by poll_signals)
         JOBS_UNIT_FAIL_M,  # jobs -> step already seen, nothing new
         ARTS_UNIT_M,  # artifacts -> artifact already seen, no zip call
-        # drain_then_print (Gap E) — up to DRAIN_MAX_ATTEMPTS extra signal polls
+        # drain_then_print (Gap E): up to DRAIN_MAX_ATTEMPTS extra signal polls
         # before the terminal line; all attempts find nothing new here.
         RUNS_M,
         JOBS_UNIT_FAIL_M,
@@ -1115,7 +1115,7 @@ check(
 check(rc_m == 0, "main() returned 0", "main() returned %r" % rc_m)
 
 
-# ── (n) main(): quiet passing PR — two adjacent heartbeats then a single Clear ──
+# (n) main(): quiet passing PR: two adjacent heartbeats then a single Clear---
 print("\n=== (n) main(): quiet polls emit two adjacent in_progress heartbeats, then Clear ===")
 
 # Quiet in_progress polls produce no step/FAIL output, so the only PR#N lines
@@ -1254,7 +1254,7 @@ print("\n=== (o) Gap D: ci_monitor.py prints its real PID and stops on SIGTERM =
 # spawn the real script as a child process, read the advisory PID line, send
 # SIGTERM to that exact PID, and confirm the process exits via the signal. A
 # bogus token + the unreachable real API_BASE means the loop never gets past the
-# SHA fetch, so it stays alive (sleeping) until we signal it — no network needed.
+# SHA fetch, so it stays alive (sleeping) until we signal it; no network needed.
 _MONITOR_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "ci_monitor", "ci_monitor.py"
 )
@@ -1400,7 +1400,7 @@ side_effects_p = collections.deque(
         CHECK_BL_P,
         JOBS_UNIT_FAIL_P,
         ARTS_REAL_UNIT_P,
-        # drain_then_print (Gap E) — up to DRAIN_MAX_ATTEMPTS extra signal polls
+        # drain_then_print (Gap E): up to DRAIN_MAX_ATTEMPTS extra signal polls
         # before the terminal line; all attempts find nothing new here.
         RUNS_P,
         JOBS_UNIT_FAIL_P,
@@ -1455,7 +1455,7 @@ check(
     and fail_line_p in lines_p
     and blocked_line_p in lines_p
     and lines_p.index(step_line_p) < lines_p.index(fail_line_p) < lines_p.index(blocked_line_p),
-    "ordering: step, then FAIL, then terminal Blocked -- both signals before the job concludes",
+    "ordering: step, then FAIL, then terminal Blocked--both signals before the job concludes",
     "ordering wrong; lines: %r" % lines_p,
 )
 # drain flag suppressed because the check (build-and-test) is blocking/diagnosed.
@@ -1486,7 +1486,7 @@ print(
 #
 # To stay deterministic under CI timing jitter, every quiet poll sleeps a real
 # interval comfortably larger than the window (SLEEP_Q >> WINDOW_Q). So each
-# quiet poll *always* crosses the silence window and emits a heartbeat — there is
+# quiet poll *always* crosses the silence window and emits a heartbeat; there is
 # no "is 0.24s > 0.30s?" boundary race. The reset property is then proven by a
 # poll that emits a step delta: emit_block() sets last_output_ts to real now, and
 # the in_progress gate re-reads now immediately after, so now - last_output_ts is
@@ -1530,7 +1530,7 @@ ARTS_EMPTY_Q = {"artifacts": []}
 # 5 polls (each under wiring (a): pulls, verdict check-runs (reused by
 # poll_signals), jobs, artifacts; then a real sleep).
 # main() reads last_output_ts = time.time() at startup, BEFORE poll 1, and each
-# poll's silence check runs before that poll's own sleep — so a heartbeat needs a
+# poll's silence check runs before that poll's own sleep, so a heartbeat needs a
 # prior quiet sleep to have elapsed:
 #   poll 1: quiet; now ~= startup (no sleep yet), diff ~0 -> NO heartbeat
 #   poll 2: quiet; one SLEEP_Q elapsed (> window)         -> heartbeat #1, resets timer
@@ -1562,7 +1562,7 @@ def fake_request_q(url, token, raw=False):
 
 # Capture the genuine time.sleep before patching: ci_monitor.time is the same
 # module object as this module's `time`, so patching ci_monitor.time.sleep also
-# rebinds time.sleep — calling time.sleep here would re-enter the mock and recurse.
+# rebinds time.sleep; calling time.sleep here would re-enter the mock and recurse.
 _REAL_SLEEP = time.sleep
 
 
@@ -2242,16 +2242,16 @@ side_effects_t = collections.deque(
         CHECK_BL_T,  # check-runs -> Blocked (terminal, reused by poll_signals)
         JOBS_EMPTY_T,  # jobs -> not yet caught up, nothing new
         ARTS_EMPTY_T,  # artifacts -> not yet listed
-        # drain attempt 1 -- caught up: step + FAIL surface
+        # drain attempt 1--caught up: step + FAIL surface
         RUNS_T,  # diagnostic check-runs
         JOBS_GATE_FAIL_T,  # jobs -> "Gate on test failures" -> failure
         ARTS_E2E_T,  # artifacts -> testresults-e2e-gallery now listed
         ZIP_E2E_T,  # zip (raw) -> FAIL line for test1a
-        # drain attempt 2 -- everything already seen, nothing new
+        # drain attempt 2--everything already seen, nothing new
         RUNS_T,
         JOBS_GATE_FAIL_T,
         ARTS_E2E_T,
-        # drain attempt 3 -- everything already seen, nothing new
+        # drain attempt 3--everything already seen, nothing new
         RUNS_T,
         JOBS_GATE_FAIL_T,
         ARTS_E2E_T,
@@ -2389,16 +2389,16 @@ side_effects_u = collections.deque(
         CHECK_BL_U,  # check-runs -> Blocked (terminal, reused by poll_signals)
         JOBS_EMPTY_U,  # jobs -> not yet caught up, nothing new
         ARTS_EMPTY_U,  # artifacts -> not yet listed
-        # drain attempt 1 -- still not caught up
+        # drain attempt 1--still not caught up
         RUNS_U,  # diagnostic check-runs
         JOBS_EMPTY_U,  # jobs -> still not yet caught up, nothing new
         ARTS_EMPTY_U,  # artifacts -> still not yet listed
-        # drain attempt 2 -- now caught up
+        # drain attempt 2--now caught up
         RUNS_U,  # diagnostic check-runs
         JOBS_GATE_FAIL_U,  # jobs -> "Gate on test failures" -> failure
         ARTS_E2E_U,  # artifacts -> testresults-e2e-gallery now listed
         ZIP_E2E_U,  # zip (raw) -> FAIL line for test1a
-        # drain attempt 3 -- everything already seen, nothing new
+        # drain attempt 3--everything already seen, nothing new
         RUNS_U,
         JOBS_GATE_FAIL_U,
         ARTS_E2E_U,
@@ -2584,16 +2584,16 @@ side_effects_w = collections.deque(
         CHECK_BL_W,  # check-runs -> Blocked (terminal, reused by poll_signals)
         JOBS_EMPTY_W,  # jobs -> not yet caught up, nothing new
         ARTS_EMPTY_W,  # artifacts -> not yet listed
-        # drain attempt 1 -- STEP caught up, ARTIFACT still lagging
+        # drain attempt 1--STEP caught up, ARTIFACT still lagging
         RUNS_W,  # diagnostic check-runs
         JOBS_GATE_FAIL_W,  # jobs -> "Gate on test failures" -> failure (emits)
         ARTS_EMPTY_W,  # artifacts -> still not listed
-        # drain attempt 2 -- ARTIFACT now caught up
+        # drain attempt 2--ARTIFACT now caught up
         RUNS_W,  # diagnostic check-runs
         JOBS_GATE_FAIL_W,  # jobs -> step already seen, nothing new
         ARTS_E2E_W,  # artifacts -> testresults-e2e-gallery now listed
         ZIP_E2E_W,  # zip (raw) -> FAIL line for test1a
-        # drain attempt 3 -- everything already seen, nothing new
+        # drain attempt 3--everything already seen, nothing new
         RUNS_W,
         JOBS_GATE_FAIL_W,
         ARTS_E2E_W,
@@ -3720,7 +3720,7 @@ _MONITOR_SRC_AK = open(
 check(
     "No blocking labels" not in _MONITOR_SRC_AK,
     "the string 'No blocking labels' does not appear in ci_monitor.py (config-driven only)",
-    "'No blocking labels' hardcoded in ci_monitor.py -- must live only in ci_monitor.config.json",
+    "'No blocking labels' hardcoded in ci_monitor.py--must live only in ci_monitor.config.json",
 )
 
 

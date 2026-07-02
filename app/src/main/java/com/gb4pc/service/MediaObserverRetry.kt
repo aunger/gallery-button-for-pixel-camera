@@ -13,7 +13,7 @@ import com.gb4pc.util.DebugLog
  * Pixel Camera (and other modern camera apps on API 29+) inserts new photos into MediaStore
  * with `IS_PENDING = 1` while the file is being written, then clears the flag once the write
  * completes. The ContentObserver fires on both transitions, but on the first fire the default
- * query excludes the still-pending row — so the result reflects only previously committed
+ * query excludes the still-pending row, so the result reflects only previously committed
  * items. On some devices/firmware the second callback (IS_PENDING → 0) is not delivered
  * reliably, particularly on locked devices.
  *

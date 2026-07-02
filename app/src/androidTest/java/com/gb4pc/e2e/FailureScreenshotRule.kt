@@ -11,7 +11,7 @@ import java.io.File
  * JUnit [TestWatcher] rule that captures a diagnostic screenshot whenever a test fails.
  *
  * The screenshot is saved to the app's external files directory under a "screenshots"
- * subdirectory — the same location used by [com.gb4pc.e2e.visual.Screenshot.saveForArtifact] —
+ * subdirectory (the same location used by [com.gb4pc.e2e.visual.Screenshot.saveForArtifact])
  * so that CI artifact pickup collects it automatically alongside any other screenshots produced
  * during the test.
  *

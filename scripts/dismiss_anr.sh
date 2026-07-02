@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# dismiss_anr.sh — Best-effort ANR watcher for CI pre-flight.
+# dismiss_anr.sh: Best-effort ANR watcher for CI pre-flight.
 #
 # After `adb install -r` the Pixel Launcher receives ACTION_PACKAGE_REPLACED and
 # reconciles its icon grid. On slow CI emulators this can saturate the Launcher's
@@ -11,7 +11,7 @@
 #   1. Dismisses the ANR dialog if it appears (detected via logcat, not polling).
 #   2. Waits for Pixel Launcher CPU usage to fall below 5% (two consecutive
 #      readings) before exiting, so the caller knows the system has settled.
-#   3. Always exits 0 — the green-feed check is the real correctness gate.
+#   3. Always exits 0; the green-feed check is the real correctness gate.
 #
 # Usage:
 #   scripts/dismiss_anr.sh [--adb <path>]
@@ -33,10 +33,10 @@
 (
   set -euo pipefail
 
-  # ── Timestamp helper ─────────────────────────────────────────────────────────
+  # Timestamp helper---------------------------------------------------------
   _ts() { date '+%H:%M:%S.%3N'; }
 
-  # ── Resolve adb ─────────────────────────────────────────────────────────────
+  # Resolve adb---------------------------------------------------------------
   ADB=""
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -57,7 +57,7 @@
   SCRIPT_START_TS="$(date +%s%3N)"
   echo "[dismiss_anr] $(_ts) Script started (adb=$ADB)." >&2
 
-  # ── Detect the home/launcher package at startup ───────────────────────────────
+  # Detect the home/launcher package at startup-------------------------------
   # Try the intent resolution approach first; fall back to pattern matching.
   LAUNCHER_PKG=""
   _resolve_out="$("$ADB" shell cmd package resolve-activity --brief \
@@ -70,10 +70,10 @@
   if [[ -n "$LAUNCHER_PKG" ]]; then
     echo "[dismiss_anr] $(_ts) Launcher detected: $LAUNCHER_PKG" >&2
   else
-    echo "[dismiss_anr] $(_ts) Launcher detection failed — using auto-detected via pattern fallback (nexuslauncher|launcher3)." >&2
+    echo "[dismiss_anr] $(_ts) Launcher detection failed; using auto-detected via pattern fallback (nexuslauncher|launcher3)." >&2
   fi
 
-  # ── Phase 1: logcat trigger ──────────────────────────────────────────────────
+  # Phase 1: logcat trigger-----------------------------------------------------
   # Clear the logcat buffer and start a background stream that sets a flag file
   # the moment an ANR for Pixel Launcher appears in the log.  This costs nothing
   # while no ANR is occurring and fires well before the dialog is rendered.
@@ -83,7 +83,7 @@
   #     ANR that fires after the first is dismissed is still caught.
   #   • `adb logcat` is started as a backgrounded grandchild inside the subshell
   #     and its PID is written to a temp file so the EXIT trap can kill it
-  #     directly — killing only the subshell PID would leave the grandchild
+  #     directly; killing only the subshell PID would leave the grandchild
   #     running after the script exits.
   "$ADB" logcat -c 2>/dev/null || true
 
@@ -132,7 +132,7 @@
     "$ADB" shell logcat -d ActivityManager:E '"'"'*:S'"'"' 2>/dev/null | tail -10 >&2 || true
   ' EXIT
 
-  # ── Poll loop ────────────────────────────────────────────────────────────────
+  # Poll loop--------------------------------------------------------------------
   # POLL_INTERVAL, TIMEOUT, and SLEEP_AFTER_ANR_DETECTED are overridable via
   # environment so the unit test suite can compress the real wall-clock sleeps
   # this loop performs (it polls a real mock adb, not a faked clock).
@@ -151,7 +151,7 @@
     # Phase 2: if the logcat background job flagged an ANR, dismiss it.
     if [ -f "$ANR_FLAG" ]; then
       rm -f "$ANR_FLAG"
-      echo "[dismiss_anr] $(_ts) Logcat ANR trigger fired — waiting ${SLEEP_AFTER_ANR_DETECTED}s for dialog to render." >&2
+      echo "[dismiss_anr] $(_ts) Logcat ANR trigger fired; waiting ${SLEEP_AFTER_ANR_DETECTED}s for dialog to render." >&2
       sleep "$SLEEP_AFTER_ANR_DETECTED"
       echo "[dismiss_anr] $(_ts) Sending KEYCODE_ENTER to dismiss ANR dialog." >&2
       "$ADB" shell input keyevent KEYCODE_ENTER 2>/dev/null || true
@@ -168,14 +168,14 @@
     fi
 
     if [[ -z "$launcher_line" ]]; then
-      # Launcher process not present — treat as idle.
+      # Launcher process not present; treat as idle.
       idle_count=$((idle_count + 1))
       echo "[dismiss_anr] $(_ts) [t=${elapsed}s poll=${poll_n}] idle_count=${idle_count} cpu=absent" >&2
     else
       # Extract the leading integer percentage (e.g. "  12% com.google.android.apps...")
       pct="$(echo "$launcher_line" | grep -oE '^[[:space:]]*[0-9]+' | tr -d ' ' || true)"
       if [[ -z "$pct" ]]; then
-        # Percentage not parseable — skip this iteration without changing idle_count.
+        # Percentage not parseable; skip this iteration without changing idle_count.
         echo "[dismiss_anr] $(_ts) [t=${elapsed}s poll=${poll_n}] idle_count=${idle_count} cpu=(unknown)%" >&2
       elif [[ "$pct" -lt 5 ]]; then
         idle_count=$((idle_count + 1))
@@ -194,7 +194,7 @@
       # is the fallback that catches those cases.
       window_dump=$("$ADB" shell dumpsys window 2>/dev/null) || true
       if echo "$window_dump" | grep -q "Application Not Responding"; then
-        echo "[dismiss_anr] $(_ts) dumpsys window safety check: ANR dialog found — sending KEYCODE_ENTER." >&2
+        echo "[dismiss_anr] $(_ts) dumpsys window safety check: ANR dialog found; sending KEYCODE_ENTER." >&2
         "$ADB" shell input keyevent KEYCODE_ENTER 2>/dev/null || true
         idle_count=0
         # Continue the loop instead of exiting.
@@ -208,6 +208,6 @@
     elapsed=$((elapsed + POLL_INTERVAL))
   done
 
-  echo "[dismiss_anr] $(_ts) Timeout after ${TIMEOUT}s — proceeding anyway." >&2
+  echo "[dismiss_anr] $(_ts) Timeout after ${TIMEOUT}s; proceeding anyway." >&2
   exit 0
 ) || true

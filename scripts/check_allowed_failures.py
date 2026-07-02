@@ -30,7 +30,7 @@ Each directory path must be immediately followed by --suite-label <name>, with
 an optional ``--outcome <value>`` carrying the GitHub Actions step outcome for
 the step that produced those results.  When a step's outcome is ``failure`` but
 it yielded no blocking test failure, the gate treats that as an infrastructure
-failure and fails the build -- this is what ``continue-on-error`` used to hide.
+failure and fails the build--this is what ``continue-on-error`` used to hide.
 
 Exit codes:
     0  no failures, or every failure is allowlisted
@@ -76,7 +76,7 @@ class SuiteSpec:
     # results (``success``, ``failure``, ``skipped`` or empty/unknown). Used to
     # catch *non-test* failures, for example a step that aborted before any
     # JUnit XML was written (the ``date`` breakage in issue #307). Empty means
-    # "outcome unknown -- judge on XML alone".
+    # "outcome unknown--judge on XML alone".
     outcome: str = ""
 
 
@@ -245,7 +245,7 @@ def main(argv: list[str] | None = None) -> int:
 
         # A step that reported `failure` but produced no failing test at all
         # failed for a *non-test* reason (e.g. the broken `date` invocation in
-        # issue #307). A genuine test failure -- even an allowlisted one --
+        # issue #307). A genuine test failure--even an allowlisted one--
         # explains the outcome; an empty result set does not. The allowlist
         # tolerates flaky *tests*, never silent infrastructure breakage, so an
         # unexplained step failure still fails the build.

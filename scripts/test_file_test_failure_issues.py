@@ -727,7 +727,7 @@ class TestMain(unittest.TestCase):
     def test_multiple_suites_processed(self, mock_process):
         """Failures from all suite directories are processed."""
         # Use a separate temp directory for dir2 so it is not a subdirectory of
-        # self.tmpdir — the recursive glob would otherwise pick up its XML files
+        # self.tmpdir; the recursive glob would otherwise pick up its XML files
         # when scanning the first suite directory.
         with tempfile.TemporaryDirectory() as e2e_tmpdir:
             dir2 = Path(e2e_tmpdir)

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# filter_logcat.sh — Filter logcat lines for CI failure diagnostics.
+# filter_logcat.sh: Filter logcat lines for CI failure diagnostics.
 #
 # Reads logcat lines from stdin and writes filtered lines to stdout.
 #

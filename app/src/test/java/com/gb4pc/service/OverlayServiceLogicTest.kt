@@ -23,7 +23,7 @@ class OverlayServiceLogicTest {
     private lateinit var sessionTracker: SessionTracker
     private lateinit var handler: Handler
 
-    // CameraState is used as a real object — it has no Android deps
+    // CameraState is used as a real object; it has no Android deps
     private lateinit var cameraState: CameraState
 
     // ── Lambda state flags ──────────────────────────────────────────────────
@@ -90,7 +90,7 @@ class OverlayServiceLogicTest {
         logic.onCameraUnavailable("0")
         assertTrue("Overlay should be active after camera 0 unavailable", logic.isOverlayActive)
 
-        // Camera 1 also in use — no deactivation should be scheduled
+        // Camera 1 also in use; no deactivation should be scheduled
         logic.onCameraUnavailable("1")
         assertTrue("Overlay should remain active while camera 1 is also in use", logic.isOverlayActive)
         verify(handler, never()).postDelayed(any(), any())
@@ -100,7 +100,7 @@ class OverlayServiceLogicTest {
         verify(handler, never()).postDelayed(any(), any())
         assertTrue("Overlay should still be active while camera 1 is in use", logic.isOverlayActive)
 
-        // Camera 1 released — all cameras available → deactivation scheduled
+        // Camera 1 released; all cameras available → deactivation scheduled
         logic.onCameraAvailable("1")
         verify(handler, times(1)).postDelayed(any(), eq(0L))
     }
@@ -153,7 +153,7 @@ class OverlayServiceLogicTest {
         logic.evaluateForeground()
         assertTrue(mediaObserverRegistered)
 
-        // Call again — observer must not be registered a second time
+        // Call again; observer must not be registered a second time
         var registrationCount = 0
         val logic2 =
             OverlayServiceLogic(
@@ -285,7 +285,7 @@ class OverlayServiceLogicTest {
 
     /**
      * A second evaluateForeground() call while a retry is already pending must not schedule
-     * a second handler.postDelayed — the existing retry is reused (idempotent scheduling).
+     * a second handler.postDelayed; the existing retry is reused (idempotent scheduling).
      */
     @Test
     fun `DT-06a retry is not double-scheduled on repeated evaluateForeground calls`() {
@@ -374,7 +374,7 @@ class OverlayServiceLogicTest {
         verify(handler).postDelayed(runnableCaptor.capture(), eq(Constants.ACTIVATION_RETRY_MS))
         runnableCaptor.firstValue.run()
 
-        // Foreground still not detected -- exactly one follow-up retry is scheduled (2 total).
+        // Foreground still not detected--exactly one follow-up retry is scheduled (2 total).
         verify(handler, times(2)).postDelayed(any(), eq(Constants.ACTIVATION_RETRY_MS))
         assertFalse("Overlay must not be active when foreground was never detected", logic.isOverlayActive)
     }
@@ -484,12 +484,12 @@ class OverlayServiceLogicTest {
         val runnableCaptor = argumentCaptor<Runnable>()
         verify(handler).postDelayed(runnableCaptor.capture(), eq(Constants.ACTIVATION_RETRY_MS))
 
-        // Camera released before activation completed — overlay still inactive
+        // Camera released before activation completed; overlay still inactive
         assertFalse("Pre-condition: overlay should not be active", logic.isOverlayActive)
         logic.onCameraAvailable("0")
 
         verify(handler).removeCallbacks(runnableCaptor.firstValue)
-        // Issue #89: no deactivation should be scheduled — overlay was never active
+        // Issue #89: no deactivation should be scheduled; overlay was never active
         verify(handler, never()).postDelayed(any(), eq(0L))
         verify(handler, never()).postDelayed(any(), eq(Constants.CAMERA_DEBOUNCE_MS))
     }
@@ -502,7 +502,7 @@ class OverlayServiceLogicTest {
      */
     @Test
     fun `issue-89 onCameraAvailable does not schedule deactivation when overlay is inactive`() {
-        // Overlay was never activated — simulate the initial-startup priming case
+        // Overlay was never activated; simulate the initial-startup priming case
         assertFalse("Pre-condition: overlay should not be active", logic.isOverlayActive)
 
         logic.onCameraAvailable("0")
@@ -530,7 +530,7 @@ class OverlayServiceLogicTest {
 
     /**
      * When all cameras become available and Pixel Camera is no longer the foreground app
-     * (the user closed the camera app), deactivation should be scheduled with 0 ms delay —
+     * (the user closed the camera app), deactivation should be scheduled with 0 ms delay,
      * no debounce needed for a true app-close.
      */
     @Test
@@ -684,7 +684,7 @@ class OverlayServiceLogicTest {
      * Issue #92: onOverlayFocusLost must cancel any pending camera-available deactivation
      * runnable before hiding the overlay. Without this, the deactivation runnable fires after
      * focus-loss has already hidden the overlay, calling hideOverlayAndCleanup() a second time
-     * — double-firing onOverlayStateChanged and incorrectly unregistering the thumbnail
+     * (double-firing onOverlayStateChanged and incorrectly unregistering the thumbnail
      * observer again.
      */
     @Test
@@ -699,7 +699,7 @@ class OverlayServiceLogicTest {
         val runnableCaptor = argumentCaptor<Runnable>()
         verify(handler).postDelayed(runnableCaptor.capture(), eq(50L))
 
-        // Focus lost — must cancel the pending deactivation
+        // Focus lost; must cancel the pending deactivation
         logic.onOverlayFocusLost()
 
         verify(handler).removeCallbacks(runnableCaptor.firstValue)
@@ -713,7 +713,7 @@ class OverlayServiceLogicTest {
      */
     @Test
     fun `issue-92 onOverlayFocusLost unregisters thumbnail observer`() {
-        // Activate the overlay — this registers the thumbnail observer
+        // Activate the overlay; this registers the thumbnail observer
         whenever(foregroundDetector.getForegroundPackage()).thenReturn(Constants.PIXEL_CAMERA_PACKAGE)
         logic.showOverlay()
         assertTrue("Pre-condition: thumbnail observer should be registered", thumbnailObserverRegistered)
@@ -730,7 +730,7 @@ class OverlayServiceLogicTest {
      */
     @Test
     fun `issue-92 onOverlayFocusLost ends active secure session`() {
-        // Activate via lock-screen bypass — starts a session immediately
+        // Activate via lock-screen bypass; starts a session immediately
         keyguardLocked = true
         cameraState.setCameraUnavailable("0")
         logic.evaluateForeground()
@@ -761,14 +761,14 @@ class OverlayServiceLogicTest {
         logic.onOverlayFocusLost()
         assertFalse("Thumbnail observer should be unregistered after focus loss", thumbnailObserverRegistered)
 
-        // Regain focus — thumbnail observer must be re-registered
+        // Regain focus; thumbnail observer must be re-registered
         logic.onOverlayFocusGained()
         assertTrue("Thumbnail observer must be re-registered on focus gained (Issue #92)", thumbnailObserverRegistered)
     }
 
     /**
      * Issue #92 (lock-screen): when the device is locked at focus-gained time,
-     * onOverlayFocusGained must mirror showOverlay()'s lock-screen behaviour — start the
+     * onOverlayFocusGained must mirror showOverlay()'s lock-screen behaviour: start the
      * secure session and re-register the media observer so newly captured photos update the
      * thumbnail button.  Without this, a focus-lost/focus-gained cycle on a locked device
      * would re-show the overlay but leave the media observer absent.
@@ -788,7 +788,7 @@ class OverlayServiceLogicTest {
         assertFalse("Pre-condition: overlay should be hidden after focus loss", logic.isOverlayActive)
         assertFalse("Pre-condition: media observer should be unregistered after focus loss", mediaObserverRegistered)
 
-        // Regain focus on a still-locked device — session and media observer must be restored
+        // Regain focus on a still-locked device; session and media observer must be restored
         logic.onOverlayFocusGained()
 
         assertTrue("Overlay should be active after focus regained", logic.isOverlayActive)
@@ -812,7 +812,7 @@ class OverlayServiceLogicTest {
 
         assertTrue("Overlay should be active via lock-screen bypass", logic.isOverlayActive)
         verify(overlayManager).show()
-        // UsageStats should NOT be consulted — foregroundDetector must not be called
+        // UsageStats should NOT be consulted; foregroundDetector must not be called
         verify(foregroundDetector, never()).getForegroundPackage()
     }
 
@@ -848,13 +848,13 @@ class OverlayServiceLogicTest {
 
         // show() must be called exactly once (not twice)
         verify(overlayManager, times(1)).show()
-        // UsageStats must never be consulted on a locked device — getForegroundPackage() returns
+        // UsageStats must never be consulted on a locked device; getForegroundPackage() returns
         // null on lock screen and calling it would be both wrong and misleading.
         verify(foregroundDetector, never()).getForegroundPackage()
     }
 
     /**
-     * The lock-screen bypass does NOT fire when the device is unlocked — normal UsageStats
+     * The lock-screen bypass does NOT fire when the device is unlocked; normal UsageStats
      * detection applies instead.
      */
     @Test
@@ -877,7 +877,7 @@ class OverlayServiceLogicTest {
     @Test
     fun `issue-81 lock-screen bypass does not fire when no camera is in use`() {
         keyguardLocked = true
-        // No camera is unavailable — cameraState.anyCameraUnavailable() == false
+        // No camera is unavailable; cameraState.anyCameraUnavailable() == false
 
         logic.evaluateForeground()
 
@@ -914,7 +914,7 @@ class OverlayServiceLogicTest {
     /**
      * On the lock screen, when the camera is released, deactivation must use debounceMs
      * (not 0 ms). UsageStats returns null on a locked device, so without this guard the
-     * deactivation code would see isPixelCameraPackage=false and use 0 ms — prematurely
+     * deactivation code would see isPixelCameraPackage=false and use 0 ms, prematurely
      * hiding the overlay during a transient lens switch.
      *
      * This test uses a non-zero debounceMs to distinguish the two delay values.
@@ -943,7 +943,7 @@ class OverlayServiceLogicTest {
         logicWithDebounce.onCameraUnavailable("0")
         assertTrue("Pre-condition: overlay should be active via lock-screen bypass", logicWithDebounce.isOverlayActive)
 
-        // Camera released — on lock screen, getForegroundPackage() returns null, so without
+        // Camera released; on lock screen, getForegroundPackage() returns null, so without
         // the fix the delay would be 0 ms; with the fix it must be debounceMs.
         logicWithDebounce.onCameraAvailable("0")
 
@@ -956,7 +956,7 @@ class OverlayServiceLogicTest {
 
     /**
      * When the gallery is launched and PC is no longer in the foreground, the overlay is
-     * hidden immediately — without waiting for the camera-available event.
+     * hidden immediately, without waiting for the camera-available event.
      */
     @Test
     fun `issue-91 overlay hidden immediately when PC not in foreground after gallery launch`() {
@@ -978,7 +978,7 @@ class OverlayServiceLogicTest {
 
     /**
      * When the gallery is launched but PC is still in the foreground (e.g. split-screen),
-     * a re-check is scheduled after debounceMs — no immediate hide.
+     * a re-check is scheduled after debounceMs; no immediate hide.
      */
     @Test
     fun `issue-91 recheck scheduled when PC still in foreground after gallery launch`() {
@@ -1056,7 +1056,7 @@ class OverlayServiceLogicTest {
 
     /**
      * When the re-check fires and PC is still in the foreground (it stayed there), the
-     * overlay is NOT hidden — the user is using split-screen or dual-screen.
+     * overlay is NOT hidden; the user is using split-screen or dual-screen.
      */
     @Test
     fun `issue-91 recheck does not hide overlay when PC still in foreground at recheck time`() {
@@ -1123,7 +1123,7 @@ class OverlayServiceLogicTest {
 
     /**
      * Deferred recheck hide on gallery launch must also fully tear down: end the secure session
-     * and unregister both ContentObservers — same requirement as the immediate-hide path.
+     * and unregister both ContentObservers; same requirement as the immediate-hide path.
      */
     @Test
     fun `issue-91 deferred recheck hide ends session and unregisters observers`() {
@@ -1149,7 +1149,7 @@ class OverlayServiceLogicTest {
                 onUnregisterThumbnailObserver = { thumbnailRegistered = false },
             )
 
-        // Activate via lock-screen bypass — starts a session immediately
+        // Activate via lock-screen bypass; starts a session immediately
         logicWithSession.onCameraUnavailable("0")
         assertTrue("Pre-condition: overlay active", logicWithSession.isOverlayActive)
         assertTrue("Pre-condition: thumbnail observer registered", thumbnailRegistered)

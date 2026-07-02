@@ -132,7 +132,7 @@ class TestParseDirectory(unittest.TestCase):
     def test_error_element_counts_as_failure(self):
         _write_xml(self.tmpdir, "TEST-mixed.xml", MIXED_XML)
         classes = srt.parse_directory(self.tmpdir)
-        # BetaTest has an <error> child — should count as failed
+        # BetaTest has an <error> child; should count as failed
         self.assertTrue(classes["com.example.BetaTest"].any_failed)
 
     def test_skipped_element_not_counted_as_pass(self):
@@ -526,7 +526,7 @@ class TestMain(unittest.TestCase):
         self.assertEqual(result, 0)
 
     def test_exit_0_on_failing_results(self):
-        """Script always exits 0 — failures are surfaced by earlier steps."""
+        """Script always exits 0; failures are surfaced by earlier steps."""
         _write_xml(self.tmpdir, "TEST-foo.xml", FAILING_XML)
         result = srt.main([str(self.tmpdir), "--suite-label", "Unit"])
         self.assertEqual(result, 0)

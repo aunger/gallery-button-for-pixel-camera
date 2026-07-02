@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test_filter_logcat.sh — Shell-based tests for filter_logcat.sh.
+# test_filter_logcat.sh: Shell-based tests for filter_logcat.sh.
 #
 # Covers:
 #   (a) Lines without base64 blobs are passed through unchanged (if they match the filter)

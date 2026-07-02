@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# GB4PC — Claude Code for Web session-start hook
+# GB4PC: Claude Code for Web session-start hook
 #
 # Idempotent: every block checks whether its work is already done before
 # doing it, so re-running the hook (or running it on a container that already
@@ -19,20 +19,20 @@ CMDLINE_TOOLS_URL="https://dl.google.com/android/repository/commandlinetools-lin
 SDKMANAGER="$ANDROID_HOME_DIR/cmdline-tools/latest/bin/sdkmanager"
 GRADLE_INIT="$HOME/.gradle/init.d/proxy-auth.gradle"
 
-echo "[session-start] GB4PC environment setup…"
+echo "[session-start] GB4PC environment setup..."
 
 # ───────────────────────────────────────────────────────────────────────────────
-# STEP 0 — Fix JAVA_TOOL_OPTIONS proxy / DNS issue.
+# STEP 0: Fix JAVA_TOOL_OPTIONS proxy / DNS issue.
 #
 # The container's JAVA_TOOL_OPTIONS lists *.google.com and *.googleapis.com in
-# nonProxyHosts, so Java tries direct connections to those domains — but there
+# nonProxyHosts, so Java tries direct connections to those domains, but there
 # is no direct DNS resolution for *.google.com in this network.  Stripping
 # those entries makes Java route them through the proxy, the same way wget/curl
 # already do.  The fixed value is exported via $CLAUDE_ENV_FILE so it persists
 # for all subsequent tool invocations in this session.
 # ───────────────────────────────────────────────────────────────────────────────
 if echo "${JAVA_TOOL_OPTIONS:-}" | grep -qE '\*\.(google|googleapis)\.com'; then
-    # Strip each entry independently — order in the container value is not guaranteed.
+    # Strip each entry independently; order in the container value is not guaranteed.
     FIXED_JTO=$(echo "$JAVA_TOOL_OPTIONS" \
         | sed 's/|\*\.googleapis\.com//' \
         | sed 's/|\*\.google\.com//')
@@ -43,17 +43,17 @@ if echo "${JAVA_TOOL_OPTIONS:-}" | grep -qE '\*\.(google|googleapis)\.com'; then
     fi
     echo "[session-start] Step 0: stripped *.google.com from nonProxyHosts"
 else
-    echo "[session-start] Step 0: JAVA_TOOL_OPTIONS already clean — skip"
+    echo "[session-start] Step 0: JAVA_TOOL_OPTIONS already clean--skip"
 fi
 
 # ───────────────────────────────────────────────────────────────────────────────
-# STEP 1 — Gradle proxy authenticator.
+# STEP 1: Gradle proxy authenticator.
 #
 # Java 9+ no longer auto-registers http.proxyUser/proxyPassword as an
 # Authenticator, so proxied HTTPS CONNECT tunnels get HTTP 407.
 # ───────────────────────────────────────────────────────────────────────────────
 if [[ -f "$GRADLE_INIT" ]]; then
-    echo "[session-start] Step 1: Gradle proxy-auth init.d present — skip"
+    echo "[session-start] Step 1: Gradle proxy-auth init.d present--skip"
 else
     mkdir -p "$(dirname "$GRADLE_INIT")"
     cat > "$GRADLE_INIT" << 'GROOVY'
@@ -75,12 +75,12 @@ GROOVY
 fi
 
 # ───────────────────────────────────────────────────────────────────────────────
-# STEP 2a — Android SDK command-line tools.
+# STEP 2a: Android SDK command-line tools.
 # ───────────────────────────────────────────────────────────────────────────────
 if [[ -x "$SDKMANAGER" ]]; then
-    echo "[session-start] Step 2a: sdkmanager present — skip"
+    echo "[session-start] Step 2a: sdkmanager present--skip"
 else
-    echo "[session-start] Step 2a: downloading Android command-line tools…"
+    echo "[session-start] Step 2a: downloading Android command-line tools..."
     TMP_ZIP=$(mktemp /tmp/cmdline-tools-XXXXXX.zip)
     TMP_EXTRACT=$(mktemp -d /tmp/cmdline-tools-extract-XXXXXX)
     # Clean up temp files and any partial extraction on failure.
@@ -104,12 +104,12 @@ if [[ -n "${CLAUDE_ENV_FILE:-}" ]] \
 fi
 
 # ───────────────────────────────────────────────────────────────────────────────
-# STEP 2b — SDK licenses.
+# STEP 2b: SDK licenses.
 # ───────────────────────────────────────────────────────────────────────────────
 if [[ -f "$ANDROID_HOME_DIR/licenses/android-sdk-license" ]]; then
-    echo "[session-start] Step 2b: SDK licenses present — skip"
+    echo "[session-start] Step 2b: SDK licenses present--skip"
 else
-    echo "[session-start] Step 2b: writing SDK license files…"
+    echo "[session-start] Step 2b: writing SDK license files..."
     mkdir -p "$ANDROID_HOME_DIR/licenses"
     printf '\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e\n24333f8a63b6825ea9c5514f83c2829b004d1fee' \
         > "$ANDROID_HOME_DIR/licenses/android-sdk-license"
@@ -119,7 +119,7 @@ else
 fi
 
 # ───────────────────────────────────────────────────────────────────────────────
-# STEP 2c — SDK packages (only installs what is missing).
+# STEP 2c: SDK packages (only installs what is missing).
 # build-tools;34.0.0 is required by AGP 8.7.3 even though the project targets 35.
 # ───────────────────────────────────────────────────────────────────────────────
 declare -A SDK_PACKAGES=(
@@ -132,22 +132,22 @@ declare -A SDK_PACKAGES=(
 MISSING=()
 for pkg in "${!SDK_PACKAGES[@]}"; do
     [[ -d "${SDK_PACKAGES[$pkg]}" ]] \
-        && echo "[session-start] Step 2c: $pkg present — skip" \
+        && echo "[session-start] Step 2c: $pkg present--skip" \
         || MISSING+=("$pkg")
 done
 
 if [[ ${#MISSING[@]} -gt 0 ]]; then
     echo "[session-start] Step 2c: installing: ${MISSING[*]}"
     yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 \
-        || echo "[session-start] Step 2c: warning: sdkmanager --licenses failed — install may fail if license is unaccepted"
+        || echo "[session-start] Step 2c: warning: sdkmanager --licenses failed--install may fail if license is unaccepted"
     "$SDKMANAGER" "${MISSING[@]}"
     echo "[session-start] Step 2c: done"
 else
-    echo "[session-start] Step 2c: all SDK packages present — skip"
+    echo "[session-start] Step 2c: all SDK packages present--skip"
 fi
 
 # ───────────────────────────────────────────────────────────────────────────────
-# STEP 3 — Linting tools (pre-commit framework + ktlint).
+# STEP 3: Linting tools (pre-commit framework + ktlint).
 # ───────────────────────────────────────────────────────────────────────────────
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 LOCAL_BIN="$HOME/.local/bin"
@@ -162,12 +162,12 @@ if [[ -n "${CLAUDE_ENV_FILE:-}" ]] \
     echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$CLAUDE_ENV_FILE"
 fi
 
-# STEP 3a — ktlint binary.
+# STEP 3a: ktlint binary.
 KTLINT_BIN="$LOCAL_BIN/ktlint"
 if [[ -x "$KTLINT_BIN" ]]; then
-    echo "[session-start] Step 3a: ktlint present — skip"
+    echo "[session-start] Step 3a: ktlint present--skip"
 else
-    echo "[session-start] Step 3a: installing ktlint…"
+    echo "[session-start] Step 3a: installing ktlint..."
     curl -sSL \
         https://github.com/pinterest/ktlint/releases/latest/download/ktlint \
         -o "$KTLINT_BIN"
@@ -175,31 +175,31 @@ else
     echo "[session-start] Step 3a: ktlint installed"
 fi
 
-# STEP 3b — pre-commit Python package.
+# STEP 3b: pre-commit Python package.
 # Check the binary directly rather than via `command -v`: PATH may not yet
 # include $LOCAL_BIN, and pip skips reinstalling the entrypoint script when
 # the package dist-info already exists.  --force-reinstall recreates the
 # missing binary in that case without requiring a full uninstall.
 PRECOMMIT_BIN="$LOCAL_BIN/pre-commit"
 if [[ -x "$PRECOMMIT_BIN" ]]; then
-    echo "[session-start] Step 3b: pre-commit present — skip"
+    echo "[session-start] Step 3b: pre-commit present--skip"
 else
-    echo "[session-start] Step 3b: installing pre-commit…"
+    echo "[session-start] Step 3b: installing pre-commit..."
     pip install --user --force-reinstall --quiet pre-commit
     echo "[session-start] Step 3b: pre-commit installed"
 fi
 
-# STEP 3c — wire pre-commit into the repo's git hooks.
+# STEP 3c: wire pre-commit into the repo's git hooks.
 if [[ -f "$REPO_ROOT/.git/hooks/pre-commit" ]]; then
-    echo "[session-start] Step 3c: pre-commit hook wired — skip"
+    echo "[session-start] Step 3c: pre-commit hook wired--skip"
 else
-    echo "[session-start] Step 3c: running pre-commit install…"
+    echo "[session-start] Step 3c: running pre-commit install..."
     (cd "$REPO_ROOT" && "$PRECOMMIT_BIN" install)
     echo "[session-start] Step 3c: pre-commit hook wired"
 fi
 
 # ───────────────────────────────────────────────────────────────────────────────
-# STEP 4 -- Fetch remote refs.
+# STEP 4: Fetch remote refs.
 #
 # Keep local knowledge of the remote up to date at the start of every session.
 # git fetch is always safe (it never modifies the working tree), so no skip
@@ -209,6 +209,6 @@ fi
 echo "[session-start] Step 4: git fetch..."
 git -C "$REPO_ROOT" fetch --prune --quiet \
     && echo "[session-start] Step 4: fetch complete" \
-    || echo "[session-start] Step 4: warning: git fetch failed (offline? -- continuing)"
+    || echo "[session-start] Step 4: warning: git fetch failed"
 
 echo "[session-start] Complete. ANDROID_HOME=$ANDROID_HOME"

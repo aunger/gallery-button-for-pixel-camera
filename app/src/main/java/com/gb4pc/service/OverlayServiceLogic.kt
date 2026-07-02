@@ -40,7 +40,7 @@ class OverlayServiceLogic(
 
     private var deactivateRunnable: Runnable? = null
 
-    // DT-06a: Retry runnable for UsageStats lag -- fires if foreground not detected on first check.
+    // DT-06a: Retry runnable for UsageStats lag--fires if foreground not detected on first check.
     // activationRetryPending gates re-scheduling: it is true exactly while a retry runnable is
     // posted to the handler, so a burst of evaluateForeground() calls (e.g. several camera events)
     // cannot stack multiple retries for the same lag.
@@ -82,7 +82,7 @@ class OverlayServiceLogic(
             // shows available between switching cameras); for a true app-close we want 0 ms.
             //
             // Issue #81: When the device is locked, UsageStats returns null for the foreground
-            // package, so isPixelCameraPackage() would always be false — incorrectly using 0 ms
+            // package, so isPixelCameraPackage() would always be false, incorrectly using 0 ms
             // and prematurely hiding the overlay during a transient camera switch on the lock
             // screen.  Take the conservative (debounceMs) path whenever the keyguard is locked.
             val delay =
@@ -107,12 +107,12 @@ class OverlayServiceLogic(
      * [android.app.usage.UsageStatsManager] does not emit MOVE_TO_FOREGROUND events, so
      * [ForegroundDetector.getForegroundPackage] always returns null regardless of which app
      * opened the camera.  On a locked device the camera can only be launched via the lock-screen
-     * camera shortcut — which is always Pixel Camera — so we bypass the UsageStats check and
+     * camera shortcut (which is always Pixel Camera), so we bypass the UsageStats check and
      * activate the overlay directly.
      */
     fun evaluateForeground() {
         if (!hasUsageStatsPermission()) {
-            DebugLog.log("Logic: evaluateForeground — usage-stats permission missing; overlayActive=$isOverlayActive")
+            DebugLog.log("Logic: evaluateForeground: usage-stats permission missing; overlayActive=$isOverlayActive")
             if (isOverlayActive) {
                 overlayManager.hide()
                 isOverlayActive = false
@@ -131,11 +131,11 @@ class OverlayServiceLogic(
         //   on a locked device (it would return null and could cause incorrect side-effects).
         if (isKeyguardLocked() && cameraState.anyCameraUnavailable()) {
             if (!isOverlayActive) {
-                DebugLog.log("Logic: evaluateForeground — device locked with camera in use; activating overlay without UsageStats lookup")
+                DebugLog.log("Logic: evaluateForeground: device locked with camera in use; activating overlay without UsageStats lookup")
                 cancelActivationRetry()
                 showOverlay()
             } else {
-                DebugLog.log("Logic: evaluateForeground — device locked, overlay already active; skipping UsageStats lookup")
+                DebugLog.log("Logic: evaluateForeground: device locked, overlay already active; skipping UsageStats lookup")
             }
             return
         }
@@ -143,7 +143,7 @@ class OverlayServiceLogic(
         val pkg = foregroundDetector.getForegroundPackage()
         val isPixelCamera = ForegroundDetector.isPixelCameraPackage(pkg)
         DebugLog.log(
-            "Logic: evaluateForeground — overlayActive=$isOverlayActive, anyCameraUnavailable=${cameraState.anyCameraUnavailable()}",
+            "Logic: evaluateForeground: overlayActive=$isOverlayActive, anyCameraUnavailable=${cameraState.anyCameraUnavailable()}",
         )
 
         if (isPixelCamera && !isOverlayActive) {
@@ -161,12 +161,12 @@ class OverlayServiceLogic(
      */
     fun showOverlay() {
         if (!hasOverlayPermission()) {
-            DebugLog.log("Logic: showOverlay — overlay permission missing; cannot show")
+            DebugLog.log("Logic: showOverlay: overlay permission missing; cannot show")
             onOverlayPermissionLost()
             return
         }
         val locked = isKeyguardLocked()
-        DebugLog.log("Logic: showOverlay — showing overlay; keyguardLocked=$locked")
+        DebugLog.log("Logic: showOverlay: showing overlay; keyguardLocked=$locked")
         overlayManager.show()
         isOverlayActive = true
         onOverlayStateChanged(true)
@@ -175,7 +175,7 @@ class OverlayServiceLogic(
         // SF-01: If device is locked at activation time, begin a secure session immediately.
         // H3: If unlocked, onScreenOff() will start the session when the screen locks.
         if (locked) {
-            DebugLog.log("Logic: device locked at activation — starting secure session immediately")
+            DebugLog.log("Logic: device locked at activation; starting secure session immediately")
             sessionTracker.startSession()
             onRegisterMediaObserver()
         }
@@ -196,7 +196,7 @@ class OverlayServiceLogic(
                 if (allAvailable) {
                     hideOverlayAndCleanup()
                 } else {
-                    DebugLog.log("Logic: deactivation skipped — camera still in use")
+                    DebugLog.log("Logic: deactivation skipped; camera still in use")
                 }
             }
         handler.postDelayed(deactivateRunnable!!, delayMs)
@@ -206,7 +206,7 @@ class OverlayServiceLogic(
      * Hides the overlay, marks it inactive, fires [onOverlayStateChanged], unregisters the
      * thumbnail observer, and ends any active secure session (unregistering the media observer).
      *
-     * This is the single place responsible for all teardown that must accompany every hide —
+     * This is the single place responsible for all teardown that must accompany every hide,
      * used by [scheduleDeactivation], [onGalleryLaunched], and [scheduleGalleryLaunchRecheck].
      */
     private fun hideOverlayAndCleanup() {
@@ -302,20 +302,20 @@ class OverlayServiceLogic(
      * MOVE_TO_FOREGROUND events while the keyguard is up), so [isPixelCameraPackage] will be
      * false and we always take the immediate-hide path. This is intentional: the gallery button
      * is not visible on the lock screen, so if we reach this code the device must have been
-     * unlocked when the button was pressed — hiding immediately is correct.
+     * unlocked when the button was pressed; hiding immediately is correct.
      */
     fun onGalleryLaunched() {
         if (!isOverlayActive) return
-        DebugLog.log("Logic: gallery launched — checking foreground app (Issue #91)")
+        DebugLog.log("Logic: gallery launched; checking foreground app (Issue #91)")
         // Cancel any pending deactivation so its runnable cannot fire after we hide here,
         // which could call hide() a second time or unregister observers on a fresh activation.
         cancelPendingDeactivation()
         val pkg = foregroundDetector.getForegroundPackage()
         if (!ForegroundDetector.isPixelCameraPackage(pkg)) {
-            DebugLog.log("Logic: PC not in foreground after gallery launch — hiding overlay immediately")
+            DebugLog.log("Logic: PC not in foreground after gallery launch; hiding overlay immediately")
             hideOverlayAndCleanup()
         } else {
-            DebugLog.log("Logic: PC still in foreground after gallery launch — scheduling re-check in ${debounceMs}ms")
+            DebugLog.log("Logic: PC still in foreground after gallery launch; scheduling re-check in ${debounceMs}ms")
             scheduleGalleryLaunchRecheck()
         }
     }
@@ -329,7 +329,7 @@ class OverlayServiceLogic(
                 galleryLaunchRecheckRunnable = null
                 if (!isOverlayActive) return@Runnable
                 val pkg = foregroundDetector.getForegroundPackage()
-                DebugLog.log("Logic: gallery-launch re-check fired — foreground=$pkg, overlayActive=$isOverlayActive")
+                DebugLog.log("Logic: gallery-launch re-check fired; foreground=$pkg, overlayActive=$isOverlayActive")
                 if (!ForegroundDetector.isPixelCameraPackage(pkg)) {
                     hideOverlayAndCleanup()
                 }
@@ -348,7 +348,7 @@ class OverlayServiceLogic(
      *
      * Issue #92: Must cancel any pending camera-available deactivation runnable before hiding,
      * otherwise the runnable fires after focus-loss hides the overlay and calls
-     * hideOverlayAndCleanup() on an already-hidden overlay — double-firing onOverlayStateChanged
+     * hideOverlayAndCleanup() on an already-hidden overlay (double-firing onOverlayStateChanged
      * and incorrectly unregistering the thumbnail observer a second time.
      * Uses hideOverlayAndCleanup() (not a bare hide()) so the thumbnail observer and any active
      * secure session are torn down correctly on focus loss.
@@ -369,7 +369,7 @@ class OverlayServiceLogic(
      * the overlay button thumbnail works correctly after focus is regained, matching the
      * behaviour of showOverlay().
      *
-     * Issue #92 (lock-screen): mirrors [showOverlay]'s lock-screen path — if the device is
+     * Issue #92 (lock-screen): mirrors [showOverlay]'s lock-screen path; if the device is
      * locked when focus is regained, re-start the secure session and re-register the media
      * observer so newly captured photos update the thumbnail button.
      */
@@ -386,7 +386,7 @@ class OverlayServiceLogic(
         onOverlayStateChanged(true)
         onRegisterThumbnailObserver()
         if (isKeyguardLocked()) {
-            DebugLog.log("Logic: overlay focus gained on locked device — starting secure session")
+            DebugLog.log("Logic: overlay focus gained on locked device; starting secure session")
             sessionTracker.startSession()
             onRegisterMediaObserver()
         }

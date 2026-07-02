@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# setup-e2e-emulator.sh — Prepare an Android emulator for E2E tests.
+# setup-e2e-emulator.sh: Prepare an Android emulator for E2E tests.
 #
 # Usage:
-#   scripts/setup-e2e-emulator.sh            # Full local setup (steps 1–7)
-#   scripts/setup-e2e-emulator.sh --post-boot # CI post-boot setup only (steps 4–7)
+#   scripts/setup-e2e-emulator.sh            # Full local setup (steps 1-7)
+#   scripts/setup-e2e-emulator.sh --post-boot # CI post-boot setup only (steps 4-7)
 #
 # Full setup (local):
 #   1. Create AVD (API 35, Google APIs, x86_64, Pixel_6 skin)
@@ -17,7 +17,7 @@
 #      would block activity launches from non-lockScreen tests)
 #
 # Post-boot setup (CI): the emulator is already running and all system services
-# have been verified ready by the workflow; this script performs steps 4–8 only.
+# have been verified ready by the workflow; this script performs steps 4-8 only.
 # Mock Pixel Camera (e2e-mock-camera) is installed separately by the CI workflow
 # and by the connectedE2EAndroidTest Gradle task.
 #
@@ -57,7 +57,7 @@ if [[ ! -d "$CMDLINE_TOOLS" ]]; then
     CMDLINE_TOOLS="$ANDROID_SDK/tools/bin"
 fi
 
-# ── Step 1–3: AVD creation and emulator start (local only) ──────────────────
+# Step 1-3: AVD creation and emulator start (local only)-------------------
 if [[ "$POST_BOOT_ONLY" == false ]]; then
     AVD_NAME="gb4pc_e2e"
     API_LEVEL=35
@@ -147,7 +147,7 @@ echo "==> Disabling animations..."
 # emulator: KEYCODE_SLEEP turns the display off but KeyguardManager.isKeyguardLocked
 # remains false, so E2EFixture.lockScreen() times out (issue #178).
 # Setting a PIN makes the keyguard secure, so it engages whenever the display
-# sleeps. The PIN itself is never entered by the tests — they only rely on the
+# sleeps. The PIN itself is never entered by the tests; they only rely on the
 # keyguard being locked. Clear the PIN with `locksettings clear --old 1234`
 # if you need to remove it later (the AVD is otherwise idempotent).
 #
@@ -160,12 +160,12 @@ echo "==> Setting lock-screen PIN (1234) so keyguard engages on sleep..."
 "$ADB" shell locksettings set-pin 1234 || \
     "$ADB" shell locksettings set-pin --old 1234 1234
 
-# ── Step 8: Dismiss the (now-secure) keyguard ───────────────────────────────
+# Step 8: Dismiss the (now-secure) keyguard--------------------------------
 # Setting a PIN engages the keyguard immediately on API 35, even with the
 # display on. If we leave it engaged here, the next `am start STILL_IMAGE_CAMERA`
 # from a test (e.g. PixelCameraOverlayE2ETest.overlayAppearsWhenViewfinderOpens)
 # is force-removed by WindowManager because the activity is launched under the
-# lock screen — the test then times out waiting for the overlay.
+# lock screen; the test then times out waiting for the overlay.
 # Wake the display, request keyguard dismissal, type the PIN, and submit ENTER.
 # The CI workflow's `stay_on_while_plugged_in 7` then keeps the keyguard
 # dismissed until a test explicitly calls KEYCODE_SLEEP (E2EFixture.lockScreen).

@@ -840,8 +840,8 @@ class TestDismissAnrIfPresent(unittest.TestCase):
 
     def test_initial_detect_timeout_returns_without_sending_enter(self):
         """When the initial dumpsys-window detect times out, the result is
-        undetermined (None) and the function returns without sending KEYCODE_ENTER
-        — it does not raise (Issue #256)."""
+        undetermined (None) and the function returns without sending KEYCODE_ENTER;
+        it does not raise (Issue #256)."""
         timeout_exc = subprocess.TimeoutExpired(cmd=["adb"], timeout=10)
         enter_calls: list[list] = []
 

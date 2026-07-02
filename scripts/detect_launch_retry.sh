@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# detect_launch_retry.sh -- Surface the issue #233 launch-retry signal from a run's
+# detect_launch_retry.sh: Surface the issue #233 launch-retry signal from a run's
 # overlay logcat, so the issue #364 watch item announces itself instead of relying
 # on a human to sweep every CI run by hand.
 #

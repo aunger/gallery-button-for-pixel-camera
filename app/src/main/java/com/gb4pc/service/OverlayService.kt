@@ -108,7 +108,7 @@ class OverlayService : Service() {
                         )
                     }
                     if (items.isEmpty() && !isRetry) {
-                        DebugLog.log("Media query returned empty — scheduling retry in ${mediaRetryDelayMs}ms")
+                        DebugLog.log("Media query returned empty; scheduling retry in ${mediaRetryDelayMs}ms")
                     }
                 },
             )
@@ -180,18 +180,18 @@ class OverlayService : Service() {
 
         if (intent?.action == ACTION_RESHOW_OVERLAY) {
             if (callbackRegistered) {
-                // Service already running — re-apply window flags immediately.
+                // Service already running; re-apply window flags immediately.
                 DebugLog.log("Reshow overlay requested (focusable-overlay pref changed)")
                 overlayManager.reshow()
                 return START_STICKY
             }
-            // Service was not running — fall through to normal startup so it initialises
+            // Service was not running; fall through to normal startup so it initialises
             // correctly (startForeground, camera callback registration, etc.).
         }
 
         // H6: Refuse to start if Pixel Camera is not installed (OV-04)
         if (!PermissionHelper.isPixelCameraInstalled(this)) {
-            DebugLog.log("Pixel Camera not installed — stopping service (OV-04)")
+            DebugLog.log("Pixel Camera not installed; stopping service (OV-04)")
             stopSelf()
             return START_NOT_STICKY
         }

@@ -13,7 +13,7 @@ later failure of the same test.
 Usage:
     python3 scripts/archive_stale_test_failures.py
 
-Exit code is always 0 — API failures are logged but do not fail the
+Exit code is always 0; API failures are logged but do not fail the
 CI run.
 
 Required environment variables:
@@ -125,10 +125,10 @@ def main() -> int:
     stale_days = int(os.environ.get("STALE_DAYS", "21"))
 
     if not token:
-        print("Warning: GITHUB_TOKEN not set — skipping archival.", file=sys.stderr)
+        print("Warning: GITHUB_TOKEN not set; skipping archival.", file=sys.stderr)
         return 0
     if not repo:
-        print("Warning: GITHUB_REPOSITORY not set — skipping archival.", file=sys.stderr)
+        print("Warning: GITHUB_REPOSITORY not set; skipping archival.", file=sys.stderr)
         return 0
 
     cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=stale_days)

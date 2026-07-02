@@ -35,7 +35,7 @@ object Screenshot {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
         val externalFilesDir =
             requireNotNull(ctx.getExternalFilesDir(null)) {
-                "External storage is not available — cannot access screenshot directory"
+                "External storage is not available; cannot access screenshot directory"
             }
         return File(externalFilesDir, "screenshots").also { it.mkdirs() }
     }
@@ -44,7 +44,7 @@ object Screenshot {
      * Saves [bmp] as a lossless PNG to the app's external files directory under
      * a "screenshots" subdirectory. The path is resolved at runtime via the
      * instrumentation context, which correctly targets the scoped storage directory
-     * owned by the target app's package — avoiding Permission denied errors on
+     * owned by the target app's package, avoiding Permission denied errors on
      * Android 11+ (API 30+) that occur when using a hardcoded /sdcard path.
      *
      * The directory is created if it does not exist. Intended for CI artifact pickup
@@ -52,7 +52,7 @@ object Screenshot {
      *
      * If [currentTestPrefix] is set (by [com.gb4pc.e2e.ScreenshotTestRule]), the prefix is
      * automatically prepended to [name] so the saved file is self-describing in the
-     * artifact browser — e.g. `"0-screen.png"` becomes
+     * artifact browser, e.g. `"0-screen.png"` becomes
      * `"GalleryButtonVisualE2ETest_test0_smokeGreenFeedVisible_0-screen.png"`.
      */
     fun saveForArtifact(

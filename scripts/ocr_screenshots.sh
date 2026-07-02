@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ocr_screenshots.sh — Run Tesseract OCR on every PNG in a directory and
+# ocr_screenshots.sh: Run Tesseract OCR on every PNG in a directory and
 # append a markdown summary table to $GITHUB_STEP_SUMMARY.
 #
 # Usage: ocr_screenshots.sh <screenshot-dir>
@@ -9,7 +9,7 @@
 #   2. Appends one table row (filename + first 80 chars of OCR text) to
 #      $GITHUB_STEP_SUMMARY when that variable is set.
 #
-# Exits 0 in all cases — OCR failure on individual images is non-fatal.
+# Exits 0 in all cases; OCR failure on individual images is non-fatal.
 
 set -euo pipefail
 

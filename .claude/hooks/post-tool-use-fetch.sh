@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# GB4PC -- Claude Code PostToolUse hook: git fetch after Agent tool calls.
+# GB4PC: Claude Code PostToolUse hook: git fetch after Agent tool calls.
 #
 # Configured in .claude/settings.json under PostToolUse with a matcher on
 # tool_name == "Agent".  Runs once each time a sub-agent finishes, so the
@@ -16,6 +16,6 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 git -C "$REPO_ROOT" fetch --prune --quiet \
     && echo "[post-tool-use] git fetch complete" \
-    || echo "[post-tool-use] warning: git fetch failed (offline? -- continuing)"
+    || echo "[post-tool-use] warning: git fetch failed"
 
 exit 0

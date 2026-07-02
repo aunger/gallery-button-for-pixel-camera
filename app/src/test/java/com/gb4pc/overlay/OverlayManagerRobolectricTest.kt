@@ -31,7 +31,7 @@ import org.robolectric.shadows.ShadowWindowManagerImpl
  * - Issue #45: second show() must not overwrite a thumbnail with the icon.
  * - Issue #66: overlay must remain visible after show() when focusableOverlay is false
  *   (FLAG_NOT_FOCUSABLE windows never receive focus, so onWindowFocusChanged(false) fires
- *   immediately — the focus callbacks must be suppressed in that mode).
+ *   immediately; the focus callbacks must be suppressed in that mode).
  * - Issue #81: loadThumbnailBitmap must return null (not throw) when the URI is invalid
  *   and must fall back gracefully when loadThumbnail fails.
  */
@@ -44,7 +44,7 @@ class OverlayManagerRobolectricTest {
      * With FLAG_NOT_FOCUSABLE the window never receives input focus, so Android fires
      * onWindowFocusChanged(false) immediately after the view is attached. Before the fix,
      * this fired the onFocusLost callback unconditionally, which hid the overlay the instant
-     * it was shown — causing the overlay to never appear in v0.0.6.
+     * it was shown, causing the overlay to never appear in v0.0.6.
      */
     @Test
     fun `show with non-focusable overlay does not trigger onFocusLost`() {
@@ -68,7 +68,7 @@ class OverlayManagerRobolectricTest {
 
         overlayManager.show()
 
-        // onFocusLost must not have been called — the overlay should stay visible.
+        // onFocusLost must not have been called; the overlay should stay visible.
         assertEquals(
             "onFocusLost must not fire when focusableOverlay is false (Issue #66 regression)",
             0,
@@ -107,7 +107,7 @@ class OverlayManagerRobolectricTest {
 
         val overlayManager = OverlayManager(context, prefsManager)
 
-        // Step 1: first show() — overlay view is added to the WindowManager.
+        // Step 1: first show(): overlay view is added to the WindowManager.
         overlayManager.show()
 
         // Retrieve the view from ShadowWindowManagerImpl (Robolectric shadow).
@@ -125,11 +125,11 @@ class OverlayManagerRobolectricTest {
             overlayView.drawable is BitmapDrawable,
         )
 
-        // Step 3: second show() call — simulates the second camera lens on a dual-camera
+        // Step 3: second show() call: simulates the second camera lens on a dual-camera
         // device firing its onCameraUnavailable callback while the overlay is already up.
         overlayManager.show()
 
-        // Step 4: The drawable must still be a BitmapDrawable — the isShowing guard in
+        // Step 4: The drawable must still be a BitmapDrawable; the isShowing guard in
         // show() returned early so updateIcon() was never called.
         assertTrue(
             "After the second show() call the thumbnail BitmapDrawable must not have been " +
@@ -145,7 +145,7 @@ class OverlayManagerRobolectricTest {
      *
      * Issue #188: the squircle shape is baked into the drawable so it is applied at draw time,
      * independent of the device launcher's adaptive-icon mask. On the [google_apis] API-35
-     * emulator the launcher clips adaptive icons to a circle — wrapping in [SquircleDrawable]
+     * emulator the launcher clips adaptive icons to a circle, wrapping in [SquircleDrawable]
      * draws the icon's layers directly, bypassing that mask.
      */
     @Test
@@ -174,7 +174,7 @@ class OverlayManagerRobolectricTest {
 
     /**
      * After switching to a photo thumbnail via showLatestPhotoThumbnail(), the overlay must
-     * still use a [SquircleDrawable] — the thumbnail is shaped just like the icon.
+     * still use a [SquircleDrawable]; the thumbnail is shaped just like the icon.
      *
      * Issue #188: squircle shape is baked into the drawable, so it persists across drawable
      * changes without relying on clipToOutline or outlineProvider.
@@ -335,7 +335,7 @@ class OverlayManagerRobolectricTest {
     // ── Issue #81: loadThumbnailBitmap fallback ──────────────────────────────
 
     /**
-     * When the URI is inaccessible (URI not accessible — as can happen on a locked device
+     * When the URI is inaccessible (URI not accessible, as can happen on a locked device
      * or for a pending media item), loadThumbnailBitmap must complete without throwing.
      * The real assertion here is that no exception propagates out of the method.
      */
@@ -350,7 +350,7 @@ class OverlayManagerRobolectricTest {
             }
         val overlayManager = OverlayManager(context, prefsManager)
 
-        // A URI with an unregistered authority — this exercises the fallback exception-
+        // A URI with an unregistered authority; this exercises the fallback exception-
         // handling path so we know an inaccessible URI never crashes the overlay service.
         val unregisteredUri = android.net.Uri.parse("content://com.gb4pc.unregistered.authority/images/999")
 
