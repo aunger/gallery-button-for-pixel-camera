@@ -457,18 +457,17 @@ class OverlayManager(
         // windows behind it (so the surrounding camera-app touches pass through), while in-bounds
         // touches go to this window's clickable ImageView.
         //
-        // FLAG_LAYOUT_NO_LIMITS (both branches, Issue #556): combined with FLAG_LAYOUT_IN_SCREEN,
-        // this keeps the window's surface unclipped by display insets (status/nav bars, cutouts),
-        // so it renders at the exact physical-screen coordinates calculateOverlayXPx/
-        // calculateOverlayYPx computed. PR #398 (commit ce20d71) dropped this flag from the
-        // non-focusable branch on the theory that keeping the frame within screen limits would
-        // align the touchable region with the surface for test2a, and justified keeping it dropped
-        // by citing test1a as still passing under that flag set. Neither claim held up: test2a's
-        // real fix was unrelated (the LastPhotoActivity MediaStore query crash, not these flags),
-        // and test1a in fact regressed to a more severe failure (pixelCount=0 — the overlay wasn't
-        // rendering on screen at all, apparently clipped by display insets without this flag) on
-        // every CI run since (see issue #556). Restoring FLAG_LAYOUT_NO_LIMITS here matches the
-        // focusable branch, which kept it the whole time.
+        // FLAG_LAYOUT_NO_LIMITS is not set on the non-focusable branch. Issue #556 originally
+        // suspected that PR #398 (commit ce20d71) dropping this flag here caused test1a's
+        // pixelCount=0 regression, and an earlier round of this fix restored it on that theory.
+        // Direct CI evidence (see issue #556 / PR #557) disproved that: with the flag restored,
+        // test1a still failed with the exact same signature as without it, and the actual
+        // screenshot evidence (a JUnit TestWatcher's post-failure screenshot, taken moments after
+        // the assertion's own screenshot) showed the overlay rendering correctly regardless --
+        // the real bug was a screenshot-timing race in the E2E test harness (fixed in
+        // E2EFixture.captureScreenUntilColorVisible), unrelated to this flag. No evidence
+        // supports setting this flag on the non-focusable branch, so it is left unset, matching
+        // the flag set that has shipped since PR #398.
         val windowFlags =
             if (prefsManager.focusableOverlay) {
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
@@ -478,7 +477,6 @@ class OverlayManager(
             } else {
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
                     WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                     showWhenLockedFlag
             }

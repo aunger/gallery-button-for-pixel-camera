@@ -115,7 +115,7 @@ class GalleryButtonVisualE2ETest {
         // activity briefly shows Android's mandatory splash-screen frame first; a single capture
         // taken too early sees that stale frame instead of the real content.
         fixture.waitForOverlayActive()
-        val screen = fixture.waitForColorVisible(Rgb.BLUE)
+        val screen = fixture.captureScreenUntilColorVisible(Rgb.BLUE)
         val blue = ColorMatch.mask(screen, Rgb.BLUE)
         Screenshot.saveForArtifact(screen, "1a-screen.png")
         Screenshot.saveForArtifact(maskToBitmap(blue), "1a-blue-mask.png")
@@ -160,7 +160,7 @@ class GalleryButtonVisualE2ETest {
         // screenshots until BLUE pixels actually appear on screen (Issue #556). See test1a's
         // comment for why a fixed post-activation pause is not reliable here.
         fixture.waitForOverlayActive()
-        val screen = fixture.waitForColorVisible(Rgb.BLUE)
+        val screen = fixture.captureScreenUntilColorVisible(Rgb.BLUE)
         val blue = ColorMatch.mask(screen, Rgb.BLUE)
         Screenshot.saveForArtifact(screen, "1b-screen.png")
         Screenshot.saveForArtifact(maskToBitmap(blue), "1b-blue-mask.png")
@@ -186,7 +186,7 @@ class GalleryButtonVisualE2ETest {
         // comment for why a fixed post-activation pause is not reliable here. YELLOW is part of
         // the same overlay icon draw, so BLUE's appearance is a reliable proxy for it too.
         fixture.waitForOverlayActive()
-        val screen = fixture.waitForColorVisible(Rgb.BLUE)
+        val screen = fixture.captureScreenUntilColorVisible(Rgb.BLUE)
         val outer =
             ColorMatch.union(
                 ColorMatch.mask(screen, Rgb.BLUE),

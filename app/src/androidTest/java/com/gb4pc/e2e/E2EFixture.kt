@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.media.MediaScannerConnection
 import android.os.Build
 import android.os.Environment
@@ -636,10 +637,9 @@ class E2EFixture(
     }
 
     /**
-     * Polls screenshots until at least one pixel matches [color], or [timeoutMs] elapses.
-     * Returns the last captured screenshot regardless of whether the color appeared, so the
-     * caller's own assertion (built from that screenshot) still produces a meaningful diagnostic
-     * on a genuine failure.
+     * Polls screenshots until at least one pixel matches [color], or [timeoutMs] elapses, and
+     * returns the screenshot it last captured -- so the caller asserts against the exact same
+     * image that proved (or failed to prove) the color's presence, not a separately-captured one.
      *
      * Issue #556: [waitForOverlayActive] only observes [OverlayService.isOverlayActive], an
      * internal UsageStats-based flag that can flip true before the corresponding frame (camera
@@ -657,11 +657,11 @@ class E2EFixture(
      * @param timeoutMs  Maximum wait time in milliseconds.
      * @param intervalMs Sleep between successive capture attempts.
      */
-    fun waitForColorVisible(
+    fun captureScreenUntilColorVisible(
         color: Rgb,
         timeoutMs: Long = 5_000L,
         intervalMs: Long = 200L,
-    ): android.graphics.Bitmap {
+    ): Bitmap {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (true) {
             val screen = Screenshot.captureScreen()

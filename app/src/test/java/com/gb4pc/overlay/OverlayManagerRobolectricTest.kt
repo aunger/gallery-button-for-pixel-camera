@@ -294,27 +294,23 @@ class OverlayManagerRobolectricTest {
         )
     }
 
-    // ── Issue #556: overlay surface must not be clipped by display insets ────
+    // ── Issue #556: FLAG_LAYOUT_NO_LIMITS is not the non-focusable window's problem ──
 
     /**
      * Regression guard for Issue #556 (`test1a_overlayShowsBlueAtConfiguredPosition`): the
-     * small, non-focusable overlay window must set `FLAG_LAYOUT_NO_LIMITS`.
+     * small, non-focusable overlay window must NOT set `FLAG_LAYOUT_NO_LIMITS`.
      *
-     * PR #398 (commit ce20d71) dropped this flag from the non-focusable branch on the theory
-     * that keeping the window's frame within screen limits would align its touchable region
-     * with the `FLAG_LAYOUT_IN_SCREEN`-placed surface for `test2a_emptyGalleryNoGreenAfterTap`,
-     * and justified the drop by citing `test1a` as still passing under the resulting flag set.
-     * Neither claim held up: `test2a`'s real fix was unrelated (a `LastPhotoActivity` MediaStore
-     * query crash, not these flags), and `test1a` in fact regressed on every CI run since,
-     * to a more severe failure mode (`pixelCount=0`: the overlay was not rendering on screen at
-     * all, consistent with the window being clipped by display insets without this flag).
-     *
-     * This test previously asserted the opposite (that this flag must NOT be set); that
-     * assertion encoded the disproven theory above and is inverted here to match the corrected
-     * understanding (Issue #556).
+     * Issue #556 originally suspected that PR #398 (commit ce20d71) dropping this flag here
+     * caused test1a's `pixelCount=0` regression, and an earlier round of the #556 fix restored
+     * it on that theory (also inverting this test's assertion to match). Direct CI evidence
+     * (see PR #557) disproved the theory: with the flag restored, test1a still failed with the
+     * exact same failure signature as without it. The real bug was a screenshot-timing race in
+     * the E2E test harness, unrelated to this flag (fixed via
+     * `E2EFixture.captureScreenUntilColorVisible`). This test is restored to its original
+     * assertion, since no evidence supports setting this flag on the non-focusable branch.
      */
     @Test
-    fun `non-focusable overlay window sets FLAG_LAYOUT_NO_LIMITS`() {
+    fun `non-focusable overlay window does not set FLAG_LAYOUT_NO_LIMITS`() {
         val context: Application = ApplicationProvider.getApplicationContext()
         val prefsManager: PrefsManager =
             mock {
@@ -332,10 +328,9 @@ class OverlayManagerRobolectricTest {
         val params = overlayView.layoutParams as WindowManager.LayoutParams
 
         assertTrue(
-            "Non-focusable overlay window must set FLAG_LAYOUT_NO_LIMITS, combined with " +
-                "FLAG_LAYOUT_IN_SCREEN, so the surface is not clipped by display insets and " +
-                "renders at the configured position (Issue #556).",
-            (params.flags and WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS) != 0,
+            "Non-focusable overlay window must NOT set FLAG_LAYOUT_NO_LIMITS (Issue #556: " +
+                "restoring it did not fix test1a in CI, and no evidence supports setting it).",
+            (params.flags and WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS) == 0,
         )
     }
 
