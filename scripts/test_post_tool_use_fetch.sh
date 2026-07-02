@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test_post_tool_use_fetch.sh--Shell-based tests for
+# test_post_tool_use_fetch.sh: Shell-based tests for
 # .claude/hooks/post-tool-use-fetch.sh.
 #
 # The hook runs "git fetch --prune --quiet" in the repo root.

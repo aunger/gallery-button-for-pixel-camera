@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test_dismiss_anr.sh--Shell-based tests for dismiss_anr.sh.
+# test_dismiss_anr.sh: Shell-based tests for dismiss_anr.sh.
 #
 # Covers:
 #   (a) --adb argument is used for both logcat and shell subcommands

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""strip_session_bylines.py--Remove Claude session-URL bylines from GitHub content.
+"""strip_session_bylines.py: Remove Claude session-URL bylines from GitHub content.
 
 Scans a piece of text for Claude session-URL bylines and strips each
 occurrence so the surrounding text reads cleanly.

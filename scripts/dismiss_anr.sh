@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# dismiss_anr.sh--Best-effort ANR watcher for CI pre-flight.
+# dismiss_anr.sh: Best-effort ANR watcher for CI pre-flight.
 #
 # After `adb install -r` the Pixel Launcher receives ACTION_PACKAGE_REPLACED and
 # reconciles its icon grid. On slow CI emulators this can saturate the Launcher's

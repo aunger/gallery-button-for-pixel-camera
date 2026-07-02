@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test_summarize_preflight_integration.sh--Integration test for
+# test_summarize_preflight_integration.sh: Integration test for
 # summarize_test_results.py exercised through the exact multi-suite CLI
 # argument shape that build.yml's "Write test-result summary" step passes.
 #

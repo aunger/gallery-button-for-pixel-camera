@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""test_ci_monitor.py--Tests for ci_monitor.py.
+"""test_ci_monitor.py: Tests for ci_monitor.py.
 
 Calls the parser functions directly (no subprocess shims). Plus a mocked-HTTP
 smoke test that exercises the request helper without touching the network.

@@ -22,7 +22,7 @@ GRADLE_INIT="$HOME/.gradle/init.d/proxy-auth.gradle"
 echo "[session-start] GB4PC environment setup..."
 
 # ───────────────────────────────────────────────────────────────────────────────
-# STEP 0--Fix JAVA_TOOL_OPTIONS proxy / DNS issue.
+# STEP 0: Fix JAVA_TOOL_OPTIONS proxy / DNS issue.
 #
 # The container's JAVA_TOOL_OPTIONS lists *.google.com and *.googleapis.com in
 # nonProxyHosts, so Java tries direct connections to those domains, but there
@@ -47,7 +47,7 @@ else
 fi
 
 # ───────────────────────────────────────────────────────────────────────────────
-# STEP 1--Gradle proxy authenticator.
+# STEP 1: Gradle proxy authenticator.
 #
 # Java 9+ no longer auto-registers http.proxyUser/proxyPassword as an
 # Authenticator, so proxied HTTPS CONNECT tunnels get HTTP 407.
@@ -75,7 +75,7 @@ GROOVY
 fi
 
 # ───────────────────────────────────────────────────────────────────────────────
-# STEP 2a--Android SDK command-line tools.
+# STEP 2a: Android SDK command-line tools.
 # ───────────────────────────────────────────────────────────────────────────────
 if [[ -x "$SDKMANAGER" ]]; then
     echo "[session-start] Step 2a: sdkmanager present--skip"
@@ -104,7 +104,7 @@ if [[ -n "${CLAUDE_ENV_FILE:-}" ]] \
 fi
 
 # ───────────────────────────────────────────────────────────────────────────────
-# STEP 2b--SDK licenses.
+# STEP 2b: SDK licenses.
 # ───────────────────────────────────────────────────────────────────────────────
 if [[ -f "$ANDROID_HOME_DIR/licenses/android-sdk-license" ]]; then
     echo "[session-start] Step 2b: SDK licenses present--skip"
@@ -119,7 +119,7 @@ else
 fi
 
 # ───────────────────────────────────────────────────────────────────────────────
-# STEP 2c--SDK packages (only installs what is missing).
+# STEP 2c: SDK packages (only installs what is missing).
 # build-tools;34.0.0 is required by AGP 8.7.3 even though the project targets 35.
 # ───────────────────────────────────────────────────────────────────────────────
 declare -A SDK_PACKAGES=(
@@ -147,7 +147,7 @@ else
 fi
 
 # ───────────────────────────────────────────────────────────────────────────────
-# STEP 3--Linting tools (pre-commit framework + ktlint).
+# STEP 3: Linting tools (pre-commit framework + ktlint).
 # ───────────────────────────────────────────────────────────────────────────────
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 LOCAL_BIN="$HOME/.local/bin"
@@ -162,7 +162,7 @@ if [[ -n "${CLAUDE_ENV_FILE:-}" ]] \
     echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$CLAUDE_ENV_FILE"
 fi
 
-# STEP 3a--ktlint binary.
+# STEP 3a: ktlint binary.
 KTLINT_BIN="$LOCAL_BIN/ktlint"
 if [[ -x "$KTLINT_BIN" ]]; then
     echo "[session-start] Step 3a: ktlint present--skip"
@@ -175,7 +175,7 @@ else
     echo "[session-start] Step 3a: ktlint installed"
 fi
 
-# STEP 3b--pre-commit Python package.
+# STEP 3b: pre-commit Python package.
 # Check the binary directly rather than via `command -v`: PATH may not yet
 # include $LOCAL_BIN, and pip skips reinstalling the entrypoint script when
 # the package dist-info already exists.  --force-reinstall recreates the
@@ -189,7 +189,7 @@ else
     echo "[session-start] Step 3b: pre-commit installed"
 fi
 
-# STEP 3c--wire pre-commit into the repo's git hooks.
+# STEP 3c: wire pre-commit into the repo's git hooks.
 if [[ -f "$REPO_ROOT/.git/hooks/pre-commit" ]]; then
     echo "[session-start] Step 3c: pre-commit hook wired--skip"
 else
@@ -199,7 +199,7 @@ else
 fi
 
 # ───────────────────────────────────────────────────────────────────────────────
-# STEP 4--Fetch remote refs.
+# STEP 4: Fetch remote refs.
 #
 # Keep local knowledge of the remote up to date at the start of every session.
 # git fetch is always safe (it never modifies the working tree), so no skip
@@ -209,6 +209,6 @@ fi
 echo "[session-start] Step 4: git fetch..."
 git -C "$REPO_ROOT" fetch --prune --quiet \
     && echo "[session-start] Step 4: fetch complete" \
-    || echo "[session-start] Step 4: warning: git fetch failed (offline?--continuing)"
+    || echo "[session-start] Step 4: warning: git fetch failed"
 
 echo "[session-start] Complete. ANDROID_HOME=$ANDROID_HOME"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# setup-e2e-emulator.sh--Prepare an Android emulator for E2E tests.
+# setup-e2e-emulator.sh: Prepare an Android emulator for E2E tests.
 #
 # Usage:
 #   scripts/setup-e2e-emulator.sh            # Full local setup (steps 1-7)

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ocr_screenshots.sh--Run Tesseract OCR on every PNG in a directory and
+# ocr_screenshots.sh: Run Tesseract OCR on every PNG in a directory and
 # append a markdown summary table to $GITHUB_STEP_SUMMARY.
 #
 # Usage: ocr_screenshots.sh <screenshot-dir>

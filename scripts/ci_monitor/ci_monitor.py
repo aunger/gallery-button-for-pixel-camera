@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ci_monitor.py--Poll a PR's CI and stream a terminal outcome plus per-test signals.
+"""ci_monitor.py: Poll a PR's CI and stream a terminal outcome plus per-test signals.
 
 Invoked by the Orchestrator's Monitor tool call (see agents/dev_orchestration.md).
 Each stdout line is consumed as a task-notification event, so output is the

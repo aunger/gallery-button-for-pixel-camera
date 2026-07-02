@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test_ocr_screenshots.sh--Shell-based tests for ocr_screenshots.sh.
+# test_ocr_screenshots.sh: Shell-based tests for ocr_screenshots.sh.
 #
 # Covers:
 #   (a) Normal operation: PNGs processed, .ocr.txt companion files created
