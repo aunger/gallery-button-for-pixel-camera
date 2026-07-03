@@ -273,7 +273,25 @@ tasks.register("connectedE2EAndroidTest") {
         // so the prior `appops set com.gb4pc READ_MEDIA_IMAGES allow` was a no-op and CI still
         // timed out. `pm grant` is the mechanism already used for CAMERA below and in
         // build.yml; it grants the manifest-declared permission outright.
-        exec { commandLine(e2eAdb, "shell", "pm", "grant", "com.gb4pc", "android.permission.READ_MEDIA_IMAGES") }
+        //
+        // -PmediaPermissionGranted=false flips this to `pm revoke` instead, for
+        // PermissionsDeniedE2ETest (issue #509 follow-up, PR #564 review). This MUST happen here,
+        // before `am instrument` starts the com.gb4pc process below, never from within a running
+        // test: changing a storage-group runtime permission on an already-running process makes
+        // Android kill that process to re-establish its scoped-storage FUSE mount, which took down
+        // an earlier version of this suite that called `pm grant`/`pm revoke` mid-test (see
+        // PermissionsDeniedE2ETest's class doc for the full incident).
+        val grantMediaPermission = (project.findProperty("mediaPermissionGranted") as String? ?: "true").toBoolean()
+        exec {
+            commandLine(
+                e2eAdb,
+                "shell",
+                "pm",
+                if (grantMediaPermission) "grant" else "revoke",
+                "com.gb4pc",
+                "android.permission.READ_MEDIA_IMAGES",
+            )
+        }
         // Install mock Pixel Camera so CameraManager callbacks and UsageStats detection are exercised.
         // CI also installs this APK explicitly before invoking the task (see build.yml) because
         // relying solely on this doLast install caused test failures in CI; kept here for local runs.
