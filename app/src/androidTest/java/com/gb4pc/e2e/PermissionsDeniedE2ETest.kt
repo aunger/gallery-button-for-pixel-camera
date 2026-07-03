@@ -45,6 +45,16 @@ import org.junit.runner.RunWith
  *
  * Tracks: #568 (missing/denied permission surfaces banner + notification). See
  * [PermissionsGrantedE2ETest] for #566/#567.
+ *
+ * ### A second, unrelated CI precondition this class exposed
+ *
+ * The `overlaySkipsThumbnailPollingAndNotifiesWhenMediaPermissionMissing` notification assertion
+ * initially failed in CI even though `OverlayService.postPermissionNotification()` is correct: on
+ * API 33+, `NotificationManager.notify()` is a silent no-op (no exception) when `POST_NOTIFICATIONS`
+ * has not been granted, and nothing in `connectedE2EAndroidTest` granted it (no prior E2E test ever
+ * asserted on notification state, so the gap was invisible until this one). Fixed by granting
+ * `POST_NOTIFICATIONS` alongside the other pre-launch grants in `app/build.gradle.kts`'s
+ * `connectedE2EAndroidTest` `doLast` block, before the process starts.
  */
 @E2ETest
 @RunWith(AndroidJUnit4::class)
@@ -76,6 +86,9 @@ class PermissionsDeniedE2ETest {
      * Regression guard for #509/#568: without the media permission, `registerThumbnailObserver`
      * must not poll MediaStore at all (every query would silently return only this app's own
      * rows), and must instead log the reason and post a tap-to-fix notification once.
+     *
+     * Requires `POST_NOTIFICATIONS` granted (see the class doc); `connectedE2EAndroidTest` grants
+     * it unconditionally, independent of `-PmediaPermissionGranted`.
      */
     @Test
     fun overlaySkipsThumbnailPollingAndNotifiesWhenMediaPermissionMissing() {

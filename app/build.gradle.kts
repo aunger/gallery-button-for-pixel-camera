@@ -256,6 +256,15 @@ tasks.register("connectedE2EAndroidTest") {
         // GET_USAGE_STATS (= PACKAGE_USAGE_STATS on API 29+) lets ForegroundDetector see
         // which app is in the foreground — without this the overlay never appears.
         exec { commandLine(e2eAdb, "shell", "appops", "set", "com.gb4pc", "GET_USAGE_STATS", "allow") }
+        // POST_NOTIFICATIONS (API 33+ runtime permission, declared in the main manifest) lets
+        // OverlayService's postPermissionNotification() actually post anything. Without this
+        // grant, NotificationManager.notify() is a silent no-op on API 33+ (no exception, no
+        // crash, the call simply does nothing), so PermissionsDeniedE2ETest's assertion that
+        // NOTIFICATION_MEDIA_PERMISSION_ID becomes active would otherwise time out even though
+        // the production code posting it is correct (issue #509 follow-up, PR #564 review).
+        // `pm grant` (not `appops set`) for the same reason as READ_MEDIA_IMAGES below: this is a
+        // dangerous/runtime permission, not an appops-gated special permission.
+        exec { commandLine(e2eAdb, "shell", "pm", "grant", "com.gb4pc", "android.permission.POST_NOTIFICATIONS") }
         // READ_MEDIA_IMAGES lets E2EFixture see MediaStore rows inserted by other packages
         // (e2e-mock-camera). `am instrument` runs the instrumented test code inside this
         // app's process and UID (com.gb4pc), not com.gb4pc.test's, so the grant must target
