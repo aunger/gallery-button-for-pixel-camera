@@ -41,9 +41,14 @@ import org.junit.runner.RunWith
  * pre-Gradle shell dismissal and the activity's actual launch. This class simply runs earlier in
  * the job's E2E sequence (right after `PermissionsGrantedE2ETest`, whose own dismissal likely
  * left the screen awake), so it dodged the same race rather than being immune to it, per
- * [SetupActivityDeniedE2ETest]'s class doc. Fixed here too with the identical
- * [RuleChain]-based dismissal, so this test does not silently start flaking the next time CI
- * step ordering or timing shifts.
+ * [SetupActivityDeniedE2ETest]'s class doc.
+ *
+ * Fixed here too with the identical [RuleChain]-based dismissal, so this test does not silently
+ * start flaking the next time CI step ordering or timing shifts, and using the same
+ * [E2EFixture.dismissSecureKeyguard] (not [E2EFixture.wakeAndDismissKeyguard], which only
+ * performs a swipe and does nothing against this suite's PIN-secured lock screen; see
+ * [SetupActivityDeniedE2ETest]'s class doc for the incident where a swipe-only dismissal here
+ * still let the same failure recur for the sibling test).
  */
 @E2ETest
 @RunWith(AndroidJUnit4::class)
@@ -56,7 +61,7 @@ class SetupActivityGrantedE2ETest {
                 E2EFixture(
                     context = instrumentation.targetContext,
                     uiAutomation = instrumentation.uiAutomation,
-                ).wakeAndDismissKeyguard()
+                ).dismissSecureKeyguard()
             }
         }
 

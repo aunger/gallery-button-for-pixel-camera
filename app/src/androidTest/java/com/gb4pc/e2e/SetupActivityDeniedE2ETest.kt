@@ -61,22 +61,28 @@ import org.junit.runner.RunWith
  * would be enough, matching [SetupActivityTest] (which also does not call
  * [E2EFixture.wakeAndDismissKeyguard]). That worked for [SetupActivityGrantedE2ETest] but not
  * here: CI logcat showed this class's `SetupActivity` reaching `RESUMED` and then `PAUSED` again
- * 45 ms later, consistent with the keyguard (this suite runs under a PIN-secured lock screen, see
- * `scripts/setup-e2e-emulator.sh`) re-engaging in the gap between the CI step's one-time,
+ * 45 ms later, consistent with the keyguard re-engaging in the gap between the CI step's one-time,
  * pre-Gradle shell dismissal and this specific class's turn to launch its activity, several
  * suites later in the same job. `SetupActivityTest` avoids this because the CI script's
  * `connectedDebugAndroidTest` step wakes/dismisses immediately before that whole (short) suite
  * runs, with no other E2E suites in between to let the keyguard reassert itself.
  *
- * The fix: dismiss the keyguard from *inside* the test process, immediately before
- * `SetupActivity` launches, reusing [E2EFixture.wakeAndDismissKeyguard] (the exact mechanism
- * every other, reliably-passing E2E suite in this package already uses via `fixture.setUp()`).
- * A plain `@Before` method would run too late here: `createAndroidComposeRule`'s underlying
- * `ActivityScenarioRule` launches the activity as part of the *rule's* `before()`, which JUnit
- * runs ahead of the test class's own `@Before` methods. [RuleChain.outerRule] instead runs the
- * keyguard dismissal's `before()` ahead of the compose rule's own, mirroring the
- * `RuleChain.outerRule(prefsSetup).around(composeRule)` pattern already used in
- * `MainActivityTest`'s `MainSettingsScreenTest`.
+ * A second version dismissed the keyguard from inside the test process (via
+ * [RuleChain.outerRule], see below), but called [E2EFixture.wakeAndDismissKeyguard], which only
+ * performs a swipe gesture against the emulator's non-secure lock screen. It does nothing against
+ * this suite's *actual* lock screen: `scripts/setup-e2e-emulator.sh` configures a real PIN
+ * (`1234`), so the keyguard here is credential-secured, and a swipe alone left it engaged. The
+ * exact same `RESUMED`-then-`PAUSED` symptom recurred in CI even with that fix in place. The fix
+ * now uses [E2EFixture.dismissSecureKeyguard] instead, which replays
+ * `scripts/setup-e2e-emulator.sh`'s own dismissal sequence: wake, request dismissal, type the
+ * PIN, submit ENTER.
+ *
+ * A plain `@Before` method would run too late here regardless of which dismissal is used:
+ * `createAndroidComposeRule`'s underlying `ActivityScenarioRule` launches the activity as part of
+ * the *rule's* `before()`, which JUnit runs ahead of the test class's own `@Before` methods.
+ * [RuleChain.outerRule] instead runs the keyguard dismissal's `before()` ahead of the compose
+ * rule's own, mirroring the `RuleChain.outerRule(prefsSetup).around(composeRule)` pattern already
+ * used in `MainActivityTest`'s `MainSettingsScreenTest`.
  */
 @E2ETest
 @RunWith(AndroidJUnit4::class)
@@ -89,7 +95,7 @@ class SetupActivityDeniedE2ETest {
                 E2EFixture(
                     context = instrumentation.targetContext,
                     uiAutomation = instrumentation.uiAutomation,
-                ).wakeAndDismissKeyguard()
+                ).dismissSecureKeyguard()
             }
         }
 
