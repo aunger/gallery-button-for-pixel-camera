@@ -1,5 +1,7 @@
 package com.gb4pc.ui
 
+import android.app.Activity
+import android.app.Instrumentation
 import android.provider.Settings
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -135,6 +137,23 @@ class MainSettingsScreenTest {
      *
      * Skips (does not fail) if the environment happens to already have the permission granted,
      * since then the banner, and its tap target, would not exist.
+     *
+     * ### Stubbing the intent (CI hang, this round)
+     *
+     * An earlier version of this test asserted `Intents.intended(...)` after the click without
+     * ever calling `Intents.intending(...).respondWith(...)` first. Espresso-Intents only
+     * intercepts an intent when a response is stubbed *before* the action that fires it;
+     * otherwise `Intents.intended(...)` is a passive assertion checked after the real intent
+     * already launched its real target. `ACTION_APPLICATION_DETAILS_SETTINGS` targets the actual
+     * system Settings app (`com.android.settings`), a separate process, unlike
+     * [MainActivityRedirectTest]'s `Intents` usage, which launches [SetupActivity], a real
+     * activity within this same app and therefore harmless. Letting the real Settings app launch
+     * on the CI emulator, with nothing to bring `MainActivity` back to the foreground afterward,
+     * left Compose's test synchronization waiting on a hierarchy that was no longer in the
+     * foreground; the general instrumented suite (`connectedDebugAndroidTest`) hung for over 30
+     * minutes on the run that first exercised this test and had to be manually cancelled. Now
+     * stubs the response before the click, so the real activity never launches at all and the
+     * assertion only confirms the *intent* MainActivity attempted to fire.
      */
     @Test
     fun mainScreen_tappingMediaMissingBanner_opensAppDetailsSettings() {
@@ -146,6 +165,10 @@ class MainSettingsScreenTest {
 
         Intents.init()
         try {
+            Intents
+                .intending(hasAction(Settings.ACTION_APPLICATION_DETAILS_SETTINGS))
+                .respondWith(Instrumentation.ActivityResult(Activity.RESULT_OK, null))
+
             composeRule
                 .onNodeWithText(context.getString(R.string.settings_media_missing), substring = true)
                 .performClick()
