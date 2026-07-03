@@ -523,6 +523,51 @@ jobs:
           path: results/e2e-gallery.ndjson
           retention-days: 14
 
+      - name: Run PermissionsE2ETest
+        # No `continue-on-error` (issue #309): record the real outcome and defer
+        # the pass/fail verdict to the "Gate on test failures" step.
+        #
+        # Issue #564 review: this suite was added to close #566/#567/#568 with
+        # real automated coverage, but was initially left out of every
+        # `connectedE2EAndroidTest -Pe2eClass=...` invocation in this workflow,
+        # so it compiled but never actually ran. `am instrument -e class` runs
+        # only the named class, not the rest of its package, so a dedicated step
+        # is required, mirroring the two suites above.
+        id: run_permissions_e2e
+        if: steps.diff_check.outputs.needs_full_build == 'true'
+        run: |
+          ADB="$ANDROID_HOME/platform-tools/adb"
+          # Wake and dismiss the swipe keyguard before starting the test suite.
+          # The previous E2E suites can run for several minutes, and the screen
+          # may sleep or re-lock before this step starts. This mirrors
+          # E2EFixture.wakeAndDismissKeyguard() (issue #344 / #341).
+          # sleep 2 lets the swipe animation complete before Gradle's am start fires
+          # (same reasoning as the pre-flight step's post-swipe sleep 2).
+          "$ADB" shell input keyevent KEYCODE_WAKEUP
+          "$ADB" shell input swipe 300 1000 300 300
+          sleep 2
+          mkdir -p results
+          set -o pipefail
+          LOGCAT_SINCE=$("$ADB" shell "date '+%m-%d %H:%M:%S.000'" | tr -d '\r')
+          if ./gradlew connectedE2EAndroidTest \
+            -Pe2eClass=com.gb4pc.e2e.PermissionsE2ETest \
+            | tee >(grep '^##GB4PC_TEST##' > results/e2e-permissions.ndjson); then
+            echo "outcome=success" >> "$GITHUB_OUTPUT"
+          else
+            echo "outcome=failure" >> "$GITHUB_OUTPUT"
+            echo "=== LOGCAT (since test start) ==="
+            "$ADB" logcat -d -T "$LOGCAT_SINCE" | \
+              bash scripts/filter_logcat.sh
+          fi
+
+      - name: Upload permissions E2E markers
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: testresults-e2e-permissions
+          path: results/e2e-permissions.ndjson
+          retention-days: 14
+
       - name: Copy E2E test results
         if: always() && steps.diff_check.outputs.needs_full_build == 'true'
         continue-on-error: true
@@ -593,7 +638,7 @@ jobs:
               --outcome "${{ steps.run_instrumented.outcome }}" \
             app/build/outputs/androidTest-results/e2e \
               --suite-label "E2E Tests" \
-              --outcome "${{ (steps.run_overlay_e2e.outcome == 'skipped' && steps.run_gallery_e2e.outcome == 'skipped') && 'skipped' || ((steps.run_overlay_e2e.outcome == 'failure' || steps.run_gallery_e2e.outcome == 'failure') && 'failure' || 'success') }}"
+              --outcome "${{ (steps.run_overlay_e2e.outcome == 'skipped' && steps.run_gallery_e2e.outcome == 'skipped' && steps.run_permissions_e2e.outcome == 'skipped') && 'skipped' || ((steps.run_overlay_e2e.outcome == 'failure' || steps.run_gallery_e2e.outcome == 'failure' || steps.run_permissions_e2e.outcome == 'failure') && 'failure' || 'success') }}"
 
       # Single authority on whether the test phase passed (issue #309). Replaces
       # the old blanket `continue-on-error` on the test steps: any failing test
@@ -615,7 +660,7 @@ jobs:
               --outcome "${{ steps.run_instrumented.outputs.outcome }}" \
             app/build/outputs/androidTest-results/e2e \
               --suite-label "E2E Tests" \
-              --outcome "${{ (steps.run_overlay_e2e.outputs.outcome == 'failure' || steps.run_gallery_e2e.outputs.outcome == 'failure') && 'failure' || 'success' }}"
+              --outcome "${{ (steps.run_overlay_e2e.outputs.outcome == 'failure' || steps.run_gallery_e2e.outputs.outcome == 'failure' || steps.run_permissions_e2e.outputs.outcome == 'failure') && 'failure' || 'success' }}"
 
   file-issues:
     needs: [build-and-test]
