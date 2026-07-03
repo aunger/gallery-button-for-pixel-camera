@@ -51,6 +51,10 @@ class OverlayService : Service() {
     private var mediaObserver: ContentObserver? = null
     private var thumbnailObserver: ContentObserver? = null
     private var overlayActiveTimestamp: Long = 0L
+
+    // Issue #509: post the "can't read photos" notification at most once per service instance,
+    // so it is not re-alerted on every camera open. Reset if the permission is later granted.
+    private var mediaPermissionNotified = false
     private lateinit var mediaChangeDispatcher: MediaObserverRetry<List<MediaItem>>
     private lateinit var thumbnailChangeDispatcher: MediaObserverRetry<MediaItem?>
 
@@ -325,6 +329,26 @@ class OverlayService : Service() {
 
     private fun registerThumbnailObserver() {
         if (thumbnailObserver != null) return
+
+        // Issue #509 service-level check: without full media read access, every MediaStore query
+        // returns only this app's own rows (scoped storage), never Pixel Camera's, so the thumbnail
+        // can never update no matter how many times the observer fires. The camera is already on
+        // screen here, so it is too late to prompt (see the permission-timing principle in SPEC §2):
+        // make do with what we have -- keep the gallery icon, skip the futile observer, and surface
+        // a tap-to-fix notification the user can act on after leaving the camera.
+        if (!PermissionHelper.hasMediaPermission(this)) {
+            DebugLog.log("Media read permission not granted; thumbnail cannot update (issue #509). Grant it in setup.")
+            if (!mediaPermissionNotified) {
+                mediaPermissionNotified = true
+                postPermissionNotification(
+                    Constants.NOTIFICATION_MEDIA_PERMISSION_ID,
+                    getString(R.string.notification_media_permission_missing),
+                )
+            }
+            return
+        }
+        mediaPermissionNotified = false
+
         overlayActiveTimestamp = System.currentTimeMillis()
         val startMs = overlayActiveTimestamp
         thumbnailObserver =

@@ -9,6 +9,7 @@
     <string name="notification_stop">Stop</string>
     <string name="notification_usage_access_lost">GB4PC cannot detect apps — tap to fix</string>
     <string name="notification_overlay_lost">GB4PC cannot show overlay — tap to grant permission</string>
+    <string name="notification_media_permission_missing">GB4PC can\'t read your photos — tap to allow all photos so the thumbnail can update</string>
 
     <!-- Setup Flow -->
     <string name="setup_title">GB4PC Setup</string>
