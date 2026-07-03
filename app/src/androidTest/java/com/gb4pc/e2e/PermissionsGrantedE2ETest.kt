@@ -1,12 +1,18 @@
 package com.gb4pc.e2e
 
 import android.content.Context
+import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.test.onNodeWithText
+import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.gb4pc.R
+import com.gb4pc.ui.setup.SetupActivity
 import com.gb4pc.util.DebugLog
 import com.gb4pc.util.PermissionHelper
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -32,6 +38,13 @@ class PermissionsGrantedE2ETest {
             context = context,
             uiAutomation = instrumentation.uiAutomation,
         )
+
+    // Used only by setupFlow_skipsMediaStep_whenPermissionAlreadyGranted below. createEmptyComposeRule()
+    // (rather than createAndroidComposeRule<SetupActivity>()) does not auto-launch anything, so it
+    // has no effect on this class's other tests, which drive OverlayService via E2EFixture and have
+    // no need for SetupActivity on screen.
+    @get:Rule
+    val composeTestRule = createEmptyComposeRule()
 
     @Before
     fun setUp() {
@@ -71,5 +84,21 @@ class PermissionsGrantedE2ETest {
             "Overlay thumbnail should update to the newly captured photo within 10 s (issue #509)",
             updated,
         )
+    }
+
+    /**
+     * Regression coverage for #566 (UI half): confirms the guided setup flow auto-advances past
+     * the Photos & Media step without ever showing it, when the permission is already granted
+     * before `SetupActivity` starts (this class's precondition; PM-02's existing auto-advance
+     * behavior, exercised here for the MEDIA step specifically). See
+     * [PermissionsDeniedE2ETest.setupFlow_reachesMediaStep_whenPermissionNotGranted] for the
+     * denied-precondition half.
+     */
+    @Test
+    fun setupFlow_skipsMediaStep_whenPermissionAlreadyGranted() {
+        ActivityScenario.launch(SetupActivity::class.java).use {
+            composeTestRule.waitForIdle()
+            composeTestRule.onNodeWithText(context.getString(R.string.setup_media_title)).assertDoesNotExist()
+        }
     }
 }

@@ -2,14 +2,21 @@ package com.gb4pc.e2e
 
 import android.app.NotificationManager
 import android.content.Context
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.test.onNodeWithText
+import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.gb4pc.Constants
+import com.gb4pc.R
+import com.gb4pc.ui.setup.SetupActivity
 import com.gb4pc.util.DebugLog
 import com.gb4pc.util.PermissionHelper
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -67,6 +74,13 @@ class PermissionsDeniedE2ETest {
             uiAutomation = instrumentation.uiAutomation,
         )
 
+    // Used only by setupFlow_reachesMediaStep_whenPermissionNotGranted below. createEmptyComposeRule()
+    // (rather than createAndroidComposeRule<SetupActivity>()) does not auto-launch anything, so it
+    // has no effect on this class's other tests, which drive OverlayService via E2EFixture and have
+    // no need for SetupActivity on screen.
+    @get:Rule
+    val composeTestRule = createEmptyComposeRule()
+
     @Before
     fun setUp() {
         fixture.setUp()
@@ -117,5 +131,32 @@ class PermissionsDeniedE2ETest {
             "A tap-to-fix notification should be posted when the media permission is missing",
             notified,
         )
+    }
+
+    /**
+     * Regression coverage for #566 (UI half): confirms the guided setup flow actually reaches
+     * and displays the Photos & Media step when the permission is not yet granted at launch,
+     * rather than skipping it or (worse) crashing. `POST_NOTIFICATIONS` is granted
+     * unconditionally by `connectedE2EAndroidTest` (see the class doc above), so the NOTIFICATION
+     * step auto-advances on its own here and MEDIA is the first step `SetupActivity` shows.
+     *
+     * Stops at asserting the step is showing; does not tap the button or call `pm grant` to
+     * complete it, since either would need to interact with (or bypass) the real system
+     * permission dialog, and `pm grant` specifically would reproduce the process-crash this round
+     * already fixed (commit e5d37ed) if issued while this process is alive. See
+     * [PermissionsGrantedE2ETest.setupFlow_skipsMediaStep_whenPermissionAlreadyGranted] for the
+     * granted-precondition half.
+     */
+    @Test
+    fun setupFlow_reachesMediaStep_whenPermissionNotGranted() {
+        ActivityScenario.launch(SetupActivity::class.java).use {
+            composeTestRule.waitForIdle()
+            composeTestRule.onNodeWithText(context.getString(R.string.setup_media_title)).assertIsDisplayed()
+            composeTestRule.onNodeWithText(context.getString(R.string.setup_media_button)).assertIsDisplayed()
+            assertFalse(
+                "hasMediaPermission should still be false while the Photos & Media step is showing",
+                PermissionHelper.hasMediaPermission(context),
+            )
+        }
     }
 }
