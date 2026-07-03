@@ -259,7 +259,9 @@ tasks.register("connectedE2EAndroidTest") {
         // READ_MEDIA_IMAGES lets E2EFixture see MediaStore rows inserted by other packages
         // (e2e-mock-camera). `am instrument` runs the instrumented test code inside this
         // app's process and UID (com.gb4pc), not com.gb4pc.test's, so the grant must target
-        // com.gb4pc; the permission is declared in app/src/debug/AndroidManifest.xml.
+        // com.gb4pc; the permission is declared in app/src/main/AndroidManifest.xml (it also
+        // backs the runtime grant flow added for issue #509, so debug builds no longer need
+        // their own copy of the declaration).
         // Without this, E2EFixture.captureOnePhoto()'s countMediaStoreImages() query only
         // returns rows owned by com.gb4pc itself (scoped storage, API 29+), so it never
         // observes the photo the mock camera wrote and times out (issues #231/#232).
