@@ -53,6 +53,19 @@ class SetupActivity : ComponentActivity() {
             ActivityResultContracts.RequestPermission(),
         ) { /* Handled in onResume */ }
 
+    private val mediaPermissionLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.RequestPermission(),
+        ) { /* Handled in onResume */ }
+
+    private val mediaPermission: String
+        get() =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                Manifest.permission.READ_MEDIA_IMAGES
+            } else {
+                Manifest.permission.READ_EXTERNAL_STORAGE
+            }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefsManager = PrefsManager(this)
@@ -78,6 +91,7 @@ class SetupActivity : ComponentActivity() {
     private fun isCurrentStepGranted(): Boolean =
         when (currentStep) {
             SetupStep.NOTIFICATION -> PermissionHelper.hasNotificationPermission(this)
+            SetupStep.MEDIA -> PermissionHelper.hasMediaPermission(this)
             SetupStep.USAGE_ACCESS -> PermissionHelper.hasUsageStatsPermission(this)
             SetupStep.OVERLAY -> PermissionHelper.hasOverlayPermission(this)
             SetupStep.BATTERY -> PermissionHelper.isBatteryOptimizationExcluded(this)
@@ -111,6 +125,10 @@ class SetupActivity : ComponentActivity() {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                 }
+            }
+
+            SetupStep.MEDIA -> {
+                mediaPermissionLauncher.launch(mediaPermission)
             }
 
             SetupStep.USAGE_ACCESS -> {
@@ -151,6 +169,14 @@ fun SetupScreen(
                     stringResource(R.string.setup_notification_title),
                     stringResource(R.string.setup_notification_desc),
                     stringResource(R.string.setup_notification_button),
+                )
+            }
+
+            SetupStep.MEDIA -> {
+                Triple(
+                    stringResource(R.string.setup_media_title),
+                    stringResource(R.string.setup_media_desc),
+                    stringResource(R.string.setup_media_button),
                 )
             }
 

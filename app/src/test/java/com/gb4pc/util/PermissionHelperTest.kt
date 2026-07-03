@@ -1,5 +1,6 @@
 package com.gb4pc.util
 
+import android.Manifest
 import android.app.AppOpsManager
 import android.content.Context
 import android.content.pm.PackageManager
@@ -41,6 +42,22 @@ class PermissionHelperTest {
             }
         whenever(context.packageManager).thenReturn(pm)
         assertFalse(PermissionHelper.isPixelCameraInstalled(context))
+    }
+
+    // In plain JVM unit tests Build.VERSION.SDK_INT is 0, so hasMediaPermission takes the
+    // pre-API-33 branch and checks READ_EXTERNAL_STORAGE via context.checkSelfPermission.
+    @Test
+    fun `hasMediaPermission returns true when read permission granted`() {
+        whenever(context.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE))
+            .thenReturn(PackageManager.PERMISSION_GRANTED)
+        assertTrue(PermissionHelper.hasMediaPermission(context))
+    }
+
+    @Test
+    fun `hasMediaPermission returns false when read permission denied`() {
+        whenever(context.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE))
+            .thenReturn(PackageManager.PERMISSION_DENIED)
+        assertFalse(PermissionHelper.hasMediaPermission(context))
     }
 
     @Test

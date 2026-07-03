@@ -34,6 +34,7 @@ class MainActivity : ComponentActivity() {
     private var isPixelCameraInstalled = mutableStateOf(false)
     private var hasUsageStats = mutableStateOf(false)
     private var hasOverlay = mutableStateOf(false)
+    private var hasMedia = mutableStateOf(false)
     private var isBatteryExcluded = mutableStateOf(false)
     private var galleryPackage = mutableStateOf<String?>(null)
 
@@ -60,6 +61,7 @@ class MainActivity : ComponentActivity() {
                     isPixelCameraInstalled = isPixelCameraInstalled.value,
                     hasUsageStats = hasUsageStats.value,
                     hasOverlay = hasOverlay.value,
+                    hasMedia = hasMedia.value,
                     isBatteryExcluded = isBatteryExcluded.value,
                     galleryPackage = galleryPackage.value,
                 )
@@ -73,6 +75,7 @@ class MainActivity : ComponentActivity() {
         isPixelCameraInstalled.value = PermissionHelper.isPixelCameraInstalled(this)
         hasUsageStats.value = PermissionHelper.hasUsageStatsPermission(this)
         hasOverlay.value = PermissionHelper.hasOverlayPermission(this)
+        hasMedia.value = PermissionHelper.hasMediaPermission(this)
         isBatteryExcluded.value = PermissionHelper.isBatteryOptimizationExcluded(this)
         galleryPackage.value = prefsManager.galleryPackage
     }
@@ -84,6 +87,7 @@ fun MainSettingsScreen(
     isPixelCameraInstalled: Boolean,
     hasUsageStats: Boolean,
     hasOverlay: Boolean,
+    hasMedia: Boolean,
     isBatteryExcluded: Boolean,
     galleryPackage: String?,
 ) {
@@ -138,6 +142,23 @@ fun MainSettingsScreen(
                         context.startActivity(
                             Intent(
                                 Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:${context.packageName}"),
+                            ),
+                        )
+                    },
+                )
+            }
+
+            // Issue #509: photo read access missing (or limited). Runtime permissions can't be
+            // toggled from a settings sub-screen like the special permissions above, so route to
+            // the app's details page where the "Photos and videos" grant (Allow all) lives.
+            if (!hasMedia) {
+                PermissionBanner(
+                    message = stringResource(R.string.settings_media_missing),
+                    onClick = {
+                        context.startActivity(
+                            Intent(
+                                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                                 Uri.parse("package:${context.packageName}"),
                             ),
                         )

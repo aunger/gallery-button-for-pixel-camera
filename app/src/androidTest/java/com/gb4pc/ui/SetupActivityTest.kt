@@ -10,6 +10,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.gb4pc.R
 import com.gb4pc.data.PrefsManager
 import com.gb4pc.ui.setup.SetupActivity
+import com.gb4pc.ui.setup.getSetupSteps
 import org.junit.After
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -53,6 +54,7 @@ class SetupActivityTest {
         val possibleButtonTexts =
             listOf(
                 R.string.setup_notification_button,
+                R.string.setup_media_button,
                 R.string.setup_usage_access_button,
                 R.string.setup_overlay_button,
                 R.string.setup_battery_button,
@@ -71,11 +73,11 @@ class SetupActivityTest {
 
     @Test
     fun setupScreen_skipThroughAllSteps_completesSetup() {
-        // Clicking Skip four times covers all steps and marks setup complete.
-        // If the activity finishes before four clicks (all permissions already granted)
+        // Clicking Skip once per step covers all steps and marks setup complete.
+        // If the activity finishes before every click (some permissions already granted)
         // the loop exits early; that is also a valid passing state.
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        repeat(4) {
+        repeat(getSetupSteps().size) {
             try {
                 composeRule.onNodeWithText("Skip").performClick()
                 composeRule.waitForIdle()
