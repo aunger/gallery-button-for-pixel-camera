@@ -3,12 +3,15 @@ package com.gb4pc.e2e
 import android.app.KeyguardManager
 import android.app.UiAutomation
 import android.content.BroadcastReceiver
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.media.MediaScannerConnection
+import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.os.ParcelFileDescriptor
@@ -366,6 +369,60 @@ class E2EFixture(
             0,
             count,
         )
+    }
+
+    /**
+     * Inserts one small image into the shared-images MediaStore and returns its content [Uri], so
+     * a caller that then opens the system photo picker is guaranteed at least one selectable item.
+     *
+     * [PartialAccessPhotoPickerE2ETest] needs the picker grid to be non-empty for two reasons: so a
+     * thumbnail exists to tap, and so the resulting grant is a *genuine* partial grant
+     * (`READ_MEDIA_VISUAL_USER_SELECTED` over a real selected item), which is exactly what issue
+     * #568's H2 case must exercise -- confirming an empty selection would not produce that grant.
+     * The emulator's photo library is otherwise non-deterministic here (earlier E2E suites both
+     * capture into DCIM and call [clearCameraRoll]), so this seeds a known row rather than relying
+     * on residual state.
+     *
+     * Writing the app's *own* media to MediaStore needs no runtime permission on API 29+ (scoped
+     * storage), so this works even with `READ_MEDIA_IMAGES` revoked (`-PmediaPermissionGranted=false`).
+     */
+    fun seedOnePhoto(): Uri {
+        val resolver = context.contentResolver
+        val values =
+            ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, "gb4pc-e2e-seed-${System.currentTimeMillis()}.jpg")
+                put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_DCIM}/gb4pc-e2e")
+                    // IS_PENDING hides the half-written row from other apps (incl. the picker)
+                    // until the JPEG bytes are flushed and it is cleared below.
+                    put(MediaStore.Images.Media.IS_PENDING, 1)
+                }
+            }
+        val uri =
+            requireNotNull(
+                resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values),
+            ) { "seedOnePhoto(): MediaStore.insert returned null; could not seed a picker item" }
+
+        val bitmap = Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888)
+        bitmap.eraseColor(Color.rgb(0, 200, 83))
+        requireNotNull(resolver.openOutputStream(uri)) {
+            "seedOnePhoto(): openOutputStream returned null for $uri"
+        }.use { out -> bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out) }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            resolver.update(
+                uri,
+                ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) },
+                null,
+                null,
+            )
+        }
+
+        // Confirm the row is now visible via an unfiltered query, so the caller does not open the
+        // picker before the insert is observable.
+        waitForCondition(5_000L) { countMediaStoreImages() > 0 }
+        return uri
     }
 
     /**

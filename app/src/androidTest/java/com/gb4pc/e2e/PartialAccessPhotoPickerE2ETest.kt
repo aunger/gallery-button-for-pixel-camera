@@ -44,6 +44,17 @@ import java.util.regex.Pattern
  * before it interacted with the live system photo picker, only a Robolectric stub of the
  * resulting grant state ([com.gb4pc.util.PermissionHelperRobolectricTest]).
  *
+ * ### The "Select photos and videos" option appears even though the manifest omits the permission
+ *
+ * The app declares only `READ_MEDIA_IMAGES` (not `READ_MEDIA_VISUAL_USER_SELECTED`) and targets
+ * SDK 35. On a device running API 34+, Android's Selected Photos Access is enabled *by default*
+ * for any app targeting SDK 34+, so requesting `READ_MEDIA_IMAGES` shows the three-option dialog
+ * (Allow all / Select photos and videos / Don't allow) regardless of whether the app declares
+ * `READ_MEDIA_VISUAL_USER_SELECTED`; declaring it only changes the re-selection behaviour, not
+ * whether the option is offered. This CI emulator is API 35, so the option is present, and no
+ * manifest change (which the app deliberately avoids, per [PermissionHelper.hasMediaPermission]'s
+ * doc) is needed to reach the H2 path.
+ *
  * ### Why this reuses [SetupActivityPermissionDialogE2ETest]'s scaffolding, then goes further
  *
  * The first half of this test (reach the MEDIA step, tap its button, drive the real
@@ -77,9 +88,11 @@ import java.util.regex.Pattern
  *    case-insensitive "Select photos" text match -- the exact phrase Android's own developer
  *    documentation uses for this option, which should hold even if the resource id differs.
  *  - [selectPhotosInSystemPickerAndConfirm] tries both the Google-branded and AOSP package names
- *    for the MediaProvider photo picker module, and tolerates an empty photo grid: Android's own
- *    guidance is that apps "shouldn't assume the device's photo library is empty," implying a
- *    zero-item confirm is a normal, supported outcome, not a special case to avoid.
+ *    for the MediaProvider photo picker module. It requires a selectable thumbnail rather than
+ *    tolerating an empty grid: the test seeds one image via [E2EFixture.seedOnePhoto] before the
+ *    picker opens, so the grid is deterministically non-empty and the resulting grant is a
+ *    genuine partial grant over a real item (an empty selection would not produce
+ *    `READ_MEDIA_VISUAL_USER_SELECTED`, so it could not exercise H2 at all).
  *
  * A future CI run may reveal these guesses need correcting, exactly as happened over several
  * rounds for [SetupActivityPermissionDialogE2ETest] (see PR #576) and the sibling permission
@@ -127,6 +140,13 @@ class PartialAccessPhotoPickerE2ETest {
             PermissionHelper.hasMediaPermission(context),
         )
 
+        // Seed one image so the system photo picker's grid is deterministically non-empty. This
+        // lets the picker step select a real thumbnail and produce a genuine
+        // READ_MEDIA_VISUAL_USER_SELECTED grant (H2's subject), rather than depending on the
+        // emulator's non-deterministic residual library. Writing the app's own media needs no
+        // media permission on API 29+, so this works with READ_MEDIA_IMAGES still revoked.
+        fixture.seedOnePhoto()
+
         // Tap the MEDIA step's own button, which calls requestPermissions() and shows the real
         // system permission dialog over SetupActivity.
         composeRule.onNodeWithText(mediaButton).performClick()
@@ -160,14 +180,15 @@ class PartialAccessPhotoPickerE2ETest {
         //    so this proves that reaction against a genuine live partial grant, not only a
         //    fully denied one (see com.gb4pc.ui.MainSettingsScreenTest for that case).
         PrefsManager(context).isSetupCompleted = true // avoid MainActivity redirecting to SetupActivity
-        ActivityScenario.launch(MainActivity::class.java)
         val bannerText = context.getString(R.string.settings_media_missing)
-        val bannerShown = device.wait(Until.findObject(By.textContains(bannerText)), BANNER_TIMEOUT_MS) != null
-        assertTrue(
-            "MainActivity's media-missing banner should appear when the media permission is " +
-                "only partially granted (H2), exactly as it does when fully denied",
-            bannerShown,
-        )
+        ActivityScenario.launch(MainActivity::class.java).use {
+            val bannerShown = device.wait(Until.findObject(By.textContains(bannerText)), BANNER_TIMEOUT_MS) != null
+            assertTrue(
+                "MainActivity's media-missing banner should appear when the media permission is " +
+                    "only partially granted (H2), exactly as it does when fully denied",
+                bannerShown,
+            )
+        }
 
         // 4) OverlayService's tap-to-fix notification still appears, exercised the same way as
         //    PermissionsDeniedE2ETest, now against a genuine partial grant. fixture.setUp()
@@ -223,15 +244,22 @@ class PartialAccessPhotoPickerE2ETest {
     }
 
     /**
-     * Drives the real system photo picker that "Select photos and videos" opens: selects the
-     * first thumbnail if the library is non-empty (best effort; an empty grid is a legitimate,
-     * documented outcome per Android's own guidance), then confirms the selection.
+     * Drives the real system photo picker that "Select photos and videos" opens: selects the first
+     * thumbnail (guaranteed present because [E2EFixture.seedOnePhoto] seeded one image before the
+     * picker opened), then confirms, producing a genuine `READ_MEDIA_VISUAL_USER_SELECTED` grant
+     * over a real item.
      */
     private fun selectPhotosInSystemPickerAndConfirm() {
         val thumbnail =
             findDialogObject(By.res(PHOTO_PICKER_PKG_GOOGLE, "icon_thumbnail"))
                 ?: findDialogObject(By.res(PHOTO_PICKER_PKG_AOSP, "icon_thumbnail"))
-        thumbnail?.click()
+        requireNotNull(thumbnail) {
+            "The system photo picker showed no selectable thumbnail within $DIALOG_TIMEOUT_MS ms, " +
+                "even though seedOnePhoto() inserted one image before it opened. The picker may " +
+                "not have opened, or its thumbnail resource id differs on this emulator (see the " +
+                "class doc's H2 caveat)."
+        }
+        thumbnail.click()
 
         val confirmButton =
             findDialogObject(By.res(PHOTO_PICKER_PKG_GOOGLE, "button_add"))
