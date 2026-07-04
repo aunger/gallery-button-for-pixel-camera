@@ -46,19 +46,22 @@ import java.util.regex.Pattern
  * `com.gb4pc`'s own process. Changing a storage-group runtime permission on an already-running
  * process can make Android kill that process to re-establish its scoped-storage mount; an earlier
  * suite that toggled this permission via out-of-band `pm grant`/`pm revoke` mid-test reproduced
- * exactly that (commit e5d37ed; see [PermissionsDeniedE2ETest]'s class doc). It is *not* yet
- * established whether a grant delivered through the standard in-app `requestPermissions()` dialog
- * (the OS's intended in-app flow, designed to deliver a result callback to the still-running app)
- * has the same effect, because `pm grant` is a different, out-of-band mechanism. This test is how
- * we find out.
+ * exactly that (commit e5d37ed; see [PermissionsDeniedE2ETest]'s class doc). Before this suite's
+ * first real CI execution, it was not established whether a grant delivered through the standard
+ * in-app `requestPermissions()` dialog (the OS's intended in-app flow, designed to deliver a
+ * result callback to the still-running app) has the same effect, because `pm grant` is a
+ * different, out-of-band mechanism.
  *
- * If the dialog grant leaves the process alive (the expected outcome for the standard flow), the
- * in-process assertions below run and pass. If instead it kills `com.gb4pc`, this instrumentation
- * is torn down with it and the assertions never complete; that outcome is captured *from outside
- * the process* by the CI step's host-side checks (a `dumpsys package` grant check and a `pidof`
- * before/after, both immune to `com.gb4pc` dying), which report whether the grant nonetheless
- * succeeded and whether the app restarted. See the `Run SetupActivityPermissionDialogE2ETest` step
- * in `.github/workflows/build.yml`.
+ * That first real run (a `workflow_dispatch` execution, since this PR's base is a feature branch
+ * and `build.yml`'s `pull_request` trigger is scoped to `branches: [main]`) settled it: the
+ * in-process assertions below ran and passed directly, with `com.gb4pc` staying alive throughout.
+ * Tapping "Allow all" through the standard `requestPermissions()` flow does *not* crash or restart
+ * the process the way the out-of-band `pm grant` did. The CI step's host-side recovery path
+ * (a `dumpsys package` grant check, a `pidof` before/after, and a UI Automator dump confirming
+ * setup progress survives) is retained as a safety net: if a future Android version or app change
+ * ever reintroduces the crash, that path still distinguishes a genuine restart-with-recovery from
+ * an unrelated regression, and reports it instead of silently masking it. See the
+ * `Run SetupActivityPermissionDialogE2ETest` step in `.github/workflows/build.yml`.
  *
  * ### Why the same [RuleChain] + `createAndroidComposeRule<SetupActivity>()` scaffolding
  *

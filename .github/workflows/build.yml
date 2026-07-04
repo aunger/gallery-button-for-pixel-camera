@@ -723,14 +723,20 @@ jobs:
         # `am instrument` starts the com.gb4pc process, so the MEDIA step is actually
         # reached (same as the two denied-precondition suites above).
         #
-        # This is the one E2E suite whose action can kill its own instrumented process:
-        # granting a storage-group runtime permission to a running app can make Android
-        # restart it to re-mount scoped storage (commit e5d37ed reproduced this via the
-        # out-of-band `pm grant`; whether the standard requestPermissions() dialog does
-        # the same is exactly what this suite establishes). Because `am instrument`
-        # self-instruments (test code runs inside com.gb4pc), such a restart tears down
-        # the instrumentation mid-test. So this step diagnoses a non-zero Gradle exit
-        # from OUTSIDE the process, host-side and immune to com.gb4pc dying: a genuine
+        # This is the one E2E suite whose action theoretically could kill its own instrumented
+        # process: granting a storage-group runtime permission to a running app can make Android
+        # restart it to re-mount scoped storage, and commit e5d37ed reproduced exactly that via the
+        # out-of-band `pm grant`. This suite's first real CI execution (a `workflow_dispatch` run,
+        # since this PR's base is a feature branch and the `pull_request` trigger above is scoped
+        # to `branches: [main]`) settled whether the standard requestPermissions() dialog has the
+        # same effect: it does not. The in-process assertions ran and passed directly, with
+        # com.gb4pc staying alive throughout, so the recovery path described below was not
+        # exercised on that run.
+        #
+        # Because `am instrument` self-instruments (test code runs inside com.gb4pc), a restart
+        # would still tear down the instrumentation mid-test if one ever happens (e.g. after a
+        # future Android version change). So this step still diagnoses a non-zero Gradle exit from
+        # OUTSIDE the process, host-side and immune to com.gb4pc dying, as a safety net: a genuine
         # in-process assertion failure emits a FAIL marker and fails the build.
         #
         # A torn-down run (no terminal marker) whose grant nonetheless landed (`dumpsys
