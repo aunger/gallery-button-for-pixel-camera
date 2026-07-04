@@ -1019,7 +1019,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Post placeholder CI summary comment
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             // This marker must stay in lockstep with MARKER in
