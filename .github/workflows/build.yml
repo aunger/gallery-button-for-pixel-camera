@@ -803,9 +803,18 @@ jobs:
                 sleep 1
               done
               echo "com.gb4pc pid after recovery wait: '${RECOVERED_PID:-<not running>}'"
+              # This suite runs last in the job (see scripts/setup-e2e-emulator.sh's step 8 and
+              # SetupActivityDeniedE2ETest's class doc), so the PIN-secured keyguard the setup
+              # script configures can have re-engaged by the time this recovery relaunch runs. A
+              # swipe-only dismissal does nothing against it; replay the same PIN-aware sequence
+              # E2EFixture.dismissSecureKeyguard() and the setup script's step 8 use. This runs
+              # host-side (the instrumented process may be dead), so the Kotlin helper itself
+              # cannot be called; the shell sequence is replayed directly instead.
               "$ADB" shell input keyevent KEYCODE_WAKEUP
-              "$ADB" shell input swipe 300 1000 300 300
-              sleep 1
+              "$ADB" shell wm dismiss-keyguard
+              "$ADB" shell input text 1234
+              "$ADB" shell input keyevent 66
+              sleep 2
               "$ADB" shell am start -n com.gb4pc/com.gb4pc.ui.setup.SetupActivity
               sleep 3
               "$ADB" shell uiautomator dump /sdcard/e2e-recovery-dump.xml > /dev/null 2>&1 || true
