@@ -1018,20 +1018,35 @@ jobs:
     permissions:
       pull-requests: write
     steps:
-      # A fresh "opened" PR has no comments yet, so this can post
-      # unconditionally without first checking for an existing marker
-      # comment (contrast with post_pr_ci_summary_link.py, which must find
-      # and edit an existing comment across repeated runs on the same PR).
       - name: Post placeholder CI summary comment
-        uses: actions/github-script@v9
+        uses: actions/github-script@v7
         with:
           script: |
-            github.rest.issues.createComment({
+            // This marker must stay in lockstep with MARKER in
+            // scripts/post_pr_ci_summary_link.py, which scans for it to find
+            // this comment and edit it in place once real CI results are ready.
+            const marker = '<!-- gb4pc-ci-summary-link -->';
+
+            // A manual "Re-run all jobs" replays this job even though the
+            // stored trigger event is still 'opened', so guard against
+            // posting a second placeholder alongside one that already exists.
+            const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
-              body: '<!-- gb4pc-ci-summary-link -->\n### CI test summary\n\nCI has not reported results yet.\n'
-            })
+              per_page: 100,
+            });
+            if (comments.some((comment) => (comment.body || '').includes(marker))) {
+              console.log('A CI summary comment already exists; skipping placeholder.');
+              return;
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `${marker}\n### CI test summary\n\nCI has not reported results yet.\n`,
+            });
 
   # Surface the build-and-test job's pass/fail summary directly on the PR
   # (issue #331): post or update a sticky comment linking to the job's
