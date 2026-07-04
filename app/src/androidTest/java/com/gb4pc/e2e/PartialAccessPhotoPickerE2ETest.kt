@@ -67,6 +67,20 @@ import java.util.regex.Pattern
  * [E2EFixture]) *within the same live permission state*, to confirm the banner and notification
  * actually render for a genuine partial grant, not only for a fully denied one.
  *
+ * ### The partial grant must not tear down the instrumented process
+ *
+ * Because this test runs the banner and notification assertions *in-process, after* the picker
+ * grant, it depends on `com.gb4pc` surviving that grant. The scoped-storage process-kill that
+ * [PermissionsDeniedE2ETest] documents was reproduced only for *out-of-band* `pm grant`/`pm
+ * revoke`; the sibling above showed a grant delivered through the standard in-app
+ * `requestPermissions()` dialog (the OS's intended in-app flow, which delivers a result callback
+ * to the still-running app) does *not* kill the process. That in-app delivery mechanism, not the
+ * particular permission, is what keeps the process alive, and this test grants
+ * `READ_MEDIA_VISUAL_USER_SELECTED` through the very same dialog flow. Should that assumption not
+ * hold for this permission on some future build, the CI step's host-side diagnosis (see the
+ * `Run PartialAccessPhotoPickerE2ETest` step in `.github/workflows/build.yml`) reports the
+ * torn-down-but-partially-granted signature explicitly instead of failing opaquely.
+ *
  * All of this happens in a single `@Test` method rather than split across several, because the
  * OS-level permission grant this test produces (`READ_MEDIA_VISUAL_USER_SELECTED`, granted) is
  * package-level state that outlives any one `@Test` method and is **not** reset by JUnit's

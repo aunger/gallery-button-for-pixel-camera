@@ -882,16 +882,47 @@ jobs:
           mkdir -p results
           set -o pipefail
           LOGCAT_SINCE=$("$ADB" shell "date '+%m-%d %H:%M:%S.000'" | tr -d '\r')
+          PID_BEFORE=$("$ADB" shell pidof com.gb4pc | tr -d '\r' || true)
+          echo "com.gb4pc pid before partial grant: '${PID_BEFORE:-<not running>}'"
           if ./gradlew connectedE2EAndroidTest \
             -Pe2eClass=com.gb4pc.e2e.PartialAccessPhotoPickerE2ETest \
             -PmediaPermissionGranted=false \
             | tee >(grep '^##GB4PC_TEST##' > results/e2e-partial-access-photo-picker.ndjson); then
             echo "outcome=success" >> "$GITHUB_OUTPUT"
           else
+            # Gradle exited non-zero. Diagnose host-side, immune to com.gb4pc having died.
+            #
+            # Unlike SetupActivityPermissionDialogE2ETest, this test's later assertions (the
+            # MainActivity banner and the OverlayService notification) run *in-process, after* the
+            # partial grant, so a grant that tore the process down is a genuine failure here, not a
+            # documented success. This branch does NOT rescue such a run; it only makes the
+            # torn-down-but-partially-granted signature legible instead of an opaque non-zero exit,
+            # so a future regression of the "in-app dialog grant is non-fatal" assumption (see the
+            # test's class doc) is diagnosable rather than mysterious.
             echo "outcome=failure" >> "$GITHUB_OUTPUT"
+            echo "=== PartialAccessPhotoPickerE2ETest: non-zero Gradle exit; host-side diagnosis ==="
+            PID_AFTER=$("$ADB" shell pidof com.gb4pc | tr -d '\r' || true)
+            echo "com.gb4pc pid after partial grant:  '${PID_AFTER:-<not running>}'"
+            DUMP=$("$ADB" shell dumpsys package com.gb4pc | tr -d '\r' || true)
+            SELECTED_LINE=$(echo "$DUMP" | grep 'READ_MEDIA_VISUAL_USER_SELECTED: granted=' | head -n1 | sed 's/^ *//' || true)
+            IMAGES_LINE=$(echo "$DUMP" | grep 'READ_MEDIA_IMAGES: granted=' | head -n1 | sed 's/^ *//' || true)
+            echo "host-side READ_MEDIA_VISUAL_USER_SELECTED state: '${SELECTED_LINE:-<not found>}'"
+            echo "host-side READ_MEDIA_IMAGES state:               '${IMAGES_LINE:-<not found>}'"
+            if ! grep -q '"outcome":"FAIL"' results/e2e-partial-access-photo-picker.ndjson 2>/dev/null \
+              && echo "$SELECTED_LINE" | grep -q 'granted=true' \
+              && echo "$IMAGES_LINE" | grep -q 'granted=false'; then
+              echo "FINDING: no in-process test marker was emitted, yet the partial grant landed"
+              echo "         host-side (READ_MEDIA_VISUAL_USER_SELECTED granted, READ_MEDIA_IMAGES"
+              echo "         not). That signature means the READ_MEDIA_VISUAL_USER_SELECTED grant"
+              echo "         tore down the instrumented com.gb4pc process mid-test (pid"
+              echo "         before='${PID_BEFORE:-<none>}', after='${PID_AFTER:-<none>}'), so the"
+              echo "         post-grant banner/notification assertions never ran. This contradicts"
+              echo "         the in-app-dialog-grant-is-non-fatal assumption this test relies on"
+              echo "         (see its class doc); that assumption needs revisiting for this"
+              echo "         permission before the test can pass."
+            fi
             echo "=== LOGCAT (since test start) ==="
-            "$ADB" logcat -d -T "$LOGCAT_SINCE" | \
-              bash scripts/filter_logcat.sh
+            "$ADB" logcat -d -T "$LOGCAT_SINCE" | bash scripts/filter_logcat.sh
           fi
 
       - name: Re-grant media permission after PartialAccessPhotoPickerE2ETest
