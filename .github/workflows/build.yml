@@ -1018,15 +1018,35 @@ jobs:
     permissions:
       pull-requests: write
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v6
-
       - name: Post placeholder CI summary comment
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          WORKFLOW_RUN_PR_URL: ${{ github.event.pull_request.html_url }}
-        run: python3 scripts/post_pr_ci_placeholder_comment.py
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // This marker must stay in lockstep with MARKER in
+            // scripts/post_pr_ci_summary_link.py, which scans for it to find
+            // this comment and edit it in place once real CI results are ready.
+            const marker = '<!-- gb4pc-ci-summary-link -->';
+
+            // A manual "Re-run all jobs" replays this job even though the
+            // stored trigger event is still 'opened', so guard against
+            // posting a second placeholder alongside one that already exists.
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            if (comments.some((comment) => (comment.body || '').includes(marker))) {
+              console.log('A CI summary comment already exists; skipping placeholder.');
+              return;
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `${marker}\n### CI test summary\n\nCI has not reported results yet.\n`,
+            });
 
   # Surface the build-and-test job's pass/fail summary directly on the PR
   # (issue #331): post or update a sticky comment linking to the job's
