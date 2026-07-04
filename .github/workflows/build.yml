@@ -673,6 +673,28 @@ jobs:
             downloaded-artifacts/e2e-test-results \
               --suite-label "E2E Tests"
 
+  # Reserve the first PR comment for CI status updates (issue #561): as soon
+  # as the PR is opened, post a placeholder comment carrying the same hidden
+  # marker link-pr-to-ci-summary looks for. That job's find-or-update logic
+  # then edits this placeholder in place once real results are ready, instead
+  # of creating a late comment (the build-and-test job can take a long time)
+  # that lands after human review comments have already piled up.
+  reserve-ci-summary-comment:
+    if: github.event_name == 'pull_request' && github.event.action == 'opened'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Post placeholder CI summary comment
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          WORKFLOW_RUN_PR_URL: ${{ github.event.pull_request.html_url }}
+        run: python3 scripts/post_pr_ci_placeholder_comment.py
+
   # Surface the build-and-test job's pass/fail summary directly on the PR
   # (issue #331): post or update a sticky comment linking to the job's
   # "Summary" section, e.g. .../actions/runs/<run_id>#summary-<job_id>.
