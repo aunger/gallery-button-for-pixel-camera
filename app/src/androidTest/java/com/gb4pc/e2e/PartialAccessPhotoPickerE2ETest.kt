@@ -46,16 +46,17 @@ import java.util.regex.Pattern
  * before it interacted with the live system photo picker, only a Robolectric stub of the
  * resulting grant state ([com.gb4pc.util.PermissionHelperRobolectricTest]).
  *
- * ### The "Select photos and videos" option appears even though the manifest omits the permission
+ * ### The "Select photos and videos" option, and the manifest's partial-access declaration
  *
- * The app declares only `READ_MEDIA_IMAGES` (not `READ_MEDIA_VISUAL_USER_SELECTED`) and targets
+ * The app declares both `READ_MEDIA_IMAGES` and `READ_MEDIA_VISUAL_USER_SELECTED` and targets
  * SDK 35. On a device running API 34+, Android's Selected Photos Access is enabled *by default*
  * for any app targeting SDK 34+, so requesting `READ_MEDIA_IMAGES` shows the three-option dialog
- * (Allow all / Select photos and videos / Don't allow) regardless of whether the app declares
- * `READ_MEDIA_VISUAL_USER_SELECTED`; declaring it only changes the re-selection behaviour, not
- * whether the option is offered. This CI emulator is API 35, so the option is present, and no
- * manifest change (which the app deliberately avoids, per [PermissionHelper.hasMediaPermission]'s
- * doc) is needed to reach the H2 path.
+ * (Allow all / Select photos and videos / Don't allow). Declaring `READ_MEDIA_VISUAL_USER_SELECTED`
+ * is what makes a "Select photos" grant leave `READ_MEDIA_IMAGES` reading as DENIED, instead of the
+ * temporary backward-compatibility grant Android would otherwise apply (see
+ * [PermissionHelper.hasMediaPermission]'s doc); that declaration is the production fix for issue
+ * #568, and it is what lets the H2 assertion below hold. This CI emulator is API 35, so the option
+ * is present.
  *
  * ### Why this reuses [SetupActivityPermissionDialogE2ETest]'s scaffolding, then goes further
  *
@@ -85,20 +86,26 @@ import java.util.regex.Pattern
  * real CI run (run 28706188622) confirmed the process does survive: its in-process assertions
  * ran, so the assumption holds for `READ_MEDIA_VISUAL_USER_SELECTED` too.
  *
- * ### The partial grant settles asynchronously in this process
+ * ### Why full access reads as not-granted for a partial grant, and the async settle
  *
- * The picker delivers its grant to this still-running process asynchronously. That first CI run
- * showed `checkSelfPermission(READ_MEDIA_IMAGES)` reading as *granted* in-process for a short
- * window immediately after the picker returned, even though the authoritative package state was
- * only ever partially granted (the same run's host-side `dumpsys package` reported
- * `READ_MEDIA_VISUAL_USER_SELECTED granted=true` and `READ_MEDIA_IMAGES granted=false`, and
- * `GrantPermissionsViewModel` logged `clickedButton == ALLOW_SELECTED_BUTTON`, i.e. "Select photos
- * and videos" really was the option tapped). The single immediate read raced the client-side
- * permission cache before it settled. So this class waits for the state to *settle* -- the
- * partial grant visible (`READ_MEDIA_VISUAL_USER_SELECTED` granted) and full access back to its
- * settled not-granted value -- rather than reading once, mirroring how
- * [SetupActivityPermissionDialogE2ETest] polls for its (full) grant to propagate. Requiring the
- * partial grant to have landed keeps the poll from passing vacuously on the pre-grant state.
+ * The load-bearing reason `hasMediaPermission()` returns false here is that the manifest declares
+ * `READ_MEDIA_VISUAL_USER_SELECTED` (see above): with it declared, a "Select photos" grant does not
+ * grant `READ_MEDIA_IMAGES`, so `checkSelfPermission(READ_MEDIA_IMAGES)` returns DENIED. Without
+ * that declaration Android runs a backward-compatibility mode that *temporarily* reports
+ * `READ_MEDIA_IMAGES` as granted (flagged `FLAG_PERMISSION_REVOKED_COMPAT`) while the app is
+ * foregrounded -- which is exactly what made an earlier revision of this test time out: its poll
+ * for `!hasMediaPermission()` never became true because the in-process compat grant kept
+ * `READ_MEDIA_IMAGES` reading as granted (issue #568's real root cause was that missing manifest
+ * declaration, a production bug, not a test-timing flake). `GrantPermissionsViewModel` logged
+ * `clickedButton == ALLOW_SELECTED_BUTTON` on a real run, confirming "Select photos and videos"
+ * really was the option tapped, not "Allow all".
+ *
+ * The picker still delivers the `READ_MEDIA_VISUAL_USER_SELECTED` grant to this still-running
+ * process asynchronously, so this class polls for the state to *settle* -- the partial grant
+ * visible (`READ_MEDIA_VISUAL_USER_SELECTED` granted) and full access not granted -- rather than
+ * reading once, mirroring how [SetupActivityPermissionDialogE2ETest] polls for its (full) grant to
+ * propagate. Requiring the partial grant to have landed keeps the poll from passing vacuously on
+ * the pre-grant state.
  *
  * All of this happens in a single `@Test` method rather than split across several, because the
  * OS-level permission grant this test produces (`READ_MEDIA_VISUAL_USER_SELECTED`, granted) is
@@ -196,21 +203,20 @@ class PartialAccessPhotoPickerE2ETest {
 
         // 1) hasMediaPermission() treats the partial grant as NOT granted (H2's core claim).
         //
-        // The picker delivers its grant to this still-running process asynchronously, and the
-        // client-side permission cache settles a little after the grant lands. A real CI run
-        // (run 28706188622, job 85132114900) showed READ_MEDIA_IMAGES reading as *granted*
-        // in-process for a short window right after the picker returned -- even though the
-        // authoritative package state was only ever partially granted: that run's host-side
-        // `dumpsys package` confirmed READ_MEDIA_VISUAL_USER_SELECTED granted=true and
-        // READ_MEDIA_IMAGES granted=false (the correct partial-access state), while
-        // GrantPermissionsViewModel logged clickedButton=4096 == ALLOW_SELECTED_BUTTON, i.e. the
-        // "Select photos and videos" option really was the one tapped. So PermissionHelper's
-        // logic is right; the single immediate read just raced the cache.
+        // This holds because the manifest declares READ_MEDIA_VISUAL_USER_SELECTED (see the class
+        // doc and PermissionHelper.hasMediaPermission): with it declared, a "Select photos" grant
+        // leaves READ_MEDIA_IMAGES reading as DENIED, so hasMediaPermission() is false. Without it,
+        // Android's backward-compatibility mode keeps READ_MEDIA_IMAGES reading as granted in-process
+        // (FLAG_PERMISSION_REVOKED_COMPAT) for a partial grant, which is why an earlier revision of
+        // this test timed out here. GrantPermissionsViewModel logged clickedButton=4096 ==
+        // ALLOW_SELECTED_BUTTON on a real run, confirming "Select photos and videos" was tapped.
         //
-        // Poll for the state to settle instead, mirroring how SetupActivityPermissionDialogE2ETest
-        // polls for its (full) grant to propagate. The condition also requires the partial grant
-        // to have genuinely landed (READ_MEDIA_VISUAL_USER_SELECTED granted), so this cannot pass
-        // vacuously on the pre-grant state where hasMediaPermission() is already false.
+        // The READ_MEDIA_VISUAL_USER_SELECTED grant is delivered to this still-running process
+        // asynchronously, so poll for the state to settle, mirroring how
+        // SetupActivityPermissionDialogE2ETest polls for its (full) grant to propagate. The
+        // condition requires the partial grant to have genuinely landed (READ_MEDIA_VISUAL_USER_-
+        // SELECTED granted), so it cannot pass vacuously on the pre-grant state where
+        // hasMediaPermission() is already false.
         val partialGrantSettled =
             fixture.waitForCondition(GRANT_TIMEOUT_MS) {
                 context.checkSelfPermission(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED) ==
