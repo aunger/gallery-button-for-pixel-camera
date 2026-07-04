@@ -1023,7 +1023,7 @@ jobs:
       # comment (contrast with post_pr_ci_summary_link.py, which must find
       # and edit an existing comment across repeated runs on the same PR).
       - name: Post placeholder CI summary comment
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             github.rest.issues.createComment({
