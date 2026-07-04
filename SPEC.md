@@ -28,6 +28,8 @@ The overlay appears when Pixel Camera's viewfinder is in the foreground and disa
 |`FOREGROUND_SERVICE`                  |Normal (manifest)         |Keep the process alive so camera-availability callbacks remain registered                        |
 |`FOREGROUND_SERVICE_SPECIAL_USE`      |Normal (manifest, API 34+)|Foreground service type declaration                                                              |
 |`POST_NOTIFICATIONS`                  |Runtime (API 33+)         |Show required foreground service notification                                                    |
+|`READ_MEDIA_IMAGES`                   |Runtime (API 33+)         |Read the shared image collection so the overlay thumbnail shows Pixel Camera's newest photo      |
+|`READ_EXTERNAL_STORAGE`               |Runtime (API 26-32)       |Same as `READ_MEDIA_IMAGES`, for devices below API 33 (declared with `maxSdkVersion="32"`)       |
 |`RECEIVE_BOOT_COMPLETED`              |Normal (manifest)         |Restart service after device reboot                                                              |
 |`CAMERA`                              |Normal (manifest)         |Required to register `CameraManager.AvailabilityCallback`                                        |
 |`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`|Normal (manifest)         |Prompt user to exclude GB4PC from battery optimization                                           |
@@ -51,7 +53,8 @@ This is a compile-time manifest declaration, not a runtime permission; the user 
 
 ### 2.2 Guided Setup Flow
 
-- **PM-01** On first launch, display a guided setup flow with three steps. Each step explains one permission, why it is needed, and provides a single button to grant it. Steps:
+- **PM-01** On first launch, display a guided setup flow. Each step explains one permission, why it is needed, and provides a single button to grant it. Steps (a leading Notifications step is inserted on API 33+ per PM-05):
+1. **Photos & Media**: "GB4PC needs to read your photos so the overlay button can show your newest shot as a thumbnail. Please choose Allow all, since limited access cannot include a photo you just took." Button: "Allow Photo Access" → requests the `READ_MEDIA_IMAGES` / `READ_EXTERNAL_STORAGE` runtime permission (PM-06).
 1. **Usage Access**: "GB4PC needs to confirm which app is using the camera. This permission lets GB4PC see which app is in the foreground. It cannot read your personal data." Button: "Grant Usage Access" → opens the system Usage Access settings screen.
 1. **Draw Over Apps**: "Allows GB4PC to show the gallery button on top of Pixel Camera." Button: "Grant Overlay Permission" → opens the system overlay settings screen.
 1. **Battery Optimization**: "GB4PC needs to stay running in the background to detect when you open the camera. Excluding it from battery optimization prevents Android from killing it." Button: "Exclude from Battery Optimization" → fires `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` intent.
@@ -59,6 +62,12 @@ This is a compile-time manifest declaration, not a runtime permission; the user 
 - **PM-03** If Usage Access is revoked while the service is running, the service continues running (to maintain camera callbacks) but cannot confirm foreground app identity. It hides any visible overlay, posts a notification ("GB4PC cannot detect apps, tap to fix"), and the main settings screen shows the missing-permission banner.
 - **PM-04** If Overlay permission is revoked while the service is running, the service detects the failure when it next attempts to show the overlay, posts a notification prompting re-grant, and the main settings screen shows the missing-permission banner.
 - **PM-05** If the `POST_NOTIFICATIONS` runtime permission (API 33+) has not been granted, request it at the beginning of the setup flow before step 1, since the foreground service notification requires it.
+- **PM-06** The setup flow includes a **Photos & Media** step that requests read access to the shared image collection (`READ_MEDIA_IMAGES` on API 33+, `READ_EXTERNAL_STORAGE` below) at runtime. This is a dangerous runtime permission on every supported API level, so declaring it in the manifest is not enough; without the grant, a MediaStore query silently returns only rows owned by GB4PC itself (scoped storage, API 29+), never Pixel Camera's, and the overlay thumbnail can never update (issue #509). Full access is required: on API 34+ the "Select photos" (partial) option grants only `READ_MEDIA_VISUAL_USER_SELECTED`, which can never include a photo taken seconds ago, so `PermissionHelper.hasMediaPermission` treats partial access as not granted and the setup step and main-screen banner keep prompting until the user allows all photos. If the permission is missing while the service runs, the service does not attempt to prompt (see the permission-timing principle below); it keeps the gallery icon, skips the futile MediaStore polling, and posts a tap-to-fix notification.
+
+> [!NOTE]
+> **Permission-timing principle.** If the camera is on screen, it is too late to request permissions. Make do with what you have.
+>
+> Runtime permissions must be requested ahead of time in the guided setup flow, never from the running service or overlay while Pixel Camera is in the foreground. When a permission the overlay would use is missing at that moment, the service degrades gracefully with whatever access it already has, rather than interrupting the camera to prompt.
 
 -----
 

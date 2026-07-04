@@ -527,6 +527,192 @@ jobs:
           path: results/e2e-gallery.ndjson
           retention-days: 14
 
+      - name: Run PermissionsGrantedE2ETest
+        # No `continue-on-error` (issue #309): record the real outcome and defer
+        # the pass/fail verdict to the "Gate on test failures" step.
+        #
+        # Issue #564 review: this suite was added to close #566/#567/#568 with real
+        # automated coverage, but was initially left out of every
+        # `connectedE2EAndroidTest -Pe2eClass=...` invocation in this workflow, so it
+        # compiled but never actually ran. `am instrument -e class` runs only the named
+        # class, not the rest of its package, so a dedicated step is required, mirroring
+        # the two suites above. It was then split into two classes (granted/denied) after
+        # a second review round found the original single-class design changed the media
+        # permission on the already-running `com.gb4pc` process mid-test, which crashes
+        # that process (see PermissionsDeniedE2ETest's class doc). This step runs under
+        # the task's default precondition (permission granted before the process starts),
+        # same as every other E2E suite.
+        id: run_permissions_granted_e2e
+        if: steps.diff_check.outputs.needs_full_build == 'true'
+        run: |
+          ADB="$ANDROID_HOME/platform-tools/adb"
+          # Wake and dismiss the swipe keyguard before starting the test suite.
+          # The previous E2E suites can run for several minutes, and the screen
+          # may sleep or re-lock before this step starts. This mirrors
+          # E2EFixture.wakeAndDismissKeyguard() (issue #344 / #341).
+          # sleep 2 lets the swipe animation complete before Gradle's am start fires
+          # (same reasoning as the pre-flight step's post-swipe sleep 2).
+          "$ADB" shell input keyevent KEYCODE_WAKEUP
+          "$ADB" shell input swipe 300 1000 300 300
+          sleep 2
+          mkdir -p results
+          set -o pipefail
+          LOGCAT_SINCE=$("$ADB" shell "date '+%m-%d %H:%M:%S.000'" | tr -d '\r')
+          if ./gradlew connectedE2EAndroidTest \
+            -Pe2eClass=com.gb4pc.e2e.PermissionsGrantedE2ETest \
+            | tee >(grep '^##GB4PC_TEST##' > results/e2e-permissions-granted.ndjson); then
+            echo "outcome=success" >> "$GITHUB_OUTPUT"
+          else
+            echo "outcome=failure" >> "$GITHUB_OUTPUT"
+            echo "=== LOGCAT (since test start) ==="
+            "$ADB" logcat -d -T "$LOGCAT_SINCE" | \
+              bash scripts/filter_logcat.sh
+          fi
+
+      - name: Upload permissions-granted E2E markers
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: testresults-e2e-permissions-granted
+          path: results/e2e-permissions-granted.ndjson
+          retention-days: 14
+
+      - name: Run PermissionsDeniedE2ETest
+        # No `continue-on-error` (issue #309): record the real outcome and defer
+        # the pass/fail verdict to the "Gate on test failures" step.
+        #
+        # -PmediaPermissionGranted=false makes connectedE2EAndroidTest's doLast block
+        # (app/build.gradle.kts) `pm revoke` READ_MEDIA_IMAGES before `am instrument`
+        # starts the com.gb4pc process, instead of the default `pm grant`. This class
+        # must never run without that flag: launching it under the default grant would
+        # violate its own precondition assertion, and toggling the permission from
+        # inside a running test crashes the process (see the class doc).
+        id: run_permissions_denied_e2e
+        if: steps.diff_check.outputs.needs_full_build == 'true'
+        run: |
+          ADB="$ANDROID_HOME/platform-tools/adb"
+          "$ADB" shell input keyevent KEYCODE_WAKEUP
+          "$ADB" shell input swipe 300 1000 300 300
+          sleep 2
+          mkdir -p results
+          set -o pipefail
+          LOGCAT_SINCE=$("$ADB" shell "date '+%m-%d %H:%M:%S.000'" | tr -d '\r')
+          if ./gradlew connectedE2EAndroidTest \
+            -Pe2eClass=com.gb4pc.e2e.PermissionsDeniedE2ETest \
+            -PmediaPermissionGranted=false \
+            | tee >(grep '^##GB4PC_TEST##' > results/e2e-permissions-denied.ndjson); then
+            echo "outcome=success" >> "$GITHUB_OUTPUT"
+          else
+            echo "outcome=failure" >> "$GITHUB_OUTPUT"
+            echo "=== LOGCAT (since test start) ==="
+            "$ADB" logcat -d -T "$LOGCAT_SINCE" | \
+              bash scripts/filter_logcat.sh
+          fi
+
+      - name: Re-grant media permission after PermissionsDeniedE2ETest
+        # The app is not reinstalled again before the remaining steps in this job (there
+        # are none after this point today, but this keeps the device state honest for any
+        # future step added after this one), so explicitly restore the default granted
+        # state that every other E2E suite assumes.
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        run: |
+          "$ANDROID_HOME/platform-tools/adb" shell pm grant com.gb4pc android.permission.READ_MEDIA_IMAGES
+
+      - name: Upload permissions-denied E2E markers
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: testresults-e2e-permissions-denied
+          path: results/e2e-permissions-denied.ndjson
+          retention-days: 14
+
+      - name: Run SetupActivityGrantedE2ETest
+        # No `continue-on-error` (issue #309): record the real outcome and defer
+        # the pass/fail verdict to the "Gate on test failures" step.
+        #
+        # Issue #509/#566 follow-up (PR #564 review): an earlier attempt folded this
+        # assertion into PermissionsGrantedE2ETest using createEmptyComposeRule() plus
+        # a manually launched ActivityScenario for SetupActivity. That combination let
+        # this exact test pass, but only because assertDoesNotExist() vacuously
+        # succeeds when Compose's test framework finds no hierarchy at all to search
+        # (see SetupActivityGrantedE2ETest's class doc). This dedicated step uses
+        # createAndroidComposeRule<SetupActivity>() instead, the same rule
+        # SetupActivityTest already relies on successfully, so the hierarchy is
+        # actually found and the assertion is meaningful.
+        id: run_setup_activity_granted_e2e
+        if: steps.diff_check.outputs.needs_full_build == 'true'
+        run: |
+          ADB="$ANDROID_HOME/platform-tools/adb"
+          "$ADB" shell input keyevent KEYCODE_WAKEUP
+          "$ADB" shell input swipe 300 1000 300 300
+          sleep 2
+          mkdir -p results
+          set -o pipefail
+          LOGCAT_SINCE=$("$ADB" shell "date '+%m-%d %H:%M:%S.000'" | tr -d '\r')
+          if ./gradlew connectedE2EAndroidTest \
+            -Pe2eClass=com.gb4pc.e2e.SetupActivityGrantedE2ETest \
+            | tee >(grep '^##GB4PC_TEST##' > results/e2e-setup-activity-granted.ndjson); then
+            echo "outcome=success" >> "$GITHUB_OUTPUT"
+          else
+            echo "outcome=failure" >> "$GITHUB_OUTPUT"
+            echo "=== LOGCAT (since test start) ==="
+            "$ADB" logcat -d -T "$LOGCAT_SINCE" | \
+              bash scripts/filter_logcat.sh
+          fi
+
+      - name: Upload SetupActivityGrantedE2ETest markers
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: testresults-e2e-setup-activity-granted
+          path: results/e2e-setup-activity-granted.ndjson
+          retention-days: 14
+
+      - name: Run SetupActivityDeniedE2ETest
+        # No `continue-on-error` (issue #309): record the real outcome and defer
+        # the pass/fail verdict to the "Gate on test failures" step.
+        #
+        # -PmediaPermissionGranted=false, same as PermissionsDeniedE2ETest above and for
+        # the same reason: this class asserts the permission is NOT granted, so it must
+        # never run under the task's default grant.
+        id: run_setup_activity_denied_e2e
+        if: steps.diff_check.outputs.needs_full_build == 'true'
+        run: |
+          ADB="$ANDROID_HOME/platform-tools/adb"
+          "$ADB" shell input keyevent KEYCODE_WAKEUP
+          "$ADB" shell input swipe 300 1000 300 300
+          sleep 2
+          mkdir -p results
+          set -o pipefail
+          LOGCAT_SINCE=$("$ADB" shell "date '+%m-%d %H:%M:%S.000'" | tr -d '\r')
+          if ./gradlew connectedE2EAndroidTest \
+            -Pe2eClass=com.gb4pc.e2e.SetupActivityDeniedE2ETest \
+            -PmediaPermissionGranted=false \
+            | tee >(grep '^##GB4PC_TEST##' > results/e2e-setup-activity-denied.ndjson); then
+            echo "outcome=success" >> "$GITHUB_OUTPUT"
+          else
+            echo "outcome=failure" >> "$GITHUB_OUTPUT"
+            echo "=== LOGCAT (since test start) ==="
+            "$ADB" logcat -d -T "$LOGCAT_SINCE" | \
+              bash scripts/filter_logcat.sh
+          fi
+
+      - name: Re-grant media permission after SetupActivityDeniedE2ETest
+        # Mirrors the "Re-grant media permission after PermissionsDeniedE2ETest" step
+        # above: keeps device state in the "granted" baseline every other suite (and
+        # any future step) assumes.
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        run: |
+          "$ANDROID_HOME/platform-tools/adb" shell pm grant com.gb4pc android.permission.READ_MEDIA_IMAGES
+
+      - name: Upload SetupActivityDeniedE2ETest markers
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: testresults-e2e-setup-activity-denied
+          path: results/e2e-setup-activity-denied.ndjson
+          retention-days: 14
+
       - name: Copy E2E test results
         if: always() && steps.diff_check.outputs.needs_full_build == 'true'
         continue-on-error: true
@@ -597,7 +783,7 @@ jobs:
               --outcome "${{ steps.run_instrumented.outcome }}" \
             app/build/outputs/androidTest-results/e2e \
               --suite-label "E2E Tests" \
-              --outcome "${{ (steps.run_overlay_e2e.outcome == 'skipped' && steps.run_gallery_e2e.outcome == 'skipped') && 'skipped' || ((steps.run_overlay_e2e.outcome == 'failure' || steps.run_gallery_e2e.outcome == 'failure') && 'failure' || 'success') }}"
+              --outcome "${{ (steps.run_overlay_e2e.outcome == 'skipped' && steps.run_gallery_e2e.outcome == 'skipped' && steps.run_permissions_granted_e2e.outcome == 'skipped' && steps.run_permissions_denied_e2e.outcome == 'skipped' && steps.run_setup_activity_granted_e2e.outcome == 'skipped' && steps.run_setup_activity_denied_e2e.outcome == 'skipped') && 'skipped' || ((steps.run_overlay_e2e.outcome == 'failure' || steps.run_gallery_e2e.outcome == 'failure' || steps.run_permissions_granted_e2e.outcome == 'failure' || steps.run_permissions_denied_e2e.outcome == 'failure' || steps.run_setup_activity_granted_e2e.outcome == 'failure' || steps.run_setup_activity_denied_e2e.outcome == 'failure') && 'failure' || 'success') }}"
 
       # Single authority on whether the test phase passed (issue #309). Replaces
       # the old blanket `continue-on-error` on the test steps: any failing test
@@ -619,7 +805,7 @@ jobs:
               --outcome "${{ steps.run_instrumented.outputs.outcome }}" \
             app/build/outputs/androidTest-results/e2e \
               --suite-label "E2E Tests" \
-              --outcome "${{ (steps.run_overlay_e2e.outputs.outcome == 'failure' || steps.run_gallery_e2e.outputs.outcome == 'failure') && 'failure' || 'success' }}"
+              --outcome "${{ (steps.run_overlay_e2e.outputs.outcome == 'failure' || steps.run_gallery_e2e.outputs.outcome == 'failure' || steps.run_permissions_granted_e2e.outputs.outcome == 'failure' || steps.run_permissions_denied_e2e.outputs.outcome == 'failure' || steps.run_setup_activity_granted_e2e.outputs.outcome == 'failure' || steps.run_setup_activity_denied_e2e.outputs.outcome == 'failure') && 'failure' || 'success' }}"
 
   file-issues:
     needs: [build-and-test]

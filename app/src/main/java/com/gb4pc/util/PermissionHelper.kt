@@ -50,4 +50,29 @@ object PermissionHelper {
         } else {
             true // Not required before API 33
         }
+
+    /**
+     * True when the app holds *full* read access to the shared image collection, which it
+     * needs to see photos Pixel Camera writes to MediaStore (issue #509).
+     *
+     * On API 33+ this is `READ_MEDIA_IMAGES`; below that it is `READ_EXTERNAL_STORAGE`. Both
+     * are dangerous runtime permissions: declaring them in the manifest does not grant them,
+     * and without the grant a MediaStore query silently returns only rows owned by this app
+     * (scoped storage, API 29+), never Pixel Camera's, so the overlay thumbnail can never update.
+     *
+     * On API 34+ a user may instead choose "Select photos" (partial access), which grants only
+     * `READ_MEDIA_VISUAL_USER_SELECTED`. That subset can never include a photo taken seconds ago,
+     * so it is insufficient for this feature. This check deliberately requires the full-access
+     * `READ_MEDIA_IMAGES` grant and treats partial access as not granted, so the setup step and
+     * the main-screen banner keep prompting until the user allows all photos.
+     */
+    fun hasMediaPermission(context: Context): Boolean {
+        val permission =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                android.Manifest.permission.READ_MEDIA_IMAGES
+            } else {
+                android.Manifest.permission.READ_EXTERNAL_STORAGE
+            }
+        return context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
+    }
 }

@@ -9,6 +9,7 @@
     <string name="notification_stop">Stop</string>
     <string name="notification_usage_access_lost">GB4PC cannot detect apps — tap to fix</string>
     <string name="notification_overlay_lost">GB4PC cannot show overlay — tap to grant permission</string>
+    <string name="notification_media_permission_missing">GB4PC can\'t read your photos — tap to allow all photos so the thumbnail can update</string>
 
     <!-- Setup Flow -->
     <string name="setup_title">GB4PC Setup</string>
@@ -25,6 +26,9 @@
     <string name="setup_notification_title">Notifications</string>
     <string name="setup_notification_desc">GB4PC needs notification permission to show its required foreground service notification.</string>
     <string name="setup_notification_button">Allow Notifications</string>
+    <string name="setup_media_title">Photos &amp; Media</string>
+    <string name="setup_media_desc">GB4PC needs to read your photos so the overlay button can show your newest shot as a thumbnail. Please choose \"Allow all\" — limited access cannot include a photo you just took.</string>
+    <string name="setup_media_button">Allow Photo Access</string>
 
     <!-- Main Settings -->
     <string name="settings_service_toggle">Enable GB4PC</string>
@@ -34,6 +38,7 @@
     <string name="settings_pixel_camera_missing">Pixel Camera is not installed. GB4PC requires Pixel Camera to function.</string>
     <string name="settings_battery_warning">Not excluded from battery optimization — GB4PC may be killed in the background. Tap to fix.</string>
     <string name="settings_permission_missing">Missing permission: %s. Tap to fix.</string>
+    <string name="settings_media_missing">Photo access not granted (or limited) — the overlay button can\'t show your latest shot. Tap to allow all photos.</string>
 
     <string name="settings_focusable_overlay_title">Experimental responsiveness boost</string>
     <string name="settings_focusable_overlay_subtitle">Improve reaction time to app switching, but possibly block hardware key (volume &amp; power button) control of the camera shutter and zoom</string>

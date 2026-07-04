@@ -36,6 +36,7 @@ object Constants {
     const val NOTIFICATION_CHANNEL_ID = "gb4pc_service"
     const val NOTIFICATION_ID = 1
     const val NOTIFICATION_PERMISSION_ID = 2
+    const val NOTIFICATION_MEDIA_PERMISSION_ID = 3
 
     // SharedPreferences
     const val PREFS_NAME = "gb4pc_prefs"

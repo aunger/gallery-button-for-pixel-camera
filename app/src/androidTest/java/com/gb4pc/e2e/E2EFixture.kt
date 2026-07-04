@@ -219,11 +219,46 @@ class E2EFixture(
      *
      * An upward swipe is preferred over KEYCODE_MENU (82): KEYCODE_MENU can open a foreground
      * activity's options/overflow menu, obscuring the camera View.
+     *
+     * **Not sufficient against the secure keyguard `scripts/setup-e2e-emulator.sh` configures for
+     * this whole E2E suite** (a PIN, so `wm dismiss-keyguard` alone leaves it engaged, per that
+     * script's own step 8 comment). A swipe gesture does nothing against a PIN prompt. Most E2E
+     * tests never need to care, because the CI workflow's `stay_on_while_plugged_in 7` keeps the
+     * one-time dismissal from that setup script in effect for the rest of the job, unless
+     * something re-engages the keyguard (explicitly via [lockScreen], or implicitly if enough
+     * real time passes between CI steps for it to reassert itself, as happened with
+     * `SetupActivityDeniedE2ETest`, issue #509 PR #564). If you actually need to guarantee the
+     * secure keyguard is dismissed, use [dismissSecureKeyguard] instead.
      */
     fun wakeAndDismissKeyguard() {
         uiAutomation.executeShellCommand("input keyevent 224").close() // KEYCODE_WAKEUP
         Thread.sleep(300)
         uiAutomation.executeShellCommand("input swipe 300 1000 300 300").close()
+        Thread.sleep(300)
+    }
+
+    /**
+     * Wakes the display and dismisses the PIN-secured keyguard `scripts/setup-e2e-emulator.sh`
+     * configures for this E2E suite (PIN `1234`), by replaying that script's own step-8 sequence:
+     * wake, request dismissal, type the PIN, submit ENTER. [wakeAndDismissKeyguard]'s swipe
+     * gesture does nothing against this secure keyguard; it only dismisses the emulator's
+     * non-secure swipe-style lock screen (see that method's doc).
+     *
+     * The CI workflow's `stay_on_while_plugged_in 7` keeps the keyguard dismissed for most of a
+     * job once the setup script's one-time dismissal runs, so most E2E tests never need this.
+     * Reach for it when a test's own activity launch can race a keyguard re-engagement the
+     * one-time setup dismissal no longer covers, e.g. because enough wall-clock time or enough
+     * other E2E steps have passed since setup ran (see [SetupActivityDeniedE2ETest]'s class doc
+     * for the incident that prompted this method, issue #509 PR #564).
+     */
+    fun dismissSecureKeyguard() {
+        uiAutomation.executeShellCommand("input keyevent 224").close() // KEYCODE_WAKEUP
+        Thread.sleep(300)
+        uiAutomation.executeShellCommand("wm dismiss-keyguard").close()
+        Thread.sleep(300)
+        uiAutomation.executeShellCommand("input text 1234").close()
+        Thread.sleep(300)
+        uiAutomation.executeShellCommand("input keyevent 66").close() // KEYCODE_ENTER
         Thread.sleep(300)
     }
 
