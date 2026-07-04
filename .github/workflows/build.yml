@@ -727,10 +727,19 @@ jobs:
         # self-instruments (test code runs inside com.gb4pc), such a restart tears down
         # the instrumentation mid-test. So this step diagnoses a non-zero Gradle exit
         # from OUTSIDE the process, host-side and immune to com.gb4pc dying: a genuine
-        # in-process assertion failure emits a FAIL marker and fails the build, whereas
-        # a torn-down run (no terminal marker) whose grant nonetheless landed
-        # (`dumpsys package` confirms granted=true) is the documented "the dialog grant
-        # restarts the app but succeeds" finding, reported as success.
+        # in-process assertion failure emits a FAIL marker and fails the build.
+        #
+        # A torn-down run (no terminal marker) whose grant nonetheless landed (`dumpsys
+        # package` confirms granted=true) is not enough evidence on its own: that signature
+        # cannot tell "the process died for the expected scoped-storage remount" apart from
+        # "the process died from an unrelated regression that happens to land right after
+        # the grant is recorded"--both leave the same granted=true snapshot. So this case
+        # additionally verifies the flow recovers without losing progress, per the issue's
+        # "if the app does restart, capture what happens next": it relaunches SetupActivity
+        # host-side and confirms, via a UI Automator dump, that it lands on BATTERY (the
+        # next ungranted step) rather than reverting to MEDIA or failing to render. Only
+        # when that recovery is confirmed is the run reported as the documented "the dialog
+        # grant restarts the app but succeeds" finding.
         id: run_setup_activity_permission_dialog_e2e
         if: steps.diff_check.outputs.needs_full_build == 'true'
         run: |
@@ -765,14 +774,56 @@ jobs:
               "$ADB" logcat -d -T "$LOGCAT_SINCE" | bash scripts/filter_logcat.sh
             elif echo "$GRANT_LINE" | grep -q 'granted=true'; then
               # No terminal marker was emitted, so the instrumentation was torn down before it
-              # could report -- consistent with the media grant restarting com.gb4pc mid-test --
-              # yet the grant itself SUCCEEDED (confirmed host-side). That is a valid #575 result:
-              # the real dialog-driven grant restarts the process like the out-of-band pm grant
-              # (commit e5d37ed) did, and the permission is now held.
+              # could report--consistent with the media grant restarting com.gb4pc mid-test--
+              # and the grant itself SUCCEEDED (confirmed host-side). Capture logcat now: this
+              # torn-down-but-granted outcome is the single most interesting result the whole
+              # test exists to characterize, so it must not go undocumented the way the two
+              # other (unambiguous) failure branches above already capture it.
               echo "FINDING: the real Photos & Media dialog grant tore down the instrumented"
               echo "         com.gb4pc process (pid before='${PID_BEFORE:-<none>}',"
               echo "         after='${PID_AFTER:-<none>}'), but READ_MEDIA_IMAGES is now granted."
-              echo "outcome=success" >> "$GITHUB_OUTPUT"
+              echo "=== LOGCAT (since test start) ==="
+              "$ADB" logcat -d -T "$LOGCAT_SINCE" | bash scripts/filter_logcat.sh
+
+              # A confirmed grant alone does not establish that setup progress survived the
+              # restart: an unrelated regression that happens to crash com.gb4pc right after
+              # the grant lands would produce this exact same granted=true/no-marker signature.
+              # Distinguish the two by relaunching SetupActivity from the host and checking,
+              # via a UI Automator dump, that it actually lands on BATTERY (the next
+              # still-ungranted step per SetupStep's NOTIFICATION/MEDIA/USAGE_ACCESS/OVERLAY/
+              # BATTERY order, since connectedE2EAndroidTest's doLast grants everything except
+              # battery-optimization exclusion) rather than reverting to MEDIA or failing to
+              # render at all.
+              echo "=== Verifying the setup flow recovers without losing progress ==="
+              "$ADB" wait-for-device
+              RECOVERED_PID=""
+              for _ in $(seq 1 10); do
+                RECOVERED_PID=$("$ADB" shell pidof com.gb4pc | tr -d '\r' || true)
+                [[ -n "$RECOVERED_PID" ]] && break
+                sleep 1
+              done
+              echo "com.gb4pc pid after recovery wait: '${RECOVERED_PID:-<not running>}'"
+              "$ADB" shell input keyevent KEYCODE_WAKEUP
+              "$ADB" shell input swipe 300 1000 300 300
+              sleep 1
+              "$ADB" shell am start -n com.gb4pc/com.gb4pc.ui.setup.SetupActivity
+              sleep 3
+              "$ADB" shell uiautomator dump /sdcard/e2e-recovery-dump.xml > /dev/null 2>&1 || true
+              RECOVERY_DUMP=$("$ADB" shell cat /sdcard/e2e-recovery-dump.xml 2>/dev/null || true)
+              if echo "$RECOVERY_DUMP" | grep -q 'Battery Optimization' \
+                && ! echo "$RECOVERY_DUMP" | grep -q 'Photos &amp; Media'; then
+                echo "CONFIRMED: relaunching SetupActivity lands on the BATTERY step and MEDIA"
+                echo "           is not shown again, so the grant survived the restart and no"
+                echo "           setup progress was lost."
+                echo "outcome=success" >> "$GITHUB_OUTPUT"
+              else
+                echo "REGRESSION: relaunching SetupActivity did not land cleanly on the BATTERY"
+                echo "            step after the restart (dump snippet:"
+                echo "            $(echo "$RECOVERY_DUMP" | tr -d '\n' | head -c 500)). Either"
+                echo "            the flow reverted to MEDIA or failed to render, so the crash"
+                echo "            was not the benign, expected scoped-storage restart."
+                echo "outcome=failure" >> "$GITHUB_OUTPUT"
+              fi
             else
               # Non-zero exit with neither a reported failure nor a confirmed grant: treat as a
               # real failure (e.g. the dialog never appeared, or the grant did not land).
