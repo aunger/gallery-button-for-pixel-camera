@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -45,8 +46,11 @@ jobs:
       - name: Check for non-docs changes
         id: diff_check
         run: |
-          if [[ "${{ github.event_name }}" == "push" ]]; then
-            # Always build on direct pushes to main (e.g. merge commits).
+          if [[ "${{ github.event_name }}" == "push" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            # Always build on direct pushes to main (e.g. merge commits) and on
+            # manual ad hoc runs. github.base_ref is empty for workflow_dispatch,
+            # so falling through to the pull_request branch below would pass an
+            # empty ref to git fetch/check_non_docs_changes.sh--see #577.
             echo "needs_full_build=true" >> $GITHUB_OUTPUT
           else
             BASE_REF="${{ github.base_ref }}"
