@@ -1,6 +1,8 @@
 package com.gb4pc.e2e
 
+import android.Manifest
 import android.app.NotificationManager
+import android.content.pm.PackageManager
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -79,7 +81,24 @@ import java.util.regex.Pattern
  * `READ_MEDIA_VISUAL_USER_SELECTED` through the very same dialog flow. Should that assumption not
  * hold for this permission on some future build, the CI step's host-side diagnosis (see the
  * `Run PartialAccessPhotoPickerE2ETest` step in `.github/workflows/build.yml`) reports the
- * torn-down-but-partially-granted signature explicitly instead of failing opaquely.
+ * torn-down-but-partially-granted signature explicitly instead of failing opaquely. The first
+ * real CI run (run 28706188622) confirmed the process does survive: its in-process assertions
+ * ran, so the assumption holds for `READ_MEDIA_VISUAL_USER_SELECTED` too.
+ *
+ * ### The partial grant settles asynchronously in this process
+ *
+ * The picker delivers its grant to this still-running process asynchronously. That first CI run
+ * showed `checkSelfPermission(READ_MEDIA_IMAGES)` reading as *granted* in-process for a short
+ * window immediately after the picker returned, even though the authoritative package state was
+ * only ever partially granted (the same run's host-side `dumpsys package` reported
+ * `READ_MEDIA_VISUAL_USER_SELECTED granted=true` and `READ_MEDIA_IMAGES granted=false`, and
+ * `GrantPermissionsViewModel` logged `clickedButton == ALLOW_SELECTED_BUTTON`, i.e. "Select photos
+ * and videos" really was the option tapped). The single immediate read raced the client-side
+ * permission cache before it settled. So this class waits for the state to *settle* -- the
+ * partial grant visible (`READ_MEDIA_VISUAL_USER_SELECTED` granted) and full access back to its
+ * settled not-granted value -- rather than reading once, mirroring how
+ * [SetupActivityPermissionDialogE2ETest] polls for its (full) grant to propagate. Requiring the
+ * partial grant to have landed keeps the poll from passing vacuously on the pre-grant state.
  *
  * All of this happens in a single `@Test` method rather than split across several, because the
  * OS-level permission grant this test produces (`READ_MEDIA_VISUAL_USER_SELECTED`, granted) is
@@ -171,17 +190,39 @@ class PartialAccessPhotoPickerE2ETest {
         tapSelectPhotosInSystemDialog()
         selectPhotosInSystemPickerAndConfirm()
 
-        // Give SetupActivity's onResume()/autoAdvanceIfGranted() a moment to run after the
-        // picker returns control to it, then confirm the two things #568 needs proven live:
+        // Let SetupActivity's onResume()/autoAdvanceIfGranted() run after the picker returns
+        // control to it, then confirm the things #568 needs proven live.
         composeRule.waitForIdle()
-        fixture.pause(500)
 
         // 1) hasMediaPermission() treats the partial grant as NOT granted (H2's core claim).
-        assertFalse(
-            "hasMediaPermission() should remain false after choosing \"Select photos and " +
-                "videos\" in the real system dialog/picker; partial access " +
-                "(READ_MEDIA_VISUAL_USER_SELECTED only) must not count as granted",
-            PermissionHelper.hasMediaPermission(context),
+        //
+        // The picker delivers its grant to this still-running process asynchronously, and the
+        // client-side permission cache settles a little after the grant lands. A real CI run
+        // (run 28706188622, job 85132114900) showed READ_MEDIA_IMAGES reading as *granted*
+        // in-process for a short window right after the picker returned -- even though the
+        // authoritative package state was only ever partially granted: that run's host-side
+        // `dumpsys package` confirmed READ_MEDIA_VISUAL_USER_SELECTED granted=true and
+        // READ_MEDIA_IMAGES granted=false (the correct partial-access state), while
+        // GrantPermissionsViewModel logged clickedButton=4096 == ALLOW_SELECTED_BUTTON, i.e. the
+        // "Select photos and videos" option really was the one tapped. So PermissionHelper's
+        // logic is right; the single immediate read just raced the cache.
+        //
+        // Poll for the state to settle instead, mirroring how SetupActivityPermissionDialogE2ETest
+        // polls for its (full) grant to propagate. The condition also requires the partial grant
+        // to have genuinely landed (READ_MEDIA_VISUAL_USER_SELECTED granted), so this cannot pass
+        // vacuously on the pre-grant state where hasMediaPermission() is already false.
+        val partialGrantSettled =
+            fixture.waitForCondition(GRANT_TIMEOUT_MS) {
+                context.checkSelfPermission(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED) ==
+                    PackageManager.PERMISSION_GRANTED &&
+                    !PermissionHelper.hasMediaPermission(context)
+            }
+        assertTrue(
+            "After choosing \"Select photos and videos\", the partial grant should settle to " +
+                "READ_MEDIA_VISUAL_USER_SELECTED granted while hasMediaPermission() (full access) " +
+                "stays false; it did not settle within ${GRANT_TIMEOUT_MS}ms. Partial access " +
+                "(READ_MEDIA_VISUAL_USER_SELECTED only) must not count as granted.",
+            partialGrantSettled,
         )
 
         // 2) The setup flow does NOT advance past MEDIA (mirrors
@@ -296,6 +337,7 @@ class PartialAccessPhotoPickerE2ETest {
         const val PHOTO_PICKER_PKG_GOOGLE = "com.google.android.providers.media.module"
         const val PHOTO_PICKER_PKG_AOSP = "com.android.providers.media.module"
         const val DIALOG_TIMEOUT_MS = 5_000L
+        const val GRANT_TIMEOUT_MS = 10_000L
         const val BANNER_TIMEOUT_MS = 10_000L
     }
 }
