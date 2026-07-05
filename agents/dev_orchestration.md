@@ -27,6 +27,7 @@ These rules are absolute:
    It must never carry one sub-agent's words to another sub-agent.
    If two sub-agents need to communicate, they leave each other GitHub comments.
 4. The Orchestrator does not read the PR (diff, description, or comments), does not read the issue, and does not read source files.
+   The only exception is fetching label metadata during `resolveLabelGate` (see the Monitor loop below); that narrow read must not act on any other field the same call returns.
    Its only window into CI is the CI Monitor (`scripts/ci_monitor/ci_monitor.py`).
    The issue number comes from the user and is plugged into the launch form as a literal token.
 5. Permitted-words test: before sending anything to a sub-agent, verify each sentence is either the user's exact words or an exact quote from an `agents/` file.
