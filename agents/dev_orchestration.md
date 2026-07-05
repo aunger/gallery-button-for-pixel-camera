@@ -38,7 +38,7 @@ The Orchestrator is not a Reviewer or a Programmer.
 
 **May not:**
 - Read source files (Read, Bash cat/grep, etc.)
-- Read the PR (diff, description, or comments)
+- Read the PR (diff, description, or comments), except for fetching label metadata during `resolveLabelGate` (see the Monitor loop below); that narrow read must not act on any other field the same call happens to return
 - Read the issue or its comments
 - Edit or write files
 - Diagnose bugs or evaluate code
@@ -250,10 +250,10 @@ PR routing (Monitor loop):
     if Monitor emits `drain poll found no new diagnostic signals` immediately followed by a Blocked or Infra line -> goto undiagnosedTerminal
     (Note: the attributed `Blocked by: <name>` form already names the blocking check in the per-check summary block and the terminal suffix, so the Monitor suppresses the drain flag in that case. The `goto undiagnosedTerminal` branch therefore applies only to a bare `Blocked`/`Infra` line that the Monitor itself flagged as undiagnosed.)
     if Monitor emits a Blocked line where the terminal ends with `[label gate]` (the ` by: ...` suffix names only label-gate checks) -> clear the silentVanish re-launch flag; inform the user only a process-label gate blocks the merge (code is review-approved); do NOT route to a new Author round; goto surfaceBeforeMergingRequirements (label-gate path)
-    // Issue #516 treated every label-gate block as needing a human, but the "No
-    // blocking labels" check only watches Orchestrator-owned bookkeeping labels.
-    // `resolveLabelGate` below checks whether the Orchestrator's own unfinished
-    // cleanup explains the block before escalating to a human.
+    // Every label-gate block used to be treated as needing a human unconditionally,
+    // but the "No blocking labels" check only watches Orchestrator-owned bookkeeping
+    // labels. `resolveLabelGate` below checks whether the Orchestrator's own
+    // unfinished cleanup explains the block before escalating to a human.
     if Monitor emits a Blocked line  -> clear the silentVanish re-launch flag; goto newAuthor
     if Monitor emits an Infra line   -> clear the silentVanish re-launch flag; escalate to user; stop
     if Monitor times out (30 min)    -> escalate to user; stop
@@ -293,14 +293,25 @@ resolveLabelGate:
   // check (.github/workflows/block-merge-on-blocking-labels.yml) only watches four
   // Orchestrator-owned bookkeeping labels: `verification needed`, `changes
   // requested`, `changes done`, `orchestrating`. By this point in the cycle the
-  // first three are already clear, so check whether `orchestrating` (or some other
-  // label entirely) is what remains before assuming a human must act.
-  Fetch the PR's current labels (label metadata only, not the diff/description/comments the "may not" list above restricts).
-  if every label present is one of the check's own four:
+  // first three are normally already clear, leaving `orchestrating` as the sole
+  // cause. The PR may also carry other, unrelated labels (for example a
+  // `c-a-<model>` label from Model selection, or an area/severity label); the
+  // check ignores those entirely, so this step must too.
+  Fetch the PR's labels: call `mcp__github__pull_request_read` with method `get`
+  (the only tool that returns a PR's labels by number) and read only the returned
+  `labels` field. Do not read, act on, or be influenced by any other field the
+  same call returns (body, diff, comments, etc.); this is a narrow, scoped
+  exception to the "does not read the PR" rule above, limited to label metadata.
+  Do not substitute the issue's labels for the PR's: earlier transitions in this
+  document (e.g. "CI checking after a Reviewer exits") apply some of these labels
+  to the PR only, so the two label sets can diverge mid-cycle.
+  if none of `verification needed`, `changes requested`, or `changes done` is present among the fetched labels:
+    // Any other blocking label present must be `orchestrating`; any non-blocking
+    // label present is irrelevant to the check and is left alone.
     Apply "Concluding PR orchestration" (removes `orchestrating` from both the issue and the PR).
     Apply `verified` to both the issue and the PR; this step is complete.
   else:
-    A label outside the Orchestrator's own set is present; inform the user a human must remove it before the PR can merge. Do NOT apply `verified`.
+    One of `verification needed`, `changes requested`, or `changes done` is still present; inform the user a human must resolve it before the PR can merge. Do NOT apply `verified`.
 
 undiagnosedTerminal:
   // Issue #410 (Run G, issue #402): "drain poll found no new diagnostic
