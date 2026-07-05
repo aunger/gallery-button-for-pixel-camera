@@ -65,6 +65,15 @@ object PermissionHelper {
      * so it is insufficient for this feature. This check deliberately requires the full-access
      * `READ_MEDIA_IMAGES` grant and treats partial access as not granted, so the setup step and
      * the main-screen banner keep prompting until the user allows all photos.
+     *
+     * This single check is correct only because the manifest also declares
+     * `READ_MEDIA_VISUAL_USER_SELECTED`. That declaration opts the app out of Android's
+     * backward-compatibility mode, under which a partial grant would *temporarily* report
+     * `READ_MEDIA_IMAGES` as granted (flagged `PackageManager.FLAG_PERMISSION_REVOKED_COMPAT`) while
+     * the app is foregrounded, and this check would then mistake partial access for full access
+     * (issue #568). With the permission declared, `checkSelfPermission(READ_MEDIA_IMAGES)` returns
+     * `PERMISSION_DENIED` for a partial grant, so no flag inspection is needed here (a normal app
+     * cannot read `FLAG_PERMISSION_REVOKED_COMPAT` anyway; `getPermissionFlags()` is privileged).
      */
     fun hasMediaPermission(context: Context): Boolean {
         val permission =

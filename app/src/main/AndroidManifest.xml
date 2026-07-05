@@ -18,6 +18,17 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <!--
+      Declared so that on API 34+ a "Select photos" (partial) grant does NOT also cause
+      READ_MEDIA_IMAGES to read as granted. Without this line the OS runs a backward-compatibility
+      mode that temporarily reports READ_MEDIA_IMAGES as granted (flagged
+      PackageManager.FLAG_PERMISSION_REVOKED_COMPAT) for a partial grant, which made
+      PermissionHelper.hasMediaPermission() mistake partial access for full access (issue #568).
+      Declaring the permission opts the app out of that compat mode, so
+      checkSelfPermission(READ_MEDIA_IMAGES) correctly returns DENIED for a partial grant. The app
+      never uses partial access itself; it needs full access and keeps prompting until it is granted.
+    -->
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
 
     <!-- Runtime permission (API 33+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
