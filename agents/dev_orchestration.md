@@ -250,7 +250,10 @@ PR routing (Monitor loop):
     if Monitor emits `drain poll found no new diagnostic signals` immediately followed by a Blocked or Infra line -> goto undiagnosedTerminal
     (Note: the attributed `Blocked by: <name>` form already names the blocking check in the per-check summary block and the terminal suffix, so the Monitor suppresses the drain flag in that case. The `goto undiagnosedTerminal` branch therefore applies only to a bare `Blocked`/`Infra` line that the Monitor itself flagged as undiagnosed.)
     if Monitor emits a Blocked line where the terminal ends with `[label gate]` (the ` by: ...` suffix names only label-gate checks) -> clear the silentVanish re-launch flag; inform the user only a process-label gate blocks the merge (code is review-approved); do NOT route to a new Author round; goto surfaceBeforeMergingRequirements (label-gate path)
-    // The Orchestrator does not auto-remove the blocking label (issue #516, Step 8a): it is a user-controlled process label needing human judgment.
+    // Issue #516 treated every label-gate block as needing a human, but the "No
+    // blocking labels" check only watches Orchestrator-owned bookkeeping labels.
+    // `resolveLabelGate` below checks whether the Orchestrator's own unfinished
+    // cleanup explains the block before escalating to a human.
     if Monitor emits a Blocked line  -> clear the silentVanish re-launch flag; goto newAuthor
     if Monitor emits an Infra line   -> clear the silentVanish re-launch flag; escalate to user; stop
     if Monitor times out (30 min)    -> escalate to user; stop
@@ -273,7 +276,7 @@ surfaceBeforeMergingRequirements:
       |---|
       | `verified` |
 
-    if entered on the label-gate path: this step is complete, but do NOT apply `verified`; a human must still remove the blocking label before the PR may merge. Inform the user of this.
+    if entered on the label-gate path: goto resolveLabelGate
   Otherwise, relay the before-merging list to the user verbatim, and apply this transition to the PR:
 
   | Add label |
@@ -281,7 +284,23 @@ surfaceBeforeMergingRequirements:
   | `verification needed` |
 
   Dispatch a Verification Agent (see pr_verify.md) to carry out those items; it does not consult the user.
-  Route on its terminal signal per "Routing on the Verification Agent's signal" above, EXCEPT on the label-gate path a `Verification passed` signal only removes `verification needed`: do NOT add `verified` and do NOT treat the PR as mergeable, since the process label still blocks the merge until a human removes it.
+  Route on its terminal signal per "Routing on the Verification Agent's signal" above, EXCEPT on the label-gate path a `Verification passed` signal removes `verification needed` and then goes to resolveLabelGate instead of adding `verified` directly.
+
+resolveLabelGate:
+  // Entered once the code-approved cycle's automated work is otherwise finished
+  // (an empty before-merging list, or a Verification Agent `Verification passed`
+  // signal) but a `[label gate]` block is still reported. The "No blocking labels"
+  // check (.github/workflows/block-merge-on-blocking-labels.yml) only watches four
+  // Orchestrator-owned bookkeeping labels: `verification needed`, `changes
+  // requested`, `changes done`, `orchestrating`. By this point in the cycle the
+  // first three are already clear, so check whether `orchestrating` (or some other
+  // label entirely) is what remains before assuming a human must act.
+  Fetch the PR's current labels (label metadata only, not the diff/description/comments the "may not" list above restricts).
+  if every label present is one of the check's own four:
+    Apply "Concluding PR orchestration" (removes `orchestrating` from both the issue and the PR).
+    Apply `verified` to both the issue and the PR; this step is complete.
+  else:
+    A label outside the Orchestrator's own set is present; inform the user a human must remove it before the PR can merge. Do NOT apply `verified`.
 
 undiagnosedTerminal:
   // Issue #410 (Run G, issue #402): "drain poll found no new diagnostic
