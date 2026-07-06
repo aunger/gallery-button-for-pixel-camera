@@ -85,6 +85,13 @@ class OverlayManager(
      * foreground, without waiting for the camera-available event.
      */
     private val onGalleryLaunched: () -> Unit = {},
+    /**
+     * Called immediately after the secure viewer is launched via a locked-screen overlay tap
+     * (Issue #608). Lets the service preserve the secure session across the overlay deactivation
+     * that follows (Pixel Camera closes behind the viewer), so the viewer keeps rendering its media
+     * instead of flashing to the empty state.
+     */
+    private val onSecureViewerLaunched: () -> Unit = {},
 ) {
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private val keyguardManager = context.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
@@ -412,6 +419,7 @@ class OverlayManager(
             }
         context.startActivity(intent)
         DebugLog.log("Launched secure viewer")
+        onSecureViewerLaunched()
     }
 
     private fun createLayoutParams(): WindowManager.LayoutParams {
