@@ -1223,4 +1223,118 @@ class OverlayServiceLogicTest {
 
         verify(handler).removeCallbacks(runnableCaptor.firstValue)
     }
+
+    // ── Issue #608: preserve the secure session across secure-viewer launch ──
+
+    /**
+     * When the secure viewer is launched from a locked tap, the ensuing overlay deactivation
+     * (Pixel Camera closes behind the viewer) must hide the overlay and drop the thumbnail
+     * observer, but must NOT end the secure session or unregister the media observer, so the
+     * open viewer keeps rendering the session's media instead of flashing to the empty state.
+     */
+    @Test
+    fun `issue-608 deactivation after secure-viewer launch keeps session and media observer alive`() {
+        // Activate the overlay with a live session (device locked at activation time)
+        keyguardLocked = true
+        cameraState.setCameraUnavailable("0")
+        logic.evaluateForeground()
+        assertTrue("Pre-condition: overlay should be active", logic.isOverlayActive)
+        assertTrue("Pre-condition: thumbnail observer registered", thumbnailObserverRegistered)
+        assertTrue("Pre-condition: media observer registered", mediaObserverRegistered)
+        whenever(sessionTracker.isSessionActive).thenReturn(true)
+
+        // User taps the overlay; the secure viewer is launched.
+        logic.onSecureViewerLaunched()
+
+        // Launching the viewer closed Pixel Camera → camera released → deactivation scheduled.
+        logic.onCameraAvailable("0")
+        val runnableCaptor = argumentCaptor<Runnable>()
+        verify(handler).postDelayed(runnableCaptor.capture(), eq(0L))
+        runnableCaptor.firstValue.run()
+
+        // Overlay is hidden and its thumbnail observer torn down...
+        assertFalse("Overlay should be hidden after deactivation", logic.isOverlayActive)
+        verify(overlayManager).hide()
+        assertFalse("Thumbnail observer should be unregistered", thumbnailObserverRegistered)
+        // ...but the secure session and its media observer must survive for the open viewer.
+        verify(sessionTracker, never()).endSession()
+        assertTrue("Media observer should remain registered while the viewer is open", mediaObserverRegistered)
+    }
+
+    /**
+     * A camera-release deactivation with no preceding secure-viewer launch must still end the
+     * session and unregister the media observer (unchanged SF-01(a) behaviour).
+     */
+    @Test
+    fun `issue-608 deactivation without secure-viewer launch still ends session`() {
+        keyguardLocked = true
+        cameraState.setCameraUnavailable("0")
+        logic.evaluateForeground()
+        assertTrue("Pre-condition: overlay should be active", logic.isOverlayActive)
+        whenever(sessionTracker.isSessionActive).thenReturn(true)
+
+        // Camera released with NO secure-viewer launch → normal teardown.
+        logic.onCameraAvailable("0")
+        val runnableCaptor = argumentCaptor<Runnable>()
+        verify(handler).postDelayed(runnableCaptor.capture(), eq(0L))
+        runnableCaptor.firstValue.run()
+
+        assertFalse("Overlay should be hidden after deactivation", logic.isOverlayActive)
+        verify(sessionTracker).endSession()
+        assertFalse("Media observer should be unregistered on normal deactivation", mediaObserverRegistered)
+    }
+
+    /**
+     * The preservation flag is one-shot: it is consumed by the deactivation that follows the
+     * secure-viewer launch and must not leak into a later, unrelated deactivation.
+     */
+    @Test
+    fun `issue-608 preservation flag is one-shot and does not leak into a later deactivation`() {
+        keyguardLocked = true
+        cameraState.setCameraUnavailable("0")
+        logic.evaluateForeground()
+        whenever(sessionTracker.isSessionActive).thenReturn(true)
+
+        // First cycle: secure viewer launched → deactivation preserves the session.
+        logic.onSecureViewerLaunched()
+        logic.onCameraAvailable("0")
+        val captor1 = argumentCaptor<Runnable>()
+        verify(handler).postDelayed(captor1.capture(), eq(0L))
+        captor1.firstValue.run()
+        verify(sessionTracker, never()).endSession()
+
+        // Second cycle: camera reopens (fresh activation), then closes normally with no viewer launch.
+        logic.onCameraUnavailable("0")
+        assertTrue("Overlay should reactivate on the next camera-open", logic.isOverlayActive)
+        logic.onCameraAvailable("0")
+        val captor2 = argumentCaptor<Runnable>()
+        verify(handler, atLeast(2)).postDelayed(captor2.capture(), eq(0L))
+        captor2.lastValue.run()
+
+        // This normal deactivation must end the session; the flag did not leak.
+        verify(sessionTracker).endSession()
+    }
+
+    /**
+     * onSecureViewerLaunched() is a no-op when the overlay is not active, so a stray call cannot
+     * arm the preservation flag and suppress a subsequent genuine session teardown.
+     */
+    @Test
+    fun `issue-608 onSecureViewerLaunched is no-op when overlay is not active`() {
+        assertFalse("Pre-condition: overlay should not be active", logic.isOverlayActive)
+        logic.onSecureViewerLaunched()
+
+        // A real activation and normal deactivation must still end the session.
+        keyguardLocked = true
+        cameraState.setCameraUnavailable("0")
+        logic.evaluateForeground()
+        whenever(sessionTracker.isSessionActive).thenReturn(true)
+
+        logic.onCameraAvailable("0")
+        val captor = argumentCaptor<Runnable>()
+        verify(handler).postDelayed(captor.capture(), eq(0L))
+        captor.firstValue.run()
+
+        verify(sessionTracker).endSession()
+    }
 }

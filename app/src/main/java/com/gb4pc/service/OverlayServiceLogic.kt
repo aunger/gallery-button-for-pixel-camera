@@ -40,6 +40,16 @@ class OverlayServiceLogic(
 
     private var deactivateRunnable: Runnable? = null
 
+    // Issue #608: set when the secure viewer is launched from a locked-screen tap.
+    // Launching the viewer closes Pixel Camera, which releases the camera and drives the
+    // overlay's normal deactivation. That deactivation must hide the overlay WITHOUT ending
+    // the secure session, because the just-opened SecureViewerActivity renders that session's
+    // media reactively (#552); ending it would empty the flow and flip the viewer to the
+    // "no photos" state (the reported flash). The session instead ends on device unlock
+    // (OverlayService.onUserPresent), per SF-01(b). The flag is one-shot: it is consumed by the
+    // next hideOverlayAndCleanup() and cleared on any fresh activation.
+    private var secureViewerLaunched = false
+
     // DT-06a: Retry runnable for UsageStats lag--fires if foreground not detected on first check.
     // activationRetryPending gates re-scheduling: it is true exactly while a retry runnable is
     // posted to the handler, so a burst of evaluateForeground() calls (e.g. several camera events)
@@ -167,6 +177,9 @@ class OverlayServiceLogic(
         }
         val locked = isKeyguardLocked()
         DebugLog.log("Logic: showOverlay: showing overlay; keyguardLocked=$locked")
+        // Issue #608: a fresh activation starts a new session; clear any stale
+        // secure-viewer-launch preservation flag left over from a prior cycle.
+        secureViewerLaunched = false
         overlayManager.show()
         isOverlayActive = true
         onOverlayStateChanged(true)
@@ -214,11 +227,31 @@ class OverlayServiceLogic(
         isOverlayActive = false
         onOverlayStateChanged(false)
         onUnregisterThumbnailObserver() // unregister thumbnail observer on deactivation
+        if (secureViewerLaunched) {
+            // Issue #608: the overlay is being torn down only because launching the secure
+            // viewer closed Pixel Camera. Keep the secure session (and its media observer)
+            // alive so the open SecureViewerActivity keeps rendering the session's media
+            // instead of flashing to the empty state. The session ends on unlock (SF-01(b)).
+            DebugLog.log("Logic: overlay deactivated after secure-viewer launch; keeping secure session alive")
+            secureViewerLaunched = false
+            return
+        }
         if (sessionTracker.isSessionActive) {
             DebugLog.log("Logic: ending secure session on overlay deactivation")
             sessionTracker.endSession()
             onUnregisterMediaObserver()
         }
+    }
+
+    /**
+     * Issue #608: Called immediately after the secure viewer is launched from a locked-screen tap.
+     * Marks the next overlay deactivation (caused by Pixel Camera closing behind the viewer) so it
+     * preserves the secure session rather than ending it; see [hideOverlayAndCleanup].
+     */
+    fun onSecureViewerLaunched() {
+        if (!isOverlayActive) return
+        DebugLog.log("Logic: secure viewer launched; preserving session across the ensuing overlay deactivation")
+        secureViewerLaunched = true
     }
 
     fun cancelPendingDeactivation() {
@@ -277,6 +310,7 @@ class OverlayServiceLogic(
         cancelGalleryLaunchRecheck()
         onUnregisterThumbnailObserver()
         isOverlayActive = false
+        secureViewerLaunched = false
     }
 
     private fun cancelGalleryLaunchRecheck() {
