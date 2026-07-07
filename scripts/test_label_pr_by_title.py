@@ -1,0 +1,229 @@
+#!/usr/bin/env python3
+"""Unit tests for label_pr_by_title.py."""
+
+import json
+import os
+import sys
+import unittest
+import urllib.error
+from unittest.mock import MagicMock, patch
+
+sys.path.insert(0, os.path.dirname(__file__))
+import label_pr_by_title as lpt  # noqa: E402
+
+
+# ---------------------------------------------------------------------------
+# gh_api tests
+# ---------------------------------------------------------------------------
+
+
+class TestGhApi(unittest.TestCase):
+    def _make_response(self, body: bytes, status: int = 200) -> MagicMock:
+        resp = MagicMock()
+        resp.read.return_value = body
+        resp.status = status
+        resp.__enter__ = lambda s: s
+        resp.__exit__ = MagicMock(return_value=False)
+        return resp
+
+    def test_returns_parsed_json_for_non_empty_body(self):
+        payload = [{"name": "ci"}]
+        response = self._make_response(json.dumps(payload).encode())
+        with patch("urllib.request.urlopen", return_value=response):
+            result = lpt.gh_api("repos/owner/repo/issues/1/labels", token="tok")
+        self.assertEqual(result, payload)
+
+    def test_returns_none_for_empty_body(self):
+        response = self._make_response(b"", status=204)
+        with patch("urllib.request.urlopen", return_value=response):
+            result = lpt.gh_api("repos/owner/repo/issues/1/labels", token="tok", method="POST")
+        self.assertIsNone(result)
+
+
+# ---------------------------------------------------------------------------
+# matching_labels tests
+# ---------------------------------------------------------------------------
+
+
+class TestMatchingLabelsCi(unittest.TestCase):
+    def test_bare_ci_word_matches(self):
+        self.assertIn("ci", lpt.matching_labels("Fix the CI pipeline"))
+
+    def test_ci_prefixed_by_underscore_matches(self):
+        self.assertIn("ci", lpt.matching_labels("Move ci_monitor.py into scripts/"))
+
+    def test_ci_within_longer_word_does_not_match(self):
+        self.assertNotIn("ci", lpt.matching_labels("Fix the specific config"))
+
+    def test_automat_suffixes_match(self):
+        self.assertIn("ci", lpt.matching_labels("Automate version sync"))
+        self.assertIn("ci", lpt.matching_labels("Add automated coverage"))
+        self.assertIn("ci", lpt.matching_labels("Validate automation-required labels"))
+
+    def test_case_insensitive(self):
+        self.assertIn("ci", lpt.matching_labels("fix the ci pipeline"))
+        self.assertIn("ci", lpt.matching_labels("Fix The CI Pipeline"))
+
+
+class TestMatchingLabelsAgents(unittest.TestCase):
+    def test_agent_word_matches(self):
+        self.assertIn("agents", lpt.matching_labels("Add agent guidance for code reviews"))
+
+    def test_agent_suffix_matches(self):
+        self.assertIn("agents", lpt.matching_labels("Tighten guidance for agents"))
+
+    def test_agent_prefixed_by_underscore_matches(self):
+        self.assertIn("agents", lpt.matching_labels("Rename the_agent module"))
+
+    def test_dev_orchestration_matches(self):
+        self.assertIn("agents", lpt.matching_labels("Update dev_orchestration.md for clarity"))
+
+    def test_rule_and_rules_match(self):
+        self.assertIn("agents", lpt.matching_labels("Add orchestrator timestamp reporting rule"))
+        self.assertIn("agents", lpt.matching_labels("Rework scope creep rules"))
+
+    def test_ruled_does_not_match(self):
+        self.assertNotIn("agents", lpt.matching_labels("The court ruled in our favor"))
+
+    def test_attribution_and_byline_match(self):
+        self.assertIn("agents", lpt.matching_labels("Claude attribution/byline settings"))
+        self.assertIn("agents", lpt.matching_labels("Clear commit attribution in settings.json"))
+
+    def test_verif_suffixes_match(self):
+        self.assertIn("agents", lpt.matching_labels("Add PR verification agent instructions"))
+        self.assertIn("agents", lpt.matching_labels("Test PR: verify remove-verified-on-push"))
+
+    def test_author_exact_word_matches(self):
+        self.assertIn(
+            "agents", lpt.matching_labels("Empower Author to file issues for review requests")
+        )
+
+    def test_authors_does_not_match(self):
+        self.assertNotIn("agents", lpt.matching_labels("List all the authors of this project"))
+
+    def test_review_requires_suffix(self):
+        self.assertIn("agents", lpt.matching_labels("Clarify Reviewer account sharing"))
+        self.assertNotIn("agents", lpt.matching_labels("Leave a review"))
+
+
+class TestMatchingLabelsTesting(unittest.TestCase):
+    def test_e2e_matches(self):
+        self.assertIn("testing", lpt.matching_labels("Add E2E instrumented test"))
+
+    def test_e2e_within_camel_case_identifier_does_not_match(self):
+        # No boundary (word or underscore) surrounds "E2E" inside this
+        # camelCase identifier, so the strict \be2e\b rule does not fire.
+        self.assertEqual(lpt.matching_labels("Add GalleryButtonVisualE2ETest"), [])
+
+    def test_unit_exact_word_matches(self):
+        self.assertIn("testing", lpt.matching_labels("Skip Python and shell unit tests"))
+
+    def test_units_does_not_match_unit_rule(self):
+        # "units" alone (no "test") should not match the strict \bunit\b rule.
+        self.assertNotIn("testing", lpt.matching_labels("Convert distance units to metric"))
+
+    def test_test_suffixes_match(self):
+        self.assertIn("testing", lpt.matching_labels("Add noisy tests for coverage"))
+        self.assertIn("testing", lpt.matching_labels("Add :testgallery module"))
+
+    def test_test_prefixed_by_underscore_matches(self):
+        self.assertIn(
+            "testing", lpt.matching_labels("Speed up ci_monitor's poll interval unit_tests")
+        )
+
+
+class TestMatchingLabelsCombined(unittest.TestCase):
+    def test_multiple_labels_from_one_title(self):
+        result = lpt.matching_labels("Add CiWatcher agent and fix Reviewer CI-polling loop")
+        self.assertIn("ci", result)
+        self.assertIn("agents", result)
+        self.assertNotIn("testing", result)
+
+    def test_no_match_returns_empty_list(self):
+        self.assertEqual(lpt.matching_labels("Set overlay default position to y=75%"), [])
+
+
+# ---------------------------------------------------------------------------
+# main() tests
+# ---------------------------------------------------------------------------
+
+
+class TestMain(unittest.TestCase):
+    def setUp(self):
+        self._env_patch = patch.dict(
+            os.environ,
+            {
+                "GITHUB_TOKEN": "test-token",
+                "GITHUB_REPOSITORY": "owner/repo",
+                "PR_NUMBER": "42",
+                "PR_TITLE": "Fix the CI pipeline",
+            },
+        )
+        self._env_patch.start()
+
+    def tearDown(self):
+        self._env_patch.stop()
+
+    def test_exit_0_when_token_missing(self):
+        with patch.dict(os.environ, {"GITHUB_TOKEN": ""}):
+            result = lpt.main()
+        self.assertEqual(result, 0)
+
+    def test_exit_0_when_repository_missing(self):
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": ""}):
+            result = lpt.main()
+        self.assertEqual(result, 0)
+
+    def test_exit_0_when_pr_number_missing(self):
+        with patch.dict(os.environ, {"PR_NUMBER": ""}):
+            result = lpt.main()
+        self.assertEqual(result, 0)
+
+    def test_exit_0_when_pr_number_non_integer(self):
+        with patch.dict(os.environ, {"PR_NUMBER": "abc"}):
+            result = lpt.main()
+        self.assertEqual(result, 0)
+
+    def test_no_api_call_when_title_matches_nothing(self):
+        with patch.dict(os.environ, {"PR_TITLE": "Set overlay default position"}):
+            with patch.object(lpt, "gh_api") as mock_api:
+                result = lpt.main()
+        self.assertEqual(result, 0)
+        mock_api.assert_not_called()
+
+    def test_posts_matching_labels(self):
+        with patch.object(lpt, "gh_api") as mock_api:
+            result = lpt.main()
+        self.assertEqual(result, 0)
+        mock_api.assert_called_once()
+        args, kwargs = mock_api.call_args
+        self.assertEqual(args[0], "repos/owner/repo/issues/42/labels")
+        self.assertEqual(kwargs["method"], "POST")
+        self.assertEqual(kwargs["body"], {"labels": ["ci"]})
+
+    def test_posts_multiple_matching_labels(self):
+        with patch.dict(
+            os.environ, {"PR_TITLE": "Add CiWatcher agent and fix Reviewer CI-polling loop"}
+        ):
+            with patch.object(lpt, "gh_api") as mock_api:
+                result = lpt.main()
+        self.assertEqual(result, 0)
+        body = mock_api.call_args[1]["body"]
+        self.assertIn("ci", body["labels"])
+        self.assertIn("agents", body["labels"])
+
+    def test_handles_http_error_gracefully(self):
+        error = urllib.error.HTTPError(url=None, code=422, msg="Unprocessable", hdrs=None, fp=None)
+        with patch.object(lpt, "gh_api", side_effect=error):
+            result = lpt.main()
+        self.assertEqual(result, 0)
+
+    def test_handles_url_error_gracefully(self):
+        error = urllib.error.URLError("network error")
+        with patch.object(lpt, "gh_api", side_effect=error):
+            result = lpt.main()
+        self.assertEqual(result, 0)
+
+
+if __name__ == "__main__":
+    unittest.main()
