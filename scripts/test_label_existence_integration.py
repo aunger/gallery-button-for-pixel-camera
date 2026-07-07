@@ -13,6 +13,7 @@ Sources:
   scripts/enforce_mutually_exclusive_labels.py: MUTUALLY_EXCLUSIVE_SETS
   scripts/file_test_failure_issues.py:          LABELS constant
   scripts/archive_stale_test_failures.py:       LABEL_TEST_FAILURE_ARCHIVE constant
+  .github/release.yml:                          changelog.exclude.labels
 """
 
 import json
@@ -22,6 +23,8 @@ import unittest
 import urllib.error
 import urllib.request
 
+import yaml
+
 # Scripts live in the same directory as this file; make them importable.
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -29,11 +32,29 @@ from archive_stale_test_failures import LABEL_TEST_FAILURE_ARCHIVE  # noqa: E402
 from enforce_mutually_exclusive_labels import MUTUALLY_EXCLUSIVE_SETS  # noqa: E402
 from file_test_failure_issues import LABELS as _TEST_FAILURE_LABELS  # noqa: E402
 
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_RELEASE_CONFIG_PATH = os.path.join(_REPO_ROOT, ".github", "release.yml")
+
+
+def _release_notes_excluded_labels() -> frozenset[str]:
+    """Return the labels excluded from release notes by .github/release.yml.
+
+    Reads the YAML file itself rather than duplicating its label list as a
+    separate Python constant, so there is exactly one place to update the
+    exclusion list and no way for a second copy to drift out of sync with
+    what GitHub's release-notes generator actually consumes.
+    """
+    with open(_RELEASE_CONFIG_PATH, encoding="utf-8") as f:
+        config = yaml.safe_load(f) or {}
+    labels = config.get("changelog", {}).get("exclude", {}).get("labels", [])
+    return frozenset(labels)
+
+
 # ---------------------------------------------------------------------------
 # Derive the set of required labels from their authoritative sources.
 # When a new label is added to automation, updating the source constant
-# (or MUTUALLY_EXCLUSIVE_SETS) is sufficient; this test picks it up
-# automatically.
+# (or MUTUALLY_EXCLUSIVE_SETS, or .github/release.yml) is sufficient; this
+# test picks it up automatically.
 # ---------------------------------------------------------------------------
 
 REQUIRED_LABELS: frozenset[str] = (
@@ -44,6 +65,8 @@ REQUIRED_LABELS: frozenset[str] = (
     | frozenset(_TEST_FAILURE_LABELS)
     # Label swapped in when a test-failure issue goes stale.
     | frozenset({LABEL_TEST_FAILURE_ARCHIVE})
+    # Labels excluded from GitHub's auto-generated release notes.
+    | _release_notes_excluded_labels()
     # Note: the labels referenced in block-merge-on-blocking-labels.yml
     # (verification needed, changes requested, changes done, orchestrating)
     # and remove-verified-on-push.yml (verified) are all already members of

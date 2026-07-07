@@ -860,6 +860,88 @@ jobs:
           path: results/e2e-setup-activity-permission-dialog.ndjson
           retention-days: 14
 
+      - name: Run PartialAccessPhotoPickerE2ETest
+        # No `continue-on-error` (issue #309): record the real outcome and defer
+        # the pass/fail verdict to the "Gate on test failures" step.
+        #
+        # Issue #568 (H2): drives the REAL API 34+ "Select photos and videos" system photo
+        # picker, rather than SetupActivityPermissionDialogE2ETest's "Allow all", and confirms
+        # PermissionHelper.hasMediaPermission() treats the resulting partial
+        # (READ_MEDIA_VISUAL_USER_SELECTED-only) grant as not granted, and that MainActivity's
+        # banner and OverlayService's tap-to-fix notification still appear for it.
+        # -PmediaPermissionGranted=false makes connectedE2EAndroidTest's doLast block `pm revoke`
+        # READ_MEDIA_IMAGES before `am instrument` starts the com.gb4pc process, so the MEDIA
+        # step is actually reached (same precondition as the denied/dialog suites above).
+        id: run_partial_access_photo_picker_e2e
+        if: steps.diff_check.outputs.needs_full_build == 'true'
+        run: |
+          ADB="$ANDROID_HOME/platform-tools/adb"
+          "$ADB" shell input keyevent KEYCODE_WAKEUP
+          "$ADB" shell input swipe 300 1000 300 300
+          sleep 2
+          mkdir -p results
+          set -o pipefail
+          LOGCAT_SINCE=$("$ADB" shell "date '+%m-%d %H:%M:%S.000'" | tr -d '\r')
+          PID_BEFORE=$("$ADB" shell pidof com.gb4pc | tr -d '\r' || true)
+          echo "com.gb4pc pid before partial grant: '${PID_BEFORE:-<not running>}'"
+          if ./gradlew connectedE2EAndroidTest \
+            -Pe2eClass=com.gb4pc.e2e.PartialAccessPhotoPickerE2ETest \
+            -PmediaPermissionGranted=false \
+            | tee >(grep '^##GB4PC_TEST##' > results/e2e-partial-access-photo-picker.ndjson); then
+            echo "outcome=success" >> "$GITHUB_OUTPUT"
+          else
+            # Gradle exited non-zero. Diagnose host-side, immune to com.gb4pc having died.
+            #
+            # Unlike SetupActivityPermissionDialogE2ETest, this test's later assertions (the
+            # MainActivity banner and the OverlayService notification) run *in-process, after* the
+            # partial grant, so a grant that tore the process down is a genuine failure here, not a
+            # documented success. This branch does NOT rescue such a run; it only makes the
+            # torn-down-but-partially-granted signature legible instead of an opaque non-zero exit,
+            # so a future regression of the "in-app dialog grant is non-fatal" assumption (see the
+            # test's class doc) is diagnosable rather than mysterious.
+            echo "outcome=failure" >> "$GITHUB_OUTPUT"
+            echo "=== PartialAccessPhotoPickerE2ETest: non-zero Gradle exit; host-side diagnosis ==="
+            PID_AFTER=$("$ADB" shell pidof com.gb4pc | tr -d '\r' || true)
+            echo "com.gb4pc pid after partial grant:  '${PID_AFTER:-<not running>}'"
+            DUMP=$("$ADB" shell dumpsys package com.gb4pc | tr -d '\r' || true)
+            SELECTED_LINE=$(echo "$DUMP" | grep 'READ_MEDIA_VISUAL_USER_SELECTED: granted=' | head -n1 | sed 's/^ *//' || true)
+            IMAGES_LINE=$(echo "$DUMP" | grep 'READ_MEDIA_IMAGES: granted=' | head -n1 | sed 's/^ *//' || true)
+            echo "host-side READ_MEDIA_VISUAL_USER_SELECTED state: '${SELECTED_LINE:-<not found>}'"
+            echo "host-side READ_MEDIA_IMAGES state:               '${IMAGES_LINE:-<not found>}'"
+            if ! grep -q '"outcome":"FAIL"' results/e2e-partial-access-photo-picker.ndjson 2>/dev/null \
+              && echo "$SELECTED_LINE" | grep -q 'granted=true' \
+              && echo "$IMAGES_LINE" | grep -q 'granted=false'; then
+              echo "FINDING: no in-process test marker was emitted, yet the partial grant landed"
+              echo "         host-side (READ_MEDIA_VISUAL_USER_SELECTED granted, READ_MEDIA_IMAGES"
+              echo "         not). That signature means the READ_MEDIA_VISUAL_USER_SELECTED grant"
+              echo "         tore down the instrumented com.gb4pc process mid-test (pid"
+              echo "         before='${PID_BEFORE:-<none>}', after='${PID_AFTER:-<none>}'), so the"
+              echo "         post-grant banner/notification assertions never ran. This contradicts"
+              echo "         the in-app-dialog-grant-is-non-fatal assumption this test relies on"
+              echo "         (see its class doc); that assumption needs revisiting for this"
+              echo "         permission before the test can pass."
+            fi
+            echo "=== LOGCAT (since test start) ==="
+            "$ADB" logcat -d -T "$LOGCAT_SINCE" | bash scripts/filter_logcat.sh
+          fi
+
+      - name: Re-grant media permission after PartialAccessPhotoPickerE2ETest
+        # Mirrors "Re-grant media permission after PermissionsDeniedE2ETest" above: this suite
+        # leaves com.gb4pc with only partial (or no) media access, so restore the default
+        # granted state every other E2E suite assumes, keeping device state honest for any
+        # future step added after this one.
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        run: |
+          "$ANDROID_HOME/platform-tools/adb" shell pm grant com.gb4pc android.permission.READ_MEDIA_IMAGES
+
+      - name: Upload PartialAccessPhotoPickerE2ETest markers
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: testresults-e2e-partial-access-photo-picker
+          path: results/e2e-partial-access-photo-picker.ndjson
+          retention-days: 14
+
       - name: Copy E2E test results
         if: always() && steps.diff_check.outputs.needs_full_build == 'true'
         continue-on-error: true
@@ -930,7 +1012,7 @@ jobs:
               --outcome "${{ steps.run_instrumented.outcome }}" \
             app/build/outputs/androidTest-results/e2e \
               --suite-label "E2E Tests" \
-              --outcome "${{ (steps.run_overlay_e2e.outcome == 'skipped' && steps.run_gallery_e2e.outcome == 'skipped' && steps.run_permissions_granted_e2e.outcome == 'skipped' && steps.run_permissions_denied_e2e.outcome == 'skipped' && steps.run_setup_activity_granted_e2e.outcome == 'skipped' && steps.run_setup_activity_denied_e2e.outcome == 'skipped' && steps.run_setup_activity_permission_dialog_e2e.outcome == 'skipped') && 'skipped' || ((steps.run_overlay_e2e.outcome == 'failure' || steps.run_gallery_e2e.outcome == 'failure' || steps.run_permissions_granted_e2e.outcome == 'failure' || steps.run_permissions_denied_e2e.outcome == 'failure' || steps.run_setup_activity_granted_e2e.outcome == 'failure' || steps.run_setup_activity_denied_e2e.outcome == 'failure' || steps.run_setup_activity_permission_dialog_e2e.outcome == 'failure') && 'failure' || 'success') }}"
+              --outcome "${{ (steps.run_overlay_e2e.outcome == 'skipped' && steps.run_gallery_e2e.outcome == 'skipped' && steps.run_permissions_granted_e2e.outcome == 'skipped' && steps.run_permissions_denied_e2e.outcome == 'skipped' && steps.run_setup_activity_granted_e2e.outcome == 'skipped' && steps.run_setup_activity_denied_e2e.outcome == 'skipped' && steps.run_setup_activity_permission_dialog_e2e.outcome == 'skipped' && steps.run_partial_access_photo_picker_e2e.outcome == 'skipped') && 'skipped' || ((steps.run_overlay_e2e.outcome == 'failure' || steps.run_gallery_e2e.outcome == 'failure' || steps.run_permissions_granted_e2e.outcome == 'failure' || steps.run_permissions_denied_e2e.outcome == 'failure' || steps.run_setup_activity_granted_e2e.outcome == 'failure' || steps.run_setup_activity_denied_e2e.outcome == 'failure' || steps.run_setup_activity_permission_dialog_e2e.outcome == 'failure' || steps.run_partial_access_photo_picker_e2e.outcome == 'failure') && 'failure' || 'success') }}"
 
       # Single authority on whether the test phase passed (issue #309). Replaces
       # the old blanket `continue-on-error` on the test steps: any failing test
@@ -952,7 +1034,7 @@ jobs:
               --outcome "${{ steps.run_instrumented.outputs.outcome }}" \
             app/build/outputs/androidTest-results/e2e \
               --suite-label "E2E Tests" \
-              --outcome "${{ (steps.run_overlay_e2e.outputs.outcome == 'failure' || steps.run_gallery_e2e.outputs.outcome == 'failure' || steps.run_permissions_granted_e2e.outputs.outcome == 'failure' || steps.run_permissions_denied_e2e.outputs.outcome == 'failure' || steps.run_setup_activity_granted_e2e.outputs.outcome == 'failure' || steps.run_setup_activity_denied_e2e.outputs.outcome == 'failure' || steps.run_setup_activity_permission_dialog_e2e.outputs.outcome == 'failure') && 'failure' || 'success' }}"
+              --outcome "${{ (steps.run_overlay_e2e.outputs.outcome == 'failure' || steps.run_gallery_e2e.outputs.outcome == 'failure' || steps.run_permissions_granted_e2e.outputs.outcome == 'failure' || steps.run_permissions_denied_e2e.outputs.outcome == 'failure' || steps.run_setup_activity_granted_e2e.outputs.outcome == 'failure' || steps.run_setup_activity_denied_e2e.outputs.outcome == 'failure' || steps.run_setup_activity_permission_dialog_e2e.outputs.outcome == 'failure' || steps.run_partial_access_photo_picker_e2e.outputs.outcome == 'failure') && 'failure' || 'success' }}"
 
   file-issues:
     needs: [build-and-test]
