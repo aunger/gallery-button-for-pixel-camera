@@ -192,6 +192,55 @@ class TestFormatReport(unittest.TestCase):
         self.assertIn("[1]", text)
         self.assertNotIn('["1"]', text)
 
+    def test_include_match_false_omits_match_key(self):
+        text = blt.format_report(
+            {"ci": [1]}, {"agents": [2]}, {"product": [3]}, include_match=False
+        )
+        parsed = json.loads(text)
+        self.assertEqual(set(parsed.keys()), {"add", "miss"})
+        self.assertNotIn("match", parsed)
+
+    def test_include_match_true_is_the_default(self):
+        text = blt.format_report({}, {"agents": [2]}, {})
+        parsed = json.loads(text)
+        self.assertIn("match", parsed)
+        self.assertEqual(parsed["match"], {"agents": [2]})
+
+
+# ---------------------------------------------------------------------------
+# parse_skip_matches
+# ---------------------------------------------------------------------------
+
+
+class TestParseSkipMatches(unittest.TestCase):
+    def test_none_includes_match_with_no_skips(self):
+        include_match, labels = blt.parse_skip_matches(None)
+        self.assertTrue(include_match)
+        self.assertEqual(labels, frozenset())
+
+    def test_empty_string_omits_match_entirely(self):
+        include_match, labels = blt.parse_skip_matches("")
+        self.assertFalse(include_match)
+        self.assertEqual(labels, frozenset())
+
+    def test_single_label(self):
+        include_match, labels = blt.parse_skip_matches("ci")
+        self.assertTrue(include_match)
+        self.assertEqual(labels, frozenset({"ci"}))
+
+    def test_multiple_labels(self):
+        include_match, labels = blt.parse_skip_matches("ci,agents")
+        self.assertTrue(include_match)
+        self.assertEqual(labels, frozenset({"ci", "agents"}))
+
+    def test_whitespace_around_labels_is_stripped(self):
+        include_match, labels = blt.parse_skip_matches("ci, agents , testing")
+        self.assertEqual(labels, frozenset({"ci", "agents", "testing"}))
+
+    def test_trailing_comma_does_not_add_empty_label(self):
+        include_match, labels = blt.parse_skip_matches("ci,")
+        self.assertEqual(labels, frozenset({"ci"}))
+
 
 # ---------------------------------------------------------------------------
 # parse_args
@@ -220,6 +269,30 @@ class TestParseArgs(unittest.TestCase):
     def test_both_flags_is_an_error(self):
         with self.assertRaises(SystemExit):
             blt.parse_args(["-n", "-f"])
+
+    def test_quiet_flag_short_and_long(self):
+        self.assertTrue(blt.parse_args(["-n", "-q"]).quiet)
+        self.assertTrue(blt.parse_args(["-n", "--quiet"]).quiet)
+
+    def test_quiet_defaults_to_false(self):
+        self.assertFalse(blt.parse_args(["-n"]).quiet)
+
+    def test_skip_matches_defaults_to_none(self):
+        self.assertIsNone(blt.parse_args(["-n"]).skip_matches)
+
+    def test_skip_matches_alone_is_empty_string(self):
+        self.assertEqual(blt.parse_args(["-n", "--skip-matches"]).skip_matches, "")
+
+    def test_skip_matches_equals_form(self):
+        args = blt.parse_args(["-n", "--skip-matches=ci,agents"])
+        self.assertEqual(args.skip_matches, "ci,agents")
+
+    def test_skip_matches_space_form(self):
+        # Python argparse's nargs='?' accepts the space form too, unlike
+        # strict GNU getopt_long (which requires "=" for optional
+        # arguments); we follow argparse's convention here.
+        args = blt.parse_args(["-n", "--skip-matches", "ci,agents"])
+        self.assertEqual(args.skip_matches, "ci,agents")
 
 
 # ---------------------------------------------------------------------------
@@ -280,6 +353,52 @@ class TestMain(unittest.TestCase):
         printed = mock_print.call_args_list[-1].args[0]
         parsed = json.loads(printed)
         self.assertIn("add", parsed)
+
+    def test_quiet_suppresses_the_report(self):
+        items = [_issue(1, "Fix the CI pipeline", [])]
+        with patch.object(blt, "fetch_all_issues", return_value=items):
+            with patch("builtins.print") as mock_print:
+                result = blt.main(["-n", "-q"])
+        self.assertEqual(result, 0)
+        mock_print.assert_not_called()
+
+    def test_quiet_with_force_still_applies_but_prints_nothing(self):
+        items = [_issue(1, "Fix the CI pipeline", [])]
+        with patch.object(blt, "fetch_all_issues", return_value=items):
+            with patch.object(blt, "apply_labels") as mock_apply:
+                with patch("builtins.print") as mock_print:
+                    result = blt.main(["-f", "-q"])
+        self.assertEqual(result, 0)
+        mock_apply.assert_called_once()
+        mock_print.assert_not_called()
+
+    def test_skip_matches_with_no_value_omits_match_key(self):
+        items = [_issue(1, "Fix the CI pipeline", ["ci"])]
+        with patch.object(blt, "fetch_all_issues", return_value=items):
+            with patch("builtins.print") as mock_print:
+                blt.main(["-n", "--skip-matches"])
+        parsed = json.loads(mock_print.call_args_list[-1].args[0])
+        self.assertNotIn("match", parsed)
+
+    def test_skip_matches_with_value_filters_that_label_only(self):
+        items = [
+            _issue(1, "Fix the CI pipeline", ["ci"]),
+            _issue(2, "Tighten guidance for agents", ["agents"]),
+        ]
+        with patch.object(blt, "fetch_all_issues", return_value=items):
+            with patch("builtins.print") as mock_print:
+                blt.main(["-n", "--skip-matches=ci"])
+        parsed = json.loads(mock_print.call_args_list[-1].args[0])
+        self.assertNotIn("ci", parsed["match"])
+        self.assertEqual(parsed["match"]["agents"], [2])
+
+    def test_no_skip_matches_leaves_match_untouched(self):
+        items = [_issue(1, "Fix the CI pipeline", ["ci"])]
+        with patch.object(blt, "fetch_all_issues", return_value=items):
+            with patch("builtins.print") as mock_print:
+                blt.main(["-n"])
+        parsed = json.loads(mock_print.call_args_list[-1].args[0])
+        self.assertEqual(parsed["match"]["ci"], [1])
 
 
 if __name__ == "__main__":

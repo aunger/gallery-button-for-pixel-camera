@@ -17,10 +17,15 @@ Each category maps a label name to the sorted list of issue/PR numbers
 it applies to.
 
 Usage:
-    python3 scripts/backfill_labels_by_title.py (-n | -f)
+    python3 scripts/backfill_labels_by_title.py (-n | -f) [-q] [--skip-matches[=LABELS]]
 
     -n, --dry-run   Compute and print the report; apply nothing.
     -f, --force     Apply the "add" category, then print the report.
+    -q, --quiet     Suppress the JSON report.
+    --skip-matches[=LABELS]
+                    Omit LABELS (comma-separated) from the "match" report
+                    category. Given with no LABELS, omit the "match"
+                    category entirely.
 
     Exactly one of -n or -f is required, matching git clean's semantics:
     the script refuses to guess and does nothing without one.
@@ -144,21 +149,44 @@ def format_report(
     add: dict[str, list[int]],
     match: dict[str, list[int]],
     miss: dict[str, list[int]],
+    include_match: bool = True,
 ) -> str:
     """Render the add/match/miss categories as JSON.
 
     Minimized except for a newline after each ``"category":`` and after
-    each label's number list, per the requested output shape.
+    each label's number list, per the requested output shape. Pass
+    ``include_match=False`` to omit the "match" key entirely (the
+    ``--skip-matches`` flag given with no value).
     """
-    categories = {"add": add, "match": match, "miss": miss}
+    categories = [("add", add)]
+    if include_match:
+        categories.append(("match", match))
+    categories.append(("miss", miss))
+
     category_parts = []
-    for name, labels in categories.items():
+    for name, labels in categories:
         label_parts = [
             f"{json.dumps(label)}:{json.dumps(sorted(labels[label]), separators=(',', ':'))}\n"
             for label in sorted(labels)
         ]
         category_parts.append(f"{json.dumps(name)}:\n{{{','.join(label_parts)}}}")
     return "{" + ",".join(category_parts) + "}"
+
+
+def parse_skip_matches(value: str | None) -> tuple[bool, frozenset[str]]:
+    """Interpret the --skip-matches value.
+
+    Returns (include_match, labels_to_skip):
+        value is None   flag not given: include "match" in full
+        value is ""     flag given with no LABELS: omit "match" entirely
+        value is a CSV  flag given with LABELS: include "match" minus those
+    """
+    if value is None:
+        return True, frozenset()
+    if value == "":
+        return False, frozenset()
+    labels = frozenset(label.strip() for label in value.split(",") if label.strip())
+    return True, labels
 
 
 # ---------------------------------------------------------------------------
@@ -171,6 +199,18 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("-n", "--dry-run", action="store_true", help="Report only; apply nothing.")
     mode.add_argument("-f", "--force", action="store_true", help="Apply the missing labels.")
+    parser.add_argument("-q", "--quiet", action="store_true", help="Suppress the JSON report.")
+    parser.add_argument(
+        "--skip-matches",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="LABELS",
+        help=(
+            'Omit LABELS (comma-separated) from the "match" report category. '
+            'With no LABELS, omit the "match" category entirely.'
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -198,7 +238,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.force:
         apply_labels(to_apply, repo, token)
 
-    print(format_report(add, match, miss))
+    if not args.quiet:
+        include_match, labels_to_skip = parse_skip_matches(args.skip_matches)
+        if labels_to_skip:
+            match = {label: nums for label, nums in match.items() if label not in labels_to_skip}
+        print(format_report(add, match, miss, include_match=include_match))
     return 0
 
 
