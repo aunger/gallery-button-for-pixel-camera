@@ -3,14 +3,8 @@
 
 Matching is case-insensitive. An underscore counts as a word break, in
 addition to the normal ``\\b`` boundary, so e.g. ``ci_monitor`` matches the
-``ci`` rule.
-
-Label rules:
-    ci:      \\bci\\b | \\bautomat\\w+\\b
-    agents:  \\bagent\\w* | \\bdev_orchestration\\b | \\brules?\\b |
-             \\battributions?\\b | \\bbylines?\\b | \\bverif\\w+\\b |
-             \\bauthor\\b | \\breview\\w+\\b
-    testing: \\be2e\\b | \\bunit\\b | \\btest\\w*
+``ci`` rule. See LABEL_PATTERNS below for the exact rules--not duplicated
+here, to avoid this docstring drifting out of sync with the code.
 
 Labels are only ever added, never removed.
 
@@ -42,9 +36,19 @@ import urllib.request
 
 _B = r"(\b|_)"
 
+# "E2ETest" (no boundary around "E2E" inside a CamelCase identifier like
+# GalleryButtonVisualE2ETest) needs both sides open.
+_E2E_TEST_IDENTIFIER = r"\w*e2etest\w*"
+
 LABEL_PATTERNS: dict[str, re.Pattern[str]] = {
     "ci": re.compile(
-        rf"{_B}ci{_B}|{_B}automat\w+{_B}",
+        rf"{_B}ci{_B}"
+        rf"|{_B}automat\w+{_B}"
+        rf"|{_B}workflow\w*"
+        rf"|{_B}github[\W_]*action\w*"
+        rf"|{_B}e2e\w*"
+        rf"|{_B}pre-?flight{_B}"
+        rf"|{_B}codeql{_B}",
         re.IGNORECASE,
     ),
     "agents": re.compile(
@@ -55,11 +59,19 @@ LABEL_PATTERNS: dict[str, re.Pattern[str]] = {
         rf"|{_B}bylines?{_B}"
         rf"|{_B}verif\w+{_B}"
         rf"|{_B}author{_B}"
-        rf"|{_B}review\w+{_B}",
+        rf"|{_B}review\w+{_B}"
+        rf"|{_B}orchestrat\w*"
+        rf"|{_B}ci[\W_]*monitor\w*"
+        rf"|{_B}sub[\W_]?agent\w*",
         re.IGNORECASE,
     ),
     "testing": re.compile(
-        rf"{_B}e2e{_B}|{_B}unit{_B}|{_B}test\w*",
+        rf"{_B}e2e{_B}"
+        rf"|{_B}unit{_B}"
+        rf"|{_B}test\w*"
+        rf"|{_E2E_TEST_IDENTIFIER}"
+        rf"|{_B}pre-?flight{_B}"
+        rf"|(?-i:\w*Test(\b|_))",
         re.IGNORECASE,
     ),
 }

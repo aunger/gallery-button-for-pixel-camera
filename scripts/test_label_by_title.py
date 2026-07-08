@@ -64,6 +64,49 @@ class TestMatchingLabelsCi(unittest.TestCase):
         self.assertIn("ci", lpt.matching_labels("fix the ci pipeline"))
         self.assertIn("ci", lpt.matching_labels("Fix The CI Pipeline"))
 
+    def test_workflow_suffixes_match(self):
+        self.assertIn("ci", lpt.matching_labels("Add workflow_dispatch trigger"))
+        self.assertIn("ci", lpt.matching_labels("Daily workflow to archive stale issues"))
+
+    def test_github_action_matches_with_separator_variants(self):
+        self.assertIn("ci", lpt.matching_labels("GitHub Action: remove verified label"))
+        self.assertIn("ci", lpt.matching_labels("Enforce label sets via GitHub Actions"))
+        self.assertIn("ci", lpt.matching_labels("Fix github_action bug"))
+
+    def test_e2e_suffix_matches_in_ci(self):
+        self.assertIn("ci", lpt.matching_labels("Capture E2E test video on failure"))
+
+    def test_e2e_without_leading_boundary_does_not_match_ci(self):
+        # "E2E" inside "VisualE2ETest" has no boundary before it (preceded
+        # by "l"), so the suffix-only e2e\w* rule doesn't fire.
+        self.assertNotIn("ci", lpt.matching_labels("Add VisualE2Efixture helper"))
+
+    def test_e2etest_camel_case_identifier_does_not_match_ci(self):
+        # The e2etest identifier rule is testing-only by design; CI-auto-
+        # filed test-failure issue titles don't get ci from this alone.
+        self.assertNotIn(
+            "ci",
+            lpt.matching_labels("[GalleryButtonVisualE2ETest] test2a_emptyGalleryNoGreenAfterTap"),
+        )
+
+    def test_preflight_variants_match(self):
+        self.assertIn("ci", lpt.matching_labels("Preflight: Pixel Launcher isn't responding"))
+        self.assertIn("ci", lpt.matching_labels("CI pre-flight: replace fixed sleep"))
+
+    def test_codeql_matches(self):
+        self.assertIn("ci", lpt.matching_labels("Add CodeQL workflow for scanning"))
+
+    def test_merge_does_not_match_ci(self):
+        # Blocking-merge issues are not ci-labeled by design; no rule
+        # targets "merge" at all.
+        self.assertNotIn("ci", lpt.matching_labels("Add to label-based merge gate"))
+        self.assertNotIn(
+            "ci",
+            lpt.matching_labels(
+                "Extend label merge gate to block on change-requested, change-done"
+            ),
+        )
+
 
 class TestMatchingLabelsAgents(unittest.TestCase):
     def test_agent_word_matches(self):
@@ -105,15 +148,66 @@ class TestMatchingLabelsAgents(unittest.TestCase):
         self.assertIn("agents", lpt.matching_labels("Clarify Reviewer account sharing"))
         self.assertNotIn("agents", lpt.matching_labels("Leave a review"))
 
+    def test_orchestrat_suffixes_match(self):
+        self.assertIn("agents", lpt.matching_labels("Orchestrator directions: CI review loop"))
+        self.assertIn("agents", lpt.matching_labels("Build an /orchestrate Claude Code plugin"))
+
+    def test_ci_monitor_matches_with_separator_variants(self):
+        self.assertIn("agents", lpt.matching_labels("CI Monitor: handle two lagging endpoints"))
+        self.assertIn("agents", lpt.matching_labels("Speed up ci_monitor's poll interval"))
+        self.assertIn("agents", lpt.matching_labels("Refactor CIMonitor internals"))
+
+    def test_subagent_concatenated_matches(self):
+        self.assertIn("agents", lpt.matching_labels("Make subagent delegation dependable"))
+        self.assertIn(
+            "agents", lpt.matching_labels("Replace CiWatcher subagents with a Monitor loop")
+        )
+
+    def test_subagent_with_single_separator_matches(self):
+        self.assertIn("agents", lpt.matching_labels("Fix the sub-agent handoff"))
+        self.assertIn("agents", lpt.matching_labels("Fix the sub agent handoff"))
+        self.assertIn("agents", lpt.matching_labels("Fix the sub_agent handoff"))
+
 
 class TestMatchingLabelsTesting(unittest.TestCase):
     def test_e2e_matches(self):
         self.assertIn("testing", lpt.matching_labels("Add E2E instrumented test"))
 
-    def test_e2e_within_camel_case_identifier_does_not_match(self):
-        # No boundary (word or underscore) surrounds "E2E" inside this
-        # camelCase identifier, so the strict \be2e\b rule does not fire.
-        self.assertEqual(lpt.matching_labels("Add GalleryButtonVisualE2ETest"), [])
+    def test_e2e_within_camel_case_identifier_does_not_match_the_plain_e2e_rule(self):
+        # No boundary surrounds "E2E" inside "VisualE2Efixture", and it's
+        # not followed by "Test", so neither e2e rule fires.
+        self.assertEqual(lpt.matching_labels("Add VisualE2Efixture helper"), [])
+
+    def test_e2etest_camel_case_identifier_matches_testing(self):
+        # The dedicated e2etest identifier rule (both sides open) catches
+        # what the plain \be2e\b rule can't reach inside CamelCase names.
+        self.assertIn("testing", lpt.matching_labels("Add GalleryButtonVisualE2ETest"))
+
+    def test_preflight_matches_testing(self):
+        self.assertIn(
+            "testing", lpt.matching_labels("CI pre-flight: MockCameraActivity ready signal")
+        )
+
+    def test_camel_case_test_suffix_matches_case_sensitively(self):
+        self.assertIn("testing", lpt.matching_labels("Add Gaussian-blur noise to ShapeMatcherTest"))
+        self.assertIn(
+            "testing", lpt.matching_labels("Six instrumented (androidTest) classes are skipped")
+        )
+
+    def test_lowercase_camel_test_identifier_does_not_match(self):
+        # "shapematchertest" (all lowercase, no separators) has no leading
+        # boundary before its final "test" for the ordinary test\w* rule
+        # (preceded by "r"), so only a case-insensitive version of the new
+        # \w*Test(\b|_) rule could catch it--and it must not.
+        self.assertEqual(lpt.matching_labels("shapematchertest"), [])
+
+    def test_common_english_words_ending_in_test_do_not_match(self):
+        # Each of these ends in the literal substring "test" with no
+        # boundary before it, so only a case-insensitive version of the new
+        # \w*Test(\b|_) rule could wrongly catch them. If this test starts
+        # failing, the case-sensitivity of that rule has regressed.
+        result = lpt.matching_labels("Set the latest, fastest, greatest contest and protest")
+        self.assertEqual(result, [])
 
     def test_unit_exact_word_matches(self):
         self.assertIn("testing", lpt.matching_labels("Skip Python and shell unit tests"))
