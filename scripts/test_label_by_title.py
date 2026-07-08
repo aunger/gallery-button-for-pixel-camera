@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for label_pr_by_title.py."""
+"""Unit tests for label_by_title.py."""
 
 import json
 import os
@@ -9,7 +9,7 @@ import urllib.error
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(__file__))
-import label_pr_by_title as lpt  # noqa: E402
+import label_by_title as lpt  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -155,8 +155,8 @@ class TestMain(unittest.TestCase):
             {
                 "GITHUB_TOKEN": "test-token",
                 "GITHUB_REPOSITORY": "owner/repo",
-                "PR_NUMBER": "42",
-                "PR_TITLE": "Fix the CI pipeline",
+                "ISSUE_NUMBER": "42",
+                "ISSUE_TITLE": "Fix the CI pipeline",
             },
         )
         self._env_patch.start()
@@ -174,18 +174,18 @@ class TestMain(unittest.TestCase):
             result = lpt.main()
         self.assertEqual(result, 0)
 
-    def test_exit_0_when_pr_number_missing(self):
-        with patch.dict(os.environ, {"PR_NUMBER": ""}):
+    def test_exit_0_when_issue_number_missing(self):
+        with patch.dict(os.environ, {"ISSUE_NUMBER": ""}):
             result = lpt.main()
         self.assertEqual(result, 0)
 
-    def test_exit_0_when_pr_number_non_integer(self):
-        with patch.dict(os.environ, {"PR_NUMBER": "abc"}):
+    def test_exit_0_when_issue_number_non_integer(self):
+        with patch.dict(os.environ, {"ISSUE_NUMBER": "abc"}):
             result = lpt.main()
         self.assertEqual(result, 0)
 
     def test_no_api_call_when_title_matches_nothing(self):
-        with patch.dict(os.environ, {"PR_TITLE": "Set overlay default position"}):
+        with patch.dict(os.environ, {"ISSUE_TITLE": "Set overlay default position"}):
             with patch.object(lpt, "gh_api") as mock_api:
                 result = lpt.main()
         self.assertEqual(result, 0)
@@ -203,7 +203,7 @@ class TestMain(unittest.TestCase):
 
     def test_posts_multiple_matching_labels(self):
         with patch.dict(
-            os.environ, {"PR_TITLE": "Add CiWatcher agent and fix Reviewer CI-polling loop"}
+            os.environ, {"ISSUE_TITLE": "Add CiWatcher agent and fix Reviewer CI-polling loop"}
         ):
             with patch.object(lpt, "gh_api") as mock_api:
                 result = lpt.main()

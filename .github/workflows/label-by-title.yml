@@ -1,0 +1,36 @@
+name: Label issue/PR by title
+
+# Applies labels to an issue or pull request based on regex matches
+# against its title. See scripts/label_by_title.py for the exact rules.
+# Labels are only ever added, never removed.
+#
+# Runs on "opened" (a fresh title) or "edited" where the title itself
+# changed (github.event.changes.title is only present when the title was
+# part of the edit), so unrelated edits (body, labels, base branch) do
+# not re-trigger it.
+
+on:
+  issues:
+    types: [opened, edited]
+  pull_request:
+    types: [opened, edited]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  label-by-title:
+    runs-on: ubuntu-latest
+    if: github.event.action == 'opened' || github.event.changes.title
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Apply labels matching the title
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          ISSUE_TITLE: ${{ github.event.pull_request.title || github.event.issue.title }}
+        run: python3 scripts/label_by_title.py

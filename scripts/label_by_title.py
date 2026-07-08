@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply labels to a pull request based on regex matches against its title.
+"""Apply labels to an issue or pull request based on regex matches against its title.
 
 Matching is case-insensitive. An underscore counts as a word break, in
 addition to the normal ``\\b`` boundary, so e.g. ``ci_monitor`` matches the
@@ -15,17 +15,17 @@ Label rules:
 Labels are only ever added, never removed.
 
 Usage:
-    python3 scripts/label_pr_by_title.py
+    python3 scripts/label_by_title.py
 
 Exit code:
     0  always--API failures are logged but do not fail the CI run.
 
 Required environment variables:
     GITHUB_TOKEN        Personal access token or Actions secret with
-                        pull-requests: write
+                        issues: write and pull-requests: write
     GITHUB_REPOSITORY   Owner/repo (e.g. "aunger/gallery-button-for-pixel-camera")
-    PR_NUMBER           Number of the pull request
-    PR_TITLE            Title of the pull request
+    ISSUE_NUMBER        Number of the issue or pull request
+    ISSUE_TITLE         Title of the issue or pull request
 """
 
 import json
@@ -105,8 +105,8 @@ def gh_api(path: str, token: str, method: str = "GET", body: object = None) -> o
 def main() -> int:
     token = os.environ.get("GITHUB_TOKEN", "")
     repo = os.environ.get("GITHUB_REPOSITORY", "")
-    pr_number_str = os.environ.get("PR_NUMBER", "")
-    title = os.environ.get("PR_TITLE", "")
+    issue_number_str = os.environ.get("ISSUE_NUMBER", "")
+    title = os.environ.get("ISSUE_TITLE", "")
 
     if not token:
         print("Warning: GITHUB_TOKEN not set--skipping labeling.", file=sys.stderr)
@@ -114,33 +114,33 @@ def main() -> int:
     if not repo:
         print("Warning: GITHUB_REPOSITORY not set--skipping labeling.", file=sys.stderr)
         return 0
-    if not pr_number_str:
-        print("Warning: PR_NUMBER not set--skipping labeling.", file=sys.stderr)
+    if not issue_number_str:
+        print("Warning: ISSUE_NUMBER not set--skipping labeling.", file=sys.stderr)
         return 0
 
     try:
-        pr_number = int(pr_number_str)
+        issue_number = int(issue_number_str)
     except ValueError:
-        print(f"Error: PR_NUMBER is not a valid integer: {pr_number_str!r}", file=sys.stderr)
+        print(f"Error: ISSUE_NUMBER is not a valid integer: {issue_number_str!r}", file=sys.stderr)
         return 0
 
     labels = matching_labels(title)
     if not labels:
-        print(f"No label rules matched title {title!r} on #{pr_number}--nothing to do.")
+        print(f"No label rules matched title {title!r} on #{issue_number}--nothing to do.")
         return 0
 
     try:
         gh_api(
-            f"repos/{repo}/issues/{pr_number}/labels",
+            f"repos/{repo}/issues/{issue_number}/labels",
             token=token,
             method="POST",
             body={"labels": labels},
         )
-        print(f"Applied labels {labels} to #{pr_number}.")
+        print(f"Applied labels {labels} to #{issue_number}.")
     except urllib.error.HTTPError as exc:
-        print(f"Error applying labels {labels} to #{pr_number}: {exc}", file=sys.stderr)
+        print(f"Error applying labels {labels} to #{issue_number}: {exc}", file=sys.stderr)
     except urllib.error.URLError as exc:
-        print(f"Network error applying labels {labels} to #{pr_number}: {exc}", file=sys.stderr)
+        print(f"Network error applying labels {labels} to #{issue_number}: {exc}", file=sys.stderr)
 
     return 0
 
