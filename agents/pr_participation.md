@@ -43,7 +43,7 @@ Some required checks, such as "No blocking labels", validate the post-cycle stat
 
 ### Reviewing an Author who declined to open a PR
 
-Sometimes the Author opens no PR and instead posts its position as an **issue comment** (see "Declining to open a PR" in the Author section).
+Sometimes the Author opens no PR and instead posts its position as an **issue comment**, emitting `Work completed but no PR: updated issue with requested information` or `No work to do: explanation posted on the existing PR or issue` (see "Declining to open a PR" in the Author section).
 The artifact under review is then that issue comment and the Author's stated position, not a diff.
 The Orchestrator will point you at the issue rather than a PR.
 
@@ -79,13 +79,12 @@ In any of the following three circumstances, the Author should *not* open a PR:
 2. The Author believes it cannot fix the issue.
 3. The issue is flawed, invalid, or otherwise should not be acted upon.
 
-When declining to open a PR, the Author must:
+When declining to open a PR, the Author must post a comment on the **issue** (not on a PR, since none exists) that explains its position, begin the comment with the `🤖 Author` attribution line, and then tell the Orchestrator the matching status signal from `dev_orchestration.md`:
 
-- Post a comment on the **issue** (not on a PR, since none exists) that explains its position.
-  Begin the comment with the `🤖 Author` attribution line, then state which of the three circumstances applies and the reasoning behind it.
-  If circumstance 1 applies and the issue is resolved by an action outside the repo (for example, a setting change) or by an answer (for example, the issue is really asking a question), describe that action or give that answer in the comment.
-- Tell the Orchestrator that it opened no PR and posted its position as an **issue comment** instead, using the status vocabulary in `dev_orchestration.md`.
-  The Orchestrator then points a Reviewer at the issue.
+- If circumstance 1 applies and the "no code change" resolution is itself an affirmative answer or action (for example, the issue is resolved by an action outside the repo such as a setting change, or the issue is really a question the Author can answer), describe that action or give that answer in the comment, and emit `Work completed but no PR: updated issue with requested information`.
+- Otherwise (circumstance 1 without an affirmative answer or action, or circumstance 2, or circumstance 3), state which circumstance applies and the reasoning behind it, and emit `No work to do: explanation posted on the existing PR or issue`.
+
+The Orchestrator then points a Reviewer at the issue.
 
 This no-PR path changes only the artifact under review; the rest of the review cycle is unchanged.
 The Reviewer still renders an `LGTM` or `Changes requested` verdict (see the Reviewer section), and the Author still defends its position or revises it across rounds.
@@ -94,10 +93,10 @@ The Reviewer still renders an `LGTM` or `Changes requested` verdict (see the Rev
 
 An Author may change its position between rounds, in either direction:
 
-- An Author that opened a PR may, after a review, conclude that no code change is warranted or that the issue should not be acted upon.
-  In that case it should close its PR and switch to the declining-to-open-a-PR path above, explaining the change on the issue.
+- An Author that opened a PR may, after a review, conclude that no further code change is warranted (for example, a CI failure turns out not to need a fix, or the issue should not be acted upon after all).
+  In that case it leaves the PR open, posts a comment on the **PR** explaining its conclusion (begin it with the `🤖 Author` attribution line), and emits `No work to do: explanation posted on the existing PR or issue` instead of pushing a fix.
 - An Author that declined to open a PR may later become convinced and switch to authoring a PR.
-  It opens the PR as usual (see `pr_creation.md`), and the review then proceeds against the PR.
+  It opens the PR as usual (see `pr_creation.md`), emitting `PR opened or fixed`, and the review then proceeds against the PR.
 
 Because each round begins by re-reading the issue, the PR (if any), and all comments, an Author is free to adopt whichever position the evidence supports; it is not bound by a position it took in an earlier round.
 The Author should not flip-flop merely to appease the Reviewer: change position only when genuinely convinced (see the skepticism guidance above).

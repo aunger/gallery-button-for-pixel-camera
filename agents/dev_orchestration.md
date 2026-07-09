@@ -113,7 +113,7 @@ Role assignment statements (copy the applicable line exactly):
 - Verification agent: "You are a Verification Agent: carry out the before-merging steps from the Verification Planner report on the linked PR, automating them where possible, and report results. You *must* start your turn by re-fetching the Verification Planner comment on the PR and each before-merging tracking issue it lists."
 
 The Programmer statement names the decline path so the dispatched Programmer receives it in the copied line, not only by reading `pr_participation.md`.
-An Author that legitimately declines satisfies its exit obligation by posting the explanatory issue comment and emitting `No PR; position posted on the issue` (see the Author status vocabulary below) instead of creating a PR.
+An Author that legitimately declines satisfies its exit obligation by posting the explanatory comment and emitting the applicable status signal (see the Author status vocabulary below) instead of creating a PR.
 
 ## Decision-signal templates
 
@@ -121,10 +121,12 @@ When routing control signals, use these exact lines and no others.
 Fill only the tokens in braces.
 
 Author-to-Orchestrator status vocabulary (the Programmer emits one when it finishes a round, reporting only what it did):
-- `PR opened`: the Author opened a PR.
-- `No PR; position posted on the issue`: the Author opened no PR and posted its position as an explanatory comment on the issue (see "Declining to open a PR" in `pr_participation.md`).
+- `PR opened or fixed`: the Author opened a fresh PR, or pushed a fix to an existing PR.
+- `Work completed but no PR: updated issue with requested information`: the Author took a concrete action (answered a question, described an out-of-repo fix, supplied missing information) and recorded it by updating the issue, without opening a PR (see "Declining to open a PR" in `pr_participation.md`).
+- `No work to do: explanation posted on the existing PR or issue`: the Author found nothing actionable this round and left an explanation, either on the issue (no PR exists) or on an existing PR (see "Declining to open a PR" in `pr_participation.md`).
 
-When the Author emits `No PR; position posted on the issue`, dispatch the Reviewer pointed at the **issue**, not a PR (see "Assigning a Reviewer").
+When the Author emits `Work completed but no PR: updated issue with requested information`, dispatch the Reviewer pointed at the **issue** (see "Assigning a Reviewer").
+When the Author emits `No work to do: explanation posted on the existing PR or issue`, dispatch the Reviewer pointed at whichever artifact carries the explanation: the **issue** if no PR exists, or the existing **PR** if one does.
 The Orchestrator does not read or judge the Author's explanation; it only notes which artifact the Reviewer must examine.
 
 Reviewer-to-Orchestrator outcome vocabulary (the Reviewer emits one):
@@ -185,7 +187,7 @@ Routing on the Verification Agent's signal:
 - Dispatch using the dispatch template above, with the Programmer role assignment statement and the literal issue number and branch name tokens.
 
 When the Author returns, apply this transition.
-Apply it to the PR if the Author emitted `PR opened`; apply it to the issue if the Author emitted `No PR; position posted on the issue`, since that is where the work's labels live when there is no PR:
+Apply it to the PR if one exists after this round (the Author emitted `PR opened or fixed`, or emitted `No work to do: explanation posted on the existing PR or issue` about an existing PR); otherwise apply it to the issue (the Author emitted `Work completed but no PR: updated issue with requested information`, or emitted `No work to do: explanation posted on the existing PR or issue` with no PR open), since that is where the work's labels live when there is no PR:
 
 | Remove label | Add label |
 |---|---|
@@ -195,8 +197,9 @@ Apply it to the PR if the Author emitted `PR opened`; apply it to the issue if t
 
 - Create a sub-agent at the Reviewer model (see Model selection above)
 - Dispatch using the dispatch template above, with the Reviewer role assignment statement and the literal issue number token.
-- If the Author emitted `No PR; position posted on the issue` (no PR was opened), the Reviewer examines the Author's explanatory comment on the **issue** rather than a PR.
+- If the Author emitted `Work completed but no PR: updated issue with requested information`, or emitted `No work to do: explanation posted on the existing PR or issue` with no PR open, the Reviewer examines the Author's explanatory comment on the **issue** rather than a PR.
   The dispatch template's issue token already points the Reviewer there; the Reviewer follows "Reviewing an Author who declined to open a PR" in `pr_participation.md`.
+- If the Author emitted `No work to do: explanation posted on the existing PR or issue` about an existing PR, the Reviewer examines the Author's explanatory comment on that **PR** as usual.
 
 ## Author disagreement
 
@@ -209,7 +212,7 @@ After the Reviewer exits and delivers its decision, the Orchestrator acts as fol
 Monitor output lines are relayed to the user verbatim; this is user-facing status reporting and is not governed by the say-nothing rule (which covers sub-agent messages only).
 
 When the Reviewer returns, apply this transition.
-Apply it to the PR if one was opened (the Author emitted `PR opened`); apply it to the issue on the no-PR path (the Author emitted `No PR; position posted on the issue`), since that is where the work's labels live when there is no PR:
+Apply it to the PR if one exists (the Author emitted `PR opened or fixed`, or emitted `No work to do: explanation posted on the existing PR or issue` about an existing PR); apply it to the issue on the no-PR path (the Author emitted `Work completed but no PR: updated issue with requested information`, or emitted `No work to do: explanation posted on the existing PR or issue` with no PR open), since that is where the work's labels live when there is no PR:
 
 | Remove label |
 |---|
@@ -222,7 +225,8 @@ If the Reviewer requested changes, additionally apply this transition to the sam
 | `changes requested` |
 
 The Author's status signal from the prior round decides which routing fence applies.
-If the Author emitted `No PR; position posted on the issue`, there is no diff or CI to run, so follow the no-PR routing fence; if it emitted `PR opened`, follow the Monitor loop fence.
+If the Author emitted `Work completed but no PR: updated issue with requested information`, or emitted `No work to do: explanation posted on the existing PR or issue` with no PR open, there is no diff or CI to run, so follow the no-PR routing fence.
+If the Author emitted `PR opened or fixed`, or emitted `No work to do: explanation posted on the existing PR or issue` about an existing PR, follow the Monitor loop fence.
 
 No-PR routing:
 
