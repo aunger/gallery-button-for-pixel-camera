@@ -19,7 +19,13 @@ Usage:
     python3 scripts/enforce_mutually_exclusive_labels.py
 
 Exit code:
-    0  always--API failures are logged but do not fail the CI run.
+    0  no conflicting labels were found, or every conflicting label was
+       removed successfully (a 404 on removal means it was already gone,
+       e.g. via a race with another process, and does not count as a
+       failure).
+    1  ISSUE_NUMBER is not a valid integer, the issue/PR's current labels
+       could not be fetched, or removing a conflicting label failed for a
+       reason other than 404.
 
 Required environment variables:
     GITHUB_TOKEN        Personal access token or Actions secret with
@@ -145,8 +151,13 @@ def remove_labels(
     to_remove: list[str],
     repo: str,
     token: str,
-) -> None:
-    """Remove each label in *to_remove* from the issue/PR, logging each removal."""
+) -> bool:
+    """Remove each label in *to_remove* from the issue/PR, logging each removal.
+
+    Returns True if every removal succeeded or was already absent (404),
+    False if any removal failed with a non-404 HTTPError or a URLError.
+    """
+    all_succeeded = True
     for label in to_remove:
         encoded = urllib.request.quote(label, safe="")
         try:
@@ -167,11 +178,14 @@ def remove_labels(
                     f"Error removing label '{label}' from #{issue_number}: {exc}",
                     file=sys.stderr,
                 )
+                all_succeeded = False
         except urllib.error.URLError as exc:
             print(
                 f"Network error removing label '{label}' from #{issue_number}: {exc}",
                 file=sys.stderr,
             )
+            all_succeeded = False
+    return all_succeeded
 
 
 # ---------------------------------------------------------------------------
@@ -205,7 +219,7 @@ def main() -> int:
             f"Error: ISSUE_NUMBER is not a valid integer: {issue_number_str!r}",
             file=sys.stderr,
         )
-        return 0
+        return 1
 
     label_set = find_conflicting_set(added_label)
     conflicting_prefix = find_conflicting_prefix(added_label)
@@ -218,14 +232,14 @@ def main() -> int:
         issue = gh_api(f"repos/{repo}/issues/{issue_number}", token=token)
     except Exception as exc:  # noqa: BLE001
         print(f"Error fetching issue #{issue_number}: {exc}", file=sys.stderr)
-        return 0
+        return 1
 
     if not isinstance(issue, dict):
         print(
             f"Error: unexpected response fetching issue #{issue_number}: {issue!r}",
             file=sys.stderr,
         )
-        return 0
+        return 1
 
     current_labels = [lbl["name"] for lbl in issue.get("labels", [])]
 
@@ -241,7 +255,8 @@ def main() -> int:
         print(f"No conflicting labels found for '{added_label}' on #{issue_number}--nothing to do.")
         return 0
 
-    remove_labels(issue_number, to_remove, repo, token)
+    if not remove_labels(issue_number, to_remove, repo, token):
+        return 1
     return 0
 
 
