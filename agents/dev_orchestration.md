@@ -193,6 +193,8 @@ Apply it to the PR if one exists after this round (the Author emitted `PR opened
 |---|---|
 | `changes requested` | `changes done` |
 
+If this Author round was dispatched because a prior Reviewer round gave `LGTM` or `Cannot implement` (for example, via the Monitor loop's Blocked-after-LGTM branch, or a user-directed resumption after a `Cannot implement` escalation), and the Author's return signal this round is `No work to do: explanation posted on the existing PR or issue`, apply the no-work/LGTM pairing rule (see "When to abort"): do not dispatch a Reviewer; escalate to the user instead.
+
 ## Assigning a Reviewer
 
 - Create a sub-agent at the Reviewer model (see Model selection above)
@@ -228,9 +230,12 @@ The Author's status signal from the prior round decides which routing fence appl
 If the Author emitted `Work completed but no PR: updated issue with requested information`, or emitted `No work to do: explanation posted on the existing PR or issue` with no PR open, there is no diff or CI to run, so follow the no-PR routing fence.
 If the Author emitted `PR opened or fixed`, or emitted `No work to do: explanation posted on the existing PR or issue` about an existing PR, follow the Monitor loop fence.
 
+Before following either fence, check the no-work/LGTM pairing rule (see "When to abort"): if the Author's signal this round was `No work to do: explanation posted on the existing PR or issue` and the Reviewer's verdict this round is `LGTM` or `Cannot implement`, do not follow either fence below; instead escalate to the user per that rule.
+
 No-PR routing:
 
 ```text
+  if the Author's signal this round was `No work to do: explanation posted on the existing PR or issue` and Reviewer gave `LGTM` or `Cannot implement` -> escalate to user (see "When to abort"); stop
   if Reviewer requested changes -> goto newAuthor
   if Reviewer gave `Cannot implement` -> escalate to user; stop
   if Reviewer gave LGTM:
@@ -244,6 +249,7 @@ No-PR routing:
 PR routing (Monitor loop):
 
 ```text
+  if the Author's signal this round was `No work to do: explanation posted on the existing PR or issue` and Reviewer gave `LGTM` or `Cannot implement` -> escalate to user (see "When to abort"); stop
   if Reviewer requested changes -> goto newAuthor
   if Reviewer gave `Cannot implement` -> escalate to user; stop (do NOT route to a new Author round; leave the PR open for the user to close; the Reviewer's PR comment describes why)
   if Reviewer gave LGTM:
@@ -256,6 +262,10 @@ PR routing (Monitor loop):
     if Monitor emits a Blocked line where the terminal ends with `[label gate]` (the ` by: ...` suffix names only label-gate checks) -> clear the silentVanish re-launch flag; inform the user only a process-label gate blocks the merge (code is review-approved); do NOT route to a new Author round; goto surfaceBeforeMergingRequirements (label-gate path)
     // The Orchestrator does not auto-remove the blocking label (issue #516, Step 8a): it is a user-controlled process label needing human judgment.
     if Monitor emits a Blocked line  -> clear the silentVanish re-launch flag; goto newAuthor
+    // This newAuthor round follows a Reviewer LGTM (the branch we are in). If that new Author
+    // round's own return signal is `No work to do: explanation posted on the existing PR or issue`,
+    // the no-work/LGTM pairing rule (see "When to abort") applies: escalate to the user instead of
+    // dispatching the next Reviewer round.
     if Monitor emits an Infra line   -> clear the silentVanish re-launch flag; escalate to user; stop
     if Monitor times out (30 min)    -> escalate to user; stop
     if a user message wakes the session before Monitor delivers any terminal line -> goto silentVanish
@@ -390,6 +400,9 @@ Stop the automated cycle and escalate to the User in either of these cases:
   This covers a Programmer that gives up or an issue that cannot be solved as stated; the Reviewer confirms it by emitting `Cannot implement`.
 - The Programmer / Reviewer loop runs **four rounds** without reaching consensus (unless the user gave a different threshold).
   This is the fallback for a loop that stalls in disagreement; once four rounds are reached the cap applies unconditionally, even when both parties are still actively disputing.
+- The no-work/LGTM pairing rule: the Author emits `No work to do: explanation posted on the existing PR or issue` immediately adjacent, in either order across two consecutive turns, to a Reviewer verdict of `LGTM` or `Cannot implement`.
+  That is: the Author's `No work to do` turn is immediately followed by a Reviewer `LGTM`/`Cannot implement` verdict on that same round, OR a Reviewer `LGTM`/`Cannot implement` verdict is immediately followed by the Author's next turn emitting `No work to do`.
+  This pairing means one side found nothing actionable right next to the other side declaring the work fine or impossible; pause and escalate regardless of what CI reports, instead of following the normal routing fences.
 
 ## Concluding PR orchestration
 
