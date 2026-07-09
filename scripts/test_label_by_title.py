@@ -281,25 +281,25 @@ class TestMain(unittest.TestCase):
     def tearDown(self):
         self._env_patch.stop()
 
-    def test_exit_0_when_token_missing(self):
+    def test_exit_1_when_token_missing(self):
         with patch.dict(os.environ, {"GITHUB_TOKEN": ""}):
             result = lpt.main()
-        self.assertEqual(result, 0)
+        self.assertEqual(result, 1)
 
-    def test_exit_0_when_repository_missing(self):
+    def test_exit_1_when_repository_missing(self):
         with patch.dict(os.environ, {"GITHUB_REPOSITORY": ""}):
             result = lpt.main()
-        self.assertEqual(result, 0)
+        self.assertEqual(result, 1)
 
-    def test_exit_0_when_issue_number_missing(self):
+    def test_exit_1_when_issue_number_missing(self):
         with patch.dict(os.environ, {"ISSUE_NUMBER": ""}):
             result = lpt.main()
-        self.assertEqual(result, 0)
+        self.assertEqual(result, 1)
 
-    def test_exit_0_when_issue_number_non_integer(self):
+    def test_exit_1_when_issue_number_non_integer(self):
         with patch.dict(os.environ, {"ISSUE_NUMBER": "abc"}):
             result = lpt.main()
-        self.assertEqual(result, 0)
+        self.assertEqual(result, 1)
 
     def test_no_api_call_when_title_matches_nothing(self):
         with patch.dict(os.environ, {"ISSUE_TITLE": "Set overlay default position"}):
@@ -329,17 +329,17 @@ class TestMain(unittest.TestCase):
         self.assertIn("ci", body["labels"])
         self.assertIn("agents", body["labels"])
 
-    def test_handles_http_error_gracefully(self):
+    def test_exit_1_on_http_error(self):
         error = urllib.error.HTTPError(url=None, code=422, msg="Unprocessable", hdrs=None, fp=None)
         with patch.object(lpt, "gh_api", side_effect=error):
             result = lpt.main()
-        self.assertEqual(result, 0)
+        self.assertEqual(result, 1)
 
-    def test_handles_url_error_gracefully(self):
+    def test_exit_1_on_url_error(self):
         error = urllib.error.URLError("network error")
         with patch.object(lpt, "gh_api", side_effect=error):
             result = lpt.main()
-        self.assertEqual(result, 0)
+        self.assertEqual(result, 1)
 
 
 if __name__ == "__main__":

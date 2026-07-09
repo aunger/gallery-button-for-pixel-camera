@@ -12,7 +12,8 @@ Usage:
     python3 scripts/label_by_title.py
 
 Exit code:
-    0  always--API failures are logged but do not fail the CI run.
+    0  no labels matched, or labels were applied successfully.
+    1  required configuration is missing/invalid, or applying labels failed.
 
 Required environment variables:
     GITHUB_TOKEN        Personal access token or Actions secret with
@@ -129,20 +130,20 @@ def main() -> int:
     title = os.environ.get("ISSUE_TITLE", "")
 
     if not token:
-        print("Warning: GITHUB_TOKEN not set--skipping labeling.", file=sys.stderr)
-        return 0
+        print("Error: GITHUB_TOKEN not set.", file=sys.stderr)
+        return 1
     if not repo:
-        print("Warning: GITHUB_REPOSITORY not set--skipping labeling.", file=sys.stderr)
-        return 0
+        print("Error: GITHUB_REPOSITORY not set.", file=sys.stderr)
+        return 1
     if not issue_number_str:
-        print("Warning: ISSUE_NUMBER not set--skipping labeling.", file=sys.stderr)
-        return 0
+        print("Error: ISSUE_NUMBER not set.", file=sys.stderr)
+        return 1
 
     try:
         issue_number = int(issue_number_str)
     except ValueError:
         print(f"Error: ISSUE_NUMBER is not a valid integer: {issue_number_str!r}", file=sys.stderr)
-        return 0
+        return 1
 
     labels = matching_labels(title)
     if not labels:
@@ -159,8 +160,10 @@ def main() -> int:
         print(f"Applied labels {labels} to #{issue_number}.")
     except urllib.error.HTTPError as exc:
         print(f"Error applying labels {labels} to #{issue_number}: {exc}", file=sys.stderr)
+        return 1
     except urllib.error.URLError as exc:
         print(f"Network error applying labels {labels} to #{issue_number}: {exc}", file=sys.stderr)
+        return 1
 
     return 0
 

@@ -241,6 +241,20 @@ class TestParseSkipMatches(unittest.TestCase):
         include_match, labels = blt.parse_skip_matches("ci,")
         self.assertEqual(labels, frozenset({"ci"}))
 
+    def test_double_quoted_labels_are_unquoted(self):
+        # A shell only strips one layer of quoting, e.g.
+        # --skip-matches='"ci","agents"' leaves the inner quotes literal.
+        include_match, labels = blt.parse_skip_matches('"ci","agents"')
+        self.assertEqual(labels, frozenset({"ci", "agents"}))
+
+    def test_single_quoted_labels_are_unquoted(self):
+        include_match, labels = blt.parse_skip_matches("'ci','agents'")
+        self.assertEqual(labels, frozenset({"ci", "agents"}))
+
+    def test_quotes_and_whitespace_together_are_stripped(self):
+        include_match, labels = blt.parse_skip_matches("\"ci\", agents , 'testing'")
+        self.assertEqual(labels, frozenset({"ci", "agents", "testing"}))
+
 
 # ---------------------------------------------------------------------------
 # parse_args

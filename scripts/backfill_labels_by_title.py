@@ -180,12 +180,18 @@ def parse_skip_matches(value: str | None) -> tuple[bool, frozenset[str]]:
         value is None   flag not given: include "match" in full
         value is ""     flag given with no LABELS: omit "match" entirely
         value is a CSV  flag given with LABELS: include "match" minus those
+
+    Each comma-separated entry is stripped of surrounding whitespace and,
+    since a shell only strips one layer of quoting, a further layer of
+    literal quote characters (e.g. --skip-matches='"ci","agents"').
     """
     if value is None:
         return True, frozenset()
     if value == "":
         return False, frozenset()
-    labels = frozenset(label.strip() for label in value.split(",") if label.strip())
+    labels = frozenset(
+        stripped for label in value.split(",") if (stripped := label.strip().strip("'\""))
+    )
     return True, labels
 
 
