@@ -169,6 +169,8 @@ Routing on the Verification Agent's signal:
   |---|---|
   | `verification needed` | `changes requested` |
 
+  This newAuthor round is not immediately adjacent to the Reviewer's earlier `LGTM` (the Verification Planner and Verification Agent turns intervene), so the no-work/LGTM pairing rule (see "When to abort") does not apply here, even if the Author's return signal is `No work to do: explanation posted on the existing PR or issue`.
+
 - `Verification incomplete`: no item failed, but one or more before-merging items could not be automated and remain open for a human to verify.
   Do not treat the PR as cleared and do not start a new Author round.
   Inform the user that manual verification is still required, and that the PR may be merged once every open before-merging tracking issue is resolved.
@@ -193,7 +195,8 @@ Apply it to the PR if one exists after this round (the Author emitted `PR opened
 |---|---|
 | `changes requested` | `changes done` |
 
-If this Author round was dispatched because a prior Reviewer round gave `LGTM` or `Cannot implement` (for example, via the Monitor loop's Blocked-after-LGTM branch, or a user-directed resumption after a `Cannot implement` escalation), and the Author's return signal this round is `No work to do: explanation posted on the existing PR or issue`, apply the no-work/LGTM pairing rule (see "When to abort"): do not dispatch a Reviewer; escalate to the user instead.
+If this Author round was dispatched immediately after a Reviewer round gave `LGTM` or `Cannot implement`, with no other agent turn in between (that is: via the Monitor loop's Blocked-after-LGTM branch, or a user-directed resumption immediately after a `Cannot implement` escalation), and the Author's return signal this round is `No work to do: explanation posted on the existing PR or issue`, apply the no-work/LGTM pairing rule (see "When to abort"): do not dispatch a Reviewer; escalate to the user instead.
+This scoping matters: a newAuthor round dispatched via `Verification revealed an error` (see "Routing on the Verification Agent's signal") does NOT qualify, since the Verification Planner and Verification Agent turns intervene between the Reviewer's earlier `LGTM` and this Author round, breaking immediate adjacency.
 
 ## Assigning a Reviewer
 
@@ -230,7 +233,7 @@ The Author's status signal from the prior round decides which routing fence appl
 If the Author emitted `Work completed but no PR: updated issue with requested information`, or emitted `No work to do: explanation posted on the existing PR or issue` with no PR open, there is no diff or CI to run, so follow the no-PR routing fence.
 If the Author emitted `PR opened or fixed`, or emitted `No work to do: explanation posted on the existing PR or issue` about an existing PR, follow the Monitor loop fence.
 
-Before following either fence, check the no-work/LGTM pairing rule (see "When to abort"): if the Author's signal this round was `No work to do: explanation posted on the existing PR or issue` and the Reviewer's verdict this round is `LGTM` or `Cannot implement`, do not follow either fence below; instead escalate to the user per that rule.
+Each fence's first line checks the no-work/LGTM pairing rule (see "When to abort") before anything else.
 
 No-PR routing:
 
@@ -401,7 +404,8 @@ Stop the automated cycle and escalate to the User in either of these cases:
 - The Programmer / Reviewer loop runs **four rounds** without reaching consensus (unless the user gave a different threshold).
   This is the fallback for a loop that stalls in disagreement; once four rounds are reached the cap applies unconditionally, even when both parties are still actively disputing.
 - The no-work/LGTM pairing rule: the Author emits `No work to do: explanation posted on the existing PR or issue` immediately adjacent, in either order across two consecutive turns, to a Reviewer verdict of `LGTM` or `Cannot implement`.
-  That is: the Author's `No work to do` turn is immediately followed by a Reviewer `LGTM`/`Cannot implement` verdict on that same round, OR a Reviewer `LGTM`/`Cannot implement` verdict is immediately followed by the Author's next turn emitting `No work to do`.
+  That is: the Author's `No work to do` turn is immediately followed by a Reviewer `LGTM`/`Cannot implement` verdict on that same round, OR a Reviewer `LGTM`/`Cannot implement` verdict is immediately followed by the Author's next turn emitting `No work to do`, with no other agent turn (Verification Planner, Verification Agent, or otherwise) intervening between the two.
+  A newAuthor round reached via `Verification revealed an error` does not qualify for the second form: the Verification Planner and Verification Agent turns intervene, so the Author's turn there is not immediately adjacent to the earlier Reviewer verdict.
   This pairing means one side found nothing actionable right next to the other side declaring the work fine or impossible; pause and escalate regardless of what CI reports, instead of following the normal routing fences.
 
 ## Concluding PR orchestration
