@@ -32,8 +32,9 @@ Usage:
 
 Exit code:
     0  on success (whether or not any labels were applied)
-    1  if required configuration is missing, or the issue list can't be
-       fetched at all
+    1  if required configuration is missing, the issue list can't be
+       fetched at all, or (-f only) applying labels to at least one
+       issue/PR failed
 
 Required environment variables:
     GITHUB_TOKEN        Token with issues: write and pull-requests: write
@@ -123,8 +124,12 @@ def build_report(
     return add, match, miss, to_apply
 
 
-def apply_labels(to_apply: dict[int, list[str]], repo: str, token: str) -> None:
-    """POST each issue/PR's missing labels, logging failures without aborting."""
+def apply_labels(to_apply: dict[int, list[str]], repo: str, token: str) -> bool:
+    """POST each issue/PR's missing labels, logging failures without aborting.
+
+    Returns True if every application succeeded, False if any failed.
+    """
+    all_succeeded = True
     for number, labels in to_apply.items():
         try:
             label_by_title.gh_api(
@@ -136,8 +141,11 @@ def apply_labels(to_apply: dict[int, list[str]], repo: str, token: str) -> None:
             print(f"Applied labels {labels} to #{number}.")
         except urllib.error.HTTPError as exc:
             print(f"Error applying labels {labels} to #{number}: {exc}", file=sys.stderr)
+            all_succeeded = False
         except urllib.error.URLError as exc:
             print(f"Network error applying labels {labels} to #{number}: {exc}", file=sys.stderr)
+            all_succeeded = False
+    return all_succeeded
 
 
 # ---------------------------------------------------------------------------
@@ -241,15 +249,16 @@ def main(argv: list[str] | None = None) -> int:
 
     add, match, miss, to_apply = build_report(items)
 
-    if args.force:
-        apply_labels(to_apply, repo, token)
+    exit_code = 0
+    if args.force and not apply_labels(to_apply, repo, token):
+        exit_code = 1
 
     if not args.quiet:
         include_match, labels_to_skip = parse_skip_matches(args.skip_matches)
         if labels_to_skip:
             match = {label: nums for label, nums in match.items() if label not in labels_to_skip}
         print(format_report(add, match, miss, include_match=include_match))
-    return 0
+    return exit_code
 
 
 if __name__ == "__main__":

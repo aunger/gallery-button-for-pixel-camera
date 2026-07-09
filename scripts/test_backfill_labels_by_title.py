@@ -124,18 +124,20 @@ class TestApplyLabels(unittest.TestCase):
     def test_posts_once_per_issue(self):
         to_apply = {1: ["ci"], 2: ["agents", "testing"]}
         with patch.object(blt.label_by_title, "gh_api") as mock_api:
-            blt.apply_labels(to_apply, "owner/repo", "tok")
+            result = blt.apply_labels(to_apply, "owner/repo", "tok")
         self.assertEqual(mock_api.call_count, 2)
         paths = [c[0][0] for c in mock_api.call_args_list]
         self.assertIn("repos/owner/repo/issues/1/labels", paths)
         self.assertIn("repos/owner/repo/issues/2/labels", paths)
+        self.assertTrue(result)
 
     def test_no_calls_when_empty(self):
         with patch.object(blt.label_by_title, "gh_api") as mock_api:
-            blt.apply_labels({}, "owner/repo", "tok")
+            result = blt.apply_labels({}, "owner/repo", "tok")
         mock_api.assert_not_called()
+        self.assertTrue(result)
 
-    def test_continues_after_http_error(self):
+    def test_continues_after_http_error_but_reports_failure(self):
         error = urllib.error.HTTPError(url=None, code=422, msg="Unprocessable", hdrs=None, fp=None)
         calls = []
 
@@ -145,13 +147,26 @@ class TestApplyLabels(unittest.TestCase):
                 raise error
 
         with patch.object(blt.label_by_title, "gh_api", side_effect=fake_api):
-            blt.apply_labels({1: ["ci"], 2: ["ci"]}, "owner/repo", "tok")
+            result = blt.apply_labels({1: ["ci"], 2: ["ci"]}, "owner/repo", "tok")
         self.assertEqual(len(calls), 2)
+        self.assertFalse(result)
 
-    def test_continues_after_url_error(self):
+    def test_continues_after_url_error_but_reports_failure(self):
         error = urllib.error.URLError("network error")
         with patch.object(blt.label_by_title, "gh_api", side_effect=error):
-            blt.apply_labels({1: ["ci"]}, "owner/repo", "tok")  # should not raise
+            result = blt.apply_labels({1: ["ci"]}, "owner/repo", "tok")  # should not raise
+        self.assertFalse(result)
+
+    def test_one_failure_among_several_still_reports_failure(self):
+        def fake_api(path, token, method="GET", body=None):
+            if "/2/" in path:
+                raise urllib.error.HTTPError(
+                    url=None, code=500, msg="Server Error", hdrs=None, fp=None
+                )
+
+        with patch.object(blt.label_by_title, "gh_api", side_effect=fake_api):
+            result = blt.apply_labels({1: ["ci"], 2: ["ci"], 3: ["ci"]}, "owner/repo", "tok")
+        self.assertFalse(result)
 
 
 # ---------------------------------------------------------------------------
@@ -350,12 +365,29 @@ class TestMain(unittest.TestCase):
     def test_force_applies(self):
         items = [_issue(1, "Fix the CI pipeline", [])]
         with patch.object(blt, "fetch_all_issues", return_value=items):
-            with patch.object(blt, "apply_labels") as mock_apply:
+            with patch.object(blt, "apply_labels", return_value=True) as mock_apply:
                 result = blt.main(["-f"])
         self.assertEqual(result, 0)
         mock_apply.assert_called_once()
         to_apply_arg = mock_apply.call_args[0][0]
         self.assertEqual(to_apply_arg[1], ["ci"])
+
+    def test_force_exit_1_when_apply_labels_reports_failure(self):
+        items = [_issue(1, "Fix the CI pipeline", [])]
+        with patch.object(blt, "fetch_all_issues", return_value=items):
+            with patch.object(blt, "apply_labels", return_value=False):
+                result = blt.main(["-f"])
+        self.assertEqual(result, 1)
+
+    def test_force_exit_1_still_prints_report(self):
+        items = [_issue(1, "Fix the CI pipeline", [])]
+        with patch.object(blt, "fetch_all_issues", return_value=items):
+            with patch.object(blt, "apply_labels", return_value=False):
+                with patch("builtins.print") as mock_print:
+                    result = blt.main(["-f"])
+        self.assertEqual(result, 1)
+        parsed = json.loads(mock_print.call_args_list[-1].args[0])
+        self.assertIn("add", parsed)
 
     def test_prints_report(self):
         items = [_issue(1, "Fix the CI pipeline", [])]
@@ -379,7 +411,7 @@ class TestMain(unittest.TestCase):
     def test_quiet_with_force_still_applies_but_prints_nothing(self):
         items = [_issue(1, "Fix the CI pipeline", [])]
         with patch.object(blt, "fetch_all_issues", return_value=items):
-            with patch.object(blt, "apply_labels") as mock_apply:
+            with patch.object(blt, "apply_labels", return_value=True) as mock_apply:
                 with patch("builtins.print") as mock_print:
                     result = blt.main(["-f", "-q"])
         self.assertEqual(result, 0)
