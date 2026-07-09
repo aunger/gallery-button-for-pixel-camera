@@ -56,7 +56,7 @@ LABEL_PATTERNS: dict[str, re.Pattern[str]] = {
         rf"|{_B}github[\W_]*action\w*"
         rf"|{_B}e2e\w*"
         rf"|{_MERGE}"
-        rf"|{_B}pre-?flight{_B}"
+        rf"|{_B}pre-?flight\w*"
         rf"|{_B}codeql{_B}",
         re.IGNORECASE,
     ),
@@ -79,7 +79,7 @@ LABEL_PATTERNS: dict[str, re.Pattern[str]] = {
         rf"|{_B}unit{_B}"
         rf"|{_B}test\w*"
         rf"|{_E2E_TEST_IDENTIFIER}"
-        rf"|{_B}pre-?flight{_B}"
+        rf"|{_B}pre-?flight\w*"
         rf"|(?-i:\w*Test(\b|_))",
         re.IGNORECASE,
     ),

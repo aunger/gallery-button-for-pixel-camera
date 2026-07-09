@@ -93,6 +93,12 @@ class TestMatchingLabelsCi(unittest.TestCase):
         self.assertIn("ci", lpt.matching_labels("Preflight: Pixel Launcher isn't responding"))
         self.assertIn("ci", lpt.matching_labels("CI pre-flight: replace fixed sleep"))
 
+    def test_preflight_with_suffix_matches(self):
+        # A trailing \w* keeps this consistent with the other ci-rule
+        # patterns (e.g. automat\w+, e2e\w*), which allow a suffix rather
+        # than requiring a trailing word boundary right after the term.
+        self.assertIn("ci", lpt.matching_labels("Stop preflighting on every retry"))
+
     def test_codeql_matches(self):
         self.assertIn("ci", lpt.matching_labels("Add CodeQL workflow for scanning"))
 
@@ -210,6 +216,9 @@ class TestMatchingLabelsTesting(unittest.TestCase):
         self.assertIn(
             "testing", lpt.matching_labels("CI pre-flight: MockCameraActivity ready signal")
         )
+
+    def test_preflight_with_suffix_matches_testing(self):
+        self.assertIn("testing", lpt.matching_labels("Stop preflighting on every retry"))
 
     def test_camel_case_test_suffix_matches_case_sensitively(self):
         self.assertIn("testing", lpt.matching_labels("Add Gaussian-blur noise to ShapeMatcherTest"))
