@@ -37,6 +37,7 @@ Covers:
   (ad) #499/#500: the failing build run is tracked among multiple Actions checks (wiring b)
   (ae) #500 doc-sync: no legacy hardcoded workflow/job/marker literals remain
   (af) #500 poll_signals: a run-only target does not widen another run's job-id filter
+  (al) #619: importing this module directly runs no checks and has no side effects
 
 No network calls required; no GITHUB_TOKEN needed.
 Run this file directly to execute the suite: exits 0 on success, non-zero on failure.
@@ -92,149 +93,133 @@ def make_zip_ndjson(lines):
     return buf.getvalue()
 
 
+# ── Fixtures ────────────────────────────────────────────────────────────────────
+
+ALL_SUCCESS_JOBS = {
+    "jobs": [
+        {
+            "name": "build-and-test",
+            "steps": [
+                {"number": 1, "name": "Set up job", "status": "completed", "conclusion": "success"},
+                {"number": 2, "name": "Checkout", "status": "completed", "conclusion": "success"},
+                {"number": 3, "name": "Set up JDK", "status": "completed", "conclusion": "success"},
+                {
+                    "number": 4,
+                    "name": "Build and run unit tests",
+                    "status": "completed",
+                    "conclusion": "success",
+                },
+                {
+                    "number": 5,
+                    "name": "Run PixelCameraOverlayE2ETest",
+                    "status": "completed",
+                    "conclusion": "success",
+                },
+                {
+                    "number": 6,
+                    "name": "Run GalleryButtonVisualE2ETest",
+                    "status": "completed",
+                    "conclusion": "success",
+                },
+                {
+                    "number": 7,
+                    "name": "Upload test results on failure",
+                    "status": "completed",
+                    "conclusion": "skipped",
+                },
+                {
+                    "number": 8,
+                    "name": "Complete job",
+                    "status": "completed",
+                    "conclusion": "success",
+                },
+            ],
+        }
+    ]
+}
+
+FAILURE_JOBS = {
+    "jobs": [
+        {
+            "name": "build-and-test",
+            "steps": [
+                {"number": 1, "name": "Set up job", "status": "completed", "conclusion": "success"},
+                {
+                    "number": 2,
+                    "name": "Download AVD",
+                    "status": "completed",
+                    "conclusion": "failure",
+                },
+            ],
+        }
+    ]
+}
+
+FAIL_NDJSON = [
+    'some prefix ##GB4PC_TEST## {"suite":"com.gb4pc.e2e.GalleryButtonVisualE2ETest","name":"test1a","outcome":"FAIL","ms":0,"msg":"java.lang.AssertionError: expected button visible","trace":"java.lang.AssertionError: expected button visible\\n\\tat org.junit.Assert.fail(Assert.java:89)\\n\\tat com.gb4pc.e2e.GalleryButtonVisualE2ETest.test1a(GalleryButtonVisualE2ETest.kt:42)"}',
+    '##GB4PC_TEST## {"suite":"com.gb4pc.e2e.GalleryButtonVisualE2ETest","name":"test1b","outcome":"PASS","ms":120,"msg":"","trace":""}',
+    '##GB4PC_TEST## {"suite":"com.gb4pc.e2e.PixelCameraOverlayE2ETest","name":"test2a","outcome":"PASS","ms":200,"msg":"","trace":""}',
+    '##GB4PC_TEST## {"suite":"com.gb4pc.e2e.PixelCameraOverlayE2ETest","name":"test2b","outcome":"PASS","ms":150,"msg":"","trace":""}',
+]
+
+PASS_ONLY_NDJSON = [
+    '##GB4PC_TEST## {"suite":"com.gb4pc.e2e.GalleryButtonVisualE2ETest","name":"test3a","outcome":"PASS","ms":100,"msg":"","trace":""}',
+    '##GB4PC_TEST## {"suite":"com.gb4pc.e2e.GalleryButtonVisualE2ETest","name":"test3b","outcome":"PASS","ms":110,"msg":"","trace":""}',
+]
+
+# This repo's committed config values (scripts/ci_monitor/ci_monitor.config.json).
+# The parser-direct tests pass these explicitly so they exercise the same regexes
+# main() loads from the config file (issue #500).
+REPO_STEP_REGEX = "Build and run unit tests|E2ETest"
+REPO_MARKER_REGEX = "##GB4PC_TEST##|##TEST##"
+REPO_ARTIFACT_REGEX = "^testresults-"
+
+
+def check_runs_payload(*pairs):
+    """Build a /commits/{sha}/check-runs payload from (run_id, job_id) pairs.
+
+    Each pair becomes a github-actions check run whose details_url encodes the
+    run id and (when job_id is not None) the job id, as parse_actions_targets
+    reads them. Used for both the combined verdict+diagnostic payload (wiring (a),
+    issue #512) and the drain self-fetch payloads, replacing the old
+    {"workflow_runs": [...]} fixtures.
+
+    Each entry includes status/conclusion so parse_check_result can iterate the
+    full combined payload without KeyError. The github-actions job check runs
+    are always completed/success here; the verdict is determined by the
+    non-Actions status check run(s) also present in combined payloads.
+    """
+    runs = []
+    for run_id, job_id in pairs:
+        url = "https://github.com/%s/%s/actions/runs/%s" % (OWNER_T, REPO_T, run_id)
+        if job_id is not None:
+            url += "/job/%s" % job_id
+        runs.append(
+            {
+                "app": {"slug": "github-actions"},
+                "details_url": url,
+                "status": "completed",
+                "conclusion": "success",
+            }
+        )
+    return {"total_count": len(runs), "check_runs": runs}
+
+
+OWNER_T = ci_monitor.OWNER
+REPO_T = ci_monitor.REPO
+
+
 def main() -> int:
-    """Run every check (a) through (ak) and print PASS/FAIL for each.
+    """Run every check (a) through (al) and print PASS/FAIL for each.
 
     Returns 1 if any check failed, 0 otherwise.
     Only runs when this file is executed directly; see the __main__ guard below.
-    Importing this module (for example, to reuse check_runs_payload() or other
-    helpers) runs no checks, so it no longer spawns the real subprocess used by
-    check (o) or sleeps for check (q)'s ~1.75s of real wall-clock time as an
-    import side effect.
+    The fixtures and helpers above (including check_runs_payload()) stay at module
+    scope so they can be imported and reused without running the suite; only the
+    check-invocation sequence below--the part with real side effects, such as
+    check (o)'s subprocess/SIGTERM and check (q)'s real time.sleep--is gated
+    behind this function.
     """
-    # ── Fixtures ────────────────────────────────────────────────────────────────────
-
-    ALL_SUCCESS_JOBS = {
-        "jobs": [
-            {
-                "name": "build-and-test",
-                "steps": [
-                    {
-                        "number": 1,
-                        "name": "Set up job",
-                        "status": "completed",
-                        "conclusion": "success",
-                    },
-                    {
-                        "number": 2,
-                        "name": "Checkout",
-                        "status": "completed",
-                        "conclusion": "success",
-                    },
-                    {
-                        "number": 3,
-                        "name": "Set up JDK",
-                        "status": "completed",
-                        "conclusion": "success",
-                    },
-                    {
-                        "number": 4,
-                        "name": "Build and run unit tests",
-                        "status": "completed",
-                        "conclusion": "success",
-                    },
-                    {
-                        "number": 5,
-                        "name": "Run PixelCameraOverlayE2ETest",
-                        "status": "completed",
-                        "conclusion": "success",
-                    },
-                    {
-                        "number": 6,
-                        "name": "Run GalleryButtonVisualE2ETest",
-                        "status": "completed",
-                        "conclusion": "success",
-                    },
-                    {
-                        "number": 7,
-                        "name": "Upload test results on failure",
-                        "status": "completed",
-                        "conclusion": "skipped",
-                    },
-                    {
-                        "number": 8,
-                        "name": "Complete job",
-                        "status": "completed",
-                        "conclusion": "success",
-                    },
-                ],
-            }
-        ]
-    }
-
-    FAILURE_JOBS = {
-        "jobs": [
-            {
-                "name": "build-and-test",
-                "steps": [
-                    {
-                        "number": 1,
-                        "name": "Set up job",
-                        "status": "completed",
-                        "conclusion": "success",
-                    },
-                    {
-                        "number": 2,
-                        "name": "Download AVD",
-                        "status": "completed",
-                        "conclusion": "failure",
-                    },
-                ],
-            }
-        ]
-    }
-
-    FAIL_NDJSON = [
-        'some prefix ##GB4PC_TEST## {"suite":"com.gb4pc.e2e.GalleryButtonVisualE2ETest","name":"test1a","outcome":"FAIL","ms":0,"msg":"java.lang.AssertionError: expected button visible","trace":"java.lang.AssertionError: expected button visible\\n\\tat org.junit.Assert.fail(Assert.java:89)\\n\\tat com.gb4pc.e2e.GalleryButtonVisualE2ETest.test1a(GalleryButtonVisualE2ETest.kt:42)"}',
-        '##GB4PC_TEST## {"suite":"com.gb4pc.e2e.GalleryButtonVisualE2ETest","name":"test1b","outcome":"PASS","ms":120,"msg":"","trace":""}',
-        '##GB4PC_TEST## {"suite":"com.gb4pc.e2e.PixelCameraOverlayE2ETest","name":"test2a","outcome":"PASS","ms":200,"msg":"","trace":""}',
-        '##GB4PC_TEST## {"suite":"com.gb4pc.e2e.PixelCameraOverlayE2ETest","name":"test2b","outcome":"PASS","ms":150,"msg":"","trace":""}',
-    ]
-
-    PASS_ONLY_NDJSON = [
-        '##GB4PC_TEST## {"suite":"com.gb4pc.e2e.GalleryButtonVisualE2ETest","name":"test3a","outcome":"PASS","ms":100,"msg":"","trace":""}',
-        '##GB4PC_TEST## {"suite":"com.gb4pc.e2e.GalleryButtonVisualE2ETest","name":"test3b","outcome":"PASS","ms":110,"msg":"","trace":""}',
-    ]
-
-    # This repo's committed config values (scripts/ci_monitor/ci_monitor.config.json).
-    # The parser-direct tests pass these explicitly so they exercise the same regexes
-    # main() loads from the config file (issue #500).
-    REPO_STEP_REGEX = "Build and run unit tests|E2ETest"
-    REPO_MARKER_REGEX = "##GB4PC_TEST##|##TEST##"
-    REPO_ARTIFACT_REGEX = "^testresults-"
-
-    def check_runs_payload(*pairs):
-        """Build a /commits/{sha}/check-runs payload from (run_id, job_id) pairs.
-
-        Each pair becomes a github-actions check run whose details_url encodes the
-        run id and (when job_id is not None) the job id, as parse_actions_targets
-        reads them. Used for both the combined verdict+diagnostic payload (wiring (a),
-        issue #512) and the drain self-fetch payloads, replacing the old
-        {"workflow_runs": [...]} fixtures.
-
-        Each entry includes status/conclusion so parse_check_result can iterate the
-        full combined payload without KeyError. The github-actions job check runs
-        are always completed/success here; the verdict is determined by the
-        non-Actions status check run(s) also present in combined payloads.
-        """
-        runs = []
-        for run_id, job_id in pairs:
-            url = "https://github.com/%s/%s/actions/runs/%s" % (OWNER_T, REPO_T, run_id)
-            if job_id is not None:
-                url += "/job/%s" % job_id
-            runs.append(
-                {
-                    "app": {"slug": "github-actions"},
-                    "details_url": url,
-                    "status": "completed",
-                    "conclusion": "success",
-                }
-            )
-        return {"total_count": len(runs), "check_runs": runs}
-
-    OWNER_T = ci_monitor.OWNER
-    REPO_T = ci_monitor.REPO
-
     # ── (a) All-success: exactly 3 test-step lines emitted ─────────────────────────
     print("\n=== (a) Signal 1: all-success build-and-test emits exactly 3 test-step lines ===")
     out_a = ci_monitor.parse_steps(ALL_SUCCESS_JOBS, set(), None, REPO_STEP_REGEX)
@@ -3764,6 +3749,49 @@ def main() -> int:
         "No blocking labels" not in _MONITOR_SRC_AK,
         "the string 'No blocking labels' does not appear in ci_monitor.py (config-driven only)",
         "'No blocking labels' hardcoded in ci_monitor.py--must live only in ci_monitor.config.json",
+    )
+
+    # ── (al) #619: importing this module directly has no side effects ─────────────
+    print(
+        "\n=== (al) #619: importing test_ci_monitor.py directly runs no checks"
+        " (no import side effects) ==="
+    )
+
+    _SCRIPTS_DIR_AL = os.path.dirname(os.path.abspath(__file__))
+
+    _plain_import_al = subprocess.run(
+        [sys.executable, "-c", "import test_ci_monitor"],
+        cwd=_SCRIPTS_DIR_AL,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    check(
+        _plain_import_al.returncode == 0
+        and _plain_import_al.stdout == ""
+        and _plain_import_al.stderr == "",
+        "plain import exits 0 with no PASS/FAIL output (no side effects)",
+        "plain import misbehaved; returncode=%r stdout=%r stderr=%r"
+        % (_plain_import_al.returncode, _plain_import_al.stdout, _plain_import_al.stderr),
+    )
+
+    _reuse_helper_al = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import test_ci_monitor as m; print(hasattr(m, 'check_runs_payload'))",
+        ],
+        cwd=_SCRIPTS_DIR_AL,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    check(
+        _reuse_helper_al.returncode == 0 and _reuse_helper_al.stdout == "True\n",
+        "check_runs_payload() is reachable on the freshly imported module, unchanged"
+        " by running the suite",
+        "check_runs_payload() not reachable via plain import; returncode=%r stdout=%r stderr=%r"
+        % (_reuse_helper_al.returncode, _reuse_helper_al.stdout, _reuse_helper_al.stderr),
     )
 
     # ── Summary ────────────────────────────────────────────────────────────────────
