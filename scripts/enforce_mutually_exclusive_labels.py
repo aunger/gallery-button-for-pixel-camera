@@ -23,8 +23,9 @@ Exit code:
        removed successfully (a 404 on removal means it was already gone,
        e.g. via a race with another process, and does not count as a
        failure).
-    1  the issue/PR's current labels could not be fetched, or removing a
-       conflicting label failed for a reason other than 404.
+    1  ISSUE_NUMBER is not a valid integer, the issue/PR's current labels
+       could not be fetched, or removing a conflicting label failed for a
+       reason other than 404.
 
 Required environment variables:
     GITHUB_TOKEN        Personal access token or Actions secret with
@@ -218,7 +219,7 @@ def main() -> int:
             f"Error: ISSUE_NUMBER is not a valid integer: {issue_number_str!r}",
             file=sys.stderr,
         )
-        return 0
+        return 1
 
     label_set = find_conflicting_set(added_label)
     conflicting_prefix = find_conflicting_prefix(added_label)

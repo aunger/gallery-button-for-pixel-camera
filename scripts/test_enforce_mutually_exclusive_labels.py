@@ -382,10 +382,10 @@ class TestMain(unittest.TestCase):
             result = emxl.main()
         self.assertEqual(result, 0)
 
-    def test_exit_0_when_issue_number_non_integer(self):
+    def test_exit_1_when_issue_number_non_integer(self):
         with patch.dict(os.environ, {"ISSUE_NUMBER": "abc"}):
             result = emxl.main()
-        self.assertEqual(result, 0)
+        self.assertEqual(result, 1)
 
     def test_exit_0_when_label_not_in_any_set(self):
         with patch.dict(os.environ, {"ADDED_LABEL": "bug"}):
