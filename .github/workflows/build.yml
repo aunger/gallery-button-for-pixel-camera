@@ -67,7 +67,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-        run: python3 -m unittest discover -s scripts -p "test_*.py" -v
+        run: |
+          python3 -m unittest discover -s scripts -p "test_*.py" -v
+          # test_ci_monitor.py is a procedural check()-based suite, not built from
+          # unittest.TestCase classes, so `unittest discover` imports it but runs
+          # none of its checks (issue #619). Run it directly too.
+          python3 scripts/test_ci_monitor.py
 
       - name: Run shell script unit tests
         if: steps.diff_check.outputs.needs_full_build == 'true'
