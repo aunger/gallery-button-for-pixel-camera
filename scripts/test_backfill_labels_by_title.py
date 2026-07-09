@@ -22,16 +22,16 @@ def _issue(number: int, title: str, labels: list[str]) -> dict:
 
 
 class TestTrackedLabels(unittest.TestCase):
-    def test_includes_product(self):
-        self.assertIn("product", blt.TRACKED_LABELS)
-
     def test_includes_every_rule_label(self):
         self.assertIn("ci", blt.TRACKED_LABELS)
         self.assertIn("agents", blt.TRACKED_LABELS)
         self.assertIn("testing", blt.TRACKED_LABELS)
 
     def test_has_no_extra_labels(self):
-        self.assertEqual(blt.TRACKED_LABELS, frozenset({"product", "ci", "agents", "testing"}))
+        # A label with no title-matching rule (e.g. "product") must not be
+        # tracked: it could never appear in "matched", so it would sit in
+        # "miss" forever, on every run, for every issue/PR that carries it.
+        self.assertEqual(blt.TRACKED_LABELS, frozenset({"ci", "agents", "testing"}))
 
 
 # ---------------------------------------------------------------------------
@@ -83,13 +83,23 @@ class TestBuildReport(unittest.TestCase):
         self.assertNotIn(2, to_apply)
 
     def test_tracked_label_present_but_unmatched_goes_to_miss(self):
-        items = [_issue(3, "Bump the version number", ["product"])]
+        items = [_issue(3, "Bump the version number", ["agents"])]
         add, match, miss, to_apply = blt.build_report(items)
-        self.assertEqual(miss["product"], [3])
+        self.assertEqual(miss["agents"], [3])
         self.assertNotIn(3, to_apply)
 
     def test_untracked_label_present_but_unmatched_is_ignored(self):
         items = [_issue(4, "Bump the version number", ["bug"])]
+        add, match, miss, to_apply = blt.build_report(items)
+        self.assertEqual(add, {})
+        self.assertEqual(match, {})
+        self.assertEqual(miss, {})
+
+    def test_product_label_is_not_tracked(self):
+        # "product" has no title-matching rule, so it must never land in
+        # "miss": that category would then contain every "product"-labeled
+        # issue/PR on every run, forever, drowning out genuine rule drift.
+        items = [_issue(6, "Bump the version number", ["product"])]
         add, match, miss, to_apply = blt.build_report(items)
         self.assertEqual(add, {})
         self.assertEqual(match, {})

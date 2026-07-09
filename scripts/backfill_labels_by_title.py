@@ -54,8 +54,11 @@ import label_by_title
 # Tracked labels
 # ---------------------------------------------------------------------------
 
-# "product" plus every label the title-matching rules can currently apply.
-TRACKED_LABELS: frozenset[str] = frozenset({"product"} | set(label_by_title.LABEL_PATTERNS))
+# Every label the title-matching rules can currently apply. A label with no
+# rule (e.g. "product") can never appear in "matched", so it would sit in
+# "miss" on every single run for every issue/PR that carries it--permanent
+# noise that buries genuine rule drift instead of signaling it.
+TRACKED_LABELS: frozenset[str] = frozenset(label_by_title.LABEL_PATTERNS)
 
 
 # ---------------------------------------------------------------------------
