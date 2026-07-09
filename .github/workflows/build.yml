@@ -58,6 +58,25 @@ jobs:
             echo "needs_full_build=$(scripts/check_non_docs_changes.sh "origin/$BASE_REF")" >> $GITHUB_OUTPUT
           fi
 
+      - name: Install Python script dependencies
+        if: steps.diff_check.outputs.needs_full_build == 'true'
+        run: pip install -r scripts/requirements.txt
+
+      - name: Run Python script unit tests
+        if: steps.diff_check.outputs.needs_full_build == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python3 -m unittest discover -s scripts -p "test_*.py" -v
+
+      - name: Run shell script unit tests
+        if: steps.diff_check.outputs.needs_full_build == 'true'
+        run: |
+          for test_script in scripts/test_*.sh; do
+            echo "==> Running $test_script"
+            bash "$test_script"
+          done
+
       - name: Set up JDK 17
         if: steps.diff_check.outputs.needs_full_build == 'true'
         uses: actions/setup-java@v5
@@ -114,25 +133,6 @@ jobs:
 
           echo "==> emulator -list-avds:"
           ANDROID_AVD_HOME="$AVD_HOME" $ANDROID_HOME/emulator/emulator -list-avds
-
-      - name: Install Python script dependencies
-        if: steps.diff_check.outputs.needs_full_build == 'true'
-        run: pip install -r scripts/requirements.txt
-
-      - name: Run Python script unit tests
-        if: steps.diff_check.outputs.needs_full_build == 'true'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-        run: python3 -m unittest discover -s scripts -p "test_*.py" -v
-
-      - name: Run shell script unit tests
-        if: steps.diff_check.outputs.needs_full_build == 'true'
-        run: |
-          for test_script in scripts/test_*.sh; do
-            echo "==> Running $test_script"
-            bash "$test_script"
-          done
 
       - name: Grant execute permission for gradlew
         if: steps.diff_check.outputs.needs_full_build == 'true'
