@@ -40,6 +40,13 @@ _B = r"(\b|_)"
 # GalleryButtonVisualE2ETest) needs both sides open.
 _E2E_TEST_IDENTIFIER = r"\w*e2etest\w*"
 
+# "merge" is only recognized alongside a companion word, checked in either
+# order since natural phrasing varies ("merge gate" vs "block merge"): two
+# lookaheads express that AND without duplicating the whole sub-pattern for
+# both orderings.
+_MERGE_COMPANION = rf"{_B}gat(ing|e[ds]?){_B}|{_B}(un)?block\w*|{_B}prs?{_B}"
+_MERGE = rf"(?=.*{_B}merg\w+)(?=.*({_MERGE_COMPANION}))"
+
 LABEL_PATTERNS: dict[str, re.Pattern[str]] = {
     "ci": re.compile(
         rf"{_B}ci{_B}"
@@ -47,6 +54,7 @@ LABEL_PATTERNS: dict[str, re.Pattern[str]] = {
         rf"|{_B}workflow\w*"
         rf"|{_B}github[\W_]*action\w*"
         rf"|{_B}e2e\w*"
+        rf"|{_MERGE}"
         rf"|{_B}pre-?flight{_B}"
         rf"|{_B}codeql{_B}",
         re.IGNORECASE,

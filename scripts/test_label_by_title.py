@@ -96,14 +96,37 @@ class TestMatchingLabelsCi(unittest.TestCase):
     def test_codeql_matches(self):
         self.assertIn("ci", lpt.matching_labels("Add CodeQL workflow for scanning"))
 
-    def test_merge_does_not_match_ci(self):
-        # Blocking-merge issues are not ci-labeled by design; no rule
-        # targets "merge" at all.
-        self.assertNotIn("ci", lpt.matching_labels("Add to label-based merge gate"))
+    def test_merge_alone_does_not_match(self):
+        # "merge" needs a companion word (gate/block/PR); bare merge/merging
+        # is too generic on its own.
+        self.assertNotIn("ci", lpt.matching_labels("Merge feature branches together"))
+
+    def test_merge_with_gate_matches(self):
+        self.assertIn("ci", lpt.matching_labels("Add to label-based merge gate"))
+        self.assertIn("ci", lpt.matching_labels("Extend the merge gating logic"))
+
+    def test_gate_does_not_match_gateway(self):
+        # gat(ing|e[ds]?) is deliberately narrower than an open gate\w*, so
+        # it doesn't sweep in unrelated words like "gateway".
+        self.assertNotIn("ci", lpt.matching_labels("Merge feature via the new gateway service"))
+
+    def test_merge_with_block_matches_either_order(self):
+        self.assertIn("ci", lpt.matching_labels("GitHub Action: block merge when label present"))
+        self.assertIn("ci", lpt.matching_labels("'Merging is blocked' after checks pass"))
+
+    def test_merge_with_unblock_matches(self):
+        # (un)?block\w* -- "unblock merges" has no boundary before "block"
+        # for a plain block\w* rule, so the "un" prefix must be explicit.
+        self.assertIn("ci", lpt.matching_labels("Report empty results to unblock merges"))
+
+    def test_merge_with_pr_matches_either_order(self):
+        self.assertIn("ci", lpt.matching_labels("(re PR #349) Disable CodeQL setup before merging"))
+
+    def test_merge_without_any_companion_does_not_match(self):
         self.assertNotIn(
             "ci",
             lpt.matching_labels(
-                "Extend label merge gate to block on change-requested, change-done"
+                "File tracking issues for before-merging requirements instead of consulting"
             ),
         )
 
