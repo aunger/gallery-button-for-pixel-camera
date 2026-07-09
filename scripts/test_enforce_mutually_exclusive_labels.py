@@ -251,12 +251,13 @@ class TestLabelsToRemove(unittest.TestCase):
 class TestRemoveLabels(unittest.TestCase):
     def test_calls_delete_for_each_label(self):
         with patch.object(emxl, "gh_api") as mock_api:
-            emxl.remove_labels(42, ["p2", "p3"], "owner/repo", "tok")
+            result = emxl.remove_labels(42, ["p2", "p3"], "owner/repo", "tok")
 
         self.assertEqual(mock_api.call_count, 2)
         paths = [c[0][0] for c in mock_api.call_args_list]
         self.assertTrue(any("p2" in p for p in paths))
         self.assertTrue(any("p3" in p for p in paths))
+        self.assertTrue(result)
 
     def test_uses_delete_method(self):
         with patch.object(emxl, "gh_api") as mock_api:
@@ -266,27 +267,34 @@ class TestRemoveLabels(unittest.TestCase):
 
     def test_no_calls_when_list_empty(self):
         with patch.object(emxl, "gh_api") as mock_api:
-            emxl.remove_labels(1, [], "owner/repo", "tok")
+            result = emxl.remove_labels(1, [], "owner/repo", "tok")
 
         mock_api.assert_not_called()
+        self.assertTrue(result)
 
     def test_handles_404_gracefully(self):
         error = urllib.error.HTTPError(url=None, code=404, msg="Not Found", hdrs=None, fp=None)
         with patch.object(emxl, "gh_api", side_effect=error):
-            # Should not raise.
-            emxl.remove_labels(1, ["p2"], "owner/repo", "tok")
+            # Should not raise, and a 404 (already removed) does not count as a failure.
+            result = emxl.remove_labels(1, ["p2"], "owner/repo", "tok")
 
-    def test_handles_other_http_error_gracefully(self):
+        self.assertTrue(result)
+
+    def test_continues_after_http_error_but_reports_failure(self):
         error = urllib.error.HTTPError(
             url=None, code=422, msg="Unprocessable Entity", hdrs=None, fp=None
         )
         with patch.object(emxl, "gh_api", side_effect=error):
-            emxl.remove_labels(1, ["p2"], "owner/repo", "tok")
+            result = emxl.remove_labels(1, ["p2"], "owner/repo", "tok")
 
-    def test_handles_url_error_gracefully(self):
+        self.assertFalse(result)
+
+    def test_continues_after_url_error_but_reports_failure(self):
         error = urllib.error.URLError("network error")
         with patch.object(emxl, "gh_api", side_effect=error):
-            emxl.remove_labels(1, ["p2"], "owner/repo", "tok")
+            result = emxl.remove_labels(1, ["p2"], "owner/repo", "tok")
+
+        self.assertFalse(result)
 
     def test_continues_after_one_failure(self):
         """An error on the first label does not prevent the second from being removed."""
@@ -300,9 +308,22 @@ class TestRemoveLabels(unittest.TestCase):
                 )
 
         with patch.object(emxl, "gh_api", side_effect=fake_api):
-            emxl.remove_labels(1, ["p2", "p3"], "owner/repo", "tok")
+            result = emxl.remove_labels(1, ["p2", "p3"], "owner/repo", "tok")
 
         self.assertTrue(any("p3" in p for p in call_paths))
+        self.assertFalse(result)
+
+    def test_one_failure_among_several_still_reports_failure(self):
+        def fake_api(path, token, method="GET", body=None):
+            if "p2" in path:
+                raise urllib.error.HTTPError(
+                    url=None, code=500, msg="Server Error", hdrs=None, fp=None
+                )
+
+        with patch.object(emxl, "gh_api", side_effect=fake_api):
+            result = emxl.remove_labels(1, ["p1", "p2", "p3"], "owner/repo", "tok")
+
+        self.assertFalse(result)
 
     def test_url_encodes_label_with_spaces(self):
         call_paths = []
@@ -311,9 +332,10 @@ class TestRemoveLabels(unittest.TestCase):
             call_paths.append(path)
 
         with patch.object(emxl, "gh_api", side_effect=fake_api):
-            emxl.remove_labels(5, ["verification needed"], "owner/repo", "tok")
+            result = emxl.remove_labels(5, ["verification needed"], "owner/repo", "tok")
 
         self.assertTrue(any("verification%20needed" in p for p in call_paths))
+        self.assertTrue(result)
 
 
 # ---------------------------------------------------------------------------
@@ -360,10 +382,10 @@ class TestMain(unittest.TestCase):
             result = emxl.main()
         self.assertEqual(result, 0)
 
-    def test_exit_0_when_issue_number_non_integer(self):
+    def test_exit_1_when_issue_number_non_integer(self):
         with patch.dict(os.environ, {"ISSUE_NUMBER": "abc"}):
             result = emxl.main()
-        self.assertEqual(result, 0)
+        self.assertEqual(result, 1)
 
     def test_exit_0_when_label_not_in_any_set(self):
         with patch.dict(os.environ, {"ADDED_LABEL": "bug"}):
@@ -451,19 +473,49 @@ class TestMain(unittest.TestCase):
         delete_call = mock_api.call_args_list[1]
         self.assertIn("orchestrate", delete_call[0][0])
 
-    def test_exit_0_when_fetch_raises(self):
+    def test_exit_1_when_fetch_raises(self):
         with patch.object(emxl, "gh_api", side_effect=Exception("network error")):
             result = emxl.main()
-        self.assertEqual(result, 0)
+        self.assertEqual(result, 1)
 
-    def test_exit_0_when_fetch_returns_non_dict(self):
+    def test_exit_1_when_fetch_returns_non_dict(self):
         # gh_api returns None for an empty body; main() must not crash on it.
         with patch.object(emxl, "gh_api") as mock_api:
             mock_api.return_value = None
             result = emxl.main()
-        self.assertEqual(result, 0)
+        self.assertEqual(result, 1)
         # Only the GET was attempted; no DELETE follows a bad response.
         self.assertEqual(mock_api.call_count, 1)
+
+    def test_exit_1_when_remove_labels_fails(self):
+        error = urllib.error.HTTPError(url=None, code=500, msg="Server Error", hdrs=None, fp=None)
+        with patch.dict(os.environ, {"ADDED_LABEL": "p1"}):
+            with patch.object(
+                emxl,
+                "gh_api",
+                side_effect=[
+                    self._make_issue_response(["p2", "ci"]),
+                    error,  # DELETE p2 fails
+                ],
+            ):
+                result = emxl.main()
+
+        self.assertEqual(result, 1)
+
+    def test_exit_0_when_removal_404_is_benign(self):
+        error = urllib.error.HTTPError(url=None, code=404, msg="Not Found", hdrs=None, fp=None)
+        with patch.dict(os.environ, {"ADDED_LABEL": "p1"}):
+            with patch.object(
+                emxl,
+                "gh_api",
+                side_effect=[
+                    self._make_issue_response(["p2", "ci"]),
+                    error,  # DELETE p2 races with another process removing it first
+                ],
+            ):
+                result = emxl.main()
+
+        self.assertEqual(result, 0)
 
     # ------------------------------------------------------------------
     # Prefix group tests

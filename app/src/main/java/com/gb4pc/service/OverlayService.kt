@@ -86,6 +86,7 @@ class OverlayService : Service() {
                 onFocusLost = { logic.onOverlayFocusLost() },
                 onFocusGained = { logic.onOverlayFocusGained() },
                 onGalleryLaunched = { logic.onGalleryLaunched() },
+                onSecureViewerLaunched = { logic.onSecureViewerLaunched() },
             )
         cameraState = CameraState()
         val km = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
