@@ -69,6 +69,18 @@ DEFAULT_INTERESTING_STEP_REGEX = r"(?!)"
 # repo's config matches both markers for back-compat (see ci_monitor.config.json).
 DEFAULT_TEST_MARKER_REGEX = r"##TEST##"
 
+# Match (re.search) against a step's `name` to identify it as a deferred-verdict
+# step: one whose own GitHub Actions `conclusion` is always `success` because the
+# workflow wraps its test invocation in an if/else that records the real outcome
+# elsewhere and always exits 0 (issue #309). Its `success` conclusion is not a
+# test verdict, so parse_steps annotates its success line "(verdict deferred to
+# Gate)" instead of letting it read like a pass. The never-match default keeps the
+# rule repo-agnostic (mirroring `interesting_step_regex`); the project-specific
+# names are supplied via config. Kept distinct from `interesting_step_regex`
+# because not every named-on-success step is deferred-verdict (e.g. this repo's
+# honest `Build and run unit tests` step is surfaced but must not be annotated).
+DEFAULT_DEFERRED_VERDICT_STEP_REGEX = r"(?!)"
+
 # Match (re.search) against a check-run's `name` to identify it as a process-label
 # gate rather than a substantive code/test block. The never-match default keeps the
 # rule repo-agnostic; the project-specific name is supplied via config, mirroring
@@ -80,15 +92,16 @@ def load_config(path=None):
     """Load the CI Monitor config, falling back to in-code defaults.
 
     Returns a dict with keys artifact_name_regex, interesting_step_regex,
-    test_marker_regex, and label_gate_check_regex. A missing file, unreadable
-    file, or invalid JSON falls back entirely to the DEFAULT_* regexes (the
-    Monitor must never abort on config). Each key independently defaults if
-    absent, and a value that does not compile as a regex falls back to that
-    key's default rather than crashing.
+    deferred_verdict_step_regex, test_marker_regex, and label_gate_check_regex.
+    A missing file, unreadable file, or invalid JSON falls back entirely to the
+    DEFAULT_* regexes (the Monitor must never abort on config). Each key
+    independently defaults if absent, and a value that does not compile as a
+    regex falls back to that key's default rather than crashing.
     """
     defaults = {
         "artifact_name_regex": DEFAULT_ARTIFACT_NAME_REGEX,
         "interesting_step_regex": DEFAULT_INTERESTING_STEP_REGEX,
+        "deferred_verdict_step_regex": DEFAULT_DEFERRED_VERDICT_STEP_REGEX,
         "test_marker_regex": DEFAULT_TEST_MARKER_REGEX,
         "label_gate_check_regex": DEFAULT_LABEL_GATE_CHECK_REGEX,
     }
@@ -159,7 +172,12 @@ _BLOCKED_CONCLUSIONS = frozenset(("failure", "action_required"))
 
 
 def parse_steps(
-    jobs_json, seen, job_ids=None, interesting_step_regex=DEFAULT_INTERESTING_STEP_REGEX
+    jobs_json,
+    seen,
+    job_ids=None,
+    interesting_step_regex=DEFAULT_INTERESTING_STEP_REGEX,
+    deferred_verdict_step_regex=DEFAULT_DEFERRED_VERDICT_STEP_REGEX,
+    failed_steps=None,
 ):
     """Emit step-delta lines for the tracked CI job(s).
 
@@ -169,12 +187,24 @@ def parse_steps(
     multiple jobs/runs). When
     `job_ids` is a set, only jobs whose id is in it are considered; `job_ids` of
     None applies no job filter. Emits a line when a step reaches 'completed' if
-    its name matches `interesting_step_regex` (on any conclusion) or it genuinely
-    failed; successful setup steps and skipped conditional steps are otherwise
-    suppressed. Returns a list of step-delta lines.
+    its name matches `interesting_step_regex` or `deferred_verdict_step_regex`
+    (on any conclusion) or it genuinely failed; successful setup steps and
+    skipped conditional steps are otherwise suppressed. Returns a list of
+    step-delta lines.
 
     The genuine-failure clause is unconditional, so a failing step always
-    surfaces regardless of the regex.
+    surfaces regardless of the regexes.
+
+    A step whose name matches `deferred_verdict_step_regex` and concluded
+    'success' has its line annotated "(verdict deferred to Gate)": these steps
+    always exit 0 by design (issue #309), so their `success` conclusion is not a
+    test verdict and must not read like a pass. A deferred-verdict step that
+    genuinely failed is not annotated (a real failure is a real failure).
+
+    When `failed_steps` is a list, each genuinely-failed step's (name,
+    conclusion) tuple is appended to it (deduped via `seen`, so a step is
+    recorded at most once), letting a caller attribute a Blocked terminal to the
+    specific failing step (e.g. "Gate on test failures").
     """
     out = []
     for j in jobs_json.get("jobs", []):
@@ -191,17 +221,30 @@ def parse_steps(
             seen.add(key)
             name = s.get("name", "?")
             concl = s.get("conclusion") or "?"
-            if re.search(interesting_step_regex, name) or concl in (
+            genuine_failure = concl in (
                 "failure",
                 "cancelled",
                 "timed_out",
                 "action_required",
-            ):
-                out.append('step "%s" -> %s' % (name, concl))
+            )
+            deferred = bool(re.search(deferred_verdict_step_regex, name))
+            if re.search(interesting_step_regex, name) or deferred or genuine_failure:
+                if genuine_failure and failed_steps is not None:
+                    failed_steps.append((name, concl))
+                if deferred and concl == "success":
+                    out.append('step "%s" -> %s (verdict deferred to Gate)' % (name, concl))
+                else:
+                    out.append('step "%s" -> %s' % (name, concl))
     return out
 
 
-def parse_fails(lines, seen, outcome_filters=None, test_marker_regex=DEFAULT_TEST_MARKER_REGEX):
+def parse_fails(
+    lines,
+    seen,
+    outcome_filters=None,
+    test_marker_regex=DEFAULT_TEST_MARKER_REGEX,
+    failed_tests=None,
+):
     """Emit FAIL/PASS/SKIP lines from per-test ndjson markers.
 
     `lines` is an iterable of raw text lines; `seen` is a set of already-reported
@@ -219,6 +262,10 @@ def parse_fails(lines, seen, outcome_filters=None, test_marker_regex=DEFAULT_TES
     (enabled, pattern) tuples, where `enabled` is a bool and `pattern` is either
     None (match all) or a regex string (match only markers whose `name` matches).
     Default behavior (outcome_filters=None): report all FAIL, all SKIP, no PASS.
+
+    When `failed_tests` is a list, each emitted FAIL's "[suite] name" identifier
+    is appended to it (deduped via `seen`), letting a caller attribute a Blocked
+    terminal to the specific failing suite/test.
     """
     if outcome_filters is None:
         outcome_filters = {
@@ -250,6 +297,8 @@ def parse_fails(lines, seen, outcome_filters=None, test_marker_regex=DEFAULT_TES
         if key in seen:
             continue
         seen.add(key)
+        if outcome == "FAIL" and failed_tests is not None:
+            failed_tests.append("[%s] %s" % (m.get("suite", "?"), name or "?"))
         msg = (m.get("msg") or "").strip()
         tr = (m.get("trace") or "").strip()
         if len(tr) > 800:
@@ -368,12 +417,27 @@ def format_check_summary(rows):
     return lines
 
 
-def blocking_suffix(rows):
+def blocking_suffix(rows, failed_steps=None, failed_tests=None):
     """Return the attributed terminal suffix for a set of per-check rows.
 
     Returns "" when no row is blocking (caller emits the bare terminal token).
     Returns " by: <names> [label gate]" when every blocking row is a label gate.
-    Returns " by: <names>" otherwise (mixed or non-gate blocker).
+    Otherwise returns " by: <names>", enriched (issue #602) with the specific
+    failing step(s) and test(s) that explain the block when they are known:
+
+        " by: build-and-test (step \"Gate on test failures\" -> failure; test [suite] name)"
+
+    `failed_steps` is a list of (name, conclusion) tuples for the genuinely-failed
+    step(s) (collected by parse_steps); `failed_tests` is a list of "[suite] name"
+    identifiers for the failing test(s) (collected by parse_fails). The check-run
+    name alone (e.g. the single `build-and-test` job) does not say which step or
+    test failed--the deferred-verdict E2E steps all conclude `success` and the
+    real verdict is the `Gate on test failures` step--so this names the blocker at
+    step/test granularity (asks #519 and #591, issue #602). The extra detail is
+    added only for a substantive (non-label-gate) block; a label-gate-only block
+    keeps its bare " by: <names> [label gate]" form (no test failed), and
+    `[label gate]` stays the terminal suffix's final token so the Orchestrator's
+    label-gate detection is unaffected.
     """
     blocking = [r for r in rows if r["blocking"]]
     if not blocking:
@@ -381,7 +445,14 @@ def blocking_suffix(rows):
     names = [r["name"] for r in blocking]
     suffix = " by: %s" % ", ".join(names)
     if all(r["label_gate"] for r in blocking):
-        suffix += " [label gate]"
+        return suffix + " [label gate]"
+    detail = []
+    if failed_steps:
+        detail.extend('step "%s" -> %s' % (name, concl) for name, concl in failed_steps)
+    if failed_tests:
+        detail.extend("test %s" % t for t in failed_tests)
+    if detail:
+        suffix += " (%s)" % "; ".join(detail)
     return suffix
 
 
@@ -734,6 +805,7 @@ def main(argv):
     config = load_config()
     artifact_name_regex = config["artifact_name_regex"]
     interesting_step_regex = config["interesting_step_regex"]
+    deferred_verdict_step_regex = config["deferred_verdict_step_regex"]
     test_marker_regex = config["test_marker_regex"]
     label_gate_check_regex = config["label_gate_check_regex"]
 
@@ -743,6 +815,13 @@ def main(argv):
     seen_steps = set()
     seen_arts = set()
     seen_fails = set()
+
+    # Attribution accumulators (issue #602): the genuinely-failed step(s) and
+    # failing test(s) seen across every poll (including drain re-polls), used to
+    # name the specific blocker in the Blocked terminal line rather than only the
+    # enclosing check-run/job. Populated by poll_signals; read by drain_then_print.
+    failed_steps = []
+    failed_tests = []
 
     def emit_block(lines):
         """Print each line prefixed with the mode's tag and reset the 120s timer."""
@@ -821,7 +900,16 @@ def main(argv):
                 token,
             )
             if jobs_json:
-                _emit(parse_steps(jobs_json, seen_steps, job_ids, interesting_step_regex))
+                _emit(
+                    parse_steps(
+                        jobs_json,
+                        seen_steps,
+                        job_ids,
+                        interesting_step_regex,
+                        deferred_verdict_step_regex,
+                        failed_steps,
+                    )
+                )
 
             # Signal 2--per-test FAIL detail from the test-result artifacts.
             # Download each new artifact once, parse its per-test ndjson markers,
@@ -846,7 +934,11 @@ def main(argv):
                         lines = list(extract_ndjson_lines(zip_bytes))
                     except (zipfile.BadZipFile, OSError):
                         continue
-                    _emit(parse_fails(lines, seen_fails, outcome_filters, test_marker_regex))
+                    _emit(
+                        parse_fails(
+                            lines, seen_fails, outcome_filters, test_marker_regex, failed_tests
+                        )
+                    )
                     # Mark the artifact seen only after a successful download
                     # and parse: a transient failure above hits `continue` and
                     # leaves the id unseen, so it is retried on the next poll.
@@ -880,7 +972,10 @@ def main(argv):
         conclusion (the terminal is diagnosed).
 
         Then emits the per-check summary block and the attributed terminal line.
-        The terminal is `terminal_prefix + blocking_suffix(rows) + terminal_tail`.
+        The terminal is
+        `terminal_prefix + blocking_suffix(rows, failed_steps, failed_tests) + terminal_tail`,
+        so the drain's late-arriving step/FAIL signals (issue #602) feed the
+        blocker attribution just as they feed the streamed diagnostic lines.
 
         `explicit_targets` is forwarded to poll_signals unchanged (issue #603);
         --run-id mode passes its single (run_id, None) target so the drain
@@ -896,7 +991,9 @@ def main(argv):
             print("%s: drain poll found no new diagnostic signals" % tag)
             sys.stdout.flush()
         print_summary(rows)
-        terminal_line = terminal_prefix + blocking_suffix(rows) + terminal_tail
+        terminal_line = (
+            terminal_prefix + blocking_suffix(rows, failed_steps, failed_tests) + terminal_tail
+        )
         print(terminal_line)
         sys.stdout.flush()
 
