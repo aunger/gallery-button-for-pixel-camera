@@ -7,6 +7,7 @@ import com.gb4pc.util.DebugLog
 import com.gb4pc.util.PermissionHelper
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -25,6 +26,9 @@ import org.junit.runner.RunWith
 @E2ETest
 @RunWith(AndroidJUnit4::class)
 class PermissionsGrantedE2ETest {
+    @get:Rule
+    val testNameToastRule = TestNameToastRule()
+
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context: Context = instrumentation.targetContext
     private val fixture =

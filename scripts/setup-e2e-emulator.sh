@@ -2,8 +2,8 @@
 # setup-e2e-emulator.sh: Prepare an Android emulator for E2E tests.
 #
 # Usage:
-#   scripts/setup-e2e-emulator.sh            # Full local setup (steps 1-7)
-#   scripts/setup-e2e-emulator.sh --post-boot # CI post-boot setup only (steps 4-7)
+#   scripts/setup-e2e-emulator.sh            # Full local setup (steps 1-9)
+#   scripts/setup-e2e-emulator.sh --post-boot # CI post-boot setup only (steps 4-9)
 #
 # Full setup (local):
 #   1. Create AVD (API 35, Google APIs, x86_64, Pixel_6 skin)
@@ -12,12 +12,13 @@
 #   4. Grant GET_USAGE_STATS to GB4PC
 #   5. Grant SYSTEM_ALERT_WINDOW to GB4PC
 #   6. Disable animations
-#   7. Set lock-screen PIN (so the keyguard actually engages on sleep)
-#   8. Dismiss the keyguard (setting the PIN engages it; leaving it engaged
+#   7. Enable touch visualization (show_touches, pointer_location)
+#   8. Set lock-screen PIN (so the keyguard actually engages on sleep)
+#   9. Dismiss the keyguard (setting the PIN engages it; leaving it engaged
 #      would block activity launches from non-lockScreen tests)
 #
 # Post-boot setup (CI): the emulator is already running and all system services
-# have been verified ready by the workflow; this script performs steps 4-8 only.
+# have been verified ready by the workflow; this script performs steps 4-9 only.
 # Mock Pixel Camera (e2e-mock-camera) is installed separately by the CI workflow
 # and by the connectedE2EAndroidTest Gradle task.
 #
@@ -142,7 +143,16 @@ echo "==> Disabling animations..."
 "$ADB" shell settings put global transition_animation_scale 0
 "$ADB" shell settings put global animator_duration_scale 0
 
-# ── Step 7: Set lock-screen PIN ─────────────────────────────────────────────
+# ── Step 7: Enable touch visualization ──────────────────────────────────────
+# Show a ripple at every tap location (show_touches) and a live readout of pointer
+# position/pressure (pointer_location), so screen recordings and the live screen make
+# it obvious where and when the tests are tapping (issue #604). Configured here, once
+# for the whole job, rather than per-suite, so every emulator-based E2E run gets it.
+echo "==> Enabling touch visualization (show_touches, pointer_location)..."
+"$ADB" shell settings put system show_touches 1
+"$ADB" shell settings put system pointer_location 1
+
+# ── Step 8: Set lock-screen PIN ─────────────────────────────────────────────
 # Without a lock-screen credential the keyguard never engages on the CI
 # emulator: KEYCODE_SLEEP turns the display off but KeyguardManager.isKeyguardLocked
 # remains false, so E2EFixture.lockScreen() times out (issue #178).
@@ -160,7 +170,7 @@ echo "==> Setting lock-screen PIN (1234) so keyguard engages on sleep..."
 "$ADB" shell locksettings set-pin 1234 || \
     "$ADB" shell locksettings set-pin --old 1234 1234
 
-# Step 8: Dismiss the (now-secure) keyguard--------------------------------
+# Step 9: Dismiss the (now-secure) keyguard--------------------------------
 # Setting a PIN engages the keyguard immediately on API 35, even with the
 # display on. If we leave it engaged here, the next `am start STILL_IMAGE_CAMERA`
 # from a test (e.g. PixelCameraOverlayE2ETest.overlayAppearsWhenViewfinderOpens)
