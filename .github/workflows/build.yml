@@ -38,7 +38,10 @@ jobs:
     # full 360 minutes before GitHub auto-canceled it. A full green run normally finishes in
     # 10-14 minutes, so 60 minutes is a generous bound that still cuts a would-be multi-hour
     # hang down to about an hour, with results/artifacts/issue-filing preserved for whatever ran
-    # before the cutoff. The `connectedE2EAndroidTest` Gradle task's own `am instrument` call
+    # before the cutoff--GitHub re-evaluates `if` conditions on cancellation, so `if: always()`
+    # steps still queued when the timeout fires keep running, but only for up to 5 more minutes
+    # (GitHub's own cancellation grace period); anything not done by then is force-terminated
+    # regardless. The `connectedE2EAndroidTest` Gradle task's own `am instrument` call
     # (app/build.gradle.kts) now bounds itself too, so most hangs there fail within that task's
     # own timeout well before this job-level backstop is needed; this remains as defense in depth
     # for a hang anywhere else in the job (e.g. the AGP-driven "Run instrumented tests" step).

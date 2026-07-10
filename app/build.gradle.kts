@@ -367,6 +367,25 @@ tasks.register("connectedE2EAndroidTest") {
         val timedOut = !finishedInTime
         if (timedOut) {
             instrumentProcess.destroyForcibly()
+            // PR #628 review: destroyForcibly() above only kills the local `adb shell am
+            // instrument` client process; it does not by itself confirm the on-device
+            // instrumentation (com.gb4pc, am instrument's targetPackage) actually stopped. If it
+            // lingered, every later connectedE2EAndroidTest step in the same CI job (overlay,
+            // gallery, permissions granted/denied, setup-activity granted/denied/permission-dialog,
+            // partial-access-photo-picker) targets that same process and could each need their own
+            // e2eInstrumentTimeoutMinutes wait, eroding most of this fix's benefit. Force-stop both
+            // the target and test packages explicitly (`am force-stop` acts at the ActivityManager
+            // level and does not itself wait on app cooperation, so this is not a source of a
+            // second hang) so the device is guaranteed clean for whichever step runs next,
+            // regardless of whether the local client's death alone would have propagated.
+            exec {
+                commandLine(e2eAdb, "shell", "am", "force-stop", "com.gb4pc")
+                isIgnoreExitValue = true
+            }
+            exec {
+                commandLine(e2eAdb, "shell", "am", "force-stop", "com.gb4pc.test")
+                isIgnoreExitValue = true
+            }
         }
         drainThread.join(TimeUnit.MINUTES.toMillis(1))
         val output = instrumentOut.toString()
