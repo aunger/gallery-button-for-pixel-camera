@@ -52,6 +52,12 @@ Covers:
        never fetching /commits/{sha}/check-runs
   (as) #603 regression: fetch_pr_with_retry delegates to fetch_with_retry; --pr's
        output format is unchanged by the multi-mode refactor
+  (at) #602 parse_steps: a deferred-verdict step's success line is annotated
+       "(verdict deferred to Gate)", an honest step's is not, a deferred step
+       that actually failed is unannotated, and genuine failures are collected
+       into failed_steps
+  (au) #602 parse_fails: failed_tests collects only FAIL "[suite] name"
+       identifiers (not PASS/SKIP), deduped via the shared seen set
 
 No network calls required; no GITHUB_TOKEN needed.
 Run this file directly to execute the suite: exits 0 on success, non-zero on failure.
@@ -185,6 +191,7 @@ PASS_ONLY_NDJSON = [
 # The parser-direct tests pass these explicitly so they exercise the same regexes
 # main() loads from the config file (issue #500).
 REPO_STEP_REGEX = "Build and run unit tests|^Run .*E2ETest$"
+REPO_DEFERRED_REGEX = "^Run .*E2ETest$|^Run instrumented tests$"
 REPO_MARKER_REGEX = "##GB4PC_TEST##|##TEST##"
 REPO_ARTIFACT_REGEX = "^ci-monitor-feed-"
 
@@ -505,8 +512,13 @@ def main() -> int:
     fail_line_i = (
         "PR#285: FAIL [com.gb4pc.unit.GalleryButtonTest] testClick: java.lang.AssertionError: boom"
     )
-    # Terminal is now attributed with the blocking check name.
-    blocked_line_i = "PR#285: Blocked by: build-and-test"
+    # Terminal is now attributed with the blocking check name plus the specific
+    # failing step and test (issue #602).
+    blocked_line_i = (
+        "PR#285: Blocked by: build-and-test "
+        '(step "Build and run unit tests" -> failure; '
+        "test [com.gb4pc.unit.GalleryButtonTest] testClick)"
+    )
     summary_hdr_i = "PR#285: summary"
 
     check(
@@ -1076,8 +1088,13 @@ def main() -> int:
     fail_line_m = (
         "PR#272: FAIL [com.gb4pc.unit.GalleryButtonTest] testIcon: java.lang.AssertionError: kaboom"
     )
-    # Terminal is now attributed with the blocking check name.
-    blocked_line_m = "PR#272: Blocked by: build-and-test"
+    # Terminal is now attributed with the blocking check name plus the specific
+    # failing step and test (issue #602).
+    blocked_line_m = (
+        "PR#272: Blocked by: build-and-test "
+        '(step "Build and run unit tests" -> failure; '
+        "test [com.gb4pc.unit.GalleryButtonTest] testIcon)"
+    )
     ip_line_m = "PR#272: in_progress"
 
     check(
@@ -1441,8 +1458,13 @@ def main() -> int:
     lines_p = out_p.splitlines()
     step_line_p = 'PR#258: step "Build and run unit tests" -> failure'
     fail_line_p = "PR#258: FAIL [com.gb4pc.unit.GalleryButtonTest] renders_icon: java.lang.AssertionError: icon not tinted"
-    # Terminal is now attributed with the blocking check name.
-    blocked_line_p = "PR#258: Blocked by: build-and-test"
+    # Terminal is now attributed with the blocking check name plus the specific
+    # failing step and test (issue #602).
+    blocked_line_p = (
+        "PR#258: Blocked by: build-and-test "
+        '(step "Build and run unit tests" -> failure; '
+        "test [com.gb4pc.unit.GalleryButtonTest] renders_icon)"
+    )
 
     check(
         lines_p.count(step_line_p) == 1,
@@ -2291,8 +2313,13 @@ def main() -> int:
     lines_t = out_t.splitlines()
     gate_step_line_t = 'PR#402: step "Gate on test failures" -> failure'
     fail_line_t = "PR#402: FAIL [com.gb4pc.e2e.GalleryButtonVisualE2ETest] test1a: java.lang.AssertionError: button not green"
-    # Terminal is now attributed with the blocking check name.
-    blocked_line_t = "PR#402: Blocked by: Gate on test failures"
+    # Terminal is now attributed with the blocking check name plus the specific
+    # failing step and test (issue #602).
+    blocked_line_t = (
+        "PR#402: Blocked by: Gate on test failures "
+        '(step "Gate on test failures" -> failure; '
+        "test [com.gb4pc.e2e.GalleryButtonVisualE2ETest] test1a)"
+    )
 
     check(
         gate_step_line_t in lines_t,
@@ -2440,8 +2467,13 @@ def main() -> int:
     lines_u = out_u.splitlines()
     gate_step_line_u = 'PR#402: step "Gate on test failures" -> failure'
     fail_line_u = "PR#402: FAIL [com.gb4pc.e2e.GalleryButtonVisualE2ETest] test1a: java.lang.AssertionError: button not green"
-    # Terminal is now attributed with the blocking check name.
-    blocked_line_u = "PR#402: Blocked by: Gate on test failures"
+    # Terminal is now attributed with the blocking check name plus the specific
+    # failing step and test (issue #602).
+    blocked_line_u = (
+        "PR#402: Blocked by: Gate on test failures "
+        '(step "Gate on test failures" -> failure; '
+        "test [com.gb4pc.e2e.GalleryButtonVisualE2ETest] test1a)"
+    )
     no_new_line_u = "PR#402: drain poll found no new diagnostic signals"
 
     check(
@@ -2634,8 +2666,13 @@ def main() -> int:
     lines_w = out_w.splitlines()
     gate_step_line_w = 'PR#419: step "Gate on test failures" -> failure'
     fail_line_w = "PR#419: FAIL [com.gb4pc.e2e.GalleryButtonVisualE2ETest] test1a: java.lang.AssertionError: button not green"
-    # Terminal is now attributed with the blocking check name.
-    blocked_line_w = "PR#419: Blocked by: Gate on test failures"
+    # Terminal is now attributed with the blocking check name plus the specific
+    # failing step and test (issue #602).
+    blocked_line_w = (
+        "PR#419: Blocked by: Gate on test failures "
+        '(step "Gate on test failures" -> failure; '
+        "test [com.gb4pc.e2e.GalleryButtonVisualE2ETest] test1a)"
+    )
     no_new_line_w = "PR#419: drain poll found no new diagnostic signals"
 
     check(
@@ -2955,6 +2992,7 @@ def main() -> int:
     _DEFAULTS = {
         "artifact_name_regex": ci_monitor.DEFAULT_ARTIFACT_NAME_REGEX,
         "interesting_step_regex": ci_monitor.DEFAULT_INTERESTING_STEP_REGEX,
+        "deferred_verdict_step_regex": ci_monitor.DEFAULT_DEFERRED_VERDICT_STEP_REGEX,
         "test_marker_regex": ci_monitor.DEFAULT_TEST_MARKER_REGEX,
         "label_gate_check_regex": ci_monitor.DEFAULT_LABEL_GATE_CHECK_REGEX,
     }
@@ -2965,12 +3003,13 @@ def main() -> int:
             fh.write(text)
         return path
 
-    # Present file with all four keys.
+    # Present file with all five keys.
     _p_full = _write_tmp(
         json.dumps(
             {
                 "artifact_name_regex": "^foo-",
                 "interesting_step_regex": "bar",
+                "deferred_verdict_step_regex": "^Run qux$",
                 "test_marker_regex": "##BAZ##",
                 "label_gate_check_regex": "MyGate",
             }
@@ -2983,10 +3022,11 @@ def main() -> int:
         == {
             "artifact_name_regex": "^foo-",
             "interesting_step_regex": "bar",
+            "deferred_verdict_step_regex": "^Run qux$",
             "test_marker_regex": "##BAZ##",
             "label_gate_check_regex": "MyGate",
         },
-        "present file returns all four configured regexes",
+        "present file returns all five configured regexes",
         "present-file config wrong; got %r" % cfg_full,
     )
 
@@ -3040,7 +3080,8 @@ def main() -> int:
     check(
         cfg_repo["test_marker_regex"] == REPO_MARKER_REGEX
         and cfg_repo["artifact_name_regex"] == REPO_ARTIFACT_REGEX
-        and cfg_repo["interesting_step_regex"] == REPO_STEP_REGEX,
+        and cfg_repo["interesting_step_regex"] == REPO_STEP_REGEX
+        and cfg_repo["deferred_verdict_step_regex"] == REPO_DEFERRED_REGEX,
         "the committed ci_monitor.config.json carries this repo's regexes (incl. dual marker)",
         "committed repo config wrong; got %r" % cfg_repo,
     )
@@ -3155,8 +3196,13 @@ def main() -> int:
     fail_line_ad = (
         "PR#499: FAIL [com.gb4pc.e2e.GalleryButtonVisualE2ETest] test1a: button not green"
     )
-    # Terminal is now attributed with the blocking check name.
-    blocked_line_ad = "PR#499: Blocked by: build-and-test"
+    # Terminal is now attributed with the blocking check name plus the specific
+    # failing step and test (issue #602).
+    blocked_line_ad = (
+        "PR#499: Blocked by: build-and-test "
+        '(step "Gate on test failures" -> failure; '
+        "test [com.gb4pc.e2e.GalleryButtonVisualE2ETest] test1a)"
+    )
 
     check(
         gate_step_ad in lines_ad,
@@ -3345,8 +3391,9 @@ def main() -> int:
         "run-only run's step missing; output: %r" % out_af,
     )
     check(
-        'PR#500: step "Run PixelCameraOverlayE2ETest" -> success' in lines_af,
-        "run 200's filtered job (22) reports its named step",
+        'PR#500: step "Run PixelCameraOverlayE2ETest" -> success (verdict deferred to Gate)'
+        in lines_af,
+        "run 200's filtered job (22) reports its named step (annotated as deferred-verdict)",
         "run 200 job-22 step missing; output: %r" % out_af,
     )
     check(
@@ -3592,6 +3639,61 @@ def main() -> int:
         suffix_mixed == " by: build-and-test, No blocking labels",
         "mixed blocker: no [label gate] since not all-label-gate; got %r" % suffix_mixed,
         "mixed suffix wrong; got %r" % suffix_mixed,
+    )
+
+    # issue #602: a substantive block names the specific failing step(s) and test(s).
+    _rows_code_ah = [
+        {"name": "build-and-test", "conclusion": "failure", "blocking": True, "label_gate": False}
+    ]
+    suffix_attr = ci_monitor.blocking_suffix(
+        _rows_code_ah,
+        [("Gate on test failures", "failure")],
+        ["[com.gb4pc.e2e.GalleryButtonVisualE2ETest] test1a"],
+    )
+    check(
+        suffix_attr
+        == ' by: build-and-test (step "Gate on test failures" -> failure; '
+        "test [com.gb4pc.e2e.GalleryButtonVisualE2ETest] test1a)",
+        "blocking_suffix names the failing step and test for a substantive block",
+        "attributed suffix wrong; got %r" % suffix_attr,
+    )
+    # Step-only (no FAIL markers surfaced, e.g. an Infra/cancelled block).
+    suffix_step_only = ci_monitor.blocking_suffix(
+        _rows_code_ah, [("Gate on test failures", "failure")], []
+    )
+    check(
+        suffix_step_only == ' by: build-and-test (step "Gate on test failures" -> failure)',
+        "blocking_suffix with only a failing step names just the step",
+        "step-only suffix wrong; got %r" % suffix_step_only,
+    )
+    # Test-only (jobs endpoint lagged, only FAIL markers known).
+    suffix_test_only = ci_monitor.blocking_suffix(
+        _rows_code_ah, [], ["[com.gb4pc.e2e.GalleryButtonVisualE2ETest] test1a"]
+    )
+    check(
+        suffix_test_only
+        == " by: build-and-test (test [com.gb4pc.e2e.GalleryButtonVisualE2ETest] test1a)",
+        "blocking_suffix with only a failing test names just the test",
+        "test-only suffix wrong; got %r" % suffix_test_only,
+    )
+    # A label-gate-only block ignores any step/test detail and keeps its bare form,
+    # so [label gate] stays the terminal's final token for the Orchestrator.
+    suffix_gate_ignores = ci_monitor.blocking_suffix(
+        [
+            {
+                "name": "No blocking labels",
+                "conclusion": "failure",
+                "blocking": True,
+                "label_gate": True,
+            }
+        ],
+        [("Some step", "failure")],
+        ["[suite] t"],
+    )
+    check(
+        suffix_gate_ignores == " by: No blocking labels [label gate]",
+        "a label-gate-only block keeps its bare ' by: ... [label gate]' form",
+        "label-gate suffix wrongly enriched; got %r" % suffix_gate_ignores,
     )
 
     # ── (ai) #516 load_config: label_gate_check_regex key ────────────────────────
@@ -4210,6 +4312,145 @@ def main() -> int:
     # (x),(y),(z),(aa)-(ak)) all still assert exact 'PR#N: ...' lines byte-for-byte;
     # their continued passing after this multi-mode refactor (issue #603) is itself
     # the regression check that --pr's output shape is unchanged.
+
+    # ── (at) #602 parse_steps: deferred-verdict annotation + failed_steps collection ─
+    print(
+        "\n=== (at) #602 parse_steps: deferred-verdict success is annotated; genuine failure collected ==="
+    )
+
+    DEFERRED_JOBS_AT = {
+        "jobs": [
+            {
+                "id": 1,
+                "name": "build-and-test",
+                "steps": [
+                    # Honest step (matches interesting, not deferred): NOT annotated.
+                    {
+                        "number": 1,
+                        "name": "Build and run unit tests",
+                        "status": "completed",
+                        "conclusion": "success",
+                    },
+                    # Deferred-verdict E2E step concluding success: annotated.
+                    {
+                        "number": 2,
+                        "name": "Run PixelCameraOverlayE2ETest",
+                        "status": "completed",
+                        "conclusion": "success",
+                    },
+                    # Deferred-verdict instrumented step concluding success: annotated.
+                    {
+                        "number": 3,
+                        "name": "Run instrumented tests",
+                        "status": "completed",
+                        "conclusion": "success",
+                    },
+                    # The real verdict: a genuine failure, surfaced and collected.
+                    {
+                        "number": 4,
+                        "name": "Gate on test failures",
+                        "status": "completed",
+                        "conclusion": "failure",
+                    },
+                ],
+            }
+        ]
+    }
+    failed_steps_at = []
+    out_at = ci_monitor.parse_steps(
+        DEFERRED_JOBS_AT,
+        set(),
+        None,
+        REPO_STEP_REGEX,
+        REPO_DEFERRED_REGEX,
+        failed_steps_at,
+    )
+    check(
+        'step "Build and run unit tests" -> success' in out_at,
+        "an honest (non-deferred) success step is NOT annotated",
+        "unit-test step wrongly annotated or missing; output: %r" % out_at,
+    )
+    check(
+        'step "Run PixelCameraOverlayE2ETest" -> success (verdict deferred to Gate)' in out_at,
+        "a deferred-verdict E2E success step is annotated '(verdict deferred to Gate)'",
+        "E2E deferred annotation missing; output: %r" % out_at,
+    )
+    check(
+        'step "Run instrumented tests" -> success (verdict deferred to Gate)' in out_at,
+        "the deferred-verdict 'Run instrumented tests' success step is annotated",
+        "instrumented deferred annotation missing; output: %r" % out_at,
+    )
+    check(
+        'step "Gate on test failures" -> failure' in out_at,
+        "the genuinely-failed gate step surfaces with a plain (unannotated) line",
+        "gate failure line missing/annotated; output: %r" % out_at,
+    )
+    check(
+        failed_steps_at == [("Gate on test failures", "failure")],
+        "failed_steps collects only the genuinely-failed step (name, conclusion)",
+        "failed_steps wrong; got %r" % failed_steps_at,
+    )
+
+    # A deferred-verdict step that genuinely failed is a real failure: it is NOT
+    # annotated and IS collected.
+    DEFERRED_FAIL_JOBS_AT = {
+        "jobs": [
+            {
+                "id": 2,
+                "name": "build-and-test",
+                "steps": [
+                    {
+                        "number": 1,
+                        "name": "Run GalleryButtonVisualE2ETest",
+                        "status": "completed",
+                        "conclusion": "failure",
+                    },
+                ],
+            }
+        ]
+    }
+    failed_steps_at2 = []
+    out_at2 = ci_monitor.parse_steps(
+        DEFERRED_FAIL_JOBS_AT,
+        set(),
+        None,
+        REPO_STEP_REGEX,
+        REPO_DEFERRED_REGEX,
+        failed_steps_at2,
+    )
+    check(
+        out_at2 == ['step "Run GalleryButtonVisualE2ETest" -> failure']
+        and failed_steps_at2 == [("Run GalleryButtonVisualE2ETest", "failure")],
+        "a deferred-verdict step that actually failed is unannotated and collected",
+        "deferred failure handling wrong; out=%r failed=%r" % (out_at2, failed_steps_at2),
+    )
+
+    # ── (au) #602 parse_fails: failed_tests collects FAIL identifiers, deduped ──────
+    print("\n=== (au) #602 parse_fails: failed_tests collects only FAILs, deduped ===")
+
+    failed_tests_au = []
+    ci_monitor.parse_fails(
+        FAIL_NDJSON, set(), test_marker_regex=REPO_MARKER_REGEX, failed_tests=failed_tests_au
+    )
+    check(
+        failed_tests_au == ["[com.gb4pc.e2e.GalleryButtonVisualE2ETest] test1a"],
+        "failed_tests collects only the FAIL's '[suite] name' (PASS markers excluded)",
+        "failed_tests wrong; got %r" % failed_tests_au,
+    )
+    # Dedup: a second call over the same lines with the shared `seen` adds nothing.
+    seen_au = set()
+    failed_tests_au2 = []
+    ci_monitor.parse_fails(
+        FAIL_NDJSON, seen_au, test_marker_regex=REPO_MARKER_REGEX, failed_tests=failed_tests_au2
+    )
+    ci_monitor.parse_fails(
+        FAIL_NDJSON, seen_au, test_marker_regex=REPO_MARKER_REGEX, failed_tests=failed_tests_au2
+    )
+    check(
+        failed_tests_au2 == ["[com.gb4pc.e2e.GalleryButtonVisualE2ETest] test1a"],
+        "failed_tests is deduped across calls via the shared seen set",
+        "failed_tests dedup wrong; got %r" % failed_tests_au2,
+    )
 
     # ── Summary ────────────────────────────────────────────────────────────────────
     print("\nResults: %d passed, %d failed." % (PASS, FAIL))
