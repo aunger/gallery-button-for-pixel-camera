@@ -3,6 +3,7 @@ import java.io.File
 import java.time.LocalDate
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import java.util.concurrent.TimeUnit
 
 plugins {
     id("com.android.application")
@@ -327,8 +328,21 @@ tasks.register("connectedE2EAndroidTest") {
         val xmlSuiteName = e2eClass ?: "com.gb4pc.e2e"
 
         val instrumentOut = ByteArrayOutputStream()
-        exec {
-            commandLine(
+        // Issue #611: `am instrument -w` blocks until the on-device instrumentation reports
+        // completion, and has no timeout of its own. A prior CI run's "Run SetupActivityDeniedE2ETest"
+        // step went completely silent right after this exec started (no INSTRUMENTATION_STATUS
+        // output at all) for over three hours before a human had to cancel it; a separate run on
+        // main hit GitHub's own 360-minute (6-hour) job default and was cancelled automatically.
+        // Both burned CI compute and blocked the pipeline for hours with no automatic recovery.
+        // Run `am instrument` via a plain ProcessBuilder (rather than Gradle's `exec {}`, which has
+        // no built-in timeout either) and bound it ourselves with Process.waitFor(timeout, unit) +
+        // destroyForcibly(), so a hung instrumentation run fails this task quickly instead of
+        // hanging indefinitely. A JVM-level timeout (vs. shelling out to the `timeout` coreutil, as
+        // build.yml already does for the emulator-readiness wait) keeps this task portable to
+        // developers running `./gradlew connectedE2EAndroidTest` locally on any OS.
+        val e2eInstrumentTimeoutMinutes = 10L
+        val instrumentProcess =
+            ProcessBuilder(
                 e2eAdb,
                 "shell",
                 "am",
@@ -337,12 +351,43 @@ tasks.register("connectedE2EAndroidTest") {
                 "-w",
                 *classArgs.toTypedArray(),
                 "com.gb4pc.test/androidx.test.runner.AndroidJUnitRunner",
-            )
-            standardOutput = instrumentOut
-            // Don't throw on non-zero exit: am instrument exits 1 on test failure,
-            // but we must write the JUnit XML before surfacing the error ourselves.
-            isIgnoreExitValue = true
+            ).redirectErrorStream(true)
+                .start()
+        // Drain stdout on a separate thread while we wait: the pipe's OS buffer is bounded, and a
+        // verbose test run could otherwise deadlock the child process (blocked writing) against
+        // this task (not yet reading) before the timeout below is ever reached.
+        val drainThread =
+            Thread {
+                instrumentProcess.inputStream.copyTo(instrumentOut)
+            }.apply {
+                isDaemon = true
+                start()
+            }
+        val finishedInTime = instrumentProcess.waitFor(e2eInstrumentTimeoutMinutes, TimeUnit.MINUTES)
+        val timedOut = !finishedInTime
+        if (timedOut) {
+            instrumentProcess.destroyForcibly()
+            // PR #628 review: destroyForcibly() above only kills the local `adb shell am
+            // instrument` client process; it does not by itself confirm the on-device
+            // instrumentation (com.gb4pc, am instrument's targetPackage) actually stopped. If it
+            // lingered, every later connectedE2EAndroidTest step in the same CI job (overlay,
+            // gallery, permissions granted/denied, setup-activity granted/denied/permission-dialog,
+            // partial-access-photo-picker) targets that same process and could each need their own
+            // e2eInstrumentTimeoutMinutes wait, eroding most of this fix's benefit. Force-stop both
+            // the target and test packages explicitly (`am force-stop` acts at the ActivityManager
+            // level and does not itself wait on app cooperation, so this is not a source of a
+            // second hang) so the device is guaranteed clean for whichever step runs next,
+            // regardless of whether the local client's death alone would have propagated.
+            exec {
+                commandLine(e2eAdb, "shell", "am", "force-stop", "com.gb4pc")
+                isIgnoreExitValue = true
+            }
+            exec {
+                commandLine(e2eAdb, "shell", "am", "force-stop", "com.gb4pc.test")
+                isIgnoreExitValue = true
+            }
         }
+        drainThread.join(TimeUnit.MINUTES.toMillis(1))
         val output = instrumentOut.toString()
         print(output)
 
@@ -465,6 +510,17 @@ tasks.register("connectedE2EAndroidTest") {
             },
         )
 
+        // Timeout guard (issue #611): checked first and unconditionally, since a hung run that
+        // happened to complete a few tests before being killed would otherwise slip past the
+        // empty-results guard (cases non-empty) and the failure guard (those completed cases
+        // may all have passed), reporting a false-green partial run instead of the hang it was.
+        if (timedOut) {
+            throw GradleException(
+                "E2E: 'am instrument' for $xmlSuiteName did not finish within " +
+                    "${e2eInstrumentTimeoutMinutes}m and was killed (device or test likely hung; " +
+                    "check logcat); ${cases.size} test(s) completed before the timeout",
+            )
+        }
         // Crash guard: these strings appear in -r output on hard abort/crash.
         if (output.contains("Process crashed") || output.contains("INSTRUMENTATION_ABORTED")) {
             throw GradleException("E2E instrumentation process crashed — check device logs")

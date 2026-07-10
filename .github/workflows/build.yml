@@ -32,6 +32,21 @@ jobs:
     # ubuntu-latest has KVM hardware acceleration (available since April 2024).
     runs-on: ubuntu-latest
 
+    # Issue #611: with no job-level timeout, a hang anywhere in this job falls back to GitHub's
+    # own 360-minute (6-hour) default. That has happened twice: this issue's referenced run sat
+    # hung for over three hours before a human canceled it, and a separate run on main ran the
+    # full 360 minutes before GitHub auto-canceled it. A full green run normally finishes in
+    # 10-14 minutes, so 60 minutes is a generous bound that still cuts a would-be multi-hour
+    # hang down to about an hour, with results/artifacts/issue-filing preserved for whatever ran
+    # before the cutoff--GitHub re-evaluates `if` conditions on cancellation, so `if: always()`
+    # steps still queued when the timeout fires keep running, but only for up to 5 more minutes
+    # (GitHub's own cancellation grace period); anything not done by then is force-terminated
+    # regardless. The `connectedE2EAndroidTest` Gradle task's own `am instrument` call
+    # (app/build.gradle.kts) now bounds itself too, so most hangs there fail within that task's
+    # own timeout well before this job-level backstop is needed; this remains as defense in depth
+    # for a hang anywhere else in the job (e.g. the AGP-driven "Run instrumented tests" step).
+    timeout-minutes: 60
+
     outputs:
       # Surfaced so link-pr-to-ci-summary (issue #331) can tell whether the
       # "Write test-result summary" step actually ran--on docs-only PRs it is
