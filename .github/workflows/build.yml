@@ -1036,8 +1036,15 @@ jobs:
                 echo "outcome=success" >> "$GITHUB_OUTPUT"
                 # Synthesize a PASS so this benign torn-down-but-recovered run still gets a
                 # per-test marker (issue #601). CI Monitor suppresses PASS by default, but it
-                # is available to --include-pass 'SetupActivityPermissionDialog' task-relevance
-                # validation, which otherwise has no marker at all on this recovery path.
+                # is available to task-relevance validation via --include-pass: a bare
+                # --include-pass, or one whose pattern matches a substring of this marker's
+                # fixed `name` (e.g. --include-pass 'setupFlow'), surfaces it. ci_monitor.py's
+                # parse_fails matches --include-pass PATTERN against the marker's `name` field
+                # only, never `suite`, so a suite-shaped pattern like
+                # --include-pass 'SetupActivityPermissionDialog' will NOT match this marker's
+                # name (setupFlow_grantsMediaPermissionViaSystemDialog_andAdvances) and would
+                # silently surface nothing (PR #644 review). Otherwise this recovery path has
+                # no marker at all.
                 synthesize_marker PASS "host-side diagnosis: the real Photos and Media dialog grant restarted com.gb4pc but the setup flow recovered on the BATTERY step without losing progress (the benign scoped-storage remount)"
               else
                 echo "REGRESSION: relaunching SetupActivity did not land cleanly on the BATTERY"
