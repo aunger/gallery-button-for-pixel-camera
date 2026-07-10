@@ -95,6 +95,9 @@ class E2EFixture(
         private const val LAUNCH_FIRST_VERIFY_MS = 12_000L
         private const val LAUNCH_RETRY_VERIFY_MS = 6_000L
         private const val LAUNCH_BASELINE_MS = 3_000L
+
+        /** Overall budget for [dismissSecureKeyguard]'s verify-and-retry loop. */
+        private const val DISMISS_KEYGUARD_TIMEOUT_MS = 10_000L
     }
 
     /**
@@ -225,7 +228,7 @@ class E2EFixture(
      *
      * **Not sufficient against the secure keyguard `scripts/setup-e2e-emulator.sh` configures for
      * this whole E2E suite** (a PIN, so `wm dismiss-keyguard` alone leaves it engaged, per that
-     * script's own step 8 comment). A swipe gesture does nothing against a PIN prompt. Most E2E
+     * script's own step 9 comment). A swipe gesture does nothing against a PIN prompt. Most E2E
      * tests never need to care, because the CI workflow's `stay_on_while_plugged_in 7` keeps the
      * one-time dismissal from that setup script in effect for the rest of the job, unless
      * something re-engages the keyguard (explicitly via [lockScreen], or implicitly if enough
@@ -242,7 +245,7 @@ class E2EFixture(
 
     /**
      * Wakes the display and dismisses the PIN-secured keyguard `scripts/setup-e2e-emulator.sh`
-     * configures for this E2E suite (PIN `1234`), by replaying that script's own step-8 sequence:
+     * configures for this E2E suite (PIN `1234`), by replaying that script's own step-9 sequence:
      * wake, request dismissal, type the PIN, submit ENTER. [wakeAndDismissKeyguard]'s swipe
      * gesture does nothing against this secure keyguard; it only dismisses the emulator's
      * non-secure swipe-style lock screen (see that method's doc).
@@ -253,16 +256,34 @@ class E2EFixture(
      * one-time setup dismissal no longer covers, e.g. because enough wall-clock time or enough
      * other E2E steps have passed since setup ran (see [SetupActivityDeniedE2ETest]'s class doc
      * for the incident that prompted this method, issue #509 PR #564).
+     *
+     * ### Verifies dismissal instead of trusting a fixed delay (issue #604)
+     *
+     * The sequence below is not instantaneous: each shell command is real IPC to the system UI,
+     * and its total duration can stretch under extra CPU load on the emulator (for example, the
+     * `screenrecord` process issue #604 added to suites that call this method). A single fire-
+     * and-forget pass raced exactly that stretched duration in CI: `SetupActivityDeniedE2ETest`
+     * and `SetupActivityPermissionDialogE2ETest` (both callers of this method) failed their very
+     * first post-launch assertion with `SetupActivity` reaching `RESUMED` then `PAUSED` again
+     * shortly after, because the compose rule's activity launch--which runs immediately after
+     * this method returns--started before the keyguard had actually cleared. Polling
+     * [KeyguardManager.isKeyguardLocked] and retrying the whole dismissal sequence until it
+     * reports unlocked (or [DISMISS_KEYGUARD_TIMEOUT_MS] elapses) makes this method robust to that
+     * variance instead of assuming a fixed wall-clock budget is always enough.
      */
     fun dismissSecureKeyguard() {
-        uiAutomation.executeShellCommand("input keyevent 224").close() // KEYCODE_WAKEUP
-        Thread.sleep(300)
-        uiAutomation.executeShellCommand("wm dismiss-keyguard").close()
-        Thread.sleep(300)
-        uiAutomation.executeShellCommand("input text 1234").close()
-        Thread.sleep(300)
-        uiAutomation.executeShellCommand("input keyevent 66").close() // KEYCODE_ENTER
-        Thread.sleep(300)
+        val keyguardManager = context.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+        val deadline = System.currentTimeMillis() + DISMISS_KEYGUARD_TIMEOUT_MS
+        do {
+            uiAutomation.executeShellCommand("input keyevent 224").close() // KEYCODE_WAKEUP
+            Thread.sleep(300)
+            uiAutomation.executeShellCommand("wm dismiss-keyguard").close()
+            Thread.sleep(300)
+            uiAutomation.executeShellCommand("input text 1234").close()
+            Thread.sleep(300)
+            uiAutomation.executeShellCommand("input keyevent 66").close() // KEYCODE_ENTER
+            Thread.sleep(300)
+        } while (keyguardManager.isKeyguardLocked && System.currentTimeMillis() < deadline)
     }
 
     fun goHome() {
