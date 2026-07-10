@@ -181,7 +181,15 @@ class SetupActivityPermissionDialogE2ETest {
     private companion object {
         const val PERMISSION_CONTROLLER_PKG = "com.android.permissioncontroller"
         const val DIALOG_TIMEOUT_MS = 5_000L
-        const val GRANT_TIMEOUT_MS = 10_000L
+
+        // Widened from 10 s to 20 s (issue #604): this suite gained a `screenrecord` process for
+        // the first time in issue #604 (see build.yml's "Run SetupActivityPermissionDialogE2ETest"
+        // step), and the extra CPU load it puts on the CI emulator was enough to push the real,
+        // asynchronous permission-result delivery past the previous 10 s budget in CI, failing
+        // this assertion even though "Allow all" was tapped successfully (confirmed via CI logcat:
+        // GrantPermissionsActivity opened and the dialog tap completed without the
+        // requireNotNull(button) failure tapAllowAllInSystemDialog() would otherwise throw).
+        const val GRANT_TIMEOUT_MS = 20_000L
         const val ADVANCE_TIMEOUT_MS = 10_000L
     }
 }
