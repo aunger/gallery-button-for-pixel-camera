@@ -394,6 +394,11 @@ def parse_run_result(run_json):
     'Blocked', 'all_passed'. Unlike parse_check_result, there is no 'Clear'
     token here--a bare Actions run always exists once fetched, so the
     "no checks registered yet" case does not apply.
+
+    Any non-'completed' status (not just 'queued'/'in_progress') maps to
+    'in_progress': a single run object only has one status field, so there is
+    no multi-check "some still running" case to distinguish, unlike
+    parse_check_result's per-check-run list.
     """
     status = run_json.get("status", "")
     conclusion = run_json.get("conclusion") or ""
@@ -631,6 +636,30 @@ def _parse_outcome_filters(args):
     }
 
 
+def _select_mode(args):
+    """Return (mode, tag) for whichever identifier flag was supplied (issue #603).
+
+    `mode` is one of 'pr'/'sha'/'run'/'branch'; `tag` is the output-line
+    prefix. Only --pr has a PR to gate mergeable_state on or a merged/closed
+    short-circuit; the other three modes are simpler variants that fire
+    `Clear` directly off an all-passed check verdict.
+
+    Branches on "was this flag supplied" (argparse leaves an un-supplied dest
+    at its None default), not on truthiness: the mutually exclusive group
+    only guarantees exactly one dest is non-None, not that its value is
+    non-empty, so a truthiness check would misroute a literal empty-string
+    value for the flag actually used (e.g. `--sha ""`) to the next mode in
+    the chain instead of honoring --sha.
+    """
+    if args.pr is not None:
+        return "pr", "PR#%s" % args.pr
+    if args.sha is not None:
+        return "sha", "SHA#%s" % args.sha[:7]
+    if args.run_id is not None:
+        return "run", "RUN#%s" % args.run_id
+    return "branch", "BRANCH#%s" % args.branch
+
+
 class _DocstringParser(argparse.ArgumentParser):
     """ArgumentParser that prints the module docstring for --help/-h."""
 
@@ -697,22 +726,7 @@ def main(argv):
     token = os.environ.get("GITHUB_TOKEN", "")
     outcome_filters = _parse_outcome_filters(args)
 
-    # `mode` selects the identifier this run tracks; `tag` is the output-line
-    # prefix (issue #603). Only --pr has a PR to gate mergeable_state on or a
-    # merged/closed short-circuit; the other three modes are simpler variants
-    # that fire `Clear` directly off an all-passed check verdict.
-    if args.pr:
-        mode = "pr"
-        tag = "PR#%s" % args.pr
-    elif args.sha:
-        mode = "sha"
-        tag = "SHA#%s" % args.sha[:7]
-    elif args.run_id:
-        mode = "run"
-        tag = "RUN#%s" % args.run_id
-    else:
-        mode = "branch"
-        tag = "BRANCH#%s" % args.branch
+    mode, tag = _select_mode(args)
 
     # Configurable run/artifact/step/marker behavior (issue #500). Loaded once at
     # startup and threaded into the parsers below; a missing or invalid config

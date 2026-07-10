@@ -42,7 +42,10 @@ Covers:
        in_progress/all_passed/Blocked/Infra
   (an) #603 parse_commit_sha: reads the top-level sha from a /commits/{ref} response
   (ao) #603 argparse: exactly one of --pr/--sha/--run-id/--branch is required;
-       two or none is rejected
+       two or none is rejected. Also: _select_mode() branches on "was this
+       flag supplied" not on truthiness, so an empty-string value for the
+       supplied flag (e.g. --sha "") is not misrouted to the next mode
+       (review finding on PR #636)
   (ap) #603 main(): --sha mode Clear and Blocked paths, no mergeable_state gating
   (aq) #603 main(): --branch mode re-resolves the head SHA each poll; Clear and Blocked
   (ar) #603 main(): --run-id mode scopes verdict/diagnostics to the run object itself,
@@ -3892,6 +3895,47 @@ def main() -> int:
     # Each flag being independently accepted is demonstrated by (ap)/(aq)/(ar)
     # below, each of which drives main() to a terminal line via exactly one of
     # --sha/--branch/--run-id.
+
+    # _select_mode must branch on "was this flag supplied" (argparse's
+    # un-supplied dest stays at its None default), not on truthiness--a review
+    # finding on this PR: a truthiness check misroutes a literal empty-string
+    # value for the flag actually used (e.g. `--sha ""`) to the next mode in
+    # the chain, since "" is falsy but still means --sha was supplied.
+    import argparse as _argparse_ao  # noqa: E402
+
+    def _mode_args(**kw):
+        defaults = {"pr": None, "sha": None, "run_id": None, "branch": None}
+        defaults.update(kw)
+        return _argparse_ao.Namespace(**defaults)
+
+    check(
+        ci_monitor._select_mode(_mode_args(pr="")) == ("pr", "PR#"),
+        "_select_mode: --pr '' (empty but supplied) selects pr mode, not the next one",
+        "expected ('pr', 'PR#'); got %r" % (ci_monitor._select_mode(_mode_args(pr="")),),
+    )
+    check(
+        ci_monitor._select_mode(_mode_args(sha="")) == ("sha", "SHA#"),
+        "_select_mode: --sha '' (empty but supplied) selects sha mode, not branch mode"
+        " (the exact bug reported in review)",
+        "expected ('sha', 'SHA#'); got %r" % (ci_monitor._select_mode(_mode_args(sha="")),),
+    )
+    check(
+        ci_monitor._select_mode(_mode_args(run_id="")) == ("run", "RUN#"),
+        "_select_mode: --run-id '' (empty but supplied) selects run mode",
+        "expected ('run', 'RUN#'); got %r" % (ci_monitor._select_mode(_mode_args(run_id="")),),
+    )
+    check(
+        ci_monitor._select_mode(_mode_args(branch="main")) == ("branch", "BRANCH#main"),
+        "_select_mode: --branch selects branch mode with the expected tag",
+        "expected ('branch', 'BRANCH#main'); got %r"
+        % (ci_monitor._select_mode(_mode_args(branch="main")),),
+    )
+    check(
+        ci_monitor._select_mode(_mode_args(sha="deadbeefcafe")) == ("sha", "SHA#deadbee"),
+        "_select_mode: --sha tag truncates to the first 7 characters",
+        "expected ('sha', 'SHA#deadbee'); got %r"
+        % (ci_monitor._select_mode(_mode_args(sha="deadbeefcafe")),),
+    )
 
     # ── (ap) #603 main(): --sha mode Clear and Blocked, no PR involved ─────────────
     print("\n=== (ap) #603 main(): --sha mode Clear path (no mergeable_state fetch) ===")
