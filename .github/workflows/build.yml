@@ -938,6 +938,38 @@ jobs:
           else
             # Gradle exited non-zero. Diagnose host-side, immune to com.gb4pc having died.
             echo "=== SetupActivityPermissionDialogE2ETest: non-zero Gradle exit; host-side diagnosis ==="
+            # Deterministically rebuild the monitor feed from the fully-written log before
+            # inspecting it below (issue #601). The in-line `tee >(grep ...)` process
+            # substitution above can still be flushing when Gradle returns, so rebuilding
+            # from /tmp/e2e-permission-dialog.log (which `tee` has finished writing by the
+            # time the pipeline's exit status is known) makes the "outcome":"FAIL" check
+            # and any synthesized marker below race-free. `|| true`: grep exits non-zero
+            # when the log has no marker lines (the torn-down case this step handles),
+            # which is expected and must not abort the step under `set -o pipefail`.
+            grep '^##GB4PC_TEST##' /tmp/e2e-permission-dialog.log > results/e2e-setup-activity-permission-dialog.ndjson || true
+            # Helper: append a synthesized terminal marker for this suite's single test
+            # method when the instrumented process was torn down mid-test so no in-process
+            # ##GB4PC_TEST## line was emitted (issue #601), giving this feed the same
+            # per-test attribution the other six suites get for every run. Idempotent:
+            # no-ops if a genuine marker for this method is already present (the rebuild
+            # above guarantees a real one, if any exists, is there). Only static ASCII text
+            # and integer pids are ever interpolated and `trace` is empty, so the payload
+            # never needs general JSON escaping. $1 is the outcome (FAIL/PASS), $2 the msg.
+            # The suite/name/ms values are fixed to match the class/method the in-process
+            # parser and JUnit XML use, so ci_monitor's suite#name#outcome dedup and its
+            # --include-fail/--include-pass name filters work on these lines unchanged.
+            SYNTH_MARKER_SUITE="com.gb4pc.e2e.SetupActivityPermissionDialogE2ETest"
+            SYNTH_MARKER_NAME="setupFlow_grantsMediaPermissionViaSystemDialog_andAdvances"
+            synthesize_marker() {
+              if grep -q "\"name\":\"$SYNTH_MARKER_NAME\"" results/e2e-setup-activity-permission-dialog.ndjson 2>/dev/null; then
+                echo "  monitor marker for $SYNTH_MARKER_NAME already present; not synthesizing a $1"
+                return 0
+              fi
+              printf '##GB4PC_TEST## {"suite":"%s","name":"%s","outcome":"%s","ms":0,"msg":"%s","trace":""}\n' \
+                "$SYNTH_MARKER_SUITE" "$SYNTH_MARKER_NAME" "$1" "$2" \
+                >> results/e2e-setup-activity-permission-dialog.ndjson
+              echo "  synthesized $1 monitor marker for $SYNTH_MARKER_NAME"
+            }
             PID_AFTER=$("$ADB" shell pidof com.gb4pc | tr -d '\r' || true)
             echo "com.gb4pc pid after dialog grant:  '${PID_AFTER:-<not running>}'"
             GRANT_LINE=$("$ADB" shell dumpsys package com.gb4pc | tr -d '\r' \
@@ -1002,6 +1034,11 @@ jobs:
                 echo "           is not shown again, so the grant survived the restart and no"
                 echo "           setup progress was lost."
                 echo "outcome=success" >> "$GITHUB_OUTPUT"
+                # Synthesize a PASS so this benign torn-down-but-recovered run still gets a
+                # per-test marker (issue #601). CI Monitor suppresses PASS by default, but it
+                # is available to --include-pass 'SetupActivityPermissionDialog' task-relevance
+                # validation, which otherwise has no marker at all on this recovery path.
+                synthesize_marker PASS "host-side diagnosis: the real Photos and Media dialog grant restarted com.gb4pc but the setup flow recovered on the BATTERY step without losing progress (the benign scoped-storage remount)"
               else
                 echo "REGRESSION: relaunching SetupActivity did not land cleanly on the BATTERY"
                 echo "            step after the restart (dump snippet:"
@@ -1009,11 +1046,19 @@ jobs:
                 echo "            the flow reverted to MEDIA or failed to render, so the crash"
                 echo "            was not the benign, expected scoped-storage restart."
                 echo "outcome=failure" >> "$GITHUB_OUTPUT"
+                # Synthesize a FAIL so this torn-down regression gets the same per-test
+                # attribution the other suites emit in-process (issue #601). Message uses
+                # only static text plus the integer pids captured above.
+                synthesize_marker FAIL "host-side diagnosis: the dialog grant tore down com.gb4pc (pid before=${PID_BEFORE:-<none>} after=${PID_AFTER:-<none>}) and the recovery relaunch (pid=${RECOVERED_PID:-<none>}) did not land on the BATTERY step, so the restart was not the benign scoped-storage remount"
               fi
             else
               # Non-zero exit with neither a reported failure nor a confirmed grant: treat as a
               # real failure (e.g. the dialog never appeared, or the grant did not land).
               echo "outcome=failure" >> "$GITHUB_OUTPUT"
+              # Synthesize a FAIL so this torn-down failure gets the same per-test
+              # attribution the other suites emit in-process (issue #601). Message uses
+              # only static text plus the integer pids captured above.
+              synthesize_marker FAIL "host-side diagnosis: non-zero Gradle exit with no in-process FAIL marker and READ_MEDIA_IMAGES not granted (pid before=${PID_BEFORE:-<none>} after=${PID_AFTER:-<none>}); the permission-dialog flow did not complete"
               echo "=== LOGCAT (since test start) ==="
               "$ADB" logcat -d -T "$LOGCAT_SINCE" | bash scripts/filter_logcat.sh
             fi
