@@ -113,25 +113,27 @@ Role assignment statements (copy the applicable line exactly):
 - Verification agent: "You are a Verification Agent: carry out the before-merging steps from the Verification Planner report on the linked PR, automating them where possible, and report results. You *must* start your turn by re-fetching the Verification Planner comment on the PR and each before-merging tracking issue it lists."
 
 The Programmer statement names the decline path so the dispatched Programmer receives it in the copied line, not only by reading `pr_participation.md`.
-An Author that legitimately declines satisfies its exit obligation by posting the explanatory issue comment and emitting `No PR; position posted on the issue` (see the Author status vocabulary below) instead of creating a PR.
+An Author that legitimately declines satisfies its exit obligation by posting the explanatory issue comment and reporting that it opened no PR, pointing to that comment (see the Author work-location report below), instead of creating a PR.
 
 ## Decision-signal templates
 
 When routing control signals, use these exact lines and no others.
 Fill only the tokens in braces.
 
-Author-to-Orchestrator status vocabulary (the Programmer emits one when it finishes a round, reporting only what it did):
-- `PR opened`: the Author opened a PR.
-- `No PR; position posted on the issue`: the Author opened no PR and posted its position as an explanatory comment on the issue (see "Declining to open a PR" in `pr_participation.md`).
+Author-to-Orchestrator work-location report (the Programmer states where its work product is when it finishes a round, reporting only what it did):
+- If it opened a PR, it gives the PR number.
+- If it opened no PR, it points to the explanatory comment it posted on the issue (see "Declining to open a PR" in `pr_participation.md`).
 
-When the Author emits `No PR; position posted on the issue`, dispatch the Reviewer pointed at the **issue**, not a PR (see "Assigning a Reviewer").
+The Author is not making a branching decision, so it uses no fixed phrase; a plain location report suffices.
+The Orchestrator derives the branch from whether a PR number is present: a PR number selects the PR path, its absence the no-PR path.
+When no PR number is present, dispatch the Reviewer pointed at the **issue**, not a PR (see "Assigning a Reviewer").
 The Orchestrator does not read or judge the Author's explanation; it only notes which artifact the Reviewer must examine.
 
 Reviewer-to-Orchestrator outcome vocabulary (the Reviewer emits one):
 - `LGTM`: the committed changes are correct and complete.
   If extra work outside the repo is required before merging, it should be explained clearly in a PR comment.
 - `Changes requested`: the Author is asked to take another turn, to correct or complete its prior work.
-- `Cannot implement`: the coding phase cannot be completed--the requirements are incomplete, unattainable, or self-contradictory, or no code change could address the issue.
+- `Cannot work`: the coding phase cannot be completed--the requirements are incomplete, unattainable, or self-contradictory, or no code change could address the issue.
   The Reviewer describes the specifics in a PR comment, or in an issue comment on the no-PR path (where there is no PR to comment on).
 
 Orchestrator-to-user terminal CI lines:
@@ -185,7 +187,7 @@ Routing on the Verification Agent's signal:
 - Dispatch using the dispatch template above, with the Programmer role assignment statement and the literal issue number and branch name tokens.
 
 When the Author returns, apply this transition.
-Apply it to the PR if the Author emitted `PR opened`; apply it to the issue if the Author emitted `No PR; position posted on the issue`, since that is where the work's labels live when there is no PR:
+Apply it to the PR if one exists; apply it to the issue otherwise, since that is where the work's labels live when there is no PR:
 
 | Remove label | Add label |
 |---|---|
@@ -195,7 +197,7 @@ Apply it to the PR if the Author emitted `PR opened`; apply it to the issue if t
 
 - Create a sub-agent at the Reviewer model (see Model selection above)
 - Dispatch using the dispatch template above, with the Reviewer role assignment statement and the literal issue number token.
-- If the Author emitted `No PR; position posted on the issue` (no PR was opened), the Reviewer examines the Author's explanatory comment on the **issue** rather than a PR.
+- If no PR exists, the Reviewer examines the Author's explanatory comment on the **issue** rather than a PR.
   The dispatch template's issue token already points the Reviewer there; the Reviewer follows "Reviewing an Author who declined to open a PR" in `pr_participation.md`.
 
 ## Author disagreement
@@ -209,7 +211,7 @@ After the Reviewer exits and delivers its decision, the Orchestrator acts as fol
 Monitor output lines are relayed to the user verbatim; this is user-facing status reporting and is not governed by the say-nothing rule (which covers sub-agent messages only).
 
 When the Reviewer returns, apply this transition.
-Apply it to the PR if one was opened (the Author emitted `PR opened`); apply it to the issue on the no-PR path (the Author emitted `No PR; position posted on the issue`), since that is where the work's labels live when there is no PR:
+Apply it to the PR if one exists; apply it to the issue otherwise, since that is where the work's labels live when there is no PR:
 
 | Remove label |
 |---|
@@ -221,14 +223,14 @@ If the Reviewer requested changes, additionally apply this transition to the sam
 |---|
 | `changes requested` |
 
-The Author's status signal from the prior round decides which routing fence applies.
-If the Author emitted `No PR; position posted on the issue`, there is no diff or CI to run, so follow the no-PR routing fence; if it emitted `PR opened`, follow the Monitor loop fence.
+Whether a PR exists decides which routing fence applies.
+If no PR exists, there is no diff or CI to run, so follow the no-PR routing fence; if a PR exists, follow the Monitor loop fence.
 
 No-PR routing:
 
 ```text
   if Reviewer requested changes -> goto newAuthor
-  if Reviewer gave `Cannot implement` -> escalate to user; stop
+  if Reviewer gave `Cannot work` -> escalate to user; stop
   if Reviewer gave LGTM:
     The issue is resolved without a code change, and the Reviewer agreed.
     Do NOT launch the CI Monitor and do NOT dispatch a Verification Planner; both presuppose a PR.
@@ -241,7 +243,7 @@ PR routing (Monitor loop):
 
 ```text
   if Reviewer requested changes -> goto newAuthor
-  if Reviewer gave `Cannot implement` -> escalate to user; stop (do NOT route to a new Author round; leave the PR open for the user to close; the Reviewer's PR comment describes why)
+  if Reviewer gave `Cannot work` -> escalate to user; stop (do NOT route to a new Author round; leave the PR open for the user to close; the Reviewer's PR comment describes why)
   if Reviewer gave LGTM:
     Orchestrator launches a Monitor tool call running `python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER>` from the repo root (run_in_background: true, timeout_ms: 1800000). Record the task ID returned by the Monitor tool call for use in silentVanish recovery, and clear the silentVanish re-launch flag (this original launch is not a re-launch).
     Each stdout line arrives as a task-notification event; relay each line to the user verbatim.
@@ -382,8 +384,8 @@ If the stall cannot be explained by a known recoverable cause (e.g., a Monitor t
 
 Stop the automated cycle and escalate to the User in either of these cases:
 
-- A sub-agent emits `Cannot implement` (see the routing fences above): escalate immediately, without waiting for further rounds.
-  This covers a Programmer that gives up or an issue that cannot be solved as stated; the Reviewer confirms it by emitting `Cannot implement`.
+- A Reviewer emits `Cannot work` (see the routing fences above): escalate immediately, without waiting for further rounds.
+  This covers a Programmer that gives up or an issue that cannot be solved as stated; the Reviewer confirms it by emitting `Cannot work`.
 - The Programmer / Reviewer loop runs **four rounds** without reaching consensus (unless the user gave a different threshold).
   This is the fallback for a loop that stalls in disagreement; once four rounds are reached the cap applies unconditionally, even when both parties are still actively disputing.
 
