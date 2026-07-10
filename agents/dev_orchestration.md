@@ -187,7 +187,7 @@ Routing on the Verification Agent's signal:
 - Dispatch using the dispatch template above, with the Programmer role assignment statement and the literal issue number and branch name tokens.
 
 When the Author returns, apply this transition.
-Apply it to the PR if the Author opened one; apply it to the issue if the Author opened no PR, since that is where the work's labels live when there is no PR:
+Apply it to the PR if one exists; apply it to the issue otherwise, since that is where the work's labels live when there is no PR:
 
 | Remove label | Add label |
 |---|---|
@@ -197,7 +197,7 @@ Apply it to the PR if the Author opened one; apply it to the issue if the Author
 
 - Create a sub-agent at the Reviewer model (see Model selection above)
 - Dispatch using the dispatch template above, with the Reviewer role assignment statement and the literal issue number token.
-- If the Author opened no PR, the Reviewer examines the Author's explanatory comment on the **issue** rather than a PR.
+- If no PR exists, the Reviewer examines the Author's explanatory comment on the **issue** rather than a PR.
   The dispatch template's issue token already points the Reviewer there; the Reviewer follows "Reviewing an Author who declined to open a PR" in `pr_participation.md`.
 
 ## Author disagreement
@@ -211,7 +211,7 @@ After the Reviewer exits and delivers its decision, the Orchestrator acts as fol
 Monitor output lines are relayed to the user verbatim; this is user-facing status reporting and is not governed by the say-nothing rule (which covers sub-agent messages only).
 
 When the Reviewer returns, apply this transition.
-Apply it to the PR if one was opened; apply it to the issue on the no-PR path, since that is where the work's labels live when there is no PR:
+Apply it to the PR if one exists; apply it to the issue otherwise, since that is where the work's labels live when there is no PR:
 
 | Remove label |
 |---|
@@ -223,8 +223,8 @@ If the Reviewer requested changes, additionally apply this transition to the sam
 |---|
 | `changes requested` |
 
-Whether a PR was opened in the prior round decides which routing fence applies.
-If no PR was opened, there is no diff or CI to run, so follow the no-PR routing fence; if a PR was opened, follow the Monitor loop fence.
+Whether a PR exists decides which routing fence applies.
+If no PR exists, there is no diff or CI to run, so follow the no-PR routing fence; if a PR exists, follow the Monitor loop fence.
 
 No-PR routing:
 
