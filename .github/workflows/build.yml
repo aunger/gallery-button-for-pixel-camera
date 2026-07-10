@@ -575,6 +575,13 @@ jobs:
           "$ADB" shell input keyevent KEYCODE_WAKEUP
           "$ADB" shell input swipe 300 1000 300 300
           sleep 2
+          # Start screen recording for this suite (issue #604), extending the
+          # overlay/gallery suites' issue #520 pattern to every E2E suite. See the
+          # overlay E2E step for the rationale on display-on-first, SIGINT-only stop,
+          # and why the host-side adb shell wrapper must not be killed before muxer flush.
+          "$ADB" shell screenrecord /sdcard/e2e-permissions-granted.mp4 &
+          RECPID_PERMISSIONS_GRANTED=$!
+          sleep 1
           mkdir -p results
           set -o pipefail
           LOGCAT_SINCE=$("$ADB" shell "date '+%m-%d %H:%M:%S.000'" | tr -d '\r')
@@ -588,6 +595,33 @@ jobs:
             "$ADB" logcat -d -T "$LOGCAT_SINCE" | \
               bash scripts/filter_logcat.sh
           fi
+          # Stop screenrecord cleanly so the moov atom is written and the MP4 is playable.
+          echo "  stopping screenrecord (permissions-granted suite)"
+          "$ADB" shell pkill -INT -x screenrecord 2>/dev/null || true
+          echo "  waiting for screenrecord to finalize the MP4"
+          for i in $(seq 1 30); do
+            "$ADB" shell pidof screenrecord > /dev/null 2>&1 || break
+            sleep 1
+          done
+          wait "$RECPID_PERMISSIONS_GRANTED" 2>/dev/null || true
+
+      - name: Pull PermissionsGrantedE2ETest video on failure
+        # Only pull and upload the recording when this suite failed (issue #604).
+        # On a green run the file is left on the device and discarded when the emulator exits.
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true' && steps.run_permissions_granted_e2e.outputs.outcome == 'failure'
+        run: |
+          ADB="$ANDROID_HOME/platform-tools/adb"
+          mkdir -p /tmp/e2e-videos
+          "$ADB" pull /sdcard/e2e-permissions-granted.mp4 /tmp/e2e-videos/e2e-permissions-granted.mp4 || \
+            echo "WARNING: could not pull e2e-permissions-granted.mp4"
+
+      - name: Upload PermissionsGrantedE2ETest video
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true' && steps.run_permissions_granted_e2e.outputs.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-video-PermissionsGrantedE2ETest
+          path: /tmp/e2e-videos/e2e-permissions-granted.mp4
+          retention-days: 14
 
       - name: Upload PermissionsGrantedE2ETest monitor feed
         if: always() && steps.diff_check.outputs.needs_full_build == 'true'
@@ -614,6 +648,13 @@ jobs:
           "$ADB" shell input keyevent KEYCODE_WAKEUP
           "$ADB" shell input swipe 300 1000 300 300
           sleep 2
+          # Start screen recording for this suite (issue #604), extending the
+          # overlay/gallery suites' issue #520 pattern to every E2E suite. See the
+          # overlay E2E step for the rationale on display-on-first, SIGINT-only stop,
+          # and why the host-side adb shell wrapper must not be killed before muxer flush.
+          "$ADB" shell screenrecord /sdcard/e2e-permissions-denied.mp4 &
+          RECPID_PERMISSIONS_DENIED=$!
+          sleep 1
           mkdir -p results
           set -o pipefail
           LOGCAT_SINCE=$("$ADB" shell "date '+%m-%d %H:%M:%S.000'" | tr -d '\r')
@@ -628,6 +669,33 @@ jobs:
             "$ADB" logcat -d -T "$LOGCAT_SINCE" | \
               bash scripts/filter_logcat.sh
           fi
+          # Stop screenrecord cleanly so the moov atom is written and the MP4 is playable.
+          echo "  stopping screenrecord (permissions-denied suite)"
+          "$ADB" shell pkill -INT -x screenrecord 2>/dev/null || true
+          echo "  waiting for screenrecord to finalize the MP4"
+          for i in $(seq 1 30); do
+            "$ADB" shell pidof screenrecord > /dev/null 2>&1 || break
+            sleep 1
+          done
+          wait "$RECPID_PERMISSIONS_DENIED" 2>/dev/null || true
+
+      - name: Pull PermissionsDeniedE2ETest video on failure
+        # Only pull and upload the recording when this suite failed (issue #604).
+        # On a green run the file is left on the device and discarded when the emulator exits.
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true' && steps.run_permissions_denied_e2e.outputs.outcome == 'failure'
+        run: |
+          ADB="$ANDROID_HOME/platform-tools/adb"
+          mkdir -p /tmp/e2e-videos
+          "$ADB" pull /sdcard/e2e-permissions-denied.mp4 /tmp/e2e-videos/e2e-permissions-denied.mp4 || \
+            echo "WARNING: could not pull e2e-permissions-denied.mp4"
+
+      - name: Upload PermissionsDeniedE2ETest video
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true' && steps.run_permissions_denied_e2e.outputs.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-video-PermissionsDeniedE2ETest
+          path: /tmp/e2e-videos/e2e-permissions-denied.mp4
+          retention-days: 14
 
       - name: Re-grant media permission after PermissionsDeniedE2ETest
         # The app is not reinstalled again before the remaining steps in this job (there
@@ -666,6 +734,13 @@ jobs:
           "$ADB" shell input keyevent KEYCODE_WAKEUP
           "$ADB" shell input swipe 300 1000 300 300
           sleep 2
+          # Start screen recording for this suite (issue #604), extending the
+          # overlay/gallery suites' issue #520 pattern to every E2E suite. See the
+          # overlay E2E step for the rationale on display-on-first, SIGINT-only stop,
+          # and why the host-side adb shell wrapper must not be killed before muxer flush.
+          "$ADB" shell screenrecord /sdcard/e2e-setup-activity-granted.mp4 &
+          RECPID_SETUP_ACTIVITY_GRANTED=$!
+          sleep 1
           mkdir -p results
           set -o pipefail
           LOGCAT_SINCE=$("$ADB" shell "date '+%m-%d %H:%M:%S.000'" | tr -d '\r')
@@ -679,6 +754,33 @@ jobs:
             "$ADB" logcat -d -T "$LOGCAT_SINCE" | \
               bash scripts/filter_logcat.sh
           fi
+          # Stop screenrecord cleanly so the moov atom is written and the MP4 is playable.
+          echo "  stopping screenrecord (setup-activity-granted suite)"
+          "$ADB" shell pkill -INT -x screenrecord 2>/dev/null || true
+          echo "  waiting for screenrecord to finalize the MP4"
+          for i in $(seq 1 30); do
+            "$ADB" shell pidof screenrecord > /dev/null 2>&1 || break
+            sleep 1
+          done
+          wait "$RECPID_SETUP_ACTIVITY_GRANTED" 2>/dev/null || true
+
+      - name: Pull SetupActivityGrantedE2ETest video on failure
+        # Only pull and upload the recording when this suite failed (issue #604).
+        # On a green run the file is left on the device and discarded when the emulator exits.
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true' && steps.run_setup_activity_granted_e2e.outputs.outcome == 'failure'
+        run: |
+          ADB="$ANDROID_HOME/platform-tools/adb"
+          mkdir -p /tmp/e2e-videos
+          "$ADB" pull /sdcard/e2e-setup-activity-granted.mp4 /tmp/e2e-videos/e2e-setup-activity-granted.mp4 || \
+            echo "WARNING: could not pull e2e-setup-activity-granted.mp4"
+
+      - name: Upload SetupActivityGrantedE2ETest video
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true' && steps.run_setup_activity_granted_e2e.outputs.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-video-SetupActivityGrantedE2ETest
+          path: /tmp/e2e-videos/e2e-setup-activity-granted.mp4
+          retention-days: 14
 
       - name: Upload SetupActivityGrantedE2ETest monitor feed
         if: always() && steps.diff_check.outputs.needs_full_build == 'true'
@@ -702,6 +804,13 @@ jobs:
           "$ADB" shell input keyevent KEYCODE_WAKEUP
           "$ADB" shell input swipe 300 1000 300 300
           sleep 2
+          # Start screen recording for this suite (issue #604), extending the
+          # overlay/gallery suites' issue #520 pattern to every E2E suite. See the
+          # overlay E2E step for the rationale on display-on-first, SIGINT-only stop,
+          # and why the host-side adb shell wrapper must not be killed before muxer flush.
+          "$ADB" shell screenrecord /sdcard/e2e-setup-activity-denied.mp4 &
+          RECPID_SETUP_ACTIVITY_DENIED=$!
+          sleep 1
           mkdir -p results
           set -o pipefail
           LOGCAT_SINCE=$("$ADB" shell "date '+%m-%d %H:%M:%S.000'" | tr -d '\r')
@@ -716,6 +825,33 @@ jobs:
             "$ADB" logcat -d -T "$LOGCAT_SINCE" | \
               bash scripts/filter_logcat.sh
           fi
+          # Stop screenrecord cleanly so the moov atom is written and the MP4 is playable.
+          echo "  stopping screenrecord (setup-activity-denied suite)"
+          "$ADB" shell pkill -INT -x screenrecord 2>/dev/null || true
+          echo "  waiting for screenrecord to finalize the MP4"
+          for i in $(seq 1 30); do
+            "$ADB" shell pidof screenrecord > /dev/null 2>&1 || break
+            sleep 1
+          done
+          wait "$RECPID_SETUP_ACTIVITY_DENIED" 2>/dev/null || true
+
+      - name: Pull SetupActivityDeniedE2ETest video on failure
+        # Only pull and upload the recording when this suite failed (issue #604).
+        # On a green run the file is left on the device and discarded when the emulator exits.
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true' && steps.run_setup_activity_denied_e2e.outputs.outcome == 'failure'
+        run: |
+          ADB="$ANDROID_HOME/platform-tools/adb"
+          mkdir -p /tmp/e2e-videos
+          "$ADB" pull /sdcard/e2e-setup-activity-denied.mp4 /tmp/e2e-videos/e2e-setup-activity-denied.mp4 || \
+            echo "WARNING: could not pull e2e-setup-activity-denied.mp4"
+
+      - name: Upload SetupActivityDeniedE2ETest video
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true' && steps.run_setup_activity_denied_e2e.outputs.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-video-SetupActivityDeniedE2ETest
+          path: /tmp/e2e-videos/e2e-setup-activity-denied.mp4
+          retention-days: 14
 
       - name: Re-grant media permission after SetupActivityDeniedE2ETest
         # Mirrors the "Re-grant media permission after PermissionsDeniedE2ETest" step
@@ -777,6 +913,17 @@ jobs:
           "$ADB" shell input keyevent KEYCODE_WAKEUP
           "$ADB" shell input swipe 300 1000 300 300
           sleep 2
+          # Start screen recording for this suite (issue #604), extending the
+          # overlay/gallery suites' issue #520 pattern to every E2E suite. See the
+          # overlay E2E step for the rationale on display-on-first, SIGINT-only stop,
+          # and why the host-side adb shell wrapper must not be killed before muxer flush.
+          # screenrecord runs as its own device-side process under `shell`, independent of
+          # com.gb4pc, so it keeps recording even through this suite's own mid-test
+          # teardown/restart of com.gb4pc (see the class doc); the stop-and-finalize block
+          # below runs unconditionally, after every branch below, to cover that path too.
+          "$ADB" shell screenrecord /sdcard/e2e-setup-activity-permission-dialog.mp4 &
+          RECPID_SETUP_ACTIVITY_PERMISSION_DIALOG=$!
+          sleep 1
           mkdir -p results
           set -o pipefail
           LOGCAT_SINCE=$("$ADB" shell "date '+%m-%d %H:%M:%S.000'" | tr -d '\r')
@@ -833,11 +980,11 @@ jobs:
                 sleep 1
               done
               echo "com.gb4pc pid after recovery wait: '${RECOVERED_PID:-<not running>}'"
-              # This suite runs last in the job (see scripts/setup-e2e-emulator.sh's step 8 and
+              # This suite runs last in the job (see scripts/setup-e2e-emulator.sh's step 9 and
               # SetupActivityDeniedE2ETest's class doc), so the PIN-secured keyguard the setup
               # script configures can have re-engaged by the time this recovery relaunch runs. A
               # swipe-only dismissal does nothing against it; replay the same PIN-aware sequence
-              # E2EFixture.dismissSecureKeyguard() and the setup script's step 8 use. This runs
+              # E2EFixture.dismissSecureKeyguard() and the setup script's step 9 use. This runs
               # host-side (the instrumented process may be dead), so the Kotlin helper itself
               # cannot be called; the shell sequence is replayed directly instead.
               "$ADB" shell input keyevent KEYCODE_WAKEUP
@@ -871,6 +1018,36 @@ jobs:
               "$ADB" logcat -d -T "$LOGCAT_SINCE" | bash scripts/filter_logcat.sh
             fi
           fi
+          # Stop screenrecord cleanly so the moov atom is written and the MP4 is playable.
+          # Runs unconditionally after every branch above (including the torn-down/recovery
+          # path): screenrecord is a separate device-side process under `shell`, so it is
+          # unaffected by com.gb4pc's own mid-test restart and is still running here.
+          echo "  stopping screenrecord (setup-activity-permission-dialog suite)"
+          "$ADB" shell pkill -INT -x screenrecord 2>/dev/null || true
+          echo "  waiting for screenrecord to finalize the MP4"
+          for i in $(seq 1 30); do
+            "$ADB" shell pidof screenrecord > /dev/null 2>&1 || break
+            sleep 1
+          done
+          wait "$RECPID_SETUP_ACTIVITY_PERMISSION_DIALOG" 2>/dev/null || true
+
+      - name: Pull SetupActivityPermissionDialogE2ETest video on failure
+        # Only pull and upload the recording when this suite failed (issue #604).
+        # On a green run the file is left on the device and discarded when the emulator exits.
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true' && steps.run_setup_activity_permission_dialog_e2e.outputs.outcome == 'failure'
+        run: |
+          ADB="$ANDROID_HOME/platform-tools/adb"
+          mkdir -p /tmp/e2e-videos
+          "$ADB" pull /sdcard/e2e-setup-activity-permission-dialog.mp4 /tmp/e2e-videos/e2e-setup-activity-permission-dialog.mp4 || \
+            echo "WARNING: could not pull e2e-setup-activity-permission-dialog.mp4"
+
+      - name: Upload SetupActivityPermissionDialogE2ETest video
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true' && steps.run_setup_activity_permission_dialog_e2e.outputs.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-video-SetupActivityPermissionDialogE2ETest
+          path: /tmp/e2e-videos/e2e-setup-activity-permission-dialog.mp4
+          retention-days: 14
 
       - name: Upload SetupActivityPermissionDialogE2ETest monitor feed
         if: always() && steps.diff_check.outputs.needs_full_build == 'true'
