@@ -30,10 +30,10 @@ jobs:
       - name: Download overlay logcat artifact
         uses: actions/download-artifact@v7
         with:
-          name: testresults-e2e-overlay
+          name: ci-monitor-feed-PixelCameraOverlayE2ETest
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ github.event.workflow_run.id }}
-          path: downloaded-artifacts/testresults-e2e-overlay
+          path: downloaded-artifacts/ci-monitor-feed-PixelCameraOverlayE2ETest
         continue-on-error: true
 
       - name: Scan logcat for launch-retry signal
@@ -45,7 +45,7 @@ jobs:
           GITHUB_RUN_ID: ${{ github.event.workflow_run.id }}
           GITHUB_SERVER_URL: ${{ github.server_url }}
         run: |
-          LOGCAT="downloaded-artifacts/testresults-e2e-overlay/e2e-overlay-logcat.txt"
+          LOGCAT="downloaded-artifacts/ci-monitor-feed-PixelCameraOverlayE2ETest/e2e-overlay-logcat.txt"
           if [[ ! -f "$LOGCAT" ]]; then
             echo "No overlay logcat artifact found (docs-only or skipped E2E run); nothing to scan."
             exit 0

@@ -20,7 +20,7 @@ Covers:
   (m) main(): staggered step-then-FAIL emitted once each before terminal, heartbeat suppressed
   (n) main(): quiet passing PR emits two adjacent heartbeats then a single Clear terminal
   (o) Gap D: real subprocess prints its own PID and SIGTERM to that PID stops it
-  (p) #258 fidelity: a real-shaped testresults-* artifact zip drives step+FAIL through main()
+  (p) #258 fidelity: a real-shaped ci-monitor-feed-* artifact zip drives step+FAIL through main()
   (q) #259 real clock: heartbeat fires only after real >SILENCE_SECONDS silence; output resets it
   (r) #260 outcome filters: parse_fails obeys outcome_filters for FAIL/PASS/SKIP
   (s) #260 CLI flags: _parse_outcome_filters and main() pass filter flags through
@@ -170,9 +170,9 @@ PASS_ONLY_NDJSON = [
 # This repo's committed config values (scripts/ci_monitor/ci_monitor.config.json).
 # The parser-direct tests pass these explicitly so they exercise the same regexes
 # main() loads from the config file (issue #500).
-REPO_STEP_REGEX = "Build and run unit tests|E2ETest"
+REPO_STEP_REGEX = "Build and run unit tests|^Run .*E2ETest$"
 REPO_MARKER_REGEX = "##GB4PC_TEST##|##TEST##"
-REPO_ARTIFACT_REGEX = "^testresults-"
+REPO_ARTIFACT_REGEX = "^ci-monitor-feed-"
 
 
 def check_runs_payload(*pairs):
@@ -414,7 +414,7 @@ def main() -> int:
             }
         ]
     }
-    ARTS_JSON = {"artifacts": [{"id": 9001, "name": "testresults-unit", "expired": False}]}
+    ARTS_JSON = {"artifacts": [{"id": 9001, "name": "ci-monitor-feed-unit", "expired": False}]}
     # Drain self-fetch payload: one github-actions check run pointing at run 555,
     # job 42. Under wiring (a), drain attempts still self-fetch (check_json=None).
     DIAG_CHECK_I = check_runs_payload(("555", "42"))
@@ -991,7 +991,7 @@ def main() -> int:
         ]
     }
     ARTS_EMPTY_M = {"artifacts": []}
-    ARTS_UNIT_M = {"artifacts": [{"id": 7007, "name": "testresults-unit", "expired": False}]}
+    ARTS_UNIT_M = {"artifacts": [{"id": 7007, "name": "ci-monitor-feed-unit", "expired": False}]}
     ZIP_UNIT_M = make_zip_ndjson(
         [
             '##GB4PC_TEST## {"suite":"com.gb4pc.unit.GalleryButtonTest","name":"testIcon","outcome":"FAIL","ms":4,"msg":"java.lang.AssertionError: kaboom","trace":"java.lang.AssertionError: kaboom\\n\\tat com.gb4pc.unit.GalleryButtonTest.testIcon(GalleryButtonTest.kt:33)"}',
@@ -1315,7 +1315,7 @@ def main() -> int:
 
     # ── (p) #258 fidelity: a real-shaped artifact zip drives step + FAIL ───────────
     print(
-        "\n=== (p) #258 fidelity: real-shaped testresults-unit artifact -> step + FAIL via main() ==="
+        "\n=== (p) #258 fidelity: real-shaped ci-monitor-feed-unit artifact -> step + FAIL via main() ==="
     )
 
     # Groups (i)/(m) prove the signal logic with a hand-rolled zip whose entry is
@@ -1324,7 +1324,7 @@ def main() -> int:
     #   - `... | tee >(grep '^##GB4PC_TEST##' > results/unit.ndjson)` writes only
     #     marker-prefixed lines into results/unit.ndjson.
     #   - `upload-artifact` with `path: results/unit.ndjson` zips it under the
-    #     basename entry 'unit.ndjson' inside an artifact named 'testresults-unit'.
+    #     basename entry 'unit.ndjson' inside an artifact named 'ci-monitor-feed-unit'.
     # Driving main() through that exact shape confirms extract_ndjson_lines (which
     # matches *.ndjson) and parse_fails read a genuine pipeline artifact, with the
     # step delta and FAIL both emitted before the terminal and deduped across polls.
@@ -1372,9 +1372,9 @@ def main() -> int:
             }
         ]
     }
-    # The artifact name mirrors build.yml's 'testresults-unit'; parse_new_artifacts
-    # keys on the 'testresults-' prefix and id, so the real name is exercised.
-    ARTS_REAL_UNIT_P = {"artifacts": [{"id": 4243, "name": "testresults-unit", "expired": False}]}
+    # The artifact name mirrors build.yml's 'ci-monitor-feed-unit'; parse_new_artifacts
+    # keys on the 'ci-monitor-feed-' prefix and id, so the real name is exercised.
+    ARTS_REAL_UNIT_P = {"artifacts": [{"id": 4243, "name": "ci-monitor-feed-unit", "expired": False}]}
 
     # Poll 1 (4): step delta, artifact not yet present. Poll 2 (5): step seen,
     # artifact appears -> real-shaped zip downloaded -> FAIL emitted. Poll 3 (4):
@@ -1927,7 +1927,7 @@ def main() -> int:
         + RUNS_S["check_runs"],
     }
     JOBS_EMPTY_S = {"jobs": [{"name": "build-and-test", "steps": []}]}
-    ARTS_MIX_S = {"artifacts": [{"id": 2222, "name": "testresults-mix", "expired": False}]}
+    ARTS_MIX_S = {"artifacts": [{"id": 2222, "name": "ci-monitor-feed-mix", "expired": False}]}
 
     # Poll 1 (5): artifact available, zip downloaded; poll 2 (4): terminal Blocked,
     # then drain_then_print (Gap E) re-polls check-runs/jobs/artifacts up to
@@ -2169,7 +2169,7 @@ def main() -> int:
     # Reproduces Run B/E/G from issue #402: check-runs flips straight from
     # in_progress to failure (Blocked) on poll 1, while /actions/runs/{id}/jobs
     # still shows the failing "Gate on test failures" step as not-yet-completed
-    # and the testresults-* artifact is not yet listed. Without the drain, poll 1
+    # and the ci-monitor-feed-* artifact is not yet listed. Without the drain, poll 1
     # would emit Blocked with zero step/FAIL lines. With drain_then_print, the
     # same poll's terminal line is followed by one extra signal poll
     # (DRAIN_DELAY_SECONDS later) where the jobs/artifacts endpoints have caught
@@ -2224,7 +2224,7 @@ def main() -> int:
         ]
     }
     ARTS_EMPTY_T = {"artifacts": []}
-    ARTS_E2E_T = {"artifacts": [{"id": 5005, "name": "testresults-e2e-gallery", "expired": False}]}
+    ARTS_E2E_T = {"artifacts": [{"id": 5005, "name": "ci-monitor-feed-GalleryButtonVisualE2ETest", "expired": False}]}
     ZIP_E2E_T = make_zip_ndjson(
         [
             '##GB4PC_TEST## {"suite":"com.gb4pc.e2e.GalleryButtonVisualE2ETest","name":"test1a","outcome":"FAIL","ms":9,"msg":"java.lang.AssertionError: button not green","trace":""}',
@@ -2248,7 +2248,7 @@ def main() -> int:
             # drain attempt 1--caught up: step + FAIL surface
             RUNS_T,  # diagnostic check-runs
             JOBS_GATE_FAIL_T,  # jobs -> "Gate on test failures" -> failure
-            ARTS_E2E_T,  # artifacts -> testresults-e2e-gallery now listed
+            ARTS_E2E_T,  # artifacts -> ci-monitor-feed-GalleryButtonVisualE2ETest now listed
             ZIP_E2E_T,  # zip (raw) -> FAIL line for test1a
             # drain attempt 2--everything already seen, nothing new
             RUNS_T,
@@ -2375,7 +2375,7 @@ def main() -> int:
         ]
     }
     ARTS_EMPTY_U = {"artifacts": []}
-    ARTS_E2E_U = {"artifacts": [{"id": 5006, "name": "testresults-e2e-gallery", "expired": False}]}
+    ARTS_E2E_U = {"artifacts": [{"id": 5006, "name": "ci-monitor-feed-GalleryButtonVisualE2ETest", "expired": False}]}
     ZIP_E2E_U = make_zip_ndjson(
         [
             '##GB4PC_TEST## {"suite":"com.gb4pc.e2e.GalleryButtonVisualE2ETest","name":"test1a","outcome":"FAIL","ms":9,"msg":"java.lang.AssertionError: button not green","trace":""}',
@@ -2401,7 +2401,7 @@ def main() -> int:
             # drain attempt 2--now caught up
             RUNS_U,  # diagnostic check-runs
             JOBS_GATE_FAIL_U,  # jobs -> "Gate on test failures" -> failure
-            ARTS_E2E_U,  # artifacts -> testresults-e2e-gallery now listed
+            ARTS_E2E_U,  # artifacts -> ci-monitor-feed-GalleryButtonVisualE2ETest now listed
             ZIP_E2E_U,  # zip (raw) -> FAIL line for test1a
             # drain attempt 3--everything already seen, nothing new
             RUNS_U,
@@ -2531,7 +2531,7 @@ def main() -> int:
 
     # Issue #419's partial-lag case: on the poll that produces the terminal
     # Blocked, neither signal is ready. The gate STEP catches up on drain attempt 1
-    # (so that attempt emits something), but the testresults-* ARTIFACT only lists
+    # (so that attempt emits something), but the ci-monitor-feed-* ARTIFACT only lists
     # on drain attempt 2. The pre-#419 code broke out of the drain at the first
     # fruitful attempt, so it emitted the step but silently dropped the FAIL marker
     # for this process's lifetime. With the drain running every attempt, attempt 2
@@ -2570,7 +2570,7 @@ def main() -> int:
         ]
     }
     ARTS_EMPTY_W = {"artifacts": []}
-    ARTS_E2E_W = {"artifacts": [{"id": 5419, "name": "testresults-e2e-gallery", "expired": False}]}
+    ARTS_E2E_W = {"artifacts": [{"id": 5419, "name": "ci-monitor-feed-GalleryButtonVisualE2ETest", "expired": False}]}
     ZIP_E2E_W = make_zip_ndjson(
         [
             '##GB4PC_TEST## {"suite":"com.gb4pc.e2e.GalleryButtonVisualE2ETest","name":"test1a","outcome":"FAIL","ms":9,"msg":"java.lang.AssertionError: button not green","trace":""}',
@@ -2595,7 +2595,7 @@ def main() -> int:
             # drain attempt 2--ARTIFACT now caught up
             RUNS_W,  # diagnostic check-runs
             JOBS_GATE_FAIL_W,  # jobs -> step already seen, nothing new
-            ARTS_E2E_W,  # artifacts -> testresults-e2e-gallery now listed
+            ARTS_E2E_W,  # artifacts -> ci-monitor-feed-GalleryButtonVisualE2ETest now listed
             ZIP_E2E_W,  # zip (raw) -> FAIL line for test1a
             # drain attempt 3--everything already seen, nothing new
             RUNS_W,
@@ -2864,21 +2864,21 @@ def main() -> int:
 
     ARTS_FIXTURE = {
         "artifacts": [
-            {"id": 1, "name": "testresults-unit", "expired": False},
+            {"id": 1, "name": "ci-monitor-feed-unit", "expired": False},
             {"id": 2, "name": "unit-test-results", "expired": False},
             {"id": 3, "name": "myresults-foo", "expired": False},
         ]
     }
     out_aa_default = ci_monitor.parse_new_artifacts(ARTS_FIXTURE, set(), REPO_ARTIFACT_REGEX)
     check(
-        out_aa_default == [("1", "testresults-unit")],
-        "default ^testresults- regex includes testresults-unit, excludes unit-test-results",
+        out_aa_default == [("1", "ci-monitor-feed-unit")],
+        "default ^ci-monitor-feed- regex includes ci-monitor-feed-unit, excludes unit-test-results",
         "default artifact regex wrong; got %r" % out_aa_default,
     )
     out_aa_custom = ci_monitor.parse_new_artifacts(ARTS_FIXTURE, set(), "^myresults-")
     check(
         out_aa_custom == [("3", "myresults-foo")],
-        "a custom artifact regex selects myresults-foo and excludes testresults-unit",
+        "a custom artifact regex selects myresults-foo and excludes ci-monitor-feed-unit",
         "custom artifact regex wrong; got %r" % out_aa_custom,
     )
 
@@ -3037,8 +3037,8 @@ def main() -> int:
     )
 
     # #499: an auxiliary Actions workflow's check run appears first in check-runs (its
-    # own run id, no testresults-* artifact, an unrelated job id), and the real build
-    # check appears later (failing gate step + a testresults-* artifact). Discovering
+    # own run id, no ci-monitor-feed-* artifact, an unrelated job id), and the real build
+    # check appears later (failing gate step + a ci-monitor-feed-* artifact). Discovering
     # targets from check-runs (not a hardcoded workflow/job name) must track the build
     # run so its step failure and FAIL surface. Two distinct run ids also exercise
     # multi-run fan-out.
@@ -3057,7 +3057,7 @@ def main() -> int:
         + _diag_ad["check_runs"],
     }
     DIAG_CHECK_AD = _diag_ad  # drain attempts still self-fetch (aux run 700, build run 800)
-    # Aux run 700/job 70: a successful unrelated step, no testresults-* artifact.
+    # Aux run 700/job 70: a successful unrelated step, no ci-monitor-feed-* artifact.
     JOBS_AUX_AD = {
         "jobs": [
             {
@@ -3070,7 +3070,7 @@ def main() -> int:
         ]
     }
     ARTS_AUX_AD = {"artifacts": [{"id": 7000, "name": "lint-report", "expired": False}]}
-    # Build run 800/job 80: the failing gate step + a testresults-* artifact.
+    # Build run 800/job 80: the failing gate step + a ci-monitor-feed-* artifact.
     JOBS_BUILD_AD = {
         "jobs": [
             {
@@ -3088,7 +3088,7 @@ def main() -> int:
         ]
     }
     ARTS_BUILD_AD = {
-        "artifacts": [{"id": 8000, "name": "testresults-e2e-gallery", "expired": False}]
+        "artifacts": [{"id": 8000, "name": "ci-monitor-feed-GalleryButtonVisualE2ETest", "expired": False}]
     }
     ZIP_BUILD_AD = make_zip_ndjson(
         [
@@ -3110,9 +3110,9 @@ def main() -> int:
             PR_AD,  # pulls -> sha
             CHECK_BL_AD,  # verdict check-runs -> Blocked (terminal, reused by poll_signals)
             JOBS_AUX_AD,  # run 700 jobs -> unrelated success step (suppressed)
-            ARTS_AUX_AD,  # run 700 artifacts -> no testresults-* match, no zip
+            ARTS_AUX_AD,  # run 700 artifacts -> no ci-monitor-feed-* match, no zip
             JOBS_BUILD_AD,  # run 800 jobs -> gate step failure
-            ARTS_BUILD_AD,  # run 800 artifacts -> testresults-e2e-gallery
+            ARTS_BUILD_AD,  # run 800 artifacts -> ci-monitor-feed-GalleryButtonVisualE2ETest
             ZIP_BUILD_AD,  # run 800 zip -> FAIL line
         ]
     )
