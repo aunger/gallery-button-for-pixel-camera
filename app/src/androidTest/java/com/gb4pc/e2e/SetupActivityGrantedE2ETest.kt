@@ -71,7 +71,10 @@ class SetupActivityGrantedE2ETest {
 
     @get:Rule
     val ruleChain: RuleChain =
-        RuleChain.outerRule(testNameToastRule).around(keyguardDismiss).around(composeRule)
+        // testNameToastRule is innermost, running after the activity launch, so its ~1s toast
+        // delay does not push the keyguard-dismissal-then-launch sequence into a re-engaged
+        // keyguard (see SetupActivityDeniedE2ETest's class doc for that race).
+        RuleChain.outerRule(keyguardDismiss).around(composeRule).around(testNameToastRule)
 
     @Test
     fun setupFlow_skipsMediaStep_whenPermissionAlreadyGranted() {

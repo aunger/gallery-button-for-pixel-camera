@@ -18,18 +18,23 @@ import org.junit.runner.Description
  *
  * ## Usage
  *
- * Add alongside [ScreenshotTestRule] / [FailureScreenshotRule] in any E2E test class:
+ * Wired into every E2E suite that records video (see the class docs of each suite for exactly
+ * which ones), the same way [ScreenshotTestRule] is added to the suites that use it--as a plain
+ * `@get:Rule` field:
  * ```kotlin
  * @get:Rule
  * val testNameToastRule = TestNameToastRule()
  * ```
  *
  * For classes that assemble a [org.junit.rules.RuleChain] (to sequence keyguard dismissal ahead of
- * a compose rule, for example), add this as the outermost link so the toast is the very first
- * thing shown when the test starts:
+ * a compose rule, for example), add this as the *innermost* link, after the activity is launched,
+ * rather than the outermost one. Putting it outermost would delay the keyguard-dismissal-then-
+ * launch sequence by this rule's ~1s toast duration, which is long enough to let the emulator's
+ * keyguard reassert itself before the compose rule's activity launch--exactly the race those
+ * suites' keyguard-dismissal rules exist to avoid:
  * ```kotlin
  * @get:Rule
- * val ruleChain: RuleChain = RuleChain.outerRule(testNameToastRule).around(keyguardDismiss).around(composeRule)
+ * val ruleChain: RuleChain = RuleChain.outerRule(keyguardDismiss).around(composeRule).around(testNameToastRule)
  * ```
  */
 class TestNameToastRule : TestWatcher() {
