@@ -38,6 +38,7 @@ import re
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 
@@ -605,6 +606,36 @@ def _retry_after_seconds(e, now):
     return None
 
 
+class _StripAuthOnCrossHostRedirect(urllib.request.HTTPRedirectHandler):
+    """Redirect handler that drops the Authorization header on a cross-host redirect.
+
+    `GET /repos/{owner}/{repo}/actions/artifacts/{id}/zip` (the `raw=True` path)
+    redirects to a `*.blob.core.windows.net` URL that is already fully
+    authorized by a SAS token in its own query string. urllib's default
+    redirect handling forwards the original request's `Authorization` header
+    to the redirect target regardless of host, and Azure Blob Storage then
+    rejects the request with HTTP 401 because it receives both a valid SAS
+    token and an unexpected bearer token (issue #634). Stripping the header
+    only when the redirect target's host differs from the original request's
+    host keeps same-host redirects (if any) unaffected.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        new_req = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new_req is None:
+            return None
+        old_host = urllib.parse.urlparse(req.full_url).hostname
+        new_host = urllib.parse.urlparse(newurl).hostname
+        if new_host != old_host:
+            new_req.remove_header("Authorization")
+        return new_req
+
+
+# Reused across raw=True (artifact-zip) requests: the handler itself is
+# stateless, so a single opener built once suffices (issue #634).
+_RAW_OPENER = urllib.request.build_opener(_StripAuthOnCrossHostRedirect)
+
+
 def _request(url, token, raw=False):
     """Perform an authenticated GET. Returns parsed JSON (or raw bytes if raw).
 
@@ -612,6 +643,11 @@ def _request(url, token, raw=False):
     On an HTTP error the originating HTTPError is recorded on the function as
     `_request.last_error` so callers that retry (e.g. the SHA fetch) can inspect
     rate-limit headers; it is cleared to None on a successful request.
+
+    The `raw=True` path (artifact-zip downloads) uses an opener whose redirect
+    handler strips the `Authorization` header on a cross-host redirect (see
+    `_StripAuthOnCrossHostRedirect`); the JSON API path never redirects off
+    `api.github.com`, so it keeps the plain `urllib.request.urlopen` call.
     """
     _request.last_error = None
     req = urllib.request.Request(url)
@@ -619,8 +655,12 @@ def _request(url, token, raw=False):
     req.add_header("Accept", "application/vnd.github+json")
     try:
         # URL is built from a GitHub API constant; the file:// risk does not apply.
-        with urllib.request.urlopen(req) as resp:  # nosemgrep
-            data = resp.read()
+        if raw:
+            with _RAW_OPENER.open(req) as resp:  # nosemgrep
+                data = resp.read()
+        else:
+            with urllib.request.urlopen(req) as resp:  # nosemgrep
+                data = resp.read()
     except (urllib.error.URLError, OSError) as e:
         _request.last_error = e
         sys.stderr.write("request failed (%s): %s\n" % (url, _err_detail(e)))
