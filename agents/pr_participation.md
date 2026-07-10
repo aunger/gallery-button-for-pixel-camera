@@ -28,13 +28,14 @@
   post review: mcp__github__pull_request_review_write(ReviewText, IsReviewApproval)
   ```
 
-- After posting your review, tell the Orchestrator your decision using the fixed decision-signal vocabulary from `dev_orchestration.md`: one of `LGTM` or `Changes requested`.
+- After posting your review, tell the Orchestrator your decision using the fixed decision-signal vocabulary from `dev_orchestration.md`: one of `LGTM`, `Changes requested`, or `Cannot work`.
   The Orchestrator routes this signal verbatim; it does not relay your review prose to the Author.
   The Author reads your review from GitHub directly.
 
-- Your verdict is binary: either the PR is good to merge (`LGTM`) or it needs more work (`Changes requested`).
-  There is no middle option.
-  If you want any change made before merge, request changes so the full review cycle continues.
+- Your verdict is one of exactly three words, because it selects among three different Orchestrator actions:
+  - `LGTM`: the PR is good to merge. If you want any change made before merge, do not use this; request changes instead so the full review cycle continues.
+  - `Changes requested`: the PR needs more work, and another Author round can supply it. This sends the Author back to correct or complete its work.
+  - `Cannot work`: the coding phase cannot be completed by any further Author round, because the requirements are unattainable or self-contradictory, or a blocker is genuinely outside anyone's control (for example, the CI infrastructure itself is broken). This escalates to the user instead of looping. Explain the specifics in your review comment (or, on the no-PR path, in your issue comment). Do not reach for it merely because the PR is imperfect: use `Changes requested` whenever another round could help.
 
 ### CI checks during the development cycle
 
@@ -48,8 +49,8 @@ The artifact under review is then that issue comment and the Author's stated pos
 The Orchestrator will point you at the issue rather than a PR.
 
 Because there is no PR, post your review as an ordinary comment on the **issue** (begin it with the `🤖 Reviewer` line), not via the PR review tool.
-Your verdict vocabulary is unchanged: `LGTM` or `Changes requested`.
-Choose among three stances and map each to a verdict:
+Your verdict vocabulary is unchanged: `LGTM`, `Changes requested`, or `Cannot work`.
+Choose among these stances and map each to a verdict:
 
 - **Agree and approve.** You are convinced the Author is right that no PR is warranted (the issue needs no code change, cannot be fixed, or should not be acted upon).
   Say so plainly and emit `LGTM`.
@@ -59,6 +60,8 @@ Choose among three stances and map each to a verdict:
 - **Fundamentally disagree.** You believe the Author is wrong, the issue is valid, and a change is required and possible.
   Make the case that code is needed, citing what behavior is missing or broken, and emit `Changes requested`.
   This sends the Author back to either rebut your case in the issue comments or, if convinced, open a PR with the needed code.
+- **The issue is real but unworkable.** You agree a code change is needed, but conclude the issue as stated cannot be resolved by any Author, or a required blocker is genuinely outside anyone's control.
+  Explain why fully and emit `Cannot work`, which escalates to the user instead of looping.
 
 As always, do not hold back, and do not make the change yourself; convince the Author.
 
@@ -88,7 +91,7 @@ When declining to open a PR, the Author must:
   The Orchestrator then points a Reviewer at the issue.
 
 This no-PR path changes only the artifact under review; the rest of the review cycle is unchanged.
-The Reviewer still renders an `LGTM` or `Changes requested` verdict (see the Reviewer section), and the Author still defends its position or revises it across rounds.
+The Reviewer still renders an `LGTM`, `Changes requested`, or `Cannot work` verdict (see the Reviewer section), and the Author still defends its position or revises it across rounds.
 
 ### Changing position
 
