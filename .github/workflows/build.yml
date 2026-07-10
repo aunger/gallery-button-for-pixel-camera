@@ -180,11 +180,11 @@ jobs:
             app/build/reports/tests/
           retention-days: 14
 
-      - name: Upload unit test markers
+      - name: Upload unit test monitor feed
         if: always() && steps.diff_check.outputs.needs_full_build == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: testresults-unit
+          name: ci-monitor-feed-unit
           path: results/unit.ndjson
           retention-days: 14
 
@@ -457,19 +457,19 @@ jobs:
           "$ADB" pull /sdcard/e2e-overlay.mp4 /tmp/e2e-videos/e2e-overlay.mp4 || \
             echo "WARNING: could not pull e2e-overlay.mp4"
 
-      - name: Upload overlay E2E video artifact
+      - name: Upload PixelCameraOverlayE2ETest E2E video
         if: always() && steps.diff_check.outputs.needs_full_build == 'true' && steps.run_overlay_e2e.outputs.outcome == 'failure'
         uses: actions/upload-artifact@v7
         with:
-          name: e2e-overlay-video
+          name: e2e-video-PixelCameraOverlayE2ETest
           path: /tmp/e2e-videos/e2e-overlay.mp4
           retention-days: 14
 
-      - name: Upload overlay E2E markers
+      - name: Upload PixelCameraOverlayE2ETest monitor feed
         if: always() && steps.diff_check.outputs.needs_full_build == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: testresults-e2e-overlay
+          name: ci-monitor-feed-PixelCameraOverlayE2ETest
           path: |
             results/e2e-overlay.ndjson
             results/e2e-overlay-logcat.txt
@@ -531,19 +531,19 @@ jobs:
           "$ADB" pull /sdcard/e2e-gallery.mp4 /tmp/e2e-videos/e2e-gallery.mp4 || \
             echo "WARNING: could not pull e2e-gallery.mp4"
 
-      - name: Upload gallery E2E video artifact
+      - name: Upload GalleryButtonVisualE2ETest E2E video
         if: always() && steps.diff_check.outputs.needs_full_build == 'true' && steps.run_gallery_e2e.outputs.outcome == 'failure'
         uses: actions/upload-artifact@v7
         with:
-          name: e2e-gallery-video
+          name: e2e-video-GalleryButtonVisualE2ETest
           path: /tmp/e2e-videos/e2e-gallery.mp4
           retention-days: 14
 
-      - name: Upload gallery E2E markers
+      - name: Upload GalleryButtonVisualE2ETest monitor feed
         if: always() && steps.diff_check.outputs.needs_full_build == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: testresults-e2e-gallery
+          name: ci-monitor-feed-GalleryButtonVisualE2ETest
           path: results/e2e-gallery.ndjson
           retention-days: 14
 
@@ -589,11 +589,11 @@ jobs:
               bash scripts/filter_logcat.sh
           fi
 
-      - name: Upload permissions-granted E2E markers
+      - name: Upload PermissionsGrantedE2ETest monitor feed
         if: always() && steps.diff_check.outputs.needs_full_build == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: testresults-e2e-permissions-granted
+          name: ci-monitor-feed-PermissionsGrantedE2ETest
           path: results/e2e-permissions-granted.ndjson
           retention-days: 14
 
@@ -638,11 +638,11 @@ jobs:
         run: |
           "$ANDROID_HOME/platform-tools/adb" shell pm grant com.gb4pc android.permission.READ_MEDIA_IMAGES
 
-      - name: Upload permissions-denied E2E markers
+      - name: Upload PermissionsDeniedE2ETest monitor feed
         if: always() && steps.diff_check.outputs.needs_full_build == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: testresults-e2e-permissions-denied
+          name: ci-monitor-feed-PermissionsDeniedE2ETest
           path: results/e2e-permissions-denied.ndjson
           retention-days: 14
 
@@ -680,11 +680,11 @@ jobs:
               bash scripts/filter_logcat.sh
           fi
 
-      - name: Upload SetupActivityGrantedE2ETest markers
+      - name: Upload SetupActivityGrantedE2ETest monitor feed
         if: always() && steps.diff_check.outputs.needs_full_build == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: testresults-e2e-setup-activity-granted
+          name: ci-monitor-feed-SetupActivityGrantedE2ETest
           path: results/e2e-setup-activity-granted.ndjson
           retention-days: 14
 
@@ -725,11 +725,11 @@ jobs:
         run: |
           "$ANDROID_HOME/platform-tools/adb" shell pm grant com.gb4pc android.permission.READ_MEDIA_IMAGES
 
-      - name: Upload SetupActivityDeniedE2ETest markers
+      - name: Upload SetupActivityDeniedE2ETest monitor feed
         if: always() && steps.diff_check.outputs.needs_full_build == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: testresults-e2e-setup-activity-denied
+          name: ci-monitor-feed-SetupActivityDeniedE2ETest
           path: results/e2e-setup-activity-denied.ndjson
           retention-days: 14
 
@@ -872,11 +872,11 @@ jobs:
             fi
           fi
 
-      - name: Upload SetupActivityPermissionDialogE2ETest markers
+      - name: Upload SetupActivityPermissionDialogE2ETest monitor feed
         if: always() && steps.diff_check.outputs.needs_full_build == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: testresults-e2e-setup-activity-permission-dialog
+          name: ci-monitor-feed-SetupActivityPermissionDialogE2ETest
           path: results/e2e-setup-activity-permission-dialog.ndjson
           retention-days: 14
 
@@ -954,11 +954,11 @@ jobs:
         run: |
           "$ANDROID_HOME/platform-tools/adb" shell pm grant com.gb4pc android.permission.READ_MEDIA_IMAGES
 
-      - name: Upload PartialAccessPhotoPickerE2ETest markers
+      - name: Upload PartialAccessPhotoPickerE2ETest monitor feed
         if: always() && steps.diff_check.outputs.needs_full_build == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: testresults-e2e-partial-access-photo-picker
+          name: ci-monitor-feed-PartialAccessPhotoPickerE2ETest
           path: results/e2e-partial-access-photo-picker.ndjson
           retention-days: 14
 
