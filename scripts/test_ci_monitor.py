@@ -38,6 +38,20 @@ Covers:
   (ae) #500 doc-sync: no legacy hardcoded workflow/job/marker literals remain
   (af) #500 poll_signals: a run-only target does not widen another run's job-id filter
   (al) #619: importing this module directly runs no checks and has no side effects
+  (am) #603 parse_run_result: classifies --run-id status/conclusion into
+       in_progress/all_passed/Blocked/Infra
+  (an) #603 parse_commit_sha: reads the top-level sha from a /commits/{ref} response
+  (ao) #603 argparse: exactly one of --pr/--sha/--run-id/--branch is required;
+       two or none is rejected. Also: _select_mode() branches on "was this
+       flag supplied" not on truthiness, so an empty-string value for the
+       supplied flag (e.g. --sha "") is not misrouted to the next mode
+       (review finding on PR #636)
+  (ap) #603 main(): --sha mode Clear and Blocked paths, no mergeable_state gating
+  (aq) #603 main(): --branch mode re-resolves the head SHA each poll; Clear and Blocked
+  (ar) #603 main(): --run-id mode scopes verdict/diagnostics to the run object itself,
+       never fetching /commits/{sha}/check-runs
+  (as) #603 regression: fetch_pr_with_retry delegates to fetch_with_retry; --pr's
+       output format is unchanged by the multi-mode refactor
 
 No network calls required; no GITHUB_TOKEN needed.
 Run this file directly to execute the suite: exits 0 on success, non-zero on failure.
@@ -3793,6 +3807,409 @@ def main() -> int:
         "check_runs_payload() not reachable via plain import; returncode=%r stdout=%r stderr=%r"
         % (_reuse_helper_al.returncode, _reuse_helper_al.stdout, _reuse_helper_al.stderr),
     )
+
+    # ── (am) #603 parse_run_result: classifies a /actions/runs/{id} response ───────
+    print(
+        "\n=== (am) #603 parse_run_result: in_progress/all_passed/Blocked/Infra classification ==="
+    )
+
+    check(
+        ci_monitor.parse_run_result({"status": "queued", "conclusion": None}) == "in_progress",
+        "queued run maps to in_progress",
+        "expected in_progress for a queued run",
+    )
+    check(
+        ci_monitor.parse_run_result({"status": "in_progress", "conclusion": None}) == "in_progress",
+        "in_progress run maps to in_progress",
+        "expected in_progress for an in_progress run",
+    )
+    check(
+        ci_monitor.parse_run_result({"status": "completed", "conclusion": "success"})
+        == "all_passed",
+        "completed+success maps to all_passed",
+        "expected all_passed for a completed/success run",
+    )
+    for concl in ("failure", "action_required"):
+        check(
+            ci_monitor.parse_run_result({"status": "completed", "conclusion": concl}) == "Blocked",
+            "completed+%s maps to Blocked" % concl,
+            "expected Blocked for completed/%s" % concl,
+        )
+    for concl in ("cancelled", "timed_out", "stale", "startup_failure"):
+        check(
+            ci_monitor.parse_run_result({"status": "completed", "conclusion": concl}) == "Infra",
+            "completed+%s maps to Infra" % concl,
+            "expected Infra for completed/%s" % concl,
+        )
+    check(
+        ci_monitor.parse_run_result({"status": "completed", "conclusion": "neutral"})
+        == "all_passed",
+        "an unrecognized completed conclusion (e.g. neutral) falls through to all_passed,"
+        " mirroring parse_check_result's default",
+        "expected all_passed fallback for an unrecognized completed conclusion",
+    )
+
+    # ── (an) #603 parse_commit_sha: top-level sha from /commits/{ref} ──────────────
+    print("\n=== (an) #603 parse_commit_sha: reads the top-level 'sha' field ===")
+
+    check(
+        ci_monitor.parse_commit_sha({"sha": "abc123", "commit": {}}) == "abc123",
+        "parse_commit_sha reads the top-level sha",
+        "expected 'abc123'",
+    )
+    check(
+        ci_monitor.parse_commit_sha({}) == "",
+        "parse_commit_sha returns '' when sha is absent",
+        "expected ''",
+    )
+    check(
+        ci_monitor.parse_commit_sha({"head": {"sha": "nested-only"}}) == "",
+        "parse_commit_sha does not read the nested head.sha shape (that's parse_pr_sha's job)",
+        "parse_commit_sha should not read a PR-shaped head.sha",
+    )
+
+    # ── (ao) #603 argparse: exactly one of --pr/--sha/--run-id/--branch required ───
+    print("\n=== (ao) #603 argparse: mutually exclusive identifier group ===")
+
+    with unittest.mock.patch("sys.stderr", new=io.StringIO()):
+        try:
+            ci_monitor.main(["ci_monitor.py"])
+            _fail("main() with no identifier flag should exit, but returned normally")
+        except SystemExit as e:
+            check(
+                e.code == 2,
+                "supplying none of --pr/--sha/--run-id/--branch exits with code 2",
+                "expected exit code 2, got %r" % e.code,
+            )
+
+    with unittest.mock.patch("sys.stderr", new=io.StringIO()):
+        try:
+            ci_monitor.main(["ci_monitor.py", "--pr", "1", "--sha", "deadbeef"])
+            _fail("main() with two identifier flags should exit, but returned normally")
+        except SystemExit as e:
+            check(
+                e.code == 2,
+                "supplying two identifier flags (--pr and --sha) exits with code 2",
+                "expected exit code 2, got %r" % e.code,
+            )
+    # Each flag being independently accepted is demonstrated by (ap)/(aq)/(ar)
+    # below, each of which drives main() to a terminal line via exactly one of
+    # --sha/--branch/--run-id.
+
+    # _select_mode must branch on "was this flag supplied" (argparse's
+    # un-supplied dest stays at its None default), not on truthiness--a review
+    # finding on this PR: a truthiness check misroutes a literal empty-string
+    # value for the flag actually used (e.g. `--sha ""`) to the next mode in
+    # the chain, since "" is falsy but still means --sha was supplied.
+    import argparse as _argparse_ao  # noqa: E402
+
+    def _mode_args(**kw):
+        defaults = {"pr": None, "sha": None, "run_id": None, "branch": None}
+        defaults.update(kw)
+        return _argparse_ao.Namespace(**defaults)
+
+    check(
+        ci_monitor._select_mode(_mode_args(pr="")) == ("pr", "PR#"),
+        "_select_mode: --pr '' (empty but supplied) selects pr mode, not the next one",
+        "expected ('pr', 'PR#'); got %r" % (ci_monitor._select_mode(_mode_args(pr="")),),
+    )
+    check(
+        ci_monitor._select_mode(_mode_args(sha="")) == ("sha", "SHA#"),
+        "_select_mode: --sha '' (empty but supplied) selects sha mode, not branch mode"
+        " (the exact bug reported in review)",
+        "expected ('sha', 'SHA#'); got %r" % (ci_monitor._select_mode(_mode_args(sha="")),),
+    )
+    check(
+        ci_monitor._select_mode(_mode_args(run_id="")) == ("run", "RUN#"),
+        "_select_mode: --run-id '' (empty but supplied) selects run mode",
+        "expected ('run', 'RUN#'); got %r" % (ci_monitor._select_mode(_mode_args(run_id="")),),
+    )
+    check(
+        ci_monitor._select_mode(_mode_args(branch="main")) == ("branch", "BRANCH#main"),
+        "_select_mode: --branch selects branch mode with the expected tag",
+        "expected ('branch', 'BRANCH#main'); got %r"
+        % (ci_monitor._select_mode(_mode_args(branch="main")),),
+    )
+    check(
+        ci_monitor._select_mode(_mode_args(sha="deadbeefcafe")) == ("sha", "SHA#deadbee"),
+        "_select_mode: --sha tag truncates to the first 7 characters",
+        "expected ('sha', 'SHA#deadbee'); got %r"
+        % (ci_monitor._select_mode(_mode_args(sha="deadbeefcafe")),),
+    )
+
+    # ── (ap) #603 main(): --sha mode Clear and Blocked, no PR involved ─────────────
+    print("\n=== (ap) #603 main(): --sha mode Clear path (no mergeable_state fetch) ===")
+
+    SHA_AP = "d34db33fcafe"
+    tag_ap = "SHA#%s" % SHA_AP[:7]
+    CHECK_PASS_AP = {
+        "total_count": 1,
+        "check_runs": [{"name": "build-and-test", "status": "completed", "conclusion": "success"}],
+    }
+
+    def fake_request_ap_clear(url, token, raw=False):
+        return CHECK_PASS_AP
+
+    buf_ap1 = io.StringIO()
+    with (
+        unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_ap_clear),
+        unittest.mock.patch("sys.stdout", new=buf_ap1),
+    ):
+        rc_ap1 = ci_monitor.main(["ci_monitor.py", "--sha", SHA_AP])
+
+    lines_ap1 = buf_ap1.getvalue().splitlines()
+    check(
+        ("%s: Clear" % tag_ap) in lines_ap1,
+        "sha mode emits '%s: Clear' with no mergeable_state suffix" % tag_ap,
+        "expected a bare Clear line; output: %r" % lines_ap1,
+    )
+    check(
+        not any("mergeable_state" in ln for ln in lines_ap1),
+        "sha mode never fetches or mentions mergeable_state",
+        "unexpected mergeable_state reference; output: %r" % lines_ap1,
+    )
+    check(rc_ap1 == 0, "main() returned 0", "main() returned %r" % rc_ap1)
+
+    print("\n=== (ap) #603 main(): --sha mode Blocked path, attributed by check name ===")
+
+    CHECK_BLOCKED_AP = {
+        "total_count": 1,
+        "check_runs": [{"name": "build-and-test", "status": "completed", "conclusion": "failure"}],
+    }
+    # 1 verdict poll + DRAIN_MAX_ATTEMPTS drain self-fetches of check-runs (no
+    # github-actions-shaped check run is present, so parse_actions_targets finds
+    # no jobs/artifacts to fetch on any of them).
+    side_effects_ap2 = collections.deque([CHECK_BLOCKED_AP] * (1 + ci_monitor.DRAIN_MAX_ATTEMPTS))
+
+    def fake_request_ap_blocked(url, token, raw=False):
+        return side_effects_ap2.popleft()
+
+    buf_ap2 = io.StringIO()
+    with (
+        unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_ap_blocked),
+        unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None),
+        unittest.mock.patch("sys.stdout", new=buf_ap2),
+    ):
+        rc_ap2 = ci_monitor.main(["ci_monitor.py", "--sha", SHA_AP])
+
+    lines_ap2 = buf_ap2.getvalue().splitlines()
+    check(
+        ("%s: Blocked by: build-and-test" % tag_ap) in lines_ap2,
+        "sha mode Blocked terminal attributes the failing check by name",
+        "expected an attributed Blocked line; output: %r" % lines_ap2,
+    )
+    check(
+        len(side_effects_ap2) == 0,
+        "all mocked check-runs requests consumed (1 poll + %d drain attempts)"
+        % ci_monitor.DRAIN_MAX_ATTEMPTS,
+        "request deque not drained; %d entries left" % len(side_effects_ap2),
+    )
+    check(rc_ap2 == 0, "main() returned 0", "main() returned %r" % rc_ap2)
+
+    # ── (aq) #603 main(): --branch mode re-resolves the head SHA each poll ─────────
+    print(
+        "\n=== (aq) #603 main(): --branch mode Clear path, sha resolved via /commits/{branch} ==="
+    )
+
+    BRANCH_AQ = "feature/x"
+    tag_aq = "BRANCH#%s" % BRANCH_AQ
+    COMMIT_AQ = {"sha": "0ff1ceb0a7d0"}
+    CHECK_PASS_AQ = {
+        "total_count": 1,
+        "check_runs": [{"name": "build-and-test", "status": "completed", "conclusion": "success"}],
+    }
+    side_effects_aq1 = collections.deque([COMMIT_AQ, CHECK_PASS_AQ])
+
+    def fake_request_aq1(url, token, raw=False):
+        return side_effects_aq1.popleft()
+
+    buf_aq1 = io.StringIO()
+    with (
+        unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_aq1),
+        unittest.mock.patch("sys.stdout", new=buf_aq1),
+    ):
+        rc_aq1 = ci_monitor.main(["ci_monitor.py", "--branch", BRANCH_AQ])
+
+    lines_aq1 = buf_aq1.getvalue().splitlines()
+    check(
+        ("%s: Clear" % tag_aq) in lines_aq1,
+        "branch mode emits '%s: Clear'" % tag_aq,
+        "expected a Clear line; output: %r" % lines_aq1,
+    )
+    check(
+        len(side_effects_aq1) == 0,
+        "both the commit-resolution and check-runs requests were consumed",
+        "request deque not drained; %d entries left" % len(side_effects_aq1),
+    )
+    check(rc_aq1 == 0, "main() returned 0", "main() returned %r" % rc_aq1)
+
+    print("\n=== (aq) #603 main(): --branch mode Blocked path ===")
+
+    CHECK_BLOCKED_AQ = {
+        "total_count": 1,
+        "check_runs": [{"name": "build-and-test", "status": "completed", "conclusion": "failure"}],
+    }
+    # Commit resolution + 1 verdict poll + DRAIN_MAX_ATTEMPTS drain self-fetches of
+    # check-runs (the drain re-polls check-runs directly by sha, not via the
+    # branch, so no further /commits/{branch} request is issued).
+    side_effects_aq2 = collections.deque(
+        [COMMIT_AQ, CHECK_BLOCKED_AQ] + [CHECK_BLOCKED_AQ] * ci_monitor.DRAIN_MAX_ATTEMPTS
+    )
+
+    def fake_request_aq2(url, token, raw=False):
+        return side_effects_aq2.popleft()
+
+    buf_aq2 = io.StringIO()
+    with (
+        unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_aq2),
+        unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None),
+        unittest.mock.patch("sys.stdout", new=buf_aq2),
+    ):
+        rc_aq2 = ci_monitor.main(["ci_monitor.py", "--branch", BRANCH_AQ])
+
+    lines_aq2 = buf_aq2.getvalue().splitlines()
+    check(
+        ("%s: Blocked by: build-and-test" % tag_aq) in lines_aq2,
+        "branch mode Blocked terminal attributes the failing check by name",
+        "expected an attributed Blocked line; output: %r" % lines_aq2,
+    )
+    check(
+        len(side_effects_aq2) == 0,
+        "all mocked requests consumed (commit resolve + verdict + %d drain attempts)"
+        % ci_monitor.DRAIN_MAX_ATTEMPTS,
+        "request deque not drained; %d entries left" % len(side_effects_aq2),
+    )
+    check(rc_aq2 == 0, "main() returned 0", "main() returned %r" % rc_aq2)
+
+    # ── (ar) #603 main(): --run-id mode scopes to the run object itself ────────────
+    print(
+        "\n=== (ar) #603 main(): --run-id mode Clear path (never fetches check-runs) ==="
+    )
+
+    RUN_ID_AR = "778899"
+    tag_ar = "RUN#%s" % RUN_ID_AR
+    RUN_SUCCESS_AR = {"status": "completed", "conclusion": "success", "head_sha": "5eed1234"}
+
+    def fake_request_ar1(url, token, raw=False):
+        check(
+            "check-runs" not in url,
+            "run-id mode never fetches /commits/{sha}/check-runs",
+            "unexpected check-runs fetch: %s" % url,
+        )
+        return RUN_SUCCESS_AR
+
+    buf_ar1 = io.StringIO()
+    with (
+        unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_ar1),
+        unittest.mock.patch("sys.stdout", new=buf_ar1),
+    ):
+        rc_ar1 = ci_monitor.main(["ci_monitor.py", "--run-id", RUN_ID_AR])
+
+    lines_ar1 = buf_ar1.getvalue().splitlines()
+    check(
+        ("%s: Clear" % tag_ar) in lines_ar1,
+        "run-id mode emits '%s: Clear'" % tag_ar,
+        "expected a Clear line; output: %r" % lines_ar1,
+    )
+    check(rc_ar1 == 0, "main() returned 0", "main() returned %r" % rc_ar1)
+
+    print(
+        "\n=== (ar) #603 main(): --run-id mode Blocked path, scoped to this run's jobs only ==="
+    )
+
+    RUN_FAILURE_AR = {"status": "completed", "conclusion": "failure", "head_sha": "5eed1234"}
+    JOBS_AR = {
+        "jobs": [
+            {
+                "id": 1,
+                "name": "build-and-test",
+                "steps": [
+                    {
+                        "number": 4,
+                        "name": "Build and run unit tests",
+                        "status": "completed",
+                        "conclusion": "failure",
+                    }
+                ],
+            }
+        ]
+    }
+    ARTS_EMPTY_AR = {"artifacts": []}
+    # 1 run fetch + 1 poll_signals (jobs+artifacts) + DRAIN_MAX_ATTEMPTS drain
+    # attempts, each just jobs+artifacts (explicit_targets skips any check-runs
+    # or run re-fetch during the drain).
+    side_effects_ar2 = collections.deque(
+        [RUN_FAILURE_AR, JOBS_AR, ARTS_EMPTY_AR]
+        + [JOBS_AR, ARTS_EMPTY_AR] * ci_monitor.DRAIN_MAX_ATTEMPTS
+    )
+
+    def fake_request_ar2(url, token, raw=False):
+        check(
+            "check-runs" not in url,
+            "run-id mode's drain never fetches check-runs either",
+            "unexpected check-runs fetch during drain: %s" % url,
+        )
+        return side_effects_ar2.popleft()
+
+    buf_ar2 = io.StringIO()
+    with (
+        unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_ar2),
+        unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None),
+        unittest.mock.patch("sys.stdout", new=buf_ar2),
+    ):
+        rc_ar2 = ci_monitor.main(["ci_monitor.py", "--run-id", RUN_ID_AR])
+
+    lines_ar2 = buf_ar2.getvalue().splitlines()
+    check(
+        ('%s: step "Build and run unit tests" -> failure' % tag_ar) in lines_ar2,
+        "run-id mode surfaces the failing step from its own run's jobs",
+        "expected a step failure line; output: %r" % lines_ar2,
+    )
+    check(
+        ("%s: Blocked" % tag_ar) in lines_ar2,
+        "run-id mode emits a bare Blocked terminal (no check-run summary to attribute)",
+        "expected a Blocked line; output: %r" % lines_ar2,
+    )
+    check(
+        len(side_effects_ar2) == 0,
+        "all mocked requests consumed (run fetch + jobs/artifacts + %d drain attempts)"
+        % ci_monitor.DRAIN_MAX_ATTEMPTS,
+        "request deque not drained; %d entries left" % len(side_effects_ar2),
+    )
+    check(rc_ar2 == 0, "main() returned 0", "main() returned %r" % rc_ar2)
+
+    # ── (as) #603 regression: fetch_pr_with_retry delegates to fetch_with_retry; ───
+    # --pr's output format is unchanged by the multi-mode refactor
+    print(
+        "\n=== (as) #603 regression: fetch_pr_with_retry delegates to fetch_with_retry ==="
+    )
+
+    delegate_calls_as = []
+
+    def _spy_fetch_with_retry_as(url, token, attempts=3, base_delay=2):
+        delegate_calls_as.append((url, attempts, base_delay))
+        return {"head": {"sha": "beefcafe"}}
+
+    with unittest.mock.patch.object(
+        ci_monitor, "fetch_with_retry", side_effect=_spy_fetch_with_retry_as
+    ):
+        got_as = ci_monitor.fetch_pr_with_retry("999", "tok")
+    check(
+        got_as == {"head": {"sha": "beefcafe"}},
+        "fetch_pr_with_retry returns fetch_with_retry's result",
+        "expected the delegate's return value; got %r" % got_as,
+    )
+    expected_url_as = "%s/repos/%s/%s/pulls/999" % (ci_monitor.API_BASE, OWNER_T, REPO_T)
+    check(
+        len(delegate_calls_as) == 1 and delegate_calls_as[0][0] == expected_url_as,
+        "fetch_pr_with_retry builds the same /pulls/{n} URL as before and calls"
+        " fetch_with_retry exactly once",
+        "unexpected delegate call(s): %r" % delegate_calls_as,
+    )
+    # The PR-mode tests above ((i),(j),(k),(m),(n),(p),(q),(r),(s),(t),(u),(v),(w),
+    # (x),(y),(z),(aa)-(ak)) all still assert exact 'PR#N: ...' lines byte-for-byte;
+    # their continued passing after this multi-mode refactor (issue #603) is itself
+    # the regression check that --pr's output shape is unchanged.
 
     # ── Summary ────────────────────────────────────────────────────────────────────
     print("\nResults: %d passed, %d failed." % (PASS, FAIL))

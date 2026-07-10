@@ -11,6 +11,15 @@ command-line arguments, per-outcome filter flags, and the outcome vocabulary.
 
 Usage:
     python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER> [filter flags]
+    python3 scripts/ci_monitor/ci_monitor.py --sha <SHA> [filter flags]
+    python3 scripts/ci_monitor/ci_monitor.py --run-id <RUN_ID> [filter flags]
+    python3 scripts/ci_monitor/ci_monitor.py --branch <BRANCH> [filter flags]
+
+Exactly one of --pr/--sha/--run-id/--branch is required. --sha, --run-id, and
+--branch have no PR to consult, so their `Clear` terminal fires directly off
+an all-passed check verdict--no `mergeable_state` gating (that concept is
+--pr-only). See scripts/ci_monitor/README.md for the per-mode output prefixes
+(PR#/SHA#/RUN#/BRANCH#).
 
 Environment:
     GITHUB_TOKEN  GitHub token used for the REST calls (required).
@@ -137,6 +146,13 @@ SILENCE_SECONDS = 120
 # line.
 DRAIN_DELAY_SECONDS = 5
 DRAIN_MAX_ATTEMPTS = 3
+
+
+# Conclusion buckets shared by all three verdict classifiers (parse_check_result,
+# parse_check_summary's _BLOCKING_CONCLUSIONS, and parse_run_result). Hoisted to
+# module level (issue #603) so the third classifier does not re-duplicate them.
+_INFRA_CONCLUSIONS = frozenset(("cancelled", "timed_out", "stale", "startup_failure"))
+_BLOCKED_CONCLUSIONS = frozenset(("failure", "action_required"))
 
 
 # Parsers----------------------------------------------------------------------
@@ -280,9 +296,9 @@ def parse_check_result(check_json):
     if any(s in ("in_progress", "queued") for s in statuses):
         return "in_progress"
     if all(s == "completed" for s in statuses):
-        if any(c in ("cancelled", "timed_out", "stale", "startup_failure") for c in conclusions):
+        if any(c in _INFRA_CONCLUSIONS for c in conclusions):
             return "Infra"
-        if any(c in ("failure", "action_required") for c in conclusions):
+        if any(c in _BLOCKED_CONCLUSIONS for c in conclusions):
             return "Blocked"
         return "all_passed"
     return "in_progress"
@@ -302,9 +318,7 @@ def parse_check_summary(check_json, label_gate_check_regex=DEFAULT_LABEL_GATE_CH
     Returns [] when check_runs is absent or empty. Does not make any HTTP
     requests; reads only from the already-fetched check_json payload.
     """
-    _BLOCKING_CONCLUSIONS = frozenset(
-        ("failure", "action_required", "cancelled", "timed_out", "stale", "startup_failure")
-    )
+    _BLOCKING_CONCLUSIONS = _BLOCKED_CONCLUSIONS | _INFRA_CONCLUSIONS
     rows = []
     for r in check_json.get("check_runs", []):
         name = r.get("name") or "?"
@@ -369,6 +383,43 @@ def blocking_suffix(rows):
     if all(r["label_gate"] for r in blocking):
         suffix += " [label gate]"
     return suffix
+
+
+def parse_run_result(run_json):
+    """Map a /actions/runs/{run_id} response to an overall result token.
+
+    Mirrors parse_check_result's classification, but reads status/conclusion
+    directly off a single Actions run object (issue #603, --run-id mode)
+    instead of a list of check-runs. Returns one of: 'in_progress', 'Infra',
+    'Blocked', 'all_passed'. Unlike parse_check_result, there is no 'Clear'
+    token here--a bare Actions run always exists once fetched, so the
+    "no checks registered yet" case does not apply.
+
+    Any non-'completed' status (not just 'queued'/'in_progress') maps to
+    'in_progress': a single run object only has one status field, so there is
+    no multi-check "some still running" case to distinguish, unlike
+    parse_check_result's per-check-run list.
+    """
+    status = run_json.get("status", "")
+    conclusion = run_json.get("conclusion") or ""
+    if status != "completed":
+        return "in_progress"
+    if conclusion in _INFRA_CONCLUSIONS:
+        return "Infra"
+    if conclusion in _BLOCKED_CONCLUSIONS:
+        return "Blocked"
+    return "all_passed"
+
+
+def parse_commit_sha(commit_json):
+    """Return the top-level `sha` from a /commits/{ref} response, or '' if absent.
+
+    Used by --branch mode (issue #603) to re-resolve the branch's head SHA
+    every poll. Differs from parse_pr_sha, whose SHA is nested under
+    `head.sha`: a /commits/{ref} response (ref may be a branch or SHA) carries
+    the SHA at the top level.
+    """
+    return commit_json.get("sha", "")
 
 
 # Extract the run id (and optional job id) from an Actions check run's URL.
@@ -517,8 +568,8 @@ def _request(url, token, raw=False):
 _request.last_error = None
 
 
-def fetch_pr_with_retry(pr, token, attempts=3, base_delay=2):
-    """Fetch /pulls/{n} with bounded exponential backoff and rate-limit handling.
+def fetch_with_retry(url, token, attempts=3, base_delay=2):
+    """Fetch `url` with bounded exponential backoff and rate-limit handling.
 
     Tries up to `attempts` times. Between failed tries it sleeps with exponential
     backoff (base_delay, 2x, 4x, ...), unless the failure is a rate-limit
@@ -526,17 +577,31 @@ def fetch_pr_with_retry(pr, token, attempts=3, base_delay=2):
     hint, in which case it honors that delay instead. Returns the parsed JSON on
     success, or None if every attempt fails (the caller then handles the
     throttled "could not fetch SHA" line).
+
+    Generalized (issue #603) from the old PR-only `fetch_pr_with_retry` so the
+    same retry/backoff logic serves both the `--pr` fetch and the `--branch`
+    head-commit fetch, without duplicating it.
     """
-    url = "%s/repos/%s/%s/pulls/%s" % (API_BASE, OWNER, REPO, pr)
     for attempt in range(attempts):
-        pr_json = _request(url, token)
-        if pr_json is not None:
-            return pr_json
+        result = _request(url, token)
+        if result is not None:
+            return result
         if attempt == attempts - 1:
             break
         hint = _retry_after_seconds(_request.last_error, time.time())
         time.sleep(hint if hint is not None else base_delay * (2**attempt))
     return None
+
+
+def fetch_pr_with_retry(pr, token, attempts=3, base_delay=2):
+    """Fetch /pulls/{n} with bounded exponential backoff and rate-limit handling.
+
+    Thin wrapper over fetch_with_retry that builds the /pulls/{n} URL; kept as
+    its own function since it is the --pr path's entry point and is exercised
+    directly by the test suite.
+    """
+    url = "%s/repos/%s/%s/pulls/%s" % (API_BASE, OWNER, REPO, pr)
+    return fetch_with_retry(url, token, attempts=attempts, base_delay=base_delay)
 
 
 # Main poll loop-----------------------------------------------------------------
@@ -571,6 +636,30 @@ def _parse_outcome_filters(args):
     }
 
 
+def _select_mode(args):
+    """Return (mode, tag) for whichever identifier flag was supplied (issue #603).
+
+    `mode` is one of 'pr'/'sha'/'run'/'branch'; `tag` is the output-line
+    prefix. Only --pr has a PR to gate mergeable_state on or a merged/closed
+    short-circuit; the other three modes are simpler variants that fire
+    `Clear` directly off an all-passed check verdict.
+
+    Branches on "was this flag supplied" (argparse leaves an un-supplied dest
+    at its None default), not on truthiness: the mutually exclusive group
+    only guarantees exactly one dest is non-None, not that its value is
+    non-empty, so a truthiness check would misroute a literal empty-string
+    value for the flag actually used (e.g. `--sha ""`) to the next mode in
+    the chain instead of honoring --sha.
+    """
+    if args.pr is not None:
+        return "pr", "PR#%s" % args.pr
+    if args.sha is not None:
+        return "sha", "SHA#%s" % args.sha[:7]
+    if args.run_id is not None:
+        return "run", "RUN#%s" % args.run_id
+    return "branch", "BRANCH#%s" % args.branch
+
+
 class _DocstringParser(argparse.ArgumentParser):
     """ArgumentParser that prints the module docstring for --help/-h."""
 
@@ -593,8 +682,24 @@ def main(argv):
         prog="ci_monitor.py",
         description="Poll a PR's CI and stream a terminal outcome plus per-test signals.",
     )
-    parser.add_argument(
-        "--pr", required=True, metavar="PR_NUMBER", help="The pull request number to monitor."
+    # Exactly one identifier is required (issue #603): --pr identifies a pull
+    # request; --sha/--run-id/--branch monitor a commit, an Actions run, or a
+    # branch head directly, with no PR involved.
+    id_group = parser.add_mutually_exclusive_group(required=True)
+    id_group.add_argument("--pr", metavar="PR_NUMBER", help="The pull request number to monitor.")
+    id_group.add_argument(
+        "--sha", metavar="SHA", help="A commit SHA to monitor directly; no PR involved."
+    )
+    id_group.add_argument(
+        "--run-id",
+        dest="run_id",
+        metavar="RUN_ID",
+        help="A specific GitHub Actions run ID to monitor, scoped to that run only.",
+    )
+    id_group.add_argument(
+        "--branch",
+        metavar="BRANCH",
+        help="A branch name to monitor; its head SHA is re-resolved every poll.",
     )
 
     # Per-outcome filter flags. Each outcome has an --include-* (optional regex)
@@ -618,9 +723,10 @@ def main(argv):
         )
 
     args = parser.parse_args(argv[1:])
-    pr = args.pr
     token = os.environ.get("GITHUB_TOKEN", "")
     outcome_filters = _parse_outcome_filters(args)
+
+    mode, tag = _select_mode(args)
 
     # Configurable run/artifact/step/marker behavior (issue #500). Loaded once at
     # startup and threaded into the parsers below; a missing or invalid config
@@ -639,17 +745,17 @@ def main(argv):
     seen_fails = set()
 
     def emit_block(lines):
-        """Print each line prefixed with the PR tag and reset the 120s timer."""
+        """Print each line prefixed with the mode's tag and reset the 120s timer."""
         nonlocal last_output_ts
         if not lines:
             return
         text = "\n".join(lines)
         for line in text.split("\n"):
-            print("PR#%s: %s" % (pr, line))
+            print("%s: %s" % (tag, line))
         sys.stdout.flush()
         last_output_ts = time.time()
 
-    def poll_signals(sha, check_json=None):
+    def poll_signals(sha, check_json=None, explicit_targets=None):
         """Fetch and emit the per-step and per-test informational signals for `sha`.
 
         Mirrors the streamed test-result signals described in the module
@@ -667,6 +773,13 @@ def main(argv):
         check-runs request is issued. When `check_json` is None (e.g. the drain
         in drain_then_print, which must re-fetch to observe the jobs/artifacts
         endpoints catching up), poll_signals self-fetches the payload as before.
+
+        `explicit_targets`, when not None, is used directly as the (run_id,
+        job_id) target list instead of deriving it from check-runs data (issue
+        #603). --run-id mode passes `[(run_id, None)]` so it can track its one
+        run's jobs without ever fetching /commits/{sha}/check-runs--avoiding the
+        "unrelated check on the same commit" ambiguity a check-runs-derived
+        target list would reintroduce.
         """
         emitted = [False]
 
@@ -675,11 +788,14 @@ def main(argv):
                 emitted[0] = True
             emit_block(lines)
 
-        if check_json is None:
-            check_json = _request(
-                "%s/repos/%s/%s/commits/%s/check-runs" % (API_BASE, OWNER, REPO, sha), token
-            )
-        targets = parse_actions_targets(check_json) if check_json else []
+        if explicit_targets is not None:
+            targets = explicit_targets
+        else:
+            if check_json is None:
+                check_json = _request(
+                    "%s/repos/%s/%s/commits/%s/check-runs" % (API_BASE, OWNER, REPO, sha), token
+                )
+            targets = parse_actions_targets(check_json) if check_json else []
         if not targets:
             return emitted[0]
 
@@ -739,12 +855,12 @@ def main(argv):
         return emitted[0]
 
     def print_summary(rows):
-        """Emit the per-check summary block prefixed with the PR tag."""
+        """Emit the per-check summary block prefixed with the mode's tag."""
         for ln in format_check_summary(rows):
-            print("PR#%s: %s" % (pr, ln))
+            print("%s: %s" % (tag, ln))
         sys.stdout.flush()
 
-    def drain_then_print(sha, terminal_prefix, terminal_tail, rows):
+    def drain_then_print(sha, terminal_prefix, terminal_tail, rows, explicit_targets=None):
         """Gap E (issue #402)--drain lagging signal polls before a terminal line.
 
         Pauses DRAIN_DELAY_SECONDS and re-polls the step/artifact signals, so
@@ -765,15 +881,19 @@ def main(argv):
 
         Then emits the per-check summary block and the attributed terminal line.
         The terminal is `terminal_prefix + blocking_suffix(rows) + terminal_tail`.
+
+        `explicit_targets` is forwarded to poll_signals unchanged (issue #603);
+        --run-id mode passes its single (run_id, None) target so the drain
+        re-polls stay scoped to that run instead of self-fetching check-runs.
         """
         drained = False
         for _ in range(DRAIN_MAX_ATTEMPTS):
             time.sleep(DRAIN_DELAY_SECONDS)
-            if poll_signals(sha):
+            if poll_signals(sha, explicit_targets=explicit_targets):
                 drained = True
         diagnosed = any(r["blocking"] for r in rows)
         if not drained and not diagnosed:
-            print("PR#%s: drain poll found no new diagnostic signals" % pr)
+            print("%s: drain poll found no new diagnostic signals" % tag)
             sys.stdout.flush()
         print_summary(rows)
         terminal_line = terminal_prefix + blocking_suffix(rows) + terminal_tail
@@ -789,97 +909,146 @@ def main(argv):
     sys.stdout.flush()
 
     while True:
-        # Gap C--retry the SHA fetch with backoff and rate-limit awareness
-        # instead of a flat 30s retry, so transient blips and 403/429 throttles
-        # are handled without hammering the API.
-        pr_json = fetch_pr_with_retry(pr, token)
-        sha = parse_pr_sha(pr_json) if pr_json else ""
+        # Resolve this poll's sha (mode-specific) and check for the one
+        # mode-specific early terminal (--pr's merged/closed short-circuit;
+        # issue #603 keeps that concept --pr-only, per Gap A below).
+        if mode == "pr":
+            # Gap C--retry the SHA fetch with backoff and rate-limit awareness
+            # instead of a flat 30s retry, so transient blips and 403/429
+            # throttles are handled without hammering the API.
+            pr_json = fetch_pr_with_retry(args.pr, token)
+            sha = parse_pr_sha(pr_json) if pr_json else ""
+        elif mode == "sha":
+            sha = args.sha
+        elif mode == "branch":
+            commit_json = fetch_with_retry(
+                "%s/repos/%s/%s/commits/%s" % (API_BASE, OWNER, REPO, args.branch), token
+            )
+            sha = parse_commit_sha(commit_json) if commit_json else ""
+        else:  # mode == "run"
+            sha = None  # --run-id resolves head_sha from the run object below
 
-        if not sha:
+        if mode != "run" and not sha:
             # Throttle the noise: only surface the failure after >120s of
             # silence, matching the in_progress heartbeat suppression.
             now = time.time()
             if now - last_output_ts > SILENCE_SECONDS:
-                print("PR#%s: could not fetch SHA" % pr)
+                print("%s: could not fetch SHA" % tag)
                 sys.stdout.flush()
                 last_output_ts = now
             time.sleep(30)
             continue
 
-        # Gap A--a closed or merged PR leaves mergeable_state "unknown"
-        # forever; emit a terminal line and stop instead of spinning.
-        terminal = parse_pr_terminal(pr_json)
-        if terminal:
-            print("PR#%s: %s" % (pr, terminal))
-            sys.stdout.flush()
-            break
+        if mode == "pr":
+            # Gap A--a closed or merged PR leaves mergeable_state "unknown"
+            # forever; emit a terminal line and stop instead of spinning. This
+            # concept has no equivalent for a bare commit, run, or branch.
+            terminal = parse_pr_terminal(pr_json)
+            if terminal:
+                print("%s: %s" % (tag, terminal))
+                sys.stdout.flush()
+                break
 
-        check_json = _request(
-            "%s/repos/%s/%s/commits/%s/check-runs" % (API_BASE, OWNER, REPO, sha), token
-        )
-        result = parse_check_result(check_json) if check_json else None
-        summary_rows = parse_check_summary(check_json, label_gate_check_regex) if check_json else []
+        if mode == "run":
+            # --run-id mode (issue #603) resolves verdict and diagnostics from
+            # the run object itself, not from /commits/{sha}/check-runs, so
+            # tracking stays scoped to this run and is not confused by an
+            # unrelated check on the same commit.
+            run_json = _request(
+                "%s/repos/%s/%s/actions/runs/%s" % (API_BASE, OWNER, REPO, args.run_id), token
+            )
+            if run_json is None:
+                now = time.time()
+                if now - last_output_ts > SILENCE_SECONDS:
+                    print("%s: could not fetch run" % tag)
+                    sys.stdout.flush()
+                    last_output_ts = now
+                time.sleep(30)
+                continue
+            sha = run_json.get("head_sha", "")
+            result = parse_run_result(run_json)
+            summary_rows = []
+            poll_signals(sha, explicit_targets=[(str(args.run_id), None)])
+        else:
+            check_json = _request(
+                "%s/repos/%s/%s/commits/%s/check-runs" % (API_BASE, OWNER, REPO, sha), token
+            )
+            result = parse_check_result(check_json) if check_json else None
+            summary_rows = (
+                parse_check_summary(check_json, label_gate_check_regex) if check_json else []
+            )
 
-        # --- Streamed test-result signals -------------------------------------
-        # Emitted independent of the overall check conclusion, so E2E failures
-        # surface even while the check stays green via continue-on-error. Both
-        # signals are purely informational: they reset the silence timer but
-        # never end the loop.
-        poll_signals(sha, check_json=check_json)
-        # ----------------------------------------------------------------------
+            # --- Streamed test-result signals -------------------------------------
+            # Emitted independent of the overall check conclusion, so E2E failures
+            # surface even while the check stays green via continue-on-error. Both
+            # signals are purely informational: they reset the silence timer but
+            # never end the loop.
+            poll_signals(sha, check_json=check_json)
+            # ----------------------------------------------------------------------
 
         if result == "in_progress":
             now = time.time()
             if now - last_output_ts > SILENCE_SECONDS:
-                print("PR#%s: in_progress" % pr)
+                print("%s: in_progress" % tag)
                 sys.stdout.flush()
                 last_output_ts = now
         elif result == "all_passed":
-            mpr_json = _request("%s/repos/%s/%s/pulls/%s" % (API_BASE, OWNER, REPO, pr), token)
-            mergeable = mpr_json.get("mergeable_state", "unknown") if mpr_json else "unknown"
-            if mergeable in ("clean", "unstable"):
+            if mode == "pr":
+                mpr_json = _request(
+                    "%s/repos/%s/%s/pulls/%s" % (API_BASE, OWNER, REPO, args.pr), token
+                )
+                mergeable = mpr_json.get("mergeable_state", "unknown") if mpr_json else "unknown"
+                if mergeable in ("clean", "unstable"):
+                    print_summary(summary_rows)
+                    print("%s: Clear (mergeable_state=%s)" % (tag, mergeable))
+                    sys.stdout.flush()
+                    break
+                elif mergeable in ("behind", "dirty"):
+                    # Gap E (issue #402)--drain lagging step/FAIL signals before
+                    # the terminal line; see drain_then_print and DRAIN_DELAY_SECONDS.
+                    drain_then_print(
+                        sha,
+                        "%s: Blocked" % tag,
+                        " (mergeable_state=%s)" % mergeable,
+                        summary_rows,
+                    )
+                    break
+                elif mergeable == "blocked":
+                    drain_then_print(
+                        sha, "%s: Infra" % tag, " (mergeable_state=blocked)", summary_rows
+                    )
+                    break
+                else:
+                    # Gap B--throttle "still computing" to >120s of silence, just
+                    # like the in_progress heartbeat, so it does not print every poll.
+                    now = time.time()
+                    if now - last_output_ts > SILENCE_SECONDS:
+                        print(
+                            "%s: all_passed mergeable_state=%s (still computing)" % (tag, mergeable)
+                        )
+                        sys.stdout.flush()
+                        last_output_ts = now
+            else:
+                # --sha/--branch/--run-id modes have no mergeable_state concept
+                # (issue #603): Clear fires directly off an all-passed verdict.
                 print_summary(summary_rows)
-                print("PR#%s: Clear (mergeable_state=%s)" % (pr, mergeable))
+                print("%s: Clear" % tag)
                 sys.stdout.flush()
                 break
-            elif mergeable in ("behind", "dirty"):
-                # Gap E (issue #402)--drain lagging step/FAIL signals before
-                # the terminal line; see drain_then_print and DRAIN_DELAY_SECONDS.
-                drain_then_print(
-                    sha,
-                    "PR#%s: Blocked" % pr,
-                    " (mergeable_state=%s)" % mergeable,
-                    summary_rows,
-                )
-                break
-            elif mergeable == "blocked":
-                drain_then_print(
-                    sha, "PR#%s: Infra" % pr, " (mergeable_state=blocked)", summary_rows
-                )
-                break
-            else:
-                # Gap B--throttle "still computing" to >120s of silence, just
-                # like the in_progress heartbeat, so it does not print every poll.
-                now = time.time()
-                if now - last_output_ts > SILENCE_SECONDS:
-                    print(
-                        "PR#%s: all_passed mergeable_state=%s (still computing)" % (pr, mergeable)
-                    )
-                    sys.stdout.flush()
-                    last_output_ts = now
         elif result in ("Blocked", "Infra"):
             # Gap E (issue #402)--drain lagging step/FAIL signals before the
             # terminal line; see drain_then_print and DRAIN_DELAY_SECONDS.
-            drain_then_print(sha, "PR#%s: %s" % (pr, result), "", summary_rows)
+            explicit_targets = [(str(args.run_id), None)] if mode == "run" else None
+            drain_then_print(sha, "%s: %s" % (tag, result), "", summary_rows, explicit_targets)
             break
         elif result == "Clear":
-            # No check runs registered (total_count == 0)--PR is already clear.
+            # No check runs registered (total_count == 0)--already clear.
             # Break immediately; no drain needed (there are no failing signals).
-            print("PR#%s: Clear" % pr)
+            print("%s: Clear" % tag)
             sys.stdout.flush()
             break
         elif result is not None:
-            print("PR#%s: %s" % (pr, result))
+            print("%s: %s" % (tag, result))
             sys.stdout.flush()
             last_output_ts = time.time()
 

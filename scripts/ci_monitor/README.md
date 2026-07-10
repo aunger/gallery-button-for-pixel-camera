@@ -1,23 +1,41 @@
 # CI Monitor
 
-`ci_monitor.py` polls a pull request's CI and streams a terminal outcome plus per-test signals.
+`ci_monitor.py` polls CI for a pull request, a bare commit, a specific Actions run, or a branch head, and streams a terminal outcome plus per-test signals.
 Each stdout line is the interface: terminal lines (`Clear`/`Blocked`/`Infra`) end the loop, while informational lines (`in_progress` heartbeat, per-step deltas, per-test `FAIL`/`SKIP`/`PASS`) keep it alive.
 
 For how the Orchestrator uses this script as part of the development cycle (the Monitor loop, routing decisions, and the Verification Planner dispatch), see [`agents/dev_orchestration.md`](../../agents/dev_orchestration.md).
 
 ## Running the monitor
 
-Run it from the repo root, passing the PR number via `--pr`:
+Run it from the repo root, passing **exactly one** identifier:
 
 ```bash
 python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER> [filter flags]
+python3 scripts/ci_monitor/ci_monitor.py --sha <SHA> [filter flags]
+python3 scripts/ci_monitor/ci_monitor.py --run-id <RUN_ID> [filter flags]
+python3 scripts/ci_monitor/ci_monitor.py --branch <BRANCH> [filter flags]
 ```
+
+| Flag | Tracks | Output prefix |
+|---|---|---|
+| `--pr <PR_NUMBER>` | A pull request's head commit. | `PR#<n>:` |
+| `--sha <SHA>` | A specific commit's check-runs directly, no PR involved. | `SHA#<first 7 chars>:` |
+| `--run-id <RUN_ID>` | One specific GitHub Actions run, scoped to that run only--not every check on its commit. | `RUN#<id>:` |
+| `--branch <BRANCH>` | The current head of a branch; its SHA is re-resolved every poll, so a new push is picked up. | `BRANCH#<name>:` |
+
+Supplying zero or more than one of these flags is a usage error (argparse exits with an error before any request is made).
+
+`--pr` mode is the only one with a pull request to consult, so it alone: (1) treats a merged or closed PR as an immediate terminal (`Merged`/`Closed`), and (2) gates the `Clear` terminal on `mergeable_state` (`clean`/`unstable`; `behind`/`dirty` maps to `Blocked`, `blocked` maps to `Infra`).
+`--sha`, `--run-id`, and `--branch` have no such state to consult: `Clear` fires directly off an all-passed check verdict, with no extra `/pulls/{n}` fetch.
+
+`--run-id` additionally does not fetch `/commits/{sha}/check-runs` at all--it resolves its verdict from the run object itself (`GET /actions/runs/{run_id}`, which carries `status`/`conclusion`/`head_sha` directly), and scopes step/artifact diagnostics to that one run's jobs. This keeps `--run-id` immune to an unrelated check on the same commit (e.g. this repo's `semgrep.yml`, which also runs on every commit) confusing its verdict--the problem `--pr`/`--sha`/`--branch` modes can in principle have if unrelated checks land on the same commit.
 
 `OWNER`/`REPO` default to this repo at the top of the script, and it reads `$GITHUB_TOKEN` from the environment (required).
 The script catches transient REST/parse failures per call so they cannot kill the resilient poll loop.
 
-The Monitor discovers which workflow run(s) and job(s) to track from the `/commits/{sha}/check-runs` payload, by parsing each GitHub Actions check run's `details_url` for its `(run_id, job_id)` (gated on `app.slug == "github-actions"`, with a `/actions/runs/` URL-pattern fallback when the `app` block is absent).
+In `--pr`/`--sha`/`--branch` modes, the Monitor discovers which workflow run(s) and job(s) to track from the `/commits/{sha}/check-runs` payload, by parsing each GitHub Actions check run's `details_url` for its `(run_id, job_id)` (gated on `app.slug == "github-actions"`, with a `/actions/runs/` URL-pattern fallback when the `app` block is absent).
 It does not name a workflow or job; the run/job to follow is derived from the same check-runs data that produces the verdict.
+In `--run-id` mode, the run to track is simply the one named on the command line--no check-runs payload is consulted for this purpose.
 
 ## Per-test outcome filters
 
@@ -73,6 +91,9 @@ The full marker is simply listed first as a readable convention.
 Switching the *emit* side to `##TEST##` (the Gradle/test reporters plus the `build.yml` greps) is a separate, larger change and out of scope here; the dual-marker config is the bridge, not an end state.
 
 ## Outcome vocabulary
+
+The table below is written for `--pr` mode's `PR#N:` prefix; `--sha`/`--run-id`/`--branch` modes emit the identical vocabulary under their own `SHA#<sha>:`/`RUN#<id>:`/`BRANCH#<name>:` prefix instead (see the flag table above).
+The `mergeable_state` gating on `Clear`/`Blocked`/`Infra` described below is `--pr`-only: the other three modes have no PR to consult, so `Clear` fires directly off an all-passed check verdict and `Blocked`/`Infra` fire directly off a failing/infra check conclusion, with no `mergeable_state` suffix.
 
 | Line emitted          | Meaning                                                                                               |
 |-----------------------|-------------------------------------------------------------------------------------------------------|
