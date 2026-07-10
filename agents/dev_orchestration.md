@@ -384,7 +384,7 @@ If the stall cannot be explained by a known recoverable cause (e.g., a Monitor t
 
 Stop the automated cycle and escalate to the User in either of these cases:
 
-- A sub-agent emits `Cannot work` (see the routing fences above): escalate immediately, without waiting for further rounds.
+- A Reviewer emits `Cannot work` (see the routing fences above): escalate immediately, without waiting for further rounds.
   This covers a Programmer that gives up or an issue that cannot be solved as stated; the Reviewer confirms it by emitting `Cannot work`.
 - The Programmer / Reviewer loop runs **four rounds** without reaching consensus (unless the user gave a different threshold).
   This is the fallback for a loop that stalls in disagreement; once four rounds are reached the cap applies unconditionally, even when both parties are still actively disputing.
