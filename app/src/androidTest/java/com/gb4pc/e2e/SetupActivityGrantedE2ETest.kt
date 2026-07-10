@@ -67,8 +67,11 @@ class SetupActivityGrantedE2ETest {
 
     private val composeRule = createAndroidComposeRule<SetupActivity>()
 
+    private val testNameToastRule = TestNameToastRule()
+
     @get:Rule
-    val ruleChain: RuleChain = RuleChain.outerRule(keyguardDismiss).around(composeRule)
+    val ruleChain: RuleChain =
+        RuleChain.outerRule(testNameToastRule).around(keyguardDismiss).around(composeRule)
 
     @Test
     fun setupFlow_skipsMediaStep_whenPermissionAlreadyGranted() {

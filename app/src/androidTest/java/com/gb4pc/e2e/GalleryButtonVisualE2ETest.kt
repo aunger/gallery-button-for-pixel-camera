@@ -50,6 +50,9 @@ class GalleryButtonVisualE2ETest {
     @get:Rule
     val screenshotRule = ScreenshotTestRule()
 
+    @get:Rule
+    val testNameToastRule = TestNameToastRule()
+
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
     private val fixture =
