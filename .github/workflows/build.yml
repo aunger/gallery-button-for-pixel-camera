@@ -447,7 +447,7 @@ jobs:
           "$ADB" logcat -d -T "$LOGCAT_SINCE" | \
             bash scripts/filter_logcat.sh | tee results/e2e-overlay-logcat.txt
 
-      - name: Pull and upload overlay E2E video on failure
+      - name: Pull PixelCameraOverlayE2ETest E2E video on failure
         # Only pull and upload the recording when the overlay E2E suite failed (issue #520).
         # On a green run the file is left on the device and discarded when the emulator exits.
         if: always() && steps.diff_check.outputs.needs_full_build == 'true' && steps.run_overlay_e2e.outputs.outcome == 'failure'
@@ -521,7 +521,7 @@ jobs:
           done
           wait "$RECPID_GALLERY" 2>/dev/null || true
 
-      - name: Pull and upload gallery E2E video on failure
+      - name: Pull GalleryButtonVisualE2ETest E2E video on failure
         # Only pull and upload the recording when the gallery E2E suite failed (issue #520).
         # On a green run the file is left on the device and discarded when the emulator exits.
         if: always() && steps.diff_check.outputs.needs_full_build == 'true' && steps.run_gallery_e2e.outputs.outcome == 'failure'
