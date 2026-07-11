@@ -607,18 +607,26 @@ def _retry_after_seconds(e, now):
 
 
 class _StripAuthOnCrossHostRedirect(urllib.request.HTTPRedirectHandler):
-    """Redirect handler that drops the Authorization header on a cross-host redirect.
+    """Redirect handler that drops GitHub-specific headers on a cross-host redirect.
 
     `GET /repos/{owner}/{repo}/actions/artifacts/{id}/zip` (the `raw=True` path)
     redirects to a `*.blob.core.windows.net` URL that is already fully
     authorized by a SAS token in its own query string. urllib's default
-    redirect handling forwards the original request's `Authorization` header
-    to the redirect target regardless of host, and Azure Blob Storage then
-    rejects the request with HTTP 401 because it receives both a valid SAS
-    token and an unexpected bearer token (issue #634). Stripping the header
-    only when the redirect target's host differs from the original request's
-    host keeps same-host redirects (if any) unaffected.
+    redirect handling forwards the original request's headers to the redirect
+    target regardless of host. The `Authorization` header causes Azure Blob
+    Storage to reject the request with HTTP 401 because it receives both a
+    valid SAS token and an unexpected bearer token (issue #634). The `Accept:
+    application/vnd.github+json` header set by `_request()` is GitHub-specific
+    too and has no business riding along to a non-GitHub host, so it is
+    stripped alongside `Authorization` for the same reason, even though it is
+    not currently known to cause a failure (issue #650). Stripping only
+    applies when the redirect target's host differs from the original
+    request's host, so same-host redirects (if any) are unaffected.
     """
+
+    # Headers added by `_request()` that are meaningful only to api.github.com
+    # and should not be forwarded to a cross-host redirect target.
+    _GITHUB_SPECIFIC_HEADERS = ("Authorization", "Accept")
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         new_req = super().redirect_request(req, fp, code, msg, headers, newurl)
@@ -627,7 +635,8 @@ class _StripAuthOnCrossHostRedirect(urllib.request.HTTPRedirectHandler):
         old_host = urllib.parse.urlparse(req.full_url).hostname
         new_host = urllib.parse.urlparse(newurl).hostname
         if new_host != old_host:
-            new_req.remove_header("Authorization")
+            for header_name in self._GITHUB_SPECIFIC_HEADERS:
+                new_req.remove_header(header_name)
         return new_req
 
 
@@ -645,9 +654,10 @@ def _request(url, token, raw=False):
     rate-limit headers; it is cleared to None on a successful request.
 
     The `raw=True` path (artifact-zip downloads) uses an opener whose redirect
-    handler strips the `Authorization` header on a cross-host redirect (see
-    `_StripAuthOnCrossHostRedirect`); the JSON API path never redirects off
-    `api.github.com`, so it keeps the plain `urllib.request.urlopen` call.
+    handler strips GitHub-specific headers (`Authorization`, `Accept`) on a
+    cross-host redirect (see `_StripAuthOnCrossHostRedirect`); the JSON API
+    path never redirects off `api.github.com`, so it keeps the plain
+    `urllib.request.urlopen` call.
     """
     _request.last_error = None
     req = urllib.request.Request(url)
