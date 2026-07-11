@@ -191,6 +191,15 @@ class PartialAccessPhotoPickerE2ETest {
         // system permission dialog over SetupActivity.
         composeRule.onNodeWithText(mediaButton).performClick()
 
+        // Diagnostic (issue #581): this test drives the same permission-controller dialog as
+        // SetupActivityPermissionDialogE2ETest, whose "Allow all" button intermittently failed
+        // to register a tap that landed correctly by resource id, traced to a possible
+        // cross-process window-focus-transfer race after the activity switch from SetupActivity.
+        // This suite's own button tap has not shown that flake, but measuring it here too costs
+        // nothing and gives a second data point on whether the transfer time is consistent
+        // across both buttons on the same dialog. See E2EFixture.waitForWindowFocus.
+        fixture.waitForWindowFocus(PERMISSION_CONTROLLER_PKG, FOCUS_TIMEOUT_MS)
+
         // Drive the real com.android.permissioncontroller dialog: pick "Select photos and
         // videos" (partial access, H2) instead of SetupActivityPermissionDialogE2ETest's
         // "Allow all", then drive the resulting system photo picker to completion.
@@ -345,5 +354,10 @@ class PartialAccessPhotoPickerE2ETest {
         const val DIALOG_TIMEOUT_MS = 5_000L
         const val GRANT_TIMEOUT_MS = 10_000L
         const val BANNER_TIMEOUT_MS = 10_000L
+
+        // Matches SetupActivityPermissionDialogE2ETest's budget for the same diagnostic (issue
+        // #581): generous enough that a genuine non-transfer within it is itself the interesting
+        // result, not a timeout to tighten.
+        const val FOCUS_TIMEOUT_MS = 45_000L
     }
 }
