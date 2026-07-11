@@ -128,10 +128,20 @@ class TestFindConflictingPrefix(unittest.TestCase):
     def test_case_insensitive_c_r(self):
         self.assertEqual(emxl.find_conflicting_prefix("C-R-Haiku"), "c-r-")
 
+    def test_test_failure_label_returns_prefix(self):
+        self.assertEqual(emxl.find_conflicting_prefix("test-failure"), "test-failure")
+
+    def test_test_failure_archive_label_returns_prefix(self):
+        self.assertEqual(emxl.find_conflicting_prefix("test-failure-archive"), "test-failure")
+
+    def test_case_insensitive_test_failure(self):
+        self.assertEqual(emxl.find_conflicting_prefix("Test-Failure-Archive"), "test-failure")
+
     def test_unrelated_label_returns_none(self):
         self.assertIsNone(emxl.find_conflicting_prefix("ci"))
         self.assertIsNone(emxl.find_conflicting_prefix("p1"))
         self.assertIsNone(emxl.find_conflicting_prefix("bug"))
+        self.assertIsNone(emxl.find_conflicting_prefix("testing"))
 
     def test_empty_string_returns_none(self):
         self.assertIsNone(emxl.find_conflicting_prefix(""))
@@ -187,6 +197,25 @@ class TestLabelsByPrefix(unittest.TestCase):
         )
         self.assertIn("c-a-haiku", result)
         self.assertNotIn("c-r-opus", result)
+
+    def test_removes_test_failure_when_archive_added(self):
+        result = emxl.labels_to_remove_by_prefix(
+            "test-failure-archive", ["test-failure", "testing"], "test-failure"
+        )
+        self.assertEqual(result, ["test-failure"])
+
+    def test_removes_test_failure_archive_when_test_failure_added(self):
+        result = emxl.labels_to_remove_by_prefix(
+            "test-failure", ["test-failure-archive", "testing"], "test-failure"
+        )
+        self.assertEqual(result, ["test-failure-archive"])
+
+    def test_test_failure_prefix_does_not_touch_testing_label(self):
+        """The 'testing' label shares no real prefix with 'test-failure' and must survive."""
+        result = emxl.labels_to_remove_by_prefix(
+            "test-failure", ["testing", "ci"], "test-failure"
+        )
+        self.assertEqual(result, [])
         self.assertNotIn("ci", result)
 
 
@@ -618,6 +647,56 @@ class TestMain(unittest.TestCase):
         # c-a-opus must not appear in any DELETE call
         delete_paths = [c[0][0] for c in mock_api.call_args_list[1:]]
         self.assertFalse(any("c-a-opus" in p for p in delete_paths))
+
+    def test_test_failure_archive_removes_test_failure(self):
+        """Adding test-failure-archive when test-failure is present removes test-failure."""
+        with patch.dict(os.environ, {"ADDED_LABEL": "test-failure-archive"}):
+            with patch.object(
+                emxl,
+                "gh_api",
+                side_effect=[
+                    self._make_issue_response(["test-failure", "testing"]),
+                    None,  # DELETE test-failure
+                ],
+            ) as mock_api:
+                result = emxl.main()
+
+        self.assertEqual(result, 0)
+        delete_call = mock_api.call_args_list[1]
+        self.assertIn("test-failure", delete_call[0][0])
+        self.assertEqual(delete_call[1]["method"], "DELETE")
+
+    def test_test_failure_removes_test_failure_archive(self):
+        """Adding test-failure when test-failure-archive is present removes test-failure-archive."""
+        with patch.dict(os.environ, {"ADDED_LABEL": "test-failure"}):
+            with patch.object(
+                emxl,
+                "gh_api",
+                side_effect=[
+                    self._make_issue_response(["test-failure-archive", "testing"]),
+                    None,  # DELETE test-failure-archive
+                ],
+            ) as mock_api:
+                result = emxl.main()
+
+        self.assertEqual(result, 0)
+        delete_call = mock_api.call_args_list[1]
+        self.assertIn("test-failure-archive", delete_call[0][0])
+        self.assertEqual(delete_call[1]["method"], "DELETE")
+
+    def test_test_failure_prefix_does_not_remove_testing_label(self):
+        """Enforcing the test-failure group must not touch the unrelated 'testing' label."""
+        with patch.dict(os.environ, {"ADDED_LABEL": "test-failure"}):
+            with patch.object(
+                emxl,
+                "gh_api",
+                side_effect=[self._make_issue_response(["testing", "ci"])],
+            ) as mock_api:
+                result = emxl.main()
+
+        self.assertEqual(result, 0)
+        # Only the GET call to fetch the issue should be made; no conflicts found.
+        self.assertEqual(mock_api.call_count, 1)
 
 
 if __name__ == "__main__":
