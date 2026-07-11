@@ -4485,21 +4485,6 @@ def main() -> int:
         "cross-host redirect kept Authorization: %r"
         % (cross_host_redirected and cross_host_redirected.get_header("Authorization")),
     )
-    # (aw) #650: Accept is GitHub-specific too (it rides along from `_request()`
-    # as "application/vnd.github+json") and has no business reaching a
-    # non-GitHub host, so the cross-host redirect strips it just like
-    # Authorization, even though it is not known to cause a failure.
-    check(
-        cross_host_redirected is not None and cross_host_redirected.get_header("Accept") is None,
-        "cross-host redirect strips the Accept header",
-        "cross-host redirect kept Accept: %r"
-        % (cross_host_redirected and cross_host_redirected.get_header("Accept")),
-    )
-    check(
-        cross_host_redirected is not None and cross_host_redirected.get_header("X-unrelated") == "keep-me",
-        "cross-host redirect keeps a genuinely unrelated header",
-        "cross-host redirect dropped an unrelated header unexpectedly",
-    )
 
     # Same-host redirect: Authorization is not the cross-host leak this guards
     # against, so it is left intact.
@@ -4559,6 +4544,27 @@ def main() -> int:
         mock_opener_open.call_count == 1,
         "_request(raw=True) calls the stripping opener exactly once",
         "_request(raw=True) called the opener %d times" % mock_opener_open.call_count,
+    )
+
+    # ── (aw) #650 cross-host redirect also strips Accept ──────────
+    print("\n=== (aw) #650 _StripAuthOnCrossHostRedirect also strips Accept across hosts ===")
+
+    # Accept is GitHub-specific too (it rides along from `_request()` as
+    # "application/vnd.github+json") and has no business reaching a
+    # non-GitHub host, so the cross-host redirect strips it just like
+    # Authorization, even though it is not known to cause a failure. Reuses
+    # `cross_host_redirected` from the (av) section above, which was built
+    # from a request carrying Authorization, Accept, and an unrelated header.
+    check(
+        cross_host_redirected is not None and cross_host_redirected.get_header("Accept") is None,
+        "cross-host redirect strips the Accept header",
+        "cross-host redirect kept Accept: %r"
+        % (cross_host_redirected and cross_host_redirected.get_header("Accept")),
+    )
+    check(
+        cross_host_redirected is not None and cross_host_redirected.get_header("X-unrelated") == "keep-me",
+        "cross-host redirect keeps a genuinely unrelated header",
+        "cross-host redirect dropped an unrelated header unexpectedly",
     )
 
     # ── Summary ────────────────────────────────────────────────────────────────────
