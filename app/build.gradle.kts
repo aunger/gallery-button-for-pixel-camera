@@ -366,6 +366,52 @@ tasks.register("connectedE2EAndroidTest") {
         val finishedInTime = instrumentProcess.waitFor(e2eInstrumentTimeoutMinutes, TimeUnit.MINUTES)
         val timedOut = !finishedInTime
         if (timedOut) {
+            // Issue #629: this class's own hang history has already shown two different
+            // symptoms (a keyguard-driven RESUMED/PAUSED flicker, then later a launch that
+            // never produced any further system activity at all), and the second recurrence
+            // left no real clue to work from: scripts/filter_logcat.sh's tag allowlist may
+            // have dropped lines relevant to a stuck launch, and nothing captured what was
+            // actually on screen. Grab both BEFORE the force-stop below tears the activity
+            // down, so the device state reflects the hang itself rather than a freshly
+            // cleaned slate. Best-effort: a device unresponsive enough to hang a whole suite
+            // might not answer these either, so failures here must not mask the timeout
+            // exception thrown below.
+            val diagnosticsDir =
+                layout.buildDirectory
+                    .dir("outputs/e2e-diagnostics")
+                    .get()
+                    .asFile
+                    .also { it.mkdirs() }
+            val onDeviceDumpPath = "/sdcard/gb4pc-e2e-timeout-uidump.xml"
+            exec {
+                commandLine(e2eAdb, "shell", "uiautomator", "dump", onDeviceDumpPath)
+                isIgnoreExitValue = true
+            }
+            exec {
+                commandLine(
+                    e2eAdb,
+                    "pull",
+                    onDeviceDumpPath,
+                    File(diagnosticsDir, "$xmlSuiteName-timeout-uidump.xml").absolutePath,
+                )
+                isIgnoreExitValue = true
+            }
+            // Unfiltered: unlike every other CI failure branch (which pipes through
+            // scripts/filter_logcat.sh), this dumps the raw buffer so a symptom outside that
+            // script's tag allowlist can't be silently dropped again.
+            val rawLogcat = ByteArrayOutputStream()
+            exec {
+                commandLine(e2eAdb, "logcat", "-d")
+                standardOutput = rawLogcat
+                isIgnoreExitValue = true
+            }
+            File(diagnosticsDir, "$xmlSuiteName-timeout-logcat.txt").writeText(rawLogcat.toString())
+            println(
+                "E2E timeout diagnostics captured for $xmlSuiteName in " +
+                    "${diagnosticsDir.absolutePath} (UI Automator dump + full logcat); " +
+                    "see the e2e-timeout-diagnostics CI artifact.",
+            )
+
             instrumentProcess.destroyForcibly()
             // PR #628 review: destroyForcibly() above only kills the local `adb shell am
             // instrument` client process; it does not by itself confirm the on-device
