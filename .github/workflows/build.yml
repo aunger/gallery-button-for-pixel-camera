@@ -1167,6 +1167,23 @@ jobs:
           $ANDROID_HOME/platform-tools/adb emu kill 2>/dev/null || true
           [[ -n "${EMULATOR_PID:-}" ]] && kill "$EMULATOR_PID" 2>/dev/null || true
 
+      - name: Upload E2E timeout diagnostics
+        # Issue #629: connectedE2EAndroidTest (app/build.gradle.kts) writes a UI Automator
+        # screen dump and the full, unfiltered logcat buffer into
+        # app/build/outputs/e2e-diagnostics/ only when its own 10-minute `am instrument`
+        # timeout (issue #611/#628) fires, captured before force-stop tears the hung
+        # activity down. Whichever E2E suite step (if any) hit that timeout is the only one
+        # that would have populated the directory, so this single step runs unconditionally
+        # after every suite rather than being duplicated per-suite; if-no-files-found:
+        # ignore keeps the common (no timeout) case from warning.
+        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-timeout-diagnostics
+          path: app/build/outputs/e2e-diagnostics/
+          retention-days: 14
+          if-no-files-found: ignore
+
       - name: Upload instrumented test results
         if: always() && steps.diff_check.outputs.needs_full_build == 'true'
         uses: actions/upload-artifact@v7

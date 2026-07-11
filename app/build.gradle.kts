@@ -245,6 +245,43 @@ val e2eXmlDir =
     layout.buildDirectory
         .dir("outputs/androidTest-results/connected/debug")
 
+/**
+ * Runs [command] via a plain ProcessBuilder, bounded by [timeoutSeconds]: `Process.waitFor(timeout,
+ * unit)` + `destroyForcibly()` on expiry, the same pattern `e2eInstrumentTimeoutMinutes` uses below
+ * for `am instrument` -- not the `timeout` coreutil `build.yml` uses for its own adb waits, to keep
+ * this task portable to local dev on any OS (see that call site's own rationale).
+ *
+ * Returns combined stdout/stderr, or "" on any failure (non-zero exit, thrown exception, or the
+ * timeout itself, which is logged as a warning rather than thrown). Callers use this only for
+ * best-effort diagnostic capture (issue #629): a command that hangs or errors here must never
+ * block the build or mask the failure that triggered the capture in the first place -- exactly the
+ * class of hang this whole task's timeout guard exists to eliminate.
+ */
+fun runBestEffort(
+    command: List<String>,
+    timeoutSeconds: Long,
+): String =
+    try {
+        val process = ProcessBuilder(command).redirectErrorStream(true).start()
+        val out = ByteArrayOutputStream()
+        val drainThread =
+            Thread {
+                process.inputStream.copyTo(out)
+            }.apply {
+                isDaemon = true
+                start()
+            }
+        if (!process.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
+            process.destroyForcibly()
+            println("WARNING: '${command.joinToString(" ")}' did not finish within ${timeoutSeconds}s; killed")
+        }
+        drainThread.join(TimeUnit.SECONDS.toMillis(5))
+        out.toString()
+    } catch (e: Exception) {
+        println("WARNING: '${command.joinToString(" ")}' failed: ${e.message}")
+        ""
+    }
+
 tasks.register("connectedE2EAndroidTest") {
     group = "verification"
     description = "Runs E2E instrumented tests (requires device/emulator with Pixel Camera installed)."
@@ -366,6 +403,50 @@ tasks.register("connectedE2EAndroidTest") {
         val finishedInTime = instrumentProcess.waitFor(e2eInstrumentTimeoutMinutes, TimeUnit.MINUTES)
         val timedOut = !finishedInTime
         if (timedOut) {
+            // Issue #629: this class's own hang history has already shown two different
+            // symptoms (a keyguard-driven RESUMED/PAUSED flicker, then later a launch that
+            // never produced any further system activity at all), and the second recurrence
+            // left no real clue to work from: scripts/filter_logcat.sh's tag allowlist may
+            // have dropped lines relevant to a stuck launch, and nothing captured what was
+            // actually on screen. Grab both BEFORE the force-stop below tears the activity
+            // down, so the device state reflects the hang itself rather than a freshly
+            // cleaned slate. Best-effort: a device unresponsive enough to hang a whole suite
+            // might not answer these either, so each capture is bounded via runBestEffort()
+            // (PR #651 review): an unbounded `exec {}` here could itself hang against the exact
+            // unresponsive-device state this issue documents, reintroducing the multi-hour block
+            // issue #611/#628 already eliminated for `am instrument`, just three calls later.
+            val diagnosticsDir =
+                layout.buildDirectory
+                    .dir("outputs/e2e-diagnostics")
+                    .get()
+                    .asFile
+                    .also { it.mkdirs() }
+            val diagnosticsTimeoutSeconds = 30L
+            val onDeviceDumpPath = "/sdcard/gb4pc-e2e-timeout-uidump.xml"
+            runBestEffort(
+                listOf(e2eAdb, "shell", "uiautomator", "dump", onDeviceDumpPath),
+                diagnosticsTimeoutSeconds,
+            )
+            runBestEffort(
+                listOf(
+                    e2eAdb,
+                    "pull",
+                    onDeviceDumpPath,
+                    File(diagnosticsDir, "$xmlSuiteName-timeout-uidump.xml").absolutePath,
+                ),
+                diagnosticsTimeoutSeconds,
+            )
+            // Unfiltered: unlike every other CI failure branch (which pipes through
+            // scripts/filter_logcat.sh), this dumps the raw buffer so a symptom outside that
+            // script's tag allowlist can't be silently dropped again.
+            val rawLogcat = runBestEffort(listOf(e2eAdb, "logcat", "-d"), diagnosticsTimeoutSeconds)
+            File(diagnosticsDir, "$xmlSuiteName-timeout-logcat.txt").writeText(rawLogcat)
+            println(
+                "E2E timeout diagnostics captured for $xmlSuiteName in " +
+                    "${diagnosticsDir.absolutePath} (UI Automator dump + full logcat); " +
+                    "see the e2e-timeout-diagnostics CI artifact.",
+            )
+
             instrumentProcess.destroyForcibly()
             // PR #628 review: destroyForcibly() above only kills the local `adb shell am
             // instrument` client process; it does not by itself confirm the on-device
