@@ -197,6 +197,7 @@ class TestLabelsByPrefix(unittest.TestCase):
         )
         self.assertIn("c-a-haiku", result)
         self.assertNotIn("c-r-opus", result)
+        self.assertNotIn("ci", result)
 
     def test_removes_test_failure_when_archive_added(self):
         result = emxl.labels_to_remove_by_prefix(
@@ -216,7 +217,6 @@ class TestLabelsByPrefix(unittest.TestCase):
             "test-failure", ["testing", "ci"], "test-failure"
         )
         self.assertEqual(result, [])
-        self.assertNotIn("ci", result)
 
 
 # ---------------------------------------------------------------------------
