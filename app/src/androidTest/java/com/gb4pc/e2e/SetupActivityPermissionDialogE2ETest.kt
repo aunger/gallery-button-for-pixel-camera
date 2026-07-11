@@ -127,11 +127,14 @@ class SetupActivityPermissionDialogE2ETest {
         // Diagnostic (issue #581): a flat 1-minute sleep in an earlier commit on this PR did not
         // fix the flake, ruling out the timing-theory family wholesale rather than confirming one
         // mechanism within it. Measure the actual thing that theory family was about, instead of
-        // guessing at a delay: wait for the permission-controller window to actually take input
+        // guessing at a delay: wait for GrantPermissionsActivity's window to actually take input
         // focus (see E2EFixture.waitForWindowFocus), logging how long that took, or that it
         // never happened, so CI logcat carries a real number regardless of whether the assertion
-        // below passes or fails.
-        fixture.waitForWindowFocus(PERMISSION_CONTROLLER_PKG, FOCUS_TIMEOUT_MS)
+        // below passes or fails. Matched by activity class name, not PERMISSION_CONTROLLER_PKG:
+        // that constant is the dialog's resource package (correct for the By.res() lookups
+        // below), not necessarily its runtime application id, which differs on this CI
+        // emulator's Google-branded system image (see waitForWindowFocus's doc).
+        fixture.waitForWindowFocus("GrantPermissionsActivity", FOCUS_TIMEOUT_MS)
 
         // Drive the real com.android.permissioncontroller dialog: tap "Allow all".
         tapAllowAllInSystemDialog()

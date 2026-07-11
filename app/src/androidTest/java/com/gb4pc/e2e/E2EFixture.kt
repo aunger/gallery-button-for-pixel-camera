@@ -345,27 +345,36 @@ class E2EFixture(
     }
 
     /**
-     * Polls `dumpsys window` for the moment [packageName]'s window takes input focus (issue
-     * #581's cross-process activity-switch diagnostic: a UI Automator click can find and tap a
-     * target's accessibility node before WindowManagerService finishes handing that window
-     * input focus, so the tap lands on a window that is not yet receiving touches). Logs how
-     * long the transfer took, or that it never happened within [timeoutMs], via [TAG] so CI
-     * logcat carries a real measurement regardless of whether the caller's own assertions pass
-     * or fail afterward.
+     * Polls `dumpsys window` for the moment the window whose component name contains
+     * [componentFragment] takes input focus (issue #581's cross-process activity-switch
+     * diagnostic: a UI Automator click can find and tap a target's accessibility node before
+     * WindowManagerService finishes handing that window input focus, so the tap lands on a
+     * window that is not yet receiving touches). Logs how long the transfer took, or that it
+     * never happened within [timeoutMs], via [TAG] so CI logcat carries a real measurement
+     * regardless of whether the caller's own assertions pass or fail afterward.
+     *
+     * Matches on a substring of the reported component (`package/Class`), not a package prefix:
+     * an earlier revision of this diagnostic compared against
+     * `com.android.permissioncontroller` and always reported a false "never took focus" on this
+     * CI emulator's Google-branded system image, whose permission controller actually runs as
+     * `com.google.android.permissioncontroller` (its resource package, used by `By.res()` button
+     * lookups elsewhere, is still `com.android.permissioncontroller`; only the runtime
+     * application id differs). An activity class name fragment such as
+     * `"GrantPermissionsActivity"` is stable across that branding difference.
      */
     fun waitForWindowFocus(
-        packageName: String,
+        componentFragment: String,
         timeoutMs: Long,
     ): Boolean {
         val start = System.currentTimeMillis()
-        val focused = waitForCondition(timeoutMs) { currentFocusedComponent().startsWith("$packageName/") }
+        val focused = waitForCondition(timeoutMs) { currentFocusedComponent().contains(componentFragment) }
         val elapsedMs = System.currentTimeMillis() - start
         if (focused) {
-            Log.i(TAG, "$packageName took input focus after ${elapsedMs}ms")
+            Log.i(TAG, "'$componentFragment' took input focus after ${elapsedMs}ms")
         } else {
             Log.w(
                 TAG,
-                "$packageName never took input focus within ${timeoutMs}ms " +
+                "'$componentFragment' never took input focus within ${timeoutMs}ms " +
                     "(last focused component: '${currentFocusedComponent()}')",
             )
         }

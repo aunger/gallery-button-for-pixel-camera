@@ -201,8 +201,11 @@ class PartialAccessPhotoPickerE2ETest {
         // cross-process window-focus-transfer race after the activity switch from SetupActivity.
         // This suite's own button tap has not shown that flake, but measuring it here too costs
         // nothing and gives a second data point on whether the transfer time is consistent
-        // across both buttons on the same dialog. See E2EFixture.waitForWindowFocus.
-        fixture.waitForWindowFocus(PERMISSION_CONTROLLER_PKG, FOCUS_TIMEOUT_MS)
+        // across both buttons on the same dialog. Matched by activity class name, not
+        // PERMISSION_CONTROLLER_PKG: see E2EFixture.waitForWindowFocus's doc for why that
+        // constant (correct for the By.res() lookups below) isn't this dialog's runtime
+        // application id on this CI emulator's Google-branded system image.
+        fixture.waitForWindowFocus("GrantPermissionsActivity", FOCUS_TIMEOUT_MS)
 
         // Drive the real com.android.permissioncontroller dialog: pick "Select photos and
         // videos" (partial access, H2) instead of SetupActivityPermissionDialogE2ETest's
