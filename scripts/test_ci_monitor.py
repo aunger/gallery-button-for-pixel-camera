@@ -61,6 +61,9 @@ Covers:
   (av) #634 _StripAuthOnCrossHostRedirect strips Authorization on a cross-host
        redirect (the artifact-zip -> Azure Blob Storage case) but keeps it on
        a same-host redirect; _request(raw=True) routes through this handler
+  (aw) #650 _StripAuthOnCrossHostRedirect also strips Accept (another
+       GitHub-specific header) on a cross-host redirect, while leaving an
+       unrelated header untouched
 
 No network calls required; no GITHUB_TOKEN needed.
 Run this file directly to execute the suite: exits 0 on success, non-zero on failure.
@@ -4467,6 +4470,7 @@ def main() -> int:
     )
     cross_host_req.add_header("Authorization", "Bearer sekrit")
     cross_host_req.add_header("Accept", "application/vnd.github+json")
+    cross_host_req.add_header("X-Unrelated", "keep-me")
     cross_host_redirected = _redirect_handler.redirect_request(
         cross_host_req,
         None,
@@ -4481,10 +4485,19 @@ def main() -> int:
         "cross-host redirect kept Authorization: %r"
         % (cross_host_redirected and cross_host_redirected.get_header("Authorization")),
     )
+    # (aw) #650: Accept is GitHub-specific too (it rides along from `_request()`
+    # as "application/vnd.github+json") and has no business reaching a
+    # non-GitHub host, so the cross-host redirect strips it just like
+    # Authorization, even though it is not known to cause a failure.
     check(
-        cross_host_redirected is not None
-        and cross_host_redirected.get_header("Accept") == "application/vnd.github+json",
-        "cross-host redirect keeps unrelated headers (e.g. Accept)",
+        cross_host_redirected is not None and cross_host_redirected.get_header("Accept") is None,
+        "cross-host redirect strips the Accept header",
+        "cross-host redirect kept Accept: %r"
+        % (cross_host_redirected and cross_host_redirected.get_header("Accept")),
+    )
+    check(
+        cross_host_redirected is not None and cross_host_redirected.get_header("X-unrelated") == "keep-me",
+        "cross-host redirect keeps a genuinely unrelated header",
         "cross-host redirect dropped an unrelated header unexpectedly",
     )
 
