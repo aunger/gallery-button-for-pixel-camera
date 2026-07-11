@@ -124,17 +124,18 @@ class SetupActivityPermissionDialogE2ETest {
         // system permission dialog over SetupActivity.
         composeRule.onNodeWithText(mediaButton).performClick()
 
-        // Wait for the permission-controller window to report an update (issue #581) before
-        // searching for its buttons. permission_allow_all_button's node can appear in the
-        // accessibility tree fast enough that findDialogObject() matches and clicks it before
-        // WindowManager has finished handing this cross-process activity switch its input focus,
-        // so the tap lands on a window that is not yet receiving touches: the grant never
-        // registers (no PackageManager grant, no onRequestPermissionsResult callback, no
-        // GrantPermissionsActivity finish), and the sole symptom is hasMediaPermission() never
-        // becoming true within GRANT_TIMEOUT_MS. This wait is not merely redundant with
-        // findDialogObject()'s own device.wait(): that call only waits for the node to exist, not
-        // for its window to be focused for input.
-        device.waitForWindowUpdate(PERMISSION_CONTROLLER_PKG, WINDOW_UPDATE_TIMEOUT_MS)
+        // DELIBERATE DIAGNOSTIC OVERSHOOT (issue #581), not the intended fix: a flat one-minute
+        // sleep before searching for the dialog's buttons at all, to test the timing-theory family
+        // wholesale rather than any one specific settle signal. device.waitForWindowUpdate() (a
+        // window content/state-change event wait) did not fix the flake in the previous commit on
+        // this PR; that leaves open whether the settle time this test actually needs is simply
+        // longer than an event-driven wait provides, or whether timing is not the cause at all. A
+        // sleep this long relative to PartialAccessPhotoPickerE2ETest's accidental ~10 s settle
+        // (from two dead resource-id lookups before it reaches its real button) should clear
+        // either possibility if the root cause is timing-related in any form; if the assertion
+        // still fails after this, that rules out the whole timing-theory family, not just one
+        // mechanism within it.
+        Thread.sleep(60_000L)
 
         // Drive the real com.android.permissioncontroller dialog: tap "Allow all".
         tapAllowAllInSystemDialog()
@@ -203,10 +204,5 @@ class SetupActivityPermissionDialogE2ETest {
         // requireNotNull(button) failure tapAllowAllInSystemDialog() would otherwise throw).
         const val GRANT_TIMEOUT_MS = 20_000L
         const val ADVANCE_TIMEOUT_MS = 10_000L
-
-        // Bounded by DIALOG_TIMEOUT_MS's own budget for finding the dialog at all: if the window
-        // update never arrives within this long, findDialogObject()'s own wait below will time
-        // out too and report the clearer "button not found" failure instead.
-        const val WINDOW_UPDATE_TIMEOUT_MS = 5_000L
     }
 }
