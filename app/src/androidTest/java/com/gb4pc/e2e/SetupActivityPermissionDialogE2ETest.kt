@@ -124,6 +124,18 @@ class SetupActivityPermissionDialogE2ETest {
         // system permission dialog over SetupActivity.
         composeRule.onNodeWithText(mediaButton).performClick()
 
+        // Wait for the permission-controller window to report an update (issue #581) before
+        // searching for its buttons. permission_allow_all_button's node can appear in the
+        // accessibility tree fast enough that findDialogObject() matches and clicks it before
+        // WindowManager has finished handing this cross-process activity switch its input focus,
+        // so the tap lands on a window that is not yet receiving touches: the grant never
+        // registers (no PackageManager grant, no onRequestPermissionsResult callback, no
+        // GrantPermissionsActivity finish), and the sole symptom is hasMediaPermission() never
+        // becoming true within GRANT_TIMEOUT_MS. This wait is not merely redundant with
+        // findDialogObject()'s own device.wait(): that call only waits for the node to exist, not
+        // for its window to be focused for input.
+        device.waitForWindowUpdate(PERMISSION_CONTROLLER_PKG, WINDOW_UPDATE_TIMEOUT_MS)
+
         // Drive the real com.android.permissioncontroller dialog: tap "Allow all".
         tapAllowAllInSystemDialog()
 
@@ -191,5 +203,10 @@ class SetupActivityPermissionDialogE2ETest {
         // requireNotNull(button) failure tapAllowAllInSystemDialog() would otherwise throw).
         const val GRANT_TIMEOUT_MS = 20_000L
         const val ADVANCE_TIMEOUT_MS = 10_000L
+
+        // Bounded by DIALOG_TIMEOUT_MS's own budget for finding the dialog at all: if the window
+        // update never arrives within this long, findDialogObject()'s own wait below will time
+        // out too and report the clearer "button not found" failure instead.
+        const val WINDOW_UPDATE_TIMEOUT_MS = 5_000L
     }
 }
