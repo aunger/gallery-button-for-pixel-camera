@@ -58,6 +58,9 @@ Covers:
        into failed_steps
   (au) #602 parse_fails: failed_tests collects only FAIL "[suite] name"
        identifiers (not PASS/SKIP), deduped via the shared seen set
+  (av) #634 _StripAuthOnCrossHostRedirect strips Authorization on a cross-host
+       redirect (the artifact-zip -> Azure Blob Storage case) but keeps it on
+       a same-host redirect; _request(raw=True) routes through this handler
 
 No network calls required; no GITHUB_TOKEN needed.
 Run this file directly to execute the suite: exits 0 on success, non-zero on failure.
@@ -4450,6 +4453,99 @@ def main() -> int:
         failed_tests_au2 == ["[com.gb4pc.e2e.GalleryButtonVisualE2ETest] test1a"],
         "failed_tests is deduped across calls via the shared seen set",
         "failed_tests dedup wrong; got %r" % failed_tests_au2,
+    )
+
+    # ── (av) #634 artifact-zip redirect: Authorization stripped cross-host ──────────
+    print("\n=== (av) #634 _StripAuthOnCrossHostRedirect drops Authorization across hosts ===")
+
+    _redirect_handler = ci_monitor._StripAuthOnCrossHostRedirect()
+
+    # Cross-host redirect (the real bug: api.github.com -> *.blob.core.windows.net,
+    # a SAS-signed URL that itself rejects an unexpected bearer Authorization header).
+    cross_host_req = ci_monitor.urllib.request.Request(
+        "%s/repos/%s/%s/actions/artifacts/1/zip" % (ci_monitor.API_BASE, ci_monitor.OWNER, ci_monitor.REPO)
+    )
+    cross_host_req.add_header("Authorization", "Bearer sekrit")
+    cross_host_req.add_header("Accept", "application/vnd.github+json")
+    cross_host_redirected = _redirect_handler.redirect_request(
+        cross_host_req,
+        None,
+        302,
+        "Found",
+        {},
+        "https://productionresultssa.blob.core.windows.net/artifacts/1.zip?sv=2021&sig=abc",
+    )
+    check(
+        cross_host_redirected is not None and cross_host_redirected.get_header("Authorization") is None,
+        "cross-host redirect strips the Authorization header",
+        "cross-host redirect kept Authorization: %r"
+        % (cross_host_redirected and cross_host_redirected.get_header("Authorization")),
+    )
+    check(
+        cross_host_redirected is not None
+        and cross_host_redirected.get_header("Accept") == "application/vnd.github+json",
+        "cross-host redirect keeps unrelated headers (e.g. Accept)",
+        "cross-host redirect dropped an unrelated header unexpectedly",
+    )
+
+    # Same-host redirect: Authorization is not the cross-host leak this guards
+    # against, so it is left intact.
+    same_host_req = ci_monitor.urllib.request.Request(
+        "%s/repos/%s/%s/actions/artifacts/1/zip" % (ci_monitor.API_BASE, ci_monitor.OWNER, ci_monitor.REPO)
+    )
+    same_host_req.add_header("Authorization", "Bearer sekrit")
+    same_host_redirected = _redirect_handler.redirect_request(
+        same_host_req,
+        None,
+        302,
+        "Found",
+        {},
+        "%s/repos/%s/%s/actions/artifacts/1/zip/redirected"
+        % (ci_monitor.API_BASE, ci_monitor.OWNER, ci_monitor.REPO),
+    )
+    check(
+        same_host_redirected is not None and same_host_redirected.get_header("Authorization") == "Bearer sekrit",
+        "same-host redirect keeps the Authorization header",
+        "same-host redirect unexpectedly dropped Authorization",
+    )
+
+    # _request(raw=True) routes through the stripping opener, not plain urlopen:
+    # patching urlopen to raise proves the raw path never calls it, while the
+    # opener mock supplies the (redirect-safe) response.
+    class _FakeRawResp:
+        def __init__(self, data):
+            self._data = data
+
+        def read(self):
+            return self._data
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    with unittest.mock.patch.object(
+        ci_monitor._RAW_OPENER, "open", return_value=_FakeRawResp(b"PK\x03\x04fake-zip-bytes")
+    ) as mock_opener_open, unittest.mock.patch.object(
+        ci_monitor.urllib.request,
+        "urlopen",
+        side_effect=AssertionError("raw=True must not call urlopen directly"),
+    ):
+        got_raw = ci_monitor._request(
+            "%s/repos/%s/%s/actions/artifacts/1/zip" % (ci_monitor.API_BASE, ci_monitor.OWNER, ci_monitor.REPO),
+            "tok",
+            raw=True,
+        )
+    check(
+        got_raw == b"PK\x03\x04fake-zip-bytes",
+        "_request(raw=True) returns the opener's raw bytes",
+        "_request(raw=True) returned wrong data: %r" % got_raw,
+    )
+    check(
+        mock_opener_open.call_count == 1,
+        "_request(raw=True) calls the stripping opener exactly once",
+        "_request(raw=True) called the opener %d times" % mock_opener_open.call_count,
     )
 
     # ── Summary ────────────────────────────────────────────────────────────────────
