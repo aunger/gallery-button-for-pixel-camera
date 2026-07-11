@@ -1,5 +1,7 @@
 package com.gb4pc.e2e
 
+import android.os.ParcelFileDescriptor
+import android.util.Log
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -124,18 +126,28 @@ class SetupActivityPermissionDialogE2ETest {
         // system permission dialog over SetupActivity.
         composeRule.onNodeWithText(mediaButton).performClick()
 
-        // DELIBERATE DIAGNOSTIC OVERSHOOT (issue #581), not the intended fix: a flat one-minute
-        // sleep before searching for the dialog's buttons at all, to test the timing-theory family
-        // wholesale rather than any one specific settle signal. device.waitForWindowUpdate() (a
-        // window content/state-change event wait) did not fix the flake in the previous commit on
-        // this PR; that leaves open whether the settle time this test actually needs is simply
-        // longer than an event-driven wait provides, or whether timing is not the cause at all. A
-        // sleep this long relative to PartialAccessPhotoPickerE2ETest's accidental ~10 s settle
-        // (from two dead resource-id lookups before it reaches its real button) should clear
-        // either possibility if the root cause is timing-related in any form; if the assertion
-        // still fails after this, that rules out the whole timing-theory family, not just one
-        // mechanism within it.
-        Thread.sleep(60_000L)
+        // Diagnostic (issue #581): a flat 1-minute sleep in the previous commit on this PR did not
+        // fix the flake, ruling out the timing-theory family wholesale rather than confirming one
+        // mechanism within it. Measure the actual thing that theory family was about, instead of
+        // guessing at a delay: poll dumpsys window for the moment WindowManagerService reports
+        // GrantPermissionsActivity as having input focus, and log how long that took (or that it
+        // never happened) so CI logcat carries a real number regardless of whether the assertion
+        // below passes or fails.
+        val focusStart = System.currentTimeMillis()
+        val focusTransferred =
+            fixture.waitForCondition(FOCUS_TIMEOUT_MS) {
+                currentFocusedComponent().startsWith("$PERMISSION_CONTROLLER_PKG/")
+            }
+        val focusElapsedMs = System.currentTimeMillis() - focusStart
+        if (focusTransferred) {
+            Log.i(TAG, "GrantPermissionsActivity took input focus after ${focusElapsedMs}ms")
+        } else {
+            Log.w(
+                TAG,
+                "GrantPermissionsActivity never took input focus within ${FOCUS_TIMEOUT_MS}ms " +
+                    "(last focused component: '${currentFocusedComponent()}')",
+            )
+        }
 
         // Drive the real com.android.permissioncontroller dialog: tap "Allow all".
         tapAllowAllInSystemDialog()
@@ -191,9 +203,32 @@ class SetupActivityPermissionDialogE2ETest {
 
     private fun findDialogObject(selector: BySelector): UiObject2? = device.wait(Until.findObject(selector), DIALOG_TIMEOUT_MS)
 
+    /**
+     * Reads the focused window's component name from `dumpsys window displays` (issue #581's
+     * focus-transfer diagnostic). Returns an empty string if the current dump has no
+     * `mCurrentFocus` line in the expected shape, which is treated the same as "not yet focused
+     * on the permission controller" by the poll above.
+     */
+    private fun currentFocusedComponent(): String {
+        val pfd = instrumentation.uiAutomation.executeShellCommand("dumpsys window displays")
+        return ParcelFileDescriptor.AutoCloseInputStream(pfd).use { stream ->
+            FOCUS_LINE_PATTERN.find(stream.bufferedReader().readText())
+                ?.groupValues
+                ?.get(1)
+                .orEmpty()
+        }
+    }
+
     private companion object {
+        const val TAG = "GB4PC_E2E"
         const val PERMISSION_CONTROLLER_PKG = "com.android.permissioncontroller"
         const val DIALOG_TIMEOUT_MS = 5_000L
+        val FOCUS_LINE_PATTERN = Regex("""mCurrentFocus=Window\{[0-9a-f]+ u0 ([^}]+)\}""")
+
+        // Generous relative to the diagnostic 1-minute sleep this replaced (issue #581): if focus
+        // genuinely never transfers within this budget, that is itself the interesting result, not
+        // a timeout to tighten.
+        const val FOCUS_TIMEOUT_MS = 45_000L
 
         // Widened from 10 s to 20 s (issue #604): this suite gained a `screenrecord` process for
         // the first time in issue #604 (see build.yml's "Run SetupActivityPermissionDialogE2ETest"
