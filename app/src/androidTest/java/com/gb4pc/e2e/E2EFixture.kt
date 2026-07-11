@@ -270,6 +270,19 @@ class E2EFixture(
      * [KeyguardManager.isKeyguardLocked] and retrying the whole dismissal sequence until it
      * reports unlocked (or [DISMISS_KEYGUARD_TIMEOUT_MS] elapses) makes this method robust to that
      * variance instead of assuming a fixed wall-clock budget is always enough.
+     *
+     * ### Fails loudly on timeout instead of racing a downstream assertion (issue #642)
+     *
+     * If the keyguard is still locked when [DISMISS_KEYGUARD_TIMEOUT_MS] elapses, this method
+     * fails immediately with [fail], the same way [lockScreen] fails loudly on its own timeout
+     * path, instead of silently returning and letting the caller's next assertion fail with a
+     * symptom (e.g. an activity bouncing `RESUMED` then `PAUSED`) that does not point back to the
+     * keyguard as the actual cause. This exact silent-return path was implicated in a confusing
+     * intermittent CI failure (PR #637) before the retry loop above was added; failing loudly here
+     * makes any future recurrence of that race immediately diagnosable instead of requiring the
+     * same investigation to be repeated.
+     *
+     * @throws AssertionError if the keyguard is still locked after [DISMISS_KEYGUARD_TIMEOUT_MS].
      */
     fun dismissSecureKeyguard() {
         val keyguardManager = context.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
@@ -284,6 +297,13 @@ class E2EFixture(
             uiAutomation.executeShellCommand("input keyevent 66").close() // KEYCODE_ENTER
             Thread.sleep(300)
         } while (keyguardManager.isKeyguardLocked && System.currentTimeMillis() < deadline)
+        if (keyguardManager.isKeyguardLocked) {
+            fail(
+                "dismissSecureKeyguard(): KeyguardManager.isKeyguardLocked still true after " +
+                    "$DISMISS_KEYGUARD_TIMEOUT_MS ms; the dismissal sequence did not clear the " +
+                    "secure keyguard within its retry budget.",
+            )
+        }
     }
 
     fun goHome() {
