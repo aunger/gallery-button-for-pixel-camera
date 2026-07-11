@@ -5,6 +5,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.gb4pc.Constants
 import com.gb4pc.service.OverlayService
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -76,6 +77,11 @@ class PixelCameraOverlayE2ETest {
 
         val appeared = fixture.waitForCondition(timeoutMs = 30000L) { OverlayService.isOverlayActive }
         assertTrue("Overlay should appear within 30 s of launching Pixel Camera viewfinder", appeared)
+
+        // THROWAWAY: deliberate failure for issue #641 verification (forces this suite's
+        // e2e-video-* artifact to be produced so it can be inspected). Not a real product
+        // assertion--revert before merging; see issue #641.
+        fail("THROWAWAY failure for issue #641 CI-artifact verification--do not merge")
     }
 
     /**

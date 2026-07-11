@@ -6,6 +6,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.gb4pc.R
 import com.gb4pc.ui.setup.SetupActivity
+import org.junit.Assert.fail
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.ExternalResource
@@ -81,5 +82,10 @@ class SetupActivityGrantedE2ETest {
         val context = instrumentation.targetContext
 
         composeRule.onNodeWithText(context.getString(R.string.setup_media_title)).assertDoesNotExist()
+
+        // THROWAWAY: deliberate failure for issue #641 verification (forces this suite's
+        // e2e-video-* artifact to be produced so it can be inspected). Not a real product
+        // assertion--revert before merging; see issue #641.
+        fail("THROWAWAY failure for issue #641 CI-artifact verification--do not merge")
     }
 }

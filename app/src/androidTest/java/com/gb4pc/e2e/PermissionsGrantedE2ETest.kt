@@ -6,6 +6,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.gb4pc.util.DebugLog
 import com.gb4pc.util.PermissionHelper
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -75,5 +76,10 @@ class PermissionsGrantedE2ETest {
             "Overlay thumbnail should update to the newly captured photo within 10 s (issue #509)",
             updated,
         )
+
+        // THROWAWAY: deliberate failure for issue #641 verification (forces this suite's
+        // e2e-video-* artifact to be produced so it can be inspected). Not a real product
+        // assertion--revert before merging; see issue #641.
+        fail("THROWAWAY failure for issue #641 CI-artifact verification--do not merge")
     }
 }
