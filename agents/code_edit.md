@@ -12,6 +12,12 @@
   - **Do not** organize your commits by file rather than by concern (e.g. "all changes to Foo.kt in one commit, Bar.kt in another").
 - When you refactor existing code, **always** commit the pure refactoring (which does not change behavior or output) separately. **Do not** combine that refactoring with a change in functionality or behavior.
 
+## Dependency versions
+
+- Every dependency version must be pinned (exact version, tag, or commit SHA; never a range or an unpinned "latest").
+- Pin to a recent version, not an old one you happen to already know; check what is current before picking a version.
+- Always pin the latest patch build of whichever minor/major version you choose.
+
 ## Test coverage
 
 - New behavior must be accompanied by automated tests.
