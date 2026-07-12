@@ -1018,6 +1018,14 @@ jobs:
               "$ADB" logcat -d -T "$LOGCAT_SINCE" | bash scripts/filter_logcat.sh
             fi
           fi
+          # The grant-poll retry loop's diagnostic (issue #581) logs via the GB4PC_E2E tag only
+          # when a retry actually happens (silence means the first tap registered), regardless of
+          # whether the test itself ultimately passes or fails; the LOGCAT dump above only runs
+          # on a non-zero Gradle exit. Pull any retry lines unconditionally, on every outcome, so
+          # a retry that happened on an otherwise-green run is still visible.
+          echo "=== Allow-all tap retry diagnostic (issue #581) ==="
+          "$ADB" logcat -d -T "$LOGCAT_SINCE" -s GB4PC_E2E:W | grep -i "retrying" \
+            || echo "  (no retry occurred; first tap registered)"
           # Stop screenrecord cleanly so the moov atom is written and the MP4 is playable.
           # Runs unconditionally after every branch above (including the torn-down/recovery
           # path): screenrecord is a separate device-side process under `shell`, so it is

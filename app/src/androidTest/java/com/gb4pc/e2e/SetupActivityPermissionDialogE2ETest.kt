@@ -1,5 +1,6 @@
 package com.gb4pc.e2e
 
+import android.util.Log
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -9,6 +10,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
+import androidx.test.uiautomator.StaleObjectException
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
@@ -127,11 +129,50 @@ class SetupActivityPermissionDialogE2ETest {
         // Drive the real com.android.permissioncontroller dialog: tap "Allow all".
         tapAllowAllInSystemDialog()
 
-        // 1) The grant actually took effect. Poll, because the permission result and the
-        //    PackageManager grant-state update are delivered asynchronously after the tap.
+        // 1) The grant actually took effect. Poll, retrying the tap if the button is still
+        //    visible (issue #581): AOSP's SecureButton (the permission dialog's button class)
+        //    silently drops any touch the system's input dispatcher flags
+        //    FLAG_WINDOW_IS_OBSCURED/FLAG_WINDOW_IS_PARTIALLY_OBSCURED, with no exception, no
+        //    log, and no symptom other than the grant never landing. SecureButton's own AOSP
+        //    source contains no self-timer; the flag comes from the real dispatcher computation,
+        //    which can transiently flag even a freshly created window's first touches while its
+        //    input bookkeeping settles, with no second app window involved. Retrying the tap,
+        //    rather than waiting longer or polling a different pre-tap signal, is the fix that
+        //    does not depend on identifying which transient condition caused any one drop: if
+        //    the button is still visible, the previous tap did not register, so tap it again.
+        //    If the button has disappeared, the previous tap succeeded and the grant is simply
+        //    propagating asynchronously (the pre-existing, documented issue #604 case); nothing
+        //    to retry.
+        //
+        //    findAllowAllButtonNow() and button.click() are two separate round-trips to the
+        //    accessibility tree, so the button can go stale in between: the dialog can start
+        //    tearing down (e.g. because the *previous* tap actually did register, just after
+        //    this poll tick's find call) between the find and the click, which makes
+        //    UiObject2.click() throw StaleObjectException instead of silently no-op'ing. That is
+        //    the same "previous tap already succeeded" case findAllowAllButtonNow() returning
+        //    null handles, just observed at click time rather than find time, so it is caught
+        //    and treated the same way (poll again) rather than letting it escape and fail the
+        //    test with an exception instead of the intended assertion.
+        var retryCount = 0
         val granted =
             fixture.waitForCondition(GRANT_TIMEOUT_MS) {
-                PermissionHelper.hasMediaPermission(context)
+                if (PermissionHelper.hasMediaPermission(context)) return@waitForCondition true
+                findAllowAllButtonNow()?.let { button ->
+                    retryCount++
+                    Log.w(TAG, "Grant not yet registered; retrying \"Allow all\" tap (attempt ${retryCount + 1})")
+                    try {
+                        button.click()
+                    } catch (e: StaleObjectException) {
+                        Log.w(
+                            TAG,
+                            "\"Allow all\" button went stale between find and click (attempt " +
+                                "${retryCount + 1}); the previous tap likely already registered " +
+                                "and the dialog is tearing down, so treating this like a vanished " +
+                                "button rather than failing the test",
+                        )
+                    }
+                }
+                false
             }
         assertTrue(
             "hasMediaPermission() should become true after tapping \"Allow all\" in the real " +
@@ -161,13 +202,21 @@ class SetupActivityPermissionDialogE2ETest {
      * Older single-permission layouts use `permission_allow_button` instead; both are tried by
      * resource id, with a case-insensitive "Allow all"/"Allow" text match as a final fallback so
      * the test does not silently pass by failing to find the dialog.
+     *
+     * `device.waitForWindowUpdate()` is a cheap, early guard against the common case (the button
+     * not existing in the tree yet), but two prior commits on this PR ruled out both a longer
+     * pre-tap wait (a window-focus-transfer poll: the window takes focus in under 1 s, so there
+     * is nothing slow to wait for) and a pre-tap `isEnabled()` poll (the button reported enabled
+     * after ~100ms and the tap still silently failed) as fixes for the flake by themselves. See
+     * the retry loop around this method's call site for the mechanism that actually addresses
+     * it: AOSP's `SecureButton` class drops touches the system flags as window-obscured, with no
+     * exception or log, and that is inherently a transient condition worth retrying rather than
+     * waiting out.
      */
     private fun tapAllowAllInSystemDialog() {
-        val button =
-            findDialogObject(By.res(PERMISSION_CONTROLLER_PKG, "permission_allow_all_button"))
-                ?: findDialogObject(By.res(PERMISSION_CONTROLLER_PKG, "permission_allow_button"))
-                ?: findDialogObject(By.textContains("Allow all"))
-                ?: findDialogObject(By.text(Pattern.compile("Allow.*", Pattern.CASE_INSENSITIVE)))
+        device.waitForWindowUpdate(PERMISSION_CONTROLLER_PKG, WINDOW_UPDATE_TIMEOUT_MS)
+
+        val button = findAllowAllButton()
         requireNotNull(button) {
             "The system permission dialog's \"Allow all\" button was not found within " +
                 "$DIALOG_TIMEOUT_MS ms after tapping the MEDIA step button. The requestPermissions() " +
@@ -176,11 +225,36 @@ class SetupActivityPermissionDialogE2ETest {
         button.click()
     }
 
+    private fun findAllowAllButton(): UiObject2? =
+        findDialogObject(By.res(PERMISSION_CONTROLLER_PKG, "permission_allow_all_button"))
+            ?: findDialogObject(By.res(PERMISSION_CONTROLLER_PKG, "permission_allow_button"))
+            ?: findDialogObject(By.textContains("Allow all"))
+            ?: findDialogObject(By.text(Pattern.compile("Allow.*", Pattern.CASE_INSENSITIVE)))
+
+    /**
+     * Non-blocking counterpart to [findAllowAllButton], used by the retry poll in
+     * [setupFlow_grantsMediaPermissionViaSystemDialog_andAdvances]: an immediate lookup (no
+     * `device.wait()`) so a poll tick that finds nothing returns quickly instead of blocking for
+     * up to [DIALOG_TIMEOUT_MS] per selector, which would stack badly inside a 100 ms poll loop.
+     * `null` here means the dialog has already dismissed (the previous tap likely succeeded and
+     * the grant is just propagating), not that it never appeared in the first place.
+     */
+    private fun findAllowAllButtonNow(): UiObject2? =
+        device.findObject(By.res(PERMISSION_CONTROLLER_PKG, "permission_allow_all_button"))
+            ?: device.findObject(By.res(PERMISSION_CONTROLLER_PKG, "permission_allow_button"))
+            ?: device.findObject(By.textContains("Allow all"))
+            ?: device.findObject(By.text(Pattern.compile("Allow.*", Pattern.CASE_INSENSITIVE)))
+
     private fun findDialogObject(selector: BySelector): UiObject2? = device.wait(Until.findObject(selector), DIALOG_TIMEOUT_MS)
 
     private companion object {
+        const val TAG = "GB4PC_E2E"
         const val PERMISSION_CONTROLLER_PKG = "com.android.permissioncontroller"
         const val DIALOG_TIMEOUT_MS = 5_000L
+
+        // The window-content-change event alone arrives too early to fix the flake on its own
+        // (issue #581); this is just its own find-the-window budget, not expected to be load-bearing.
+        const val WINDOW_UPDATE_TIMEOUT_MS = 5_000L
 
         // Widened from 10 s to 20 s (issue #604): this suite gained a `screenrecord` process for
         // the first time in issue #604 (see build.yml's "Run SetupActivityPermissionDialogE2ETest"

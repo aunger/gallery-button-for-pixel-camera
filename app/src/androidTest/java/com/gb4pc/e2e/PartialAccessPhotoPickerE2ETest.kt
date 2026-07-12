@@ -117,16 +117,20 @@ import java.util.regex.Pattern
  *
  * ### Uncertainties this class cannot resolve without a real CI run
  *
- * As the issue anticipated ("expect more work identifying the right resource IDs/gestures"),
- * neither the permission dialog's "Select photos and videos" option nor the system photo
- * picker's thumbnail/confirm controls have a resource id confirmed against this CI emulator (API
- * 35, `google_apis` system image) the way [SetupActivityPermissionDialogE2ETest]'s
- * `permission_allow_all_button` was. This dev environment has no emulator/device to verify
- * against (see the several "NOT AUTOMATABLE" comments on issue #568), so:
+ * As the issue anticipated ("expect more work identifying the right resource IDs/gestures"), the
+ * system photo picker's thumbnail/confirm controls do not have a resource id confirmed against
+ * this CI emulator (API 35, `google_apis` system image) the way
+ * [SetupActivityPermissionDialogE2ETest]'s `permission_allow_all_button` was. The permission
+ * dialog's own "Select photos and videos" option no longer shares that uncertainty:
+ * `permission_allow_selected_button` is confirmed against current AOSP `PermissionController`
+ * source (issue #581), so [tapSelectPhotosInSystemDialog] leads with it rather than guessing. This
+ * dev environment has no emulator/device to verify the picker controls against (see the several
+ * "NOT AUTOMATABLE" comments on issue #568), so:
  *
- *  - [tapSelectPhotosInSystemDialog] tries several plausible resource ids, then falls back to a
- *    case-insensitive "Select photos" text match -- the exact phrase Android's own developer
- *    documentation uses for this option, which should hold even if the resource id differs.
+ *  - [tapSelectPhotosInSystemDialog] falls back from the confirmed id to a case-insensitive
+ *    "Select photos" text match -- the exact phrase Android's own developer documentation uses
+ *    for this option, which should hold even if the resource id changes in a future Android
+ *    version.
  *  - [selectPhotosInSystemPickerAndConfirm] tries both the Google-branded and AOSP package names
  *    for the MediaProvider photo picker module. It requires a selectable thumbnail rather than
  *    tolerating an empty grid: the test seeds one image via [E2EFixture.seedOnePhoto] before the
@@ -286,13 +290,26 @@ class PartialAccessPhotoPickerE2ETest {
     /**
      * Waits for the real system permission dialog and taps its "Select photos and videos"
      * option (partial access, H2), rather than [SetupActivityPermissionDialogE2ETest]'s "Allow
-     * all". See the class doc for why the resource id guesses below are unconfirmed.
+     * all". `permission_allow_selected_button` is confirmed against the current AOSP
+     * `PermissionController` source (issue #581's investigation): it is the id
+     * `GrantPermissionsViewHandlerImpl`'s `BUTTON_RES_ID_TO_NUM` maps to `ALLOW_SELECTED_BUTTON`,
+     * so it leads the list rather than the two ids this class originally guessed
+     * (`permission_more_photos_button`, `permission_allow_partial_button`), which do not exist
+     * in that source and always failed over. The text fallbacks remain in case a future Android
+     * version renames the id.
+     *
+     * `device.waitForWindowUpdate()` is a cheap, early guard against the button not existing in
+     * the tree yet. It is deliberately not paired with the retry-on-failure loop
+     * [SetupActivityPermissionDialogE2ETest] uses to work around AOSP's `SecureButton` silently
+     * dropping window-obscured touches (issue #581): this suite has not shown that flake, and a
+     * blind retry here is riskier, since a re-tap that lands after the button dismisses could hit
+     * whatever the system photo picker (a second dialog) puts in its place instead.
      */
     private fun tapSelectPhotosInSystemDialog() {
+        device.waitForWindowUpdate(PERMISSION_CONTROLLER_PKG, WINDOW_UPDATE_TIMEOUT_MS)
+
         val button =
-            findDialogObject(By.res(PERMISSION_CONTROLLER_PKG, "permission_more_photos_button"))
-                ?: findDialogObject(By.res(PERMISSION_CONTROLLER_PKG, "permission_allow_selected_button"))
-                ?: findDialogObject(By.res(PERMISSION_CONTROLLER_PKG, "permission_allow_partial_button"))
+            findDialogObject(By.res(PERMISSION_CONTROLLER_PKG, "permission_allow_selected_button"))
                 ?: findDialogObject(By.textContains("Select photos"))
                 ?: findDialogObject(By.text(Pattern.compile(".*select.*photo.*", Pattern.CASE_INSENSITIVE)))
         requireNotNull(button) {
@@ -345,5 +362,8 @@ class PartialAccessPhotoPickerE2ETest {
         const val DIALOG_TIMEOUT_MS = 5_000L
         const val GRANT_TIMEOUT_MS = 10_000L
         const val BANNER_TIMEOUT_MS = 10_000L
+
+        // Matches SetupActivityPermissionDialogE2ETest's budget for the same guard (issue #581).
+        const val WINDOW_UPDATE_TIMEOUT_MS = 5_000L
     }
 }
