@@ -163,13 +163,19 @@ if [[ -n "${CLAUDE_ENV_FILE:-}" ]] \
 fi
 
 # STEP 3a: ktlint binary.
+# Pinned to an exact release (not releases/latest): an unpinned URL means a
+# fresh install can silently pick up a different ktlint version than the one
+# this project was last verified against (issue #667).
+KTLINT_VERSION="1.8.0"
 KTLINT_BIN="$LOCAL_BIN/ktlint"
 if [[ -x "$KTLINT_BIN" ]]; then
     echo "[session-start] Step 3a: ktlint present--skip"
 else
-    echo "[session-start] Step 3a: installing ktlint..."
-    curl -sSL \
-        https://github.com/pinterest/ktlint/releases/latest/download/ktlint \
+    echo "[session-start] Step 3a: installing ktlint $KTLINT_VERSION..."
+    # -f: fail on an HTTP error status instead of writing the error response
+    # body to $KTLINT_BIN as if it were the binary (issue #667).
+    curl -fsSL \
+        "https://github.com/pinterest/ktlint/releases/download/$KTLINT_VERSION/ktlint" \
         -o "$KTLINT_BIN"
     chmod +x "$KTLINT_BIN"
     echo "[session-start] Step 3a: ktlint installed"
