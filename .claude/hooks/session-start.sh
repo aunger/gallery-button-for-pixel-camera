@@ -163,9 +163,6 @@ if [[ -n "${CLAUDE_ENV_FILE:-}" ]] \
 fi
 
 # STEP 3a: ktlint binary.
-# Pinned to an exact release (not releases/latest): an unpinned URL means a
-# fresh install can silently pick up a different ktlint version than the one
-# this project was last verified against (issue #667).
 KTLINT_VERSION="1.8.0"
 KTLINT_BIN="$LOCAL_BIN/ktlint"
 if [[ -x "$KTLINT_BIN" ]]; then
