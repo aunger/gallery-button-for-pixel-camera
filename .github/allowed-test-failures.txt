@@ -22,6 +22,3 @@
 
 # Tracking issue: #243
 com.gb4pc.e2e.GalleryButtonVisualE2ETest#test5a_secureCameraLockedPopulatedGalleryShowsGreen
-
-# Tracking issue: #581
-com.gb4pc.e2e.SetupActivityPermissionDialogE2ETest#setupFlow_grantsMediaPermissionViaSystemDialog_andAdvances
