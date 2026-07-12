@@ -14,7 +14,7 @@
 
 ## Dependency versions
 
-- Every dependency version must be pinned (exact version, tag, or commit SHA; never a range or an unpinned "latest").
+- Every dependency version must be pinned (exact version or commit SHA; never a range, a tag, or an unpinned "latest"). A tag is not a valid pin: unlike a commit SHA, a tag can be moved to point at a different commit after the fact, so it is not truly immutable.
 - Pin to a recent version, not an old one you happen to already know; check what is current before picking a version.
 - Always pin the latest patch build of whichever minor/major version you choose.
 
