@@ -10,6 +10,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
+import androidx.test.uiautomator.StaleObjectException
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
@@ -142,6 +143,16 @@ class SetupActivityPermissionDialogE2ETest {
         //    If the button has disappeared, the previous tap succeeded and the grant is simply
         //    propagating asynchronously (the pre-existing, documented issue #604 case); nothing
         //    to retry.
+        //
+        //    findAllowAllButtonNow() and button.click() are two separate round-trips to the
+        //    accessibility tree, so the button can go stale in between: the dialog can start
+        //    tearing down (e.g. because the *previous* tap actually did register, just after
+        //    this poll tick's find call) between the find and the click, which makes
+        //    UiObject2.click() throw StaleObjectException instead of silently no-op'ing. That is
+        //    the same "previous tap already succeeded" case findAllowAllButtonNow() returning
+        //    null handles, just observed at click time rather than find time, so it is caught
+        //    and treated the same way (poll again) rather than letting it escape and fail the
+        //    test with an exception instead of the intended assertion.
         var retryCount = 0
         val granted =
             fixture.waitForCondition(GRANT_TIMEOUT_MS) {
@@ -149,7 +160,17 @@ class SetupActivityPermissionDialogE2ETest {
                 findAllowAllButtonNow()?.let { button ->
                     retryCount++
                     Log.w(TAG, "Grant not yet registered; retrying \"Allow all\" tap (attempt ${retryCount + 1})")
-                    button.click()
+                    try {
+                        button.click()
+                    } catch (e: StaleObjectException) {
+                        Log.w(
+                            TAG,
+                            "\"Allow all\" button went stale between find and click (attempt " +
+                                "${retryCount + 1}); the previous tap likely already registered " +
+                                "and the dialog is tearing down, so treating this like a vanished " +
+                                "button rather than failing the test",
+                        )
+                    }
                 }
                 false
             }
