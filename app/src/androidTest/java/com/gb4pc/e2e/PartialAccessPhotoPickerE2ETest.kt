@@ -3,6 +3,7 @@ package com.gb4pc.e2e
 import android.Manifest
 import android.app.NotificationManager
 import android.content.pm.PackageManager
+import android.util.Log
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -195,18 +196,6 @@ class PartialAccessPhotoPickerE2ETest {
         // system permission dialog over SetupActivity.
         composeRule.onNodeWithText(mediaButton).performClick()
 
-        // Diagnostic (issue #581): this test drives the same permission-controller dialog as
-        // SetupActivityPermissionDialogE2ETest, whose "Allow all" button intermittently failed
-        // to register a tap that landed correctly by resource id, traced to a possible
-        // cross-process window-focus-transfer race after the activity switch from SetupActivity.
-        // This suite's own button tap has not shown that flake, but measuring it here too costs
-        // nothing and gives a second data point on whether the transfer time is consistent
-        // across both buttons on the same dialog. Matched by activity class name, not
-        // PERMISSION_CONTROLLER_PKG: see E2EFixture.waitForWindowFocus's doc for why that
-        // constant (correct for the By.res() lookups below) isn't this dialog's runtime
-        // application id on this CI emulator's Google-branded system image.
-        fixture.waitForWindowFocus("GrantPermissionsActivity", FOCUS_TIMEOUT_MS)
-
         // Drive the real com.android.permissioncontroller dialog: pick "Select photos and
         // videos" (partial access, H2) instead of SetupActivityPermissionDialogE2ETest's
         // "Allow all", then drive the resulting system photo picker to completion.
@@ -309,8 +298,16 @@ class PartialAccessPhotoPickerE2ETest {
      * (`permission_more_photos_button`, `permission_allow_partial_button`), which do not exist
      * in that source and always failed over. The text fallbacks remain in case a future Android
      * version renames the id.
+     *
+     * Also applies [SetupActivityPermissionDialogE2ETest]'s tapjacking-defense experiment (issue
+     * #581): waits for the early window-content-change event, then polls the found button's own
+     * `isEnabled()` state before clicking, rather than assuming presence in the accessibility
+     * tree means it is already clickable. This suite's button tap has not shown the sibling's
+     * flake, but applying the same sequence here too costs little and gives a second data point.
      */
     private fun tapSelectPhotosInSystemDialog() {
+        device.waitForWindowUpdate(PERMISSION_CONTROLLER_PKG, WINDOW_UPDATE_TIMEOUT_MS)
+
         val button =
             findDialogObject(By.res(PERMISSION_CONTROLLER_PKG, "permission_allow_selected_button"))
                 ?: findDialogObject(By.textContains("Select photos"))
@@ -320,6 +317,19 @@ class PartialAccessPhotoPickerE2ETest {
                 "within $DIALOG_TIMEOUT_MS ms after tapping the MEDIA step button. Either the " +
                 "requestPermissions() dialog did not appear, or this option's wording/resource " +
                 "id differs on this emulator/Android build (see the class doc's H2 caveat)."
+        }
+
+        val start = System.currentTimeMillis()
+        val enabled = fixture.waitForCondition(BUTTON_ENABLED_TIMEOUT_MS) { button.isEnabled }
+        val elapsedMs = System.currentTimeMillis() - start
+        if (enabled) {
+            Log.i(TAG, "Select photos button reported enabled after ${elapsedMs}ms")
+        } else {
+            Log.w(
+                TAG,
+                "Select photos button never reported enabled within ${BUTTON_ENABLED_TIMEOUT_MS}ms; " +
+                    "clicking anyway",
+            )
         }
         button.click()
     }
@@ -359,6 +369,7 @@ class PartialAccessPhotoPickerE2ETest {
     private fun findDialogObject(selector: BySelector): UiObject2? = device.wait(Until.findObject(selector), DIALOG_TIMEOUT_MS)
 
     private companion object {
+        const val TAG = "GB4PC_E2E"
         const val PERMISSION_CONTROLLER_PKG = "com.android.permissioncontroller"
         const val PHOTO_PICKER_PKG_GOOGLE = "com.google.android.providers.media.module"
         const val PHOTO_PICKER_PKG_AOSP = "com.android.providers.media.module"
@@ -366,9 +377,9 @@ class PartialAccessPhotoPickerE2ETest {
         const val GRANT_TIMEOUT_MS = 10_000L
         const val BANNER_TIMEOUT_MS = 10_000L
 
-        // Matches SetupActivityPermissionDialogE2ETest's budget for the same diagnostic (issue
-        // #581): generous enough that a genuine non-transfer within it is itself the interesting
-        // result, not a timeout to tighten.
-        const val FOCUS_TIMEOUT_MS = 45_000L
+        // Matches SetupActivityPermissionDialogE2ETest's budgets for the same diagnostics (issue
+        // #581).
+        const val WINDOW_UPDATE_TIMEOUT_MS = 5_000L
+        const val BUTTON_ENABLED_TIMEOUT_MS = 45_000L
     }
 }

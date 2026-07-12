@@ -69,9 +69,6 @@ class E2EFixture(
         /** Package name of the mock gallery APK (see `:e2e-mock-gallery` module). */
         private const val MOCK_GALLERY_PACKAGE = "com.gb4pc.mockgallery"
 
-        /** Matches `dumpsys window displays`' focused-window line; see [waitForWindowFocus]. */
-        private val FOCUS_LINE_PATTERN = Regex("""mCurrentFocus=Window\{[0-9a-f]+ u0 ([^}]+)\}""")
-
         // Issue #233: bounded relaunch for the first-launch teardown race in launchPixelCamera().
         //
         // The per-attempt verify windows must not false-positive a *healthy* launch as a failed
@@ -342,53 +339,6 @@ class E2EFixture(
             Thread.sleep(100)
         }
         return condition()
-    }
-
-    /**
-     * Polls `dumpsys window` for the moment the window whose component name contains
-     * [componentFragment] takes input focus (issue #581's cross-process activity-switch
-     * diagnostic: a UI Automator click can find and tap a target's accessibility node before
-     * WindowManagerService finishes handing that window input focus, so the tap lands on a
-     * window that is not yet receiving touches). Logs how long the transfer took, or that it
-     * never happened within [timeoutMs], via [TAG] so CI logcat carries a real measurement
-     * regardless of whether the caller's own assertions pass or fail afterward.
-     *
-     * Matches on a substring of the reported component (`package/Class`), not a package prefix:
-     * an earlier revision of this diagnostic compared against
-     * `com.android.permissioncontroller` and always reported a false "never took focus" on this
-     * CI emulator's Google-branded system image, whose permission controller actually runs as
-     * `com.google.android.permissioncontroller` (its resource package, used by `By.res()` button
-     * lookups elsewhere, is still `com.android.permissioncontroller`; only the runtime
-     * application id differs). An activity class name fragment such as
-     * `"GrantPermissionsActivity"` is stable across that branding difference.
-     */
-    fun waitForWindowFocus(
-        componentFragment: String,
-        timeoutMs: Long,
-    ): Boolean {
-        val start = System.currentTimeMillis()
-        val focused = waitForCondition(timeoutMs) { currentFocusedComponent().contains(componentFragment) }
-        val elapsedMs = System.currentTimeMillis() - start
-        if (focused) {
-            Log.i(TAG, "'$componentFragment' took input focus after ${elapsedMs}ms")
-        } else {
-            Log.w(
-                TAG,
-                "'$componentFragment' never took input focus within ${timeoutMs}ms " +
-                    "(last focused component: '${currentFocusedComponent()}')",
-            )
-        }
-        return focused
-    }
-
-    private fun currentFocusedComponent(): String {
-        val pfd = uiAutomation.executeShellCommand("dumpsys window displays")
-        return ParcelFileDescriptor.AutoCloseInputStream(pfd).use { stream ->
-            FOCUS_LINE_PATTERN.find(stream.bufferedReader().readText())
-                ?.groupValues
-                ?.get(1)
-                .orEmpty()
-        }
     }
 
     // ── Phase 4 extensions ────────────────────────────────────────────────────

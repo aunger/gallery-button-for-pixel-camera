@@ -1018,14 +1018,15 @@ jobs:
               "$ADB" logcat -d -T "$LOGCAT_SINCE" | bash scripts/filter_logcat.sh
             fi
           fi
-          # E2EFixture.waitForWindowFocus()'s diagnostic (issue #581) logs via the GB4PC_E2E tag
-          # regardless of whether the test itself passes or fails, but the LOGCAT dump above only
-          # runs on a non-zero Gradle exit. Pull just this suite's focus-transfer line
-          # unconditionally, on every outcome, so the actual settle time is visible even on a
-          # green run instead of only when something else already failed.
-          echo "=== Permission-controller window-focus diagnostic (issue #581) ==="
-          "$ADB" logcat -d -T "$LOGCAT_SINCE" -s GB4PC_E2E:I | grep -i "took input focus\|never took input focus" \
-            || echo "  (no focus diagnostic line found in logcat)"
+          # The tapAllowAllInSystemDialog()/tapSelectPhotosInSystemDialog() button-enabled poll's
+          # diagnostic (issue #581) logs via the GB4PC_E2E tag regardless of whether the test
+          # itself passes or fails, but the LOGCAT dump above only runs on a non-zero Gradle exit.
+          # Pull just this suite's diagnostic lines unconditionally, on every outcome, so the
+          # actual timings are visible even on a green run instead of only when something else
+          # already failed.
+          echo "=== Permission dialog button-enabled diagnostic (issue #581) ==="
+          "$ADB" logcat -d -T "$LOGCAT_SINCE" -s GB4PC_E2E:I | grep -i "reported enabled\|never reported enabled" \
+            || echo "  (no button-enabled diagnostic line found in logcat)"
           # Stop screenrecord cleanly so the moov atom is written and the MP4 is playable.
           # Runs unconditionally after every branch above (including the torn-down/recovery
           # path): screenrecord is a separate device-side process under `shell`, so it is
@@ -1129,14 +1130,15 @@ jobs:
             echo "=== LOGCAT (since test start) ==="
             "$ADB" logcat -d -T "$LOGCAT_SINCE" | bash scripts/filter_logcat.sh
           fi
-          # E2EFixture.waitForWindowFocus()'s diagnostic (issue #581) logs via the GB4PC_E2E tag
-          # regardless of whether the test itself passes or fails, but the LOGCAT dump above only
-          # runs on a non-zero Gradle exit. Pull just this suite's focus-transfer line
-          # unconditionally, on every outcome, so the actual settle time is visible even on a
-          # green run instead of only when something else already failed.
-          echo "=== Permission-controller window-focus diagnostic (issue #581) ==="
-          "$ADB" logcat -d -T "$LOGCAT_SINCE" -s GB4PC_E2E:I | grep -i "took input focus\|never took input focus" \
-            || echo "  (no focus diagnostic line found in logcat)"
+          # The tapAllowAllInSystemDialog()/tapSelectPhotosInSystemDialog() button-enabled poll's
+          # diagnostic (issue #581) logs via the GB4PC_E2E tag regardless of whether the test
+          # itself passes or fails, but the LOGCAT dump above only runs on a non-zero Gradle exit.
+          # Pull just this suite's diagnostic lines unconditionally, on every outcome, so the
+          # actual timings are visible even on a green run instead of only when something else
+          # already failed.
+          echo "=== Permission dialog button-enabled diagnostic (issue #581) ==="
+          "$ADB" logcat -d -T "$LOGCAT_SINCE" -s GB4PC_E2E:I | grep -i "reported enabled\|never reported enabled" \
+            || echo "  (no button-enabled diagnostic line found in logcat)"
 
       - name: Re-grant media permission after PartialAccessPhotoPickerE2ETest
         # Mirrors "Re-grant media permission after PermissionsDeniedE2ETest" above: this suite

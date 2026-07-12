@@ -1,5 +1,6 @@
 package com.gb4pc.e2e
 
+import android.util.Log
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -124,18 +125,6 @@ class SetupActivityPermissionDialogE2ETest {
         // system permission dialog over SetupActivity.
         composeRule.onNodeWithText(mediaButton).performClick()
 
-        // Diagnostic (issue #581): a flat 1-minute sleep in an earlier commit on this PR did not
-        // fix the flake, ruling out the timing-theory family wholesale rather than confirming one
-        // mechanism within it. Measure the actual thing that theory family was about, instead of
-        // guessing at a delay: wait for GrantPermissionsActivity's window to actually take input
-        // focus (see E2EFixture.waitForWindowFocus), logging how long that took, or that it
-        // never happened, so CI logcat carries a real number regardless of whether the assertion
-        // below passes or fails. Matched by activity class name, not PERMISSION_CONTROLLER_PKG:
-        // that constant is the dialog's resource package (correct for the By.res() lookups
-        // below), not necessarily its runtime application id, which differs on this CI
-        // emulator's Google-branded system image (see waitForWindowFocus's doc).
-        fixture.waitForWindowFocus("GrantPermissionsActivity", FOCUS_TIMEOUT_MS)
-
         // Drive the real com.android.permissioncontroller dialog: tap "Allow all".
         tapAllowAllInSystemDialog()
 
@@ -173,8 +162,27 @@ class SetupActivityPermissionDialogE2ETest {
      * Older single-permission layouts use `permission_allow_button` instead; both are tried by
      * resource id, with a case-insensitive "Allow all"/"Allow" text match as a final fallback so
      * the test does not silently pass by failing to find the dialog.
+     *
+     * ### The tapjacking-defense theory (issue #581)
+     *
+     * A prior commit on this PR confirmed the permission-controller window itself takes input
+     * focus quickly (under 1 s), which undercuts the window-focus-transfer theory as the flake's
+     * cause. A different, security-motivated mechanism is also plausible for a dialog this
+     * sensitive: the button may exist in the accessibility tree, and its window may hold focus,
+     * before the button itself is actually enabled for input, specifically to defeat
+     * tapjacking (a touch landing on the button the instant it renders, e.g. under a finger
+     * already mid-tap from the action that triggered the dialog). `device.waitForWindowUpdate()`
+     * alone (an early, near-instant window-content-change event) did not fix the flake in an
+     * earlier commit. This combines that same early signal with an explicit poll of the found
+     * button's own `isEnabled()` state: `UiObject2.isEnabled()` re-syncs against the live
+     * `AccessibilityNodeInfo` on every call (confirmed against current
+     * androidx.test.uiautomator source), so polling the same captured button reference correctly
+     * observes a disabled-to-enabled transition, rather than assuming presence in the tree means
+     * the button is already clickable.
      */
     private fun tapAllowAllInSystemDialog() {
+        device.waitForWindowUpdate(PERMISSION_CONTROLLER_PKG, WINDOW_UPDATE_TIMEOUT_MS)
+
         val button =
             findDialogObject(By.res(PERMISSION_CONTROLLER_PKG, "permission_allow_all_button"))
                 ?: findDialogObject(By.res(PERMISSION_CONTROLLER_PKG, "permission_allow_button"))
@@ -185,19 +193,37 @@ class SetupActivityPermissionDialogE2ETest {
                 "$DIALOG_TIMEOUT_MS ms after tapping the MEDIA step button. The requestPermissions() " +
                 "dialog may not have appeared, or its resource ids/labels differ on this emulator."
         }
+
+        val start = System.currentTimeMillis()
+        val enabled = fixture.waitForCondition(BUTTON_ENABLED_TIMEOUT_MS) { button.isEnabled }
+        val elapsedMs = System.currentTimeMillis() - start
+        if (enabled) {
+            Log.i(TAG, "Allow all button reported enabled after ${elapsedMs}ms")
+        } else {
+            Log.w(
+                TAG,
+                "Allow all button never reported enabled within ${BUTTON_ENABLED_TIMEOUT_MS}ms; " +
+                    "clicking anyway",
+            )
+        }
         button.click()
     }
 
     private fun findDialogObject(selector: BySelector): UiObject2? = device.wait(Until.findObject(selector), DIALOG_TIMEOUT_MS)
 
     private companion object {
+        const val TAG = "GB4PC_E2E"
         const val PERMISSION_CONTROLLER_PKG = "com.android.permissioncontroller"
         const val DIALOG_TIMEOUT_MS = 5_000L
 
-        // Generous relative to the diagnostic 1-minute sleep this replaced (issue #581): if focus
-        // genuinely never transfers within this budget, that is itself the interesting result, not
-        // a timeout to tighten.
-        const val FOCUS_TIMEOUT_MS = 45_000L
+        // The window-content-change event alone arrives too early to fix the flake on its own
+        // (issue #581); this is just its own find-the-window budget, not expected to be load-bearing.
+        const val WINDOW_UPDATE_TIMEOUT_MS = 5_000L
+
+        // Generous relative to the diagnostic sleeps/polls this replaced (issue #581): if the
+        // button genuinely never reports enabled within this budget, that is itself the
+        // interesting result, not a timeout to tighten.
+        const val BUTTON_ENABLED_TIMEOUT_MS = 45_000L
 
         // Widened from 10 s to 20 s (issue #604): this suite gained a `screenrecord` process for
         // the first time in issue #604 (see build.yml's "Run SetupActivityPermissionDialogE2ETest"
