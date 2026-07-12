@@ -14,9 +14,9 @@
 
 ## Dependency versions
 
-- Every dependency version must be pinned (exact version or commit SHA; never a range, a tag, or an unpinned "latest"). A tag is not a valid pin: unlike a commit SHA, a tag can be moved to point at a different commit after the fact, so it is not truly immutable.
-- Pin to a recent version, not an old one you happen to already know; check what is current before picking a version.
-- Always pin the latest patch build of whichever minor/major version you choose.
+- This section applies to third-party dependencies: anything not published directly by GitHub itself (the `actions/` and `github/` GitHub Actions namespaces are first-party and exempt). It covers third-party GitHub Actions (for example `android-actions/setup-android`, `softprops/action-gh-release`) and pre-commit hook repos (for example `astral-sh/ruff-pre-commit`), regardless of how well-known or trusted the publisher is.
+- Every such dependency version must be pinned to a commit SHA (never a range, a tag, or an unpinned "latest"). A tag is not a valid pin; unlike a commit SHA, a tag can be moved to point at a different commit after the fact, so it is not truly immutable.
+- When you newly introduce or update a pin, pin to a recent version, not an old one you happen to already know. Check what is current before picking a version, and pin the latest patch build of whichever minor/major version you choose. This does not obligate you to bump every existing pin in a file just because you touched it; only the ones you are adding or intentionally updating.
 
 ## Test coverage
 
