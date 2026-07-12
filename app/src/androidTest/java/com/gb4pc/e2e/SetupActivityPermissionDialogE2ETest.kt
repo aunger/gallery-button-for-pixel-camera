@@ -128,11 +128,30 @@ class SetupActivityPermissionDialogE2ETest {
         // Drive the real com.android.permissioncontroller dialog: tap "Allow all".
         tapAllowAllInSystemDialog()
 
-        // 1) The grant actually took effect. Poll, because the permission result and the
-        //    PackageManager grant-state update are delivered asynchronously after the tap.
+        // 1) The grant actually took effect. Poll, retrying the tap if the button is still
+        //    visible (issue #581): AOSP's SecureButton (the permission dialog's button class)
+        //    silently drops any touch the system's input dispatcher flags
+        //    FLAG_WINDOW_IS_OBSCURED/FLAG_WINDOW_IS_PARTIALLY_OBSCURED, with no exception, no
+        //    log, and no symptom other than the grant never landing. SecureButton's own AOSP
+        //    source contains no self-timer; the flag comes from the real dispatcher computation,
+        //    which can transiently flag even a freshly created window's first touches while its
+        //    input bookkeeping settles, with no second app window involved. Retrying the tap,
+        //    rather than waiting longer or polling a different pre-tap signal, is the fix that
+        //    does not depend on identifying which transient condition caused any one drop: if
+        //    the button is still visible, the previous tap did not register, so tap it again.
+        //    If the button has disappeared, the previous tap succeeded and the grant is simply
+        //    propagating asynchronously (the pre-existing, documented issue #604 case); nothing
+        //    to retry.
+        var retryCount = 0
         val granted =
             fixture.waitForCondition(GRANT_TIMEOUT_MS) {
-                PermissionHelper.hasMediaPermission(context)
+                if (PermissionHelper.hasMediaPermission(context)) return@waitForCondition true
+                findAllowAllButtonNow()?.let { button ->
+                    retryCount++
+                    Log.w(TAG, "Grant not yet registered; retrying \"Allow all\" tap (attempt ${retryCount + 1})")
+                    button.click()
+                }
+                false
             }
         assertTrue(
             "hasMediaPermission() should become true after tapping \"Allow all\" in the real " +
@@ -163,51 +182,47 @@ class SetupActivityPermissionDialogE2ETest {
      * resource id, with a case-insensitive "Allow all"/"Allow" text match as a final fallback so
      * the test does not silently pass by failing to find the dialog.
      *
-     * ### The tapjacking-defense theory (issue #581)
-     *
-     * A prior commit on this PR confirmed the permission-controller window itself takes input
-     * focus quickly (under 1 s), which undercuts the window-focus-transfer theory as the flake's
-     * cause. A different, security-motivated mechanism is also plausible for a dialog this
-     * sensitive: the button may exist in the accessibility tree, and its window may hold focus,
-     * before the button itself is actually enabled for input, specifically to defeat
-     * tapjacking (a touch landing on the button the instant it renders, e.g. under a finger
-     * already mid-tap from the action that triggered the dialog). `device.waitForWindowUpdate()`
-     * alone (an early, near-instant window-content-change event) did not fix the flake in an
-     * earlier commit. This combines that same early signal with an explicit poll of the found
-     * button's own `isEnabled()` state: `UiObject2.isEnabled()` re-syncs against the live
-     * `AccessibilityNodeInfo` on every call (confirmed against current
-     * androidx.test.uiautomator source), so polling the same captured button reference correctly
-     * observes a disabled-to-enabled transition, rather than assuming presence in the tree means
-     * the button is already clickable.
+     * `device.waitForWindowUpdate()` is a cheap, early guard against the common case (the button
+     * not existing in the tree yet), but two prior commits on this PR ruled out both a longer
+     * pre-tap wait (a window-focus-transfer poll: the window takes focus in under 1 s, so there
+     * is nothing slow to wait for) and a pre-tap `isEnabled()` poll (the button reported enabled
+     * after ~100ms and the tap still silently failed) as fixes for the flake by themselves. See
+     * the retry loop around this method's call site for the mechanism that actually addresses
+     * it: AOSP's `SecureButton` class drops touches the system flags as window-obscured, with no
+     * exception or log, and that is inherently a transient condition worth retrying rather than
+     * waiting out.
      */
     private fun tapAllowAllInSystemDialog() {
         device.waitForWindowUpdate(PERMISSION_CONTROLLER_PKG, WINDOW_UPDATE_TIMEOUT_MS)
 
-        val button =
-            findDialogObject(By.res(PERMISSION_CONTROLLER_PKG, "permission_allow_all_button"))
-                ?: findDialogObject(By.res(PERMISSION_CONTROLLER_PKG, "permission_allow_button"))
-                ?: findDialogObject(By.textContains("Allow all"))
-                ?: findDialogObject(By.text(Pattern.compile("Allow.*", Pattern.CASE_INSENSITIVE)))
+        val button = findAllowAllButton()
         requireNotNull(button) {
             "The system permission dialog's \"Allow all\" button was not found within " +
                 "$DIALOG_TIMEOUT_MS ms after tapping the MEDIA step button. The requestPermissions() " +
                 "dialog may not have appeared, or its resource ids/labels differ on this emulator."
         }
-
-        val start = System.currentTimeMillis()
-        val enabled = fixture.waitForCondition(BUTTON_ENABLED_TIMEOUT_MS) { button.isEnabled }
-        val elapsedMs = System.currentTimeMillis() - start
-        if (enabled) {
-            Log.i(TAG, "Allow all button reported enabled after ${elapsedMs}ms")
-        } else {
-            Log.w(
-                TAG,
-                "Allow all button never reported enabled within ${BUTTON_ENABLED_TIMEOUT_MS}ms; " +
-                    "clicking anyway",
-            )
-        }
         button.click()
     }
+
+    private fun findAllowAllButton(): UiObject2? =
+        findDialogObject(By.res(PERMISSION_CONTROLLER_PKG, "permission_allow_all_button"))
+            ?: findDialogObject(By.res(PERMISSION_CONTROLLER_PKG, "permission_allow_button"))
+            ?: findDialogObject(By.textContains("Allow all"))
+            ?: findDialogObject(By.text(Pattern.compile("Allow.*", Pattern.CASE_INSENSITIVE)))
+
+    /**
+     * Non-blocking counterpart to [findAllowAllButton], used by the retry poll in
+     * [setupFlow_grantsMediaPermissionViaSystemDialog_andAdvances]: an immediate lookup (no
+     * `device.wait()`) so a poll tick that finds nothing returns quickly instead of blocking for
+     * up to [DIALOG_TIMEOUT_MS] per selector, which would stack badly inside a 100 ms poll loop.
+     * `null` here means the dialog has already dismissed (the previous tap likely succeeded and
+     * the grant is just propagating), not that it never appeared in the first place.
+     */
+    private fun findAllowAllButtonNow(): UiObject2? =
+        device.findObject(By.res(PERMISSION_CONTROLLER_PKG, "permission_allow_all_button"))
+            ?: device.findObject(By.res(PERMISSION_CONTROLLER_PKG, "permission_allow_button"))
+            ?: device.findObject(By.textContains("Allow all"))
+            ?: device.findObject(By.text(Pattern.compile("Allow.*", Pattern.CASE_INSENSITIVE)))
 
     private fun findDialogObject(selector: BySelector): UiObject2? = device.wait(Until.findObject(selector), DIALOG_TIMEOUT_MS)
 
@@ -219,11 +234,6 @@ class SetupActivityPermissionDialogE2ETest {
         // The window-content-change event alone arrives too early to fix the flake on its own
         // (issue #581); this is just its own find-the-window budget, not expected to be load-bearing.
         const val WINDOW_UPDATE_TIMEOUT_MS = 5_000L
-
-        // Generous relative to the diagnostic sleeps/polls this replaced (issue #581): if the
-        // button genuinely never reports enabled within this budget, that is itself the
-        // interesting result, not a timeout to tighten.
-        const val BUTTON_ENABLED_TIMEOUT_MS = 45_000L
 
         // Widened from 10 s to 20 s (issue #604): this suite gained a `screenrecord` process for
         // the first time in issue #604 (see build.yml's "Run SetupActivityPermissionDialogE2ETest"
