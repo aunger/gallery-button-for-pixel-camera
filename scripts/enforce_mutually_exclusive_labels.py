@@ -12,8 +12,11 @@ Mutually exclusive sets (fixed):
     [orchestrate, orchestrating]
 
 Mutually exclusive prefix groups (any label sharing a prefix is exclusive):
-    c-a-*   (author model, e.g. c-a-haiku, c-a-sonnet, c-a-opus)
-    c-r-*   (reviewer model, e.g. c-r-haiku, c-r-sonnet, c-r-opus)
+    c-a-*          (author model, e.g. c-a-haiku, c-a-sonnet, c-a-opus)
+    c-r-*          (reviewer model, e.g. c-r-haiku, c-r-sonnet, c-r-opus)
+    test-failure   (test-failure vs. test-failure-archive; an issue should
+                    carry at most one, since test-failure-archive replaces
+                    test-failure once the archive window has passed)
 
 Usage:
     python3 scripts/enforce_mutually_exclusive_labels.py
@@ -58,6 +61,7 @@ MUTUALLY_EXCLUSIVE_SETS: list[frozenset[str]] = [
 MUTUALLY_EXCLUSIVE_PREFIXES: list[str] = [
     "c-a-",
     "c-r-",
+    "test-failure",
 ]
 
 
