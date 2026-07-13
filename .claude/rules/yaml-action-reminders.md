@@ -2,6 +2,7 @@
 paths:
   - "**/*.{yaml,yml}"
 ---
+
 # GitHub Actions version reminders
 
 When editing YAML files, keep these priorities in mind:

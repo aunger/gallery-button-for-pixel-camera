@@ -7,13 +7,14 @@ On the Claude API it is the `output_config.effort` parameter; in Claude Code it 
 
 ## Available and default effort by model
 
-| Model | Model ID | Available effort levels | Default (API) | Default (Claude Code) |
-|-------|----------|-------------------------|---------------|-----------------------|
-| Opus 4.8 | `claude-opus-4-8` | low, medium, high, xhigh, max | high | high |
-| Sonnet 4.6 | `claude-sonnet-4-6` | low, medium, high, max | high | high |
-| Haiku 4.5 | `claude-haiku-4-5` | not supported | n/a | n/a |
+  | Model      | Model ID            | Available effort levels       | Default (API) | Default (Claude Code) |
+  | ---------- | ------------------- | ----------------------------- | ------------- | --------------------- |
+  | Opus 4.8   | `claude-opus-4-8`   | low, medium, high, xhigh, max | high          | high                  |
+  | Sonnet 4.6 | `claude-sonnet-4-6` | low, medium, high, max        | high          | high                  |
+  | Haiku 4.5  | `claude-haiku-4-5`  | not supported                 | n/a           | n/a                   |
 
 Notes:
+
 - `xhigh` is available on Opus 4.8 (and Opus 4.7) but not on Sonnet 4.6.
 - Haiku 4.5 does not support the `effort` parameter at all, and does not support adaptive thinking.
   It does support manual extended thinking.
@@ -26,15 +27,16 @@ These are estimates, not documented figures.
 Anthropic does not publish per-level token-spend ratios; effort is described qualitatively.
 Treat the numbers below as order-of-magnitude only, with `high` normalized to 1.0.
 
-| Effort | Estimated relative total token spend | Notes |
-|--------|--------------------------------------|-------|
-| low | ~0.2-0.4x | Often skips thinking entirely on easy problems, so can run much lower. |
-| medium | ~0.5-0.7x | Thinks, but briefly. |
-| high | 1.0x (baseline) | Almost always thinks. |
-| xhigh | ~1.5-2.5x | Noticeably deeper reasoning. |
-| max | ~3-6x+ | Thinking caps lifted; highly variable and can exceed this on hard problems. |
+  | Effort | Estimated relative total token spend | Notes                                                                       |
+  | ------ | ------------------------------------ | --------------------------------------------------------------------------- |
+  | low    | ~0.2-0.4x                            | Often skips thinking entirely on easy problems, so can run much lower.      |
+  | medium | ~0.5-0.7x                            | Thinks, but briefly.                                                        |
+  | high   | 1.0x (baseline)                      | Almost always thinks.                                                       |
+  | xhigh  | ~1.5-2.5x                            | Noticeably deeper reasoning.                                                |
+  | max    | ~3-6x+                               | Thinking caps lifted; highly variable and can exceed this on hard problems. |
 
 Caveats:
+
 - The spread is widest on thinking-heavy tasks, where effort has the most leverage.
   On output-dominated tasks (producing a long file with little reasoning) all levels compress much closer to 1.0x, because the thinking delta is a small fraction of the total.
 - `max` is the least predictable: it removes thinking caps, so its ratio tracks problem difficulty more than any fixed multiplier.

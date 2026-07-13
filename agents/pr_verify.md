@@ -20,8 +20,7 @@ Note: Both items may be provided in a single URL of the form `https://github.com
 Start by fetching:
 
 1. The Verification Planner comment.
-   If it was not provided, locate it by searching the PR's comments for the HTML marker
-   `<!-- gb4pc-verification-plan -->`.
+   If it was not provided, locate it by searching the PR's comments for the HTML marker `<!-- gb4pc-verification-plan -->`.
    In this comment, each markdown checkbox line carries a tracking-issue number.
    Parse the issue numbers from the comment's *before-merging list*, but **ignore the follow-up issue list**, which should not be addressed now.
 2. Each tracking issue, including its title, body, and all of its comments, to understand what must be verified.
@@ -46,8 +45,7 @@ The workflow must run on a real PR; you cannot mock it.
 1. Fetch the feature branch (the PR's head branch) locally.
    The workflow file under test lives on that branch.
    Creating the test branch from it ensures the workflow runs from the correct version.
-2. Create a test branch from the feature branch:
-   `git checkout -b test/verify-pr-{N}-{short-description} origin/{feature-branch}`
+2. Create a test branch from the feature branch: `git checkout -b test/verify-pr-{N}-{short-description} origin/{feature-branch}`
 3. Push the test branch.
 4. Open a test PR (base: `main`) with a description that names the items under test and states "Do not merge."
    The PR creation event is `opened`, which does not trigger `pull_request: synchronize` or `pull_request: reopened` workflows; that is intentional.
