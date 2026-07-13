@@ -147,7 +147,7 @@ else
 fi
 
 # ───────────────────────────────────────────────────────────────────────────────
-# STEP 3: Linting tools (pre-commit framework + ktlint).
+# STEP 3: Linting tools (pre-commit framework, ktlint, and rumdl).
 # ───────────────────────────────────────────────────────────────────────────────
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 LOCAL_BIN="$HOME/.local/bin"
@@ -178,27 +178,47 @@ else
     echo "[session-start] Step 3a: ktlint installed"
 fi
 
-# STEP 3b: pre-commit Python package.
+# STEP 3b: rumdl binary (Markdown linter/formatter: structure + prose wrap).
+# Installed via cargo rather than a curl'd GitHub release binary: this
+# session's git-proxy only allows cloning the repo the session itself is
+# working in, and that restriction has also been observed to cover release
+# asset downloads for third-party repos. crates.io is reachable directly,
+# and cargo install is one of this repo's accepted install paths for tools
+# that do not require a git clone. rumdl's own docs recommend a
+# `repo: https://github.com/rvben/rumdl-pre-commit` pre-commit hook entry,
+# which is not usable here for the same git-clone reason; a local hook
+# wrapping this binary is used instead (see .pre-commit-config.yaml).
+RUMDL_VERSION="0.2.32"
+RUMDL_BIN="$HOME/.cargo/bin/rumdl"
+if [[ -x "$RUMDL_BIN" ]]; then
+    echo "[session-start] Step 3b: rumdl present--skip"
+else
+    echo "[session-start] Step 3b: installing rumdl $RUMDL_VERSION..."
+    cargo install --locked --version "$RUMDL_VERSION" rumdl
+    echo "[session-start] Step 3b: rumdl installed"
+fi
+
+# STEP 3c: pre-commit Python package.
 # Check the binary directly rather than via `command -v`: PATH may not yet
 # include $LOCAL_BIN, and pip skips reinstalling the entrypoint script when
 # the package dist-info already exists.  --force-reinstall recreates the
 # missing binary in that case without requiring a full uninstall.
 PRECOMMIT_BIN="$LOCAL_BIN/pre-commit"
 if [[ -x "$PRECOMMIT_BIN" ]]; then
-    echo "[session-start] Step 3b: pre-commit present--skip"
+    echo "[session-start] Step 3c: pre-commit present--skip"
 else
-    echo "[session-start] Step 3b: installing pre-commit..."
+    echo "[session-start] Step 3c: installing pre-commit..."
     pip install --user --force-reinstall --quiet pre-commit
-    echo "[session-start] Step 3b: pre-commit installed"
+    echo "[session-start] Step 3c: pre-commit installed"
 fi
 
-# STEP 3c: wire pre-commit into the repo's git hooks.
+# STEP 3d: wire pre-commit into the repo's git hooks.
 if [[ -f "$REPO_ROOT/.git/hooks/pre-commit" ]]; then
-    echo "[session-start] Step 3c: pre-commit hook wired--skip"
+    echo "[session-start] Step 3d: pre-commit hook wired--skip"
 else
-    echo "[session-start] Step 3c: running pre-commit install..."
+    echo "[session-start] Step 3d: running pre-commit install..."
     (cd "$REPO_ROOT" && "$PRECOMMIT_BIN" install)
-    echo "[session-start] Step 3c: pre-commit hook wired"
+    echo "[session-start] Step 3d: pre-commit hook wired"
 fi
 
 # ───────────────────────────────────────────────────────────────────────────────
