@@ -43,7 +43,7 @@ The proxy credentials in `JAVA_TOOL_OPTIONS` are a session-scoped JWT injected b
 
 ## Linting and formatting
 
-The `SessionStart` hook installs and wires up the linting stack automatically (steps 3a-3c).
+The `SessionStart` hook installs and wires up the linting stack automatically (steps 3a-3d).
 No manual setup is needed.
 
 ### Tools installed at session start
@@ -51,24 +51,25 @@ No manual setup is needed.
   | Tool         | Step | Location                  | Purpose                                                   |
   | ------------ | ---- | ------------------------- | --------------------------------------------------------- |
   | `ktlint`     | 3a   | `~/.local/bin/ktlint`     | Kotlin formatting and style (official Kotlin style guide) |
-  | `pre-commit` | 3b   | `~/.local/bin/pre-commit` | Hook framework; manages ruff, markdownlint, and ktlint    |
+  | `pre-commit` | 3b   | `~/.local/bin/pre-commit` | Hook framework; manages ruff, panache, and ktlint         |
   | git hook     | 3c   | `.git/hooks/pre-commit`   | Runs all hooks automatically on every `git commit`        |
+  | `panache`    | 3d   | `~/.cargo/bin/panache`    | Markdown formatting (prose wrap and ASCII punctuation)    |
   | hook envs    | --   | `~/.cache/pre-commit/`    | Populated on first commit (not pre-warmed at startup)     |
 
 ### Hooks configured in `.pre-commit-config.yaml`
 
-  | Hook                    | Files             | Behavior                                                    |
-  | ----------------------- | ----------------- | ----------------------------------------------------------- |
-  | trailing-whitespace     | all               | removes trailing spaces                                     |
-  | end-of-file-fixer       | all               | ensures files end with a newline                            |
-  | check-yaml              | `*.yaml`, `*.yml` | validates YAML syntax                                       |
-  | check-toml              | `*.toml`          | validates TOML syntax                                       |
-  | check-merge-conflict    | all               | blocks accidental conflict markers                          |
-  | check-added-large-files | all               | blocks large binary commits                                 |
-  | ruff                    | `*.py`            | lint + auto-fix (E, F rules)                                |
-  | ruff-format             | `*.py`            | format                                                      |
-  | markdownlint-cli2       | `*.md`            | lint; MD013 (line length) disabled via `.markdownlint.yaml` |
-  | ktlint                  | `*.kt`, `*.kts`   | format; auto-corrects in place                              |
+  | Hook                    | Files                | Behavior                                                                             |
+  | ----------------------- | -------------------- | ------------------------------------------------------------------------------------ |
+  | trailing-whitespace     | all                  | removes trailing spaces                                                              |
+  | end-of-file-fixer       | all                  | ensures files end with a newline                                                     |
+  | check-yaml              | `*.yaml`, `*.yml`    | validates YAML syntax                                                                |
+  | check-toml              | `*.toml`             | validates TOML syntax                                                                |
+  | check-merge-conflict    | all                  | blocks accidental conflict markers                                                   |
+  | check-added-large-files | all                  | blocks large binary commits                                                          |
+  | ruff                    | `*.py`               | lint + auto-fix (E, F rules)                                                         |
+  | ruff-format             | `*.py`               | format                                                                               |
+  | ktlint                  | `*.kt`, `*.kts`      | format; auto-corrects in place                                                       |
+  | panache                 | `*.md`, `*.markdown` | format; sentence-wraps prose and normalizes punctuation to ASCII, per `panache.toml` |
 
 When a hook modifies a file, the agent did not cause that change-- stage the modified files and commit again.
 

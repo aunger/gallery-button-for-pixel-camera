@@ -147,7 +147,7 @@ else
 fi
 
 # ───────────────────────────────────────────────────────────────────────────────
-# STEP 3: Linting tools (pre-commit framework + ktlint).
+# STEP 3: Linting tools (pre-commit framework, ktlint, and panache).
 # ───────────────────────────────────────────────────────────────────────────────
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 LOCAL_BIN="$HOME/.local/bin"
@@ -199,6 +199,22 @@ else
     echo "[session-start] Step 3c: running pre-commit install..."
     (cd "$REPO_ROOT" && "$PRECOMMIT_BIN" install)
     echo "[session-start] Step 3c: pre-commit hook wired"
+fi
+
+# STEP 3d: panache binary (Markdown formatter: prose wrap + ASCII punctuation).
+# Installed via cargo rather than a curl'd GitHub release binary.
+# This session's git-proxy only allows cloning the repo the session itself is working in.
+# That restriction has also been observed to cover release asset downloads for third-party repos.
+# crates.io is reachable directly, and cargo install is one of this repo's accepted install paths
+# for tools that do not require a git clone.
+PANACHE_VERSION="2.61.0"
+PANACHE_BIN="$HOME/.cargo/bin/panache"
+if [[ -x "$PANACHE_BIN" ]]; then
+    echo "[session-start] Step 3d: panache present--skip"
+else
+    echo "[session-start] Step 3d: installing panache $PANACHE_VERSION..."
+    cargo install --locked --version "$PANACHE_VERSION" panache
+    echo "[session-start] Step 3d: panache installed"
 fi
 
 # ───────────────────────────────────────────────────────────────────────────────
