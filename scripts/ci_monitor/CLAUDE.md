@@ -1,2 +1,3 @@
-<!-- This file simply @ includes README.md. -->
+<!-- This file simply @ includes README.md.
+-->
 @README.md
