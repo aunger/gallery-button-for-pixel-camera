@@ -1,0 +1,29 @@
+# rumdl configuration for this repo's plain GitHub-flavored Markdown.
+# See .claude/rules/prose-style.md for the prose conventions this maps to.
+# Docs: https://rumdl.dev/global-settings/ and https://rumdl.dev/rules/md013/
+
+[global]
+# These three carry over from the old .markdownlint.yaml (now removed), for the same
+# reasons that file gave: MD026 (trailing heading punctuation) is disabled because
+# documentation-style headings ending in "." are intentional here.
+# MD032 (blanks around lists) is disabled because tight list formatting is this
+# project's prevailing style.
+# MD041 (first line must be a top-level heading) is disabled because CLAUDE.md files
+# open with include directives, not headings.
+disable = ["MD026", "MD032", "MD041"]
+
+[MD013]
+# One sentence per line, but unlike plain sentence-per-line mode, semantic-line-breaks
+# also falls back to clause punctuation and then word wrap when a single sentence still
+# exceeds line-length. This is the closest match to prose-style.md's word-wrap rule:
+# "Split prose at sentence breaks. This balances line-diff stability with moderate line
+# lengths." Sentence-per-line alone gets the first half; semantic-line-breaks is the only
+# mode that also delivers the "moderate line lengths" half for an overlong sentence.
+line-length = 80
+reflow = true
+reflow-mode = "semantic-line-breaks"
+# Inline code spans and code blocks cannot be reflowed, so do not flag their length;
+# this mirrors the old .markdownlint.yaml's rationale for disabling MD013 entirely
+# ("URLs and code spans can exceed any reasonable limit"), without losing prose wrapping.
+code-blocks = false
+code-spans = false
