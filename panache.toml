@@ -1,0 +1,29 @@
+# Panache configuration for this repo's plain GitHub-flavored Markdown.
+# See .claude/rules/prose-style.md for the prose conventions this maps to.
+# Docs: https://panache.bz/guide/configuration.html
+
+flavor = "gfm"
+
+# SPEC.md is excluded from formatting: panache 2.61.0 corrupts one of its lines.
+# A bold span immediately followed by a code span (for example "**stale data:** `code`")
+# can come out of `panache format` with extra, unbalanced asterisks, and the corruption
+# compounds on every subsequent run instead of settling (it is not idempotent).
+# See the Known limitations note in the PR description for the reproduction.
+# The pre-commit hook passes --force-exclude so this list is honored even though
+# pre-commit names files explicitly rather than passing a directory.
+exclude = ["SPEC.md"]
+
+[format]
+# One sentence per line.
+# This balances line-diff stability with moderate line lengths (prose-style.md "Word wrap in Markdown, etc").
+wrap = "sentence"
+
+[extensions]
+# gfm normally leaves punctuation untouched: "smart" defaults to false for this flavor.
+# Force it on so any curly quotes, en/em dashes, or a unicode ellipsis that sneak into a document
+# get normalized to their ASCII Markdown forms ('/", --/---, ...) instead
+# (prose-style.md "Avoid angle quote, em-dash, and ellipsis characters").
+# Panache maps an em dash to "---" (Pandoc's own convention), not this repo's preferred
+# double-hyphen "--". See the Known limitations note in the PR description for the one
+# prose rule Panache does not enforce (removing spaces around dashes).
+smart = true
