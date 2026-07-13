@@ -4,6 +4,16 @@
 #
 # - `semantic` enables sentence-boundary line wrapping, i.e. "split prose at
 #   sentence breaks" (the "Word wrap in Markdown, etc" rule).
+# - `width` is set very large rather than left at the 88-column default so
+#   `semantic` is the sole determinant of line breaks: a sentence only ever
+#   breaks at its end, never mid-sentence at a width limit.
+#   Do NOT set this to 0 instead: 0 has a different, special meaning here.
+#   `line_wrap_by_sentence()` in Flowmark's own source
+#   (linewrapping/line_wrappers.py) short-circuits on `width <= 0` *before*
+#   it ever calls the sentence splitter, collapsing an entire paragraph
+#   (every sentence in it) onto a single line. A large positive width goes
+#   through the normal sentence-splitting path and simply never triggers
+#   the width check, which is the behavior we actually want.
 # - `cleanups` enables (safe) structural fixes, such as unbolding headings
 #   whose entire text is bold. It does not touch punctuation.
 # - `smartquotes` and `ellipses` are deliberately left disabled: enabling
@@ -15,6 +25,7 @@
 
 [formatting]
 semantic = true
+width = 100_000
 cleanups = true
 smartquotes = false
 ellipses = false

@@ -10,8 +10,7 @@ cd gallery-button-for-pixel-camera
 ./gradlew assembleRelease        # unsigned release APK
 ```
 
-The `SessionStart` hook (`.claude/hooks/session-start.sh`) runs automatically at session
-start and sets up the Android SDK and proxy configuration.
+The `SessionStart` hook (`.claude/hooks/session-start.sh`) runs automatically at session start and sets up the Android SDK and proxy configuration.
 See the script for implementation details; each step is commented.
 
 * * *
@@ -26,8 +25,7 @@ See the script for implementation details; each step is commented.
 | `GITHUB_TOKEN` | *(fine-grained PAT)* | container | Use with `curl` to query the GitHub REST API |
 
 `~/.bashrc` carries the same fixes for interactive terminal sessions.
-The proxy credentials in `JAVA_TOOL_OPTIONS` are a session-scoped JWT injected by the
-container; never hard-code them.
+The proxy credentials in `JAVA_TOOL_OPTIONS` are a session-scoped JWT injected by the container; never hard-code them.
 
 * * *
 
@@ -45,8 +43,7 @@ container; never hard-code them.
 
 ## Linting and formatting
 
-The `SessionStart` hook installs and wires up the linting stack automatically (steps
-3a-3d). No manual setup is needed.
+The `SessionStart` hook installs and wires up the linting stack automatically (steps 3a-3d). No manual setup is needed.
 
 ### Tools installed at session start
 
@@ -73,14 +70,12 @@ The `SessionStart` hook installs and wires up the linting stack automatically (s
 | flowmark | `*.md`, `*.markdown` | prose formatting; semantic line wrap and safe cleanups per `.flowmark.toml`, auto-corrects in place |
 | ktlint | `*.kt`, `*.kts` | format; auto-corrects in place |
 
-When a hook modifies a file, the agent did not cause that change-- stage the modified
-files and commit again.
+When a hook modifies a file, the agent did not cause that change-- stage the modified files and commit again.
 
 ### Semgrep (CI only)
 
 Semgrep runs in CI (`.github/workflows/semgrep.yml`) on PRs and weekly.
-Rulesets: `p/python`, `p/kotlin`, `p/security-audit`. Results appear in the GitHub
-Security tab (SARIF upload).
+Rulesets: `p/python`, `p/kotlin`, `p/security-audit`. Results appear in the GitHub Security tab (SARIF upload).
 Findings block the PR.
 
 * * *
@@ -89,32 +84,23 @@ Findings block the PR.
 
 ### `issue_write labels: []` is a silent no-op
 
-Calling `mcp__github__issue_write` with `labels: []` to clear all labels returns a
-success-looking response (`{"id":"...","url":"..."}`) but **does not change any
-labels**. The MCP tool appears to filter out empty arrays before building the API
-request body, so the `labels` field is never sent and all existing labels remain.
+Calling `mcp__github__issue_write` with `labels: []` to clear all labels returns a success-looking response (`{"id":"...","url":"..."}`) but **does not change any labels**. The MCP tool appears to filter out empty arrays before building the API request body, so the `labels` field is never sent and all existing labels remain.
 
 **Evidence (empirically verified 2026-05):**
-- `labels: ["planning needed"]` → correctly replaces ALL labels with just that one
-  (REPLACE semantics; "orchestrate" was removed in the same call).
+- `labels: ["planning needed"]` → correctly replaces ALL labels with just that one (REPLACE semantics; "orchestrate" was removed in the same call).
   Non-empty arrays work.
 - `labels: []` → no change; all labels remain.
   Confirmed by a follow-up `get_labels` read.
 
-**Implication:** There is no way to remove *all* labels from an issue using
-`mcp__github__issue_write` alone.
+**Implication:** There is no way to remove *all* labels from an issue using `mcp__github__issue_write` alone.
 To drop N−1 labels, set `labels` to the one label you want to keep.
-The last remaining label cannot be removed via this tool, and the `GITHUB_TOKEN`
-environment variable also cannot help; it is read-only for the Issues API (write
-attempts return 403).
+The last remaining label cannot be removed via this tool, and the `GITHUB_TOKEN` environment variable also cannot help; it is read-only for the Issues API (write attempts return 403).
 
 ### Always verify writes with a follow-up read
 
-`mcp__github__issue_write` (and similar write tools) return `{"id":"...","url":"..."}`
-regardless of whether the underlying change was applied.
+`mcp__github__issue_write` (and similar write tools) return `{"id":"...","url":"..."}` regardless of whether the underlying change was applied.
 The stripped response gives no signal about what actually changed.
-**Always follow a write with a confirming `issue_read`** (e.g. `method: "get_labels"`)
-before reporting success.
+**Always follow a write with a confirming `issue_read`** (e.g. `method: "get_labels"`) before reporting success.
 
 ### GitHub MCP "requires re-authorization (token expired)" on write
 
@@ -127,17 +113,14 @@ MCP server "github" requires re-authorization (token expired)
 
 #### Possible workaround (not guaranteed, appears to work)
 
-If writes fail with this error, try performing any `issue_read` first, then immediately
-retry the write. Do not interpret this as "no blind writes" enforcement.
+If writes fail with this error, try performing any `issue_read` first, then immediately retry the write.
+Do not interpret this as "no blind writes" enforcement.
 
 #### Observations
 
-`$GITHUB_TOKEN` is a fine-grained PAT (`github_pat_...` format), not a JWT. It is stable
-across sessions and does not change mid-session or after MCP reads/writes.
-The "token expired" error therefore **does not refer to `GITHUB_TOKEN` expiring**. The
-MCP server manages its own internal credentials separately from this environment
-variable. The mechanism is unknown, but reads appear to succeed via a cached path while
-writes require a live MCP session token.
+`$GITHUB_TOKEN` is a fine-grained PAT (`github_pat_...` format), not a JWT. It is stable across sessions and does not change mid-session or after MCP reads/writes.
+The "token expired" error therefore **does not refer to `GITHUB_TOKEN` expiring**. The MCP server manages its own internal credentials separately from this environment variable.
+The mechanism is unknown, but reads appear to succeed via a cached path while writes require a live MCP session token.
 A successful read call appears to unblock subsequent writes.
 
 * * *
