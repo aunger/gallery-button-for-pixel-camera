@@ -3,6 +3,13 @@ repos:
     rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # v6.0.0
     hooks:
       - id: trailing-whitespace
+        # flowmark (below) is the authoritative formatter for Markdown and
+        # always renders a blank line inside a multi-paragraph blockquote as
+        # "> " (a trailing space after the ">"); this is how flowmark keeps
+        # the line a valid blockquote continuation. Without this exclude,
+        # this hook strips that trailing space right back out on every run,
+        # and the two hooks fight forever on any file with such a blockquote.
+        exclude: '\.(md|markdown)$'
       - id: end-of-file-fixer
       - id: check-yaml
       - id: check-toml
@@ -16,11 +23,6 @@ repos:
         args: [--fix]
       - id: ruff-format
 
-  - repo: https://github.com/DavidAnson/markdownlint-cli2
-    rev: da711fa8b30421506086eb2dc7ea0a6c3cb27b9f # v0.14.0
-    hooks:
-      - id: markdownlint-cli2
-
   - repo: local
     hooks:
       - id: ktlint
@@ -29,3 +31,9 @@ repos:
         entry: ktlint
         args: [--format]
         files: '\.(kt|kts)$'
+      - id: flowmark
+        name: flowmark
+        language: system
+        entry: flowmark
+        args: [--inplace, --nobackup, --force-exclude]
+        files: '\.(md|markdown)$'

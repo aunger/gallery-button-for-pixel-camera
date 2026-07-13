@@ -1,8 +1,0 @@
-# MD013: line length -- disabled because URLs and code spans can exceed any reasonable limit.
-MD013: false
-# MD026: trailing punctuation in headings -- disabled; documentation-style headings ending with '.' are intentional.
-MD026: false
-# MD032: blanks around lists -- disabled; tight list formatting is the prevailing style in this project.
-MD032: false
-# MD041: first line heading -- disabled; CLAUDE.md files open with include directives, not headings.
-MD041: false

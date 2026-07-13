@@ -1,0 +1,20 @@
+# Flowmark configuration for this repo's Markdown formatting.
+#
+# These settings map to the rules in .claude/rules/prose-style.md:
+#
+# - `semantic` enables sentence-boundary line wrapping, i.e. "split prose at
+#   sentence breaks" (the "Word wrap in Markdown, etc" rule).
+# - `cleanups` enables (safe) structural fixes, such as unbolding headings
+#   whose entire text is bold. It does not touch punctuation.
+# - `smartquotes` and `ellipses` are deliberately left disabled: enabling
+#   either would convert straight quotes or a literal "..." into curly or
+#   typographic characters, which is the opposite of the "Avoid angle quote,
+#   em-dash, and ellipsis characters" rule. This is also why the pre-commit
+#   hook uses `--inplace --nobackup` directly instead of the `--auto`
+#   convenience flag, which silently bundles smartquotes/ellipses in.
+
+[formatting]
+semantic = true
+cleanups = true
+smartquotes = false
+ellipses = false
