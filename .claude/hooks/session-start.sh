@@ -201,6 +201,37 @@ else
     echo "[session-start] Step 3c: pre-commit hook wired"
 fi
 
+# STEP 3d: mdformat + plugins (Markdown formatter).
+# Same --force-reinstall rationale as pre-commit above: PATH may not yet
+# include $LOCAL_BIN, and pip skips reinstalling the entrypoint script when
+# the package dist-info already exists. Appended after the existing steps
+# rather than inserted before pre-commit, so this doesn't renumber steps
+# 3b/3c that might be referenced by name elsewhere.
+#
+# mdformat is pinned to 0.7.22, not the current 1.0.0: mdformat-sentencebreak
+# (the sentence-wrap plugin; see .pre-commit-config.yaml) requires
+# `mdformat>=0.7.16,<0.8.0` and has had no release since 2022, so this repo
+# cannot move to mdformat 1.0.0 without dropping that plugin. mdformat-tables
+# and mdformat-frontmatter are both required too: without them, core mdformat
+# (CommonMark only) mangles GFM pipe tables and destroys YAML frontmatter
+# (confirmed: it re-parses frontmatter as a thematic break plus a regular
+# paragraph, escaping asterisks inside it). See the PR's Known limitations
+# for the full story, including a mdformat-sentencebreak bug this repo works
+# around by excluding a specific list of files from the hook.
+MDFORMAT_VERSION="0.7.22"
+MDFORMAT_BIN="$LOCAL_BIN/mdformat"
+if [[ -x "$MDFORMAT_BIN" ]]; then
+    echo "[session-start] Step 3d: mdformat present--skip"
+else
+    echo "[session-start] Step 3d: installing mdformat $MDFORMAT_VERSION + plugins..."
+    pip install --user --force-reinstall --quiet \
+        "mdformat==$MDFORMAT_VERSION" \
+        "mdformat-sentencebreak==0.4.0" \
+        "mdformat-frontmatter==2.1.2" \
+        "mdformat-tables==1.0.0"
+    echo "[session-start] Step 3d: mdformat installed"
+fi
+
 # ───────────────────────────────────────────────────────────────────────────────
 # STEP 4: Fetch remote refs.
 #

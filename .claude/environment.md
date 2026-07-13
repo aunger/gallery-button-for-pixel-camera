@@ -45,7 +45,7 @@ by the container; never hard-code them.
 
 ## Linting and formatting
 
-The `SessionStart` hook installs and wires up the linting stack automatically (steps 3a-3c).
+The `SessionStart` hook installs and wires up the linting stack automatically (steps 3a-3d).
 No manual setup is needed.
 
 ### Tools installed at session start
@@ -53,8 +53,9 @@ No manual setup is needed.
 | Tool | Step | Location | Purpose |
 |------|------|----------|---------|
 | `ktlint` | 3a | `~/.local/bin/ktlint` | Kotlin formatting and style (official Kotlin style guide) |
-| `pre-commit` | 3b | `~/.local/bin/pre-commit` | Hook framework; manages ruff, markdownlint, and ktlint |
+| `pre-commit` | 3b | `~/.local/bin/pre-commit` | Hook framework; manages ruff, mdformat, and ktlint |
 | git hook | 3c | `.git/hooks/pre-commit` | Runs all hooks automatically on every `git commit` |
+| `mdformat` | 3d | `~/.local/bin/mdformat` | Markdown prose formatting (sentence wrap via `mdformat-sentencebreak`; see `.pre-commit-config.yaml`) |
 | hook envs | -- | `~/.cache/pre-commit/` | Populated on first commit (not pre-warmed at startup) |
 
 ### Hooks configured in `.pre-commit-config.yaml`
@@ -69,7 +70,7 @@ No manual setup is needed.
 | check-added-large-files | all | blocks large binary commits |
 | ruff | `*.py` | lint + auto-fix (E, F rules) |
 | ruff-format | `*.py` | format |
-| markdownlint-cli2 | `*.md` | lint; MD013 (line length) disabled via `.markdownlint.yaml` |
+| mdformat | `*.md`, `*.markdown` | format; sentence wrap plus frontmatter/table support, auto-corrects in place (a fixed list of files is excluded; see `.pre-commit-config.yaml`) |
 | ktlint | `*.kt`, `*.kts` | format; auto-corrects in place |
 
 When a hook modifies a file, the agent did not cause that change--
