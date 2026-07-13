@@ -50,9 +50,9 @@ The `SessionStart` hook installs and wires up the linting stack automatically (s
 | Tool | Step | Location | Purpose |
 | --- | --- | --- | --- |
 | `ktlint` | 3a | `~/.local/bin/ktlint` | Kotlin formatting and style (official Kotlin style guide) |
-| `flowmark` | 3b | `~/.local/bin/flowmark` (pip) | Markdown prose formatting (semantic line wrap; see `.flowmark.toml`) |
-| `pre-commit` | 3c | `~/.local/bin/pre-commit` | Hook framework; manages ruff, flowmark, and ktlint |
-| git hook | 3d | `.git/hooks/pre-commit` | Runs all hooks automatically on every `git commit` |
+| `pre-commit` | 3b | `~/.local/bin/pre-commit` | Hook framework; manages ruff, flowmark, and ktlint |
+| git hook | 3c | `.git/hooks/pre-commit` | Runs all hooks automatically on every `git commit` |
+| `flowmark` | 3d | `~/.local/bin/flowmark` | Markdown prose formatting (semantic line wrap; see `.flowmark.toml`) |
 | hook envs | -- | `~/.cache/pre-commit/` | Populated on first commit (not pre-warmed at startup) |
 
 ### Hooks configured in `.pre-commit-config.yaml`

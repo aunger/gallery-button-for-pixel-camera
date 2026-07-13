@@ -178,41 +178,43 @@ else
     echo "[session-start] Step 3a: ktlint installed"
 fi
 
-# STEP 3b: flowmark Python package (Markdown prose formatter).
-# Same --force-reinstall rationale as pre-commit below: PATH may not yet
-# include $LOCAL_BIN, and pip skips reinstalling the entrypoint script when
-# the package dist-info already exists.
-FLOWMARK_VERSION="0.7.2"
-FLOWMARK_BIN="$LOCAL_BIN/flowmark"
-if [[ -x "$FLOWMARK_BIN" ]]; then
-    echo "[session-start] Step 3b: flowmark present--skip"
-else
-    echo "[session-start] Step 3b: installing flowmark $FLOWMARK_VERSION..."
-    pip install --user --force-reinstall --quiet "flowmark==$FLOWMARK_VERSION"
-    echo "[session-start] Step 3b: flowmark installed"
-fi
-
-# STEP 3c: pre-commit Python package.
+# STEP 3b: pre-commit Python package.
 # Check the binary directly rather than via `command -v`: PATH may not yet
 # include $LOCAL_BIN, and pip skips reinstalling the entrypoint script when
 # the package dist-info already exists.  --force-reinstall recreates the
 # missing binary in that case without requiring a full uninstall.
 PRECOMMIT_BIN="$LOCAL_BIN/pre-commit"
 if [[ -x "$PRECOMMIT_BIN" ]]; then
-    echo "[session-start] Step 3c: pre-commit present--skip"
+    echo "[session-start] Step 3b: pre-commit present--skip"
 else
-    echo "[session-start] Step 3c: installing pre-commit..."
+    echo "[session-start] Step 3b: installing pre-commit..."
     pip install --user --force-reinstall --quiet pre-commit
-    echo "[session-start] Step 3c: pre-commit installed"
+    echo "[session-start] Step 3b: pre-commit installed"
 fi
 
-# STEP 3d: wire pre-commit into the repo's git hooks.
+# STEP 3c: wire pre-commit into the repo's git hooks.
 if [[ -f "$REPO_ROOT/.git/hooks/pre-commit" ]]; then
-    echo "[session-start] Step 3d: pre-commit hook wired--skip"
+    echo "[session-start] Step 3c: pre-commit hook wired--skip"
 else
-    echo "[session-start] Step 3d: running pre-commit install..."
+    echo "[session-start] Step 3c: running pre-commit install..."
     (cd "$REPO_ROOT" && "$PRECOMMIT_BIN" install)
-    echo "[session-start] Step 3d: pre-commit hook wired"
+    echo "[session-start] Step 3c: pre-commit hook wired"
+fi
+
+# STEP 3d: flowmark Python package (Markdown prose formatter).
+# Same --force-reinstall rationale as pre-commit above: PATH may not yet
+# include $LOCAL_BIN, and pip skips reinstalling the entrypoint script when
+# the package dist-info already exists. Appended after the existing steps
+# rather than inserted before pre-commit, so this doesn't renumber steps
+# 3b/3c that might be referenced by name elsewhere.
+FLOWMARK_VERSION="0.7.2"
+FLOWMARK_BIN="$LOCAL_BIN/flowmark"
+if [[ -x "$FLOWMARK_BIN" ]]; then
+    echo "[session-start] Step 3d: flowmark present--skip"
+else
+    echo "[session-start] Step 3d: installing flowmark $FLOWMARK_VERSION..."
+    pip install --user --force-reinstall --quiet "flowmark==$FLOWMARK_VERSION"
+    echo "[session-start] Step 3d: flowmark installed"
 fi
 
 # ───────────────────────────────────────────────────────────────────────────────
