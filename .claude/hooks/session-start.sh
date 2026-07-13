@@ -178,30 +178,7 @@ else
     echo "[session-start] Step 3a: ktlint installed"
 fi
 
-# STEP 3b: pre-commit Python package.
-# Check the binary directly rather than via `command -v`: PATH may not yet
-# include $LOCAL_BIN, and pip skips reinstalling the entrypoint script when
-# the package dist-info already exists.  --force-reinstall recreates the
-# missing binary in that case without requiring a full uninstall.
-PRECOMMIT_BIN="$LOCAL_BIN/pre-commit"
-if [[ -x "$PRECOMMIT_BIN" ]]; then
-    echo "[session-start] Step 3b: pre-commit present--skip"
-else
-    echo "[session-start] Step 3b: installing pre-commit..."
-    pip install --user --force-reinstall --quiet pre-commit
-    echo "[session-start] Step 3b: pre-commit installed"
-fi
-
-# STEP 3c: wire pre-commit into the repo's git hooks.
-if [[ -f "$REPO_ROOT/.git/hooks/pre-commit" ]]; then
-    echo "[session-start] Step 3c: pre-commit hook wired--skip"
-else
-    echo "[session-start] Step 3c: running pre-commit install..."
-    (cd "$REPO_ROOT" && "$PRECOMMIT_BIN" install)
-    echo "[session-start] Step 3c: pre-commit hook wired"
-fi
-
-# STEP 3d: panache binary (Markdown formatter: prose wrap + ASCII punctuation).
+# STEP 3b: panache binary (Markdown formatter: prose wrap + ASCII punctuation).
 # Installed via cargo rather than a curl'd GitHub release binary.
 # This session's git-proxy only allows cloning the repo the session itself is working in.
 # That restriction has also been observed to cover release asset downloads for third-party repos.
@@ -210,11 +187,34 @@ fi
 PANACHE_VERSION="2.61.0"
 PANACHE_BIN="$HOME/.cargo/bin/panache"
 if [[ -x "$PANACHE_BIN" ]]; then
-    echo "[session-start] Step 3d: panache present--skip"
+    echo "[session-start] Step 3b: panache present--skip"
 else
-    echo "[session-start] Step 3d: installing panache $PANACHE_VERSION..."
+    echo "[session-start] Step 3b: installing panache $PANACHE_VERSION..."
     cargo install --locked --version "$PANACHE_VERSION" panache
-    echo "[session-start] Step 3d: panache installed"
+    echo "[session-start] Step 3b: panache installed"
+fi
+
+# STEP 3c: pre-commit Python package.
+# Check the binary directly rather than via `command -v`: PATH may not yet
+# include $LOCAL_BIN, and pip skips reinstalling the entrypoint script when
+# the package dist-info already exists.  --force-reinstall recreates the
+# missing binary in that case without requiring a full uninstall.
+PRECOMMIT_BIN="$LOCAL_BIN/pre-commit"
+if [[ -x "$PRECOMMIT_BIN" ]]; then
+    echo "[session-start] Step 3c: pre-commit present--skip"
+else
+    echo "[session-start] Step 3c: installing pre-commit..."
+    pip install --user --force-reinstall --quiet pre-commit
+    echo "[session-start] Step 3c: pre-commit installed"
+fi
+
+# STEP 3d: wire pre-commit into the repo's git hooks.
+if [[ -f "$REPO_ROOT/.git/hooks/pre-commit" ]]; then
+    echo "[session-start] Step 3d: pre-commit hook wired--skip"
+else
+    echo "[session-start] Step 3d: running pre-commit install..."
+    (cd "$REPO_ROOT" && "$PRECOMMIT_BIN" install)
+    echo "[session-start] Step 3d: pre-commit hook wired"
 fi
 
 # ───────────────────────────────────────────────────────────────────────────────

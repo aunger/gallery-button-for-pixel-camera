@@ -16,6 +16,10 @@ exclude = ["SPEC.md"]
 [format]
 # One sentence per line.
 # This balances line-diff stability with moderate line lengths (prose-style.md "Word wrap in Markdown, etc").
+# Caveat: "sentence" (like "semantic") applies no width limit at all, so an unusually long
+# sentence becomes one very long line rather than falling back to a width-based wrap.
+# There is no config combination that adds a fallback; see the Known limitations note in
+# the PR description for the source-level confirmation.
 wrap = "sentence"
 
 [extensions]

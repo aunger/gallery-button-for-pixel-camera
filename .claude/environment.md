@@ -51,9 +51,9 @@ No manual setup is needed.
   | Tool         | Step | Location                  | Purpose                                                   |
   | ------------ | ---- | ------------------------- | --------------------------------------------------------- |
   | `ktlint`     | 3a   | `~/.local/bin/ktlint`     | Kotlin formatting and style (official Kotlin style guide) |
-  | `pre-commit` | 3b   | `~/.local/bin/pre-commit` | Hook framework; manages ruff, panache, and ktlint         |
-  | git hook     | 3c   | `.git/hooks/pre-commit`   | Runs all hooks automatically on every `git commit`        |
-  | `panache`    | 3d   | `~/.cargo/bin/panache`    | Markdown formatting (prose wrap and ASCII punctuation)    |
+  | `panache`    | 3b   | `~/.cargo/bin/panache`    | Markdown formatting (prose wrap and ASCII punctuation)    |
+  | `pre-commit` | 3c   | `~/.local/bin/pre-commit` | Hook framework; manages ruff, panache, and ktlint         |
+  | git hook     | 3d   | `.git/hooks/pre-commit`   | Runs all hooks automatically on every `git commit`        |
   | hook envs    | --   | `~/.cache/pre-commit/`    | Populated on first commit (not pre-warmed at startup)     |
 
 ### Hooks configured in `.pre-commit-config.yaml`
