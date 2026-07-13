@@ -1,9 +1,17 @@
 # CI Monitor
 
-`ci_monitor.py` polls CI for a pull request, a bare commit, a specific Actions run, or a branch head, and streams a terminal outcome plus per-test signals.
-Each stdout line is the interface: terminal lines (`Clear`/`Blocked`/`Infra`) end the loop, while informational lines (`in_progress` heartbeat, per-step deltas, per-test `FAIL`/`SKIP`/`PASS`) keep it alive.
+`ci_monitor.py` polls CI for a pull request, a bare commit,
+a specific Actions run, or a branch head,
+and streams a terminal outcome plus per-test signals.
+Each stdout line is the interface:
+terminal lines (`Clear`/`Blocked`/`Infra`) end the loop,
+while informational lines
+(`in_progress` heartbeat, per-step deltas, per-test `FAIL`/`SKIP`/`PASS`)
+keep it alive.
 
-For how the Orchestrator uses this script as part of the development cycle (the Monitor loop, routing decisions, and the Verification Planner dispatch), see [`agents/dev_orchestration.md`](../../agents/dev_orchestration.md).
+For how the Orchestrator uses this script as part of the development cycle
+(the Monitor loop, routing decisions, and the Verification Planner dispatch),
+see [`agents/dev_orchestration.md`](../../agents/dev_orchestration.md).
 
 ## Running the monitor
 
@@ -23,23 +31,49 @@ python3 scripts/ci_monitor/ci_monitor.py --branch <BRANCH> [filter flags]
 | `--run-id <RUN_ID>` | One specific GitHub Actions run, scoped to that run only--not every check on its commit. | `RUN#<id>:` |
 | `--branch <BRANCH>` | The current head of a branch; its SHA is re-resolved every poll, so a new push is picked up. | `BRANCH#<name>:` |
 
-Supplying zero or more than one of these flags is a usage error (argparse exits with an error before any request is made).
+Supplying zero or more than one of these flags is a usage error
+(argparse exits with an error before any request is made).
 
-`--pr` mode is the only one with a pull request to consult, so it alone: (1) treats a merged or closed PR as an immediate terminal (`Merged`/`Closed`), and (2) gates the `Clear` terminal on `mergeable_state` (`clean`/`unstable`; `behind`/`dirty` maps to `Blocked`, `blocked` maps to `Infra`).
-`--sha`, `--run-id`, and `--branch` have no such state to consult: `Clear` fires directly off an all-passed check verdict, with no extra `/pulls/{n}` fetch.
+`--pr` mode is the only one with a pull request to consult, so it alone:
+(1) treats a merged or closed PR as an immediate terminal (`Merged`/`Closed`),
+and (2) gates the `Clear` terminal on `mergeable_state`
+(`clean`/`unstable`; `behind`/`dirty` maps to `Blocked`,
+`blocked` maps to `Infra`).
+`--sha`, `--run-id`, and `--branch` have no such state to consult:
+`Clear` fires directly off an all-passed check verdict,
+with no extra `/pulls/{n}` fetch.
 
-`--run-id` additionally does not fetch `/commits/{sha}/check-runs` at all--it resolves its verdict from the run object itself (`GET /actions/runs/{run_id}`, which carries `status`/`conclusion`/`head_sha` directly), and scopes step/artifact diagnostics to that one run's jobs. This keeps `--run-id` immune to an unrelated check on the same commit (e.g. this repo's `semgrep.yml`, which also runs on every commit) confusing its verdict--the problem `--pr`/`--sha`/`--branch` modes can in principle have if unrelated checks land on the same commit.
+`--run-id` additionally does not fetch `/commits/{sha}/check-runs` at all--it
+resolves its verdict from the run object itself (`GET /actions/runs/{run_id}`,
+which carries `status`/`conclusion`/`head_sha` directly), and scopes
+step/artifact diagnostics to that one run's jobs.
+This keeps `--run-id` immune to an unrelated check on the same commit
+(e.g. this repo's `semgrep.yml`, which also runs on every commit)
+confusing its verdict--the problem `--pr`/`--sha`/`--branch` modes can in
+principle have if unrelated checks land on the same commit.
 
-`OWNER`/`REPO` default to this repo at the top of the script, and it reads `$GITHUB_TOKEN` from the environment (required).
-The script catches transient REST/parse failures per call so they cannot kill the resilient poll loop.
+`OWNER`/`REPO` default to this repo at the top of the script,
+and it reads `$GITHUB_TOKEN` from the environment (required).
+The script catches transient REST/parse failures per call
+so they cannot kill the resilient poll loop.
 
-In `--pr`/`--sha`/`--branch` modes, the Monitor discovers which workflow run(s) and job(s) to track from the `/commits/{sha}/check-runs` payload, by parsing each GitHub Actions check run's `details_url` for its `(run_id, job_id)` (gated on `app.slug == "github-actions"`, with a `/actions/runs/` URL-pattern fallback when the `app` block is absent).
-It does not name a workflow or job; the run/job to follow is derived from the same check-runs data that produces the verdict.
-In `--run-id` mode, the run to track is simply the one named on the command line--no check-runs payload is consulted for this purpose.
+In `--pr`/`--sha`/`--branch` modes,
+the Monitor discovers which workflow run(s)
+and job(s) to track from the `/commits/{sha}/check-runs` payload,
+by parsing each GitHub Actions check run's `details_url`
+for its `(run_id, job_id)`
+(gated on `app.slug == "github-actions"`,
+with a `/actions/runs/` URL-pattern fallback when the `app` block is absent).
+It does not name a workflow or job;
+the run/job to follow is derived from the same check-runs data
+that produces the verdict.
+In `--run-id` mode, the run to track is simply the one named on the command
+line--no check-runs payload is consulted for this purpose.
 
 ## Per-test outcome filters
 
-By default the monitor reports **all FAIL markers**, **all SKIP markers**, and **no PASS markers**.
+By default the monitor reports **all FAIL markers**, **all SKIP markers**,
+and **no PASS markers**.
 Independent filter flags narrow or expand which per-test outcomes are streamed:
 
 | Flag | Effect |
@@ -51,23 +85,33 @@ Independent filter flags narrow or expand which per-test outcomes are streamed:
 | `--include-pass [PATTERN]` | Report PASS markers (not the default); optionally restrict to those whose `name` matches PATTERN. |
 | `--no-include-pass` | Suppress all PASS markers (explicit form of the default). |
 
-Each `--include-*` flag takes an **optional regex** matched against the marker's `name` field.
+Each `--include-*` flag takes an **optional regex** matched against the marker's
+`name` field.
 Supplied without a pattern it includes *all* markers of that outcome.
-The three outcomes keep their distinct labels in output: `--include-pass` never relabels a SKIP as PASS.
+The three outcomes keep their distinct labels in output:
+`--include-pass` never relabels a SKIP as PASS.
 
-**Task-relevance validation.** To verify that a task-relevant test actually ran and passed (rather than being silently skipped), supply `--include-pass` with a regex matching the test(s) of interest:
+**Task-relevance validation.**
+To verify that a task-relevant test actually ran and passed
+(rather than being silently skipped),
+supply `--include-pass` with a regex matching the test(s) of interest:
 
 ```bash
 python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER> --include-pass 'MyFeatureTest'
 ```
 
-This emits a `PASS` line when the matching test passes and a `SKIP` line if it was skipped (which would be a false-validation trap: the code path was never exercised).
+This emits a `PASS` line when the matching test passes and a `SKIP` line
+if it was skipped (which would be a false-validation trap:
+the code path was never exercised).
 With no pattern (`--include-pass ''`), every passing test is reported.
 
 ## Configuration
 
 `ci_monitor.config.json` (next to the script) tunes five behaviors as regexes.
-The monitor loads it once at startup; each value is optional, and a missing file, unreadable file, invalid JSON, or non-compiling regex falls back to the in-code default for that key without aborting the resilient poll loop.
+The monitor loads it once at startup; each value is optional,
+and a missing file, unreadable file, invalid JSON,
+or non-compiling regex falls back to the in-code default for
+that key without aborting the resilient poll loop.
 
 | Config key | Default (in code) | Matched against | Purpose |
 |---|---|---|---|
@@ -79,23 +123,55 @@ The monitor loads it once at startup; each value is optional, and a missing file
 
 This repo's committed `ci_monitor.config.json` sets:
 
-- `artifact_name_regex`: `^ci-monitor-feed-` (matches `ci-monitor-feed-unit`, `ci-monitor-feed-PixelCameraOverlayE2ETest`, `ci-monitor-feed-GalleryButtonVisualE2ETest`, and the rest of the per-suite monitor feeds).
-- `interesting_step_regex`: `Build and run unit tests|^Run .*E2ETest$` (reproduces the named-step reporting on success; anchored to the `Run <Class>E2ETest` steps specifically, so it does not also match the `Upload <Class>E2ETest monitor feed`/`E2E video` steps, whose names now embed the same class name per issue #600).
-- `deferred_verdict_step_regex`: `^Run .*E2ETest$|^Run instrumented tests$` (the nine deferred-verdict steps in `build.yml`: the eight `Run <Class>E2ETest` steps and `Run instrumented tests`). Narrower than `interesting_step_regex`, which also matches `Build and run unit tests`: that step runs `testDebugUnitTest` under `set -o pipefail`, so its conclusion is an honest verdict and must *not* be annotated.
-- `test_marker_regex`: `##GB4PC_TEST##|##TEST##` (back-compat dual marker, see below).
-- `label_gate_check_regex`: `No blocking labels` (the process-label gate check used in this repo).
+- `artifact_name_regex`: `^ci-monitor-feed-`
+  (matches `ci-monitor-feed-unit`, `ci-monitor-feed-PixelCameraOverlayE2ETest`,
+  `ci-monitor-feed-GalleryButtonVisualE2ETest`,
+  and the rest of the per-suite monitor feeds).
+- `interesting_step_regex`: `Build and run unit tests|^Run .*E2ETest$`
+  (reproduces the named-step reporting on success;
+  anchored to the `Run <Class>E2ETest` steps specifically,
+  so it does not also match the `Upload <Class>E2ETest monitor feed`/`E2E video`
+  steps, whose names now embed the same class name per issue #600).
+- `deferred_verdict_step_regex`: `^Run .*E2ETest$|^Run instrumented tests$`
+  (the nine deferred-verdict steps in `build.yml`:
+  the eight `Run <Class>E2ETest` steps and `Run instrumented tests`).
+  Narrower than `interesting_step_regex`,
+  which also matches `Build and run unit tests`:
+  that step runs `testDebugUnitTest` under `set -o pipefail`,
+  so its conclusion is an honest verdict and must *not* be annotated.
+- `test_marker_regex`: `##GB4PC_TEST##|##TEST##`
+  (back-compat dual marker, see below).
+- `label_gate_check_regex`: `No blocking labels`
+  (the process-label gate check used in this repo).
 
 **Back-compat dual marker.**
-The default read marker is `##TEST##`, but this repo's CI still emits `##GB4PC_TEST##` (see `build.yml`), so the committed config matches both (`##GB4PC_TEST##|##TEST##`).
-The payload offset is computed from the end of whichever alternative matched (`re.search(...).end()`), so both markers parse correctly.
-Alternation order does not matter for this pair: neither marker is a prefix of the other (`##GB4PC_TEST##` has `G` after the leading `##`, while `##TEST##` has `T`), so they can never match at the same start position, and `##TEST##` does not appear inside `##GB4PC_TEST##` at all.
+The default read marker is `##TEST##`,
+but this repo's CI still emits `##GB4PC_TEST##`
+(see `build.yml`),
+so the committed config matches both (`##GB4PC_TEST##|##TEST##`).
+The payload offset is computed from the end of whichever alternative matched
+(`re.search(...).end()`), so both markers parse correctly.
+Alternation order does not matter for this pair:
+neither marker is a prefix of the other
+(`##GB4PC_TEST##` has `G` after the leading `##`, while `##TEST##` has `T`),
+so they can never match at the same start position,
+and `##TEST##` does not appear inside `##GB4PC_TEST##` at all.
 The full marker is simply listed first as a readable convention.
-Switching the *emit* side to `##TEST##` (the Gradle/test reporters plus the `build.yml` greps) is a separate, larger change and out of scope here; the dual-marker config is the bridge, not an end state.
+Switching the *emit* side to `##TEST##`
+(the Gradle/test reporters plus the `build.yml` greps)
+is a separate, larger change and out of scope here;
+the dual-marker config is the bridge, not an end state.
 
 ## Outcome vocabulary
 
-The table below is written for `--pr` mode's `PR#N:` prefix; `--sha`/`--run-id`/`--branch` modes emit the identical vocabulary under their own `SHA#<sha>:`/`RUN#<id>:`/`BRANCH#<name>:` prefix instead (see the flag table above).
-The `mergeable_state` gating on `Clear`/`Blocked`/`Infra` described below is `--pr`-only: the other three modes have no PR to consult, so `Clear` fires directly off an all-passed check verdict and `Blocked`/`Infra` fire directly off a failing/infra check conclusion, with no `mergeable_state` suffix.
+The table below is written for `--pr` mode's `PR#N:` prefix;
+`--sha`/`--run-id`/`--branch` modes emit the identical vocabulary under their
+own `SHA#<sha>:`/`RUN#<id>:`/`BRANCH#<name>:` prefix instead (see the flag table
+above).
+The `mergeable_state` gating on `Clear`/`Blocked`/`Infra` described below is
+`--pr`-only: the other three modes have no PR to consult, so `Clear` fires
+directly off an all-passed check verdict and `Blocked`/`Infra` fire directly off
+a failing/infra check conclusion, with no `mergeable_state` suffix.
 
 | Line emitted          | Meaning                                                                                               |
 |-----------------------|-------------------------------------------------------------------------------------------------------|
@@ -112,8 +188,67 @@ The `mergeable_state` gating on `Clear`/`Blocked`/`Infra` described below is `--
 | `PR#N: PASS [suite] name: ...` | A per-test pass parsed from a `ci-monitor-feed-<group>` artifact. **Informational**; suppressed by default; enable with `--include-pass [PATTERN]`; never ends the loop. |
 | `PR#N: drain poll found no new diagnostic signals` | Printed immediately before a `Blocked`/`Infra` terminal line when every drain poll (see below) emitted nothing new **and** no named check-run is already known to have a blocking conclusion. **Informational**; flags that the terminal line that follows carries no fresh `step`/`FAIL`/`SKIP`/`PASS` evidence. Suppressed when at least one blocking check-run is identified (the terminal is already diagnosed by name in the per-check summary and the `by: ...` portion of the terminal line). |
 
-- `step`/`FAIL`/`SKIP`/`PASS` lines are **informational test-result deltas**, not terminal outcomes.
-- The Monitor reads results at **step granularity** from two polled REST signals: per-step `conclusion` (`/actions/runs/{id}/jobs`) and the `ci-monitor-feed-<group>` artifacts (`/actions/runs/{id}/artifacts`).
-  It deliberately does **not** scrape the in-progress job log: `GET /actions/jobs/{job_id}/logs` returns 404 until the job completes, so markers are not readable mid-run that way.
-- The nine deferred-verdict steps (`Run *E2ETest` and `Run instrumented tests`, matched by `deferred_verdict_step_regex`) always conclude `success` by design: the CI workflow wraps each test invocation in an `if`/`else` that records `outcome=success|failure` to `$GITHUB_OUTPUT` but always exits 0 (issue #309). A `step "Run ...E2ETest" -> success` line means only that the wrapper script exited 0, not that the contained tests passed, so the Monitor annotates it `(verdict deferred to Gate)` to keep it from reading like a pass. The actual pass/fail verdict comes from the separate `Gate on test failures` step (surfaced as a `step "Gate on test failures" -> failure` line when it fails, and named in the `Blocked by: ... (step "Gate on test failures" -> failure; ...)` terminal suffix) and from the per-test `FAIL`/`SKIP`/`PASS` markers (which also name the failing suite/test in that terminal suffix). This is why the terminal attributes the block by step and test rather than trusting the `Run ...E2ETest` steps' own `success` conclusions.
-- Before emitting a `Blocked` or `Infra` terminal line, the Monitor pauses briefly and re-polls the `step`/`FAIL`/`SKIP`/`PASS` signals, repeating up to a few times. The `/actions/runs/{id}/jobs` and `/actions/runs/{id}/artifacts` endpoints can lag behind `/commits/{sha}/check-runs`: the poll where check-runs first reports the failing conclusion may still show the final gate step as not yet completed, or the `ci-monitor-feed-<group>` artifact as not yet listed. These extra drain polls give those endpoints a chance to catch up, so a `Blocked` terminal is not reported with zero diagnostic `step`/`FAIL` lines. Every drain attempt runs (the drain does not stop at the first attempt that emits something): the two endpoints can settle on different attempts (issue #419), e.g. the gate step appears on attempt 1 while the `ci-monitor-feed-<group>` artifact only lists on attempt 2, and stopping at the first fruitful attempt would drop the later signal for this process's lifetime. If every drain poll comes up empty and no blocking check-run is identified by name in the per-check summary, the Monitor prints `drain poll found no new diagnostic signals` immediately before the terminal line, so a `Blocked`/`Infra` with no diagnostics is explicitly flagged rather than looking like an undiagnosed coincidence. When a named check-run has a blocking conclusion (and thus the per-check summary and the `by: ...` terminal suffix already identify the cause), this flag is suppressed--the terminal is already diagnosed. This bounded retry mitigates short lags (a few times the per-attempt delay); a lag that outlives a single Monitor process invocation surfaces as this flagged, undiagnosed terminal, and the Orchestrator's Monitor loop (see `agents/dev_orchestration.md`) responds by waiting 5 minutes and re-launching the Monitor once for a fresh, out-of-process recheck before acting on it.
+- `step`/`FAIL`/`SKIP`/`PASS` lines are **informational test-result deltas**,
+  not terminal outcomes.
+- The Monitor reads results at **step granularity** from two polled REST
+  signals: per-step `conclusion` (`/actions/runs/{id}/jobs`) and the
+  `ci-monitor-feed-<group>` artifacts (`/actions/runs/{id}/artifacts`).
+  It deliberately does **not** scrape the in-progress job log:
+  `GET /actions/jobs/{job_id}/logs` returns 404 until the job completes,
+  so markers are not readable mid-run that way.
+- The nine deferred-verdict steps
+  (`Run *E2ETest` and `Run instrumented tests`,
+  matched by `deferred_verdict_step_regex`) always conclude `success` by design:
+  the CI workflow wraps each test invocation in an `if`/`else`
+  that records `outcome=success|failure` to `$GITHUB_OUTPUT` but always exits 0
+  (issue #309).
+  A `step "Run ...E2ETest" -> success` line means only
+  that the wrapper script exited 0, not that the contained tests passed,
+  so the Monitor annotates it `(verdict deferred to Gate)` to keep it from
+  reading like a pass.
+  The actual pass/fail verdict comes from the separate `Gate on test failures`
+  step (surfaced as a `step "Gate on test failures" -> failure` line when it
+  fails, and named in the
+  `Blocked by: ... (step "Gate on test failures" -> failure; ...)` terminal
+  suffix) and from the per-test `FAIL`/`SKIP`/`PASS` markers (which also name
+  the failing suite/test in that terminal suffix).
+  This is why the terminal attributes the block by step
+  and test rather than trusting the `Run ...E2ETest` steps' own `success`
+  conclusions.
+- Before emitting a `Blocked` or `Infra` terminal line,
+  the Monitor pauses briefly
+  and re-polls the `step`/`FAIL`/`SKIP`/`PASS` signals,
+  repeating up to a few times.
+  The `/actions/runs/{id}/jobs`
+  and `/actions/runs/{id}/artifacts` endpoints can lag behind
+  `/commits/{sha}/check-runs`: the poll where check-runs first reports the
+  failing conclusion may still show the final gate step as not yet completed, or
+  the `ci-monitor-feed-<group>` artifact as not yet listed.
+  These extra drain polls give those endpoints a chance to catch up,
+  so a `Blocked` terminal is not reported with zero diagnostic `step`/`FAIL`
+  lines.
+  Every drain attempt runs
+  (the drain does not stop at the first attempt that emits something):
+  the two endpoints can settle on different attempts
+  (issue #419),
+  e.g. the gate step appears on attempt 1
+  while the `ci-monitor-feed-<group>` artifact only lists on attempt 2,
+  and stopping at the first fruitful attempt would drop the later signal
+  for this process's lifetime.
+  If every drain poll comes up empty
+  and no blocking check-run is identified by name in the per-check summary,
+  the Monitor prints `drain poll found no new diagnostic signals` immediately
+  before the terminal line,
+  so a `Blocked`/`Infra` with no diagnostics is explicitly flagged rather than
+  looking like an undiagnosed coincidence.
+  When a named check-run has a blocking conclusion
+  (and thus the per-check summary and the `by: ...` terminal suffix already
+  identify the cause), this flag is suppressed--the terminal is already
+  diagnosed.
+  This bounded retry mitigates short lags
+  (a few times the per-attempt delay);
+  a lag that outlives a single Monitor process invocation surfaces
+  as this flagged, undiagnosed terminal, and the Orchestrator's Monitor loop
+  (see `agents/dev_orchestration.md`)
+  responds by waiting 5 minutes and re-launching the Monitor once for a fresh,
+  out-of-process recheck before acting on it.
