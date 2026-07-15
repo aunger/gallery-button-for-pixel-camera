@@ -219,9 +219,7 @@ class TestMatchingLabelsAutomatedTests(unittest.TestCase):
         )
 
     def test_preflight_with_suffix_matches_automated_tests(self):
-        self.assertIn(
-            "automated tests", lpt.matching_labels("Stop preflighting on every retry")
-        )
+        self.assertIn("automated tests", lpt.matching_labels("Stop preflighting on every retry"))
 
     def test_camel_case_test_suffix_matches_case_sensitively(self):
         self.assertIn(
@@ -252,9 +250,7 @@ class TestMatchingLabelsAutomatedTests(unittest.TestCase):
 
     def test_units_does_not_match_unit_rule(self):
         # "units" alone (no "test") should not match the strict \bunit\b rule.
-        self.assertNotIn(
-            "automated tests", lpt.matching_labels("Convert distance units to metric")
-        )
+        self.assertNotIn("automated tests", lpt.matching_labels("Convert distance units to metric"))
 
     def test_test_suffixes_match(self):
         self.assertIn("automated tests", lpt.matching_labels("Add noisy tests for coverage"))

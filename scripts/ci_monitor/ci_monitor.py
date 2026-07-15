@@ -839,7 +839,8 @@ def main(argv):
             nargs="?",
             default=None,  # sentinel: flag not supplied
             const="",  # supplied with no argument: match all
-            help="Include %s markers, optionally filtered by regex on name or suite." % outcome.upper(),
+            help="Include %s markers, optionally filtered by regex on name or suite."
+            % outcome.upper(),
         )
         parser.add_argument(
             "--no-include-%s" % outcome,
