@@ -64,6 +64,10 @@ Covers:
   (aw) #650 _StripAuthOnCrossHostRedirect also strips Accept (another
        GitHub-specific header) on a cross-host redirect, while leaving an
        unrelated header untouched
+  (ax) #646 parse_fails: an --include-* PATTERN matches the marker's `suite`
+       field as well as its `name`, so a suite-shaped query surfaces a marker
+       whose distinguishing text lives in `suite` (name matching still works,
+       and a pattern in neither still suppresses)
 
 No network calls required; no GITHUB_TOKEN needed.
 Run this file directly to execute the suite: exits 0 on success, non-zero on failure.
@@ -4565,6 +4569,97 @@ def main() -> int:
         cross_host_redirected is not None and cross_host_redirected.get_header("X-unrelated") == "keep-me",
         "cross-host redirect keeps a genuinely unrelated header",
         "cross-host redirect dropped an unrelated header unexpectedly",
+    )
+
+    # ── (ax) #646 parse_fails: an include pattern matches suite as well as name ────
+    print(
+        "\n=== (ax) #646 parse_fails: --include-* PATTERN matches the marker's suite, not only its name ==="
+    )
+
+    # Models the PR #644 synthesized PASS marker whose distinguishing text
+    # ("SetupActivityPermissionDialog") lives in the `suite` field, while its
+    # fixed `name` ("setupFlow_grantsMediaPermissionViaSystemDialog_andAdvances")
+    # shares no substring with the suite-shaped validation query. Issue #601
+    # illustrated the intended query as `--include-pass 'SetupActivityPermissionDialog'`.
+    SUITE_MATCH_NDJSON = [
+        '##TEST## {"suite":"com.gb4pc.e2e.SetupActivityPermissionDialogE2ETest","name":"setupFlow_grantsMediaPermissionViaSystemDialog_andAdvances","outcome":"PASS","ms":50,"msg":"","trace":""}',
+        '##TEST## {"suite":"com.gb4pc.e2e.SetupActivityPermissionDialogE2ETest","name":"setupFlow_deniesMediaPermission_andBlocks","outcome":"FAIL","ms":51,"msg":"boom","trace":""}',
+        '##TEST## {"suite":"com.gb4pc.e2e.UnrelatedE2ETest","name":"otherFlow_passes","outcome":"PASS","ms":10,"msg":"","trace":""}',
+    ]
+
+    # A suite-shaped --include-pass pattern surfaces the PASS marker via its
+    # `suite` field, even though the pattern matches nothing in the `name`.
+    out_ax_pass = ci_monitor.parse_fails(
+        SUITE_MATCH_NDJSON,
+        set(),
+        outcome_filters={
+            "FAIL": (False, None),
+            "SKIP": (False, None),
+            "PASS": (True, "SetupActivityPermissionDialog"),
+        },
+    )
+    out_ax_pass_str = "\n".join(out_ax_pass)
+    check(
+        "PASS [com.gb4pc.e2e.SetupActivityPermissionDialogE2ETest] setupFlow_grantsMediaPermissionViaSystemDialog_andAdvances:"
+        in out_ax_pass_str,
+        "--include-pass suite-shaped pattern matches the marker's suite field",
+        "--include-pass suite pattern: PASS not surfaced via suite; output: %r" % out_ax_pass,
+    )
+    check(
+        "UnrelatedE2ETest" not in out_ax_pass_str,
+        "--include-pass suite-shaped pattern excludes a non-matching suite",
+        "--include-pass suite pattern: non-matching suite leaked; output: %r" % out_ax_pass,
+    )
+
+    # Name matching still works: a pattern found only in `name` (never in `suite`)
+    # continues to select the marker, so the suite fallback is additive.
+    out_ax_name = ci_monitor.parse_fails(
+        SUITE_MATCH_NDJSON,
+        set(),
+        outcome_filters={
+            "FAIL": (False, None),
+            "SKIP": (False, None),
+            "PASS": (True, "grantsMediaPermissionViaSystemDialog"),
+        },
+    )
+    check(
+        "setupFlow_grantsMediaPermissionViaSystemDialog_andAdvances" in "\n".join(out_ax_name),
+        "--include-pass name-shaped pattern still matches the marker's name field",
+        "--include-pass name pattern: PASS not surfaced via name; output: %r" % out_ax_name,
+    )
+
+    # A pattern present in neither `suite` nor `name` still suppresses the marker.
+    out_ax_none = ci_monitor.parse_fails(
+        SUITE_MATCH_NDJSON,
+        set(),
+        outcome_filters={
+            "FAIL": (False, None),
+            "SKIP": (False, None),
+            "PASS": (True, "NoSuchTokenAnywhere"),
+        },
+    )
+    check(
+        out_ax_none == [],
+        "--include-pass pattern matching neither suite nor name emits nothing",
+        "--include-pass no-match pattern: unexpected output: %r" % out_ax_none,
+    )
+
+    # Consistency: --include-fail matches the suite too (issue #646 asked for the
+    # suite fallback to apply to every include filter, not only PASS).
+    out_ax_fail = ci_monitor.parse_fails(
+        SUITE_MATCH_NDJSON,
+        set(),
+        outcome_filters={
+            "FAIL": (True, "SetupActivityPermissionDialog"),
+            "SKIP": (False, None),
+            "PASS": (False, None),
+        },
+    )
+    check(
+        "FAIL [com.gb4pc.e2e.SetupActivityPermissionDialogE2ETest] setupFlow_deniesMediaPermission_andBlocks:"
+        in "\n".join(out_ax_fail),
+        "--include-fail suite-shaped pattern matches the marker's suite field",
+        "--include-fail suite pattern: FAIL not surfaced via suite; output: %r" % out_ax_fail,
     )
 
     # ── Summary ────────────────────────────────────────────────────────────────────
