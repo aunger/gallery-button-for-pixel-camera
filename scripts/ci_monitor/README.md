@@ -44,14 +44,15 @@ Independent filter flags narrow or expand which per-test outcomes are streamed:
 
 | Flag | Effect |
 |---|---|
-| `--include-fail [PATTERN]` | Report FAIL markers (default); optionally restrict to those whose `name` matches PATTERN. |
+| `--include-fail [PATTERN]` | Report FAIL markers (default); optionally restrict to those whose `name` or `suite` matches PATTERN. |
 | `--no-include-fail` | Suppress all FAIL markers. |
-| `--include-skip [PATTERN]` | Report SKIP markers (default); optionally restrict to those whose `name` matches PATTERN. |
+| `--include-skip [PATTERN]` | Report SKIP markers (default); optionally restrict to those whose `name` or `suite` matches PATTERN. |
 | `--no-include-skip` | Suppress all SKIP markers. |
-| `--include-pass [PATTERN]` | Report PASS markers (not the default); optionally restrict to those whose `name` matches PATTERN. |
+| `--include-pass [PATTERN]` | Report PASS markers (not the default); optionally restrict to those whose `name` or `suite` matches PATTERN. |
 | `--no-include-pass` | Suppress all PASS markers (explicit form of the default). |
 
-Each `--include-*` flag takes an **optional regex** matched against the marker's `name` field.
+Each `--include-*` flag takes an **optional regex** matched against the marker's `name` field or its `suite` field: a marker is selected when the pattern matches *either* (issue #646).
+This lets a suite-shaped query like `--include-pass 'SetupActivityPermissionDialog'` surface a marker whose distinguishing text lives in `suite` rather than `name`.
 Supplied without a pattern it includes *all* markers of that outcome.
 The three outcomes keep their distinct labels in output: `--include-pass` never relabels a SKIP as PASS.
 

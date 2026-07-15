@@ -261,7 +261,10 @@ def parse_fails(
 
     `outcome_filters` is a dict mapping outcome names ('FAIL', 'PASS', 'SKIP') to
     (enabled, pattern) tuples, where `enabled` is a bool and `pattern` is either
-    None (match all) or a regex string (match only markers whose `name` matches).
+    None (match all) or a regex string. A non-None pattern matches a marker when
+    it matches either the marker's `name` or its `suite` field (issue #646), so a
+    suite-shaped query like 'SetupActivityPermissionDialog' surfaces a marker
+    whose distinguishing text lives in `suite` rather than `name`.
     Default behavior (outcome_filters=None): report all FAIL, all SKIP, no PASS.
 
     When `failed_tests` is a list, each emitted FAIL's "[suite] name" identifier
@@ -290,11 +293,14 @@ def parse_fails(
         enabled, pattern = outcome_filters[outcome]
         if not enabled:
             continue
-        # Pattern is matched against the marker's `name` field.
+        # Pattern is matched against the marker's `name` or `suite` field
+        # (issue #646): a suite-shaped query surfaces a marker whose
+        # distinguishing text lives in `suite` rather than `name`.
         name = m.get("name", "")
-        if pattern is not None and not re.search(pattern, name):
+        suite = m.get("suite", "")
+        if pattern is not None and not (re.search(pattern, name) or re.search(pattern, suite)):
             continue
-        key = m.get("suite", "") + "#" + name + "#" + outcome
+        key = suite + "#" + name + "#" + outcome
         if key in seen:
             continue
         seen.add(key)
@@ -833,7 +839,7 @@ def main(argv):
             nargs="?",
             default=None,  # sentinel: flag not supplied
             const="",  # supplied with no argument: match all
-            help="Include %s markers, optionally filtered by regex on name." % outcome.upper(),
+            help="Include %s markers, optionally filtered by regex on name or suite." % outcome.upper(),
         )
         parser.add_argument(
             "--no-include-%s" % outcome,
