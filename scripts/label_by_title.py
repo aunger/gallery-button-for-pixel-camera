@@ -74,7 +74,7 @@ LABEL_PATTERNS: dict[str, re.Pattern[str]] = {
         rf"|{_B}sub[\W_]?agent\w*",
         re.IGNORECASE,
     ),
-    "testing": re.compile(
+    "automated tests": re.compile(
         rf"{_B}e2e{_B}"
         rf"|{_B}unit{_B}"
         rf"|{_B}test\w*"

@@ -198,32 +198,38 @@ class TestMatchingLabelsAgents(unittest.TestCase):
         self.assertIn("agents", lpt.matching_labels("Fix the sub_agent handoff"))
 
 
-class TestMatchingLabelsTesting(unittest.TestCase):
+class TestMatchingLabelsAutomatedTests(unittest.TestCase):
     def test_e2e_matches(self):
-        self.assertIn("testing", lpt.matching_labels("Add E2E instrumented test"))
+        self.assertIn("automated tests", lpt.matching_labels("Add E2E instrumented test"))
 
     def test_e2e_within_camel_case_identifier_does_not_match_the_plain_e2e_rule(self):
         # No boundary surrounds "E2E" inside "VisualE2Efixture", and it's
         # not followed by "Test", so neither e2e rule fires.
         self.assertEqual(lpt.matching_labels("Add VisualE2Efixture helper"), [])
 
-    def test_e2etest_camel_case_identifier_matches_testing(self):
+    def test_e2etest_camel_case_identifier_matches_automated_tests(self):
         # The dedicated e2etest identifier rule (both sides open) catches
         # what the plain \be2e\b rule can't reach inside CamelCase names.
-        self.assertIn("testing", lpt.matching_labels("Add GalleryButtonVisualE2ETest"))
+        self.assertIn("automated tests", lpt.matching_labels("Add GalleryButtonVisualE2ETest"))
 
-    def test_preflight_matches_testing(self):
+    def test_preflight_matches_automated_tests(self):
         self.assertIn(
-            "testing", lpt.matching_labels("CI pre-flight: MockCameraActivity ready signal")
+            "automated tests",
+            lpt.matching_labels("CI pre-flight: MockCameraActivity ready signal"),
         )
 
-    def test_preflight_with_suffix_matches_testing(self):
-        self.assertIn("testing", lpt.matching_labels("Stop preflighting on every retry"))
+    def test_preflight_with_suffix_matches_automated_tests(self):
+        self.assertIn(
+            "automated tests", lpt.matching_labels("Stop preflighting on every retry")
+        )
 
     def test_camel_case_test_suffix_matches_case_sensitively(self):
-        self.assertIn("testing", lpt.matching_labels("Add Gaussian-blur noise to ShapeMatcherTest"))
         self.assertIn(
-            "testing", lpt.matching_labels("Six instrumented (androidTest) classes are skipped")
+            "automated tests", lpt.matching_labels("Add Gaussian-blur noise to ShapeMatcherTest")
+        )
+        self.assertIn(
+            "automated tests",
+            lpt.matching_labels("Six instrumented (androidTest) classes are skipped"),
         )
 
     def test_lowercase_camel_test_identifier_does_not_match(self):
@@ -242,19 +248,22 @@ class TestMatchingLabelsTesting(unittest.TestCase):
         self.assertEqual(result, [])
 
     def test_unit_exact_word_matches(self):
-        self.assertIn("testing", lpt.matching_labels("Skip Python and shell unit tests"))
+        self.assertIn("automated tests", lpt.matching_labels("Skip Python and shell unit tests"))
 
     def test_units_does_not_match_unit_rule(self):
         # "units" alone (no "test") should not match the strict \bunit\b rule.
-        self.assertNotIn("testing", lpt.matching_labels("Convert distance units to metric"))
+        self.assertNotIn(
+            "automated tests", lpt.matching_labels("Convert distance units to metric")
+        )
 
     def test_test_suffixes_match(self):
-        self.assertIn("testing", lpt.matching_labels("Add noisy tests for coverage"))
-        self.assertIn("testing", lpt.matching_labels("Add :testgallery module"))
+        self.assertIn("automated tests", lpt.matching_labels("Add noisy tests for coverage"))
+        self.assertIn("automated tests", lpt.matching_labels("Add :testgallery module"))
 
     def test_test_prefixed_by_underscore_matches(self):
         self.assertIn(
-            "testing", lpt.matching_labels("Speed up ci_monitor's poll interval unit_tests")
+            "automated tests",
+            lpt.matching_labels("Speed up ci_monitor's poll interval unit_tests"),
         )
 
 
@@ -263,7 +272,7 @@ class TestMatchingLabelsCombined(unittest.TestCase):
         result = lpt.matching_labels("Add CiWatcher agent and fix Reviewer CI-polling loop")
         self.assertIn("ci", result)
         self.assertIn("agents", result)
-        self.assertNotIn("testing", result)
+        self.assertNotIn("automated tests", result)
 
     def test_no_match_returns_empty_list(self):
         self.assertEqual(lpt.matching_labels("Set overlay default position to y=75%"), [])

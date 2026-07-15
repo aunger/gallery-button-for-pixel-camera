@@ -2,5 +2,5 @@ changelog:
   exclude:
     labels:
       - ci
-      - testing
+      - automated tests
       - agents
