@@ -1415,7 +1415,9 @@ def main() -> int:
     }
     # The artifact name mirrors build.yml's 'ci-monitor-feed-unit'; parse_new_artifacts
     # keys on the 'ci-monitor-feed-' prefix and id, so the real name is exercised.
-    ARTS_REAL_UNIT_P = {"artifacts": [{"id": 4243, "name": "ci-monitor-feed-unit", "expired": False}]}
+    ARTS_REAL_UNIT_P = {
+        "artifacts": [{"id": 4243, "name": "ci-monitor-feed-unit", "expired": False}]
+    }
 
     # Poll 1 (4): step delta, artifact not yet present. Poll 2 (5): step seen,
     # artifact appears -> real-shaped zip downloaded -> FAIL emitted. Poll 3 (4):
@@ -2270,7 +2272,11 @@ def main() -> int:
         ]
     }
     ARTS_EMPTY_T = {"artifacts": []}
-    ARTS_E2E_T = {"artifacts": [{"id": 5005, "name": "ci-monitor-feed-GalleryButtonVisualE2ETest", "expired": False}]}
+    ARTS_E2E_T = {
+        "artifacts": [
+            {"id": 5005, "name": "ci-monitor-feed-GalleryButtonVisualE2ETest", "expired": False}
+        ]
+    }
     ZIP_E2E_T = make_zip_ndjson(
         [
             '##GB4PC_TEST## {"suite":"com.gb4pc.e2e.GalleryButtonVisualE2ETest","name":"test1a","outcome":"FAIL","ms":9,"msg":"java.lang.AssertionError: button not green","trace":""}',
@@ -2426,7 +2432,11 @@ def main() -> int:
         ]
     }
     ARTS_EMPTY_U = {"artifacts": []}
-    ARTS_E2E_U = {"artifacts": [{"id": 5006, "name": "ci-monitor-feed-GalleryButtonVisualE2ETest", "expired": False}]}
+    ARTS_E2E_U = {
+        "artifacts": [
+            {"id": 5006, "name": "ci-monitor-feed-GalleryButtonVisualE2ETest", "expired": False}
+        ]
+    }
     ZIP_E2E_U = make_zip_ndjson(
         [
             '##GB4PC_TEST## {"suite":"com.gb4pc.e2e.GalleryButtonVisualE2ETest","name":"test1a","outcome":"FAIL","ms":9,"msg":"java.lang.AssertionError: button not green","trace":""}',
@@ -2626,7 +2636,11 @@ def main() -> int:
         ]
     }
     ARTS_EMPTY_W = {"artifacts": []}
-    ARTS_E2E_W = {"artifacts": [{"id": 5419, "name": "ci-monitor-feed-GalleryButtonVisualE2ETest", "expired": False}]}
+    ARTS_E2E_W = {
+        "artifacts": [
+            {"id": 5419, "name": "ci-monitor-feed-GalleryButtonVisualE2ETest", "expired": False}
+        ]
+    }
     ZIP_E2E_W = make_zip_ndjson(
         [
             '##GB4PC_TEST## {"suite":"com.gb4pc.e2e.GalleryButtonVisualE2ETest","name":"test1a","outcome":"FAIL","ms":9,"msg":"java.lang.AssertionError: button not green","trace":""}',
@@ -3153,7 +3167,9 @@ def main() -> int:
         ]
     }
     ARTS_BUILD_AD = {
-        "artifacts": [{"id": 8000, "name": "ci-monitor-feed-GalleryButtonVisualE2ETest", "expired": False}]
+        "artifacts": [
+            {"id": 8000, "name": "ci-monitor-feed-GalleryButtonVisualE2ETest", "expired": False}
+        ]
     }
     ZIP_BUILD_AD = make_zip_ndjson(
         [
@@ -3661,8 +3677,7 @@ def main() -> int:
         ["[com.gb4pc.e2e.GalleryButtonVisualE2ETest] test1a"],
     )
     check(
-        suffix_attr
-        == ' by: build-and-test (step "Gate on test failures" -> failure; '
+        suffix_attr == ' by: build-and-test (step "Gate on test failures" -> failure; '
         "test [com.gb4pc.e2e.GalleryButtonVisualE2ETest] test1a)",
         "blocking_suffix names the failing step and test for a substantive block",
         "attributed suffix wrong; got %r" % suffix_attr,
@@ -4194,9 +4209,7 @@ def main() -> int:
     check(rc_aq2 == 0, "main() returned 0", "main() returned %r" % rc_aq2)
 
     # ── (ar) #603 main(): --run-id mode scopes to the run object itself ────────────
-    print(
-        "\n=== (ar) #603 main(): --run-id mode Clear path (never fetches check-runs) ==="
-    )
+    print("\n=== (ar) #603 main(): --run-id mode Clear path (never fetches check-runs) ===")
 
     RUN_ID_AR = "778899"
     tag_ar = "RUN#%s" % RUN_ID_AR
@@ -4225,9 +4238,7 @@ def main() -> int:
     )
     check(rc_ar1 == 0, "main() returned 0", "main() returned %r" % rc_ar1)
 
-    print(
-        "\n=== (ar) #603 main(): --run-id mode Blocked path, scoped to this run's jobs only ==="
-    )
+    print("\n=== (ar) #603 main(): --run-id mode Blocked path, scoped to this run's jobs only ===")
 
     RUN_FAILURE_AR = {"status": "completed", "conclusion": "failure", "head_sha": "5eed1234"}
     JOBS_AR = {
@@ -4292,9 +4303,7 @@ def main() -> int:
 
     # ── (as) #603 regression: fetch_pr_with_retry delegates to fetch_with_retry; ───
     # --pr's output format is unchanged by the multi-mode refactor
-    print(
-        "\n=== (as) #603 regression: fetch_pr_with_retry delegates to fetch_with_retry ==="
-    )
+    print("\n=== (as) #603 regression: fetch_pr_with_retry delegates to fetch_with_retry ===")
 
     delegate_calls_as = []
 
@@ -4470,7 +4479,8 @@ def main() -> int:
     # Cross-host redirect (the real bug: api.github.com -> *.blob.core.windows.net,
     # a SAS-signed URL that itself rejects an unexpected bearer Authorization header).
     cross_host_req = ci_monitor.urllib.request.Request(
-        "%s/repos/%s/%s/actions/artifacts/1/zip" % (ci_monitor.API_BASE, ci_monitor.OWNER, ci_monitor.REPO)
+        "%s/repos/%s/%s/actions/artifacts/1/zip"
+        % (ci_monitor.API_BASE, ci_monitor.OWNER, ci_monitor.REPO)
     )
     cross_host_req.add_header("Authorization", "Bearer sekrit")
     cross_host_req.add_header("Accept", "application/vnd.github+json")
@@ -4484,7 +4494,8 @@ def main() -> int:
         "https://productionresultssa.blob.core.windows.net/artifacts/1.zip?sv=2021&sig=abc",
     )
     check(
-        cross_host_redirected is not None and cross_host_redirected.get_header("Authorization") is None,
+        cross_host_redirected is not None
+        and cross_host_redirected.get_header("Authorization") is None,
         "cross-host redirect strips the Authorization header",
         "cross-host redirect kept Authorization: %r"
         % (cross_host_redirected and cross_host_redirected.get_header("Authorization")),
@@ -4493,7 +4504,8 @@ def main() -> int:
     # Same-host redirect: Authorization is not the cross-host leak this guards
     # against, so it is left intact.
     same_host_req = ci_monitor.urllib.request.Request(
-        "%s/repos/%s/%s/actions/artifacts/1/zip" % (ci_monitor.API_BASE, ci_monitor.OWNER, ci_monitor.REPO)
+        "%s/repos/%s/%s/actions/artifacts/1/zip"
+        % (ci_monitor.API_BASE, ci_monitor.OWNER, ci_monitor.REPO)
     )
     same_host_req.add_header("Authorization", "Bearer sekrit")
     same_host_redirected = _redirect_handler.redirect_request(
@@ -4506,7 +4518,8 @@ def main() -> int:
         % (ci_monitor.API_BASE, ci_monitor.OWNER, ci_monitor.REPO),
     )
     check(
-        same_host_redirected is not None and same_host_redirected.get_header("Authorization") == "Bearer sekrit",
+        same_host_redirected is not None
+        and same_host_redirected.get_header("Authorization") == "Bearer sekrit",
         "same-host redirect keeps the Authorization header",
         "same-host redirect unexpectedly dropped Authorization",
     )
@@ -4527,15 +4540,19 @@ def main() -> int:
         def __exit__(self, *a):
             return False
 
-    with unittest.mock.patch.object(
-        ci_monitor._RAW_OPENER, "open", return_value=_FakeRawResp(b"PK\x03\x04fake-zip-bytes")
-    ) as mock_opener_open, unittest.mock.patch.object(
-        ci_monitor.urllib.request,
-        "urlopen",
-        side_effect=AssertionError("raw=True must not call urlopen directly"),
+    with (
+        unittest.mock.patch.object(
+            ci_monitor._RAW_OPENER, "open", return_value=_FakeRawResp(b"PK\x03\x04fake-zip-bytes")
+        ) as mock_opener_open,
+        unittest.mock.patch.object(
+            ci_monitor.urllib.request,
+            "urlopen",
+            side_effect=AssertionError("raw=True must not call urlopen directly"),
+        ),
     ):
         got_raw = ci_monitor._request(
-            "%s/repos/%s/%s/actions/artifacts/1/zip" % (ci_monitor.API_BASE, ci_monitor.OWNER, ci_monitor.REPO),
+            "%s/repos/%s/%s/actions/artifacts/1/zip"
+            % (ci_monitor.API_BASE, ci_monitor.OWNER, ci_monitor.REPO),
             "tok",
             raw=True,
         )
@@ -4566,7 +4583,8 @@ def main() -> int:
         % (cross_host_redirected and cross_host_redirected.get_header("Accept")),
     )
     check(
-        cross_host_redirected is not None and cross_host_redirected.get_header("X-unrelated") == "keep-me",
+        cross_host_redirected is not None
+        and cross_host_redirected.get_header("X-unrelated") == "keep-me",
         "cross-host redirect keeps a genuinely unrelated header",
         "cross-host redirect dropped an unrelated header unexpectedly",
     )

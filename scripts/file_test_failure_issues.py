@@ -161,9 +161,7 @@ def make_summary_body(
     at the version that produced the failure.
     """
     ref = workflow_run_branch or "HEAD"
-    workflow_url = (
-        f"{github_server_url}/{github_repository}/blob/{ref}/{_WORKFLOW_FILE_PATH}"
-    )
+    workflow_url = f"{github_server_url}/{github_repository}/blob/{ref}/{_WORKFLOW_FILE_PATH}"
 
     return f"""\
 # Automated test failure
@@ -423,8 +421,7 @@ def process_failure(
 # ---------------------------------------------------------------------------
 
 _USAGE = (
-    "usage: file_test_failure_issues.py "
-    "<dir> --suite-label <name> [<dir> --suite-label <name> ...]"
+    "usage: file_test_failure_issues.py <dir> --suite-label <name> [<dir> --suite-label <name> ...]"
 )
 
 
