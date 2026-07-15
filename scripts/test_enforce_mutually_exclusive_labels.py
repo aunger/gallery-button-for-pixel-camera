@@ -141,7 +141,7 @@ class TestFindConflictingPrefix(unittest.TestCase):
         self.assertIsNone(emxl.find_conflicting_prefix("ci"))
         self.assertIsNone(emxl.find_conflicting_prefix("p1"))
         self.assertIsNone(emxl.find_conflicting_prefix("bug"))
-        self.assertIsNone(emxl.find_conflicting_prefix("testing"))
+        self.assertIsNone(emxl.find_conflicting_prefix("automated tests"))
 
     def test_empty_string_returns_none(self):
         self.assertIsNone(emxl.find_conflicting_prefix(""))
@@ -201,20 +201,20 @@ class TestLabelsByPrefix(unittest.TestCase):
 
     def test_removes_test_failure_when_archive_added(self):
         result = emxl.labels_to_remove_by_prefix(
-            "test-failure-archive", ["test-failure", "testing"], "test-failure"
+            "test-failure-archive", ["test-failure", "automated tests"], "test-failure"
         )
         self.assertEqual(result, ["test-failure"])
 
     def test_removes_test_failure_archive_when_test_failure_added(self):
         result = emxl.labels_to_remove_by_prefix(
-            "test-failure", ["test-failure-archive", "testing"], "test-failure"
+            "test-failure", ["test-failure-archive", "automated tests"], "test-failure"
         )
         self.assertEqual(result, ["test-failure-archive"])
 
-    def test_test_failure_prefix_does_not_touch_testing_label(self):
-        """The 'testing' label shares no real prefix with 'test-failure' and must survive."""
+    def test_test_failure_prefix_does_not_touch_automated_tests_label(self):
+        """The 'automated tests' label shares no real prefix with 'test-failure' and must survive."""
         result = emxl.labels_to_remove_by_prefix(
-            "test-failure", ["testing", "ci"], "test-failure"
+            "test-failure", ["automated tests", "ci"], "test-failure"
         )
         self.assertEqual(result, [])
 
@@ -655,7 +655,7 @@ class TestMain(unittest.TestCase):
                 emxl,
                 "gh_api",
                 side_effect=[
-                    self._make_issue_response(["test-failure", "testing"]),
+                    self._make_issue_response(["test-failure", "automated tests"]),
                     None,  # DELETE test-failure
                 ],
             ) as mock_api:
@@ -673,7 +673,7 @@ class TestMain(unittest.TestCase):
                 emxl,
                 "gh_api",
                 side_effect=[
-                    self._make_issue_response(["test-failure-archive", "testing"]),
+                    self._make_issue_response(["test-failure-archive", "automated tests"]),
                     None,  # DELETE test-failure-archive
                 ],
             ) as mock_api:
@@ -684,13 +684,13 @@ class TestMain(unittest.TestCase):
         self.assertIn("test-failure-archive", delete_call[0][0])
         self.assertEqual(delete_call[1]["method"], "DELETE")
 
-    def test_test_failure_prefix_does_not_remove_testing_label(self):
-        """Enforcing the test-failure group must not touch the unrelated 'testing' label."""
+    def test_test_failure_prefix_does_not_remove_automated_tests_label(self):
+        """Enforcing the test-failure group must not touch the unrelated 'automated tests' label."""
         with patch.dict(os.environ, {"ADDED_LABEL": "test-failure"}):
             with patch.object(
                 emxl,
                 "gh_api",
-                side_effect=[self._make_issue_response(["testing", "ci"])],
+                side_effect=[self._make_issue_response(["automated tests", "ci"])],
             ) as mock_api:
                 result = emxl.main()
 

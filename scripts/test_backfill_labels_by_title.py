@@ -25,13 +25,13 @@ class TestTrackedLabels(unittest.TestCase):
     def test_includes_every_rule_label(self):
         self.assertIn("ci", blt.TRACKED_LABELS)
         self.assertIn("agents", blt.TRACKED_LABELS)
-        self.assertIn("testing", blt.TRACKED_LABELS)
+        self.assertIn("automated tests", blt.TRACKED_LABELS)
 
     def test_has_no_extra_labels(self):
         # A label with no title-matching rule (e.g. "product") must not be
         # tracked: it could never appear in "matched", so it would sit in
         # "miss" forever, on every run, for every issue/PR that carries it.
-        self.assertEqual(blt.TRACKED_LABELS, frozenset({"ci", "agents", "testing"}))
+        self.assertEqual(blt.TRACKED_LABELS, frozenset({"ci", "agents", "automated tests"}))
 
 
 # ---------------------------------------------------------------------------
@@ -132,7 +132,7 @@ class TestBuildReport(unittest.TestCase):
 
 class TestApplyLabels(unittest.TestCase):
     def test_posts_once_per_issue(self):
-        to_apply = {1: ["ci"], 2: ["agents", "testing"]}
+        to_apply = {1: ["ci"], 2: ["agents", "automated tests"]}
         with patch.object(blt.label_by_title, "gh_api") as mock_api:
             result = blt.apply_labels(to_apply, "owner/repo", "tok")
         self.assertEqual(mock_api.call_count, 2)
@@ -259,8 +259,8 @@ class TestParseSkipMatches(unittest.TestCase):
         self.assertEqual(labels, frozenset({"ci", "agents"}))
 
     def test_whitespace_around_labels_is_stripped(self):
-        include_match, labels = blt.parse_skip_matches("ci, agents , testing")
-        self.assertEqual(labels, frozenset({"ci", "agents", "testing"}))
+        include_match, labels = blt.parse_skip_matches("ci, agents , automated tests")
+        self.assertEqual(labels, frozenset({"ci", "agents", "automated tests"}))
 
     def test_trailing_comma_does_not_add_empty_label(self):
         include_match, labels = blt.parse_skip_matches("ci,")
@@ -277,8 +277,8 @@ class TestParseSkipMatches(unittest.TestCase):
         self.assertEqual(labels, frozenset({"ci", "agents"}))
 
     def test_quotes_and_whitespace_together_are_stripped(self):
-        include_match, labels = blt.parse_skip_matches("\"ci\", agents , 'testing'")
-        self.assertEqual(labels, frozenset({"ci", "agents", "testing"}))
+        include_match, labels = blt.parse_skip_matches("\"ci\", agents , 'automated tests'")
+        self.assertEqual(labels, frozenset({"ci", "agents", "automated tests"}))
 
 
 # ---------------------------------------------------------------------------
