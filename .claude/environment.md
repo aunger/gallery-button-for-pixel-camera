@@ -45,36 +45,42 @@ ______________________________________________________________________
 
 ## Linting and formatting
 
-The `SessionStart` hook installs and wires up the linting stack automatically (steps 3a-3d).
+The `SessionStart` hook installs and wires up the linting stack automatically (steps 3a-3c).
 No manual setup is needed.
+There is no `pre-commit` framework: every tool is installed from a trusted package registry, pinned to an exact version, and run from a checked-in git hook (`scripts/git-hooks/pre-commit`) via `scripts/lint.sh`.
+Nothing is git-cloned or fetched from GitHub Releases at commit time (issue #667).
 
 ### Tools installed at session start
 
-| Tool         | Step | Location                  | Purpose                                                   |
-| ------------ | ---- | ------------------------- | --------------------------------------------------------- |
-| `ktlint`     | 3a   | `~/.local/bin/ktlint`     | Kotlin formatting and style (official Kotlin style guide) |
-| `pre-commit` | 3b   | `~/.local/bin/pre-commit` | Hook framework; manages ruff, mdformat, and ktlint        |
-| git hook     | 3c   | `.git/hooks/pre-commit`   | Runs all hooks automatically on every `git commit`        |
-| `mdformat`   | 3d   | `~/.local/bin/mdformat`   | Markdown formatting, with `mdformat-gfm`/`-frontmatter`   |
-| hook envs    | --   | `~/.cache/pre-commit/`    | Populated on first commit (not pre-warmed at startup)     |
+| Tool              | Step | Source                                             | Purpose                                                                     |
+| ----------------- | ---- | -------------------------------------------------- | --------------------------------------------------------------------------- |
+| `ktlint`          | 3a   | Maven Central (`ktlint-cli` JAR, SHA-256 verified) | Kotlin formatting; wrapper at `~/.local/bin/ktlint` runs the JAR via `java` |
+| Python lint tools | 3b   | PyPI (`scripts/requirements-lint.txt`)             | `ruff`, `pre-commit-hooks` checks, `mdformat` + plugins; in `~/.local/bin`  |
+| git hook          | 3c   | `core.hooksPath` = `scripts/git-hooks`             | runs `scripts/lint.sh` on staged files on every `git commit`                |
 
-### Hooks configured in `.pre-commit-config.yaml`
+The `ktlint` JAR is stored under `~/.local/lib/ktlint/`.
+`ruff` version tracks the ruff-pre-commit pin (issue #673); `pre-commit-hooks` is the same upstream project as before, now installed from PyPI instead of cloned, and exposes each generic check as a console script.
 
-| Hook                    | Files             | Behavior                                      |
-| ----------------------- | ----------------- | --------------------------------------------- |
-| trailing-whitespace     | all               | removes trailing spaces                       |
-| end-of-file-fixer       | all               | ensures files end with a newline              |
-| check-yaml              | `*.yaml`, `*.yml` | validates YAML syntax                         |
-| check-toml              | `*.toml`          | validates TOML syntax                         |
-| check-merge-conflict    | all               | blocks accidental conflict markers            |
-| check-added-large-files | all               | blocks large binary commits                   |
-| ruff                    | `*.py`            | lint + auto-fix (E, F rules)                  |
-| ruff-format             | `*.py`            | format                                        |
-| mdformat                | `*.md`            | format; `--wrap keep --number`; auto-corrects |
-| ktlint                  | `*.kt`, `*.kts`   | format; auto-corrects in place                |
+### Checks run by `scripts/lint.sh`
+
+`scripts/lint.sh` is the single source of truth for "run the linters".
+It takes an explicit file list (the git hook passes the staged set) or `--all` to lint the whole tree.
+
+| Check                       | Files             | Behavior                                      |
+| --------------------------- | ----------------- | --------------------------------------------- |
+| `trailing-whitespace-fixer` | text              | removes trailing spaces                       |
+| `end-of-file-fixer`         | text              | ensures files end with a newline              |
+| `check-yaml`                | `*.yaml`, `*.yml` | validates YAML syntax                         |
+| `check-toml`                | `*.toml`          | validates TOML syntax                         |
+| `check-merge-conflict`      | all               | blocks accidental conflict markers            |
+| `check-added-large-files`   | staged            | blocks large file commits                     |
+| `ruff`                      | `*.py`            | lint + auto-fix (E, F rules), then format     |
+| `mdformat`                  | `*.md`            | format; `--wrap keep --number`; auto-corrects |
+| `ktlint`                    | `*.kt`, `*.kts`   | format; auto-corrects in place                |
 
 When a hook modifies a file, the agent did not cause that change--
 stage the modified files and commit again.
+The hook lints the working-tree copy of each staged file rather than stashing unstaged changes first, so a partially staged file is linted as it sits in the working tree.
 
 ### Semgrep (CI only)
 
