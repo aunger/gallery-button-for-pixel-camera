@@ -17,6 +17,7 @@ A session setup may specify a single "development branch." Treat this as context
 
 Use the dispatch template defined in `dev_orchestration.md`.
 Fill the branch name (following the naming pattern above) and the issue number (given by the user) as literal tokens.
+Dispatch each Programmer in its own git worktree, per "Always use worktrees" in `dev_orchestration.md`; this applies to every dispatch, not only parallel ones.
 Commit/PR duties and branch-isolation rules are discoverable by the sub-agent via CLAUDE.md and need not be re-narrated.
 
 ## Parallel dispatch

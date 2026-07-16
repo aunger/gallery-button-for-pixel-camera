@@ -191,6 +191,8 @@ Routing on the Verification Agent's signal:
 ## Assigning a Programmer
 
 - Create a sub-agent at the Author model (see Model selection above)
+- Always dispatch the Programmer in its own git worktree (Agent tool `isolation: "worktree"`), whether or not this dispatch is parallel.
+  See "Always use worktrees" under Delegation rules below.
 - Create a dedicated per-issue branch for the Programmer to use.
   Branch names should follow the pattern `fix/issue-N-short-description` for bug fixes or `feature/issue-N-short-description` for new features.
   Never direct two Programmers for unrelated issues to the same branch.
@@ -368,7 +370,9 @@ Orchestrator-specific notes:
 
 ## Delegation rules
 
-- If requested by the user, **dispatch in parallel** for independent issues. Parallel issues must each have their own branch and worktree.
+- **Always use worktrees.** Dispatch every Programmer in its own git worktree (Agent tool `isolation: "worktree"`), not only when dispatching in parallel.
+  Parallel conditions often go unnoticed, so applying worktrees unconditionally is safer than deciding case by case, and it keeps each task's checkout isolated.
+- If requested by the user, **dispatch in parallel** for independent issues. Parallel issues must each have their own branch.
 - **One branch per ticket.** Each issue gets its own dedicated branch.
 - **Separate subagents per ticket.** Each issue or PR gets its own independent Author and Reviewer agents.
 - **Report subagent timing.** Use the Bash tool to run `date -u` immediately before dispatching each subagent, and again immediately after it returns. Report both times to the user.
