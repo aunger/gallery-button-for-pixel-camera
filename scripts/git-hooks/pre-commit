@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# scripts/git-hooks/pre-commit -- first-party replacement for the pre-commit
+# framework (issue #667).
+#
+# Wired in by `git config core.hooksPath scripts/git-hooks` at session start.
+# It lints the staged files through scripts/lint.sh (the single source of
+# truth for "run the linters") and aborts the commit if a check fails or an
+# auto-fixer had to modify a staged file, preserving the pre-commit contract of
+# "hooks modified files; re-stage and commit again".
+#
+# It lints the working-tree copy of each staged file rather than reproducing
+# pre-commit's stash-of-unstaged-changes isolation. That is simpler and
+# adequate for this project's workflow; a partially staged file is linted as it
+# sits in the working tree.
+
+set -uo pipefail
+
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LINT_SH="$HOOK_DIR/../lint.sh"
+
+# Staged additions/copies/modifications, NUL-delimited so paths with spaces or
+# other odd characters survive intact. Deletions and renames-away are excluded
+# (nothing to lint).
+mapfile -d '' -t STAGED < <(git diff --cached --name-only --diff-filter=ACM -z)
+[[ ${#STAGED[@]} -eq 0 ]] && exit 0
+
+# Run the linters over the staged set; the fixers may rewrite files in place.
+lint_rc=0
+"$LINT_SH" "${STAGED[@]}" || lint_rc=$?
+
+# Did a fixer change the working-tree copy of any staged file? If so the index
+# no longer matches what was linted, so the fixes must be re-staged.
+mapfile -d '' -t MODIFIED < <(git diff --name-only -z -- "${STAGED[@]}")
+
+if [[ $lint_rc -ne 0 || ${#MODIFIED[@]} -gt 0 ]]; then
+    echo "" >&2
+    echo "pre-commit: linting blocked this commit." >&2
+    if [[ ${#MODIFIED[@]} -gt 0 ]]; then
+        echo "A formatter modified these staged files; review, re-stage, and commit again:" >&2
+        printf '  %s\n' "${MODIFIED[@]}" >&2
+    fi
+    if [[ $lint_rc -ne 0 ]]; then
+        echo "One or more linters reported a problem (see output above)." >&2
+    fi
+    exit 1
+fi
+
+exit 0
