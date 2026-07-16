@@ -18,6 +18,8 @@
 #       on ktlint availability)
 #   (j) --check leaves the working tree unmodified
 #   (k) --only runs only the named tool family
+#   (l) a tracked file over 500 KB fails --all (--enforce-all), while the
+#       file-list (hook) path leaves an unlisted large file alone
 #
 # The lint tools are resolved from $LINT_BIN_DIR (default $HOME/.local/bin),
 # exactly as scripts/lint.sh resolves them; .claude/hooks/session-start.sh
@@ -218,6 +220,28 @@ RC_RUFF=$?
 RC_MD=$?
 if [[ "$RC_RUFF" -eq 0 ]]; then pass "--only ruff ignores a dirty .md"; else fail "--only ruff should ignore a dirty .md, rc=$RC_RUFF"; fi
 if [[ "$RC_MD" -ne 0 ]]; then pass "--only mdformat flags a dirty .md"; else fail "--only mdformat should flag a dirty .md"; fi
+
+# ── (l) large file fails --all, hook path unaffected ─────────────────────────
+echo ""
+echo "=== (l) large file fails --all (--enforce-all) ==="
+REPO="$(new_repo)"
+printf 'x = 1\n' > "$REPO/small.py"
+# A clean 600 KB text file: a single long line plus a trailing newline, so the
+# whitespace/eof fixers have nothing to change and only the size check can flag
+# it. Committed with --no-verify so the hook (which would block it) is bypassed
+# and it becomes a pre-existing tracked file.
+head -c 599999 /dev/zero | tr '\0' 'a' > "$REPO/big.txt"
+printf '\n' >> "$REPO/big.txt"
+git -C "$REPO" add -A
+git -C "$REPO" commit -q -m "seed" --no-verify >/dev/null 2>&1
+( cd "$REPO" && "$LINT_SH" --check --only hygiene --all >/dev/null 2>&1 )
+RC_ALL=$?
+if [[ "$RC_ALL" -ne 0 ]]; then pass "--all flags a tracked 600 KB file"; else fail "--all should flag a tracked 600 KB file"; fi
+# The hook path lints only the files it is handed, without --enforce-all, so a
+# pre-existing large file it was not given must not be flagged.
+( cd "$REPO" && "$LINT_SH" --only hygiene small.py >/dev/null 2>&1 )
+RC_HOOK=$?
+if [[ "$RC_HOOK" -eq 0 ]]; then pass "file-list path ignores an unlisted large file"; else fail "file-list path should not flag an unlisted large file, rc=$RC_HOOK"; fi
 
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""

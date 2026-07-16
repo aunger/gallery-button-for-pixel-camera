@@ -137,6 +137,14 @@ run() {
     "$@" || status=1
 }
 
+# check-added-large-files intersects its file-list argument with the staged
+# index unless --enforce-all is passed. Over a whole-tree (--all) run nothing is
+# staged, so without the flag it would check nothing; pass it there. On the
+# file-list (hook) path it must be omitted, or the check would flag pre-existing
+# large files the commit is not actually adding.
+declare -a LARGE_FILES_ARGS=()
+[[ $ALL -eq 1 ]] && LARGE_FILES_ARGS+=(--enforce-all)
+
 # hygiene family: the six generic pre-commit-hooks checks. These behave
 # identically in fix and check mode -- the read-only checks never write, and the
 # two whitespace fixers have no check-only mode, so they run as usual and fail
@@ -147,7 +155,7 @@ if want hygiene; then
         run "$LINT_BIN_DIR/end-of-file-fixer" "${TEXT[@]}"
     fi
     run "$LINT_BIN_DIR/check-merge-conflict" "${FILES[@]}"
-    run "$LINT_BIN_DIR/check-added-large-files" "${FILES[@]}"
+    run "$LINT_BIN_DIR/check-added-large-files" "${LARGE_FILES_ARGS[@]}" "${FILES[@]}"
     [[ ${#YAML[@]} -gt 0 ]] && run "$LINT_BIN_DIR/check-yaml" "${YAML[@]}"
     [[ ${#TOML[@]} -gt 0 ]] && run "$LINT_BIN_DIR/check-toml" "${TOML[@]}"
 fi
