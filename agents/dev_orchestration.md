@@ -54,7 +54,7 @@ The Orchestrator is not a Reviewer or a Programmer.
 **May:**
 
 - Create local Git branches to keep tasks separate
-- Add or remove GitHub labels per the transition tables in this document (already exercised throughout, e.g., "Starting to orchestrate a PR" and "Concluding PR orchestration")
+- Add or remove GitHub labels per the transition tables in this document
 - Read project instructions (AGENTS.md and the files it references)
 - Dispatch and communicate with subagents
   - Replace subagents, reluctantly and when necessary, to complete a workflow
@@ -272,33 +272,12 @@ PR routing (Monitor loop):
       goto surfaceBeforeMergingRequirements (entered on the Clear path)
 
 labelGateBlock:
-  // Step 8a's original design (issue #516): a label-gate-only Blocked terminal names a
-  // process label the Orchestrator itself controls (see the blocking-label set in
-  // `.github/workflows/block-merge-on-blocking-labels.yml`), not a code or test failure, so
-  // routing a new Author round would accomplish nothing. Label management is already a
-  // normal, permitted Orchestrator action--this branch reuses the same label-transition
-  // mechanism used throughout this document (e.g. "Starting to orchestrate a PR" and
-  // "Concluding PR orchestration"), rather than inventing a new one.
-  //
-  // The Monitor's attributed terminal names the failing check ("No blocking labels"), not the
-  // specific label causing it (the check-runs API does not expose that). The routing above
-  // guarantees which blocking label this branch can find applied: `changes requested` and
-  // `changes done` were already cleared when the Reviewer returned (see "CI checking after a
-  // Reviewer exits"), and `verification needed` is not applied yet--that only happens in
-  // `surfaceBeforeMergingRequirements`, downstream of this branch. So `orchestrating` is the
-  // only blocking label this branch expects to find.
-  // `verification needed` is deliberately never auto-removed by this branch, even if some
-  // future routing change let it coexist here: unlike `orchestrating`, it represents real
-  // outstanding process state (before-merging items pending the Verification Agent), and
-  // clearing it here would defeat that gate instead of clearing stale bookkeeping.
-  //
-  // This branch removes `orchestrating` well before "Concluding PR orchestration" normally
-  // would. That is fine: nothing in this document treats `orchestrating` as a concurrency
-  // guard or precondition, only as a human-visible "automation is mid-cycle" marker and as
-  // the mechanism gating this check. The Orchestrator's own session state, not the label,
-  // is what tracks progress through the rest of the cycle, and the later unconditional
-  // removal at "Concluding PR orchestration" is a no-op once this branch has already
-  // removed it.
+  // Step 8a's original design (issue #516). `orchestrating` is the only blocking label
+  // expected here: `changes requested`/`changes done` clear when the Reviewer returns, and
+  // `verification needed` isn't applied until `surfaceBeforeMergingRequirements`, downstream
+  // of this branch. Never auto-remove `verification needed`--it is real outstanding process
+  // state, not bookkeeping. Removing `orchestrating` early is fine; nothing in this document
+  // treats it as a concurrency guard.
   If `orchestrating` is the only blocking label currently applied to the PR (the expected case): apply this transition to the PR:
 
     | Remove label    |
