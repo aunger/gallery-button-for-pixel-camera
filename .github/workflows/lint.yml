@@ -1,0 +1,85 @@
+name: Lint
+
+# CI enforcement of the repo's linters, so formatting and hygiene violations are
+# caught even when the commit-time git hook did not run (a local clone has no
+# hook, and `git commit --no-verify` bypasses it everywhere). CI is the one
+# enforcement point that cannot be locally skipped.
+#
+# Four independent jobs, one per tool family, run in parallel and pass or fail on
+# their own so each shows red or green individually. Each invokes scripts/lint.sh
+# --check --only <family> --all, so the git hook and CI share one definition of
+# how every tool runs. CI checks only; it never auto-fixes or pushes.
+#
+# This lives in its own workflow rather than build.yml: build.yml's build-and-test
+# job is skipped on docs-only PRs, but Markdown and hygiene linting must run
+# precisely there.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python-ruff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+      - name: Install Python lint tools
+        run: |
+          pip install -r scripts/requirements-lint.txt
+          echo "LINT_BIN_DIR=$(python -c 'import sysconfig; print(sysconfig.get_path("scripts"))')" >> "$GITHUB_ENV"
+      - name: Ruff check
+        run: scripts/lint.sh --check --only ruff --all
+
+  markdown-mdformat:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+      - name: Install Python lint tools
+        run: |
+          pip install -r scripts/requirements-lint.txt
+          echo "LINT_BIN_DIR=$(python -c 'import sysconfig; print(sysconfig.get_path("scripts"))')" >> "$GITHUB_ENV"
+      - name: mdformat check
+        run: scripts/lint.sh --check --only mdformat --all
+
+  hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+      - name: Install Python lint tools
+        run: |
+          pip install -r scripts/requirements-lint.txt
+          echo "LINT_BIN_DIR=$(python -c 'import sysconfig; print(sysconfig.get_path("scripts"))')" >> "$GITHUB_ENV"
+      - name: Hygiene checks
+        run: scripts/lint.sh --check --only hygiene --all
+
+  kotlin-ktlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+      - name: Install ktlint
+        # Installs the pinned, SHA-256-verified ktlint into ~/.local/bin, which is
+        # scripts/lint.sh's default $LINT_BIN_DIR, so no LINT_BIN_DIR override is
+        # needed for the check step below.
+        run: scripts/install-ktlint.sh
+      - name: ktlint check
+        run: scripts/lint.sh --check --only ktlint --all
