@@ -2,6 +2,7 @@
 paths:
   - "**/*"
 ---
+
 # GitHub MCP server: do not call `mcp__github__authenticate`
 
 ## Never call `mcp__github__authenticate`

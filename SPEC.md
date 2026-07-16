@@ -2,7 +2,7 @@
 
 ## Expanded Requirements v1.0
 
------
+______________________________________________________________________
 
 ## 1. Overview
 
@@ -15,24 +15,24 @@ The overlay appears when Pixel Camera's viewfinder is in the foreground and disa
 - **OV-03** Distribution: sideload / F-Droid. Play Store compatible.
 - **OV-04** The Pixel Camera package name is `com.google.android.GoogleCamera`. If this package is not installed, the main settings screen displays a notice and the service refuses to start.
 
------
+______________________________________________________________________
 
 ## 2. Permissions & Setup
 
 ### 2.1 Required Permissions
 
-|Permission                            |Type                      |Purpose                                                                                          |
-|--------------------------------------|--------------------------|-------------------------------------------------------------------------------------------------|
-|`PACKAGE_USAGE_STATS`                 |Special (Settings toggle) |Confirm foreground app identity via `UsageStatsManager` when a camera-availability callback fires|
-|`SYSTEM_ALERT_WINDOW`                 |Special (Settings toggle) |Draw the overlay icon on top of Pixel Camera                                                     |
-|`FOREGROUND_SERVICE`                  |Normal (manifest)         |Keep the process alive so camera-availability callbacks remain registered                        |
-|`FOREGROUND_SERVICE_SPECIAL_USE`      |Normal (manifest, API 34+)|Foreground service type declaration                                                              |
-|`POST_NOTIFICATIONS`                  |Runtime (API 33+)         |Show required foreground service notification                                                    |
-|`READ_MEDIA_IMAGES`                   |Runtime (API 33+)         |Read the shared image collection so the overlay thumbnail shows Pixel Camera's newest photo      |
-|`READ_EXTERNAL_STORAGE`               |Runtime (API 26-32)       |Same as `READ_MEDIA_IMAGES`, for devices below API 33 (declared with `maxSdkVersion="32"`)       |
-|`RECEIVE_BOOT_COMPLETED`              |Normal (manifest)         |Restart service after device reboot                                                              |
-|`CAMERA`                              |Normal (manifest)         |Required to register `CameraManager.AvailabilityCallback`                                        |
-|`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`|Normal (manifest)         |Prompt user to exclude GB4PC from battery optimization                                           |
+| Permission                             | Type                       | Purpose                                                                                           |
+| -------------------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------- |
+| `PACKAGE_USAGE_STATS`                  | Special (Settings toggle)  | Confirm foreground app identity via `UsageStatsManager` when a camera-availability callback fires |
+| `SYSTEM_ALERT_WINDOW`                  | Special (Settings toggle)  | Draw the overlay icon on top of Pixel Camera                                                      |
+| `FOREGROUND_SERVICE`                   | Normal (manifest)          | Keep the process alive so camera-availability callbacks remain registered                         |
+| `FOREGROUND_SERVICE_SPECIAL_USE`       | Normal (manifest, API 34+) | Foreground service type declaration                                                               |
+| `POST_NOTIFICATIONS`                   | Runtime (API 33+)          | Show required foreground service notification                                                     |
+| `READ_MEDIA_IMAGES`                    | Runtime (API 33+)          | Read the shared image collection so the overlay thumbnail shows Pixel Camera's newest photo       |
+| `READ_EXTERNAL_STORAGE`                | Runtime (API 26-32)        | Same as `READ_MEDIA_IMAGES`, for devices below API 33 (declared with `maxSdkVersion="32"`)        |
+| `RECEIVE_BOOT_COMPLETED`               | Normal (manifest)          | Restart service after device reboot                                                               |
+| `CAMERA`                               | Normal (manifest)          | Required to register `CameraManager.AvailabilityCallback`                                         |
+| `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` | Normal (manifest)          | Prompt user to exclude GB4PC from battery optimization                                            |
 
 Note: `QUERY_ALL_PACKAGES` is not required.
 Instead, the manifest declares a `<queries>` element to satisfy Android's package visibility filtering (API 30+):
@@ -54,10 +54,12 @@ This is a compile-time manifest declaration, not a runtime permission; the user 
 ### 2.2 Guided Setup Flow
 
 - **PM-01** On first launch, display a guided setup flow. Each step explains one permission, why it is needed, and provides a single button to grant it. Steps (a leading Notifications step is inserted on API 33+ per PM-05):
+
 1. **Photos & Media**: "GB4PC needs to read your photos so the overlay button can show your newest shot as a thumbnail. Please choose Allow all, since limited access cannot include a photo you just took." Button: "Allow Photo Access" → requests the `READ_MEDIA_IMAGES` / `READ_EXTERNAL_STORAGE` runtime permission (PM-06).
-1. **Usage Access**: "GB4PC needs to confirm which app is using the camera. This permission lets GB4PC see which app is in the foreground. It cannot read your personal data." Button: "Grant Usage Access" → opens the system Usage Access settings screen.
-1. **Draw Over Apps**: "Allows GB4PC to show the gallery button on top of Pixel Camera." Button: "Grant Overlay Permission" → opens the system overlay settings screen.
-1. **Battery Optimization**: "GB4PC needs to stay running in the background to detect when you open the camera. Excluding it from battery optimization prevents Android from killing it." Button: "Exclude from Battery Optimization" → fires `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` intent.
+2. **Usage Access**: "GB4PC needs to confirm which app is using the camera. This permission lets GB4PC see which app is in the foreground. It cannot read your personal data." Button: "Grant Usage Access" → opens the system Usage Access settings screen.
+3. **Draw Over Apps**: "Allows GB4PC to show the gallery button on top of Pixel Camera." Button: "Grant Overlay Permission" → opens the system overlay settings screen.
+4. **Battery Optimization**: "GB4PC needs to stay running in the background to detect when you open the camera. Excluding it from battery optimization prevents Android from killing it." Button: "Exclude from Battery Optimization" → fires `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` intent.
+
 - **PM-02** Each step shows a checkmark and auto-advances when the permission is detected as granted (on `onResume`). The user can also tap a "Skip" link to defer, but a persistent banner on the main settings screen indicates any missing permission with a tap-to-fix action.
 - **PM-03** If Usage Access is revoked while the service is running, the service continues running (to maintain camera callbacks) but cannot confirm foreground app identity. It hides any visible overlay, posts a notification ("GB4PC cannot detect apps, tap to fix"), and the main settings screen shows the missing-permission banner.
 - **PM-04** If Overlay permission is revoked while the service is running, the service detects the failure when it next attempts to show the overlay, posts a notification prompting re-grant, and the main settings screen shows the missing-permission banner.
@@ -69,7 +71,7 @@ This is a compile-time manifest declaration, not a runtime permission; the user 
 >
 > Runtime permissions must be requested ahead of time in the guided setup flow, never from the running service or overlay while Pixel Camera is in the foreground. When a permission the overlay would use is missing at that moment, the service degrades gracefully with whatever access it already has, rather than interrupting the camera to prompt.
 
------
+______________________________________________________________________
 
 ## 3. Foreground Detection
 
@@ -87,7 +89,7 @@ This is a compile-time manifest declaration, not a runtime permission; the user 
 - **DT-07** A foreground service keeps the process alive so that camera-availability callbacks remain registered. Without it, Android may kill the process and callbacks will stop firing.
 - **DT-08** The service must survive doze mode. The setup flow prompts battery optimization exclusion (PM-01 step 3). If the user has not excluded GB4PC from battery optimization, the main settings screen shows a warning banner.
 
------
+______________________________________________________________________
 
 ## 4. Overlay
 
@@ -119,7 +121,7 @@ This is a compile-time manifest declaration, not a runtime permission; the user 
 
 - **AC-05** Lock state is determined via `KeyguardManager.isKeyguardLocked()`. This returns `true` when the device is locked (even if the screen is on and showing the lock screen or a secure camera session), and `false` when the device is fully unlocked.
 
------
+______________________________________________________________________
 
 ## 5. Secure Filmstrip Viewer
 
@@ -153,16 +155,18 @@ This mirrors the behavior of AOSP's secure camera implementation.
 - **SF-15** If the device is unlocked while the secure viewer is open, the viewer finishes itself. Subsequent taps on the overlay will launch the external gallery app per AC-01.
 - **SF-16** The viewer does not provide any way to access photos outside the current session. It has no navigation to albums, folders, or the broader photo library.
 
------
+______________________________________________________________________
 
 ## 6. Settings UI
 
 ### 6.1 Main Screen
 
 - **UI-01** The main screen contains:
+
 1. A master on/off toggle for the service, with a status line beneath it that displays error descriptions when applicable (otherwise no status text).
-1. A gallery app row showing the currently selected app's icon and name (or "Not set, tap to choose" if none is selected). Tapping this row opens the gallery app picker (§6.2).
-1. A link/button to Advanced Settings (§6.3).
+2. A gallery app row showing the currently selected app's icon and name (or "Not set, tap to choose" if none is selected). Tapping this row opens the gallery app picker (§6.2).
+3. A link/button to Advanced Settings (§6.3).
+
 - **UI-02** If any required permission is missing, a banner appears at the top of the screen indicating which permission is missing, with a tap action that navigates to the appropriate system settings screen.
 - **UI-03** If Pixel Camera (`com.google.android.GoogleCamera`) is not installed, a notice replaces the service toggle: "Pixel Camera is not installed. GB4PC requires Pixel Camera to function."
 - **UI-04** If battery optimization exclusion has not been granted, a warning banner appears: "Not excluded from battery optimization; GB4PC may be killed in the background. Tap to fix."
@@ -178,15 +182,17 @@ This mirrors the behavior of AOSP's secure camera implementation.
 ### 6.3 Advanced Settings
 
 - **UI-10** The Advanced Settings screen contains:
+
 1. **Overlay Position**: Three labeled sliders or number inputs:
-    - `X position` (0.00-100.00%): horizontal center
-    - `Y position` (0.00-100.00%): vertical center
-    - `Size` (1.00-30.00%): percentage of the shorter screen dimension
-1. **Reset to Defaults** button: restores the shipped default position values for the current display aspect ratio. Shows a confirmation dialog before resetting.
-1. **Debug Log**: A scrollable log viewer showing the most recent foreground detection events (camera callbacks, USM queries, overlay show/hide events), timestamped. Useful for troubleshooting. The log is held in a circular buffer of the last 200 entries, in memory only (not persisted).
+   - `X position` (0.00-100.00%): horizontal center
+   - `Y position` (0.00-100.00%): vertical center
+   - `Size` (1.00-30.00%): percentage of the shorter screen dimension
+2. **Reset to Defaults** button: restores the shipped default position values for the current display aspect ratio. Shows a confirmation dialog before resetting.
+3. **Debug Log**: A scrollable log viewer showing the most recent foreground detection events (camera callbacks, USM queries, overlay show/hide events), timestamped. Useful for troubleshooting. The log is held in a circular buffer of the last 200 entries, in memory only (not persisted).
+
 - **UI-11** Changes to position/size values are applied immediately (live preview if the overlay is currently visible). Values are saved on change.
 
------
+______________________________________________________________________
 
 ## 7. Foreground Service & Notification
 
@@ -196,7 +202,7 @@ This mirrors the behavior of AOSP's secure camera implementation.
 - **FS-04** Tapping the notification body opens the GB4PC main settings screen.
 - **FS-05** The service is started on boot via `RECEIVE_BOOT_COMPLETED` broadcast if the master toggle was on when the device last shut down. The toggle state is persisted in `SharedPreferences`.
 
------
+______________________________________________________________________
 
 ## 8. Data Persistence
 
@@ -204,7 +210,7 @@ This mirrors the behavior of AOSP's secure camera implementation.
 - **DA-02** Overlay positions are stored as a JSON-serialized map keyed by quantized aspect ratio (two decimal places). Each entry contains `x%`, `y%`, and `size%`.
 - **DA-03** The debug log is in-memory only, in a circular buffer. It is lost when the process is killed.
 
------
+______________________________________________________________________
 
 ## 9. Edge Cases & Error Handling
 
@@ -218,7 +224,7 @@ This mirrors the behavior of AOSP's secure camera implementation.
 - **EC-08** **Multiple rapid camera switches (e.g., toggling front/back repeatedly):** The 500ms debounce (DT-04) prevents overlay flicker. At most one USM query is issued per debounce window.
 - **EC-09** **USM query returns stale data:** `UsageStatsManager` event data can lag by a few hundred milliseconds. The 5-second query window in DT-02 mitigates this. If no `MOVE_TO_FOREGROUND` event is found in the window, the service assumes the foreground app is unknown and does not show the overlay.
 
------
+______________________________________________________________________
 
 ## 10. Package & Build
 
@@ -232,7 +238,7 @@ This mirrors the behavior of AOSP's secure camera implementation.
   - A gesture-capable ImageView library for the secure viewer (e.g., `com.davemorrissey.labs:subsampling-scale-image-view` or equivalent)
   - No network libraries, no analytics, no crash reporting.
 
------
+______________________________________________________________________
 
 ## 11. Known Risks & Platform Limitations
 
@@ -246,7 +252,7 @@ This mirrors the behavior of AOSP's secure camera implementation.
   The current per-aspect-ratio position storage (PS-03) helps for rotation changes, but split-screen produces a continuum of window sizes at the same aspect ratio.
   Incorrect positioning may be a significant usability problem in v1 and is the primary motivation for exploring the detection approaches in Appendix A.
 
------
+______________________________________________________________________
 
 ## Appendix A: Overlay Position Detection, Future Approaches
 

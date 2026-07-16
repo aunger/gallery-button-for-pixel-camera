@@ -74,6 +74,7 @@ Use `mcp__github__pull_request_read` to confirm the resulting state on the PR af
 For each tracking issue:
 
 - If **PASS**: comment on the issue with:
+
   - "Result: PASS"
   - The workflow run URL (or a script and its output) as evidence.
   - A brief description of what was confirmed (e.g., "Log output: '...'").
