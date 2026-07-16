@@ -106,6 +106,8 @@ Do not delete any test branch; the closed PR preserves the run history as eviden
 
 ## Boundaries
 
+- You run in your own git worktree (the Orchestrator dispatches you with worktree isolation; see "Always use worktrees" in `dev_orchestration.md`).
+  The repository-changing actions below therefore happen inside that isolated checkout and never disturb a shared checkout or another agent's in-flight work.
 - Do not fix bugs, and do not modify any source files.
 - Do not merge any PR.
 - Do not communicate with the user during the run.
