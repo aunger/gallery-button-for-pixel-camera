@@ -115,3 +115,5 @@ Do not delete any test branch; the closed PR preserves the run history as eviden
   - Creating a test PR for the test branch.
   - Filing comments and closing tracking issues.
   - Closing a test PR that was created for this verification.
+- You run in your own git worktree (the Orchestrator dispatches you with worktree isolation).
+  The repository-changing actions above therefore happen inside that isolated checkout and never disturb a shared checkout or another agent's in-flight work.
