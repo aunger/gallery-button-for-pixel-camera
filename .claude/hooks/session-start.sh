@@ -172,49 +172,14 @@ fi
 
 # STEP 3a: ktlint (Kotlin formatter), from Maven Central.
 #
-# ktlint is fetched as the ktlint-cli fat JAR from Maven Central--the same
-# trusted, immutable, checksummed host Gradle already resolves this build
-# from--rather than from GitHub Releases, which this sandbox blocks with a 403
-# (issue #667).  The published SHA-256 is verified before the JAR is used, so a
-# proxy error page fails loudly here instead of masquerading as a corrupt
-# "binary" that only breaks later with an opaque Exec format error.  A small
-# wrapper on PATH runs the JAR via `java -jar`.
-#
-# When bumping KTLINT_VERSION, update KTLINT_SHA256 to the new release's
-# published checksum from
-# https://repo1.maven.org/maven2/com/pinterest/ktlint/ktlint-cli/<version>/ktlint-cli-<version>-all.jar.sha256
-KTLINT_VERSION="1.8.0"
-KTLINT_SHA256="369ad2b789f95a011f807e1fcb690ccef80bd7cd014fd139e73ae82dcc0baeab"
-KTLINT_JAR_DIR="$HOME/.local/lib/ktlint"
-KTLINT_JAR="$KTLINT_JAR_DIR/ktlint-cli-$KTLINT_VERSION-all.jar"
-KTLINT_BIN="$LOCAL_BIN/ktlint"
-if [[ -x "$KTLINT_BIN" && -f "$KTLINT_JAR" ]]; then
-    echo "[session-start] Step 3a: ktlint present--skip"
-else
-    echo "[session-start] Step 3a: installing ktlint $KTLINT_VERSION from Maven Central..."
-    mkdir -p "$KTLINT_JAR_DIR"
-    KTLINT_URL="https://repo1.maven.org/maven2/com/pinterest/ktlint/ktlint-cli/$KTLINT_VERSION/ktlint-cli-$KTLINT_VERSION-all.jar"
-    TMP_JAR=$(mktemp "$KTLINT_JAR_DIR/.download-XXXXXX")
-    trap 'rm -f "$TMP_JAR"' EXIT
-    # -f: fail on an HTTP error status instead of writing the error response
-    # body to the JAR as if it were the artifact (issue #667).
-    curl -fsSL "$KTLINT_URL" -o "$TMP_JAR"
-    ACTUAL_SHA=$(sha256sum "$TMP_JAR" | cut -d' ' -f1)
-    if [[ "$ACTUAL_SHA" != "$KTLINT_SHA256" ]]; then
-        echo "[session-start] Step 3a: ERROR: ktlint SHA-256 mismatch (refusing to install)" >&2
-        echo "[session-start]   expected $KTLINT_SHA256" >&2
-        echo "[session-start]   actual   $ACTUAL_SHA" >&2
-        exit 1
-    fi
-    mv "$TMP_JAR" "$KTLINT_JAR"
-    trap - EXIT
-    cat > "$KTLINT_BIN" << EOF
-#!/usr/bin/env bash
-exec java -jar "$KTLINT_JAR" "\$@"
-EOF
-    chmod +x "$KTLINT_BIN"
-    echo "[session-start] Step 3a: ktlint installed and SHA-256 verified"
-fi
+# The pinned, SHA-256-verified install lives in scripts/install-ktlint.sh, which
+# the CI ktlint lint job (.github/workflows/lint.yml) also runs, so both paths
+# provision the identical ktlint from one definition.  It installs the wrapper
+# into $HOME/.local/bin (the $LOCAL_BIN this step already put on PATH) and is
+# idempotent, so re-running is a fast no-op.  See that script for the rationale
+# on fetching the fat JAR from Maven Central rather than GitHub Releases.
+echo "[session-start] Step 3a: ensuring ktlint is installed..."
+"$REPO_ROOT/scripts/install-ktlint.sh"
 
 # STEP 3b: Python lint tools (ruff, pre-commit-hooks checks, mdformat), from PyPI.
 #
