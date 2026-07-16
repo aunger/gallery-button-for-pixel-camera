@@ -11,14 +11,14 @@ Apply separately for the Author (implementation) and the Reviewer (code review),
 
 ## Dimensions
 
-| Dimension | 1: Low | 2: Medium | 3: High |
-|-----------|---------|------------|----------|
-| **Task type** | Boilerplate, formatting, simple config edit | Standard feature, bug fix, refactor | Architecture, novel algorithm, system design |
-| **Ambiguity** | Fully specified, clear acceptance criteria | Some interpretation needed | Underspecified, requires judgment or design |
-| **Context breadth** | Single file / self-contained | A few related files | Cross-cutting; large-codebase awareness needed |
-| **Domain depth** | Generic code or prose | Moderate domain knowledge | Specialized (GitHub Actions internals, Android build system, security, etc.) |
-| **Reasoning chain** | Single step, pattern match | Multi-step, some tradeoffs | Long chain, competing concerns, novel reasoning |
-| **Investigation** | Approach clear from the issue; at most a standard docs lookup | Some unknowns, resolvable via code inspection or documentation | Requires empirical investigation: undocumented API behavior, platform quirks that must be tested to understand |
+| Dimension           | 1: Low                                                        | 2: Medium                                                      | 3: High                                                                                                        |
+| ------------------- | ------------------------------------------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| **Task type**       | Boilerplate, formatting, simple config edit                   | Standard feature, bug fix, refactor                            | Architecture, novel algorithm, system design                                                                   |
+| **Ambiguity**       | Fully specified, clear acceptance criteria                    | Some interpretation needed                                     | Underspecified, requires judgment or design                                                                    |
+| **Context breadth** | Single file / self-contained                                  | A few related files                                            | Cross-cutting; large-codebase awareness needed                                                                 |
+| **Domain depth**    | Generic code or prose                                         | Moderate domain knowledge                                      | Specialized (GitHub Actions internals, Android build system, security, etc.)                                   |
+| **Reasoning chain** | Single step, pattern match                                    | Multi-step, some tradeoffs                                     | Long chain, competing concerns, novel reasoning                                                                |
+| **Investigation**   | Approach clear from the issue; at most a standard docs lookup | Some unknowns, resolvable via code inspection or documentation | Requires empirical investigation: undocumented API behavior, platform quirks that must be tested to understand |
 
 ## Author leveling
 
@@ -35,19 +35,19 @@ Same dimensions and tier ranges, with:
 
 ## Scoring → tier
 
-| Total | Tier | Model |
-|-------|------|-------|
-| 6-8 | 1 | Haiku |
-| 9-13 | 2 | Sonnet |
-| 14-18 | 3 | Opus |
+| Total | Tier | Model  |
+| ----- | ---- | ------ |
+| 6-8   | 1    | Haiku  |
+| 9-13  | 2    | Sonnet |
+| 14-18 | 3    | Opus   |
 
 ## GitHub labels
 
-| Model | Author | Reviewer |
-|------|--------|----------|
-| Haiku | `c-a-haiku` | `c-r-haiku` |
+| Model  | Author       | Reviewer     |
+| ------ | ------------ | ------------ |
+| Haiku  | `c-a-haiku`  | `c-r-haiku`  |
 | Sonnet | `c-a-sonnet` | `c-r-sonnet` |
-| Opus | `c-a-opus` | `c-r-opus` |
+| Opus   | `c-a-opus`   | `c-r-opus`   |
 
 ## General notes
 

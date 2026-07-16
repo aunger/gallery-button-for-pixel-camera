@@ -16,11 +16,6 @@ repos:
         args: [--fix]
       - id: ruff-format
 
-  - repo: https://github.com/DavidAnson/markdownlint-cli2
-    rev: da711fa8b30421506086eb2dc7ea0a6c3cb27b9f # v0.14.0
-    hooks:
-      - id: markdownlint-cli2
-
   - repo: local
     hooks:
       - id: ktlint
@@ -29,3 +24,15 @@ repos:
         entry: ktlint
         args: [--format]
         files: '\.(kt|kts)$'
+      - id: mdformat
+        name: mdformat
+        language: system
+        entry: mdformat
+        # --wrap keep preserves this repo's intentional one-sentence-per-line
+        # prose (see .claude/rules/prose-style.md) instead of rewrapping it.
+        # --number keeps ordered-list numbering sequential (1, 2, 3, ...)
+        # instead of mdformat's own default of repeating "1." for every item.
+        # Extensions (frontmatter, gfm tables) are picked up automatically
+        # from whatever is pip-installed; see .claude/hooks/session-start.sh.
+        args: [--wrap, keep, --number]
+        files: '\.md$'

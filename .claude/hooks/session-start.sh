@@ -201,6 +201,45 @@ else
     echo "[session-start] Step 3c: pre-commit hook wired"
 fi
 
+# STEP 3d: mdformat + plugins (Markdown formatter).
+# Same --force-reinstall rationale as pre-commit above: PATH may not yet
+# include $LOCAL_BIN, and pip skips reinstalling the entrypoint script when
+# the package dist-info already exists.
+#
+# mdformat-gfm (not mdformat-tables) provides GFM pipe table support here.
+# mdformat-tables is deprecated and its own repo is archived: its README
+# says "Mdformat-tables has moved to mdformat-gfm", and it still declares
+# `mdformat<0.8.0,>=0.7.5` in its dependency metadata, a ceiling it never
+# lifted after the move. mdformat-gfm declares `mdformat>=0.7.5` with no
+# upper bound, so it does not force this repo back to the 0.7.x line;
+# mdformat is pinned to the current 1.0.0. mdformat-frontmatter has no
+# ceiling either. mdformat-sentencebreak (a sentence-wrap plugin also
+# evaluated in issue #680) is deliberately not installed: it corrupts inline
+# code spans that contain a period and is unmaintained (issue #681).
+#
+# Caution when bumping these pins later: this single pip install manages
+# three entangled packages behind one presence check on the mdformat
+# binary. If mdformat is already installed (any version) the block below
+# skips entirely, so a stale mdformat-gfm/mdformat-frontmatter would not
+# get bumped to newly pinned versions either. Unlike the single-package
+# ktlint/pre-commit steps above, a version bump here needs the installed
+# environment refreshed explicitly (or the cache cleared) rather than
+# relying on this guard to notice.
+MDFORMAT_VERSION="1.0.0"
+MDFORMAT_GFM_VERSION="1.0.0"
+MDFORMAT_FRONTMATTER_VERSION="2.1.2"
+MDFORMAT_BIN="$LOCAL_BIN/mdformat"
+if [[ -x "$MDFORMAT_BIN" ]]; then
+    echo "[session-start] Step 3d: mdformat present--skip"
+else
+    echo "[session-start] Step 3d: installing mdformat $MDFORMAT_VERSION + plugins..."
+    pip install --user --force-reinstall --quiet \
+        "mdformat==$MDFORMAT_VERSION" \
+        "mdformat-gfm==$MDFORMAT_GFM_VERSION" \
+        "mdformat-frontmatter==$MDFORMAT_FRONTMATTER_VERSION"
+    echo "[session-start] Step 3d: mdformat installed"
+fi
+
 # ───────────────────────────────────────────────────────────────────────────────
 # STEP 4: Fetch remote refs.
 #
