@@ -13,6 +13,11 @@
 #   (e) a format-dirty .kt blocks the commit (skipped when ktlint is absent)
 #   (f) invalid YAML blocks the commit
 #   (g) lint.sh --all runs over the whole tree
+#   (h) --check passes on a clean tree
+#   (i) --check fails on a lint-dirty .py, format-dirty .md, and .kt (.kt gated
+#       on ktlint availability)
+#   (j) --check leaves the working tree unmodified
+#   (k) --only runs only the named tool family
 #
 # The lint tools are resolved from $LINT_BIN_DIR (default $HOME/.local/bin),
 # exactly as scripts/lint.sh resolves them; .claude/hooks/session-start.sh
@@ -148,6 +153,71 @@ git -C "$REPO" add -A
 ( cd "$REPO" && "$LINT_SH" --all >/dev/null 2>&1 )
 RC=$?
 if [[ "$RC" -eq 0 ]]; then pass "lint.sh --all -> clean tree passes"; else fail "lint.sh --all should pass on a clean tree, rc=$RC"; fi
+
+# ── (h) --check passes on a clean tree ───────────────────────────────────────
+echo ""
+echo "=== (h) --check passes on a clean tree ==="
+REPO="$(new_repo)"
+printf 'x = 1\n' > "$REPO/clean.py"
+printf '# Title\n\nSome text.\n' > "$REPO/clean.md"
+# Normalise the fixtures through fix mode so they are fixed points, then assert
+# check mode is happy with them.
+( cd "$REPO" && "$LINT_SH" clean.py clean.md >/dev/null 2>&1 || true )
+( cd "$REPO" && "$LINT_SH" --check clean.py clean.md >/dev/null 2>&1 )
+RC=$?
+if [[ "$RC" -eq 0 ]]; then pass "--check on clean fixtures passes"; else fail "--check should pass on clean fixtures, rc=$RC"; fi
+
+# ── (i) --check fails on dirty fixtures ──────────────────────────────────────
+echo ""
+echo "=== (i) --check fails on dirty fixtures ==="
+REPO="$(new_repo)"
+printf 'import os\nx=1\n' > "$REPO/bad.py"   # unused import (ruff F401) + spacing
+( cd "$REPO" && "$LINT_SH" --check --only ruff bad.py >/dev/null 2>&1 )
+RC=$?
+if [[ "$RC" -ne 0 ]]; then pass "--check flags a lint-dirty .py"; else fail "--check should flag a lint-dirty .py"; fi
+if grep -q 'import os' "$REPO/bad.py"; then pass "--check did not fix bad.py"; else fail "--check must not fix bad.py"; fi
+
+REPO="$(new_repo)"
+printf '#    Title\n\n\n\nsome   text\n' > "$REPO/doc.md"
+( cd "$REPO" && "$LINT_SH" --check --only mdformat doc.md >/dev/null 2>&1 )
+RC=$?
+if [[ "$RC" -ne 0 ]]; then pass "--check flags a format-dirty .md"; else fail "--check should flag a format-dirty .md"; fi
+
+if [[ $KTLINT_AVAILABLE -eq 1 ]]; then
+    REPO="$(new_repo)"
+    printf 'fun main( ){println( "hi" )}\n' > "$REPO/Main.kt"
+    ( cd "$REPO" && "$LINT_SH" --check --only ktlint Main.kt >/dev/null 2>&1 )
+    RC=$?
+    if [[ "$RC" -ne 0 ]]; then pass "--check flags a format-dirty .kt"; else fail "--check should flag a format-dirty .kt"; fi
+else
+    echo "  SKIP: ktlint not available under \$LINT_BIN_DIR ($LINT_BIN_DIR)"
+fi
+
+# ── (j) --check leaves the working tree unmodified ───────────────────────────
+echo ""
+echo "=== (j) --check leaves the tree unmodified ==="
+REPO="$(new_repo)"
+printf 'x = 1\n' > "$REPO/keep.py"
+printf '# Title\n\nText.\n' > "$REPO/keep.md"
+( cd "$REPO" && "$LINT_SH" keep.py keep.md >/dev/null 2>&1 || true )
+BEFORE="$( cd "$REPO" && sha256sum keep.py keep.md )"
+( cd "$REPO" && "$LINT_SH" --check keep.py keep.md >/dev/null 2>&1 )
+AFTER="$( cd "$REPO" && sha256sum keep.py keep.md )"
+if [[ "$BEFORE" == "$AFTER" ]]; then pass "--check did not modify the fixtures"; else fail "--check modified the fixtures"; fi
+
+# ── (k) --only isolates a tool family ────────────────────────────────────────
+echo ""
+echo "=== (k) --only isolates a tool family ==="
+REPO="$(new_repo)"
+printf '#    Title\n\n\n\nsome   text\n' > "$REPO/only.md"
+# The ruff family sees no .py, so a format-dirty .md is invisible to it...
+( cd "$REPO" && "$LINT_SH" --check --only ruff only.md >/dev/null 2>&1 )
+RC_RUFF=$?
+# ...but the mdformat family flags exactly this file.
+( cd "$REPO" && "$LINT_SH" --check --only mdformat only.md >/dev/null 2>&1 )
+RC_MD=$?
+if [[ "$RC_RUFF" -eq 0 ]]; then pass "--only ruff ignores a dirty .md"; else fail "--only ruff should ignore a dirty .md, rc=$RC_RUFF"; fi
+if [[ "$RC_MD" -ne 0 ]]; then pass "--only mdformat flags a dirty .md"; else fail "--only mdformat should flag a dirty .md"; fi
 
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""

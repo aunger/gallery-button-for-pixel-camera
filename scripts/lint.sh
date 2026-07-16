@@ -5,9 +5,16 @@
 #   scripts/lint.sh FILE [FILE ...]   lint the named files
 #   scripts/lint.sh --all             lint every tracked file in the tree
 #
+# Options (combine with either form above):
+#   --check                 run each tool in its check-only invocation and report,
+#                           rather than auto-fixing. See "Check mode" below.
+#   --only ruff|mdformat|ktlint|hygiene
+#                           run only one tool family, skipping the others.
+#
 # This is the single source of truth for "run the linters". The git pre-commit
-# hook (scripts/git-hooks/pre-commit) calls it with the staged file set; a
-# future CI job could call it with --all and reuse the exact same invocations.
+# hook (scripts/git-hooks/pre-commit) calls it with the staged file set; the CI
+# lint workflow (.github/workflows/lint.yml) calls it with --check --only <fam>
+# --all, so the hook and CI share one definition of how each tool runs.
 #
 # Each tool is resolved by explicit path under $LINT_BIN_DIR (default
 # $HOME/.local/bin), where .claude/hooks/session-start.sh installs it at
@@ -16,34 +23,69 @@
 # run time (issue #667). Point $LINT_BIN_DIR elsewhere to run against tools
 # installed in a different location (the test harness does this).
 #
-# The formatters run as auto-fixers where they support it (ruff --fix, ruff
-# format, mdformat, ktlint --format) and rewrite files in place. lint.sh exits
-# non-zero if any tool reports a problem (an unfixable violation, or a fixer
-# that had to change a file). Detecting which staged files a fixer touched, so
-# the commit can be aborted with a re-stage message, is the caller's job; see
-# scripts/git-hooks/pre-commit.
+# Default (fix) mode: the formatters run as auto-fixers where they support it
+# (ruff --fix, ruff format, mdformat, ktlint --format) and rewrite files in
+# place. lint.sh exits non-zero if any tool reports a problem (an unfixable
+# violation, or a fixer that had to change a file). Detecting which staged files
+# a fixer touched, so the commit can be aborted with a re-stage message, is the
+# caller's job; see scripts/git-hooks/pre-commit.
+#
+# Check mode (--check): each fixer runs in its check-only invocation instead:
+# `ruff check` (no --fix), `ruff format --check`, `mdformat --check`, and
+# `ktlint` (no --format). The read-only hygiene checks (check-yaml, check-toml,
+# check-merge-conflict, check-added-large-files) are unchanged. The two
+# whitespace fixers (trailing-whitespace-fixer, end-of-file-fixer) have no
+# check-only mode, so they run as usual and their non-zero exit on any change
+# fails the run, without altering the pass/fail contract. On a clean tree check
+# mode writes nothing and exits 0.
 
 set -uo pipefail
 
 LINT_BIN_DIR="${LINT_BIN_DIR:-$HOME/.local/bin}"
 
 usage() {
-    echo "usage: lint.sh FILE [FILE ...] | --all" >&2
+    echo "usage: lint.sh [--check] [--only ruff|mdformat|ktlint|hygiene] FILE [FILE ...] | --all" >&2
     exit 2
 }
 
 # ---------------------------------------------------------------------------
-# Resolve the target file list.
+# Parse options, then resolve the target file list.
 # ---------------------------------------------------------------------------
+CHECK=0
+ONLY=""
+ALL=0
 declare -a FILES=()
-if [[ "${1:-}" == "--all" ]]; then
-    [[ $# -eq 1 ]] || usage
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --check) CHECK=1; shift ;;
+        --only)
+            ONLY="${2:-}"
+            case "$ONLY" in
+                ruff | mdformat | ktlint | hygiene) ;;
+                *) usage ;;
+            esac
+            shift 2
+            ;;
+        --all) ALL=1; shift ;;
+        --) shift; FILES+=("$@"); break ;;
+        -*) usage ;;
+        *) FILES+=("$1"); shift ;;
+    esac
+done
+
+if [[ $ALL -eq 1 ]]; then
+    # --all lints the whole tree and takes no explicit file arguments.
+    [[ ${#FILES[@]} -eq 0 ]] || usage
     mapfile -d '' -t FILES < <(git ls-files -z)
-elif [[ $# -ge 1 ]]; then
-    FILES=("$@")
-else
+elif [[ ${#FILES[@]} -eq 0 ]]; then
     usage
 fi
+
+# want FAMILY -> true if that tool family should run, honoring --only. With no
+# --only, every family runs.
+want() {
+    [[ -z "$ONLY" || "$ONLY" == "$1" ]]
+}
 
 # Keep only files that still exist as regular files. The pre-commit hook passes
 # the ACM (added/copied/modified) set, so deletions never reach here, but a
@@ -87,32 +129,59 @@ done
 
 # ---------------------------------------------------------------------------
 # Run each tool, resolved by explicit path. status becomes 1 if any tool fails,
-# but every tool still runs so a single pass applies all available fixes.
+# but every selected tool still runs so a single pass applies all available
+# fixes (fix mode) or reports every violation (check mode).
 # ---------------------------------------------------------------------------
 status=0
 run() {
     "$@" || status=1
 }
 
-if [[ ${#TEXT[@]} -gt 0 ]]; then
-    run "$LINT_BIN_DIR/trailing-whitespace-fixer" "${TEXT[@]}"
-    run "$LINT_BIN_DIR/end-of-file-fixer" "${TEXT[@]}"
+# hygiene family: the six generic pre-commit-hooks checks. These behave
+# identically in fix and check mode -- the read-only checks never write, and the
+# two whitespace fixers have no check-only mode, so they run as usual and fail
+# the run via their exit status if they change anything.
+if want hygiene; then
+    if [[ ${#TEXT[@]} -gt 0 ]]; then
+        run "$LINT_BIN_DIR/trailing-whitespace-fixer" "${TEXT[@]}"
+        run "$LINT_BIN_DIR/end-of-file-fixer" "${TEXT[@]}"
+    fi
+    run "$LINT_BIN_DIR/check-merge-conflict" "${FILES[@]}"
+    run "$LINT_BIN_DIR/check-added-large-files" "${FILES[@]}"
+    [[ ${#YAML[@]} -gt 0 ]] && run "$LINT_BIN_DIR/check-yaml" "${YAML[@]}"
+    [[ ${#TOML[@]} -gt 0 ]] && run "$LINT_BIN_DIR/check-toml" "${TOML[@]}"
 fi
-run "$LINT_BIN_DIR/check-merge-conflict" "${FILES[@]}"
-run "$LINT_BIN_DIR/check-added-large-files" "${FILES[@]}"
-[[ ${#YAML[@]} -gt 0 ]] && run "$LINT_BIN_DIR/check-yaml" "${YAML[@]}"
-[[ ${#TOML[@]} -gt 0 ]] && run "$LINT_BIN_DIR/check-toml" "${TOML[@]}"
 
-if [[ ${#PY[@]} -gt 0 ]]; then
-    run "$LINT_BIN_DIR/ruff" check --fix "${PY[@]}"
-    run "$LINT_BIN_DIR/ruff" format "${PY[@]}"
+# ruff family: lint + format Python.
+if want ruff && [[ ${#PY[@]} -gt 0 ]]; then
+    if [[ $CHECK -eq 1 ]]; then
+        run "$LINT_BIN_DIR/ruff" check "${PY[@]}"
+        run "$LINT_BIN_DIR/ruff" format --check "${PY[@]}"
+    else
+        run "$LINT_BIN_DIR/ruff" check --fix "${PY[@]}"
+        run "$LINT_BIN_DIR/ruff" format "${PY[@]}"
+    fi
 fi
 
+# mdformat family: format Markdown.
 # --wrap keep preserves this repo's one-sentence-per-line prose (see
 # .claude/rules/prose-style.md); --number keeps ordered-list numbering
 # sequential. These match the retired .pre-commit-config.yaml mdformat args.
-[[ ${#MD[@]} -gt 0 ]] && run "$LINT_BIN_DIR/mdformat" --wrap keep --number "${MD[@]}"
+if want mdformat && [[ ${#MD[@]} -gt 0 ]]; then
+    if [[ $CHECK -eq 1 ]]; then
+        run "$LINT_BIN_DIR/mdformat" --check --wrap keep --number "${MD[@]}"
+    else
+        run "$LINT_BIN_DIR/mdformat" --wrap keep --number "${MD[@]}"
+    fi
+fi
 
-[[ ${#KT[@]} -gt 0 ]] && run "$LINT_BIN_DIR/ktlint" --format "${KT[@]}"
+# ktlint family: format Kotlin.
+if want ktlint && [[ ${#KT[@]} -gt 0 ]]; then
+    if [[ $CHECK -eq 1 ]]; then
+        run "$LINT_BIN_DIR/ktlint" "${KT[@]}"
+    else
+        run "$LINT_BIN_DIR/ktlint" --format "${KT[@]}"
+    fi
+fi
 
 exit "$status"
