@@ -17,7 +17,16 @@
 # Install locations (override via the environment if needed):
 #   $KTLINT_BIN_DIR/ktlint            wrapper script on PATH (default ~/.local/bin)
 #   $KTLINT_JAR_DIR/ktlint-cli-*.jar  the verified JAR (default ~/.local/lib/ktlint)
-# Idempotent: if both already exist, it does nothing.
+# Idempotent: if both already exist, it does nothing (beyond the stale-JAR
+# cleanup below).
+#
+# On a KTLINT_VERSION bump, the previous version's JAR is not overwritten (the
+# filename is version-suffixed) and the wrapper is simply repointed at the new
+# one, so the old JAR would otherwise be left behind in $KTLINT_JAR_DIR forever
+# (issue #700). cleanup_stale_jars() removes every ktlint-cli-*-all.jar in that
+# directory other than the one this script's KTLINT_VERSION currently names,
+# once that current JAR is confirmed present, whether this run just verified
+# and installed it or found it already there.
 #
 # When bumping KTLINT_VERSION, update KTLINT_SHA256 to the new release's
 # published checksum from
@@ -33,8 +42,25 @@ KTLINT_JAR_DIR="${KTLINT_JAR_DIR:-$HOME/.local/lib/ktlint}"
 KTLINT_JAR="$KTLINT_JAR_DIR/ktlint-cli-$KTLINT_VERSION-all.jar"
 KTLINT_BIN="$KTLINT_BIN_DIR/ktlint"
 
+# Remove any previously installed ktlint-cli-*-all.jar other than the current
+# KTLINT_VERSION's, left behind by an earlier version bump. Only called once
+# the current JAR is confirmed on disk, so a failed download never costs us
+# the previously working install.
+cleanup_stale_jars() {
+    local jar
+    [[ -d "$KTLINT_JAR_DIR" ]] || return 0
+    shopt -s nullglob
+    for jar in "$KTLINT_JAR_DIR"/ktlint-cli-*-all.jar; do
+        [[ "$jar" == "$KTLINT_JAR" ]] && continue
+        echo "[install-ktlint] removing stale $(basename "$jar")"
+        rm -f "$jar"
+    done
+    shopt -u nullglob
+}
+
 if [[ -x "$KTLINT_BIN" && -f "$KTLINT_JAR" ]]; then
     echo "[install-ktlint] ktlint $KTLINT_VERSION present--skip"
+    cleanup_stale_jars
     exit 0
 fi
 
@@ -60,4 +86,5 @@ cat > "$KTLINT_BIN" << EOF
 exec java -jar "$KTLINT_JAR" "\$@"
 EOF
 chmod +x "$KTLINT_BIN"
+cleanup_stale_jars
 echo "[install-ktlint] ktlint installed and SHA-256 verified"
