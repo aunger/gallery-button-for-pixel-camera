@@ -54,6 +54,7 @@ The Orchestrator is not a Reviewer or a Programmer.
 **May:**
 
 - Create local Git branches to keep tasks separate
+- Add or remove GitHub labels per the transition tables in this document
 - Read project instructions (AGENTS.md and the files it references)
 - Dispatch and communicate with subagents
   - Replace subagents, reluctantly and when necessary, to complete a workflow
@@ -261,8 +262,7 @@ PR routing (Monitor loop):
     Relay `step "..." -> ...`, `FAIL [...] ...`, `summary`, and per-check summary rows to the user as informational test-result deltas; they do NOT end the loop or start a new Author round.
     if Monitor emits `drain poll found no new diagnostic signals` immediately followed by a Blocked or Infra line -> goto undiagnosedTerminal
     (Note: the attributed `Blocked by: <name>` form already names the blocking check in the per-check summary block and the terminal suffix, so the Monitor suppresses the drain flag in that case. The `goto undiagnosedTerminal` branch therefore applies only to a bare `Blocked`/`Infra` line that the Monitor itself flagged as undiagnosed.)
-    if Monitor emits a Blocked line where the terminal ends with `[label gate]` (the ` by: ...` suffix names only label-gate checks) -> clear the silentVanish re-launch flag; inform the user only a process-label gate blocks the merge (code is review-approved); do NOT route to a new Author round; goto surfaceBeforeMergingRequirements (label-gate path)
-    // The Orchestrator does not auto-remove the blocking label (issue #516, Step 8a): it is a user-controlled process label needing human judgment.
+    if Monitor emits a Blocked line where the terminal ends with `[label gate]` (the ` by: ...` suffix names only label-gate checks) -> clear the silentVanish re-launch flag; goto labelGateBlock
     if Monitor emits a Blocked line  -> clear the silentVanish re-launch flag; goto newAuthor
     if Monitor emits an Infra line   -> clear the silentVanish re-launch flag; escalate to user; stop
     if Monitor times out (30 min)    -> escalate to user; stop
@@ -271,21 +271,36 @@ PR routing (Monitor loop):
       clear the silentVanish re-launch flag
       goto surfaceBeforeMergingRequirements (entered on the Clear path)
 
+labelGateBlock:
+  // Step 8a's original design (issue #516). `orchestrating` is the only blocking label
+  // expected here: `changes requested`/`changes done` clear when the Reviewer returns, and
+  // `verification needed` isn't applied until `surfaceBeforeMergingRequirements`, downstream
+  // of this branch. Never auto-remove `verification needed`--it is real outstanding process
+  // state, not bookkeeping. Removing `orchestrating` early is fine; nothing in this document
+  // treats it as a concurrency guard.
+  If `orchestrating` is the only blocking label currently applied to the PR (the expected case): apply this transition to the PR:
+
+    | Remove label    |
+    | --------------- |
+    | `orchestrating` |
+
+    Inform the user that a process-label gate blocked the merge (code is review-approved) and that the Orchestrator removed the blocking label automatically.
+    Re-launch the Monitor tool call (same command as the original, fresh invocation).
+    Resume the routing above from "Act only on the terminal lines..." with the fresh invocation.
+  Otherwise (`verification needed`, `changes requested`, or `changes done` is applied instead of, or alongside, `orchestrating`): this is an unexpected state the routing above should not produce. Do not remove any label; escalate to the user; stop.
+
 surfaceBeforeMergingRequirements:
   // Surfaces outstanding before-merging requirements (unautomated verification steps,
-  // changes outside the repo). Entered on the Clear path or the label-gate path; on the
-  // latter the Reviewer already gave LGTM, so the code is review-approved even though a
-  // process label still blocks the merge. The Orchestrator does not scan the issue or PR itself.
+  // changes outside the repo). Entered on the Clear path. The Orchestrator does not scan
+  // the issue or PR itself.
   Dispatch a Verification Planner sub-agent using the dispatch template.
   The planner assembles the before-merging list and files a tracking issue per item (see verification_planning.md). It does not consult the user.
-  If the Planner reports its before-merging list is empty:
-    if entered on the Clear path: this step is complete; apply this transition to **both the issue and the PR**:
+  If the Planner reports its before-merging list is empty: this step is complete; apply this transition to **both the issue and the PR**:
 
-      | Add label |
-      |---|
-      | `verified` |
+    | Add label |
+    |---|
+    | `verified` |
 
-    if entered on the label-gate path: this step is complete, but do NOT apply `verified`; a human must still remove the blocking label before the PR may merge. Inform the user of this.
   Otherwise, relay the before-merging list to the user verbatim, and apply this transition to the PR:
 
   | Add label |
@@ -293,7 +308,7 @@ surfaceBeforeMergingRequirements:
   | `verification needed` |
 
   Dispatch a Verification Agent (see pr_verify.md) to carry out those items; it does not consult the user.
-  Route on its terminal signal per "Routing on the Verification Agent's signal" above, EXCEPT on the label-gate path a `Verification passed` signal only removes `verification needed`: do NOT add `verified` and do NOT treat the PR as mergeable, since the process label still blocks the merge until a human removes it.
+  Route on its terminal signal per "Routing on the Verification Agent's signal" above.
 
 undiagnosedTerminal:
   // Issue #410 (Run G, issue #402): "drain poll found no new diagnostic
@@ -363,7 +378,7 @@ Orchestrator-specific notes:
 
 - The 30-minute escalation threshold is enforced by `timeout_ms: 1800000` on the Monitor call--no elapsed-time tracking needed.
 - `step`/`FAIL`/`SKIP`/`PASS` lines, `summary` header lines, and per-check summary rows are informational test-result deltas, not terminal outcomes: relay them to the user but do not start a new Author round. Only a `Blocked` (or `Blocked by: ...`) line does that.
-- The `Blocked by: <name>` attributed form (issue #516) names which check-run blocked CI. A terminal ending with `[label gate]` means only a process-label gate (not a code/test failure) is blocking; see the label-gate branch in the Monitor loop above.
+- The `Blocked by: <name>` attributed form (issue #516) names which check-run blocked CI. A terminal ending with `[label gate]` means only a process-label gate (not a code/test failure) is blocking; the Orchestrator removes the blocking label and re-launches the Monitor rather than routing a new Author round (see the `labelGateBlock` branch in the Monitor loop above).
 - Do not subscribe to PR events or delay dispatching the Reviewer while waiting for CI; the Monitor loop replaces that pattern.
 
 ## Delegation rules
