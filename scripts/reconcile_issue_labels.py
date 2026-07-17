@@ -2,20 +2,22 @@
 """Reconcile linked-issue label propagation across every open pull request.
 
 scripts/propagate_issue_labels.py runs from a `pull_request` webhook event
-(opened, or edited with a body change) and only ever looks at the one PR that
-triggered it. That covers a closing relationship declared in the PR body
-("Fixes #N" and its variants), but GitHub has no webhook event for linking a
-PR to an issue via the "Development" sidebar after the PR is already open.
-A PR linked that way, with no subsequent body edit, would otherwise never be
-revisited, and its issue's labels would silently never propagate--exactly
-the "cross-reference" case the GraphQL-based detection in
-propagate_issue_labels.py was chosen to handle in the first place (see
-issue #621).
+and only ever looks at the one PR that triggered it. GitHub fires no webhook
+event for linking a PR to an issue via the "Development" sidebar after the
+PR is already open, so propagate-issue-labels.yml widened its trigger types
+to cover that PR the next time it sees ordinary activity (a push, a reopen,
+a ready-for-review flip, a review request)--but a PR that is sidebar-linked
+and then sees none of those events before merge would still never be
+revisited, and its issue's labels would silently never propagate.
 
-This script closes that gap by periodically walking every open pull request
-and applying scripts/propagate_issue_labels.py's exact propagation rule
-(including the mutual-exclusion skip) to each one. It is meant to run on a
-schedule (see .github/workflows/reconcile-issue-labels.yml), not per event.
+This script closes that residual gap by walking every open pull request and
+applying scripts/propagate_issue_labels.py's exact propagation rule
+(including the mutual-exclusion skip) to each one. It is meant to be run
+on demand--locally, or by dispatching
+.github/workflows/reconcile-issue-labels.yml in Actions--rather than on a
+schedule: the gap it covers is already narrow after the trigger widening
+above, so polling every open PR indefinitely on a timer was judged not
+worth the ongoing cost (see issue #621).
 
 Usage:
     python3 scripts/reconcile_issue_labels.py

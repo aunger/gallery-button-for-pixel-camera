@@ -18,13 +18,14 @@ mutual-exclusion enforcement to remove a label the PR already carries--an
 existing PR label always wins over a conflicting label being copied in from a
 linked issue. See labels_to_propagate() for the exact rule.
 
-This module is also imported by scripts/reconcile_issue_labels.py, which
-applies the same rule across every open PR on a schedule. That script exists
-because GitHub fires no webhook event when a PR is linked to an issue via the
-"Development" sidebar after the PR is already open with no further body
-edit--the pull_request-triggered workflow that runs this module's main()
-would otherwise never see that PR again. See reconcile_issue_labels.py's
-docstring for the full rationale.
+The pull_request trigger for this module's main() (see
+.github/workflows/propagate-issue-labels.yml) covers most sidebar-linked PRs
+by re-running on their next ordinary activity, since GitHub fires no webhook
+event for the sidebar-link action itself. This module is also imported by
+scripts/reconcile_issue_labels.py, an on-demand tool that applies the same
+rule across every open PR for the residual case of a PR that sees no further
+activity before merge. See reconcile_issue_labels.py's docstring for the
+full rationale.
 
 Usage:
     python3 scripts/propagate_issue_labels.py

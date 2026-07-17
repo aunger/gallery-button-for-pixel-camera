@@ -7,14 +7,30 @@ name: Propagate issue labels to linked PR
 # exception that protects an existing PR label from an indirect
 # mutual-exclusion removal.
 #
-# Runs on "opened" (the closing relationship may already be declared in the
-# initial body) or "edited" where the body itself changed
-# (github.event.changes.body is only present when the body was part of the
-# edit), so unrelated edits (title, labels, base branch) do not re-trigger it.
+# GitHub fires no webhook event for linking a PR to an issue via the
+# "Development" sidebar after the PR is already open, so a closing
+# relationship established that way, with no body edit, cannot be caught by a
+# single trigger type. Rather than run on a perpetual schedule to cover that
+# gap, this runs on every pull_request event type that commonly recurs during
+# a PR's normal review lifecycle in this repo (a fresh push, a reopen, a
+# ready-for-review flip, a review request), so most sidebar-linked PRs get
+# reconciled by their own ordinary activity. "labeled"/"unlabeled" are
+# deliberately excluded: re-running on "unlabeled" would re-apply a label a
+# human just removed on purpose, clobbering their edit.
+#
+# "edited" only re-runs when the body itself changed
+# (github.event.changes.body is only present then), so unrelated edits
+# (title, base branch) do not re-trigger it. Every other listed type always
+# runs, since none of them carry a "changes" object to gate on.
+#
+# A PR that gets sidebar-linked and then sees none of these events before
+# merge is not covered automatically; scripts/reconcile_issue_labels.py is
+# available to reconcile every open PR on demand (run locally, or dispatch
+# it in Actions) for that residual case.
 
 on:
   pull_request:
-    types: [opened, edited]
+    types: [opened, edited, reopened, synchronize, ready_for_review, review_requested]
 
 permissions:
   issues: write
@@ -23,7 +39,7 @@ permissions:
 jobs:
   propagate-issue-labels:
     runs-on: ubuntu-latest
-    if: github.event.action == 'opened' || github.event.changes.body
+    if: github.event.action != 'edited' || github.event.changes.body
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
