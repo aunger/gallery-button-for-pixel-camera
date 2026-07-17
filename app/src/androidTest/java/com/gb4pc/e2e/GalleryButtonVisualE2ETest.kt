@@ -208,6 +208,16 @@ class GalleryButtonVisualE2ETest {
      * GREEN-filled gallery screen. GREEN coverage after tap must be below 10%.
      *
      * An empty gallery should show a black empty state (per mock-gallery's design), not GREEN.
+     *
+     * **Post-tap wait is a poll, not a fixed pause (issue #241, same race as #705).**
+     *
+     * A successful tap replaces the full-screen green MockCameraActivity with the mock
+     * gallery's black empty state only after LastPhotoActivity's cold start, which test3a
+     * documents at ~1.4 s on the CI emulator. A fixed 1 s pause therefore screenshotted the
+     * still-green pre-tap frame and failed at ~87% GREEN even though the tap had worked
+     * (test3a passes on this same unlocked tap path with a post-tap poll).
+     * [E2EFixture.waitForGreenCoverageBelow] waits for the green feed to actually vanish,
+     * bounded so a genuinely broken tap still fails the assertion below.
      */
     @Test
     fun test2a_emptyGalleryNoGreenAfterTap() {
@@ -221,7 +231,14 @@ class GalleryButtonVisualE2ETest {
         Screenshot.saveForArtifact(s1, "2a-s1.png")
 
         fixture.tapOverlay()
-        fixture.pause(1000)
+
+        // Poll up to 15 s for the tap's result (the mock gallery's black empty state) to replace
+        // the full-screen green mock camera; a fixed 1 s pause races LastPhotoActivity's cold
+        // start (issue #241). The poll's return value is discarded: it only gates the wait, and
+        // the assertion below re-measures full-screen coverage on a fresh screenshot against the
+        // original 10% threshold. A no-op tap leaves the green camera on screen, so the poll
+        // times out and the assertion still fails.
+        fixture.waitForGreenCoverageBelow(maxCoverage = 0.10f, timeoutMs = 15_000L)
 
         val s2 = Screenshot.captureScreen()
         Screenshot.saveForArtifact(s2, "2a-s2.png")
