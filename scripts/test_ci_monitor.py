@@ -68,6 +68,14 @@ Covers:
        field as well as its `name`, so a suite-shaped query surfaces a marker
        whose distinguishing text lives in `suite` (name matching still works,
        and a pattern in neither still suppresses)
+  (ay) #707 latest_check_runs: same-named check runs collapse to the latest
+       each (by started_at then id); the raw payload's stale failure reads
+       Blocked while the collapsed one reads all_passed; distinct names and
+       unnamed runs are preserved; only the latest run is a diagnostic target
+  (az) #707 main(): a stale label-gate re-run (failure) between two successes
+       does not outvote the authoritative latest success -- the monitor
+       terminates Clear (mergeable_state=clean), lists the gate once, and polls
+       only the latest run's jobs/artifacts
 
 No network calls required; no GITHUB_TOKEN needed.
 Run this file directly to execute the suite: exits 0 on success, non-zero on failure.
@@ -4679,6 +4687,235 @@ def main() -> int:
         "--include-fail suite-shaped pattern matches the marker's suite field",
         "--include-fail suite pattern: FAIL not surfaced via suite; output: %r" % out_ax_fail,
     )
+
+    # ── (ay) #707 latest_check_runs: same-named re-runs collapse to the latest ─────
+    print(
+        "\n=== (ay) #707 latest_check_runs: same-named check runs collapse to the latest each ==="
+    )
+
+    # The exact shape from issue #707: one named check ('No blocking labels')
+    # recurs three times against the same commit as a label was added then
+    # removed, leaving a stale middle 'failure' between two 'success' runs. Only
+    # the most recent (highest started_at / id) is authoritative.
+    LABEL_GATE_3 = {
+        "total_count": 3,
+        "check_runs": [
+            {
+                "id": 87686988990,
+                "name": "No blocking labels",
+                "status": "completed",
+                "conclusion": "success",
+                "started_at": "2026-07-16T16:57:43Z",
+                "app": {"slug": "github-actions"},
+                "details_url": "https://github.com/%s/%s/actions/runs/111" % (OWNER_T, REPO_T),
+            },
+            {
+                "id": 87687158072,
+                "name": "No blocking labels",
+                "status": "completed",
+                "conclusion": "failure",
+                "started_at": "2026-07-16T16:58:25Z",
+                "app": {"slug": "github-actions"},
+                "details_url": "https://github.com/%s/%s/actions/runs/222" % (OWNER_T, REPO_T),
+            },
+            {
+                "id": 87688242514,
+                "name": "No blocking labels",
+                "status": "completed",
+                "conclusion": "success",
+                "started_at": "2026-07-16T17:02:58Z",
+                "app": {"slug": "github-actions"},
+                "details_url": "https://github.com/%s/%s/actions/runs/333" % (OWNER_T, REPO_T),
+            },
+        ],
+    }
+
+    # Before collapsing, the stale 'failure' makes the raw payload read Blocked --
+    # this is the bug in issue #707.
+    check(
+        ci_monitor.parse_check_result(LABEL_GATE_3) == "Blocked",
+        "raw payload (with the stale failure) still reads Blocked -- documents the bug",
+        "expected raw Blocked; got %r" % ci_monitor.parse_check_result(LABEL_GATE_3),
+    )
+
+    collapsed_ay = ci_monitor.latest_check_runs(LABEL_GATE_3)
+    check(
+        len(collapsed_ay["check_runs"]) == 1,
+        "the three same-named runs collapse to a single surviving run",
+        "expected 1 kept run; got %r" % (collapsed_ay["check_runs"],),
+    )
+    check(
+        collapsed_ay["check_runs"][0]["id"] == 87688242514
+        and collapsed_ay["check_runs"][0]["conclusion"] == "success",
+        "the surviving run is the most recent one (the authoritative success)",
+        "wrong surviving run; got %r" % (collapsed_ay["check_runs"][0],),
+    )
+    check(
+        ci_monitor.parse_check_result(collapsed_ay) == "all_passed",
+        "collapsed payload reads all_passed, matching GitHub's mergeable_state=clean",
+        "expected all_passed after collapse; got %r" % ci_monitor.parse_check_result(collapsed_ay),
+    )
+    rows_ay = ci_monitor.parse_check_summary(collapsed_ay, "No blocking labels")
+    check(
+        len(rows_ay) == 1 and not rows_ay[0]["blocking"],
+        "the collapsed summary shows one non-blocking row for the label gate",
+        "expected one non-blocking row; got %r" % (rows_ay,),
+    )
+    # parse_actions_targets on the collapsed payload discovers only the latest
+    # run, so the stale run's jobs are never polled for diagnostics either.
+    targets_ay = ci_monitor.parse_actions_targets(collapsed_ay)
+    check(
+        targets_ay == [("333", None)],
+        "only the latest run (333) is a diagnostic target; stale 111/222 are dropped",
+        "expected [('333', None)]; got %r" % (targets_ay,),
+    )
+
+    # started_at is the primary recency signal; the id is only a tiebreak. A run
+    # with a newer started_at wins even if its id is numerically lower.
+    STARTED_AT_WINS = {
+        "total_count": 2,
+        "check_runs": [
+            {
+                "id": 999,
+                "name": "gate",
+                "status": "completed",
+                "conclusion": "failure",
+                "started_at": "2026-01-01T00:00:00Z",
+            },
+            {
+                "id": 1,
+                "name": "gate",
+                "status": "completed",
+                "conclusion": "success",
+                "started_at": "2026-01-02T00:00:00Z",
+            },
+        ],
+    }
+    kept_started = ci_monitor.latest_check_runs(STARTED_AT_WINS)["check_runs"]
+    check(
+        len(kept_started) == 1 and kept_started[0]["conclusion"] == "success",
+        "a newer started_at wins over a numerically higher id",
+        "started_at tiebreak wrong; got %r" % (kept_started,),
+    )
+
+    # When started_at is absent/equal, the numeric id breaks the tie.
+    ID_TIEBREAK = {
+        "total_count": 2,
+        "check_runs": [
+            {"id": 5, "name": "gate", "status": "completed", "conclusion": "failure"},
+            {"id": 9, "name": "gate", "status": "completed", "conclusion": "success"},
+        ],
+    }
+    kept_id = ci_monitor.latest_check_runs(ID_TIEBREAK)["check_runs"]
+    check(
+        len(kept_id) == 1 and kept_id[0]["id"] == 9,
+        "with no started_at, the higher id wins the tiebreak",
+        "id tiebreak wrong; got %r" % (kept_id,),
+    )
+
+    # Distinct names are all preserved, in first-appearance order; unnamed runs
+    # (name missing/None) are each passed through unchanged (the unnamed-Actions
+    # fixtures other tests rely on must not collapse).
+    MIXED = {
+        "total_count": 5,
+        "check_runs": [
+            {"id": 1, "name": "alpha", "status": "completed", "conclusion": "success"},
+            {"id": 2, "status": "completed", "conclusion": "success"},  # unnamed
+            {"id": 3, "name": "beta", "status": "completed", "conclusion": "success"},
+            {"id": 4, "status": "completed", "conclusion": "success"},  # unnamed
+            {"id": 5, "name": "alpha", "status": "completed", "conclusion": "failure"},
+        ],
+    }
+    kept_mixed = ci_monitor.latest_check_runs(MIXED)["check_runs"]
+    names_mixed = [r.get("name") for r in kept_mixed]
+    check(
+        names_mixed == ["alpha", None, "beta", None],
+        "distinct names preserved in first-appearance order; both unnamed runs kept",
+        "mixed collapse wrong; got names %r" % (names_mixed,),
+    )
+    alpha_kept = [r for r in kept_mixed if r.get("name") == "alpha"]
+    check(
+        len(alpha_kept) == 1 and alpha_kept[0]["id"] == 5,
+        "the surviving 'alpha' is its latest (id 5) run, seated at alpha's first position",
+        "alpha collapse wrong; got %r" % (alpha_kept,),
+    )
+
+    # An empty payload collapses to an empty payload (no crash).
+    check(
+        ci_monitor.latest_check_runs({"total_count": 0, "check_runs": []})["check_runs"] == [],
+        "an empty check_runs list collapses to an empty list",
+        "empty payload collapse wrong",
+    )
+
+    # ── (az) #707 main(): a stale same-named re-run no longer drives Blocked ────────
+    print(
+        "\n=== (az) #707 main(): a stale label-gate re-run does not outvote the latest success ==="
+    )
+
+    # End-to-end reproduction of issue #707 in --pr mode: the head commit carries
+    # the three 'No blocking labels' runs (stale failure between two successes),
+    # and the PR's mergeable_state is 'clean'. The monitor must collapse to the
+    # latest success and terminate Clear, not Blocked. Only the latest run (333)
+    # is a diagnostic target, so exactly one jobs/artifacts pair is fetched --
+    # the stale 111/222 runs are never polled.
+    PR_AZ = {"head": {"sha": "707f1xed"}}
+    PR_MERGEABLE_AZ = {"mergeable_state": "clean", "merged": False, "state": "open"}
+    JOBS_EMPTY_AZ = {"jobs": [{"id": 333, "name": "No blocking labels", "steps": []}]}
+    ARTS_EMPTY_AZ = {"artifacts": []}
+
+    side_effects_az = collections.deque(
+        [
+            PR_AZ,  # pulls -> sha
+            LABEL_GATE_3,  # verdict check-runs (collapsed -> latest success; reused by poll_signals)
+            JOBS_EMPTY_AZ,  # run 333 jobs -> nothing to surface
+            ARTS_EMPTY_AZ,  # run 333 artifacts -> nothing (no zip)
+            PR_MERGEABLE_AZ,  # all_passed -> mergeable_state fetch -> clean -> Clear
+        ]
+    )
+
+    def fake_request_az(url, token, raw=False):
+        return side_effects_az.popleft()
+
+    buf_az = io.StringIO()
+    with (
+        unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_az),
+        unittest.mock.patch.object(ci_monitor.time, "time", return_value=1000.0),
+        unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None),
+        unittest.mock.patch("sys.stdout", new=buf_az),
+    ):
+        rc_az = ci_monitor.main(["ci_monitor.py", "--pr", "707"])
+
+    out_az = buf_az.getvalue()
+    lines_az = out_az.splitlines()
+    check(
+        "PR#707: Clear (mergeable_state=clean)" in lines_az,
+        "the monitor terminates Clear, matching GitHub's mergeable_state=clean",
+        "expected Clear terminal; output: %r" % out_az,
+    )
+    check(
+        not any("Blocked" in ln for ln in lines_az),
+        "no Blocked terminal is emitted despite the stale failure re-run",
+        "unexpected Blocked line; output: %r" % out_az,
+    )
+    label_rows_az = [
+        ln for ln in lines_az if "No blocking labels" in ln and ln.startswith("PR#707:")
+    ]
+    check(
+        len(label_rows_az) == 1,
+        "the summary lists the label-gate check exactly once (stale duplicates collapsed)",
+        "expected 1 'No blocking labels' summary row; got %d: %r" % (len(label_rows_az), out_az),
+    )
+    check(
+        not any("[BLOCKING]" in ln for ln in label_rows_az),
+        "the surviving label-gate row is not marked [BLOCKING]",
+        "label-gate row wrongly marked blocking; output: %r" % out_az,
+    )
+    check(
+        len(side_effects_az) == 0,
+        "all 5 mocked requests consumed (only the latest run's jobs/artifacts fetched once)",
+        "request deque not drained; %d entries left" % len(side_effects_az),
+    )
+    check(rc_az == 0, "main() returned 0", "main() returned %r" % rc_az)
 
     # ── Summary ────────────────────────────────────────────────────────────────────
     print("\nResults: %d passed, %d failed." % (PASS, FAIL))

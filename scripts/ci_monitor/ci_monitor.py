@@ -338,6 +338,74 @@ def parse_pr_terminal(pr_json):
     return ""
 
 
+def _check_run_recency_key(run):
+    """Return a sort key ordering check runs oldest-to-newest (issue #707).
+
+    GitHub can attach several check runs with the same `name` to one commit when
+    a workflow re-runs: e.g. each PR-side label add/remove re-triggers the
+    label-gate workflow, so that gate's check-run name accumulates several
+    entries against the same head commit, of which only the most recent
+    conclusion is authoritative (the earlier ones are stale).
+    Recency is judged by `started_at` (ISO 8601, so lexically sortable), then by
+    the numeric check-run `id` as a monotonic tiebreak (a re-run always gets a
+    higher id). A run missing both fields sorts oldest, so a run carrying real
+    recency data always outranks one that does not.
+    """
+    started = run.get("started_at") or ""
+    try:
+        run_id = int(run.get("id"))
+    except (TypeError, ValueError):
+        run_id = -1
+    return (started, run_id)
+
+
+def latest_check_runs(check_json):
+    """Collapse same-named check runs to the latest one each (issue #707).
+
+    Returns a shallow copy of `check_json` whose `check_runs` list keeps, for
+    each distinct non-empty check-run `name`, only the most recent run (by
+    `_check_run_recency_key`); the surviving run sits at the position of that
+    name's first appearance, so the summary's row order is otherwise preserved.
+    Runs with no usable `name` are passed through unchanged (each kept), since
+    name-based identity does not apply to them and GitHub always names its own
+    check runs; this also leaves the unnamed-Actions-run fixtures other tests
+    rely on untouched.
+
+    This mirrors GitHub's own `mergeable_state`, which judges a required check by
+    its latest run per name: without it, a stale `failure` from an earlier re-run
+    of a named check (e.g. a label-gate check that briefly saw a blocking label,
+    since removed) would outvote the authoritative later `success` and drive a
+    spurious `Blocked` terminal. Feeding the collapsed payload to the verdict,
+    the summary, and the Actions-target discovery keeps all three from latching
+    onto a superseded run. `total_count` is left as-is:
+    only its zero/non-zero distinction is load-bearing (parse_check_result's
+    "no checks registered" case), and collapsing never empties a non-empty list.
+    """
+    runs = check_json.get("check_runs", [])
+    winners = {}
+    for r in runs:
+        name = r.get("name")
+        if not name:
+            continue
+        current = winners.get(name)
+        if current is None or _check_run_recency_key(r) >= _check_run_recency_key(current):
+            winners[name] = r
+    kept = []
+    emitted = set()
+    for r in runs:
+        name = r.get("name")
+        if not name:
+            kept.append(r)
+            continue
+        if name in emitted:
+            continue
+        emitted.add(name)
+        kept.append(winners[name])
+    result = dict(check_json)
+    result["check_runs"] = kept
+    return result
+
+
 def parse_check_result(check_json):
     """Map a /commits/{sha}/check-runs response to an overall result token.
 
@@ -931,6 +999,12 @@ def main(argv):
                 check_json = _request(
                     "%s/repos/%s/%s/commits/%s/check-runs" % (API_BASE, OWNER, REPO, sha), token
                 )
+                # Collapse same-named re-runs (issue #707) on the drain's own
+                # self-fetch too, so a stale run's jobs are not tracked; the
+                # main-loop caller already passes a collapsed check_json, and
+                # re-collapsing that is a no-op.
+                if check_json:
+                    check_json = latest_check_runs(check_json)
             targets = parse_actions_targets(check_json) if check_json else []
         if not targets:
             return emitted[0]
@@ -1127,6 +1201,14 @@ def main(argv):
             check_json = _request(
                 "%s/repos/%s/%s/commits/%s/check-runs" % (API_BASE, OWNER, REPO, sha), token
             )
+            # Collapse same-named check runs to the latest each (issue #707) so a
+            # stale conclusion from an earlier re-run of a named check does not
+            # outvote its authoritative latest run. The one collapsed payload
+            # then drives the verdict, the summary, and poll_signals' target
+            # discovery, keeping all three consistent with GitHub's own
+            # mergeable_state.
+            if check_json:
+                check_json = latest_check_runs(check_json)
             result = parse_check_result(check_json) if check_json else None
             summary_rows = (
                 parse_check_summary(check_json, label_gate_check_regex) if check_json else []
