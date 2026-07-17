@@ -322,6 +322,17 @@ class GalleryButtonVisualE2ETest {
      * independently of `test3a`, and a failure here reflects the secure-camera path itself,
      * not a leftover MediaStore row.
      *
+     * **Post-tap wait is a poll, not a fixed pause (issue #705).**
+     *
+     * A successful tap replaces the full-screen green MockCameraActivity with
+     * SecureViewerActivity's black empty state only after the viewer's cold start, which takes
+     * longer than 1 s on the loaded CI emulator (test3a documents ~1.4 s for the analogous
+     * mock-gallery launch). A fixed 1 s pause therefore screenshotted the still-green pre-tap
+     * frame and failed at ~87% GREEN even though the tap had worked (test5a's failures on the
+     * same locked path show 0 green pixels after its 15 s poll, proving the viewer does open).
+     * [E2EFixture.waitForGreenCoverageBelow] waits for the green feed to actually vanish,
+     * bounded so a genuinely blocked tap still fails the assertion below (the red-light case).
+     *
      * Tracking issue: #81 (locked-screen path: no new photos detected, SecureViewer shows black).
      * Do NOT skip, ignore, or quarantine this test.
      */
@@ -337,7 +348,15 @@ class GalleryButtonVisualE2ETest {
         Screenshot.saveForArtifact(s1, "4a-s1.png")
 
         fixture.tapOverlay()
-        fixture.pause(1000)
+
+        // Poll up to 15 s for the tap's result (SecureViewer's black empty state) to replace the
+        // full-screen green mock camera; a fixed 1 s pause races SecureViewerActivity's cold start
+        // (issue #705), which deterministically screenshots the still-green pre-tap frame. The
+        // poll's return value is discarded: it only gates the wait, and the assertion below
+        // re-measures full-screen coverage on a fresh screenshot against the original 10%
+        // threshold. A no-op tap (the red-light case above) leaves the green camera on screen,
+        // so the poll times out and the assertion still fails.
+        fixture.waitForGreenCoverageBelow(maxCoverage = 0.10f, timeoutMs = 15_000L)
 
         val s2 = Screenshot.captureScreen()
         Screenshot.saveForArtifact(s2, "4a-s2.png")
