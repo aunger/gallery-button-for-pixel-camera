@@ -34,7 +34,7 @@ jobs:
           python-version: '3.x'
       - name: Install Python lint tools
         run: |
-          pip install -r scripts/requirements-lint.txt
+          pip install --require-hashes -r scripts/requirements-lint.txt
           echo "LINT_BIN_DIR=$(python -c 'import sysconfig; print(sysconfig.get_path("scripts"))')" >> "$GITHUB_ENV"
       - name: Ruff check
         run: scripts/lint.sh --check --only ruff --all
@@ -48,7 +48,7 @@ jobs:
           python-version: '3.x'
       - name: Install Python lint tools
         run: |
-          pip install -r scripts/requirements-lint.txt
+          pip install --require-hashes -r scripts/requirements-lint.txt
           echo "LINT_BIN_DIR=$(python -c 'import sysconfig; print(sysconfig.get_path("scripts"))')" >> "$GITHUB_ENV"
       - name: mdformat check
         # Also runs scripts/check_md040.py (issue #689): MD040 (a fenced code
@@ -64,7 +64,7 @@ jobs:
           python-version: '3.x'
       - name: Install Python lint tools
         run: |
-          pip install -r scripts/requirements-lint.txt
+          pip install --require-hashes -r scripts/requirements-lint.txt
           echo "LINT_BIN_DIR=$(python -c 'import sysconfig; print(sysconfig.get_path("scripts"))')" >> "$GITHUB_ENV"
       - name: Hygiene checks
         run: scripts/lint.sh --check --only hygiene --all

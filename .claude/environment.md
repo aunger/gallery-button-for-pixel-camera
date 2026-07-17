@@ -61,6 +61,9 @@ Nothing is git-cloned or fetched from GitHub Releases at commit time (issue #667
 The `ktlint` JAR is stored under `~/.local/lib/ktlint/`.
 `ruff` version tracks the ruff-pre-commit pin (issue #673); `pre-commit-hooks` is the same upstream project as before, now installed from PyPI instead of cloned, and exposes each generic check as a console script.
 
+`scripts/requirements-lint.txt` is a fully resolved lock: every package, top-level and transitive, is pinned to an exact version and a SHA-256 hash, and pip installs it with `--require-hashes` so a substituted or tampered wheel is rejected (issue #699).
+Edit the top-level pins in `scripts/requirements-lint.in` and regenerate the lock with the `uv pip compile` command recorded in that file's header.
+
 ### Checks run by `scripts/lint.sh`
 
 `scripts/lint.sh` is the single source of truth for "run the linters".
