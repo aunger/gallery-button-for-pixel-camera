@@ -108,9 +108,31 @@ so the `labels` field is never sent and all existing labels remain.
 
 **Implication:** There is no way to remove *all* labels from an issue using
 `mcp__github__issue_write` alone. To drop N−1 labels, set `labels` to the one label
-you want to keep. The last remaining label cannot be removed via this tool, and the
-`GITHUB_TOKEN` environment variable also cannot help; it is read-only for the Issues
-API (write attempts return 403).
+you want to keep. The last remaining label cannot be removed via this tool, but
+`GITHUB_TOKEN` can remove it directly against the labels sub-resource endpoint; see
+"`GITHUB_TOKEN` can write labels" below, which supersedes the read-only finding this
+section used to state here.
+
+### `GITHUB_TOKEN` can write labels (supersedes the 2026-05 finding above)
+
+The 2026-05 empirical test above found that `GITHUB_TOKEN` returned 403 on `DELETE`
+and `PATCH` against the Issues API, and concluded the token was read-only for
+issue/PR writes. That conclusion does not hold for the labels sub-resource
+endpoints.
+
+**Re-verified 2026-07 (issue #710 / PR #717):** `POST /issues/{n}/labels` (add) and
+`DELETE /issues/{n}/labels/{name}` (remove) both succeed with `GITHUB_TOKEN`. A
+round trip on issue #710's own `P3` label (`scripts/update_gh_labels.sh ... --remove P3`, then `--add P3`) was confirmed by a follow-up `get_labels` read after each
+call. `scripts/update_gh_labels.sh` (issue #710) relies on this, and is the
+supported way to add or remove specific labels without the replace-all behavior of
+`mcp__github__issue_write` (see "Applying label transitions" in
+`dev_orchestration.md`).
+
+Why the 2026-05 finding differed is unconfirmed: either the fine-grained PAT's
+permissions changed since then, or the original 403 was specific to `PATCH /issues/{n}` (updating the issue resource itself) rather than the labels
+sub-resource endpoints this script uses. Treat the write-permission boundary as the
+labels sub-resource only; do not assume other Issues/PR API writes succeed with
+`GITHUB_TOKEN` without testing them individually.
 
 ### Always verify writes with a follow-up read
 

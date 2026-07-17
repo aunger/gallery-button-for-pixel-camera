@@ -94,6 +94,10 @@ scripts/update_gh_labels.sh {owner} {repo} {issue-or-PR number} --remove orchest
 Run it once per artifact a transition's note tells you to apply to (issue, PR, or both).
 See the script's own `--help` text for full usage and the required `GITHUB_TOKEN` environment variable.
 
+If `scripts/update_gh_labels.sh` exits non-zero, the transition did not fully apply--do not treat it as done.
+Retry the same call once, since a non-2xx GitHub response can be transient.
+If it still fails, do not proceed with the transition; escalate using the Orchestrator escalation/abort line below, with the script's error output as the reason token.
+
 ## Starting to orchestrate a PR
 
 When you begin orchestrating a PR (the first thing you do once you have entered the Orchestrator role for a given issue and its PR), apply this transition to **both the issue and the PR**:
