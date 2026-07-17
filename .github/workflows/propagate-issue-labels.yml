@@ -1,0 +1,36 @@
+name: Propagate issue labels to linked PR
+
+# When a pull request closes an issue via a closing-keyword relationship
+# ("Fixes #N", "Closes #N", the other variants GitHub recognizes, or a
+# manually linked issue), copies that issue's labels onto the pull request.
+# See scripts/propagate_issue_labels.py for the exact rules, including the
+# exception that protects an existing PR label from an indirect
+# mutual-exclusion removal.
+#
+# Runs on "opened" (the closing relationship may already be declared in the
+# initial body) or "edited" where the body itself changed
+# (github.event.changes.body is only present when the body was part of the
+# edit), so unrelated edits (title, labels, base branch) do not re-trigger it.
+
+on:
+  pull_request:
+    types: [opened, edited]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  propagate-issue-labels:
+    runs-on: ubuntu-latest
+    if: github.event.action == 'opened' || github.event.changes.body
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Propagate linked issue labels
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: python3 scripts/propagate_issue_labels.py

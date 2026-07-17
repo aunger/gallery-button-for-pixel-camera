@@ -1,0 +1,275 @@
+#!/usr/bin/env python3
+"""Copy a linked issue's labels onto a pull request that closes it.
+
+When a pull request closes an issue via a closing-keyword relationship
+("Fixes #N", "Closes #N", and the other variants GitHub recognizes) or via a
+manually linked issue, this applies each of that issue's labels to the pull
+request.
+
+The relationship is detected through the GitHub GraphQL API's
+``closingIssuesReferences`` field on the pull request, which is GitHub's own
+detection of closing keywords and cross-references--not a regex scan of the
+PR body, so every keyword variant and manually linked issue is covered.
+
+Labels are only ever added, never removed. A label already present on the PR
+is left alone. A candidate label is also skipped, rather than applied, when
+applying it would cause scripts/enforce_mutually_exclusive_labels.py's
+mutual-exclusion enforcement to remove a label the PR already carries--an
+existing PR label always wins over a conflicting label being copied in from a
+linked issue. See labels_to_propagate() for the exact rule.
+
+Usage:
+    python3 scripts/propagate_issue_labels.py
+
+Exit code:
+    0  the PR has no closing issue references, its closing issues carry no
+       labels, or every eligible label was applied successfully.
+    1  required configuration is missing/invalid, or fetching or applying
+       labels failed.
+
+Required environment variables:
+    GITHUB_TOKEN        Token with issues: write and pull-requests: write
+    GITHUB_REPOSITORY   Owner/repo (e.g. "aunger/gallery-button-for-pixel-camera")
+    PR_NUMBER           Number of the pull request
+"""
+
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
+
+import enforce_mutually_exclusive_labels as emxl
+
+# ---------------------------------------------------------------------------
+# GraphQL
+# ---------------------------------------------------------------------------
+
+CLOSING_ISSUES_QUERY = """
+query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      closingIssuesReferences(first: 50) {
+        nodes {
+          number
+          repository {
+            nameWithOwner
+          }
+          labels(first: 100) {
+            nodes {
+              name
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"""
+
+
+def graphql_query(query: str, variables: dict, token: str) -> dict:
+    """Execute a GitHub GraphQL query and return its "data" object.
+
+    Raises ``RuntimeError`` if the response carries a top-level "errors"
+    list (GraphQL reports errors this way even on an HTTP 200), or
+    ``urllib.error.HTTPError``/``URLError`` on request failure.
+    """
+    url = "https://api.github.com/graphql"
+    body = json.dumps({"query": query, "variables": variables}).encode()
+    req = urllib.request.Request(url, method="POST", data=body)
+    req.add_header("Authorization", f"Bearer {token}")
+    req.add_header("Accept", "application/vnd.github+json")
+    req.add_header("Content-Type", "application/json")
+    # URL is a fixed GitHub API constant; the file:// risk does not apply.
+    with urllib.request.urlopen(req) as r:  # nosemgrep
+        payload = json.loads(r.read())
+    if payload.get("errors"):
+        raise RuntimeError(f"GraphQL errors: {payload['errors']}")
+    return payload.get("data") or {}
+
+
+def fetch_closing_issue_labels(
+    owner: str,
+    name: str,
+    pr_number: int,
+    token: str,
+) -> list[str]:
+    """Return the labels of every same-repo issue that *pr_number* closes.
+
+    Cross-repository closing references (a PR in this repo closing an issue
+    in a different repo) are skipped--this repo's label automation is scoped
+    to a single repository throughout, matching the other scripts here.
+
+    Labels are returned in the order GitHub lists the closing issues and,
+    within each issue, the order it lists that issue's labels. Duplicates
+    across multiple closing issues are not removed here; that happens in
+    labels_to_propagate().
+    """
+    data = graphql_query(
+        CLOSING_ISSUES_QUERY,
+        {"owner": owner, "name": name, "number": pr_number},
+        token,
+    )
+    pull_request = (data.get("repository") or {}).get("pullRequest")
+    if not pull_request:
+        return []
+    nodes = (pull_request.get("closingIssuesReferences") or {}).get("nodes") or []
+    repo_full_name = f"{owner}/{name}"
+
+    labels: list[str] = []
+    for node in nodes:
+        if not node:
+            continue
+        node_repo = (node.get("repository") or {}).get("nameWithOwner")
+        if node_repo != repo_full_name:
+            continue
+        labels.extend(lbl["name"] for lbl in (node.get("labels") or {}).get("nodes") or [])
+    return labels
+
+
+# ---------------------------------------------------------------------------
+# Core logic
+# ---------------------------------------------------------------------------
+
+
+def labels_to_propagate(
+    current_pr_labels: list[str],
+    issue_labels: list[str],
+) -> tuple[list[str], list[str]]:
+    """Partition *issue_labels* into what to add to the PR and what to skip.
+
+    Returns (to_add, skipped):
+        to_add    issue labels, not already on the PR, that are safe to add
+        skipped   issue labels omitted because applying them would cause
+                  enforce_mutually_exclusive_labels.py to remove a label
+                  already staged on the PR (a real current PR label, or one
+                  accepted earlier in this same call)
+
+    A label already present on the PR (case-insensitively) is dropped from
+    both lists--there is nothing to do for it. A label repeated across
+    multiple closing issues is considered once.
+
+    *issue_labels* is processed in order, staging each accepted label into a
+    working copy of the PR's labels so later candidates in the same call see
+    earlier additions. This keeps one propagation run internally consistent
+    when several linked issues supply conflicting labels, while a real
+    pre-existing PR label always wins, since it seeds the working set before
+    any candidate is considered.
+    """
+    staged = list(current_pr_labels)
+    already_lower = {lbl.lower() for lbl in current_pr_labels}
+    to_add: list[str] = []
+    skipped: list[str] = []
+    seen_lower: set[str] = set()
+
+    for label in issue_labels:
+        lower = label.lower()
+        if lower in already_lower or lower in seen_lower:
+            continue
+        seen_lower.add(lower)
+
+        conflict = False
+        label_set = emxl.find_conflicting_set(label)
+        if label_set is not None and emxl.labels_to_remove(label, staged, label_set):
+            conflict = True
+        prefix = emxl.find_conflicting_prefix(label)
+        if not conflict and prefix is not None:
+            if emxl.labels_to_remove_by_prefix(label, staged, prefix):
+                conflict = True
+
+        if conflict:
+            skipped.append(label)
+            continue
+
+        to_add.append(label)
+        staged.append(label)
+
+    return to_add, skipped
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+
+def main() -> int:
+    token = os.environ.get("GITHUB_TOKEN", "")
+    repo = os.environ.get("GITHUB_REPOSITORY", "")
+    pr_number_str = os.environ.get("PR_NUMBER", "")
+
+    if not token:
+        print("Error: GITHUB_TOKEN not set.", file=sys.stderr)
+        return 1
+    if not repo:
+        print("Error: GITHUB_REPOSITORY not set.", file=sys.stderr)
+        return 1
+    if not pr_number_str:
+        print("Error: PR_NUMBER not set.", file=sys.stderr)
+        return 1
+    if "/" not in repo:
+        print(f"Error: GITHUB_REPOSITORY is not owner/repo: {repo!r}", file=sys.stderr)
+        return 1
+
+    try:
+        pr_number = int(pr_number_str)
+    except ValueError:
+        print(f"Error: PR_NUMBER is not a valid integer: {pr_number_str!r}", file=sys.stderr)
+        return 1
+
+    owner, name = repo.split("/", 1)
+
+    try:
+        issue_labels = fetch_closing_issue_labels(owner, name, pr_number, token)
+    except (urllib.error.HTTPError, urllib.error.URLError, RuntimeError) as exc:
+        print(f"Error fetching closing issues for PR #{pr_number}: {exc}", file=sys.stderr)
+        return 1
+
+    if not issue_labels:
+        print(f"PR #{pr_number} has no labeled closing issue references--nothing to do.")
+        return 0
+
+    try:
+        pr = emxl.gh_api(f"repos/{repo}/issues/{pr_number}", token=token)
+    except Exception as exc:  # noqa: BLE001
+        print(f"Error fetching PR #{pr_number}: {exc}", file=sys.stderr)
+        return 1
+
+    if not isinstance(pr, dict):
+        print(f"Error: unexpected response fetching PR #{pr_number}: {pr!r}", file=sys.stderr)
+        return 1
+
+    current_pr_labels = [lbl["name"] for lbl in pr.get("labels", [])]
+
+    to_add, skipped = labels_to_propagate(current_pr_labels, issue_labels)
+
+    if skipped:
+        print(
+            f"Skipping labels {skipped} on PR #{pr_number}: applying them would let "
+            "mutual-exclusion enforcement remove a label the PR already carries."
+        )
+
+    if not to_add:
+        print(f"No labels to propagate to PR #{pr_number}--nothing to do.")
+        return 0
+
+    try:
+        emxl.gh_api(
+            f"repos/{repo}/issues/{pr_number}/labels",
+            token=token,
+            method="POST",
+            body={"labels": to_add},
+        )
+        print(f"Applied labels {to_add} to PR #{pr_number}.")
+    except urllib.error.HTTPError as exc:
+        print(f"Error applying labels {to_add} to PR #{pr_number}: {exc}", file=sys.stderr)
+        return 1
+    except urllib.error.URLError as exc:
+        print(f"Network error applying labels {to_add} to PR #{pr_number}: {exc}", file=sys.stderr)
+        return 1
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
