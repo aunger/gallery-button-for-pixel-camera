@@ -1,0 +1,25 @@
+# Source pins for the Python helper scripts' runtime dependencies. This file
+# lists only the top-level packages; the fully resolved, hash-pinned lock that
+# pip actually installs is scripts/requirements.txt (generated from this file).
+#
+# Every package is pinned to an exact version from PyPI, a trusted language
+# package registry. The generated lock additionally pins the full transitive
+# closure to exact versions and SHA-256 hashes so pip --require-hashes can
+# refuse any artifact whose hash does not match (issue #723; same hardening as
+# scripts/requirements-lint.txt from issue #699).
+#
+# defusedxml hardens XML parsing in the CI helper scripts; requests performs
+# the GitHub API calls; PyYAML parses the workflow/config YAML.
+#
+# Regenerating the lock (do this whenever a pin here changes):
+#
+#   uv pip compile --universal --python-version 3.10 --generate-hashes \
+#       scripts/requirements.in -o scripts/requirements.txt
+#
+# --universal + --python-version 3.10 make the lock a superset that covers every
+# interpreter the install sites use (the CI runner's system python3 via pip in
+# .github/workflows/build.yml), so any marker-gated entry resolves correctly
+# wherever pip runs it under --require-hashes.
+defusedxml==0.7.1
+requests==2.34.2
+PyYAML==6.0.3

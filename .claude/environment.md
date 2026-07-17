@@ -94,6 +94,11 @@ Findings block the PR.
 The engine is installed from `scripts/requirements-semgrep.txt`, a hash-pinned lock (top-level pin in `scripts/requirements-semgrep.in`), with `--require-hashes` (issue #723); the rulesets are still fetched from the Semgrep registry at scan time, so the weekly run keeps picking up new rules.
 Regenerate the lock with the `uv pip compile` command recorded in that `.in` file's header.
 
+### CI helper-script dependencies
+
+The Python helper scripts' runtime deps (`defusedxml`, `requests`, `PyYAML`) install in CI (`.github/workflows/build.yml`) from `scripts/requirements.txt`, a hash-pinned lock (top-level pins in `scripts/requirements.in`), with `--require-hashes` (issue #723).
+Regenerate the lock with the `uv pip compile` command recorded in that `.in` file's header.
+
 ______________________________________________________________________
 
 ## GitHub MCP tool quirks
