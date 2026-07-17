@@ -99,7 +99,7 @@ jobs:
         if: steps.diff_check.outputs.needs_full_build == 'true'
         run: |
           python3 -m venv "$RUNNER_TEMP/lintvenv"
-          "$RUNNER_TEMP/lintvenv/bin/pip" install --quiet -r scripts/requirements-lint.txt
+          "$RUNNER_TEMP/lintvenv/bin/pip" install --quiet --require-hashes -r scripts/requirements-lint.txt
           echo "LINT_BIN_DIR=$RUNNER_TEMP/lintvenv/bin" >> "$GITHUB_ENV"
 
       - name: Run shell script unit tests

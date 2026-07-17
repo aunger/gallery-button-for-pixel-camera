@@ -183,11 +183,19 @@ echo "[session-start] Step 3a: ensuring ktlint is installed..."
 
 # STEP 3b: Python lint tools (ruff, pre-commit-hooks checks, mdformat), from PyPI.
 #
-# Installed from scripts/requirements-lint.txt, each pinned to an exact version
-# on PyPI.  This replaces the pre-commit framework install (issue #667):
+# Installed from scripts/requirements-lint.txt, a fully resolved lock in which
+# every package (top-level and transitive) is pinned to an exact version and a
+# SHA-256 hash.  This replaces the pre-commit framework install (issue #667):
 # pre-commit-hooks provides the six generic hygiene checks as console scripts,
 # ruff lints/formats Python, and mdformat (with its plugins) formats Markdown.
-# See requirements-lint.txt for the per-package rationale and pins.
+# See requirements-lint.in for the per-package rationale and the top-level pins
+# the lock is generated from.
+#
+# --require-hashes makes pip refuse to install anything whose artifact does not
+# match a hash in the lock, so a compromised or substituted wheel on PyPI (or an
+# intercepted download) cannot slip in (issue #699).  It also forces every
+# dependency to be hash-pinned, which is why the lock lists the full transitive
+# closure rather than just the top-level tools.
 #
 # The install is gated on the SHA-256 of requirements-lint.txt: a marker file
 # records the hash that was last installed, so any edit to the pinned versions
@@ -202,7 +210,7 @@ if [[ -f "$LINT_MARKER" && "$(cat "$LINT_MARKER" 2>/dev/null)" == "$REQ_SHA" ]];
     echo "[session-start] Step 3b: Python lint tools up to date--skip"
 else
     echo "[session-start] Step 3b: installing Python lint tools..."
-    pip install --user --force-reinstall --quiet -r "$LINT_REQ"
+    pip install --user --force-reinstall --require-hashes --quiet -r "$LINT_REQ"
     mkdir -p "$(dirname "$LINT_MARKER")"
     echo "$REQ_SHA" > "$LINT_MARKER"
     echo "[session-start] Step 3b: Python lint tools installed"

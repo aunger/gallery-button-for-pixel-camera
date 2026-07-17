@@ -1,0 +1,34 @@
+# Source pins for the Python lint/format tools. This file lists only the
+# top-level tools; the fully resolved, hash-pinned lock that pip actually
+# installs is scripts/requirements-lint.txt (generated from this file).
+#
+# Every tool is pinned to an exact version from PyPI, a trusted language
+# package registry. Nothing here is fetched from GitHub Releases and no
+# hook repository is git-cloned at commit time (issue #667).
+#
+# ruff tracks the version pinned for the ruff-pre-commit hook (issue #673).
+# pre-commit-hooks provides the six generic hygiene checks as console
+# scripts (trailing-whitespace-fixer, end-of-file-fixer, check-yaml,
+# check-toml, check-merge-conflict, check-added-large-files); it is the same
+# pre-commit/pre-commit-hooks project, just installed from PyPI instead of
+# cloned. mdformat and its plugins format Markdown (issue #681).
+#
+# mdformat-gfm (not mdformat-tables) provides GFM pipe-table support;
+# mdformat-tables is deprecated and its repo archived. See
+# .claude/hooks/session-start.sh for the full rationale on the mdformat pins.
+#
+# Regenerating the lock (do this whenever a pin here changes):
+#
+#   uv pip compile --universal --python-version 3.10 --generate-hashes \
+#       scripts/requirements-lint.in -o scripts/requirements-lint.txt
+#
+# --universal + --python-version 3.10 make the lock a superset that covers
+# every interpreter the install sites use (system python3 in
+# .claude/hooks/session-start.sh, and setup-python's "3.x" in CI), so
+# marker-gated entries (for example tomli on Python < 3.11) resolve
+# correctly wherever pip runs it under --require-hashes.
+ruff==0.15.21
+pre-commit-hooks==6.0.0
+mdformat==1.0.0
+mdformat-gfm==1.0.0
+mdformat-frontmatter==2.1.2
