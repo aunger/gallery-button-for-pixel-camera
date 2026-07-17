@@ -20,6 +20,8 @@
 #   (k) --only runs only the named tool family
 #   (l) a tracked file over 500 KB fails --all (--enforce-all), while the
 #       file-list (hook) path leaves an unlisted large file alone
+#   (m) an .md with an unlabeled fenced code block (MD040) blocks the commit,
+#       even though mdformat itself has nothing to fix
 #
 # The lint tools are resolved from $LINT_BIN_DIR (default $HOME/.local/bin),
 # exactly as scripts/lint.sh resolves them; .claude/hooks/session-start.sh
@@ -242,6 +244,28 @@ if [[ "$RC_ALL" -ne 0 ]]; then pass "--all flags a tracked 600 KB file"; else fa
 ( cd "$REPO" && "$LINT_SH" --only hygiene small.py >/dev/null 2>&1 )
 RC_HOOK=$?
 if [[ "$RC_HOOK" -eq 0 ]]; then pass "file-list path ignores an unlisted large file"; else fail "file-list path should not flag an unlisted large file, rc=$RC_HOOK"; fi
+
+# ── (m) unlabeled fenced code block (MD040) blocks the commit ───────────────
+echo ""
+echo "=== (m) MD040 (unlabeled fence) blocks ==="
+REPO="$(new_repo)"
+printf '# Title\n\n```\nno language here\n```\n' > "$REPO/md040.md"
+RC="$(attempt_commit "$REPO")"
+if [[ "$RC" -ne 0 ]]; then pass "MD040 (unlabeled fence) -> commit blocked"; else fail "MD040 (unlabeled fence) should block"; fi
+# mdformat has no fix for a missing language, so --check should flag it too,
+# and leave the fixture untouched (nothing to auto-fix).
+REPO="$(new_repo)"
+printf '# Title\n\n```\nno language here\n```\n' > "$REPO/md040.md"
+( cd "$REPO" && "$LINT_SH" --check --only mdformat md040.md >/dev/null 2>&1 )
+RC=$?
+if [[ "$RC" -ne 0 ]]; then pass "--check flags MD040 (unlabeled fence)"; else fail "--check should flag MD040 (unlabeled fence)"; fi
+if grep -q '^```$' "$REPO/md040.md"; then pass "MD040 fixture left unmodified (no auto-fix exists)"; else fail "MD040 fixture should be left unmodified"; fi
+# A labeled fence is not a violation.
+REPO="$(new_repo)"
+printf '# Title\n\n```python\nprint(1)\n```\n' > "$REPO/labeled.md"
+( cd "$REPO" && "$LINT_SH" --check --only mdformat labeled.md >/dev/null 2>&1 )
+RC=$?
+if [[ "$RC" -eq 0 ]]; then pass "--check passes a labeled fence"; else fail "--check should pass a labeled fence, rc=$RC"; fi
 
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""

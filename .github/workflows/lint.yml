@@ -51,6 +51,8 @@ jobs:
           pip install -r scripts/requirements-lint.txt
           echo "LINT_BIN_DIR=$(python -c 'import sysconfig; print(sysconfig.get_path("scripts"))')" >> "$GITHUB_ENV"
       - name: mdformat check
+        # Also runs scripts/check_md040.py (issue #689): MD040 (a fenced code
+        # block must name a language) is not something mdformat itself checks.
         run: scripts/lint.sh --check --only mdformat --all
 
   hygiene:
