@@ -30,7 +30,7 @@ name: Propagate issue labels to linked PR
 
 on:
   pull_request:
-    types: [opened, edited, reopened, synchronize, ready_for_review, review_requested]
+    types: [opened, edited, reopened]
 
 permissions:
   issues: write
