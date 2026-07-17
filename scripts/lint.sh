@@ -38,9 +38,14 @@
 # check-only mode, so they run as usual and their non-zero exit on any change
 # fails the run, without altering the pass/fail contract. On a clean tree check
 # mode writes nothing and exits 0.
+#
+# scripts/check_md040.py (mdformat family) is read-only in both modes: MD040
+# (a fenced code block must name a language) has no auto-fix, so it always
+# reports rather than rewriting (issue #689).
 
 set -uo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LINT_BIN_DIR="${LINT_BIN_DIR:-$HOME/.local/bin}"
 
 usage() {
@@ -175,12 +180,20 @@ fi
 # --wrap keep preserves this repo's one-sentence-per-line prose (see
 # .claude/rules/prose-style.md); --number keeps ordered-list numbering
 # sequential. These match the retired .pre-commit-config.yaml mdformat args.
+#
+# mdformat does not enforce MD040 (fenced code blocks must name a language);
+# markdownlint-cli2 did, until issue #688 replaced it with mdformat. Run
+# check_md040.py alongside mdformat, in both fix and check mode, so a new
+# offender is still caught even though there is nothing to auto-fix (issue
+# #689). It is a first-party script, not a registry-installed tool, so it runs
+# under the ambient python3 rather than through $LINT_BIN_DIR.
 if want mdformat && [[ ${#MD[@]} -gt 0 ]]; then
     if [[ $CHECK -eq 1 ]]; then
         run "$LINT_BIN_DIR/mdformat" --check --wrap keep --number "${MD[@]}"
     else
         run "$LINT_BIN_DIR/mdformat" --wrap keep --number "${MD[@]}"
     fi
+    run python3 "$SCRIPT_DIR/check_md040.py" "${MD[@]}"
 fi
 
 # ktlint family: format Kotlin.
