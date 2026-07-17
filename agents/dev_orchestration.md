@@ -78,6 +78,22 @@ The Orchestrator is not a Reviewer or a Programmer.
 
 - See `inaugurate.md` for the full protocol when starting fresh work.
 
+## Applying label transitions
+
+Apply every "Remove label" / "Add label" transition table in this document with `scripts/update_gh_labels.sh`, not `mcp__github__issue_write`.
+That MCP tool's `labels` field is a replacement set: it overwrites the issue's or PR's entire label list, so it silently discards any label another agent, a workflow, or a human applied since you last read the labels (issue #710).
+`scripts/update_gh_labels.sh` instead calls GitHub's delta label endpoints, adding and removing only the specific labels you name, so a transition never touches any label outside its own row.
+
+Run one call per transition row, passing every "Remove label" entry as a `--remove` flag and every "Add label" entry as a `--add` flag.
+For example, the "Starting to orchestrate a PR" transition below becomes:
+
+```text
+scripts/update_gh_labels.sh {owner} {repo} {issue-or-PR number} --remove orchestrate --add orchestrating
+```
+
+Run it once per artifact a transition's note tells you to apply to (issue, PR, or both).
+See the script's own `--help` text for full usage and the required `GITHUB_TOKEN` environment variable.
+
 ## Starting to orchestrate a PR
 
 When you begin orchestrating a PR (the first thing you do once you have entered the Orchestrator role for a given issue and its PR), apply this transition to **both the issue and the PR**:
