@@ -76,6 +76,13 @@ Covers:
        does not outvote the authoritative latest success -- the monitor
        terminates Clear (mergeable_state=clean), lists the gate once, and polls
        only the latest run's jobs/artifacts
+  (ba) #719 latest_check_runs: a queued/in_progress re-run (started_at null)
+       outranks an older completed run of the same name, so the collapsed
+       payload reads in_progress (not all_passed / not Blocked) while the re-run
+       is pending; the #707 all-completed fixtures still collapse unchanged
+  (bb) #719 main(): in --sha mode (no mergeable_state backstop) a queued re-run
+       of a required check does not fire a premature Clear -- the monitor keeps
+       polling and terminates Clear only once the re-run completes
 
 No network calls required; no GITHUB_TOKEN needed.
 Run this file directly to execute the suite: exits 0 on success, non-zero on failure.
@@ -4916,6 +4923,164 @@ def main() -> int:
         "request deque not drained; %d entries left" % len(side_effects_az),
     )
     check(rc_az == 0, "main() returned 0", "main() returned %r" % rc_az)
+
+    # ── (ba) #719 a queued re-run is not collapsed away by an older completion ──────
+    print(
+        "\n=== (ba) #719 latest_check_runs: a queued re-run outranks an older same-named"
+        " completion ==="
+    )
+
+    # A required check has an old completed 'success' plus a freshly-queued
+    # re-run of the same name. GitHub leaves started_at null until a run starts,
+    # so by the old (started_at, id) key the queued re-run ("") sorted oldest and
+    # was collapsed away, leaving only the stale 'success' -- so parse_check_result
+    # read 'all_passed' instead of 'in_progress' during that window (issue #719).
+    QUEUED_RERUN_SUCCESS = {
+        "total_count": 2,
+        "check_runs": [
+            {
+                "id": 1,
+                "name": "gate",
+                "status": "completed",
+                "conclusion": "success",
+                "started_at": "2026-01-01T00:00:00Z",
+            },
+            # Freshly queued re-run: started_at absent, higher id.
+            {"id": 2, "name": "gate", "status": "queued"},
+        ],
+    }
+    kept_ba = ci_monitor.latest_check_runs(QUEUED_RERUN_SUCCESS)["check_runs"]
+    check(
+        len(kept_ba) == 1 and kept_ba[0]["id"] == 2,
+        "the queued re-run (id 2) survives the collapse, not the older completed success",
+        "expected the queued run kept; got %r" % (kept_ba,),
+    )
+    check(
+        ci_monitor.parse_check_result(ci_monitor.latest_check_runs(QUEUED_RERUN_SUCCESS))
+        == "in_progress",
+        "collapsed payload reads in_progress (not all_passed) while the re-run is pending",
+        "expected in_progress; got %r"
+        % ci_monitor.parse_check_result(ci_monitor.latest_check_runs(QUEUED_RERUN_SUCCESS)),
+    )
+
+    # Symmetric #707 variant: a stale completed 'failure' plus a queued re-run of
+    # the same name. The queued run must win so the verdict is in_progress, not a
+    # spurious Blocked from the superseded failure.
+    QUEUED_RERUN_FAILURE = {
+        "total_count": 2,
+        "check_runs": [
+            {
+                "id": 10,
+                "name": "gate",
+                "status": "completed",
+                "conclusion": "failure",
+                "started_at": "2026-01-01T00:00:00Z",
+            },
+            {"id": 11, "name": "gate", "status": "queued", "started_at": None},
+        ],
+    }
+    kept_ba_fail = ci_monitor.latest_check_runs(QUEUED_RERUN_FAILURE)["check_runs"]
+    check(
+        len(kept_ba_fail) == 1 and kept_ba_fail[0]["id"] == 11,
+        "the queued re-run (id 11) survives over the stale completed failure",
+        "expected the queued run kept; got %r" % (kept_ba_fail,),
+    )
+    check(
+        ci_monitor.parse_check_result(ci_monitor.latest_check_runs(QUEUED_RERUN_FAILURE))
+        == "in_progress",
+        "collapsed payload reads in_progress (not Blocked) while the re-run supersedes a failure",
+        "expected in_progress; got %r"
+        % ci_monitor.parse_check_result(ci_monitor.latest_check_runs(QUEUED_RERUN_FAILURE)),
+    )
+
+    # The pending discriminator only leads the key; among completed runs the
+    # existing (started_at, id) ordering is untouched. Re-assert the #707
+    # fixtures collapse exactly as before.
+    check(
+        ci_monitor.latest_check_runs(LABEL_GATE_3)["check_runs"][0]["id"] == 87688242514,
+        "#707 three-completed-run collapse is unchanged (latest success still wins)",
+        "regression in the three-completed-run collapse",
+    )
+    check(
+        ci_monitor.latest_check_runs(STARTED_AT_WINS)["check_runs"][0]["conclusion"] == "success",
+        "#707 STARTED_AT_WINS unchanged (newer started_at still beats a higher id)",
+        "regression in STARTED_AT_WINS",
+    )
+    check(
+        ci_monitor.latest_check_runs(ID_TIEBREAK)["check_runs"][0]["id"] == 9,
+        "#707 ID_TIEBREAK unchanged (higher id still wins with no started_at)",
+        "regression in ID_TIEBREAK",
+    )
+    kept_mixed_ba = ci_monitor.latest_check_runs(MIXED)["check_runs"]
+    check(
+        [r.get("name") for r in kept_mixed_ba] == ["alpha", None, "beta", None]
+        and [r for r in kept_mixed_ba if r.get("name") == "alpha"][0]["id"] == 5,
+        "#707 MIXED collapse unchanged (names, order, and alpha's latest id 5)",
+        "regression in MIXED",
+    )
+
+    # ── (bb) #719 main(): a queued re-run in --sha mode does not terminate Clear ────
+    print(
+        "\n=== (bb) #719 main(): --sha mode keeps polling while a queued re-run supersedes an"
+        " old success ==="
+    )
+
+    # End-to-end reproduction of the user-visible defect: in --sha mode there is
+    # no mergeable_state backstop, so a premature all_passed would fire Clear and
+    # break the loop while a required re-run is still pending. First poll carries
+    # the old completed success plus a queued re-run of the same name; the second
+    # poll shows the re-run finished success. The monitor must NOT Clear on the
+    # first poll (it must keep polling), then Clear once the re-run completes.
+    SHA_BB = "719cafef00d5"
+    tag_bb = "SHA#%s" % SHA_BB[:7]
+    CHECK_PENDING_BB = QUEUED_RERUN_SUCCESS
+    CHECK_DONE_BB = {
+        "total_count": 2,
+        "check_runs": [
+            {
+                "id": 1,
+                "name": "gate",
+                "status": "completed",
+                "conclusion": "success",
+                "started_at": "2026-01-01T00:00:00Z",
+            },
+            {
+                "id": 2,
+                "name": "gate",
+                "status": "completed",
+                "conclusion": "success",
+                "started_at": "2026-01-01T00:05:00Z",
+            },
+        ],
+    }
+    # Poll 1: pending (in_progress, keeps polling). Poll 2: all_passed -> Clear.
+    # Neither payload carries a github-actions app/details_url, so poll_signals
+    # discovers no targets and issues no jobs/artifacts fetches.
+    side_effects_bb = collections.deque([CHECK_PENDING_BB, CHECK_DONE_BB])
+
+    def fake_request_bb(url, token, raw=False):
+        return side_effects_bb.popleft()
+
+    buf_bb = io.StringIO()
+    with (
+        unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_bb),
+        unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None),
+        unittest.mock.patch("sys.stdout", new=buf_bb),
+    ):
+        rc_bb = ci_monitor.main(["ci_monitor.py", "--sha", SHA_BB])
+
+    lines_bb = buf_bb.getvalue().splitlines()
+    check(
+        ("%s: Clear" % tag_bb) in lines_bb,
+        "the monitor eventually terminates Clear once the queued re-run completes success",
+        "expected a Clear terminal; output: %r" % lines_bb,
+    )
+    check(
+        len(side_effects_bb) == 0,
+        "both polls consumed: the monitor did NOT prematurely Clear on the pending first poll",
+        "monitor broke early on the pending poll; %d entries left" % len(side_effects_bb),
+    )
+    check(rc_bb == 0, "main() returned 0", "main() returned %r" % rc_bb)
 
     # ── Summary ────────────────────────────────────────────────────────────────────
     print("\nResults: %d passed, %d failed." % (PASS, FAIL))

@@ -346,17 +346,29 @@ def _check_run_recency_key(run):
     label-gate workflow, so that gate's check-run name accumulates several
     entries against the same head commit, of which only the most recent
     conclusion is authoritative (the earlier ones are stale).
-    Recency is judged by `started_at` (ISO 8601, so lexically sortable), then by
-    the numeric check-run `id` as a monotonic tiebreak (a re-run always gets a
-    higher id). A run missing both fields sorts oldest, so a run carrying real
-    recency data always outranks one that does not.
+
+    A not-yet-completed run (`status` other than `completed`, i.e. `queued` or
+    `in_progress`) is a re-run currently superseding any completed run of the
+    same name, so it sorts above every completed run regardless of timestamps
+    (issue #719). GitHub leaves `started_at` null until a run actually starts, so
+    without this a freshly-queued re-run would sort oldest by `started_at` and be
+    collapsed away in favor of the stale completed run it supersedes; the verdict
+    would then read that stale completion instead of `in_progress`. `True` sorts
+    above `False`, so the `pending` flag leads the key.
+    Among runs sharing a completion state, recency is judged by `started_at`
+    (ISO 8601, so lexically sortable), then by the numeric check-run `id` as a
+    monotonic tiebreak (a re-run always gets a higher id). Among completed runs
+    the `pending` flag is uniformly `False`, so their order is unchanged: a run
+    missing both timestamp and id sorts oldest, and a run carrying real recency
+    data always outranks one that does not.
     """
     started = run.get("started_at") or ""
     try:
         run_id = int(run.get("id"))
     except (TypeError, ValueError):
         run_id = -1
-    return (started, run_id)
+    pending = run.get("status") != "completed"
+    return (pending, started, run_id)
 
 
 def latest_check_runs(check_json):
@@ -366,6 +378,11 @@ def latest_check_runs(check_json):
     each distinct non-empty check-run `name`, only the most recent run (by
     `_check_run_recency_key`); the surviving run sits at the position of that
     name's first appearance, so the summary's row order is otherwise preserved.
+    A pending (queued/in_progress) re-run is never collapsed away in favor of an
+    older completed run of the same name, even before GitHub populates its
+    `started_at` (issue #719), so the verdict keeps reading `in_progress` while a
+    required check's re-run is still pending rather than latching onto the stale
+    completion it supersedes.
     Runs with no usable `name` are passed through unchanged (each kept), since
     name-based identity does not apply to them and GitHub always names its own
     check runs; this also leaves the unnamed-Actions-run fixtures other tests
