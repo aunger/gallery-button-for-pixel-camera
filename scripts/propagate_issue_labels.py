@@ -16,7 +16,17 @@ is left alone. A candidate label is also skipped, rather than applied, when
 applying it would cause scripts/enforce_mutually_exclusive_labels.py's
 mutual-exclusion enforcement to remove a label the PR already carries--an
 existing PR label always wins over a conflicting label being copied in from a
-linked issue. See labels_to_propagate() for the exact rule.
+linked issue.
+
+An issue's own orchestration-cycle state labels (PROCESS_STATE_LABELS, e.g.
+`orchestrating`, `verification needed`, `changes done`) are never propagated
+at all, even onto a PR that carries none of their conflicting siblings.
+agents/dev_orchestration.md deliberately lets an issue and its PR diverge on
+these mid-cycle (for example, `orchestrating` is removed from the PR alone,
+not the issue, to clear the "No blocking labels" merge gate while
+orchestration is still active), so blindly copying them from issue to PR
+fights that state machine instead of just adding a convenience label. See
+labels_to_propagate() for the exact rule.
 
 The pull_request trigger for this module's main() (see
 .github/workflows/propagate-issue-labels.yml) covers most sidebar-linked PRs
@@ -33,8 +43,8 @@ Usage:
 Exit code:
     0  the PR has no closing issue references, its closing issues carry no
        labels, every eligible label was applied successfully, or every
-       candidate was skipped due to a mutual-exclusion conflict (skipping is
-       not itself a failure).
+       candidate was skipped due to a mutual-exclusion conflict or excluded
+       as orchestration-cycle state (neither is itself a failure).
     1  required configuration is missing/invalid, or fetching or applying
        labels failed.
 
@@ -143,22 +153,57 @@ def fetch_closing_issue_labels(
 # Core logic
 # ---------------------------------------------------------------------------
 
+# Labels agents/dev_orchestration.md manages as orchestration-cycle state,
+# not ordinary content/category labels (contrast with e.g. "p1"-"p3", "ci",
+# "bug", which are fine to copy as-is). The issue and its PR are deliberately
+# allowed, or required, to carry these differently while a PR is under
+# active orchestration:
+#   - `orchestrate`/`orchestrating` is applied to both when orchestration
+#     starts, but `orchestrating` is removed from the PR alone (not the
+#     issue) to clear the "No blocking labels" merge gate mid-cycle
+#     (dev_orchestration.md's labelGateBlock), while the issue keeps it for
+#     the rest of the active cycle.
+#   - `changes requested`/`changes done` transitions apply "to the PR if one
+#     exists; apply it to the issue otherwise"--once a PR exists, these live
+#     on the PR only, and the issue's copy (if any) goes stale by design.
+#   - `verification needed`/`verified` are likewise driven by the PR's own
+#     CI/verification state, not the issue's.
+# Blindly copying any of these from issue to PR does not add a harmless
+# convenience label: it fights this state machine and can re-obstruct a
+# merge gate an Orchestrator just cleared (observed live on PR #713, where a
+# routine push re-applied "orchestrating" moments after it had been removed
+# from the PR alone). So these are never eligible for propagation, even onto
+# a PR that carries none of their conflicting siblings.
+PROCESS_STATE_LABELS: frozenset[str] = frozenset(
+    {
+        "orchestrate",
+        "orchestrating",
+        "verification needed",
+        "verified",
+        "changes requested",
+        "changes done",
+    }
+)
+
 
 def labels_to_propagate(
     current_pr_labels: list[str],
     issue_labels: list[str],
-) -> tuple[list[str], list[str]]:
-    """Partition *issue_labels* into what to add to the PR and what to skip.
+) -> tuple[list[str], list[str], list[str]]:
+    """Partition *issue_labels* into what to add, skip, and exclude.
 
-    Returns (to_add, skipped):
+    Returns (to_add, skipped, excluded):
         to_add    issue labels, not already on the PR, that are safe to add
         skipped   issue labels omitted because applying them would cause
                   enforce_mutually_exclusive_labels.py to remove a label
                   already staged on the PR (a real current PR label, or one
                   accepted earlier in this same call)
+        excluded  issue labels never considered at all because they are in
+                  PROCESS_STATE_LABELS--orchestration-cycle state the issue
+                  and its PR are allowed to carry differently by design
 
     A label already present on the PR (case-insensitively) is dropped from
-    both lists--there is nothing to do for it. A label repeated across
+    every list--there is nothing to do for it. A label repeated across
     multiple closing issues is considered once.
 
     *issue_labels* is processed in order, staging each accepted label into a
@@ -172,13 +217,20 @@ def labels_to_propagate(
     already_lower = {lbl.lower() for lbl in current_pr_labels}
     to_add: list[str] = []
     skipped: list[str] = []
+    excluded: list[str] = []
     seen_lower: set[str] = set()
 
     for label in issue_labels:
         lower = label.lower()
-        if lower in already_lower or lower in seen_lower:
+        if lower in seen_lower:
             continue
         seen_lower.add(lower)
+
+        if lower in PROCESS_STATE_LABELS:
+            excluded.append(label)
+            continue
+        if lower in already_lower:
+            continue
 
         conflict = False
         label_set = emxl.find_conflicting_set(label)
@@ -196,7 +248,7 @@ def labels_to_propagate(
         to_add.append(label)
         staged.append(label)
 
-    return to_add, skipped
+    return to_add, skipped, excluded
 
 
 # ---------------------------------------------------------------------------
@@ -234,7 +286,14 @@ def propagate_to_pr(owner: str, name: str, repo: str, pr_number: int, token: str
 
     current_pr_labels = [lbl["name"] for lbl in pr.get("labels", [])]
 
-    to_add, skipped = labels_to_propagate(current_pr_labels, issue_labels)
+    to_add, skipped, excluded = labels_to_propagate(current_pr_labels, issue_labels)
+
+    if excluded:
+        print(
+            f"Excluding orchestration-cycle labels {excluded} on PR #{pr_number}: the "
+            "issue and its PR are allowed to carry these differently while orchestration "
+            "is active (see agents/dev_orchestration.md)."
+        )
 
     if skipped:
         print(

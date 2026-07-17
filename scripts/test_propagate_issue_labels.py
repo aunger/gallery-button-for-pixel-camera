@@ -125,59 +125,111 @@ class TestFetchClosingIssueLabels(unittest.TestCase):
 
 class TestLabelsToPropagate(unittest.TestCase):
     def test_propagates_non_conflicting_labels(self):
-        to_add, skipped = pil.labels_to_propagate([], ["p1", "bug"])
+        to_add, skipped, excluded = pil.labels_to_propagate([], ["p1", "bug"])
         self.assertEqual(to_add, ["p1", "bug"])
         self.assertEqual(skipped, [])
+        self.assertEqual(excluded, [])
 
     def test_skips_labels_already_on_pr(self):
-        to_add, skipped = pil.labels_to_propagate(["bug"], ["bug", "p1"])
+        to_add, skipped, excluded = pil.labels_to_propagate(["bug"], ["bug", "p1"])
         self.assertEqual(to_add, ["p1"])
         self.assertEqual(skipped, [])
+        self.assertEqual(excluded, [])
 
     def test_already_present_check_is_case_insensitive(self):
-        to_add, skipped = pil.labels_to_propagate(["Bug"], ["bug", "p1"])
+        to_add, skipped, excluded = pil.labels_to_propagate(["Bug"], ["bug", "p1"])
         self.assertEqual(to_add, ["p1"])
         self.assertEqual(skipped, [])
+        self.assertEqual(excluded, [])
 
     def test_deduplicates_labels_from_multiple_issues(self):
-        to_add, skipped = pil.labels_to_propagate([], ["p1", "p1", "bug"])
+        to_add, skipped, excluded = pil.labels_to_propagate([], ["p1", "p1", "bug"])
         self.assertEqual(to_add, ["p1", "bug"])
         self.assertEqual(skipped, [])
+        self.assertEqual(excluded, [])
 
     def test_skips_label_that_would_evict_existing_pr_label_fixed_set(self):
         # PR already carries p2; propagating p1 would let the mutual-exclusion
         # workflow remove p2, so p1 must be skipped instead.
-        to_add, skipped = pil.labels_to_propagate(["p2"], ["p1"])
+        to_add, skipped, excluded = pil.labels_to_propagate(["p2"], ["p1"])
         self.assertEqual(to_add, [])
         self.assertEqual(skipped, ["p1"])
+        self.assertEqual(excluded, [])
 
     def test_skips_label_that_would_evict_existing_pr_label_prefix_group(self):
-        to_add, skipped = pil.labels_to_propagate(["c-a-opus"], ["c-a-haiku"])
+        to_add, skipped, excluded = pil.labels_to_propagate(["c-a-opus"], ["c-a-haiku"])
         self.assertEqual(to_add, [])
         self.assertEqual(skipped, ["c-a-haiku"])
+        self.assertEqual(excluded, [])
 
     def test_non_conflicting_prefix_label_still_propagates(self):
-        to_add, skipped = pil.labels_to_propagate(["c-a-opus"], ["c-r-haiku"])
+        to_add, skipped, excluded = pil.labels_to_propagate(["c-a-opus"], ["c-r-haiku"])
         self.assertEqual(to_add, ["c-r-haiku"])
         self.assertEqual(skipped, [])
+        self.assertEqual(excluded, [])
 
     def test_first_accepted_candidate_blocks_a_later_conflicting_one(self):
         # No real PR label yet, but p1 is accepted first (from one linked
         # issue) and then blocks p2 (from another linked issue) within the
         # same run.
-        to_add, skipped = pil.labels_to_propagate([], ["p1", "p2"])
+        to_add, skipped, excluded = pil.labels_to_propagate([], ["p1", "p2"])
         self.assertEqual(to_add, ["p1"])
         self.assertEqual(skipped, ["p2"])
+        self.assertEqual(excluded, [])
 
     def test_labels_outside_any_exclusive_group_never_conflict(self):
-        to_add, skipped = pil.labels_to_propagate(["automated tests"], ["ci", "agents"])
+        to_add, skipped, excluded = pil.labels_to_propagate(["automated tests"], ["ci", "agents"])
         self.assertEqual(to_add, ["ci", "agents"])
         self.assertEqual(skipped, [])
+        self.assertEqual(excluded, [])
 
     def test_empty_issue_labels_is_a_no_op(self):
-        to_add, skipped = pil.labels_to_propagate(["p1"], [])
+        to_add, skipped, excluded = pil.labels_to_propagate(["p1"], [])
         self.assertEqual(to_add, [])
         self.assertEqual(skipped, [])
+        self.assertEqual(excluded, [])
+
+    # -- PROCESS_STATE_LABELS exclusion (issue #621 review, PR #713) --------
+
+    def test_excludes_orchestrating_even_with_no_pr_side_conflict(self):
+        # Reproduces the live bug: the PR carries none of {orchestrate,
+        # orchestrating}, so the old mutual-exclusion-only guard would have
+        # let this through and re-blocked "No blocking labels".
+        to_add, skipped, excluded = pil.labels_to_propagate([], ["orchestrating"])
+        self.assertEqual(to_add, [])
+        self.assertEqual(skipped, [])
+        self.assertEqual(excluded, ["orchestrating"])
+
+    def test_excludes_every_process_state_label(self):
+        for label in sorted(pil.PROCESS_STATE_LABELS):
+            with self.subTest(label=label):
+                to_add, skipped, excluded = pil.labels_to_propagate([], [label])
+                self.assertEqual(to_add, [])
+                self.assertEqual(skipped, [])
+                self.assertEqual(excluded, [label])
+
+    def test_process_state_exclusion_is_case_insensitive(self):
+        to_add, skipped, excluded = pil.labels_to_propagate([], ["Orchestrating"])
+        self.assertEqual(to_add, [])
+        self.assertEqual(excluded, ["Orchestrating"])
+
+    def test_process_state_labels_excluded_alongside_ordinary_labels(self):
+        to_add, skipped, excluded = pil.labels_to_propagate([], ["p1", "orchestrating", "ci"])
+        self.assertEqual(to_add, ["p1", "ci"])
+        self.assertEqual(skipped, [])
+        self.assertEqual(excluded, ["orchestrating"])
+
+    def test_process_state_label_deduplicated_across_issues(self):
+        to_add, skipped, excluded = pil.labels_to_propagate([], ["orchestrating", "orchestrating"])
+        self.assertEqual(excluded, ["orchestrating"])
+
+    def test_process_state_exclusion_does_not_consume_a_skip_slot(self):
+        # A process-state label and a genuinely conflicting label in the same
+        # run are reported in their own distinct lists, not conflated.
+        to_add, skipped, excluded = pil.labels_to_propagate(["p2"], ["orchestrating", "p1"])
+        self.assertEqual(to_add, [])
+        self.assertEqual(skipped, ["p1"])
+        self.assertEqual(excluded, ["orchestrating"])
 
 
 # ---------------------------------------------------------------------------
@@ -297,6 +349,22 @@ class TestPropagateToPr(unittest.TestCase):
             with patch.object(pil.emxl, "gh_api", side_effect=fake_api):
                 result = pil.propagate_to_pr("owner", "repo", "owner/repo", 42, "tok")
         self.assertFalse(result)
+
+    def test_does_not_reapply_orchestrating_the_orchestrator_just_removed(self):
+        # Reproduces the live PR #713 bug: the issue still carries
+        # "orchestrating" (active orchestration), but the PR just had it
+        # removed alone to clear the merge gate. A routine synchronize event
+        # must not put it back.
+        with patch.object(pil, "fetch_closing_issue_labels", return_value=["orchestrating", "p1"]):
+            with patch.object(
+                pil.emxl, "gh_api", return_value={"labels": [{"name": "ci"}]}
+            ) as mock_api:
+                result = pil.propagate_to_pr("owner", "repo", "owner/repo", 713, "tok")
+
+        self.assertTrue(result)
+        post_calls = [c for c in mock_api.call_args_list if c.kwargs.get("method") == "POST"]
+        self.assertEqual(len(post_calls), 1)
+        self.assertEqual(post_calls[0].kwargs["body"], {"labels": ["p1"]})
 
 
 if __name__ == "__main__":
