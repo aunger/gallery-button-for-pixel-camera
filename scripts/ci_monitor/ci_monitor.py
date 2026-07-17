@@ -429,15 +429,23 @@ def parse_check_result(check_json):
 
 
 def parse_check_summary(check_json, label_gate_check_regex=DEFAULT_LABEL_GATE_CHECK_REGEX):
-    """Extract per-check (name, conclusion, blocking, label_gate) rows from check-runs data.
+    """Extract per-check (name, conclusion, blocking, label_gate, run_id) rows.
 
     Returns a list of dicts (one per check run, preserving order):
-      {"name": str, "conclusion": str, "blocking": bool, "label_gate": bool}
+      {"name": str, "conclusion": str, "blocking": bool, "label_gate": bool,
+       "run_id": str | None}
 
     Conclusions in the "blocking" set match what parse_check_result treats as
     Blocked/Infra. The label_gate_check_regex is matched (re.search) against
     each check run's name; a True label_gate lets the consumer annotate a
     process-label block distinctly from a substantive code/test failure.
+
+    `run_id` is the GitHub Actions workflow run the check came from
+    (via _actions_run_id), or None for a non-Actions check; it lets the
+    formatter annotate each row with the run that produced it (issue #720),
+    which after the same-named collapse (issue #707) names exactly which run
+    survived for that check name. It is inert on the verdict path--only the
+    formatter renders it.
 
     Returns [] when check_runs is absent or empty. Does not make any HTTP
     requests; reads only from the already-fetched check_json payload.
@@ -459,6 +467,7 @@ def parse_check_summary(check_json, label_gate_check_regex=DEFAULT_LABEL_GATE_CH
                 "conclusion": effective,
                 "blocking": blocking,
                 "label_gate": label_gate,
+                "run_id": _actions_run_id(r),
             }
         )
     return rows
@@ -469,7 +478,11 @@ def format_check_summary(rows):
 
     Returns [] when rows is empty. The first line is "summary", followed by one
     aligned dotted line per check. Blocking rows carry [BLOCKING]; a label-gate
-    blocking row additionally carries [label gate]. Column width is capped at 60
+    blocking row additionally carries [label gate]. A row that carries a
+    non-None `run_id` (a GitHub Actions check) ends with a `[run <id>]` token
+    naming the workflow run it came from (issue #720); non-Actions rows omit it.
+    The token rides after the [BLOCKING]/[label gate] cluster, outside the dotted
+    column, so the existing alignment is unchanged. Column width is capped at 60
     characters to avoid pathological output on long check names.
     """
     if not rows:
@@ -488,6 +501,11 @@ def format_check_summary(rows):
             line += "   [BLOCKING]"
             if r["label_gate"]:
                 line += " [label gate]"
+        # .get keeps the formatter tolerant of rows built without a run_id key
+        # (e.g. manually constructed rows); a non-Actions check has run_id None.
+        run_id = r.get("run_id")
+        if run_id is not None:
+            line += " [run %s]" % run_id
         lines.append(line)
     return lines
 
