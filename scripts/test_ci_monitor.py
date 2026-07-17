@@ -76,9 +76,10 @@ Covers:
        does not outvote the authoritative latest success -- the monitor
        terminates Clear (mergeable_state=clean), lists the gate once, and polls
        only the latest run's jobs/artifacts
-  (ba) #720 _actions_run_id: extracts the workflow run id, gates on
-       app.slug == "github-actions", honors the URL-shape fallback when the
-       app block is absent, and returns None for a non-Actions app or an
+  (ba) #720 _actions_run_id / _actions_run_job: extract the workflow run id
+       (and job id) from a check run, gating on app.slug == "github-actions",
+       honoring the URL-shape fallback when the app block is absent, and
+       returning None / (None, None) for a non-Actions app or an
        unparseable/absent URL
   (bb) #720 parse_check_summary: each row carries run_id (the Actions run it
        came from, None for a non-Actions check)
@@ -5014,6 +5015,36 @@ def main() -> int:
         ci_monitor._actions_run_id({"app": {"slug": "github-actions"}}) is None,
         "returns None when there is no URL at all",
         "expected None when both details_url and html_url are absent",
+    )
+    # _actions_run_job (the shared parse _actions_run_id wraps) returns both ids:
+    # the run id and the job id (None for a run-only URL), and (None, None) for a
+    # non-Actions check.
+    check(
+        ci_monitor._actions_run_job(
+            {
+                "app": {"slug": "github-actions"},
+                "details_url": "https://github.com/o/r/actions/runs/555/job/42",
+            }
+        )
+        == ("555", "42"),
+        "_actions_run_job returns (run_id, job_id) for a run/job URL",
+        "expected ('555', '42') from _actions_run_job",
+    )
+    check(
+        ci_monitor._actions_run_job(
+            {
+                "app": {"slug": "github-actions"},
+                "details_url": "https://github.com/o/r/actions/runs/999",
+            }
+        )
+        == ("999", None),
+        "_actions_run_job returns a None job id for a run-only URL",
+        "expected ('999', None) from _actions_run_job",
+    )
+    check(
+        ci_monitor._actions_run_job({"app": {"slug": "codecov"}}) == (None, None),
+        "_actions_run_job returns (None, None) for a non-Actions check",
+        "expected (None, None) from _actions_run_job on a non-Actions check",
     )
 
     # ── (bb) #720 parse_check_summary: populates run_id per row ─────────────────────

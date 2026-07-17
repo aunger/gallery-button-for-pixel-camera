@@ -590,28 +590,40 @@ def parse_commit_sha(commit_json):
 _RUN_JOB_URL_RE = re.compile(r"/actions/runs/(\d+)(?:/job/(\d+))?")
 
 
-def _actions_run_id(check_run):
-    """Return the GitHub Actions workflow run id for a check run, or None.
+def _actions_run_job(check_run):
+    """Return the (run_id, job_id) for a GitHub Actions check run, or (None, None).
 
     A check run is treated as a GitHub Actions run when `app.slug ==
     "github-actions"`; when the `app` block is missing, it falls back to "the
-    `details_url` (or `html_url`) matched /actions/runs/". Returns the run id as
-    a string, or None for a non-Actions check or a URL from which no run id can
-    be parsed.
+    `details_url` (or `html_url`) matched /actions/runs/". Returns the run id (as
+    a string) paired with the job id (a string, or None when the URL carries only
+    a run id), or (None, None) for a non-Actions check or a URL from which no run
+    id can be parsed.
 
-    Factored out of parse_actions_targets (issue #720) so the per-check summary
-    can annotate each row with the workflow run it came from, reusing the same
-    Actions-detection and URL-parsing rules the run/job discovery uses.
+    Single source of the Actions-detection and URL-parsing logic (issue #720):
+    parse_actions_targets needs both ids, while _actions_run_id (used by the
+    per-check summary) needs only the run id, so both read from this one parse
+    rather than each re-deriving it.
     """
     app = check_run.get("app")
     if isinstance(app, dict) and app.get("slug") != "github-actions":
-        return None
+        return (None, None)
     # No app block: fall back to recognizing the URL shape.
     url = check_run.get("details_url") or check_run.get("html_url") or ""
     match = _RUN_JOB_URL_RE.search(url)
     if not match:
-        return None
-    return match.group(1)
+        return (None, None)
+    return (match.group(1), match.group(2))
+
+
+def _actions_run_id(check_run):
+    """Return the GitHub Actions workflow run id for a check run, or None.
+
+    Thin accessor over _actions_run_job for callers that need only the run id
+    (the per-check summary annotation, issue #720). Returns None for a
+    non-Actions check or a URL from which no run id can be parsed.
+    """
+    return _actions_run_job(check_run)[0]
 
 
 def parse_actions_targets(check_json):
@@ -631,13 +643,9 @@ def parse_actions_targets(check_json):
     """
     targets = set()
     for r in check_json.get("check_runs", []):
-        run_id = _actions_run_id(r)
+        run_id, job_id = _actions_run_job(r)
         if run_id is None:
             continue
-        # run_id is non-None only when the URL matched, so this re-parse for the
-        # optional job id always succeeds; job_id is None for a run-only URL.
-        url = r.get("details_url") or r.get("html_url") or ""
-        job_id = _RUN_JOB_URL_RE.search(url).group(2)
         targets.add((run_id, job_id))
     # Sort with a None-safe key: the same run could appear both run-only
     # (job_id=None) and with a job id, and None is not orderable against str.
