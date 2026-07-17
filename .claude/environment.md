@@ -91,6 +91,8 @@ Semgrep runs in CI (`.github/workflows/semgrep.yml`) on PRs and weekly.
 Rulesets: `p/python`, `p/kotlin`, `p/security-audit`.
 Results appear in the GitHub Security tab (SARIF upload).
 Findings block the PR.
+The engine is installed from `scripts/requirements-semgrep.txt`, a hash-pinned lock (top-level pin in `scripts/requirements-semgrep.in`), with `--require-hashes` (issue #723); the rulesets are still fetched from the Semgrep registry at scan time, so the weekly run keeps picking up new rules.
+Regenerate the lock with the `uv pip compile` command recorded in that `.in` file's header.
 
 ______________________________________________________________________
 
