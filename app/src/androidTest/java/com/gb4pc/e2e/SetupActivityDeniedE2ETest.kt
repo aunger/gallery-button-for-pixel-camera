@@ -105,12 +105,13 @@ class SetupActivityDeniedE2ETest {
 
     @get:Rule
     val ruleChain: RuleChain =
-        // testNameToastRule is innermost, running after the activity launch, so its ~1s toast
+        // testNameToastRule is innermost, running after the activity launch, so its ~3s toast
         // delay does not push the keyguard-dismissal-then-launch sequence into a re-engaged
         // keyguard. issue #604's first CI run reproduced exactly that regression with the toast
         // rule placed outermost: this suite failed its very first assertIsDisplayed() (the
         // RESUMED-then-PAUSED-45ms-later symptom described above), because the extra ~1s delay
-        // ahead of keyguardDismiss gave the keyguard time to reassert itself again.
+        // (the toast's duration at the time) ahead of keyguardDismiss gave the keyguard time to
+        // reassert itself again.
         RuleChain.outerRule(keyguardDismiss).around(composeRule).around(testNameToastRule)
 
     @Test
