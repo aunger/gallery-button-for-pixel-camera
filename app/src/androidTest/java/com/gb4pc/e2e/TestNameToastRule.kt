@@ -58,7 +58,7 @@ class TestNameToastRule : TestWatcher() {
     /**
      * Shows [testName] in a toast on the main thread, waits [TOAST_DURATION_MS] so it is visible
      * for a predictable duration, then cancels it explicitly rather than relying on the
-     * platform's own (less precise) toast duration to elapse.
+     * platform's own (longer and less precise) toast duration to elapse.
      */
     private fun showAndClearToast(testName: String) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
