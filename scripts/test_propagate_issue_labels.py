@@ -215,60 +215,77 @@ class TestMain(unittest.TestCase):
         with patch.dict(os.environ, self._env(PR_NUMBER="abc"), clear=True):
             self.assertEqual(pil.main(), 1)
 
-    def test_graphql_failure_returns_1(self):
+    def test_delegates_to_propagate_to_pr_with_parsed_args(self):
         with patch.dict(os.environ, self._env(), clear=True):
-            with patch.object(pil, "fetch_closing_issue_labels", side_effect=RuntimeError("boom")):
+            with patch.object(pil, "propagate_to_pr", return_value=True) as mock_propagate:
+                result = pil.main()
+
+        self.assertEqual(result, 0)
+        mock_propagate.assert_called_once_with("owner", "repo", "owner/repo", 42, "tok")
+
+    def test_returns_1_when_propagate_to_pr_fails(self):
+        with patch.dict(os.environ, self._env(), clear=True):
+            with patch.object(pil, "propagate_to_pr", return_value=False):
                 self.assertEqual(pil.main(), 1)
 
-    def test_no_closing_issues_returns_0_and_does_not_touch_labels(self):
-        with patch.dict(os.environ, self._env(), clear=True):
-            with patch.object(pil, "fetch_closing_issue_labels", return_value=[]):
-                with patch.object(pil.emxl, "gh_api") as mock_api:
-                    result = pil.main()
-        self.assertEqual(result, 0)
+
+# ---------------------------------------------------------------------------
+# propagate_to_pr tests
+# ---------------------------------------------------------------------------
+
+
+class TestPropagateToPr(unittest.TestCase):
+    def test_graphql_failure_returns_false(self):
+        with patch.object(pil, "fetch_closing_issue_labels", side_effect=RuntimeError("boom")):
+            result = pil.propagate_to_pr("owner", "repo", "owner/repo", 42, "tok")
+        self.assertFalse(result)
+
+    def test_no_closing_issues_returns_true_and_does_not_touch_labels(self):
+        with patch.object(pil, "fetch_closing_issue_labels", return_value=[]):
+            with patch.object(pil.emxl, "gh_api") as mock_api:
+                result = pil.propagate_to_pr("owner", "repo", "owner/repo", 42, "tok")
+        self.assertTrue(result)
         mock_api.assert_not_called()
 
-    def test_pr_fetch_failure_returns_1(self):
-        with patch.dict(os.environ, self._env(), clear=True):
-            with patch.object(pil, "fetch_closing_issue_labels", return_value=["p1"]):
-                with patch.object(
-                    pil.emxl,
-                    "gh_api",
-                    side_effect=urllib.error.HTTPError(
-                        url=None, code=404, msg="Not Found", hdrs=None, fp=None
-                    ),
-                ):
-                    self.assertEqual(pil.main(), 1)
+    def test_pr_fetch_failure_returns_false(self):
+        with patch.object(pil, "fetch_closing_issue_labels", return_value=["p1"]):
+            with patch.object(
+                pil.emxl,
+                "gh_api",
+                side_effect=urllib.error.HTTPError(
+                    url=None, code=404, msg="Not Found", hdrs=None, fp=None
+                ),
+            ):
+                result = pil.propagate_to_pr("owner", "repo", "owner/repo", 42, "tok")
+        self.assertFalse(result)
 
     def test_applies_eligible_labels(self):
-        with patch.dict(os.environ, self._env(), clear=True):
-            with patch.object(pil, "fetch_closing_issue_labels", return_value=["p1", "bug"]):
-                with patch.object(
-                    pil.emxl, "gh_api", return_value={"labels": [{"name": "bug"}]}
-                ) as mock_api:
-                    result = pil.main()
+        with patch.object(pil, "fetch_closing_issue_labels", return_value=["p1", "bug"]):
+            with patch.object(
+                pil.emxl, "gh_api", return_value={"labels": [{"name": "bug"}]}
+            ) as mock_api:
+                result = pil.propagate_to_pr("owner", "repo", "owner/repo", 42, "tok")
 
-        self.assertEqual(result, 0)
+        self.assertTrue(result)
         post_calls = [c for c in mock_api.call_args_list if c.kwargs.get("method") == "POST"]
         self.assertEqual(len(post_calls), 1)
         self.assertEqual(post_calls[0].args[0], "repos/owner/repo/issues/42/labels")
         self.assertEqual(post_calls[0].kwargs["body"], {"labels": ["p1"]})
 
-    def test_skip_only_case_returns_0_without_posting(self):
+    def test_skip_only_case_returns_true_without_posting(self):
         # PR already carries p2; the only candidate (p1) conflicts and is
         # skipped, so nothing should be POSTed.
-        with patch.dict(os.environ, self._env(), clear=True):
-            with patch.object(pil, "fetch_closing_issue_labels", return_value=["p1"]):
-                with patch.object(
-                    pil.emxl, "gh_api", return_value={"labels": [{"name": "p2"}]}
-                ) as mock_api:
-                    result = pil.main()
+        with patch.object(pil, "fetch_closing_issue_labels", return_value=["p1"]):
+            with patch.object(
+                pil.emxl, "gh_api", return_value={"labels": [{"name": "p2"}]}
+            ) as mock_api:
+                result = pil.propagate_to_pr("owner", "repo", "owner/repo", 42, "tok")
 
-        self.assertEqual(result, 0)
+        self.assertTrue(result)
         post_calls = [c for c in mock_api.call_args_list if c.kwargs.get("method") == "POST"]
         self.assertEqual(post_calls, [])
 
-    def test_apply_failure_returns_1(self):
+    def test_apply_failure_returns_false(self):
         def fake_api(path, token, method="GET", body=None):
             if method == "POST":
                 raise urllib.error.HTTPError(
@@ -276,10 +293,10 @@ class TestMain(unittest.TestCase):
                 )
             return {"labels": []}
 
-        with patch.dict(os.environ, self._env(), clear=True):
-            with patch.object(pil, "fetch_closing_issue_labels", return_value=["p1"]):
-                with patch.object(pil.emxl, "gh_api", side_effect=fake_api):
-                    self.assertEqual(pil.main(), 1)
+        with patch.object(pil, "fetch_closing_issue_labels", return_value=["p1"]):
+            with patch.object(pil.emxl, "gh_api", side_effect=fake_api):
+                result = pil.propagate_to_pr("owner", "repo", "owner/repo", 42, "tok")
+        self.assertFalse(result)
 
 
 if __name__ == "__main__":

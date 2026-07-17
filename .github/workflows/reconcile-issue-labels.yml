@@ -1,0 +1,29 @@
+name: Reconcile issue labels on open PRs
+
+# Periodically re-applies scripts/propagate_issue_labels.py's label
+# propagation rule to every open pull request. This exists because GitHub
+# fires no webhook event for linking a PR to an issue via the "Development"
+# sidebar after the PR is already open, so the pull_request-triggered
+# propagate-issue-labels workflow can miss that case. See
+# scripts/reconcile_issue_labels.py for the full rationale.
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'   # every 6 hours
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Reconcile issue labels across open PRs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python3 scripts/reconcile_issue_labels.py

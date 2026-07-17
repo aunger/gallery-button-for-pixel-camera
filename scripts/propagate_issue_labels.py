@@ -18,12 +18,22 @@ mutual-exclusion enforcement to remove a label the PR already carries--an
 existing PR label always wins over a conflicting label being copied in from a
 linked issue. See labels_to_propagate() for the exact rule.
 
+This module is also imported by scripts/reconcile_issue_labels.py, which
+applies the same rule across every open PR on a schedule. That script exists
+because GitHub fires no webhook event when a PR is linked to an issue via the
+"Development" sidebar after the PR is already open with no further body
+edit--the pull_request-triggered workflow that runs this module's main()
+would otherwise never see that PR again. See reconcile_issue_labels.py's
+docstring for the full rationale.
+
 Usage:
     python3 scripts/propagate_issue_labels.py
 
 Exit code:
     0  the PR has no closing issue references, its closing issues carry no
-       labels, or every eligible label was applied successfully.
+       labels, every eligible label was applied successfully, or every
+       candidate was skipped due to a mutual-exclusion conflict (skipping is
+       not itself a failure).
     1  required configuration is missing/invalid, or fetching or applying
        labels failed.
 
@@ -189,6 +199,71 @@ def labels_to_propagate(
 
 
 # ---------------------------------------------------------------------------
+# Single-PR propagation (shared by main() and reconcile_issue_labels.py)
+# ---------------------------------------------------------------------------
+
+
+def propagate_to_pr(owner: str, name: str, repo: str, pr_number: int, token: str) -> bool:
+    """Propagate *pr_number*'s closing issues' labels onto it.
+
+    Returns True on success, including every no-op case (no closing issues,
+    no labels on them, or every candidate skipped as a conflict). Returns
+    False only if fetching the closing issues, fetching the PR, or applying
+    labels failed.
+    """
+    try:
+        issue_labels = fetch_closing_issue_labels(owner, name, pr_number, token)
+    except (urllib.error.HTTPError, urllib.error.URLError, RuntimeError) as exc:
+        print(f"Error fetching closing issues for PR #{pr_number}: {exc}", file=sys.stderr)
+        return False
+
+    if not issue_labels:
+        print(f"PR #{pr_number} has no labeled closing issue references--nothing to do.")
+        return True
+
+    try:
+        pr = emxl.gh_api(f"repos/{repo}/issues/{pr_number}", token=token)
+    except Exception as exc:  # noqa: BLE001
+        print(f"Error fetching PR #{pr_number}: {exc}", file=sys.stderr)
+        return False
+
+    if not isinstance(pr, dict):
+        print(f"Error: unexpected response fetching PR #{pr_number}: {pr!r}", file=sys.stderr)
+        return False
+
+    current_pr_labels = [lbl["name"] for lbl in pr.get("labels", [])]
+
+    to_add, skipped = labels_to_propagate(current_pr_labels, issue_labels)
+
+    if skipped:
+        print(
+            f"Skipping labels {skipped} on PR #{pr_number}: applying them would let "
+            "mutual-exclusion enforcement remove a label the PR already carries."
+        )
+
+    if not to_add:
+        print(f"No labels to propagate to PR #{pr_number}--nothing to do.")
+        return True
+
+    try:
+        emxl.gh_api(
+            f"repos/{repo}/issues/{pr_number}/labels",
+            token=token,
+            method="POST",
+            body={"labels": to_add},
+        )
+        print(f"Applied labels {to_add} to PR #{pr_number}.")
+    except urllib.error.HTTPError as exc:
+        print(f"Error applying labels {to_add} to PR #{pr_number}: {exc}", file=sys.stderr)
+        return False
+    except urllib.error.URLError as exc:
+        print(f"Network error applying labels {to_add} to PR #{pr_number}: {exc}", file=sys.stderr)
+        return False
+
+    return True
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -219,56 +294,7 @@ def main() -> int:
 
     owner, name = repo.split("/", 1)
 
-    try:
-        issue_labels = fetch_closing_issue_labels(owner, name, pr_number, token)
-    except (urllib.error.HTTPError, urllib.error.URLError, RuntimeError) as exc:
-        print(f"Error fetching closing issues for PR #{pr_number}: {exc}", file=sys.stderr)
-        return 1
-
-    if not issue_labels:
-        print(f"PR #{pr_number} has no labeled closing issue references--nothing to do.")
-        return 0
-
-    try:
-        pr = emxl.gh_api(f"repos/{repo}/issues/{pr_number}", token=token)
-    except Exception as exc:  # noqa: BLE001
-        print(f"Error fetching PR #{pr_number}: {exc}", file=sys.stderr)
-        return 1
-
-    if not isinstance(pr, dict):
-        print(f"Error: unexpected response fetching PR #{pr_number}: {pr!r}", file=sys.stderr)
-        return 1
-
-    current_pr_labels = [lbl["name"] for lbl in pr.get("labels", [])]
-
-    to_add, skipped = labels_to_propagate(current_pr_labels, issue_labels)
-
-    if skipped:
-        print(
-            f"Skipping labels {skipped} on PR #{pr_number}: applying them would let "
-            "mutual-exclusion enforcement remove a label the PR already carries."
-        )
-
-    if not to_add:
-        print(f"No labels to propagate to PR #{pr_number}--nothing to do.")
-        return 0
-
-    try:
-        emxl.gh_api(
-            f"repos/{repo}/issues/{pr_number}/labels",
-            token=token,
-            method="POST",
-            body={"labels": to_add},
-        )
-        print(f"Applied labels {to_add} to PR #{pr_number}.")
-    except urllib.error.HTTPError as exc:
-        print(f"Error applying labels {to_add} to PR #{pr_number}: {exc}", file=sys.stderr)
-        return 1
-    except urllib.error.URLError as exc:
-        print(f"Network error applying labels {to_add} to PR #{pr_number}: {exc}", file=sys.stderr)
-        return 1
-
-    return 0
+    return 0 if propagate_to_pr(owner, name, repo, pr_number, token) else 1
 
 
 if __name__ == "__main__":
