@@ -96,7 +96,8 @@ See the script's own `--help` text for full usage and the required `GITHUB_TOKEN
 
 If `scripts/update_gh_labels.sh` exits non-zero, the transition did not fully apply--do not treat it as done.
 Retry the same call once, since a non-2xx GitHub response can be transient.
-If it still fails, do not proceed with the transition; escalate using the Orchestrator escalation/abort line below, with the script's error output as the reason token.
+If it still fails, fall back to `mcp__github__issue_write` for this one transition rather than escalating: read the current labels (`issue_read` with `method: "get_labels"`), apply this transition's Remove/Add columns to that list locally, and write the resulting set.
+Do not stop the automated cycle or escalate to the user over a label transition alone; the replace-all race this document otherwise avoids is an acceptable one-off cost here, and getting the work finished matters more than a label.
 
 ## Starting to orchestrate a PR
 
