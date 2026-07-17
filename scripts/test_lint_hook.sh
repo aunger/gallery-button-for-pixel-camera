@@ -176,21 +176,21 @@ echo ""
 echo "=== (i) --check fails on dirty fixtures ==="
 REPO="$(new_repo)"
 printf 'import os\nx=1\n' > "$REPO/bad.py"   # unused import (ruff F401) + spacing
-( cd "$REPO" && "$LINT_SH" --check --only ruff bad.py >/dev/null 2>&1 )
+( cd "$REPO" && "$LINT_SH" --check --only python bad.py >/dev/null 2>&1 )
 RC=$?
 if [[ "$RC" -ne 0 ]]; then pass "--check flags a lint-dirty .py"; else fail "--check should flag a lint-dirty .py"; fi
 if grep -q 'import os' "$REPO/bad.py"; then pass "--check did not fix bad.py"; else fail "--check must not fix bad.py"; fi
 
 REPO="$(new_repo)"
 printf '#    Title\n\n\n\nsome   text\n' > "$REPO/doc.md"
-( cd "$REPO" && "$LINT_SH" --check --only mdformat doc.md >/dev/null 2>&1 )
+( cd "$REPO" && "$LINT_SH" --check --only markdown doc.md >/dev/null 2>&1 )
 RC=$?
 if [[ "$RC" -ne 0 ]]; then pass "--check flags a format-dirty .md"; else fail "--check should flag a format-dirty .md"; fi
 
 if [[ $KTLINT_AVAILABLE -eq 1 ]]; then
     REPO="$(new_repo)"
     printf 'fun main( ){println( "hi" )}\n' > "$REPO/Main.kt"
-    ( cd "$REPO" && "$LINT_SH" --check --only ktlint Main.kt >/dev/null 2>&1 )
+    ( cd "$REPO" && "$LINT_SH" --check --only kotlin Main.kt >/dev/null 2>&1 )
     RC=$?
     if [[ "$RC" -ne 0 ]]; then pass "--check flags a format-dirty .kt"; else fail "--check should flag a format-dirty .kt"; fi
 else
@@ -214,14 +214,14 @@ echo ""
 echo "=== (k) --only isolates a tool family ==="
 REPO="$(new_repo)"
 printf '#    Title\n\n\n\nsome   text\n' > "$REPO/only.md"
-# The ruff family sees no .py, so a format-dirty .md is invisible to it...
-( cd "$REPO" && "$LINT_SH" --check --only ruff only.md >/dev/null 2>&1 )
-RC_RUFF=$?
-# ...but the mdformat family flags exactly this file.
-( cd "$REPO" && "$LINT_SH" --check --only mdformat only.md >/dev/null 2>&1 )
+# The python family sees no .py, so a format-dirty .md is invisible to it...
+( cd "$REPO" && "$LINT_SH" --check --only python only.md >/dev/null 2>&1 )
+RC_PY=$?
+# ...but the markdown family flags exactly this file.
+( cd "$REPO" && "$LINT_SH" --check --only markdown only.md >/dev/null 2>&1 )
 RC_MD=$?
-if [[ "$RC_RUFF" -eq 0 ]]; then pass "--only ruff ignores a dirty .md"; else fail "--only ruff should ignore a dirty .md, rc=$RC_RUFF"; fi
-if [[ "$RC_MD" -ne 0 ]]; then pass "--only mdformat flags a dirty .md"; else fail "--only mdformat should flag a dirty .md"; fi
+if [[ "$RC_PY" -eq 0 ]]; then pass "--only python ignores a dirty .md"; else fail "--only python should ignore a dirty .md, rc=$RC_PY"; fi
+if [[ "$RC_MD" -ne 0 ]]; then pass "--only markdown flags a dirty .md"; else fail "--only markdown should flag a dirty .md"; fi
 
 # ── (l) large file fails --all, hook path unaffected ─────────────────────────
 echo ""
@@ -256,14 +256,14 @@ if [[ "$RC" -ne 0 ]]; then pass "MD040 (unlabeled fence) -> commit blocked"; els
 # and leave the fixture untouched (nothing to auto-fix).
 REPO="$(new_repo)"
 printf '# Title\n\n```\nno language here\n```\n' > "$REPO/md040.md"
-( cd "$REPO" && "$LINT_SH" --check --only mdformat md040.md >/dev/null 2>&1 )
+( cd "$REPO" && "$LINT_SH" --check --only markdown md040.md >/dev/null 2>&1 )
 RC=$?
 if [[ "$RC" -ne 0 ]]; then pass "--check flags MD040 (unlabeled fence)"; else fail "--check should flag MD040 (unlabeled fence)"; fi
 if grep -q '^```$' "$REPO/md040.md"; then pass "MD040 fixture left unmodified (no auto-fix exists)"; else fail "MD040 fixture should be left unmodified"; fi
 # A labeled fence is not a violation.
 REPO="$(new_repo)"
 printf '# Title\n\n```python\nprint(1)\n```\n' > "$REPO/labeled.md"
-( cd "$REPO" && "$LINT_SH" --check --only mdformat labeled.md >/dev/null 2>&1 )
+( cd "$REPO" && "$LINT_SH" --check --only markdown labeled.md >/dev/null 2>&1 )
 RC=$?
 if [[ "$RC" -eq 0 ]]; then pass "--check passes a labeled fence"; else fail "--check should pass a labeled fence, rc=$RC"; fi
 
