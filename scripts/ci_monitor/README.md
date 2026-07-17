@@ -37,6 +37,16 @@ In `--pr`/`--sha`/`--branch` modes, the Monitor discovers which workflow run(s) 
 It does not name a workflow or job; the run/job to follow is derived from the same check-runs data that produces the verdict.
 In `--run-id` mode, the run to track is simply the one named on the command line--no check-runs payload is consulted for this purpose.
 
+### Same-named check-run collapsing
+
+Before reading the verdict, summary, or run/job targets, the Monitor collapses the `/commits/{sha}/check-runs` payload so that each distinct check-run *name* keeps only its most recent run (issue #707).
+GitHub can attach several check runs with the same name to one commit when a workflow re-runs: for example, each PR-side label add/remove re-triggers `block-merge-on-blocking-labels.yml`, so the `No blocking labels` gate accumulates several entries against the same head commit, and a stale `failure` (from a blocking label that was since removed) can sit between two `success` runs.
+Recency is judged by the run's `started_at` (ISO 8601, lexically sortable), then its numeric check-run `id` as a monotonic tiebreak; the surviving run keeps the position of that name's first appearance so the summary's row order is otherwise unchanged.
+This mirrors GitHub's own `mergeable_state`, which judges a required check by its latest run per name.
+Without it, a superseded `failure` would outvote the authoritative later `success` and drive a spurious `Blocked` terminal, and the stale run's job would also be tracked for diagnostics.
+Runs with no usable `name` are passed through unchanged (each kept), since name-based identity does not apply to them and GitHub always names its own check runs.
+`--run-id` mode reads a single run object and so is unaffected.
+
 ## Per-test outcome filters
 
 By default the monitor reports **all FAIL markers**, **all SKIP markers**, and **no PASS markers**.
