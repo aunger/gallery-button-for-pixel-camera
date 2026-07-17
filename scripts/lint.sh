@@ -8,7 +8,7 @@
 # Options (combine with either form above):
 #   --check                 run each tool in its check-only invocation and report,
 #                           rather than auto-fixing. See "Check mode" below.
-#   --only ruff|mdformat|ktlint|hygiene
+#   --only python|markdown|kotlin|hygiene
 #                           run only one tool family, skipping the others.
 #
 # This is the single source of truth for "run the linters". The git pre-commit
@@ -39,7 +39,7 @@
 # fails the run, without altering the pass/fail contract. On a clean tree check
 # mode writes nothing and exits 0.
 #
-# scripts/check_md040.py (mdformat family) is read-only in both modes: MD040
+# scripts/check_md040.py (markdown family) is read-only in both modes: MD040
 # (a fenced code block must name a language) has no auto-fix, so it always
 # reports rather than rewriting (issue #689).
 
@@ -49,7 +49,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LINT_BIN_DIR="${LINT_BIN_DIR:-$HOME/.local/bin}"
 
 usage() {
-    echo "usage: lint.sh [--check] [--only ruff|mdformat|ktlint|hygiene] FILE [FILE ...] | --all" >&2
+    echo "usage: lint.sh [--check] [--only python|markdown|kotlin|hygiene] FILE [FILE ...] | --all" >&2
     exit 2
 }
 
@@ -66,7 +66,7 @@ while [[ $# -gt 0 ]]; do
         --only)
             ONLY="${2:-}"
             case "$ONLY" in
-                ruff | mdformat | ktlint | hygiene) ;;
+                python | markdown | kotlin | hygiene) ;;
                 *) usage ;;
             esac
             shift 2
@@ -165,8 +165,8 @@ if want hygiene; then
     [[ ${#TOML[@]} -gt 0 ]] && run "$LINT_BIN_DIR/check-toml" "${TOML[@]}"
 fi
 
-# ruff family: lint + format Python.
-if want ruff && [[ ${#PY[@]} -gt 0 ]]; then
+# python family: lint + format Python.
+if want python && [[ ${#PY[@]} -gt 0 ]]; then
     if [[ $CHECK -eq 1 ]]; then
         run "$LINT_BIN_DIR/ruff" check "${PY[@]}"
         run "$LINT_BIN_DIR/ruff" format --check "${PY[@]}"
@@ -176,7 +176,7 @@ if want ruff && [[ ${#PY[@]} -gt 0 ]]; then
     fi
 fi
 
-# mdformat family: format Markdown.
+# markdown family: format Markdown.
 # --wrap keep preserves this repo's one-sentence-per-line prose (see
 # .claude/rules/prose-style.md); --number keeps ordered-list numbering
 # sequential. These match the retired .pre-commit-config.yaml mdformat args.
@@ -187,7 +187,7 @@ fi
 # offender is still caught even though there is nothing to auto-fix (issue
 # #689). It is a first-party script, not a registry-installed tool, so it runs
 # under the ambient python3 rather than through $LINT_BIN_DIR.
-if want mdformat && [[ ${#MD[@]} -gt 0 ]]; then
+if want markdown && [[ ${#MD[@]} -gt 0 ]]; then
     if [[ $CHECK -eq 1 ]]; then
         run "$LINT_BIN_DIR/mdformat" --check --wrap keep --number "${MD[@]}"
     else
@@ -196,8 +196,8 @@ if want mdformat && [[ ${#MD[@]} -gt 0 ]]; then
     run python3 "$SCRIPT_DIR/check_md040.py" "${MD[@]}"
 fi
 
-# ktlint family: format Kotlin.
-if want ktlint && [[ ${#KT[@]} -gt 0 ]]; then
+# kotlin family: format Kotlin.
+if want kotlin && [[ ${#KT[@]} -gt 0 ]]; then
     if [[ $CHECK -eq 1 ]]; then
         run "$LINT_BIN_DIR/ktlint" "${KT[@]}"
     else

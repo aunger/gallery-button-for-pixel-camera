@@ -6,7 +6,7 @@ language specified") was enforced by markdownlint-cli2 until issue #688
 replaced it with mdformat. mdformat reformats a fence's contents but does not
 check whether the fence declares a language, so a new offender (a bare
 ```` ``` ```` with nothing after it) would go uncaught. This script closes that
-gap: it runs as part of the mdformat family in scripts/lint.sh (the git
+gap: it runs as part of the markdown family in scripts/lint.sh (the git
 pre-commit hook) and in .github/workflows/lint.yml's markdown-mdformat job, so
 the hook and CI share one definition of the check.
 
