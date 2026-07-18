@@ -818,17 +818,9 @@ class E2EFixture(
      * returns the screenshot it last captured -- so the caller asserts against the exact same
      * image that proved (or failed to prove) the color's presence, not a separately-captured one.
      *
-     * Issue #556: [waitForOverlayActive] only observes [OverlayService.isOverlayActive], an
-     * internal UsageStats-based flag that can flip true before the corresponding frame (camera
-     * feed plus overlay) is actually composited by the WindowManager -- especially on a
-     * cold-started activity, which briefly shows Android's mandatory splash-screen frame first.
-     * A fixed post-activation pause is a guess at how long compositing takes and silently stops
-     * being enough as CI load changes (e.g. issue #520's concurrent `screenrecord`). Polling for
-     * the actual pixel evidence removes that guess: `ScreenshotTestRule.failed()` proved the
-     * content was correct just moments after a fixed-pause capture went stale (it takes its own
-     * screenshot after the assertion throws and consistently shows the overlay rendered exactly
-     * at the configured position), so the content was never wrong -- only the single early
-     * capture was.
+     * Issue #556: [waitForOverlayActive] only observes [OverlayService.isOverlayActive], which
+     * can flip true before the corresponding frame is composited (a cold-started activity
+     * briefly shows the splash frame first), so callers poll for pixel evidence instead.
      *
      * @param color      The [Rgb] color to poll for.
      * @param timeoutMs  Maximum wait time in milliseconds.
