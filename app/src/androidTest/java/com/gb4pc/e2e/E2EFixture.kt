@@ -767,25 +767,18 @@ class E2EFixture(
         timeoutMs: Long = 15_000L,
         intervalMs: Long = 500L,
     ): Float {
-        val deadline = System.currentTimeMillis() + timeoutMs
         var lastCoverage = 0f
-        while (System.currentTimeMillis() < deadline) {
-            val screen = Screenshot.captureScreen()
-            val w = screen.width
-            val h = screen.height
+        captureScreenUntil(timeoutMs, intervalMs) { screen ->
             val margin = (1f - 0.60f) / 2f
             val region =
                 android.graphics.Rect(
-                    (w * margin).toInt(),
-                    (h * margin).toInt(),
-                    (w * (1f - margin)).toInt(),
-                    (h * (1f - margin)).toInt(),
+                    (screen.width * margin).toInt(),
+                    (screen.height * margin).toInt(),
+                    (screen.width * (1f - margin)).toInt(),
+                    (screen.height * (1f - margin)).toInt(),
                 )
-            val greenMask = ColorMatch.mask(screen, Rgb.GREEN)
-            val coverage = ColorMatch.coverageFraction(greenMask, region)
-            lastCoverage = coverage
-            if (coverage >= minCoverage) return coverage
-            Thread.sleep(intervalMs)
+            lastCoverage = ColorMatch.coverageFraction(ColorMatch.mask(screen, Rgb.GREEN), region)
+            lastCoverage >= minCoverage
         }
         return lastCoverage
     }
@@ -845,16 +838,7 @@ class E2EFixture(
         color: Rgb,
         timeoutMs: Long = 5_000L,
         intervalMs: Long = 200L,
-    ): Bitmap {
-        val deadline = System.currentTimeMillis() + timeoutMs
-        while (true) {
-            val screen = Screenshot.captureScreen()
-            if (ColorMatch.mask(screen, color).pixelCount > 0 || System.currentTimeMillis() >= deadline) {
-                return screen
-            }
-            Thread.sleep(intervalMs)
-        }
-    }
+    ): Bitmap = captureScreenUntil(timeoutMs, intervalMs) { ColorMatch.mask(it, color).pixelCount > 0 }
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
