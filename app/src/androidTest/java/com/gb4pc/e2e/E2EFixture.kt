@@ -612,6 +612,27 @@ class E2EFixture(
     }
 
     /**
+     * Taps the overlay, then polls screenshots until [expected] accepts [stableSamples]
+     * consecutive captures, returning the last capture (see [captureScreenUntil]).
+     *
+     * [tapOverlay] is silent when the overlay is not on screen, so every tap test must await
+     * its expected post-tap screen; a fixed pause races the tapped activity's cold start
+     * (issues #241, #705). On timeout the returned screenshot still shows the wrong screen,
+     * and the caller's assertion fails on the frame that proves it.
+     */
+    fun tapOverlayAndAwait(
+        timeoutMs: Long = 15_000L,
+        stableSamples: Int = 1,
+        expected: (Bitmap) -> Boolean,
+    ): Bitmap {
+        tapOverlay()
+        return captureScreenUntil(timeoutMs = timeoutMs, stableSamples = stableSamples, predicate = expected)
+    }
+
+    /** Package name of the current foreground window, per UiAutomator; null if undetermined. */
+    fun foregroundPackage(): String? = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation()).currentPackageName
+
+    /**
      * Locks the screen by sending KEYCODE_SLEEP (puts display to sleep unconditionally)
      * and then waits (up to 5 s) for [KeyguardManager.isKeyguardLocked] to return true.
      *
@@ -770,34 +791,33 @@ class E2EFixture(
     }
 
     /**
-     * Polls screenshots until *full-screen* GREEN (#00C853) coverage drops below [maxCoverage],
-     * or [timeoutMs] elapses. Returns the last measured coverage regardless of whether the
-     * threshold was reached.
+     * Polls screenshots until [predicate] accepts [stableSamples] consecutive captures, or
+     * [timeoutMs] elapses, and returns the last captured screenshot either way, so the caller
+     * asserts against the exact frame the poll measured rather than a separately-captured one.
      *
-     * Inverse companion to [waitForGreenCoverage], for tests that assert the green mock-camera
-     * feed *disappears* after an overlay tap (issue #705). Measures full-screen coverage, not
-     * [waitForGreenCoverage]'s central 60% region, because the full screen is what the callers'
-     * assertions measure.
+     * [stableSamples] > 1 hardens absence-style predicates (e.g. "no green on screen"): a
+     * single transient frame, such as an app-transition starting window, cannot end the wait.
      *
-     * @param maxCoverage Full-screen GREEN fraction below which the poll stops.
-     * @param timeoutMs   Maximum wait time in milliseconds.
-     * @param intervalMs  Sleep between successive capture attempts.
+     * @param timeoutMs     Maximum wait time in milliseconds.
+     * @param intervalMs    Sleep between successive capture attempts.
+     * @param stableSamples Consecutive predicate-satisfying captures required to stop early.
+     * @param predicate     Decides whether a captured screenshot is the awaited screen state.
      */
-    fun waitForGreenCoverageBelow(
-        maxCoverage: Float = 0.10f,
+    fun captureScreenUntil(
         timeoutMs: Long = 15_000L,
         intervalMs: Long = 500L,
-    ): Float {
+        stableSamples: Int = 1,
+        predicate: (Bitmap) -> Boolean,
+    ): Bitmap {
+        require(stableSamples >= 1) { "stableSamples must be >= 1" }
         val deadline = System.currentTimeMillis() + timeoutMs
-        var lastCoverage = 1f
-        while (System.currentTimeMillis() < deadline) {
+        var streak = 0
+        while (true) {
             val screen = Screenshot.captureScreen()
-            val coverage = ColorMatch.coverageFraction(ColorMatch.mask(screen, Rgb.GREEN))
-            lastCoverage = coverage
-            if (coverage < maxCoverage) return coverage
+            streak = if (predicate(screen)) streak + 1 else 0
+            if (streak >= stableSamples || System.currentTimeMillis() >= deadline) return screen
             Thread.sleep(intervalMs)
         }
-        return lastCoverage
     }
 
     /**

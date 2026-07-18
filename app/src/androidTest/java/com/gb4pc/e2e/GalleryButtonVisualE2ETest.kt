@@ -208,35 +208,33 @@ class GalleryButtonVisualE2ETest {
      * GREEN-filled gallery screen. GREEN coverage after tap must be below 10%.
      *
      * An empty gallery should show a black empty state (per mock-gallery's design), not GREEN.
-     *
-     * **Post-tap wait is a poll, not a fixed pause (issue #241, same race as #705).**
-     *
-     * A successful tap replaces the full-screen green MockCameraActivity with the mock
-     * gallery's black empty state only after LastPhotoActivity's cold start, which test3a
-     * documents at ~1.4 s on the CI emulator.
      */
     @Test
     fun test2a_emptyGalleryNoGreenAfterTap() {
         fixture.seedGalleryPrefs(MOCK_GALLERY_PACKAGE)
         fixture.clearCameraRoll()
         fixture.launchPixelCamera()
-        // Wait for the overlay to be active before tapping; a fixed 1 s pause is too short.
         fixture.waitForOverlayActive()
 
-        val s1 = Screenshot.captureScreen()
+        // Precondition: the green camera feed must be on screen before the tap, or the
+        // no-green assertion below would pass vacuously.
+        val s1 = fixture.captureScreenUntil { greenCoverage(it) >= 0.50f }
         Screenshot.saveForArtifact(s1, "2a-s1.png")
+        val preTapCoverage = greenCoverage(s1)
+        if (preTapCoverage < 0.50f) {
+            fail(
+                "test2a_emptyGalleryNoGreenAfterTap: pre-tap GREEN coverage is " +
+                    "${preTapCoverage * 100f}%--expected >= 50%. The green camera feed is not " +
+                    "on screen, so the overlay tap cannot be exercised.",
+            )
+        }
 
-        fixture.tapOverlay()
-
-        // Poll up to 15 s for the tap's result (the mock gallery's black empty state) to replace
-        // the full-screen green mock camera; a fixed 1 s pause races LastPhotoActivity's cold
-        // start (issue #241). The poll's return value is discarded: it only gates the wait, and
-        // the assertion below re-measures full-screen coverage on a fresh screenshot against the
-        // original 10% threshold. A no-op tap leaves the green camera on screen, so the poll
-        // times out and the assertion still fails.
-        fixture.waitForGreenCoverageBelow(maxCoverage = 0.10f, timeoutMs = 15_000L)
-
-        val s2 = Screenshot.captureScreen()
+        // Await the gallery's non-green empty state in the foreground. stableSamples keeps a
+        // transient app-transition frame from ending the wait early (see tapOverlayAndAwait).
+        val s2 =
+            fixture.tapOverlayAndAwait(stableSamples = 3) { screen ->
+                greenCoverage(screen) < 0.10f && fixture.foregroundPackage() == MOCK_GALLERY_PACKAGE
+            }
         Screenshot.saveForArtifact(s2, "2a-s2.png")
 
         val greenMask = ColorMatch.mask(s2, Rgb.GREEN)
@@ -248,6 +246,14 @@ class GalleryButtonVisualE2ETest {
                 "test2a_emptyGalleryNoGreenAfterTap: GREEN coverage after tap is " +
                     "${coverage * 100f}%--expected < 10%. " +
                     "The gallery opened showing unexpected green content with an empty roll.",
+            )
+        }
+        val foreground = fixture.foregroundPackage()
+        if (foreground != MOCK_GALLERY_PACKAGE) {
+            fail(
+                "test2a_emptyGalleryNoGreenAfterTap: foreground package after tap is " +
+                    "$foreground--expected $MOCK_GALLERY_PACKAGE. The screen shows no green, " +
+                    "but the gallery did not open (screen off, keyguard, or no-op tap).",
             )
         }
     }
@@ -315,12 +321,12 @@ class GalleryButtonVisualE2ETest {
      * GREEN coverage. This means `coverage >= 0.10f` and the assertion FAILS.
      *
      * Conversely, once the regression is fixed (overlay renders correctly in secure-camera mode),
-     * the tap succeeds, the gallery opens, and the empty-state screen is black → coverage < 10%
-     * → assertion PASSES.
+     * the tap succeeds, SecureViewerActivity opens with an empty session, and its empty state is
+     * black → coverage < 10% → assertion PASSES.
      *
      * The assertion itself (`coverage(GREEN) < 10%`) is correct and produces the right signal:
      * it fails when the regression is present and MockCameraActivity is green, and passes when
-     * the overlay works and the empty gallery is shown. Do not change the assertion.
+     * the overlay works and the empty viewer is shown. Do not change the assertion.
      *
      * **Cross-package roll cleanup (issue #406, resolves the PR #400 caveat).**
      *
@@ -335,17 +341,6 @@ class GalleryButtonVisualE2ETest {
      * independently of `test3a`, and a failure here reflects the secure-camera path itself,
      * not a leftover MediaStore row.
      *
-     * **Post-tap wait is a poll, not a fixed pause (issue #705).**
-     *
-     * A successful tap replaces the full-screen green MockCameraActivity with
-     * SecureViewerActivity's black empty state only after the viewer's cold start, which takes
-     * longer than 1 s on the loaded CI emulator (test3a documents ~1.4 s for the analogous
-     * mock-gallery launch). A fixed 1 s pause therefore screenshotted the still-green pre-tap
-     * frame and failed at ~87% GREEN even though the tap had worked (test5a's failures on the
-     * same locked path show 0 green pixels after its 15 s poll, proving the viewer does open).
-     * [E2EFixture.waitForGreenCoverageBelow] waits for the green feed to actually vanish,
-     * bounded so a genuinely blocked tap still fails the assertion below (the red-light case).
-     *
      * Tracking issue: #81 (locked-screen path: no new photos detected, SecureViewer shows black).
      * Do NOT skip, ignore, or quarantine this test.
      */
@@ -355,23 +350,26 @@ class GalleryButtonVisualE2ETest {
         fixture.clearCameraRoll()
         fixture.lockScreen()
         fixture.launchSecureCamera()
-        fixture.pause(1000)
 
-        val s1 = Screenshot.captureScreen()
+        // Precondition: the green secure-camera feed must be on screen before the tap, or the
+        // no-green assertion below would pass vacuously.
+        val s1 = fixture.captureScreenUntil { greenCoverage(it) >= 0.50f }
         Screenshot.saveForArtifact(s1, "4a-s1.png")
+        val preTapCoverage = greenCoverage(s1)
+        if (preTapCoverage < 0.50f) {
+            fail(
+                "test4a_secureCameraLockedEmptyGalleryNoGreen: pre-tap GREEN coverage is " +
+                    "${preTapCoverage * 100f}%--expected >= 50%. The green secure-camera feed " +
+                    "is not on screen, so the overlay tap cannot be exercised.",
+            )
+        }
 
-        fixture.tapOverlay()
-
-        // Poll up to 15 s for the tap's result (SecureViewer's black empty state) to replace the
-        // full-screen green mock camera; a fixed 1 s pause races SecureViewerActivity's cold start
-        // (issue #705), which deterministically screenshots the still-green pre-tap frame. The
-        // poll's return value is discarded: it only gates the wait, and the assertion below
-        // re-measures full-screen coverage on a fresh screenshot against the original 10%
-        // threshold. A no-op tap (the red-light case above) leaves the green camera on screen,
-        // so the poll times out and the assertion still fails.
-        fixture.waitForGreenCoverageBelow(maxCoverage = 0.10f, timeoutMs = 15_000L)
-
-        val s2 = Screenshot.captureScreen()
+        // Await SecureViewer's non-green empty state in the foreground. stableSamples keeps a
+        // transient app-transition frame from ending the wait early (see tapOverlayAndAwait).
+        val s2 =
+            fixture.tapOverlayAndAwait(stableSamples = 3) { screen ->
+                greenCoverage(screen) < 0.10f && fixture.foregroundPackage() == context.packageName
+            }
         Screenshot.saveForArtifact(s2, "4a-s2.png")
 
         val greenMask = ColorMatch.mask(s2, Rgb.GREEN)
@@ -383,6 +381,15 @@ class GalleryButtonVisualE2ETest {
                 "test4a_secureCameraLockedEmptyGalleryNoGreen: GREEN coverage after tap is " +
                     "${coverage * 100f}%--expected < 10%. " +
                     "The gallery opened showing unexpected green content with an empty roll.",
+            )
+        }
+        val foreground = fixture.foregroundPackage()
+        if (foreground != context.packageName) {
+            fail(
+                "test4a_secureCameraLockedEmptyGalleryNoGreen: foreground package after tap is " +
+                    "$foreground--expected ${context.packageName} (SecureViewerActivity). The " +
+                    "screen shows no green, but the viewer did not open (screen off, keyguard, " +
+                    "or no-op tap).",
             )
         }
     }
@@ -538,6 +545,9 @@ class GalleryButtonVisualE2ETest {
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
+
+    /** Full-screen GREEN coverage fraction of [screen]. */
+    private fun greenCoverage(screen: Bitmap): Float = ColorMatch.coverageFraction(ColorMatch.mask(screen, Rgb.GREEN))
 
     /**
      * Returns the Euclidean distance between two [PointF]s.
