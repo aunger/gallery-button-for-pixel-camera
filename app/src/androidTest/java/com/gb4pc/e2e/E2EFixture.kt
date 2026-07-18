@@ -775,21 +775,9 @@ class E2EFixture(
      * threshold was reached.
      *
      * Inverse companion to [waitForGreenCoverage], for tests that assert the green mock-camera
-     * feed *disappears* after an overlay tap (issue #705). The screen the tap replaces is the
-     * full-screen green MockCameraActivity, and the expected post-tap screen (the mock gallery's
-     * or SecureViewerActivity's black empty state) only appears after the tapped activity's cold
-     * start (process spawn + first frame), which the CI logcat shows can take ~1.4 s and more
-     * under CI load. A fixed 1 s post-tap pause therefore deterministically screenshots the
-     * still-green pre-tap frame (the ~87% GREEN failures tracked in #705 and #241). Polling for
-     * the green feed to actually vanish removes that guess, exactly as test3a/test5a already
-     * poll for their expected post-tap state.
-     *
-     * The red-light property of the calling tests is preserved: a no-op tap (overlay blocked or
-     * not tappable) leaves the green camera on screen, this poll never satisfies its threshold,
-     * and the caller's own assertion still fails on the unchanged green screen after [timeoutMs].
-     *
-     * Measures full-screen coverage, not [waitForGreenCoverage]'s central 60% region, because
-     * the full screen is what the callers' assertions measure.
+     * feed *disappears* after an overlay tap (issue #705). Measures full-screen coverage, not
+     * [waitForGreenCoverage]'s central 60% region, because the full screen is what the callers'
+     * assertions measure.
      *
      * @param maxCoverage Full-screen GREEN fraction below which the poll stops.
      * @param timeoutMs   Maximum wait time in milliseconds.
