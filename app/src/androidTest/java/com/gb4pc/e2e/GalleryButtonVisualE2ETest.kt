@@ -213,11 +213,7 @@ class GalleryButtonVisualE2ETest {
      *
      * A successful tap replaces the full-screen green MockCameraActivity with the mock
      * gallery's black empty state only after LastPhotoActivity's cold start, which test3a
-     * documents at ~1.4 s on the CI emulator. A fixed 1 s pause therefore screenshotted the
-     * still-green pre-tap frame and failed at ~87% GREEN even though the tap had worked
-     * (test3a passes on this same unlocked tap path with a post-tap poll).
-     * [E2EFixture.waitForGreenCoverageBelow] waits for the green feed to actually vanish,
-     * bounded so a genuinely broken tap still fails the assertion below.
+     * documents at ~1.4 s on the CI emulator.
      */
     @Test
     fun test2a_emptyGalleryNoGreenAfterTap() {
