@@ -278,16 +278,9 @@ class GalleryButtonVisualE2ETest {
         val s1 = Screenshot.captureScreen()
         Screenshot.saveForArtifact(s1, "3a-s1.png")
 
-        fixture.tapOverlay()
-
-        // Poll up to 15 s for the gallery's photo to render; a fixed 1 s pause races
-        // LastPhotoActivity's cold start (process spawn + MediaStore query + JPEG decode),
-        // which the CI logcat shows can take ~1.4 s. waitForGreenCoverage's return value is
-        // discarded: it only gates the wait, and the assertion below re-measures full-screen
-        // coverage on a fresh screenshot against the original 40% threshold.
-        fixture.waitForGreenCoverage(minCoverage = 0.40f, timeoutMs = 15_000L)
-
-        val s2 = Screenshot.captureScreen()
+        // Await the gallery showing the captured GREEN photo; its cold start (process spawn +
+        // MediaStore query + JPEG decode) takes ~1.4 s in CI.
+        val s2 = fixture.tapOverlayAndAwait { greenCoverage(it) > 0.40f }
         Screenshot.saveForArtifact(s2, "3a-s2.png")
 
         val greenMask = ColorMatch.mask(s2, Rgb.GREEN)
@@ -485,52 +478,27 @@ class GalleryButtonVisualE2ETest {
         val s1 = Screenshot.captureScreen()
         Screenshot.saveForArtifact(s1, "5a-s1.png")
 
-        fixture.tapOverlay() // locked tap → SecureViewer renders the session's GREEN photo
-
-        // Poll up to 15 s for the letterboxed GREEN band to appear; SecureViewer's cold start
-        // (process spawn + SubsamplingScaleImageView decode) races a fixed pause. The poll requires
-        // the same letterbox geometry as the assertion below (full width, height a minority of the
-        // screen), so it does not short-circuit on the full-screen mock-camera green that is on
-        // screen before the tap, and it predicts the assertion rather than measuring a different
-        // quantity.
-        fixture.waitForGreenBand(minWidthFraction = 0.80f, maxHeightFraction = 0.70f, timeoutMs = 15_000L)
-
-        val s2 = Screenshot.captureScreen()
+        // Locked tap → SecureViewer renders the session's GREEN photo. Await the letterboxed
+        // band (see [GreenBandMetrics]); the full-screen mock-camera green on screen before the
+        // tap does not satisfy it, so the poll waits for the SecureViewer render specifically.
+        val s2 = fixture.tapOverlayAndAwait { GreenBandMetrics(ColorMatch.mask(it, Rgb.GREEN)).isLetterboxedBand }
         Screenshot.saveForArtifact(s2, "5a-s2.png")
 
         val greenMask = ColorMatch.mask(s2, Rgb.GREEN)
         Screenshot.saveForArtifact(maskToBitmap(greenMask), "5a-green-mask.png")
 
-        // The displayed photo is a solid-green 16:9 image letterboxed to full width by
-        // SecureViewer's center-inside SubsamplingScaleImageView (see kdoc above).
-        val bandWidthFraction = greenMask.bbox.width().toFloat() / greenMask.width
-        val bandHeightFraction = greenMask.bbox.height().toFloat() / greenMask.height
-        val bboxArea = greenMask.bbox.width() * greenMask.bbox.height()
-        val withinBandCoverage = if (bboxArea > 0) greenMask.pixelCount.toFloat() / bboxArea else 0f
-
-        // The black letterbox bar above the band positively confirms SecureViewer's background
-        // rather than leftover full-screen mock-camera green. Measure the green coverage of the top
-        // strip (the screen above where the ~25%-tall centred band starts). With the band centred,
-        // its top edge sits at ~37% of the screen height, so the top 25% strip is entirely within
-        // the upper letterbox bar and must be essentially green-free.
-        val topStrip = android.graphics.Rect(0, 0, greenMask.width, (greenMask.height * 0.25f).toInt())
-        val topStripGreen = ColorMatch.coverageFraction(greenMask, topStrip)
-
-        if (bandWidthFraction <= 0.80f ||
-            withinBandCoverage <= 0.80f ||
-            bandHeightFraction >= 0.70f ||
-            topStripGreen >= 0.10f
-        ) {
+        val band = GreenBandMetrics(greenMask)
+        if (!band.isLetterboxedBand) {
             fail(
                 "test5a_secureCameraLockedPopulatedGalleryShowsGreen: the locked tap should open " +
                     "SecureViewerActivity showing the GREEN photo captured during the secure " +
                     "session as a letterboxed band over a black background, but the displayed green " +
                     "region is not a solid, full-width, letterboxed band. " +
-                    "Measured: band spans ${bandWidthFraction * 100f}% of screen width " +
+                    "Measured: band spans ${band.widthFraction * 100f}% of screen width " +
                     "(expected > 80%), green coverage within its bounding box is " +
-                    "${withinBandCoverage * 100f}% (expected > 80%), band height is " +
-                    "${bandHeightFraction * 100f}% of the screen (expected < 70%, i.e. a letterbox " +
-                    "not a full-screen fill), and the top strip is ${topStripGreen * 100f}% green " +
+                    "${band.withinBandCoverage * 100f}% (expected > 80%), band height is " +
+                    "${band.heightFraction * 100f}% of the screen (expected < 70%, i.e. a letterbox " +
+                    "not a full-screen fill), and the top strip is ${band.topStripGreen * 100f}% green " +
                     "(expected < 10%, i.e. a black letterbox bar, not leftover mock-camera green); " +
                     "green pixels=${greenMask.pixelCount}, bbox=${greenMask.bbox}, " +
                     "screen=${greenMask.width}x${greenMask.height}. " +
@@ -548,6 +516,38 @@ class GalleryButtonVisualE2ETest {
 
     /** Full-screen GREEN coverage fraction of [screen]. */
     private fun greenCoverage(screen: Bitmap): Float = ColorMatch.coverageFraction(ColorMatch.mask(screen, Rgb.GREEN))
+
+    /**
+     * test5a's letterboxed-band geometry, measured on a screenshot's GREEN mask: the session's
+     * solid-green 16:9 photo letterboxed to full width by SecureViewer's center-inside
+     * SubsamplingScaleImageView, over its black background (see test5a's kdoc for why each
+     * bound is load-bearing). Used by both test5a's post-tap poll and its assertion, so the
+     * poll predicts exactly what the assertion measures.
+     */
+    private class GreenBandMetrics(
+        mask: BinaryMask,
+    ) {
+        val widthFraction = mask.bbox.width().toFloat() / mask.width
+        val heightFraction = mask.bbox.height().toFloat() / mask.height
+        val withinBandCoverage: Float
+        val topStripGreen: Float
+
+        init {
+            val bboxArea = mask.bbox.width() * mask.bbox.height()
+            withinBandCoverage = if (bboxArea > 0) mask.pixelCount.toFloat() / bboxArea else 0f
+            // A green-free strip above the centred band confirms SecureViewer's black letterbox
+            // bar rather than leftover full-screen mock-camera green.
+            val topStrip = android.graphics.Rect(0, 0, mask.width, (mask.height * 0.25f).toInt())
+            topStripGreen = ColorMatch.coverageFraction(mask, topStrip)
+        }
+
+        val isLetterboxedBand: Boolean
+            get() =
+                widthFraction > 0.80f &&
+                    withinBandCoverage > 0.80f &&
+                    heightFraction < 0.70f &&
+                    topStripGreen < 0.10f
+    }
 
     /**
      * Returns the Euclidean distance between two [PointF]s.
