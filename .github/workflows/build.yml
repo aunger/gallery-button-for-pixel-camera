@@ -75,7 +75,10 @@ jobs:
 
       - name: Install Python script dependencies
         if: steps.diff_check.outputs.needs_full_build == 'true'
-        run: pip install -r scripts/requirements.txt
+        # --require-hashes refuses any artifact whose SHA-256 is not in the
+        # generated lock scripts/requirements.txt (issue #723; see
+        # scripts/requirements.in for the top-level pins).
+        run: pip install --require-hashes -r scripts/requirements.txt
 
       - name: Run Python script unit tests
         if: steps.diff_check.outputs.needs_full_build == 'true'
@@ -1303,7 +1306,10 @@ jobs:
         continue-on-error: true
 
       - name: Install Python script dependencies
-        run: pip install -r scripts/requirements.txt
+        # --require-hashes refuses any artifact whose SHA-256 is not in the
+        # generated lock scripts/requirements.txt (issue #723; see
+        # scripts/requirements.in for the top-level pins).
+        run: pip install --require-hashes -r scripts/requirements.txt
 
       - name: File issues for failed tests
         env:
