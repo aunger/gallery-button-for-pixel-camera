@@ -255,7 +255,17 @@ class GalleryButtonVisualE2ETest {
 
     /**
      * Verifies that tapping the overlay when the camera roll contains one GREEN photo opens
-     * the gallery and shows the GREEN content. Coverage after tap must exceed 40%.
+     * the mock gallery in the foreground and shows the GREEN content. Coverage after tap must
+     * exceed 40%, and the foreground package must be the mock gallery.
+     *
+     * The foreground-package check is load-bearing (issue #733): MockCameraActivity already fills
+     * the screen with close to 100% GREEN before the tap, so coverage alone stays above 40% even
+     * when the tap is a no-op and the gallery never launches (the #241/#705 regression class this
+     * test exists to catch). A stability requirement would not help either: the no-op failure mode
+     * is a screen that never changes, so any number of consecutive samples is satisfied just as
+     * trivially as one. Requiring the mock gallery in the foreground, mirroring test2a/test4a's
+     * safeguard, makes a no-op tap time out and fail loudly instead of passing on the stale
+     * pre-tap frame.
      */
     @Test
     fun test3a_populatedGalleryShowsGreenAfterTap() {
@@ -271,9 +281,15 @@ class GalleryButtonVisualE2ETest {
         val s1 = Screenshot.captureScreen()
         Screenshot.saveForArtifact(s1, "3a-s1.png")
 
-        // Await the gallery showing the captured GREEN photo; its cold start (process spawn +
-        // MediaStore query + JPEG decode) takes ~1.4 s in CI.
-        val s2 = fixture.tapOverlayAndAwait { greenCoverage(it) > 0.40f }
+        // Await the mock gallery, in the foreground, showing the captured GREEN photo; its cold
+        // start (process spawn + MediaStore query + JPEG decode) takes ~1.4 s in CI. The
+        // foreground-package predicate is essential: the pre-tap MockCameraActivity is already
+        // ~100% GREEN, so a coverage-only predicate is satisfied by that stale frame and a no-op
+        // tap would pass without the gallery launching (issue #733).
+        val s2 =
+            fixture.tapOverlayAndAwait { screen ->
+                greenCoverage(screen) > 0.40f && fixture.foregroundPackage() == MOCK_GALLERY_PACKAGE
+            }
         Screenshot.saveForArtifact(s2, "3a-s2.png")
 
         val greenMask = ColorMatch.mask(s2, Rgb.GREEN)
@@ -285,6 +301,15 @@ class GalleryButtonVisualE2ETest {
                 "test3a_populatedGalleryShowsGreenAfterTap: GREEN coverage after tap is " +
                     "${coverage * 100f}%--expected > 40%. " +
                     "The gallery did not open, or the captured photo is not green.",
+            )
+        }
+        val foreground = fixture.foregroundPackage()
+        if (foreground != MOCK_GALLERY_PACKAGE) {
+            fail(
+                "test3a_populatedGalleryShowsGreenAfterTap: foreground package after tap is " +
+                    "$foreground--expected $MOCK_GALLERY_PACKAGE. The screen shows green, but the " +
+                    "gallery did not open (the pre-tap mock-camera feed is still in front after a " +
+                    "no-op tap).",
             )
         }
     }
