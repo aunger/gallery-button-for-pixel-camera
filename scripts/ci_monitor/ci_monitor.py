@@ -366,8 +366,10 @@ def latest_check_runs(check_json):
     each distinct non-empty check-run `name`, only the most recent run (the
     highest check-run `id`, via `_check_run_recency_key`); the surviving run sits
     at the position of that name's first appearance, so the summary's row order
-    is otherwise preserved. Because check-run ids are unique, the `>=` winner
-    test below never ties, so no list-order tiebreak is relied on.
+    is otherwise preserved. Real check-run ids are unique, so in practice the
+    `>=` winner test below never ties; the one exception is two runs whose ids
+    are both unusable (each keyed -1), where `>=` keeps the later of the two in
+    list order, which is harmless since neither carries real recency.
     Runs with no usable `name` are passed through unchanged (each kept), since
     name-based identity does not apply to them and GitHub always names its own
     check runs; this also leaves the unnamed-Actions-run fixtures other tests

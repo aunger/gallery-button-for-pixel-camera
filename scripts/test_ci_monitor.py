@@ -4809,19 +4809,20 @@ def main() -> int:
         "recency pick wrong; got %r" % (kept_newer,),
     )
 
-    # When started_at is absent/equal, the numeric id breaks the tie.
-    ID_TIEBREAK = {
+    # The check-run id is the sole recency key: the higher id is the latest
+    # attempt and wins outright (issue #719), with no started_at consulted.
+    ID_RECENCY = {
         "total_count": 2,
         "check_runs": [
             {"id": 5, "name": "gate", "status": "completed", "conclusion": "failure"},
             {"id": 9, "name": "gate", "status": "completed", "conclusion": "success"},
         ],
     }
-    kept_id = ci_monitor.latest_check_runs(ID_TIEBREAK)["check_runs"]
+    kept_id = ci_monitor.latest_check_runs(ID_RECENCY)["check_runs"]
     check(
         len(kept_id) == 1 and kept_id[0]["id"] == 9,
-        "with no started_at, the higher id wins the tiebreak",
-        "id tiebreak wrong; got %r" % (kept_id,),
+        "the higher id (the latest attempt) wins outright",
+        "id recency pick wrong; got %r" % (kept_id,),
     )
 
     # Distinct names are all preserved, in first-appearance order; unnamed runs
