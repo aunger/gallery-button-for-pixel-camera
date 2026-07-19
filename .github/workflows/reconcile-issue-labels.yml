@@ -1,0 +1,35 @@
+name: Reconcile issue labels on open PRs
+
+# On-demand re-application of scripts/propagate_issue_labels.py's label
+# propagation rule to every open pull request. propagate-issue-labels.yml's
+# pull_request triggers cover a sidebar-linked PR whenever it sees further
+# ordinary activity (a push, a reopen, and so on); this workflow exists for
+# the residual case of a PR that gets sidebar-linked and then sees none of
+# those events before merge.
+#
+# Deliberately workflow_dispatch-only rather than a schedule: a periodic
+# cron would poll every open PR indefinitely even when nothing needs
+# reconciling, for a gap that is otherwise already closed by the pokes in
+# propagate-issue-labels.yml. Run this manually (from the Actions tab, or
+# locally with `python3 scripts/reconcile_issue_labels.py`) if you suspect a
+# PR was sidebar-linked without triggering that workflow.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Reconcile issue labels across open PRs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python3 scripts/reconcile_issue_labels.py

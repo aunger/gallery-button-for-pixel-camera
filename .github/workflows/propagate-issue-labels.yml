@@ -1,0 +1,52 @@
+name: Propagate issue labels to linked PR
+
+# When a pull request closes an issue via a closing-keyword relationship
+# ("Fixes #N", "Closes #N", the other variants GitHub recognizes, or a
+# manually linked issue), copies that issue's labels onto the pull request.
+# See scripts/propagate_issue_labels.py for the exact rules, including the
+# exception that protects an existing PR label from an indirect
+# mutual-exclusion removal.
+#
+# GitHub fires no webhook event for linking a PR to an issue via the
+# "Development" sidebar after the PR is already open, so a closing
+# relationship established that way, with no body edit, cannot be caught by a
+# single trigger type. Rather than run on a perpetual schedule to cover that
+# gap, this runs on every pull_request event type that commonly recurs during
+# a PR's normal review lifecycle in this repo (a fresh push, a reopen, a
+# ready-for-review flip, a review request), so most sidebar-linked PRs get
+# reconciled by their own ordinary activity. "labeled"/"unlabeled" are
+# deliberately excluded: re-running on "unlabeled" would re-apply a label a
+# human just removed on purpose, clobbering their edit.
+#
+# "edited" only re-runs when the body itself changed
+# (github.event.changes.body is only present then), so unrelated edits
+# (title, base branch) do not re-trigger it. Every other listed type always
+# runs, since none of them carry a "changes" object to gate on.
+#
+# A PR that gets sidebar-linked and then sees none of these events before
+# merge is not covered automatically; scripts/reconcile_issue_labels.py is
+# available to reconcile every open PR on demand (run locally, or dispatch
+# it in Actions) for that residual case.
+
+on:
+  pull_request:
+    types: [opened, edited, reopened]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  propagate-issue-labels:
+    runs-on: ubuntu-latest
+    if: github.event.action != 'edited' || github.event.changes.body
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Propagate linked issue labels
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: python3 scripts/propagate_issue_labels.py

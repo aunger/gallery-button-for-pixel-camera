@@ -339,33 +339,37 @@ def parse_pr_terminal(pr_json):
 
 
 def _check_run_recency_key(run):
-    """Return a sort key ordering check runs oldest-to-newest (issue #707).
+    """Return a sort key ordering check runs oldest-to-newest by check-run id.
 
-    GitHub can attach several check runs with the same `name` to one commit when
-    a workflow re-runs: e.g. each PR-side label add/remove re-triggers the
-    label-gate workflow, so that gate's check-run name accumulates several
-    entries against the same head commit, of which only the most recent
-    conclusion is authoritative (the earlier ones are stale).
-    Recency is judged by `started_at` (ISO 8601, so lexically sortable), then by
-    the numeric check-run `id` as a monotonic tiebreak (a re-run always gets a
-    higher id). A run missing both fields sorts oldest, so a run carrying real
-    recency data always outranks one that does not.
+    GitHub attaches several check runs with the same `name` to one commit when a
+    workflow re-runs (e.g. each PR-side label add/remove re-triggers the
+    label-gate workflow), so that gate's check-run name accumulates several
+    entries against the same head commit, of which only the most recent is
+    authoritative (issue #707). A re-run always creates a new check-run row with
+    a higher `id`, and--unlike `started_at`, which GitHub leaves null until a run
+    actually starts (issue #719)--the `id` is assigned at creation, so a
+    freshly-queued re-run already outranks the completed run it supersedes.
+    Sorting by `id` alone keeps the latest attempt for both completed re-runs
+    (#707) and not-yet-started ones (#719), with no null-handling and no
+    status special-casing. A run with an unusable id sorts oldest.
     """
-    started = run.get("started_at") or ""
     try:
-        run_id = int(run.get("id"))
+        return int(run.get("id"))
     except (TypeError, ValueError):
-        run_id = -1
-    return (started, run_id)
+        return -1
 
 
 def latest_check_runs(check_json):
-    """Collapse same-named check runs to the latest one each (issue #707).
+    """Collapse same-named check runs to the latest one each (issues #707, #719).
 
     Returns a shallow copy of `check_json` whose `check_runs` list keeps, for
-    each distinct non-empty check-run `name`, only the most recent run (by
-    `_check_run_recency_key`); the surviving run sits at the position of that
-    name's first appearance, so the summary's row order is otherwise preserved.
+    each distinct non-empty check-run `name`, only the most recent run (the
+    highest check-run `id`, via `_check_run_recency_key`); the surviving run sits
+    at the position of that name's first appearance, so the summary's row order
+    is otherwise preserved. Real check-run ids are unique, so in practice the
+    `>=` winner test below never ties; the one exception is two runs whose ids
+    are both unusable (each keyed -1), where `>=` keeps the later of the two in
+    list order, which is harmless since neither carries real recency.
     Runs with no usable `name` are passed through unchanged (each kept), since
     name-based identity does not apply to them and GitHub always names its own
     check runs; this also leaves the unnamed-Actions-run fixtures other tests

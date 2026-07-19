@@ -63,6 +63,7 @@ The `ktlint` JAR is stored under `~/.local/lib/ktlint/`.
 
 `scripts/requirements-lint.txt` is a fully resolved lock: every package, top-level and transitive, is pinned to an exact version and a SHA-256 hash, and pip installs it with `--require-hashes` so a substituted or tampered wheel is rejected (issue #699).
 Edit the top-level pins in `scripts/requirements-lint.in` and regenerate the lock with the `uv pip compile` command recorded in that file's header.
+`uv` is not installed by the session-start hook; install it first with `pip install uv`.
 
 ### Checks run by `scripts/lint.sh`
 
@@ -91,6 +92,13 @@ Semgrep runs in CI (`.github/workflows/semgrep.yml`) on PRs and weekly.
 Rulesets: `p/python`, `p/kotlin`, `p/security-audit`.
 Results appear in the GitHub Security tab (SARIF upload).
 Findings block the PR.
+The engine is installed from `scripts/requirements-semgrep.txt`, a hash-pinned lock (top-level pin in `scripts/requirements-semgrep.in`), with `--require-hashes` (issue #723); the rulesets are still fetched from the Semgrep registry at scan time, so the weekly run keeps picking up new rules.
+Regenerate the lock with the `uv pip compile` command recorded in that `.in` file's header.
+
+### CI helper-script dependencies
+
+The Python helper scripts' runtime deps (`defusedxml`, `requests`, `PyYAML`) install in CI (`.github/workflows/build.yml`) from `scripts/requirements.txt`, a hash-pinned lock (top-level pins in `scripts/requirements.in`), with `--require-hashes` (issue #723).
+Regenerate the lock with the `uv pip compile` command recorded in that `.in` file's header.
 
 ______________________________________________________________________
 

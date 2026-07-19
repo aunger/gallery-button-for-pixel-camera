@@ -1,0 +1,23 @@
+# Source pin for Semgrep, the static-analysis scanner run by
+# .github/workflows/semgrep.yml. This file lists only the top-level tool; the
+# fully resolved, hash-pinned lock that pip actually installs is
+# scripts/requirements-semgrep.txt (generated from this file).
+#
+# semgrep is pinned to an exact version from PyPI, a trusted language package
+# registry. The generated lock additionally pins the full transitive closure to
+# exact versions and SHA-256 hashes so pip --require-hashes can refuse any
+# artifact whose hash does not match (issue #723; same hardening as
+# scripts/requirements-lint.txt from issue #699). Pinning the engine version
+# does not freeze the rules: the workflow still fetches p/python, p/kotlin, and
+# p/security-audit from the Semgrep registry at scan time, so its weekly
+# scheduled run keeps picking up newly-published rules.
+#
+# Regenerating the lock (do this whenever the pin here changes):
+#
+#   uv pip compile --universal --python-version 3.10 --generate-hashes \
+#       scripts/requirements-semgrep.in -o scripts/requirements-semgrep.txt
+#
+# --universal + --python-version 3.10 make the lock a superset covering every
+# interpreter the install site uses (setup-python's "3.x" in the workflow), so
+# every marker-gated and platform-gated entry resolves under --require-hashes.
+semgrep==1.170.0
