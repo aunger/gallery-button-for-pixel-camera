@@ -697,16 +697,6 @@ class E2EFixture(
     }
 
     /**
-     * Pauses the current thread for [ms] milliseconds.
-     *
-     * Explicit helper for the spec's "pause N ms" steps; wraps [Thread.sleep] so test code
-     * stays readable without raw sleep calls.
-     */
-    fun pause(ms: Long) {
-        Thread.sleep(ms)
-    }
-
-    /**
      * Polls [OverlayService.isOverlayActive] until it returns false or [timeoutMs] elapses.
      *
      * Call this after [stopPixelCamera] (or in [setUp]) to guarantee the overlay is inactive
