@@ -69,13 +69,20 @@ Covers:
        whose distinguishing text lives in `suite` (name matching still works,
        and a pattern in neither still suppresses)
   (ay) #707 latest_check_runs: same-named check runs collapse to the latest
-       each (by started_at then id); the raw payload's stale failure reads
+       each (by check-run id); the raw payload's stale failure reads
        Blocked while the collapsed one reads all_passed; distinct names and
        unnamed runs are preserved; only the latest run is a diagnostic target
   (az) #707 main(): a stale label-gate re-run (failure) between two successes
        does not outvote the authoritative latest success -- the monitor
        terminates Clear (mergeable_state=clean), lists the gate once, and polls
        only the latest run's jobs/artifacts
+  (ba) #719 latest_check_runs/parse_check_result: a freshly-queued re-run with
+       a null started_at but a higher id wins over an old completed run, so the
+       collapsed payload reads in_progress (not a premature all_passed); the
+       symmetric stale-failure variant reads in_progress (not Blocked)
+  (bb) #719 main(): --sha mode does not terminate Clear while a same-named
+       required check has a queued re-run outstanding; it Clears only once that
+       re-run completes
 
 No network calls required; no GITHUB_TOKEN needed.
 Run this file directly to execute the suite: exits 0 on success, non-zero on failure.
@@ -4770,20 +4777,22 @@ def main() -> int:
         "expected [('333', None)]; got %r" % (targets_ay,),
     )
 
-    # started_at is the primary recency signal; the id is only a tiebreak. A run
-    # with a newer started_at wins even if its id is numerically lower.
-    STARTED_AT_WINS = {
+    # Recency is judged by check-run id alone. On real GitHub payloads the newer
+    # attempt has both the higher id and the later started_at (the id is assigned
+    # first, at creation; issue #719), so this agreement case is what actually
+    # occurs -- the newer run wins and the stale low-id run loses.
+    NEWER_ATTEMPT_WINS = {
         "total_count": 2,
         "check_runs": [
             {
-                "id": 999,
+                "id": 1,
                 "name": "gate",
                 "status": "completed",
                 "conclusion": "failure",
                 "started_at": "2026-01-01T00:00:00Z",
             },
             {
-                "id": 1,
+                "id": 999,
                 "name": "gate",
                 "status": "completed",
                 "conclusion": "success",
@@ -4791,26 +4800,29 @@ def main() -> int:
             },
         ],
     }
-    kept_started = ci_monitor.latest_check_runs(STARTED_AT_WINS)["check_runs"]
+    kept_newer = ci_monitor.latest_check_runs(NEWER_ATTEMPT_WINS)["check_runs"]
     check(
-        len(kept_started) == 1 and kept_started[0]["conclusion"] == "success",
-        "a newer started_at wins over a numerically higher id",
-        "started_at tiebreak wrong; got %r" % (kept_started,),
+        len(kept_newer) == 1
+        and kept_newer[0]["id"] == 999
+        and kept_newer[0]["conclusion"] == "success",
+        "the newer attempt (higher id and later started_at) wins",
+        "recency pick wrong; got %r" % (kept_newer,),
     )
 
-    # When started_at is absent/equal, the numeric id breaks the tie.
-    ID_TIEBREAK = {
+    # The check-run id is the sole recency key: the higher id is the latest
+    # attempt and wins outright (issue #719), with no started_at consulted.
+    ID_RECENCY = {
         "total_count": 2,
         "check_runs": [
             {"id": 5, "name": "gate", "status": "completed", "conclusion": "failure"},
             {"id": 9, "name": "gate", "status": "completed", "conclusion": "success"},
         ],
     }
-    kept_id = ci_monitor.latest_check_runs(ID_TIEBREAK)["check_runs"]
+    kept_id = ci_monitor.latest_check_runs(ID_RECENCY)["check_runs"]
     check(
         len(kept_id) == 1 and kept_id[0]["id"] == 9,
-        "with no started_at, the higher id wins the tiebreak",
-        "id tiebreak wrong; got %r" % (kept_id,),
+        "the higher id (the latest attempt) wins outright",
+        "id recency pick wrong; got %r" % (kept_id,),
     )
 
     # Distinct names are all preserved, in first-appearance order; unnamed runs
@@ -4916,6 +4928,140 @@ def main() -> int:
         "request deque not drained; %d entries left" % len(side_effects_az),
     )
     check(rc_az == 0, "main() returned 0", "main() returned %r" % rc_az)
+
+    # ── (ba) #719 a queued re-run with a null started_at wins over an old run ───────
+    print(
+        "\n=== (ba) #719 latest_check_runs/parse_check_result: a queued re-run "
+        "(null started_at, higher id) is not outvoted by a stale completed run ==="
+    )
+
+    # The exact #719 shape: a required check has an old completed run plus a
+    # freshly-queued re-run of the same name. GitHub leaves the queued run's
+    # started_at null until it starts, so a started_at-primary key would sort the
+    # queued run oldest and collapse to the stale completed run -- reading its
+    # verdict during the re-run window. The id (assigned at creation) already
+    # ranks the queued re-run newest, so the collapse keeps it and the verdict
+    # stays in_progress until the re-run finishes.
+    QUEUED_RERUN_AFTER_SUCCESS = {
+        "total_count": 2,
+        "check_runs": [
+            {
+                "id": 1,
+                "name": "build-and-test",
+                "status": "completed",
+                "conclusion": "success",
+                "started_at": "2026-01-01T00:00:00Z",
+            },
+            {"id": 2, "name": "build-and-test", "status": "queued"},  # no started_at yet
+        ],
+    }
+    collapsed_ba1 = ci_monitor.latest_check_runs(QUEUED_RERUN_AFTER_SUCCESS)
+    check(
+        len(collapsed_ba1["check_runs"]) == 1 and collapsed_ba1["check_runs"][0]["id"] == 2,
+        "the freshly-queued re-run (id 2, null started_at) survives the collapse",
+        "wrong surviving run; got %r" % (collapsed_ba1["check_runs"],),
+    )
+    check(
+        ci_monitor.parse_check_result(collapsed_ba1) == "in_progress",
+        "the collapsed payload reads in_progress, not a premature all_passed",
+        "expected in_progress; got %r" % ci_monitor.parse_check_result(collapsed_ba1),
+    )
+
+    # Symmetric variant: the stale completed run is a failure. The queued re-run
+    # must still win, so the verdict is in_progress rather than a spurious Blocked
+    # off the superseded failure.
+    QUEUED_RERUN_AFTER_FAILURE = {
+        "total_count": 2,
+        "check_runs": [
+            {
+                "id": 10,
+                "name": "build-and-test",
+                "status": "completed",
+                "conclusion": "failure",
+                "started_at": "2026-01-01T00:00:00Z",
+            },
+            {"id": 11, "name": "build-and-test", "status": "queued"},  # no started_at yet
+        ],
+    }
+    collapsed_ba2 = ci_monitor.latest_check_runs(QUEUED_RERUN_AFTER_FAILURE)
+    check(
+        len(collapsed_ba2["check_runs"]) == 1 and collapsed_ba2["check_runs"][0]["id"] == 11,
+        "the queued re-run (id 11) survives over the stale completed failure",
+        "wrong surviving run; got %r" % (collapsed_ba2["check_runs"],),
+    )
+    check(
+        ci_monitor.parse_check_result(collapsed_ba2) == "in_progress",
+        "the symmetric payload reads in_progress, not a spurious Blocked",
+        "expected in_progress; got %r" % ci_monitor.parse_check_result(collapsed_ba2),
+    )
+
+    # ── (bb) #719 main(): --sha mode does not Clear while a re-run is queued ────────
+    print(
+        "\n=== (bb) #719 main(): --sha mode keeps polling through a queued re-run "
+        "and Clears only once it completes ==="
+    )
+
+    # End-to-end reproduction of the user-visible defect: in --sha mode there is
+    # no mergeable_state backstop, so a premature all_passed would terminate Clear
+    # while a required check's re-run is still queued. Poll 1 carries the old
+    # completed success plus a queued re-run of the same name; poll 2 shows the
+    # re-run completed. The monitor must stay in_progress on poll 1 (consuming it)
+    # and Clear only on poll 2. Both check runs are unnamed to Actions (no
+    # github-actions details_url), so parse_actions_targets finds no jobs/artifacts
+    # to fetch -- exactly one check-runs request is issued per poll.
+    SHA_BB = "719f1xed0cafe"
+    tag_bb = "SHA#%s" % SHA_BB[:7]
+    POLL1_BB = QUEUED_RERUN_AFTER_SUCCESS
+    POLL2_BB = {
+        "total_count": 2,
+        "check_runs": [
+            {
+                "id": 1,
+                "name": "build-and-test",
+                "status": "completed",
+                "conclusion": "success",
+                "started_at": "2026-01-01T00:00:00Z",
+            },
+            {
+                "id": 2,
+                "name": "build-and-test",
+                "status": "completed",
+                "conclusion": "success",
+                "started_at": "2026-01-02T00:00:00Z",
+            },
+        ],
+    }
+    side_effects_bb = collections.deque([POLL1_BB, POLL2_BB])
+
+    def fake_request_bb(url, token, raw=False):
+        return side_effects_bb.popleft()
+
+    buf_bb = io.StringIO()
+    with (
+        unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_bb),
+        unittest.mock.patch.object(ci_monitor.time, "time", return_value=1000.0),
+        unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None),
+        unittest.mock.patch("sys.stdout", new=buf_bb),
+    ):
+        rc_bb = ci_monitor.main(["ci_monitor.py", "--sha", SHA_BB])
+
+    lines_bb = buf_bb.getvalue().splitlines()
+    check(
+        ("%s: Clear" % tag_bb) in lines_bb,
+        "the monitor eventually terminates Clear once the re-run completes",
+        "expected a Clear line; output: %r" % lines_bb,
+    )
+    check(
+        not any("Blocked" in ln for ln in lines_bb),
+        "no Blocked terminal is emitted",
+        "unexpected Blocked line; output: %r" % lines_bb,
+    )
+    check(
+        len(side_effects_bb) == 0,
+        "both polls were consumed: the monitor did not Clear on the queued poll 1",
+        "premature terminal on poll 1; %d payloads left unconsumed" % len(side_effects_bb),
+    )
+    check(rc_bb == 0, "main() returned 0", "main() returned %r" % rc_bb)
 
     # ── Summary ────────────────────────────────────────────────────────────────────
     print("\nResults: %d passed, %d failed." % (PASS, FAIL))

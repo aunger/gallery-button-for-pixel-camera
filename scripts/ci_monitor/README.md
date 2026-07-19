@@ -41,7 +41,8 @@ In `--run-id` mode, the run to track is simply the one named on the command line
 
 Before reading the verdict, summary, or run/job targets, the Monitor collapses the `/commits/{sha}/check-runs` payload so that each distinct check-run *name* keeps only its most recent run (issue #707).
 GitHub can attach several check runs with the same name to one commit when a workflow re-runs: for example, each PR-side label add/remove re-triggers `block-merge-on-blocking-labels.yml`, so the `No blocking labels` gate accumulates several entries against the same head commit, and a stale `failure` (from a blocking label that was since removed) can sit between two `success` runs.
-Recency is judged by the run's `started_at` (ISO 8601, lexically sortable), then its numeric check-run `id` as a monotonic tiebreak; the surviving run keeps the position of that name's first appearance so the summary's row order is otherwise unchanged.
+Recency is judged by the run's numeric check-run `id`: GitHub assigns it at creation and a re-run always gets a higher one, so it identifies the latest attempt without relying on `started_at`, which GitHub leaves null until a run actually starts (a freshly-queued re-run would otherwise sort oldest and let a stale completed run win; issue #719).
+The surviving run keeps the position of that name's first appearance so the summary's row order is otherwise unchanged.
 This mirrors GitHub's own `mergeable_state`, which judges a required check by its latest run per name.
 Without it, a superseded `failure` would outvote the authoritative later `success` and drive a spurious `Blocked` terminal, and the stale run's job would also be tracked for diagnostics.
 Runs with no usable `name` are passed through unchanged (each kept), since name-based identity does not apply to them and GitHub always names its own check runs.
