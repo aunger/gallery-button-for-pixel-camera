@@ -612,6 +612,27 @@ class E2EFixture(
     }
 
     /**
+     * Taps the overlay, then polls screenshots until [expected] holds continuously for
+     * [stableForMs], returning the last capture (see [captureScreenUntil]).
+     *
+     * [tapOverlay] is silent when the overlay is not on screen, so every tap test must await
+     * its expected post-tap screen; a fixed pause races the tapped activity's cold start
+     * (issues #241, #705). On timeout the returned screenshot still shows the wrong screen,
+     * and the caller's assertion fails on the frame that proves it.
+     */
+    fun tapOverlayAndAwait(
+        timeoutMs: Long = 15_000L,
+        stableForMs: Long = 0L,
+        expected: (Bitmap) -> Boolean,
+    ): Bitmap {
+        tapOverlay()
+        return captureScreenUntil(timeoutMs = timeoutMs, stableForMs = stableForMs, predicate = expected)
+    }
+
+    /** Package name of the current foreground window, per UiAutomator; null if undetermined. */
+    fun foregroundPackage(): String? = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation()).currentPackageName
+
+    /**
      * Locks the screen by sending KEYCODE_SLEEP (puts display to sleep unconditionally)
      * and then waits (up to 5 s) for [KeyguardManager.isKeyguardLocked] to return true.
      *
@@ -676,16 +697,6 @@ class E2EFixture(
     }
 
     /**
-     * Pauses the current thread for [ms] milliseconds.
-     *
-     * Explicit helper for the spec's "pause N ms" steps; wraps [Thread.sleep] so test code
-     * stays readable without raw sleep calls.
-     */
-    fun pause(ms: Long) {
-        Thread.sleep(ms)
-    }
-
-    /**
      * Polls [OverlayService.isOverlayActive] until it returns false or [timeoutMs] elapses.
      *
      * Call this after [stopPixelCamera] (or in [setUp]) to guarantee the overlay is inactive
@@ -746,27 +757,54 @@ class E2EFixture(
         timeoutMs: Long = 15_000L,
         intervalMs: Long = 500L,
     ): Float {
-        val deadline = System.currentTimeMillis() + timeoutMs
         var lastCoverage = 0f
-        while (System.currentTimeMillis() < deadline) {
-            val screen = Screenshot.captureScreen()
-            val w = screen.width
-            val h = screen.height
+        captureScreenUntil(timeoutMs, intervalMs) { screen ->
             val margin = (1f - 0.60f) / 2f
             val region =
                 android.graphics.Rect(
-                    (w * margin).toInt(),
-                    (h * margin).toInt(),
-                    (w * (1f - margin)).toInt(),
-                    (h * (1f - margin)).toInt(),
+                    (screen.width * margin).toInt(),
+                    (screen.height * margin).toInt(),
+                    (screen.width * (1f - margin)).toInt(),
+                    (screen.height * (1f - margin)).toInt(),
                 )
-            val greenMask = ColorMatch.mask(screen, Rgb.GREEN)
-            val coverage = ColorMatch.coverageFraction(greenMask, region)
-            lastCoverage = coverage
-            if (coverage >= minCoverage) return coverage
-            Thread.sleep(intervalMs)
+            lastCoverage = ColorMatch.coverageFraction(ColorMatch.mask(screen, Rgb.GREEN), region)
+            lastCoverage >= minCoverage
         }
         return lastCoverage
+    }
+
+    /**
+     * Polls screenshots until [predicate] holds continuously for [stableForMs] of wall-clock
+     * time, or [timeoutMs] elapses, and returns the last captured screenshot either way, so the
+     * caller asserts against the exact frame the poll measured rather than a separately-captured
+     * one.
+     *
+     * [stableForMs] > 0 hardens absence-style predicates (e.g. "no green on screen"): a
+     * transient frame, such as an app-transition starting window, cannot end the wait, and the
+     * guarantee is a wall-clock duration, so it does not shrink if per-capture latency drops
+     * (e.g. issue #731).
+     *
+     * @param timeoutMs   Maximum wait time in milliseconds.
+     * @param intervalMs  Sleep between successive capture attempts.
+     * @param stableForMs Duration the predicate must hold, across re-samples, to stop early.
+     * @param predicate   Decides whether a captured screenshot is the awaited screen state.
+     */
+    fun captureScreenUntil(
+        timeoutMs: Long = 15_000L,
+        intervalMs: Long = 500L,
+        stableForMs: Long = 0L,
+        predicate: (Bitmap) -> Boolean,
+    ): Bitmap {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        var satisfiedSince: Long? = null
+        while (true) {
+            val screen = Screenshot.captureScreen()
+            val sampledAt = System.currentTimeMillis()
+            satisfiedSince = if (predicate(screen)) satisfiedSince ?: sampledAt else null
+            val stable = satisfiedSince != null && sampledAt - satisfiedSince >= stableForMs
+            if (stable || sampledAt >= deadline) return screen
+            Thread.sleep(intervalMs)
+        }
     }
 
     /**
@@ -774,17 +812,9 @@ class E2EFixture(
      * returns the screenshot it last captured -- so the caller asserts against the exact same
      * image that proved (or failed to prove) the color's presence, not a separately-captured one.
      *
-     * Issue #556: [waitForOverlayActive] only observes [OverlayService.isOverlayActive], an
-     * internal UsageStats-based flag that can flip true before the corresponding frame (camera
-     * feed plus overlay) is actually composited by the WindowManager -- especially on a
-     * cold-started activity, which briefly shows Android's mandatory splash-screen frame first.
-     * A fixed post-activation pause is a guess at how long compositing takes and silently stops
-     * being enough as CI load changes (e.g. issue #520's concurrent `screenrecord`). Polling for
-     * the actual pixel evidence removes that guess: `ScreenshotTestRule.failed()` proved the
-     * content was correct just moments after a fixed-pause capture went stale (it takes its own
-     * screenshot after the assertion throws and consistently shows the overlay rendered exactly
-     * at the configured position), so the content was never wrong -- only the single early
-     * capture was.
+     * Issue #556: [waitForOverlayActive] only observes [OverlayService.isOverlayActive], which
+     * can flip true before the corresponding frame is composited (a cold-started activity
+     * briefly shows the splash frame first), so callers poll for pixel evidence instead.
      *
      * @param color      The [Rgb] color to poll for.
      * @param timeoutMs  Maximum wait time in milliseconds.
@@ -794,63 +824,7 @@ class E2EFixture(
         color: Rgb,
         timeoutMs: Long = 5_000L,
         intervalMs: Long = 200L,
-    ): Bitmap {
-        val deadline = System.currentTimeMillis() + timeoutMs
-        while (true) {
-            val screen = Screenshot.captureScreen()
-            if (ColorMatch.mask(screen, color).pixelCount > 0 || System.currentTimeMillis() >= deadline) {
-                return screen
-            }
-            Thread.sleep(intervalMs)
-        }
-    }
-
-    /**
-     * Polls screenshots until the GREEN (#00C853) region forms a *letterboxed* band: its bounding
-     * box spans at least [minWidthFraction] of the screen width while occupying at most
-     * [maxHeightFraction] of the screen height. Returns true if such a band appeared before
-     * [timeoutMs] elapsed, false otherwise.
-     *
-     * Used by the secure-camera test. `SecureViewerActivity` renders the photo with a center-inside
-     * `SubsamplingScaleImageView`, so a 16:9 capture letterboxes to full screen width but only a
-     * fraction of the height (~25% on the Pixel 6 CI device). A central-region coverage poll (as in
-     * [waitForGreenCoverage]) does not predict that band, so this poll measures the band's geometry
-     * directly, matching the band-shaped assertion in `test5a`.
-     *
-     * The height bound is load-bearing, not cosmetic. Before the locked tap fires, the solid-green
-     * `MockCameraActivity` is in the foreground, so the green region already spans the *full* width
-     * (and the full height). A width-only poll would return immediately on that pre-tap frame and
-     * never wait for `SecureViewerActivity` to come to front; the assertion would then run against
-     * the mock-camera screenshot. Requiring the band to be *letterboxed* (full width but not full
-     * height) makes the poll wait for the SecureViewer render specifically: the full-height
-     * mock-camera green does not satisfy [maxHeightFraction], while the ~25%-tall SecureViewer band
-     * does.
-     *
-     * @param minWidthFraction  Fraction of screen width the green bbox must span before stopping.
-     * @param maxHeightFraction Maximum fraction of screen height the green bbox may span (excludes
-     *                          the full-screen mock-camera green that precedes the tap).
-     * @param timeoutMs         Maximum wait time in milliseconds.
-     * @param intervalMs        Sleep between successive capture attempts.
-     */
-    fun waitForGreenBand(
-        minWidthFraction: Float = 0.80f,
-        maxHeightFraction: Float = 0.70f,
-        timeoutMs: Long = 15_000L,
-        intervalMs: Long = 500L,
-    ): Boolean {
-        val deadline = System.currentTimeMillis() + timeoutMs
-        while (System.currentTimeMillis() < deadline) {
-            val screen = Screenshot.captureScreen()
-            val greenMask = ColorMatch.mask(screen, Rgb.GREEN)
-            val widthFraction =
-                if (greenMask.width > 0) greenMask.bbox.width().toFloat() / greenMask.width else 0f
-            val heightFraction =
-                if (greenMask.height > 0) greenMask.bbox.height().toFloat() / greenMask.height else 0f
-            if (widthFraction >= minWidthFraction && heightFraction <= maxHeightFraction) return true
-            Thread.sleep(intervalMs)
-        }
-        return false
-    }
+    ): Bitmap = captureScreenUntil(timeoutMs, intervalMs) { ColorMatch.mask(it, color).pixelCount > 0 }
 
     // ── Private helpers ───────────────────────────────────────────────────────
 

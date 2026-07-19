@@ -79,8 +79,7 @@ class GalleryButtonVisualE2ETest {
     fun test0_smokeGreenFeedVisible() {
         fixture.launchPixelCamera()
 
-        // Poll up to 30 s for the camera feed to render; a fixed 1 s pause is too short
-        // on a cold-started emulator. waitForGreenCoverage returns the last measured coverage.
+        // Poll up to 30 s for the camera feed to render on a cold-started emulator.
         val coverage = fixture.waitForGreenCoverage(minCoverage = 0.70f, timeoutMs = 30_000L)
 
         val screen = Screenshot.captureScreen()
@@ -112,11 +111,8 @@ class GalleryButtonVisualE2ETest {
         fixture.seedGalleryPrefs(MOCK_GALLERY_PACKAGE)
         fixture.clearCameraRoll()
         fixture.launchPixelCamera()
-        // Wait for UsageStats-based foreground detection to activate the overlay, then poll
-        // screenshots until BLUE pixels actually appear on screen (Issue #556). A fixed pause
-        // is only a guess at how long WM compositing takes after activation, and a cold-started
-        // activity briefly shows Android's mandatory splash-screen frame first; a single capture
-        // taken too early sees that stale frame instead of the real content.
+        // Wait for the overlay to activate, then poll until BLUE actually appears on screen
+        // (Issue #556: the active flag can flip true before the frame is composited).
         fixture.waitForOverlayActive()
         val screen = fixture.captureScreenUntilColorVisible(Rgb.BLUE)
         val blue = ColorMatch.mask(screen, Rgb.BLUE)
@@ -159,9 +155,7 @@ class GalleryButtonVisualE2ETest {
         fixture.seedGalleryPrefs(MOCK_GALLERY_PACKAGE)
         fixture.clearCameraRoll()
         fixture.launchPixelCamera()
-        // Wait for UsageStats-based foreground detection to activate the overlay, then poll
-        // screenshots until BLUE pixels actually appear on screen (Issue #556). See test1a's
-        // comment for why a fixed post-activation pause is not reliable here.
+        // Wait for the overlay to activate, then poll until BLUE actually appears (Issue #556).
         fixture.waitForOverlayActive()
         val screen = fixture.captureScreenUntilColorVisible(Rgb.BLUE)
         val blue = ColorMatch.mask(screen, Rgb.BLUE)
@@ -184,10 +178,8 @@ class GalleryButtonVisualE2ETest {
         fixture.seedGalleryPrefs(MOCK_GALLERY_PACKAGE)
         fixture.clearCameraRoll()
         fixture.launchPixelCamera()
-        // Wait for UsageStats-based foreground detection to activate the overlay, then poll
-        // screenshots until BLUE pixels actually appear on screen (Issue #556). See test1a's
-        // comment for why a fixed post-activation pause is not reliable here. YELLOW is part of
-        // the same overlay icon draw, so BLUE's appearance is a reliable proxy for it too.
+        // Wait for the overlay to activate, then poll until BLUE actually appears (Issue #556).
+        // YELLOW is part of the same overlay icon draw, so BLUE is a reliable proxy for it too.
         fixture.waitForOverlayActive()
         val screen = fixture.captureScreenUntilColorVisible(Rgb.BLUE)
         val outer =
@@ -214,16 +206,28 @@ class GalleryButtonVisualE2ETest {
         fixture.seedGalleryPrefs(MOCK_GALLERY_PACKAGE)
         fixture.clearCameraRoll()
         fixture.launchPixelCamera()
-        // Wait for the overlay to be active before tapping; a fixed 1 s pause is too short.
         fixture.waitForOverlayActive()
 
-        val s1 = Screenshot.captureScreen()
+        // Precondition: the green camera feed must be on screen before the tap, or the
+        // no-green assertion below would pass vacuously.
+        val s1 = fixture.captureScreenUntil { greenCoverage(it) >= 0.50f }
         Screenshot.saveForArtifact(s1, "2a-s1.png")
+        val preTapCoverage = greenCoverage(s1)
+        if (preTapCoverage < 0.50f) {
+            fail(
+                "test2a_emptyGalleryNoGreenAfterTap: pre-tap GREEN coverage is " +
+                    "${preTapCoverage * 100f}%--expected >= 50%. The green camera feed is not " +
+                    "on screen, so the overlay tap cannot be exercised.",
+            )
+        }
 
-        fixture.tapOverlay()
-        fixture.pause(1000)
-
-        val s2 = Screenshot.captureScreen()
+        // Await the gallery's non-green empty state in the foreground, held for 3 s: covers a
+        // transient app-transition frame and the whole ~1.4 s cold-start window with margin,
+        // independent of capture latency (see tapOverlayAndAwait).
+        val s2 =
+            fixture.tapOverlayAndAwait(stableForMs = 3_000L) { screen ->
+                greenCoverage(screen) < 0.10f && fixture.foregroundPackage() == MOCK_GALLERY_PACKAGE
+            }
         Screenshot.saveForArtifact(s2, "2a-s2.png")
 
         val greenMask = ColorMatch.mask(s2, Rgb.GREEN)
@@ -235,6 +239,14 @@ class GalleryButtonVisualE2ETest {
                 "test2a_emptyGalleryNoGreenAfterTap: GREEN coverage after tap is " +
                     "${coverage * 100f}%--expected < 10%. " +
                     "The gallery opened showing unexpected green content with an empty roll.",
+            )
+        }
+        val foreground = fixture.foregroundPackage()
+        if (foreground != MOCK_GALLERY_PACKAGE) {
+            fail(
+                "test2a_emptyGalleryNoGreenAfterTap: foreground package after tap is " +
+                    "$foreground--expected $MOCK_GALLERY_PACKAGE. The screen shows no green, " +
+                    "but the gallery did not open (screen off, keyguard, or no-op tap).",
             )
         }
     }
@@ -259,16 +271,9 @@ class GalleryButtonVisualE2ETest {
         val s1 = Screenshot.captureScreen()
         Screenshot.saveForArtifact(s1, "3a-s1.png")
 
-        fixture.tapOverlay()
-
-        // Poll up to 15 s for the gallery's photo to render; a fixed 1 s pause races
-        // LastPhotoActivity's cold start (process spawn + MediaStore query + JPEG decode),
-        // which the CI logcat shows can take ~1.4 s. waitForGreenCoverage's return value is
-        // discarded: it only gates the wait, and the assertion below re-measures full-screen
-        // coverage on a fresh screenshot against the original 40% threshold.
-        fixture.waitForGreenCoverage(minCoverage = 0.40f, timeoutMs = 15_000L)
-
-        val s2 = Screenshot.captureScreen()
+        // Await the gallery showing the captured GREEN photo; its cold start (process spawn +
+        // MediaStore query + JPEG decode) takes ~1.4 s in CI.
+        val s2 = fixture.tapOverlayAndAwait { greenCoverage(it) > 0.40f }
         Screenshot.saveForArtifact(s2, "3a-s2.png")
 
         val greenMask = ColorMatch.mask(s2, Rgb.GREEN)
@@ -302,12 +307,12 @@ class GalleryButtonVisualE2ETest {
      * GREEN coverage. This means `coverage >= 0.10f` and the assertion FAILS.
      *
      * Conversely, once the regression is fixed (overlay renders correctly in secure-camera mode),
-     * the tap succeeds, the gallery opens, and the empty-state screen is black → coverage < 10%
-     * → assertion PASSES.
+     * the tap succeeds, SecureViewerActivity opens with an empty session, and its empty state is
+     * black → coverage < 10% → assertion PASSES.
      *
      * The assertion itself (`coverage(GREEN) < 10%`) is correct and produces the right signal:
      * it fails when the regression is present and MockCameraActivity is green, and passes when
-     * the overlay works and the empty gallery is shown. Do not change the assertion.
+     * the overlay works and the empty viewer is shown. Do not change the assertion.
      *
      * **Cross-package roll cleanup (issue #406, resolves the PR #400 caveat).**
      *
@@ -331,15 +336,27 @@ class GalleryButtonVisualE2ETest {
         fixture.clearCameraRoll()
         fixture.lockScreen()
         fixture.launchSecureCamera()
-        fixture.pause(1000)
 
-        val s1 = Screenshot.captureScreen()
+        // Precondition: the green secure-camera feed must be on screen before the tap, or the
+        // no-green assertion below would pass vacuously.
+        val s1 = fixture.captureScreenUntil { greenCoverage(it) >= 0.50f }
         Screenshot.saveForArtifact(s1, "4a-s1.png")
+        val preTapCoverage = greenCoverage(s1)
+        if (preTapCoverage < 0.50f) {
+            fail(
+                "test4a_secureCameraLockedEmptyGalleryNoGreen: pre-tap GREEN coverage is " +
+                    "${preTapCoverage * 100f}%--expected >= 50%. The green secure-camera feed " +
+                    "is not on screen, so the overlay tap cannot be exercised.",
+            )
+        }
 
-        fixture.tapOverlay()
-        fixture.pause(1000)
-
-        val s2 = Screenshot.captureScreen()
+        // Await SecureViewer's non-green empty state in the foreground, held for 3 s: covers a
+        // transient app-transition frame and the whole ~1.4 s cold-start window with margin,
+        // independent of capture latency (see tapOverlayAndAwait).
+        val s2 =
+            fixture.tapOverlayAndAwait(stableForMs = 3_000L) { screen ->
+                greenCoverage(screen) < 0.10f && fixture.foregroundPackage() == context.packageName
+            }
         Screenshot.saveForArtifact(s2, "4a-s2.png")
 
         val greenMask = ColorMatch.mask(s2, Rgb.GREEN)
@@ -351,6 +368,15 @@ class GalleryButtonVisualE2ETest {
                 "test4a_secureCameraLockedEmptyGalleryNoGreen: GREEN coverage after tap is " +
                     "${coverage * 100f}%--expected < 10%. " +
                     "The gallery opened showing unexpected green content with an empty roll.",
+            )
+        }
+        val foreground = fixture.foregroundPackage()
+        if (foreground != context.packageName) {
+            fail(
+                "test4a_secureCameraLockedEmptyGalleryNoGreen: foreground package after tap is " +
+                    "$foreground--expected ${context.packageName} (SecureViewerActivity). The " +
+                    "screen shows no green, but the viewer did not open (screen off, keyguard, " +
+                    "or no-op tap).",
             )
         }
     }
@@ -446,52 +472,27 @@ class GalleryButtonVisualE2ETest {
         val s1 = Screenshot.captureScreen()
         Screenshot.saveForArtifact(s1, "5a-s1.png")
 
-        fixture.tapOverlay() // locked tap → SecureViewer renders the session's GREEN photo
-
-        // Poll up to 15 s for the letterboxed GREEN band to appear; SecureViewer's cold start
-        // (process spawn + SubsamplingScaleImageView decode) races a fixed pause. The poll requires
-        // the same letterbox geometry as the assertion below (full width, height a minority of the
-        // screen), so it does not short-circuit on the full-screen mock-camera green that is on
-        // screen before the tap, and it predicts the assertion rather than measuring a different
-        // quantity.
-        fixture.waitForGreenBand(minWidthFraction = 0.80f, maxHeightFraction = 0.70f, timeoutMs = 15_000L)
-
-        val s2 = Screenshot.captureScreen()
+        // Locked tap → SecureViewer renders the session's GREEN photo. Await the letterboxed
+        // band (see [GreenBandMetrics]); the full-screen mock-camera green on screen before the
+        // tap does not satisfy it, so the poll waits for the SecureViewer render specifically.
+        val s2 = fixture.tapOverlayAndAwait { GreenBandMetrics(ColorMatch.mask(it, Rgb.GREEN)).isLetterboxedBand }
         Screenshot.saveForArtifact(s2, "5a-s2.png")
 
         val greenMask = ColorMatch.mask(s2, Rgb.GREEN)
         Screenshot.saveForArtifact(maskToBitmap(greenMask), "5a-green-mask.png")
 
-        // The displayed photo is a solid-green 16:9 image letterboxed to full width by
-        // SecureViewer's center-inside SubsamplingScaleImageView (see kdoc above).
-        val bandWidthFraction = greenMask.bbox.width().toFloat() / greenMask.width
-        val bandHeightFraction = greenMask.bbox.height().toFloat() / greenMask.height
-        val bboxArea = greenMask.bbox.width() * greenMask.bbox.height()
-        val withinBandCoverage = if (bboxArea > 0) greenMask.pixelCount.toFloat() / bboxArea else 0f
-
-        // The black letterbox bar above the band positively confirms SecureViewer's background
-        // rather than leftover full-screen mock-camera green. Measure the green coverage of the top
-        // strip (the screen above where the ~25%-tall centred band starts). With the band centred,
-        // its top edge sits at ~37% of the screen height, so the top 25% strip is entirely within
-        // the upper letterbox bar and must be essentially green-free.
-        val topStrip = android.graphics.Rect(0, 0, greenMask.width, (greenMask.height * 0.25f).toInt())
-        val topStripGreen = ColorMatch.coverageFraction(greenMask, topStrip)
-
-        if (bandWidthFraction <= 0.80f ||
-            withinBandCoverage <= 0.80f ||
-            bandHeightFraction >= 0.70f ||
-            topStripGreen >= 0.10f
-        ) {
+        val band = GreenBandMetrics(greenMask)
+        if (!band.isLetterboxedBand) {
             fail(
                 "test5a_secureCameraLockedPopulatedGalleryShowsGreen: the locked tap should open " +
                     "SecureViewerActivity showing the GREEN photo captured during the secure " +
                     "session as a letterboxed band over a black background, but the displayed green " +
                     "region is not a solid, full-width, letterboxed band. " +
-                    "Measured: band spans ${bandWidthFraction * 100f}% of screen width " +
+                    "Measured: band spans ${band.widthFraction * 100f}% of screen width " +
                     "(expected > 80%), green coverage within its bounding box is " +
-                    "${withinBandCoverage * 100f}% (expected > 80%), band height is " +
-                    "${bandHeightFraction * 100f}% of the screen (expected < 70%, i.e. a letterbox " +
-                    "not a full-screen fill), and the top strip is ${topStripGreen * 100f}% green " +
+                    "${band.withinBandCoverage * 100f}% (expected > 80%), band height is " +
+                    "${band.heightFraction * 100f}% of the screen (expected < 70%, i.e. a letterbox " +
+                    "not a full-screen fill), and the top strip is ${band.topStripGreen * 100f}% green " +
                     "(expected < 10%, i.e. a black letterbox bar, not leftover mock-camera green); " +
                     "green pixels=${greenMask.pixelCount}, bbox=${greenMask.bbox}, " +
                     "screen=${greenMask.width}x${greenMask.height}. " +
@@ -506,6 +507,41 @@ class GalleryButtonVisualE2ETest {
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
+
+    /** Full-screen GREEN coverage fraction of [screen]. */
+    private fun greenCoverage(screen: Bitmap): Float = ColorMatch.coverageFraction(ColorMatch.mask(screen, Rgb.GREEN))
+
+    /**
+     * test5a's letterboxed-band geometry, measured on a screenshot's GREEN mask: the session's
+     * solid-green 16:9 photo letterboxed to full width by SecureViewer's center-inside
+     * SubsamplingScaleImageView, over its black background (see test5a's kdoc for why each
+     * bound is load-bearing). Used by both test5a's post-tap poll and its assertion, so the
+     * poll predicts exactly what the assertion measures.
+     */
+    private class GreenBandMetrics(
+        mask: BinaryMask,
+    ) {
+        val widthFraction = mask.bbox.width().toFloat() / mask.width
+        val heightFraction = mask.bbox.height().toFloat() / mask.height
+        val withinBandCoverage: Float
+        val topStripGreen: Float
+
+        init {
+            val bboxArea = mask.bbox.width() * mask.bbox.height()
+            withinBandCoverage = if (bboxArea > 0) mask.pixelCount.toFloat() / bboxArea else 0f
+            // A green-free strip above the centred band confirms SecureViewer's black letterbox
+            // bar rather than leftover full-screen mock-camera green.
+            val topStrip = android.graphics.Rect(0, 0, mask.width, (mask.height * 0.25f).toInt())
+            topStripGreen = ColorMatch.coverageFraction(mask, topStrip)
+        }
+
+        val isLetterboxedBand: Boolean
+            get() =
+                widthFraction > 0.80f &&
+                    withinBandCoverage > 0.80f &&
+                    heightFraction < 0.70f &&
+                    topStripGreen < 0.10f
+    }
 
     /**
      * Returns the Euclidean distance between two [PointF]s.
