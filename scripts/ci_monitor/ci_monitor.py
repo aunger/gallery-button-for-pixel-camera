@@ -433,15 +433,23 @@ def parse_check_result(check_json):
 
 
 def parse_check_summary(check_json, label_gate_check_regex=DEFAULT_LABEL_GATE_CHECK_REGEX):
-    """Extract per-check (name, conclusion, blocking, label_gate) rows from check-runs data.
+    """Extract per-check (name, conclusion, blocking, label_gate, run_id) rows.
 
     Returns a list of dicts (one per check run, preserving order):
-      {"name": str, "conclusion": str, "blocking": bool, "label_gate": bool}
+      {"name": str, "conclusion": str, "blocking": bool, "label_gate": bool,
+       "run_id": str | None}
 
     Conclusions in the "blocking" set match what parse_check_result treats as
     Blocked/Infra. The label_gate_check_regex is matched (re.search) against
     each check run's name; a True label_gate lets the consumer annotate a
     process-label block distinctly from a substantive code/test failure.
+
+    `run_id` is the GitHub Actions workflow run the check came from
+    (via _actions_run_id), or None for a non-Actions check; it lets the
+    formatter annotate each row with the run that produced it (issue #720),
+    which after the same-named collapse (issue #707) names exactly which run
+    survived for that check name. It is inert on the verdict path--only the
+    formatter renders it.
 
     Returns [] when check_runs is absent or empty. Does not make any HTTP
     requests; reads only from the already-fetched check_json payload.
@@ -463,6 +471,7 @@ def parse_check_summary(check_json, label_gate_check_regex=DEFAULT_LABEL_GATE_CH
                 "conclusion": effective,
                 "blocking": blocking,
                 "label_gate": label_gate,
+                "run_id": _actions_run_id(r),
             }
         )
     return rows
@@ -473,7 +482,11 @@ def format_check_summary(rows):
 
     Returns [] when rows is empty. The first line is "summary", followed by one
     aligned dotted line per check. Blocking rows carry [BLOCKING]; a label-gate
-    blocking row additionally carries [label gate]. Column width is capped at 60
+    blocking row additionally carries [label gate]. A row that carries a
+    non-None `run_id` (a GitHub Actions check) ends with a `[run <id>]` token
+    naming the workflow run it came from (issue #720); non-Actions rows omit it.
+    The token rides after the [BLOCKING]/[label gate] cluster, outside the dotted
+    column, so the existing alignment is unchanged. Column width is capped at 60
     characters to avoid pathological output on long check names.
     """
     if not rows:
@@ -492,6 +505,11 @@ def format_check_summary(rows):
             line += "   [BLOCKING]"
             if r["label_gate"]:
                 line += " [label gate]"
+        # .get keeps the formatter tolerant of rows built without a run_id key
+        # (e.g. manually constructed rows); a non-Actions check has run_id None.
+        run_id = r.get("run_id")
+        if run_id is not None:
+            line += " [run %s]" % run_id
         lines.append(line)
     return lines
 
@@ -576,6 +594,42 @@ def parse_commit_sha(commit_json):
 _RUN_JOB_URL_RE = re.compile(r"/actions/runs/(\d+)(?:/job/(\d+))?")
 
 
+def _actions_run_job(check_run):
+    """Return the (run_id, job_id) for a GitHub Actions check run, or (None, None).
+
+    A check run is treated as a GitHub Actions run when `app.slug ==
+    "github-actions"`; when the `app` block is missing, it falls back to "the
+    `details_url` (or `html_url`) matched /actions/runs/". Returns the run id (as
+    a string) paired with the job id (a string, or None when the URL carries only
+    a run id), or (None, None) for a non-Actions check or a URL from which no run
+    id can be parsed.
+
+    Single source of the Actions-detection and URL-parsing logic (issue #720):
+    parse_actions_targets needs both ids, while _actions_run_id (used by the
+    per-check summary) needs only the run id, so both read from this one parse
+    rather than each re-deriving it.
+    """
+    app = check_run.get("app")
+    if isinstance(app, dict) and app.get("slug") != "github-actions":
+        return (None, None)
+    # No app block: fall back to recognizing the URL shape.
+    url = check_run.get("details_url") or check_run.get("html_url") or ""
+    match = _RUN_JOB_URL_RE.search(url)
+    if not match:
+        return (None, None)
+    return (match.group(1), match.group(2))
+
+
+def _actions_run_id(check_run):
+    """Return the GitHub Actions workflow run id for a check run, or None.
+
+    Thin accessor over _actions_run_job for callers that need only the run id
+    (the per-check summary annotation, issue #720). Returns None for a
+    non-Actions check or a URL from which no run id can be parsed.
+    """
+    return _actions_run_job(check_run)[0]
+
+
 def parse_actions_targets(check_json):
     """Return sorted, de-duplicated (run_id, job_id) tuples from check-runs data.
 
@@ -593,16 +647,9 @@ def parse_actions_targets(check_json):
     """
     targets = set()
     for r in check_json.get("check_runs", []):
-        app = r.get("app")
-        if isinstance(app, dict):
-            if app.get("slug") != "github-actions":
-                continue
-        # No app block: fall back to recognizing the URL shape below.
-        url = r.get("details_url") or r.get("html_url") or ""
-        match = _RUN_JOB_URL_RE.search(url)
-        if not match:
+        run_id, job_id = _actions_run_job(r)
+        if run_id is None:
             continue
-        run_id, job_id = match.group(1), match.group(2)
         targets.add((run_id, job_id))
     # Sort with a None-safe key: the same run could appear both run-only
     # (job_id=None) and with a job id, and None is not orderable against str.

@@ -83,6 +83,15 @@ Covers:
   (bb) #719 main(): --sha mode does not terminate Clear while a same-named
        required check has a queued re-run outstanding; it Clears only once that
        re-run completes
+  (bc) #720 _actions_run_id / _actions_run_job: extract the workflow run id
+       (and job id) from a check run, gating on app.slug == "github-actions",
+       honoring the URL-shape fallback when the app block is absent, and
+       returning None / (None, None) for a non-Actions app or an
+       unparseable/absent URL
+  (bd) #720 parse_check_summary: each row carries run_id (the Actions run it
+       came from, None for a non-Actions check)
+  (be) #720 format_check_summary: renders a [run <id>] token when run_id is
+       present, omits it when None, and tolerates rows built without the key
 
 No network calls required; no GITHUB_TOKEN needed.
 Run this file directly to execute the suite: exits 0 on success, non-zero on failure.
@@ -4768,6 +4777,20 @@ def main() -> int:
         "the collapsed summary shows one non-blocking row for the label gate",
         "expected one non-blocking row; got %r" % (rows_ay,),
     )
+    # #720 regression: the surviving row is annotated with the run that won the
+    # collapse (run 333), so the summary names exactly which run each check came
+    # from after the same-named collapse.
+    check(
+        len(rows_ay) == 1 and rows_ay[0]["run_id"] == "333",
+        "the collapsed row carries the surviving run's id (333)",
+        "expected run_id '333' on the collapsed row; got %r" % (rows_ay,),
+    )
+    check(
+        any("[run 333]" in ln for ln in ci_monitor.format_check_summary(rows_ay)),
+        "the formatted collapsed summary row shows '[run 333]'",
+        "expected '[run 333]' in the formatted row; got %r"
+        % (ci_monitor.format_check_summary(rows_ay),),
+    )
     # parse_actions_targets on the collapsed payload discovers only the latest
     # run, so the stale run's jobs are never polled for diagnostics either.
     targets_ay = ci_monitor.parse_actions_targets(collapsed_ay)
@@ -4922,6 +4945,13 @@ def main() -> int:
         "the surviving label-gate row is not marked [BLOCKING]",
         "label-gate row wrongly marked blocking; output: %r" % out_az,
     )
+    # #720: the surviving summary row names the run that won the collapse (333),
+    # end-to-end through main().
+    check(
+        len(label_rows_az) == 1 and "[run 333]" in label_rows_az[0],
+        "the surviving label-gate summary row carries '[run 333]'",
+        "expected '[run 333]' on the label-gate row; output: %r" % out_az,
+    )
     check(
         len(side_effects_az) == 0,
         "all 5 mocked requests consumed (only the latest run's jobs/artifacts fetched once)",
@@ -5062,6 +5092,176 @@ def main() -> int:
         "premature terminal on poll 1; %d payloads left unconsumed" % len(side_effects_bb),
     )
     check(rc_bb == 0, "main() returned 0", "main() returned %r" % rc_bb)
+
+    # ── (bc) #720 _actions_run_id: run id extraction, Actions-gating, fallbacks ─────
+    print("\n=== (bc) #720 _actions_run_id: extracts the run id, gates on Actions, falls back ===")
+
+    check(
+        ci_monitor._actions_run_id(
+            {
+                "app": {"slug": "github-actions"},
+                "details_url": "https://github.com/o/r/actions/runs/555/job/42",
+            }
+        )
+        == "555",
+        "returns the run id for a github-actions check with a run/job URL",
+        "expected '555'; got %r"
+        % ci_monitor._actions_run_id(
+            {
+                "app": {"slug": "github-actions"},
+                "details_url": "https://github.com/o/r/actions/runs/555/job/42",
+            }
+        ),
+    )
+    check(
+        ci_monitor._actions_run_id(
+            {
+                "app": {"slug": "github-actions"},
+                "details_url": "https://github.com/o/r/actions/runs/999",
+            }
+        )
+        == "999",
+        "returns the run id for a run-only URL (no job segment)",
+        "expected '999' from a run-only URL",
+    )
+    check(
+        ci_monitor._actions_run_id(
+            {"app": {"slug": "codecov"}, "details_url": "https://github.com/o/r/actions/runs/555"}
+        )
+        is None,
+        "returns None for a non-Actions app even when the URL looks Actions-shaped",
+        "expected None for a non-Actions app",
+    )
+    check(
+        ci_monitor._actions_run_id({"details_url": "https://github.com/o/r/actions/runs/777/job/7"})
+        == "777",
+        "honors the /actions/runs/ URL-shape fallback when the app block is absent",
+        "expected '777' via URL-shape fallback",
+    )
+    check(
+        ci_monitor._actions_run_id(
+            {
+                "app": {"slug": "github-actions"},
+                "html_url": "https://github.com/o/r/actions/runs/321/job/9",
+            }
+        )
+        == "321",
+        "falls back to html_url when details_url is missing",
+        "expected '321' from html_url",
+    )
+    check(
+        ci_monitor._actions_run_id(
+            {"app": {"slug": "github-actions"}, "details_url": "https://example.invalid/not-a-run"}
+        )
+        is None,
+        "returns None when the URL carries no /actions/runs/<id>",
+        "expected None for an unparseable URL",
+    )
+    check(
+        ci_monitor._actions_run_id({"app": {"slug": "github-actions"}}) is None,
+        "returns None when there is no URL at all",
+        "expected None when both details_url and html_url are absent",
+    )
+    # _actions_run_job (the shared parse _actions_run_id wraps) returns both ids:
+    # the run id and the job id (None for a run-only URL), and (None, None) for a
+    # non-Actions check.
+    check(
+        ci_monitor._actions_run_job(
+            {
+                "app": {"slug": "github-actions"},
+                "details_url": "https://github.com/o/r/actions/runs/555/job/42",
+            }
+        )
+        == ("555", "42"),
+        "_actions_run_job returns (run_id, job_id) for a run/job URL",
+        "expected ('555', '42') from _actions_run_job",
+    )
+    check(
+        ci_monitor._actions_run_job(
+            {
+                "app": {"slug": "github-actions"},
+                "details_url": "https://github.com/o/r/actions/runs/999",
+            }
+        )
+        == ("999", None),
+        "_actions_run_job returns a None job id for a run-only URL",
+        "expected ('999', None) from _actions_run_job",
+    )
+    check(
+        ci_monitor._actions_run_job({"app": {"slug": "codecov"}}) == (None, None),
+        "_actions_run_job returns (None, None) for a non-Actions check",
+        "expected (None, None) from _actions_run_job on a non-Actions check",
+    )
+
+    # ── (bd) #720 parse_check_summary: populates run_id per row ─────────────────────
+    print("\n=== (bd) #720 parse_check_summary: run_id set for Actions rows, None otherwise ===")
+
+    RUNID_PAYLOAD = check_runs_payload(("6001", "70"))  # one github-actions run/job row
+    # Append a non-Actions status check with no details_url.
+    RUNID_PAYLOAD["check_runs"].append(
+        {
+            "name": "coverage",
+            "status": "completed",
+            "conclusion": "success",
+            "app": {"slug": "codecov"},
+        }
+    )
+    RUNID_PAYLOAD["total_count"] = len(RUNID_PAYLOAD["check_runs"])
+    rows_bd = ci_monitor.parse_check_summary(RUNID_PAYLOAD)
+    check(
+        len(rows_bd) == 2 and rows_bd[0]["run_id"] == "6001",
+        "the github-actions row carries its workflow run id (6001)",
+        "expected run_id '6001' on the Actions row; got %r" % (rows_bd,),
+    )
+    check(
+        len(rows_bd) == 2 and rows_bd[1]["run_id"] is None,
+        "the non-Actions (codecov) row carries run_id None",
+        "expected run_id None on the non-Actions row; got %r" % (rows_bd,),
+    )
+
+    # ── (be) #720 format_check_summary: renders [run <id>] when present, omits when None ─
+    print("\n=== (be) #720 format_check_summary: [run <id>] token rendering ===")
+
+    ROWS_BE = [
+        {
+            "name": "build-and-test",
+            "conclusion": "failure",
+            "blocking": True,
+            "label_gate": False,
+            "run_id": "8042",
+        },
+        {
+            "name": "coverage",
+            "conclusion": "success",
+            "blocking": False,
+            "label_gate": False,
+            "run_id": None,
+        },
+    ]
+    lines_be = ci_monitor.format_check_summary(ROWS_BE)
+    check(
+        any(
+            "build-and-test" in ln and "[BLOCKING]" in ln and ln.endswith("[run 8042]")
+            for ln in lines_be
+        ),
+        "an Actions blocking row renders [run <id>] after [BLOCKING]",
+        "expected '[run 8042]' after [BLOCKING]; got %r" % (lines_be,),
+    )
+    check(
+        any("coverage" in ln and "[run" not in ln for ln in lines_be),
+        "a run_id=None row renders no [run ...] token",
+        "unexpected [run ...] token on a None-run_id row; got %r" % (lines_be,),
+    )
+    # A row built without a run_id key at all (older manual callers) still formats
+    # cleanly, with no token and no KeyError.
+    lines_be_norun = ci_monitor.format_check_summary(
+        [{"name": "legacy", "conclusion": "success", "blocking": False, "label_gate": False}]
+    )
+    check(
+        any("legacy" in ln and "[run" not in ln for ln in lines_be_norun),
+        "a row without a run_id key formats with no token (tolerant .get)",
+        "expected no token for a run_id-less row; got %r" % (lines_be_norun,),
+    )
 
     # ── Summary ────────────────────────────────────────────────────────────────────
     print("\nResults: %d passed, %d failed." % (PASS, FAIL))
