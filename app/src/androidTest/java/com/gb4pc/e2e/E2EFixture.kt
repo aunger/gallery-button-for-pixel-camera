@@ -612,8 +612,8 @@ class E2EFixture(
     }
 
     /**
-     * Taps the overlay, then polls screenshots until [expected] accepts [stableSamples]
-     * consecutive captures, returning the last capture (see [captureScreenUntil]).
+     * Taps the overlay, then polls screenshots until [expected] holds continuously for
+     * [stableForMs], returning the last capture (see [captureScreenUntil]).
      *
      * [tapOverlay] is silent when the overlay is not on screen, so every tap test must await
      * its expected post-tap screen; a fixed pause races the tapped activity's cold start
@@ -622,11 +622,11 @@ class E2EFixture(
      */
     fun tapOverlayAndAwait(
         timeoutMs: Long = 15_000L,
-        stableSamples: Int = 1,
+        stableForMs: Long = 0L,
         expected: (Bitmap) -> Boolean,
     ): Bitmap {
         tapOverlay()
-        return captureScreenUntil(timeoutMs = timeoutMs, stableSamples = stableSamples, predicate = expected)
+        return captureScreenUntil(timeoutMs = timeoutMs, stableForMs = stableForMs, predicate = expected)
     }
 
     /** Package name of the current foreground window, per UiAutomator; null if undetermined. */
@@ -784,31 +784,35 @@ class E2EFixture(
     }
 
     /**
-     * Polls screenshots until [predicate] accepts [stableSamples] consecutive captures, or
-     * [timeoutMs] elapses, and returns the last captured screenshot either way, so the caller
-     * asserts against the exact frame the poll measured rather than a separately-captured one.
+     * Polls screenshots until [predicate] holds continuously for [stableForMs] of wall-clock
+     * time, or [timeoutMs] elapses, and returns the last captured screenshot either way, so the
+     * caller asserts against the exact frame the poll measured rather than a separately-captured
+     * one.
      *
-     * [stableSamples] > 1 hardens absence-style predicates (e.g. "no green on screen"): a
-     * single transient frame, such as an app-transition starting window, cannot end the wait.
+     * [stableForMs] > 0 hardens absence-style predicates (e.g. "no green on screen"): a
+     * transient frame, such as an app-transition starting window, cannot end the wait, and the
+     * guarantee is a wall-clock duration, so it does not shrink if per-capture latency drops
+     * (e.g. issue #731).
      *
-     * @param timeoutMs     Maximum wait time in milliseconds.
-     * @param intervalMs    Sleep between successive capture attempts.
-     * @param stableSamples Consecutive predicate-satisfying captures required to stop early.
-     * @param predicate     Decides whether a captured screenshot is the awaited screen state.
+     * @param timeoutMs   Maximum wait time in milliseconds.
+     * @param intervalMs  Sleep between successive capture attempts.
+     * @param stableForMs Duration the predicate must hold, across re-samples, to stop early.
+     * @param predicate   Decides whether a captured screenshot is the awaited screen state.
      */
     fun captureScreenUntil(
         timeoutMs: Long = 15_000L,
         intervalMs: Long = 500L,
-        stableSamples: Int = 1,
+        stableForMs: Long = 0L,
         predicate: (Bitmap) -> Boolean,
     ): Bitmap {
-        require(stableSamples >= 1) { "stableSamples must be >= 1" }
         val deadline = System.currentTimeMillis() + timeoutMs
-        var streak = 0
+        var satisfiedSince: Long? = null
         while (true) {
             val screen = Screenshot.captureScreen()
-            streak = if (predicate(screen)) streak + 1 else 0
-            if (streak >= stableSamples || System.currentTimeMillis() >= deadline) return screen
+            val sampledAt = System.currentTimeMillis()
+            satisfiedSince = if (predicate(screen)) satisfiedSince ?: sampledAt else null
+            val stable = satisfiedSince != null && sampledAt - satisfiedSince >= stableForMs
+            if (stable || sampledAt >= deadline) return screen
             Thread.sleep(intervalMs)
         }
     }

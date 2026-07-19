@@ -221,10 +221,11 @@ class GalleryButtonVisualE2ETest {
             )
         }
 
-        // Await the gallery's non-green empty state in the foreground. stableSamples keeps a
-        // transient app-transition frame from ending the wait early (see tapOverlayAndAwait).
+        // Await the gallery's non-green empty state in the foreground, held for 3 s: covers a
+        // transient app-transition frame and the whole ~1.4 s cold-start window with margin,
+        // independent of capture latency (see tapOverlayAndAwait).
         val s2 =
-            fixture.tapOverlayAndAwait(stableSamples = 3) { screen ->
+            fixture.tapOverlayAndAwait(stableForMs = 3_000L) { screen ->
                 greenCoverage(screen) < 0.10f && fixture.foregroundPackage() == MOCK_GALLERY_PACKAGE
             }
         Screenshot.saveForArtifact(s2, "2a-s2.png")
@@ -349,10 +350,11 @@ class GalleryButtonVisualE2ETest {
             )
         }
 
-        // Await SecureViewer's non-green empty state in the foreground. stableSamples keeps a
-        // transient app-transition frame from ending the wait early (see tapOverlayAndAwait).
+        // Await SecureViewer's non-green empty state in the foreground, held for 3 s: covers a
+        // transient app-transition frame and the whole ~1.4 s cold-start window with margin,
+        // independent of capture latency (see tapOverlayAndAwait).
         val s2 =
-            fixture.tapOverlayAndAwait(stableSamples = 3) { screen ->
+            fixture.tapOverlayAndAwait(stableForMs = 3_000L) { screen ->
                 greenCoverage(screen) < 0.10f && fixture.foregroundPackage() == context.packageName
             }
         Screenshot.saveForArtifact(s2, "4a-s2.png")
