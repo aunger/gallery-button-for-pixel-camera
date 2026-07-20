@@ -15,7 +15,9 @@
 #   (b) verify-metadata is "true" (metadata files are pinned)
 #   (c) verify-signatures is present and "false" (sha256-only scope, Decision 1)
 #   (d) the file actually pins artifacts (at least one <sha256> entry)
-#   (e) no CI workflow downgrades verification to lenient mode
+#   (e) nothing downgrades or disables verification: no --dependency-verification
+#       lenient|off flag in a CI workflow, and no org.gradle.dependency.verification
+#       lenient|off property in a committed gradle.properties
 #   (f) gradle-wrapper.properties pins the distribution via distributionSha256Sum
 #
 # Always exits 0 on success, non-zero on failure.
@@ -92,11 +94,28 @@ PY
     fi
 fi
 
-# (e) no workflow downgrades verification to lenient mode.
-if grep -rn -- "--dependency-verification[= ]lenient\|--dependency-verification lenient" "$WORKFLOWS_DIR" >/dev/null 2>&1; then
-    fail "a CI workflow uses lenient dependency verification"
-else
-    pass "no CI workflow downgrades verification to lenient"
+# (e) nothing downgrades or disables verification. Two paths can weaken it: a
+# --dependency-verification lenient|off flag on a gradlew invocation in a CI
+# workflow, or the org.gradle.dependency.verification=lenient|off property in a
+# committed gradle.properties. The default (neither present) is strict, which is
+# what this change requires. In the flag pattern, [= ] already matches the
+# "--dependency-verification lenient" space form, so no separate alternation is
+# needed.
+downgraded=0
+if grep -rnE -- "--dependency-verification[= ](lenient|off)" "$WORKFLOWS_DIR" >/dev/null 2>&1; then
+    fail "a CI workflow downgrades verification via a --dependency-verification flag"
+    downgraded=1
+fi
+while IFS= read -r props; do
+    [ -n "$props" ] || continue
+    if grep -nE '^[[:space:]]*org\.gradle\.dependency\.verification[[:space:]]*=[[:space:]]*(lenient|off)' \
+        "$REPO_ROOT/$props" >/dev/null 2>&1; then
+        fail "committed gradle.properties downgrades verification: $props"
+        downgraded=1
+    fi
+done < <(git -C "$REPO_ROOT" ls-files -- '*gradle.properties' 2>/dev/null)
+if [ "$downgraded" -eq 0 ]; then
+    pass "nothing downgrades verification (no lenient/off flag or gradle.properties property)"
 fi
 
 # (f) the distribution is pinned.
