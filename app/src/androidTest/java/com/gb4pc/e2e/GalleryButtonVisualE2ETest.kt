@@ -301,7 +301,8 @@ class GalleryButtonVisualE2ETest {
         // reasons rather than throwing on the first and hiding the second.
         val coverage = ColorMatch.coverageFraction(greenMask)
         val foreground = fixture.foregroundPackage()
-        val failures =
+        reportPostTapFailures(
+            "test3a_populatedGalleryShowsGreenAfterTap",
             buildList {
                 if (coverage <= 0.40f) {
                     add(
@@ -316,10 +317,8 @@ class GalleryButtonVisualE2ETest {
                             "green mock camera in front)",
                     )
                 }
-            }
-        if (failures.isNotEmpty()) {
-            fail("test3a_populatedGalleryShowsGreenAfterTap: " + failures.joinToString("; "))
-        }
+            },
+        )
     }
 
     // test4a: Secure camera + empty gallery: no GREEN after tap---------------
@@ -543,6 +542,23 @@ class GalleryButtonVisualE2ETest {
 
     /** Full-screen GREEN coverage fraction of [screen]. */
     private fun greenCoverage(screen: Bitmap): Float = ColorMatch.coverageFraction(ColorMatch.mask(screen, Rgb.GREEN))
+
+    /**
+     * Fails [testName], reporting every post-tap [reasons] entry that held, joined into a single
+     * message. A no-op when [reasons] is empty (all post-tap conditions passed).
+     *
+     * Shared by the tap tests (test2a/test3a/test4a): their post-tap coverage and foreground checks
+     * are independent failure modes, so when more than one fails the report should name every reason
+     * rather than throwing on the first fail() and hiding the rest (issue #737).
+     */
+    private fun reportPostTapFailures(
+        testName: String,
+        reasons: List<String>,
+    ) {
+        if (reasons.isNotEmpty()) {
+            fail("$testName: " + reasons.joinToString("; "))
+        }
+    }
 
     /**
      * test5a's letterboxed-band geometry, measured on a screenshot's GREEN mask: the session's
