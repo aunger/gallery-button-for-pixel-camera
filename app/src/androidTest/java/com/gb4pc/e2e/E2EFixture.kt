@@ -429,6 +429,12 @@ class E2EFixture(
      */
     fun seedOnePhoto(): Uri {
         val resolver = context.contentResolver
+        // Capture the count before the insert so the visibility wait below can require *this*
+        // insert to land, matching captureOnePhoto()'s rowsBefore/rowsAfter pattern. A bare
+        // `count > 0` check would be vacuously satisfied by any residual image a prior E2E suite
+        // left in the shared MediaStore (this method's caller does not clear the camera roll
+        // first), so it would not actually prove this row became visible (issue #606).
+        val rowsBefore = countMediaStoreImages()
         val values =
             ContentValues().apply {
                 put(MediaStore.Images.Media.DISPLAY_NAME, "gb4pc-e2e-seed-${System.currentTimeMillis()}.jpg")
@@ -461,8 +467,10 @@ class E2EFixture(
         }
 
         // Confirm the row is now visible via an unfiltered query, so the caller does not open the
-        // picker before the insert is observable.
-        waitForCondition(5_000L) { countMediaStoreImages() > 0 }
+        // picker before the insert is observable. Waiting for the count to rise above rowsBefore
+        // (rather than merely be positive) means this wait proves *this* insert landed even when
+        // the shared MediaStore already held residual images.
+        waitForCondition(5_000L) { countMediaStoreImages() > rowsBefore }
         return uri
     }
 
