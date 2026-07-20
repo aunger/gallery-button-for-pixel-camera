@@ -12,6 +12,81 @@ permissions:
   issues: read
 
 jobs:
+  # Compute whether this event needs the full build, or is a docs-only change that
+  # can skip the expensive steps (issue #618). Extracted into its own small upstream
+  # job so both build-and-test and the parallel shell-tests job can gate on the same
+  # result via `needs:`, instead of each recomputing the diff. Needs only a checkout
+  # (fetch-depth 0 so check_non_docs_changes.sh can diff against the base) and git.
+  check-diff:
+    runs-on: ubuntu-latest
+    outputs:
+      needs_full_build: ${{ steps.diff_check.outputs.needs_full_build }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Check for non-docs changes
+        id: diff_check
+        run: |
+          if [[ "${{ github.event_name }}" == "push" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            # Always build on direct pushes to main (e.g. merge commits) and on
+            # manual ad hoc runs. github.base_ref is empty for workflow_dispatch,
+            # so falling through to the pull_request branch below would pass an
+            # empty ref to git fetch/check_non_docs_changes.sh--see #577.
+            echo "needs_full_build=true" >> $GITHUB_OUTPUT
+          else
+            BASE_REF="${{ github.base_ref }}"
+            git fetch origin "$BASE_REF" --depth=1
+            echo "needs_full_build=$(scripts/check_non_docs_changes.sh "origin/$BASE_REF")" >> $GITHUB_OUTPUT
+          fi
+
+  # Run the shell script unit tests (scripts/test_*.sh) in their own job (issue #618).
+  # They take about 30 seconds and need only a checkout, bash, and the lint tools,
+  # with no dependency on the JDK/Android SDK setup or the Python steps they used to
+  # sit next to in build-and-test. Running them here lets them execute concurrently
+  # with build-and-test instead of adding to its sequential critical path. Each step
+  # is gated on check-diff's needs_full_build so a docs-only change skips them, the
+  # same per-step gating build-and-test uses; the job itself still runs (and reports
+  # a green result) so it stays consistent with build-and-test on docs-only changes.
+  shell-tests:
+    needs: [check-diff]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Python script dependencies
+        # Some scripts/test_*.sh drive Python scripts end-to-end: e.g.
+        # test_summarize_preflight_integration.sh runs summarize_test_results.py,
+        # which imports defusedxml. In build-and-test these tests ran after
+        # "Install Python script dependencies", so the deps were already present;
+        # the split job must install them itself. --require-hashes refuses any
+        # artifact whose SHA-256 is not in the generated lock scripts/requirements.txt
+        # (issue #723; see scripts/requirements.in for the top-level pins).
+        if: needs.check-diff.outputs.needs_full_build == 'true'
+        run: pip install --require-hashes -r scripts/requirements.txt
+
+      - name: Install lint tools for shell tests
+        # scripts/test_lint_hook.sh drives scripts/lint.sh and the pre-commit git
+        # hook end-to-end, which needs the real lint tools. Provision the PyPI ones
+        # into a venv so scripts/lint.sh resolves them by explicit path via
+        # LINT_BIN_DIR (persisted to the next step through $GITHUB_ENV). ktlint (a
+        # Maven Central JAR needing a JDK) is not installed here; the test skips
+        # only its Kotlin case when ktlint is absent.
+        if: needs.check-diff.outputs.needs_full_build == 'true'
+        run: |
+          python3 -m venv "$RUNNER_TEMP/lintvenv"
+          "$RUNNER_TEMP/lintvenv/bin/pip" install --quiet --require-hashes -r scripts/requirements-lint.txt
+          echo "LINT_BIN_DIR=$RUNNER_TEMP/lintvenv/bin" >> "$GITHUB_ENV"
+
+      - name: Run shell script unit tests
+        if: needs.check-diff.outputs.needs_full_build == 'true'
+        run: |
+          for test_script in scripts/test_*.sh; do
+            echo "==> Running $test_script"
+            bash "$test_script"
+          done
+
   # Gate for PRs and merges: compiles, runs unit tests, then E2E tests on an emulator.
   # Unit tests run first so a fast failure skips the slower emulator phase.
   # On success the single debug build is reused for both test suites.
@@ -29,6 +104,7 @@ jobs:
   # the slow API-35 emulator — causing exit code 224 (Broken Pipe) before our
   # script ever starts. The explicit steps below poll for true service readiness.
   build-and-test:
+    needs: [check-diff]
     # ubuntu-latest has KVM hardware acceleration (available since April 2024).
     runs-on: ubuntu-latest
 
@@ -51,37 +127,20 @@ jobs:
       # Surfaced so link-pr-to-ci-summary (issue #331) can tell whether the
       # "Write test-result summary" step actually ran--on docs-only PRs it is
       # skipped, and the job's "Summary" section has nothing to link to.
-      needs_full_build: ${{ steps.diff_check.outputs.needs_full_build }}
+      needs_full_build: ${{ needs.check-diff.outputs.needs_full_build }}
 
     steps:
       - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Check for non-docs changes
-        id: diff_check
-        run: |
-          if [[ "${{ github.event_name }}" == "push" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            # Always build on direct pushes to main (e.g. merge commits) and on
-            # manual ad hoc runs. github.base_ref is empty for workflow_dispatch,
-            # so falling through to the pull_request branch below would pass an
-            # empty ref to git fetch/check_non_docs_changes.sh--see #577.
-            echo "needs_full_build=true" >> $GITHUB_OUTPUT
-          else
-            BASE_REF="${{ github.base_ref }}"
-            git fetch origin "$BASE_REF" --depth=1
-            echo "needs_full_build=$(scripts/check_non_docs_changes.sh "origin/$BASE_REF")" >> $GITHUB_OUTPUT
-          fi
 
       - name: Install Python script dependencies
-        if: steps.diff_check.outputs.needs_full_build == 'true'
+        if: needs.check-diff.outputs.needs_full_build == 'true'
         # --require-hashes refuses any artifact whose SHA-256 is not in the
         # generated lock scripts/requirements.txt (issue #723; see
         # scripts/requirements.in for the top-level pins).
         run: pip install --require-hashes -r scripts/requirements.txt
 
       - name: Run Python script unit tests
-        if: steps.diff_check.outputs.needs_full_build == 'true'
+        if: needs.check-diff.outputs.needs_full_build == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -92,40 +151,19 @@ jobs:
           # none of its checks (issue #619). Run it directly too.
           python3 scripts/test_ci_monitor.py
 
-      - name: Install lint tools for shell tests
-        # scripts/test_lint_hook.sh drives scripts/lint.sh and the pre-commit git
-        # hook end-to-end, which needs the real lint tools. Provision the PyPI ones
-        # into a venv so scripts/lint.sh resolves them by explicit path via
-        # LINT_BIN_DIR (persisted to the next step through $GITHUB_ENV). ktlint (a
-        # Maven Central JAR needing a JDK) is not installed here; the test skips
-        # only its Kotlin case when ktlint is absent.
-        if: steps.diff_check.outputs.needs_full_build == 'true'
-        run: |
-          python3 -m venv "$RUNNER_TEMP/lintvenv"
-          "$RUNNER_TEMP/lintvenv/bin/pip" install --quiet --require-hashes -r scripts/requirements-lint.txt
-          echo "LINT_BIN_DIR=$RUNNER_TEMP/lintvenv/bin" >> "$GITHUB_ENV"
-
-      - name: Run shell script unit tests
-        if: steps.diff_check.outputs.needs_full_build == 'true'
-        run: |
-          for test_script in scripts/test_*.sh; do
-            echo "==> Running $test_script"
-            bash "$test_script"
-          done
-
       - name: Set up JDK 17
-        if: steps.diff_check.outputs.needs_full_build == 'true'
+        if: needs.check-diff.outputs.needs_full_build == 'true'
         uses: actions/setup-java@v5
         with:
           java-version: '17'
           distribution: 'temurin'
 
       - name: Set up Android SDK
-        if: steps.diff_check.outputs.needs_full_build == 'true'
+        if: needs.check-diff.outputs.needs_full_build == 'true'
         uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4
 
       - name: Enable KVM
-        if: steps.diff_check.outputs.needs_full_build == 'true'
+        if: needs.check-diff.outputs.needs_full_build == 'true'
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | \
             sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -133,7 +171,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       - name: Cache Gradle packages
-        if: steps.diff_check.outputs.needs_full_build == 'true'
+        if: needs.check-diff.outputs.needs_full_build == 'true'
         uses: actions/cache@v5
         with:
           path: |
@@ -144,7 +182,7 @@ jobs:
             ${{ runner.os }}-gradle-
 
       - name: Install emulator, system image, and create AVD
-        if: steps.diff_check.outputs.needs_full_build == 'true'
+        if: needs.check-diff.outputs.needs_full_build == 'true'
         run: |
           sdkmanager --install \
             "emulator" \
@@ -171,11 +209,11 @@ jobs:
           ANDROID_AVD_HOME="$AVD_HOME" $ANDROID_HOME/emulator/emulator -list-avds
 
       - name: Grant execute permission for gradlew
-        if: steps.diff_check.outputs.needs_full_build == 'true'
+        if: needs.check-diff.outputs.needs_full_build == 'true'
         run: chmod +x gradlew
 
       - name: Build and run unit tests
-        if: steps.diff_check.outputs.needs_full_build == 'true'
+        if: needs.check-diff.outputs.needs_full_build == 'true'
         env:
           BUILD_NUMBER: ${{ github.run_number }}
         run: |
@@ -187,7 +225,7 @@ jobs:
             | tee >(grep '^##GB4PC_TEST##' > results/unit.ndjson)
 
       - name: Upload unit test results
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: unit-test-results
@@ -197,7 +235,7 @@ jobs:
           retention-days: 14
 
       - name: Upload unit test monitor feed
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: ci-monitor-feed-unit
@@ -205,7 +243,7 @@ jobs:
           retention-days: 14
 
       - name: Start emulator
-        if: steps.diff_check.outputs.needs_full_build == 'true'
+        if: needs.check-diff.outputs.needs_full_build == 'true'
         run: |
           echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === KVM device:"
           ls -la /dev/kvm || echo "WARNING: /dev/kvm not found"
@@ -236,7 +274,7 @@ jobs:
       # sys.boot_completed is set while binder threads are still saturated;
       # we wait until `settings` actually responds before issuing any commands.
       - name: Wait for emulator service readiness
-        if: steps.diff_check.outputs.needs_full_build == 'true'
+        if: needs.check-diff.outputs.needs_full_build == 'true'
         timeout-minutes: 10
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
@@ -288,7 +326,7 @@ jobs:
           "$ADB" shell settings put global animator_duration_scale 0
 
       - name: CI pre-flight — MockCameraActivity smoke check
-        if: steps.diff_check.outputs.needs_full_build == 'true'
+        if: needs.check-diff.outputs.needs_full_build == 'true'
         id: preflight
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
@@ -335,7 +373,7 @@ jobs:
           python3 scripts/check_green_feed.py --adb "$ADB" preflight.png
 
       - name: Upload preflight screenshot on failure
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true' && steps.preflight.outcome == 'failure'
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true' && steps.preflight.outcome == 'failure'
         uses: actions/upload-artifact@v7
         with:
           name: preflight-screenshot
@@ -343,7 +381,7 @@ jobs:
           retention-days: 14
 
       - name: Run E2E emulator setup
-        if: steps.diff_check.outputs.needs_full_build == 'true'
+        if: needs.check-diff.outputs.needs_full_build == 'true'
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
 
@@ -377,7 +415,7 @@ jobs:
         # consulting both the JUnit XML and this recorded outcome against the
         # red-to-green allowlist (.github/allowed-test-failures.txt).
         id: run_instrumented
-        if: steps.diff_check.outputs.needs_full_build == 'true'
+        if: needs.check-diff.outputs.needs_full_build == 'true'
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
           # Wake and dismiss the swipe keyguard before starting the test suite.
@@ -396,7 +434,7 @@ jobs:
           fi
 
       - name: Copy instrumented test results
-        if: steps.diff_check.outputs.needs_full_build == 'true'
+        if: needs.check-diff.outputs.needs_full_build == 'true'
         continue-on-error: true
         run: |
           mkdir -p app/build/outputs/androidTest-results/instrumented
@@ -407,7 +445,7 @@ jobs:
         # No `continue-on-error` (issue #309): record the real outcome and defer
         # the pass/fail verdict to the "Gate on test failures" step.
         id: run_overlay_e2e
-        if: steps.diff_check.outputs.needs_full_build == 'true'
+        if: needs.check-diff.outputs.needs_full_build == 'true'
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
           # Wake and dismiss the swipe keyguard before starting the test suite.
@@ -466,7 +504,7 @@ jobs:
       - name: Pull PixelCameraOverlayE2ETest video on failure
         # Only pull and upload the recording when the overlay E2E suite failed (issue #520).
         # On a green run the file is left on the device and discarded when the emulator exits.
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true' && steps.run_overlay_e2e.outputs.outcome == 'failure'
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true' && steps.run_overlay_e2e.outputs.outcome == 'failure'
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
           mkdir -p /tmp/e2e-videos
@@ -474,7 +512,7 @@ jobs:
             echo "WARNING: could not pull e2e-overlay.mp4"
 
       - name: Upload PixelCameraOverlayE2ETest video
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true' && steps.run_overlay_e2e.outputs.outcome == 'failure'
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true' && steps.run_overlay_e2e.outputs.outcome == 'failure'
         uses: actions/upload-artifact@v7
         with:
           name: e2e-video-PixelCameraOverlayE2ETest
@@ -482,7 +520,7 @@ jobs:
           retention-days: 14
 
       - name: Upload PixelCameraOverlayE2ETest monitor feed
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: ci-monitor-feed-PixelCameraOverlayE2ETest
@@ -495,7 +533,7 @@ jobs:
         # No `continue-on-error` (issue #309): record the real outcome and defer
         # the pass/fail verdict to the "Gate on test failures" step.
         id: run_gallery_e2e
-        if: steps.diff_check.outputs.needs_full_build == 'true'
+        if: needs.check-diff.outputs.needs_full_build == 'true'
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
           # Wake and dismiss the swipe keyguard before starting the test suite.
@@ -540,7 +578,7 @@ jobs:
       - name: Pull GalleryButtonVisualE2ETest video on failure
         # Only pull and upload the recording when the gallery E2E suite failed (issue #520).
         # On a green run the file is left on the device and discarded when the emulator exits.
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true' && steps.run_gallery_e2e.outputs.outcome == 'failure'
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true' && steps.run_gallery_e2e.outputs.outcome == 'failure'
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
           mkdir -p /tmp/e2e-videos
@@ -548,7 +586,7 @@ jobs:
             echo "WARNING: could not pull e2e-gallery.mp4"
 
       - name: Upload GalleryButtonVisualE2ETest video
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true' && steps.run_gallery_e2e.outputs.outcome == 'failure'
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true' && steps.run_gallery_e2e.outputs.outcome == 'failure'
         uses: actions/upload-artifact@v7
         with:
           name: e2e-video-GalleryButtonVisualE2ETest
@@ -556,7 +594,7 @@ jobs:
           retention-days: 14
 
       - name: Upload GalleryButtonVisualE2ETest monitor feed
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: ci-monitor-feed-GalleryButtonVisualE2ETest
@@ -579,7 +617,7 @@ jobs:
         # the task's default precondition (permission granted before the process starts),
         # same as every other E2E suite.
         id: run_permissions_granted_e2e
-        if: steps.diff_check.outputs.needs_full_build == 'true'
+        if: needs.check-diff.outputs.needs_full_build == 'true'
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
           # Wake and dismiss the swipe keyguard before starting the test suite.
@@ -624,7 +662,7 @@ jobs:
       - name: Pull PermissionsGrantedE2ETest video on failure
         # Only pull and upload the recording when this suite failed (issue #604).
         # On a green run the file is left on the device and discarded when the emulator exits.
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true' && steps.run_permissions_granted_e2e.outputs.outcome == 'failure'
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true' && steps.run_permissions_granted_e2e.outputs.outcome == 'failure'
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
           mkdir -p /tmp/e2e-videos
@@ -632,7 +670,7 @@ jobs:
             echo "WARNING: could not pull e2e-permissions-granted.mp4"
 
       - name: Upload PermissionsGrantedE2ETest video
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true' && steps.run_permissions_granted_e2e.outputs.outcome == 'failure'
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true' && steps.run_permissions_granted_e2e.outputs.outcome == 'failure'
         uses: actions/upload-artifact@v7
         with:
           name: e2e-video-PermissionsGrantedE2ETest
@@ -640,7 +678,7 @@ jobs:
           retention-days: 14
 
       - name: Upload PermissionsGrantedE2ETest monitor feed
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: ci-monitor-feed-PermissionsGrantedE2ETest
@@ -658,7 +696,7 @@ jobs:
         # violate its own precondition assertion, and toggling the permission from
         # inside a running test crashes the process (see the class doc).
         id: run_permissions_denied_e2e
-        if: steps.diff_check.outputs.needs_full_build == 'true'
+        if: needs.check-diff.outputs.needs_full_build == 'true'
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
           "$ADB" shell input keyevent KEYCODE_WAKEUP
@@ -698,7 +736,7 @@ jobs:
       - name: Pull PermissionsDeniedE2ETest video on failure
         # Only pull and upload the recording when this suite failed (issue #604).
         # On a green run the file is left on the device and discarded when the emulator exits.
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true' && steps.run_permissions_denied_e2e.outputs.outcome == 'failure'
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true' && steps.run_permissions_denied_e2e.outputs.outcome == 'failure'
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
           mkdir -p /tmp/e2e-videos
@@ -706,7 +744,7 @@ jobs:
             echo "WARNING: could not pull e2e-permissions-denied.mp4"
 
       - name: Upload PermissionsDeniedE2ETest video
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true' && steps.run_permissions_denied_e2e.outputs.outcome == 'failure'
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true' && steps.run_permissions_denied_e2e.outputs.outcome == 'failure'
         uses: actions/upload-artifact@v7
         with:
           name: e2e-video-PermissionsDeniedE2ETest
@@ -718,12 +756,12 @@ jobs:
         # are none after this point today, but this keeps the device state honest for any
         # future step added after this one), so explicitly restore the default granted
         # state that every other E2E suite assumes.
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true'
         run: |
           "$ANDROID_HOME/platform-tools/adb" shell pm grant com.gb4pc android.permission.READ_MEDIA_IMAGES
 
       - name: Upload PermissionsDeniedE2ETest monitor feed
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: ci-monitor-feed-PermissionsDeniedE2ETest
@@ -744,7 +782,7 @@ jobs:
         # SetupActivityTest already relies on successfully, so the hierarchy is
         # actually found and the assertion is meaningful.
         id: run_setup_activity_granted_e2e
-        if: steps.diff_check.outputs.needs_full_build == 'true'
+        if: needs.check-diff.outputs.needs_full_build == 'true'
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
           "$ADB" shell input keyevent KEYCODE_WAKEUP
@@ -783,7 +821,7 @@ jobs:
       - name: Pull SetupActivityGrantedE2ETest video on failure
         # Only pull and upload the recording when this suite failed (issue #604).
         # On a green run the file is left on the device and discarded when the emulator exits.
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true' && steps.run_setup_activity_granted_e2e.outputs.outcome == 'failure'
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true' && steps.run_setup_activity_granted_e2e.outputs.outcome == 'failure'
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
           mkdir -p /tmp/e2e-videos
@@ -791,7 +829,7 @@ jobs:
             echo "WARNING: could not pull e2e-setup-activity-granted.mp4"
 
       - name: Upload SetupActivityGrantedE2ETest video
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true' && steps.run_setup_activity_granted_e2e.outputs.outcome == 'failure'
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true' && steps.run_setup_activity_granted_e2e.outputs.outcome == 'failure'
         uses: actions/upload-artifact@v7
         with:
           name: e2e-video-SetupActivityGrantedE2ETest
@@ -799,7 +837,7 @@ jobs:
           retention-days: 14
 
       - name: Upload SetupActivityGrantedE2ETest monitor feed
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: ci-monitor-feed-SetupActivityGrantedE2ETest
@@ -814,7 +852,7 @@ jobs:
         # the same reason: this class asserts the permission is NOT granted, so it must
         # never run under the task's default grant.
         id: run_setup_activity_denied_e2e
-        if: steps.diff_check.outputs.needs_full_build == 'true'
+        if: needs.check-diff.outputs.needs_full_build == 'true'
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
           "$ADB" shell input keyevent KEYCODE_WAKEUP
@@ -854,7 +892,7 @@ jobs:
       - name: Pull SetupActivityDeniedE2ETest video on failure
         # Only pull and upload the recording when this suite failed (issue #604).
         # On a green run the file is left on the device and discarded when the emulator exits.
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true' && steps.run_setup_activity_denied_e2e.outputs.outcome == 'failure'
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true' && steps.run_setup_activity_denied_e2e.outputs.outcome == 'failure'
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
           mkdir -p /tmp/e2e-videos
@@ -862,7 +900,7 @@ jobs:
             echo "WARNING: could not pull e2e-setup-activity-denied.mp4"
 
       - name: Upload SetupActivityDeniedE2ETest video
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true' && steps.run_setup_activity_denied_e2e.outputs.outcome == 'failure'
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true' && steps.run_setup_activity_denied_e2e.outputs.outcome == 'failure'
         uses: actions/upload-artifact@v7
         with:
           name: e2e-video-SetupActivityDeniedE2ETest
@@ -873,12 +911,12 @@ jobs:
         # Mirrors the "Re-grant media permission after PermissionsDeniedE2ETest" step
         # above: keeps device state in the "granted" baseline every other suite (and
         # any future step) assumes.
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true'
         run: |
           "$ANDROID_HOME/platform-tools/adb" shell pm grant com.gb4pc android.permission.READ_MEDIA_IMAGES
 
       - name: Upload SetupActivityDeniedE2ETest monitor feed
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: ci-monitor-feed-SetupActivityDeniedE2ETest
@@ -923,7 +961,7 @@ jobs:
         # when that recovery is confirmed is the run reported as the documented "the dialog
         # grant restarts the app but succeeds" finding.
         id: run_setup_activity_permission_dialog_e2e
-        if: steps.diff_check.outputs.needs_full_build == 'true'
+        if: needs.check-diff.outputs.needs_full_build == 'true'
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
           "$ADB" shell input keyevent KEYCODE_WAKEUP
@@ -1058,7 +1096,7 @@ jobs:
       - name: Pull SetupActivityPermissionDialogE2ETest video on failure
         # Only pull and upload the recording when this suite failed (issue #604).
         # On a green run the file is left on the device and discarded when the emulator exits.
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true' && steps.run_setup_activity_permission_dialog_e2e.outputs.outcome == 'failure'
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true' && steps.run_setup_activity_permission_dialog_e2e.outputs.outcome == 'failure'
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
           mkdir -p /tmp/e2e-videos
@@ -1066,7 +1104,7 @@ jobs:
             echo "WARNING: could not pull e2e-setup-activity-permission-dialog.mp4"
 
       - name: Upload SetupActivityPermissionDialogE2ETest video
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true' && steps.run_setup_activity_permission_dialog_e2e.outputs.outcome == 'failure'
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true' && steps.run_setup_activity_permission_dialog_e2e.outputs.outcome == 'failure'
         uses: actions/upload-artifact@v7
         with:
           name: e2e-video-SetupActivityPermissionDialogE2ETest
@@ -1074,7 +1112,7 @@ jobs:
           retention-days: 14
 
       - name: Upload SetupActivityPermissionDialogE2ETest monitor feed
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: ci-monitor-feed-SetupActivityPermissionDialogE2ETest
@@ -1094,7 +1132,7 @@ jobs:
         # READ_MEDIA_IMAGES before `am instrument` starts the com.gb4pc process, so the MEDIA
         # step is actually reached (same precondition as the denied/dialog suites above).
         id: run_partial_access_photo_picker_e2e
-        if: steps.diff_check.outputs.needs_full_build == 'true'
+        if: needs.check-diff.outputs.needs_full_build == 'true'
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
           "$ADB" shell input keyevent KEYCODE_WAKEUP
@@ -1151,12 +1189,12 @@ jobs:
         # leaves com.gb4pc with only partial (or no) media access, so restore the default
         # granted state every other E2E suite assumes, keeping device state honest for any
         # future step added after this one.
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true'
         run: |
           "$ANDROID_HOME/platform-tools/adb" shell pm grant com.gb4pc android.permission.READ_MEDIA_IMAGES
 
       - name: Upload PartialAccessPhotoPickerE2ETest monitor feed
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: ci-monitor-feed-PartialAccessPhotoPickerE2ETest
@@ -1164,7 +1202,7 @@ jobs:
           retention-days: 14
 
       - name: Copy E2E test results
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true'
         continue-on-error: true
         run: |
           # The E2E Gradle task writes TEST-com.gb4pc.e2e.*.xml into the shared
@@ -1178,7 +1216,7 @@ jobs:
 
       - name: Pull and upload E2E screenshots on failure
         id: pull_e2e_screenshots
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true' && (steps.run_overlay_e2e.outputs.outcome == 'failure' || steps.run_gallery_e2e.outputs.outcome == 'failure')
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true' && (steps.run_overlay_e2e.outputs.outcome == 'failure' || steps.run_gallery_e2e.outputs.outcome == 'failure')
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
           mkdir -p /tmp/e2e-screenshots
@@ -1186,7 +1224,7 @@ jobs:
             /tmp/e2e-screenshots/ || echo "No screenshots to pull (directory may not exist)"
 
       - name: Kill emulator
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true'
         run: |
           $ANDROID_HOME/platform-tools/adb emu kill 2>/dev/null || true
           [[ -n "${EMULATOR_PID:-}" ]] && kill "$EMULATOR_PID" 2>/dev/null || true
@@ -1200,7 +1238,7 @@ jobs:
         # that would have populated the directory, so this single step runs unconditionally
         # after every suite rather than being duplicated per-suite; if-no-files-found:
         # ignore keeps the common (no timeout) case from warning.
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: e2e-timeout-diagnostics
@@ -1209,7 +1247,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Upload instrumented test results
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: instrumented-test-results
@@ -1217,7 +1255,7 @@ jobs:
           retention-days: 14
 
       - name: Upload E2E test results
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: e2e-test-results
@@ -1240,7 +1278,7 @@ jobs:
           retention-days: 14
 
       - name: Write test-result summary
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true'
         run: |
           python3 scripts/summarize_test_results.py \
             app/build/test-results/testDebugUnitTest \
@@ -1261,7 +1299,7 @@ jobs:
       # infrastructure failure and still fails the build. This runs last so it
       # cannot suppress artifact upload, the summary, or issue filing.
       - name: Gate on test failures
-        if: always() && steps.diff_check.outputs.needs_full_build == 'true'
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true'
         run: |
           python3 scripts/check_allowed_failures.py \
             --allowlist .github/allowed-test-failures.txt \
