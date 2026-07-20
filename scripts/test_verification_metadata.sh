@@ -41,13 +41,12 @@ WORKFLOWS_DIR="$REPO_ROOT/.github/workflows"
 # source GitHub's gradle/wrapper-validation-action verifies against). Pinning the
 # published value, rather than the current file's own hash, makes this guard
 # authenticate the JAR against Gradle instead of trusting whatever bytes happen to
-# be committed. The committed JAR is the genuine Gradle 8.14 wrapper JAR:
-#   https://services.gradle.org/distributions/gradle-8.14-wrapper.jar.sha256
-# (This is newer than the 8.9 distribution pinned in gradle-wrapper.properties; a
-# newer wrapper JAR launches an older distribution without issue.) On a wrapper
-# upgrade, update this pin to the published checksum for the new version from the
-# gradle-<version>-wrapper.jar.sha256 URL above.
-WRAPPER_JAR_SHA256="7d3a4ac4de1c32b59bc6a4eb8ecb8e612ccd0cf1ae1e99f66902da64df296172"
+# be committed. The committed JAR is the genuine Gradle 8.9 wrapper JAR, matching
+# the 8.9 distribution pinned in gradle-wrapper.properties:
+#   https://services.gradle.org/distributions/gradle-8.9-wrapper.jar.sha256
+# On a wrapper upgrade, update this pin to the published checksum for the new
+# version from the gradle-<version>-wrapper.jar.sha256 URL above.
+WRAPPER_JAR_SHA256="498495120a03b9a6ab5d155f5de3c8f0d986a449153702fb80fc80e134484f17"
 
 PASS=0
 FAIL=0
