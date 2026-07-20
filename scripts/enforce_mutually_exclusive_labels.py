@@ -28,7 +28,9 @@ Exit code:
        failure).
     1  ISSUE_NUMBER is not a valid integer, the issue/PR's current labels
        could not be fetched, or removing a conflicting label failed for a
-       reason other than 404.
+       reason other than 404. A transient GitHub blip (a 5xx, a 429, or a
+       network error) is retried with exponential backoff first, so a nonzero
+       exit reflects a persistent failure, not a passing blip.
 
 Required environment variables:
     GITHUB_TOKEN        Personal access token or Actions secret with
@@ -41,6 +43,7 @@ Required environment variables:
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -69,14 +72,53 @@ MUTUALLY_EXCLUSIVE_PREFIXES: list[str] = [
 # GitHub API helper
 # ---------------------------------------------------------------------------
 
+# Transient-error retry policy (issue #749). A GitHub API blip (a 5xx server
+# error, a 429 rate-limit response, or a network-level URLError) may clear on a
+# repeat, so it is retried with exponential backoff before the call is allowed
+# to fail. This matches the "retry once, transient GitHub errors are expected"
+# guidance already followed by scripts/update_gh_labels.sh and
+# agents/dev_orchestration.md for this exact class of instability. A real error
+# (a 4xx other than 429, e.g. a 404 already-gone or a 422 validation failure) is
+# never retried: repeating it would not change the outcome.
+MAX_ATTEMPTS = 4
+INITIAL_BACKOFF_SECONDS = 1.0
+BACKOFF_MULTIPLIER = 2.0
 
-def gh_api(path: str, token: str, method: str = "GET", body: object = None) -> object:
+
+def _is_transient_error(exc: Exception) -> bool:
+    """Return True if *exc* is a transient GitHub API failure worth retrying.
+
+    Transient means the same request may succeed on a repeat: a 5xx server
+    error, a 429 rate-limit response, or a network-level ``URLError``
+    (connection reset, DNS blip). Any other ``HTTPError`` (a 4xx other than
+    429, such as a 404 already-gone or a 422 validation failure) is a real
+    error that a retry would not clear.
+
+    ``HTTPError`` is a subclass of ``URLError``, so it is checked first.
+    """
+    if isinstance(exc, urllib.error.HTTPError):
+        return exc.code == 429 or 500 <= exc.code <= 599
+    return isinstance(exc, urllib.error.URLError)
+
+
+def gh_api(
+    path: str,
+    token: str,
+    method: str = "GET",
+    body: object = None,
+    max_attempts: int = MAX_ATTEMPTS,
+) -> object:
     """Make a GitHub API request and return the parsed JSON response.
 
     Returns ``None`` for responses with an empty body (e.g. 204 No Content).
 
-    Raises ``urllib.error.HTTPError`` or ``urllib.error.URLError`` on
-    failure so callers can handle errors explicitly.
+    A transient failure (see ``_is_transient_error``) is retried up to
+    *max_attempts* times with exponential backoff so a passing GitHub blip does
+    not surface as a real error. Once the attempts are exhausted, or on a
+    non-transient error, raises ``urllib.error.HTTPError`` or
+    ``urllib.error.URLError`` so callers can handle errors explicitly (the
+    already-gone 404 case in ``remove_labels`` is unchanged, since a 404 is not
+    transient and is never retried here).
     """
     url = f"https://api.github.com/{path}"
     req = urllib.request.Request(url, method=method)
@@ -88,10 +130,28 @@ def gh_api(path: str, token: str, method: str = "GET", body: object = None) -> o
         req.add_header("Content-Type", "application/json")
     else:
         data = None
-    # URL is built from a GitHub API constant; the file:// risk does not apply.
-    with urllib.request.urlopen(req, data) as r:  # nosemgrep
-        response_body = r.read()
-        return json.loads(response_body) if response_body else None
+
+    backoff = INITIAL_BACKOFF_SECONDS
+    for attempt in range(1, max_attempts + 1):
+        try:
+            # URL is built from a GitHub API constant; the file:// risk does not apply.
+            with urllib.request.urlopen(req, data) as r:  # nosemgrep
+                response_body = r.read()
+                return json.loads(response_body) if response_body else None
+        except (urllib.error.HTTPError, urllib.error.URLError) as exc:
+            if attempt >= max_attempts or not _is_transient_error(exc):
+                raise
+            print(
+                f"Transient error on {method} {path} "
+                f"(attempt {attempt}/{max_attempts}): {exc}. "
+                f"Retrying in {backoff:g}s.",
+                file=sys.stderr,
+            )
+            time.sleep(backoff)
+            backoff *= BACKOFF_MULTIPLIER
+    # Unreachable: the final attempt above either returns or raises. Present so
+    # the function has a definite terminal on every path.
+    raise AssertionError("gh_api retry loop exited without returning or raising")
 
 
 # ---------------------------------------------------------------------------

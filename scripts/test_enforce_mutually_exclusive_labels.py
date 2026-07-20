@@ -12,6 +12,11 @@ sys.path.insert(0, os.path.dirname(__file__))
 import enforce_mutually_exclusive_labels as emxl  # noqa: E402
 
 
+def _http_error(code: int) -> urllib.error.HTTPError:
+    """Build an HTTPError carrying the given status code for retry tests."""
+    return urllib.error.HTTPError(url=None, code=code, msg="err", hdrs=None, fp=None)
+
+
 # ---------------------------------------------------------------------------
 # gh_api tests
 # ---------------------------------------------------------------------------
@@ -43,6 +48,136 @@ class TestGhApi(unittest.TestCase):
                 "repos/owner/repo/issues/1/labels/p2", token="tok", method="DELETE"
             )
         self.assertIsNone(result)
+
+    # ------------------------------------------------------------------
+    # Transient-error retry tests (issue #749)
+    # ------------------------------------------------------------------
+
+    def test_retries_transient_503_then_succeeds(self):
+        """A 503 blip is retried and the following success is returned."""
+        payload = {"labels": [{"name": "p1"}]}
+        response = self._make_response(json.dumps(payload).encode())
+        with patch.object(emxl.time, "sleep") as mock_sleep:
+            with patch(
+                "urllib.request.urlopen",
+                side_effect=[_http_error(503), response],
+            ) as mock_urlopen:
+                result = emxl.gh_api("repos/owner/repo/issues/1", token="tok")
+        self.assertEqual(result, payload)
+        self.assertEqual(mock_urlopen.call_count, 2)
+        mock_sleep.assert_called_once()
+
+    def test_retries_429_then_succeeds(self):
+        """A 429 rate-limit response is transient and is retried."""
+        response = self._make_response(b"")
+        with patch.object(emxl.time, "sleep"):
+            with patch(
+                "urllib.request.urlopen",
+                side_effect=[_http_error(429), response],
+            ) as mock_urlopen:
+                result = emxl.gh_api(
+                    "repos/owner/repo/issues/1/labels/p2", token="tok", method="DELETE"
+                )
+        self.assertIsNone(result)
+        self.assertEqual(mock_urlopen.call_count, 2)
+
+    def test_retries_url_error_then_succeeds(self):
+        """A network-level URLError (e.g. connection reset) is retried."""
+        payload = {"ok": True}
+        response = self._make_response(json.dumps(payload).encode())
+        with patch.object(emxl.time, "sleep"):
+            with patch(
+                "urllib.request.urlopen",
+                side_effect=[urllib.error.URLError("connection reset"), response],
+            ) as mock_urlopen:
+                result = emxl.gh_api("repos/owner/repo/issues/1", token="tok")
+        self.assertEqual(result, payload)
+        self.assertEqual(mock_urlopen.call_count, 2)
+
+    def test_retries_exhaust_and_raise_last_transient(self):
+        """After max_attempts transient failures, the last error propagates."""
+        with patch.object(emxl.time, "sleep") as mock_sleep:
+            with patch(
+                "urllib.request.urlopen",
+                side_effect=[_http_error(503), _http_error(502), _http_error(500)],
+            ) as mock_urlopen:
+                with self.assertRaises(urllib.error.HTTPError) as ctx:
+                    emxl.gh_api("repos/owner/repo/issues/1", token="tok", max_attempts=3)
+        self.assertEqual(ctx.exception.code, 500)
+        self.assertEqual(mock_urlopen.call_count, 3)
+        # One sleep between each pair of attempts: three attempts => two sleeps.
+        self.assertEqual(mock_sleep.call_count, 2)
+
+    def test_does_not_retry_404(self):
+        """A 404 is benign/real, not transient, so it is raised without retry."""
+        with patch.object(emxl.time, "sleep") as mock_sleep:
+            with patch(
+                "urllib.request.urlopen",
+                side_effect=[_http_error(404), self._make_response(b"{}")],
+            ) as mock_urlopen:
+                with self.assertRaises(urllib.error.HTTPError) as ctx:
+                    emxl.gh_api("repos/owner/repo/issues/1/labels/p2", token="tok", method="DELETE")
+        self.assertEqual(ctx.exception.code, 404)
+        self.assertEqual(mock_urlopen.call_count, 1)
+        mock_sleep.assert_not_called()
+
+    def test_does_not_retry_422(self):
+        """A 422 validation error is real, not transient, so it is not retried."""
+        with patch.object(emxl.time, "sleep") as mock_sleep:
+            with patch("urllib.request.urlopen", side_effect=_http_error(422)) as mock_urlopen:
+                with self.assertRaises(urllib.error.HTTPError):
+                    emxl.gh_api("repos/owner/repo/issues/1", token="tok")
+        self.assertEqual(mock_urlopen.call_count, 1)
+        mock_sleep.assert_not_called()
+
+    def test_backoff_grows_exponentially(self):
+        """Each retry waits longer than the last, following the backoff policy."""
+        with patch.object(emxl.time, "sleep") as mock_sleep:
+            with patch(
+                "urllib.request.urlopen",
+                side_effect=[
+                    _http_error(503),
+                    _http_error(503),
+                    _http_error(503),
+                    _http_error(503),
+                ],
+            ):
+                with self.assertRaises(urllib.error.HTTPError):
+                    emxl.gh_api("repos/owner/repo/issues/1", token="tok", max_attempts=4)
+        delays = [call.args[0] for call in mock_sleep.call_args_list]
+        b0 = emxl.INITIAL_BACKOFF_SECONDS
+        m = emxl.BACKOFF_MULTIPLIER
+        self.assertEqual(delays, [b0, b0 * m, b0 * m * m])
+
+
+# ---------------------------------------------------------------------------
+# _is_transient_error tests
+# ---------------------------------------------------------------------------
+
+
+class TestIsTransientError(unittest.TestCase):
+    def test_5xx_is_transient(self):
+        for code in (500, 502, 503, 504, 599):
+            self.assertTrue(emxl._is_transient_error(_http_error(code)), code)
+
+    def test_429_is_transient(self):
+        self.assertTrue(emxl._is_transient_error(_http_error(429)))
+
+    def test_url_error_is_transient(self):
+        self.assertTrue(emxl._is_transient_error(urllib.error.URLError("boom")))
+
+    def test_404_is_not_transient(self):
+        self.assertFalse(emxl._is_transient_error(_http_error(404)))
+
+    def test_422_is_not_transient(self):
+        self.assertFalse(emxl._is_transient_error(_http_error(422)))
+
+    def test_other_4xx_not_transient(self):
+        for code in (400, 401, 403):
+            self.assertFalse(emxl._is_transient_error(_http_error(code)), code)
+
+    def test_non_url_exception_not_transient(self):
+        self.assertFalse(emxl._is_transient_error(ValueError("nope")))
 
 
 # ---------------------------------------------------------------------------
