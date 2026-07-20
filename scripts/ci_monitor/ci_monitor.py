@@ -1332,13 +1332,15 @@ def main(argv):
                 # check (e.g. an advisory label linter) leaves the PR mergeable.
                 # GitHub's mergeable_state is authoritative for "can this merge",
                 # so consult it before terminating, exactly as the all_passed path
-                # does (a fresh /pulls fetch): clean/unstable means the PR is
-                # mergeable despite the red check -> Clear; unknown means GitHub
-                # has not recomputed yet -> keep polling; any other state
-                # (behind/dirty/blocked) is a real block -> fall through to the raw
-                # scan's Blocked/Infra terminal, which still names the blocking
-                # check (including the label gate). The raw scan keeps driving the
-                # per-check summary and step/FAIL diagnostics regardless.
+                # does (a fresh /pulls fetch). Only an explicitly un-mergeable state
+                # (behind/dirty/blocked) is a real block that falls through to the
+                # raw scan's Blocked/Infra terminal, which still names the blocking
+                # check (including the label gate). A mergeable state (clean/
+                # unstable) reports Clear; anything else (mergeable_state not yet
+                # computed, or another non-blocking state such as has_hooks) keeps
+                # polling rather than terminating, staying symmetric with the
+                # all_passed path's still-computing else. The raw scan keeps driving
+                # the per-check summary and step/FAIL diagnostics regardless.
                 mpr_json = _request(
                     "%s/repos/%s/%s/pulls/%s" % (API_BASE, OWNER, REPO, args.pr), token
                 )
@@ -1348,14 +1350,18 @@ def main(argv):
                     print("%s: Clear (mergeable_state=%s)" % (tag, mergeable))
                     sys.stdout.flush()
                     break
-                if mergeable == "unknown":
-                    # mergeable_state not yet computed: don't emit a possibly-false
-                    # terminal off the raw scan; keep polling (mirrors the
-                    # all_passed path's still-computing else branch).
+                if mergeable not in ("behind", "dirty", "blocked"):
+                    # Not an un-mergeable state: don't emit a possibly-false
+                    # terminal off the raw scan; keep polling. The heartbeat names
+                    # the internal "non-passing check" state rather than the raw
+                    # Blocked/Infra verdict, so--like the all_passed heartbeat, which
+                    # avoids the Clear keyword--it can never be mistaken for a
+                    # terminal line by a consumer scanning for Blocked/Infra.
                     now = time.time()
                     if now - last_output_ts > SILENCE_SECONDS:
                         print(
-                            "%s: %s but mergeable_state=unknown (still computing)" % (tag, result)
+                            "%s: non-passing check, mergeable_state=%s (still computing)"
+                            % (tag, mergeable)
                         )
                         sys.stdout.flush()
                         last_output_ts = now

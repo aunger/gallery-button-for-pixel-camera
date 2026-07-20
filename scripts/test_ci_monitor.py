@@ -94,8 +94,10 @@ Covers:
        present, omits it when None, and tolerates rows built without the key
   (bf) #748 main(): the --pr Blocked/Infra terminal is gated by mergeable_state,
        so a failing NON-required check (mergeable_state=unstable) terminates
-       Clear instead of a false Blocked/Infra; an 'unknown' mergeable_state
-       keeps polling rather than terminating prematurely
+       Clear instead of a false Blocked/Infra; an 'unknown' (or other
+       non-blocking, e.g. has_hooks) mergeable_state keeps polling rather than
+       terminating prematurely, and the still-computing heartbeat does not begin
+       with a Blocked/Infra terminal keyword
 
 No network calls required; no GITHUB_TOKEN needed.
 Run this file directly to execute the suite: exits 0 on success, non-zero on failure.
@@ -5383,36 +5385,58 @@ def main() -> int:
     check(rc_bf == 0, "main() returned 0", "main() returned %r" % rc_bf)
 
     # An 'unknown' mergeable_state must NOT terminate: GitHub has not recomputed yet,
-    # so the monitor keeps polling and clears only once mergeable_state settles.
-    side_effects_bf2 = collections.deque(
-        [
-            PR_BF,  # poll 1: pulls -> sha
-            CHECK_NONREQ_FAIL_BF,  # poll 1: verdict -> Blocked (raw scan)
-            {"mergeable_state": "unknown"},  # poll 1: mpr -> unknown -> keep polling (no terminal)
-            PR_BF,  # poll 2: pulls -> sha
-            CHECK_NONREQ_FAIL_BF,  # poll 2: verdict -> Blocked (raw scan)
-            MPR_UNSTABLE_BF,  # poll 2: mpr -> unstable -> Clear
-        ]
-    )
+    # so the monitor keeps polling and clears only once mergeable_state settles. This
+    # run advances the mocked clock past SILENCE_SECONDS so the still-computing
+    # heartbeat is actually emitted, and asserts its wording: it must NOT begin with a
+    # Blocked/Infra terminal keyword (issue #748 review), or a consumer scanning for
+    # terminal lines could act on it as a false Blocked terminal (the very class of
+    # false positive this PR removes). Mirrors the all_passed heartbeat, which names
+    # the internal state (`all_passed`) rather than the `Clear` terminal keyword.
+    SILENCE_BF = 50  # shrink the silence window so a couple of 30s polls cross it
+    side_effects_bf2 = collections.deque()
+    for _ in range(3):  # three unknown polls; the heartbeat fires once the window is crossed
+        side_effects_bf2.append(PR_BF)  # pulls -> sha
+        side_effects_bf2.append(CHECK_NONREQ_FAIL_BF)  # verdict -> Blocked (raw scan)
+        side_effects_bf2.append({"mergeable_state": "unknown"})  # mpr -> unknown -> keep polling
+    side_effects_bf2.append(PR_BF)  # final poll: pulls -> sha
+    side_effects_bf2.append(CHECK_NONREQ_FAIL_BF)  # final poll: verdict -> Blocked (raw scan)
+    side_effects_bf2.append(MPR_UNSTABLE_BF)  # final poll: mpr -> unstable -> Clear
 
     def fake_request_bf2(url, token, raw=False):
         return side_effects_bf2.popleft()
 
+    clock_bf2 = {"t": 0.0}
+
+    def fake_time_bf2():
+        return clock_bf2["t"]
+
+    def fake_sleep_bf2(secs):
+        clock_bf2["t"] += secs
+
     buf_bf2 = io.StringIO()
     with (
+        unittest.mock.patch.object(ci_monitor, "SILENCE_SECONDS", SILENCE_BF),
         unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_bf2),
-        unittest.mock.patch.object(ci_monitor.time, "time", return_value=9200.0),
-        unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None),
+        unittest.mock.patch.object(ci_monitor.time, "time", side_effect=fake_time_bf2),
+        unittest.mock.patch.object(ci_monitor.time, "sleep", side_effect=fake_sleep_bf2),
         unittest.mock.patch("sys.stdout", new=buf_bf2),
     ):
         rc_bf2 = ci_monitor.main(["ci_monitor.py", "--pr", "748"])
 
     out_bf2 = buf_bf2.getvalue()
     lines_bf2 = out_bf2.splitlines()
+    heartbeat_bf2 = "PR#748: non-passing check, mergeable_state=unknown (still computing)"
     check(
-        not any(ln.startswith("PR#748: Blocked") for ln in lines_bf2),
-        "mergeable_state=unknown does not produce a premature Blocked terminal",
-        "unexpected Blocked terminal on unknown; output: %r" % out_bf2,
+        heartbeat_bf2 in lines_bf2,
+        "the unknown-path still-computing heartbeat is actually emitted once the silence window is crossed",
+        "expected the still-computing heartbeat line; output: %r" % out_bf2,
+    )
+    check(
+        not any(
+            ln.startswith("PR#748: Blocked") or ln.startswith("PR#748: Infra") for ln in lines_bf2
+        ),
+        "the still-computing heartbeat does NOT begin with a Blocked/Infra terminal keyword",
+        "a still-computing line looks like a terminal; output: %r" % out_bf2,
     )
     check(
         lines_bf2[-1] == "PR#748: Clear (mergeable_state=unstable)",
@@ -5421,10 +5445,55 @@ def main() -> int:
     )
     check(
         len(side_effects_bf2) == 0,
-        "all 6 mocked requests consumed (two polls: unknown then unstable)",
+        "all 12 mocked requests consumed (three unknown polls then one unstable poll)",
         "request deque not drained; %d entries left" % len(side_effects_bf2),
     )
     check(rc_bf2 == 0, "main() returned 0", "main() returned %r" % rc_bf2)
+
+    # Symmetry with the all_passed path (issue #748 review): a mergeable_state that is
+    # neither clean/unstable nor an un-mergeable behind/dirty/blocked (here has_hooks,
+    # itself a mergeable state) must keep polling, not fall through to a false Blocked.
+    side_effects_bf2b = collections.deque(
+        [
+            PR_BF,  # poll 1: pulls -> sha
+            CHECK_NONREQ_FAIL_BF,  # poll 1: verdict -> Blocked (raw scan)
+            {
+                "mergeable_state": "has_hooks"
+            },  # poll 1: mpr -> has_hooks (mergeable) -> keep polling
+            PR_BF,  # poll 2: pulls -> sha
+            CHECK_NONREQ_FAIL_BF,  # poll 2: verdict -> Blocked (raw scan)
+            {"mergeable_state": "clean"},  # poll 2: mpr -> clean -> Clear
+        ]
+    )
+
+    def fake_request_bf2b(url, token, raw=False):
+        return side_effects_bf2b.popleft()
+
+    buf_bf2b = io.StringIO()
+    with (
+        unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_bf2b),
+        unittest.mock.patch.object(ci_monitor.time, "time", return_value=9250.0),
+        unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None),
+        unittest.mock.patch("sys.stdout", new=buf_bf2b),
+    ):
+        rc_bf2b = ci_monitor.main(["ci_monitor.py", "--pr", "748"])
+
+    out_bf2b = buf_bf2b.getvalue()
+    lines_bf2b = out_bf2b.splitlines()
+    check(
+        not any(
+            ln.startswith("PR#748: Blocked") or ln.startswith("PR#748: Infra") for ln in lines_bf2b
+        )
+        and lines_bf2b[-1] == "PR#748: Clear (mergeable_state=clean)",
+        "a mergeable non-clean/unstable state (has_hooks) keeps polling, not a false block",
+        "has_hooks did not keep polling to Clear; output: %r" % out_bf2b,
+    )
+    check(
+        len(side_effects_bf2b) == 0,
+        "all 6 mocked requests consumed (has_hooks poll then clean poll)",
+        "request deque not drained; %d entries left" % len(side_effects_bf2b),
+    )
+    check(rc_bf2b == 0, "main() returned 0", "main() returned %r" % rc_bf2b)
 
     # A NON-required check with an infra-shaped conclusion (cancelled) drives the raw
     # scan to Infra, but the PR is still mergeable (unstable) -> Clear, not a false
