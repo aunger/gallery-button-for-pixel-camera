@@ -234,21 +234,25 @@ class GalleryButtonVisualE2ETest {
         Screenshot.saveForArtifact(maskToBitmap(greenMask), "2a-green-mask.png")
 
         val coverage = ColorMatch.coverageFraction(greenMask)
-        if (coverage >= 0.10f) {
-            fail(
-                "test2a_emptyGalleryNoGreenAfterTap: GREEN coverage after tap is " +
-                    "${coverage * 100f}%--expected < 10%. " +
-                    "The gallery opened showing unexpected green content with an empty roll.",
-            )
-        }
         val foreground = fixture.foregroundPackage()
-        if (foreground != MOCK_GALLERY_PACKAGE) {
-            fail(
-                "test2a_emptyGalleryNoGreenAfterTap: foreground package after tap is " +
-                    "$foreground--expected $MOCK_GALLERY_PACKAGE. The screen shows no green, " +
-                    "but the gallery did not open (screen off, keyguard, or no-op tap).",
-            )
-        }
+        reportPostTapFailures(
+            "test2a_emptyGalleryNoGreenAfterTap",
+            buildList {
+                if (coverage >= 0.10f) {
+                    add(
+                        "GREEN coverage after tap is ${coverage * 100f}%--expected < 10% " +
+                            "(the gallery opened showing unexpected green content with an empty roll)",
+                    )
+                }
+                if (foreground != MOCK_GALLERY_PACKAGE) {
+                    add(
+                        "foreground package after tap is $foreground--expected $MOCK_GALLERY_PACKAGE " +
+                            "(the screen shows no green, but the gallery did not open: screen off, " +
+                            "keyguard, or no-op tap)",
+                    )
+                }
+            },
+        )
     }
 
     // test3a: Populated gallery: tapping overlay shows GREEN------------------
@@ -395,22 +399,25 @@ class GalleryButtonVisualE2ETest {
         Screenshot.saveForArtifact(maskToBitmap(greenMask), "4a-green-mask.png")
 
         val coverage = ColorMatch.coverageFraction(greenMask)
-        if (coverage >= 0.10f) {
-            fail(
-                "test4a_secureCameraLockedEmptyGalleryNoGreen: GREEN coverage after tap is " +
-                    "${coverage * 100f}%--expected < 10%. " +
-                    "The gallery opened showing unexpected green content with an empty roll.",
-            )
-        }
         val foreground = fixture.foregroundPackage()
-        if (foreground != context.packageName) {
-            fail(
-                "test4a_secureCameraLockedEmptyGalleryNoGreen: foreground package after tap is " +
-                    "$foreground--expected ${context.packageName} (SecureViewerActivity). The " +
-                    "screen shows no green, but the viewer did not open (screen off, keyguard, " +
-                    "or no-op tap).",
-            )
-        }
+        reportPostTapFailures(
+            "test4a_secureCameraLockedEmptyGalleryNoGreen",
+            buildList {
+                if (coverage >= 0.10f) {
+                    add(
+                        "GREEN coverage after tap is ${coverage * 100f}%--expected < 10% " +
+                            "(the gallery opened showing unexpected green content with an empty roll)",
+                    )
+                }
+                if (foreground != context.packageName) {
+                    add(
+                        "foreground package after tap is $foreground--expected ${context.packageName} " +
+                            "(SecureViewerActivity; the screen shows no green, but the viewer did not " +
+                            "open: screen off, keyguard, or no-op tap)",
+                    )
+                }
+            },
+        )
     }
 
     // test5a: Secure camera + populated session: SecureViewer shows GREEN---
