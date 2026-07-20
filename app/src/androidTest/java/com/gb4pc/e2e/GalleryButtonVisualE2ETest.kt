@@ -261,11 +261,19 @@ class GalleryButtonVisualE2ETest {
      * The foreground-package check is load-bearing (issue #733): MockCameraActivity already fills
      * the screen with close to 100% GREEN before the tap, so coverage alone stays above 40% even
      * when the tap is a no-op and the gallery never launches (the #241/#705 regression class this
-     * test exists to catch). A stability requirement would not help either: the no-op failure mode
-     * is a screen that never changes, so any number of consecutive samples is satisfied just as
+     * test exists to catch). A stability requirement does not catch that no-op failure mode: the
+     * no-op screen never changes, so any number of consecutive samples is satisfied just as
      * trivially as one. Requiring the mock gallery in the foreground, mirroring test2a/test4a's
      * safeguard, makes a no-op tap time out and fail loudly instead of passing on the stale
      * pre-tap frame.
+     *
+     * The `stableForMs = 3_000L` window guards a separate, narrower race (issue #736): the
+     * UiAutomator foreground package can flip to the mock gallery a frame or two before the
+     * gallery's first GREEN content composites, so a zero-window poll could stop on the stale,
+     * still-green pre-tap MockCameraActivity frame the instant the foreground package has already
+     * updated. Requiring both conditions to hold continuously for 3 s, mirroring test2a/test4a,
+     * outlasts that transition and the whole ~1.4 s cold-start window, so the returned frame is
+     * the gallery's own rendered GREEN photo rather than a coincidental stale one.
      */
     @Test
     fun test3a_populatedGalleryShowsGreenAfterTap() {
@@ -281,13 +289,15 @@ class GalleryButtonVisualE2ETest {
         val s1 = Screenshot.captureScreen()
         Screenshot.saveForArtifact(s1, "3a-s1.png")
 
-        // Await the mock gallery, in the foreground, showing the captured GREEN photo; its cold
-        // start (process spawn + MediaStore query + JPEG decode) takes ~1.4 s in CI. The
-        // foreground-package predicate is essential: the pre-tap MockCameraActivity is already
+        // Await the mock gallery, in the foreground, showing the captured GREEN photo, held for
+        // 3 s; its cold start (process spawn + MediaStore query + JPEG decode) takes ~1.4 s in CI.
+        // The foreground-package predicate is essential: the pre-tap MockCameraActivity is already
         // ~100% GREEN, so a coverage-only predicate is satisfied by that stale frame and a no-op
-        // tap would pass without the gallery launching (issue #733).
+        // tap would pass without the gallery launching (issue #733). The 3 s stability window
+        // additionally covers a transition race where the foreground package flips before the
+        // gallery's green frame composites (issue #736; see the KDoc above and tapOverlayAndAwait).
         val s2 =
-            fixture.tapOverlayAndAwait { screen ->
+            fixture.tapOverlayAndAwait(stableForMs = 3_000L) { screen ->
                 greenCoverage(screen) > 0.40f && fixture.foregroundPackage() == MOCK_GALLERY_PACKAGE
             }
         Screenshot.saveForArtifact(s2, "3a-s2.png")
