@@ -1326,6 +1326,43 @@ def main(argv):
             # Gap E (issue #402)--drain lagging step/FAIL signals before the
             # terminal line; see drain_then_print and DRAIN_DELAY_SECONDS.
             explicit_targets = [(str(args.run_id), None)] if mode == "run" else None
+            if mode == "pr":
+                # Issue #748--the raw per-check scan flags Blocked/Infra when ANY
+                # check-run on the head commit fails, but a failing NON-required
+                # check (e.g. an advisory label linter) leaves the PR mergeable.
+                # GitHub's mergeable_state is authoritative for "can this merge",
+                # so consult it before terminating, exactly as the all_passed path
+                # does (a fresh /pulls fetch): clean/unstable means the PR is
+                # mergeable despite the red check -> Clear; unknown means GitHub
+                # has not recomputed yet -> keep polling; any other state
+                # (behind/dirty/blocked) is a real block -> fall through to the raw
+                # scan's Blocked/Infra terminal, which still names the blocking
+                # check (including the label gate). The raw scan keeps driving the
+                # per-check summary and step/FAIL diagnostics regardless.
+                mpr_json = _request(
+                    "%s/repos/%s/%s/pulls/%s" % (API_BASE, OWNER, REPO, args.pr), token
+                )
+                mergeable = mpr_json.get("mergeable_state", "unknown") if mpr_json else "unknown"
+                if mergeable in ("clean", "unstable"):
+                    print_summary(summary_rows)
+                    print("%s: Clear (mergeable_state=%s)" % (tag, mergeable))
+                    sys.stdout.flush()
+                    break
+                if mergeable == "unknown":
+                    # mergeable_state not yet computed: don't emit a possibly-false
+                    # terminal off the raw scan; keep polling (mirrors the
+                    # all_passed path's still-computing else branch).
+                    now = time.time()
+                    if now - last_output_ts > SILENCE_SECONDS:
+                        print(
+                            "%s: %s but mergeable_state=unknown (still computing)" % (tag, result)
+                        )
+                        sys.stdout.flush()
+                        last_output_ts = now
+                    time.sleep(30)
+                    continue
+                # else: behind/dirty/blocked (a real merge block)--fall through to
+                # the raw scan's Blocked/Infra terminal below.
             drain_then_print(sha, "%s: %s" % (tag, result), "", summary_rows, explicit_targets)
             break
         elif result == "Clear":

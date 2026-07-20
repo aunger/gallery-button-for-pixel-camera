@@ -92,6 +92,10 @@ Covers:
        came from, None for a non-Actions check)
   (be) #720 format_check_summary: renders a [run <id>] token when run_id is
        present, omits it when None, and tolerates rows built without the key
+  (bf) #748 main(): the --pr Blocked/Infra terminal is gated by mergeable_state,
+       so a failing NON-required check (mergeable_state=unstable) terminates
+       Clear instead of a false Blocked/Infra; an 'unknown' mergeable_state
+       keeps polling rather than terminating prematurely
 
 No network calls required; no GITHUB_TOKEN needed.
 Run this file directly to execute the suite: exits 0 on success, non-zero on failure.
@@ -262,6 +266,16 @@ def check_runs_payload(*pairs):
 
 OWNER_T = ci_monitor.OWNER
 REPO_T = ci_monitor.REPO
+
+# Issue #748: on the --pr Blocked/Infra path the monitor now re-fetches /pulls for
+# mergeable_state before terminating (mirroring the all_passed path), and emits the
+# raw scan's Blocked/Infra terminal only when mergeable_state confirms the PR is not
+# mergeable. A genuine block (a required check failed, including the label gate)
+# reports "blocked", so the terminal still fires; the main() tests that reach a
+# Blocked terminal feed this shared payload as that mergeable-state fetch. A failing
+# NON-required check would instead report "unstable" (mergeable) and terminate Clear;
+# that new behavior is covered directly in check (bf).
+MPR_BLOCKED = {"merged": False, "state": "open", "mergeable_state": "blocked"}
 
 
 def main() -> int:
@@ -514,6 +528,7 @@ def main() -> int:
             CHECK_BL_WITH_RUN_I,  # verdict check-runs -> Blocked (terminal, reused by poll_signals)
             JOBS_FAIL,  # jobs -> step already seen, nothing new
             ARTS_JSON,  # artifacts -> artifact already seen, no zip call
+            MPR_BLOCKED,  # #748 mergeable_state fetch -> blocked -> real block, terminal fires
             # drain_then_print (Gap E): up to DRAIN_MAX_ATTEMPTS extra signal polls
             # before the terminal line; all attempts find nothing new here.
             DIAG_CHECK_I,  # drain attempt 1: diagnostic check-runs
@@ -606,7 +621,7 @@ def main() -> int:
     )
     check(
         len(side_effects_i) == 0,
-        "all 18 mocked requests consumed (zip skipped in iteration 2 and all 3 drain attempts)",
+        "all 19 mocked requests consumed (zip skipped in iteration 2, mpr fetch, and all 3 drain attempts)",
         "request deque not drained; %d entries left" % len(side_effects_i),
     )
     check(rc_i == 0, "main() returned 0", "main() returned %r" % rc_i)
@@ -676,6 +691,9 @@ def main() -> int:
         req_j.append(checks_for_iter[n])  # verdict check-runs (reused by poll_signals)
         req_j.append(jobs_for_iter[n])  # jobs
         req_j.append(ARTS_EMPTY)  # artifacts (no zip)
+    # #748: on the terminal Blocked iteration the loop re-fetches /pulls for
+    # mergeable_state -> blocked (a real block), so the terminal fires.
+    req_j.append(MPR_BLOCKED)
     # drain_then_print (Gap E) on the terminal Blocked iteration: DRAIN_MAX_ATTEMPTS
     # attempts, each finding nothing new (step already seen, artifacts empty).
     for _ in range(3):
@@ -751,7 +769,7 @@ def main() -> int:
     )
     check(
         len(req_j) == 0,
-        "all mocked requests consumed (52 + 9 drain entries drained)",
+        "all mocked requests consumed (52 + 1 mpr + 9 drain entries drained)",
         "request deque not drained; %d entries left" % len(req_j),
     )
     check(rc_j == 0, "main() returned 0", "main() returned %r" % rc_j)
@@ -1082,6 +1100,7 @@ def main() -> int:
             CHECK_BL_M,  # check-runs -> Blocked (terminal, reused by poll_signals)
             JOBS_UNIT_FAIL_M,  # jobs -> step already seen, nothing new
             ARTS_UNIT_M,  # artifacts -> artifact already seen, no zip call
+            MPR_BLOCKED,  # #748 mergeable_state fetch -> blocked -> real block, terminal fires
             # drain_then_print (Gap E): up to DRAIN_MAX_ATTEMPTS extra signal polls
             # before the terminal line; all attempts find nothing new here.
             RUNS_M,
@@ -1176,7 +1195,7 @@ def main() -> int:
     )
     check(
         len(side_effects_m) == 0,
-        "all 22 mocked requests consumed (zip only on poll 2)",
+        "all 23 mocked requests consumed (zip only on poll 2, plus the mpr fetch)",
         "request deque not drained; %d entries left" % len(side_effects_m),
     )
     check(rc_m == 0, "main() returned 0", "main() returned %r" % rc_m)
@@ -1464,6 +1483,7 @@ def main() -> int:
             CHECK_BL_P,
             JOBS_UNIT_FAIL_P,
             ARTS_REAL_UNIT_P,
+            MPR_BLOCKED,  # #748 mergeable_state fetch -> blocked -> real block, terminal fires
             # drain_then_print (Gap E): up to DRAIN_MAX_ATTEMPTS extra signal polls
             # before the terminal line; all attempts find nothing new here.
             RUNS_P,
@@ -1534,7 +1554,7 @@ def main() -> int:
     )
     check(
         len(side_effects_p) == 0,
-        "all 22 mocked requests consumed (zip only on poll 2)",
+        "all 23 mocked requests consumed (zip only on poll 2, plus the mpr fetch)",
         "request deque not drained; %d entries left" % len(side_effects_p),
     )
     check(rc_p == 0, "main() returned 0", "main() returned %r" % rc_p)
@@ -1614,6 +1634,9 @@ def main() -> int:
         req_q.append(CHECK_SCHEDULE_Q[n])
         req_q.append(JOBS_SCHEDULE_Q[n])
         req_q.append(ARTS_EMPTY_Q)
+    # #748: the terminal Blocked poll re-fetches /pulls for mergeable_state ->
+    # blocked (a real block), so the terminal fires.
+    req_q.append(MPR_BLOCKED)
     # drain_then_print (Gap E) on the terminal Blocked poll: DRAIN_MAX_ATTEMPTS
     # attempts, each finding nothing new.
     for _ in range(3):
@@ -2016,6 +2039,7 @@ def main() -> int:
             CHECK_BL_S,
             JOBS_EMPTY_S,
             ARTS_MIX_S,
+            MPR_BLOCKED,  # #748 mergeable_state fetch -> blocked -> real block, terminal fires
             RUNS_S,
             JOBS_EMPTY_S,
             ARTS_MIX_S,  # drain attempt 1
@@ -2066,7 +2090,7 @@ def main() -> int:
     )
     check(
         len(side_effects_s) == 0,
-        "main() --include-pass '': all 18 mocked requests consumed",
+        "main() --include-pass '': all 19 mocked requests consumed",
         "request deque not drained; %d entries left" % len(side_effects_s),
     )
     check(rc_s == 0, "main() --include-pass '' returned 0", "main() returned %r" % rc_s)
@@ -2083,6 +2107,7 @@ def main() -> int:
             CHECK_BL_S,
             JOBS_EMPTY_S,
             ARTS_MIX_S,
+            MPR_BLOCKED,  # #748 mergeable_state fetch -> blocked -> real block, terminal fires
             RUNS_S,
             JOBS_EMPTY_S,
             ARTS_MIX_S,  # drain attempt 1
@@ -2126,7 +2151,7 @@ def main() -> int:
     )
     check(
         len(side_effects_s2) == 0,
-        "main() no flags: all 18 mocked requests consumed",
+        "main() no flags: all 19 mocked requests consumed",
         "request deque not drained; %d entries left" % len(side_effects_s2),
     )
 
@@ -2145,6 +2170,7 @@ def main() -> int:
             CHECK_BL_S,
             JOBS_EMPTY_S,
             ARTS_MIX_S,
+            MPR_BLOCKED,  # #748 mergeable_state fetch -> blocked -> real block, terminal fires
             RUNS_S,
             JOBS_EMPTY_S,
             ARTS_MIX_S,  # drain attempt 1
@@ -2197,6 +2223,7 @@ def main() -> int:
             CHECK_BL_S,
             JOBS_EMPTY_S,
             ARTS_MIX_S,
+            MPR_BLOCKED,  # #748 mergeable_state fetch -> blocked -> real block, terminal fires
             RUNS_S,
             JOBS_EMPTY_S,
             ARTS_MIX_S,  # drain attempt 1
@@ -2321,6 +2348,7 @@ def main() -> int:
             CHECK_BL_T,  # check-runs -> Blocked (terminal, reused by poll_signals)
             JOBS_EMPTY_T,  # jobs -> not yet caught up, nothing new
             ARTS_EMPTY_T,  # artifacts -> not yet listed
+            MPR_BLOCKED,  # #748 mergeable_state fetch -> blocked -> real block, terminal fires
             # drain attempt 1--caught up: step + FAIL surface
             RUNS_T,  # diagnostic check-runs
             JOBS_GATE_FAIL_T,  # jobs -> "Gate on test failures" -> failure
@@ -2387,7 +2415,7 @@ def main() -> int:
     )
     check(
         len(side_effects_t) == 0,
-        "all 14 mocked requests consumed (drain attempt 1 downloads the zip; attempts 2-3 find nothing new)",
+        "all 15 mocked requests consumed (mpr fetch; drain attempt 1 downloads the zip; attempts 2-3 find nothing new)",
         "request deque not drained; %d entries left" % len(side_effects_t),
     )
     check(rc_t == 0, "main() returned 0", "main() returned %r" % rc_t)
@@ -2479,6 +2507,7 @@ def main() -> int:
             CHECK_BL_U,  # check-runs -> Blocked (terminal, reused by poll_signals)
             JOBS_EMPTY_U,  # jobs -> not yet caught up, nothing new
             ARTS_EMPTY_U,  # artifacts -> not yet listed
+            MPR_BLOCKED,  # #748 mergeable_state fetch -> blocked -> real block, terminal fires
             # drain attempt 1--still not caught up
             RUNS_U,  # diagnostic check-runs
             JOBS_EMPTY_U,  # jobs -> still not yet caught up, nothing new
@@ -2551,7 +2580,7 @@ def main() -> int:
     )
     check(
         len(side_effects_u) == 0,
-        "all 14 mocked requests consumed (drain attempt 1 empty, attempt 2 downloads the zip, attempt 3 finds nothing new)",
+        "all 15 mocked requests consumed (mpr fetch, drain attempt 1 empty, attempt 2 downloads the zip, attempt 3 finds nothing new)",
         "request deque not drained; %d entries left" % len(side_effects_u),
     )
     check(rc_u == 0, "main() returned 0", "main() returned %r" % rc_u)
@@ -2682,6 +2711,7 @@ def main() -> int:
             CHECK_BL_W,  # check-runs -> Blocked (terminal, reused by poll_signals)
             JOBS_EMPTY_W,  # jobs -> not yet caught up, nothing new
             ARTS_EMPTY_W,  # artifacts -> not yet listed
+            MPR_BLOCKED,  # #748 mergeable_state fetch -> blocked -> real block, terminal fires
             # drain attempt 1--STEP caught up, ARTIFACT still lagging
             RUNS_W,  # diagnostic check-runs
             JOBS_GATE_FAIL_W,  # jobs -> "Gate on test failures" -> failure (emits)
@@ -2754,7 +2784,7 @@ def main() -> int:
     )
     check(
         len(side_effects_w) == 0,
-        "all 14 mocked requests consumed (step on attempt 1, artifact+zip on attempt 2, attempt 3 empty)",
+        "all 15 mocked requests consumed (mpr fetch, step on attempt 1, artifact+zip on attempt 2, attempt 3 empty)",
         "request deque not drained; %d entries left" % len(side_effects_w),
     )
     check(rc_w == 0, "main() returned 0", "main() returned %r" % rc_w)
@@ -3219,6 +3249,7 @@ def main() -> int:
             JOBS_BUILD_AD,  # run 800 jobs -> gate step failure
             ARTS_BUILD_AD,  # run 800 artifacts -> ci-monitor-feed-GalleryButtonVisualE2ETest
             ZIP_BUILD_AD,  # run 800 zip -> FAIL line
+            MPR_BLOCKED,  # #748 mergeable_state fetch -> blocked -> real block, terminal fires
         ]
     )
     for _ in range(3):
@@ -3280,7 +3311,7 @@ def main() -> int:
     )
     check(
         len(side_effects_ad) == 0,
-        "all 22 mocked requests consumed (two runs fanned out, build zip once)",
+        "all 23 mocked requests consumed (two runs fanned out, build zip once, plus the mpr fetch)",
         "request deque not drained; %d entries left" % len(side_effects_ad),
     )
     check(rc_ad == 0, "main() returned 0", "main() returned %r" % rc_ad)
@@ -3412,6 +3443,7 @@ def main() -> int:
             ARTS_EMPTY_AF,
             JOBS_200_AF,
             ARTS_EMPTY_AF,
+            MPR_BLOCKED,  # #748 mergeable_state fetch -> blocked -> real block, terminal fires
         ]
     )
     for _ in range(3):
@@ -3453,7 +3485,7 @@ def main() -> int:
     )
     check(
         len(side_effects_af) == 0,
-        "all 21 mocked requests consumed (two runs fanned out, no zips)",
+        "all 22 mocked requests consumed (two runs fanned out, no zips, plus the mpr fetch)",
         "request deque not drained; %d entries left" % len(side_effects_af),
     )
     check(rc_af == 0, "main() returned 0", "main() returned %r" % rc_af)
@@ -3816,12 +3848,16 @@ def main() -> int:
     DIAG_EMPTY_AJ = {"total_count": 0, "check_runs": []}
 
     # Single-poll run (wiring a): pulls, verdict check-runs (reused by poll_signals;
-    # no Actions targets -> fast exit). Then drain_then_print: DRAIN_MAX_ATTEMPTS
-    # attempts each with a self-fetch of check-runs -> no targets -> 3 requests. 2 + 3 = 5.
+    # no Actions targets -> fast exit). Then the #748 mergeable_state fetch returns
+    # "blocked" (the label gate is a required check, so the PR really is blocked),
+    # which falls through to the raw scan's label-gate terminal. Then
+    # drain_then_print: DRAIN_MAX_ATTEMPTS attempts each with a self-fetch of
+    # check-runs -> no targets -> 3 requests. 2 + 1 + 3 = 6.
     side_effects_aj = collections.deque(
         [
             PR_AJ,  # pulls -> sha
             CHECK_BL_GATE_AJ,  # verdict check-runs -> Blocked (label gate, reused by poll_signals)
+            MPR_BLOCKED,  # #748 mergeable_state fetch -> blocked -> real block (label gate)
         ]
     )
     for _ in range(3):  # DRAIN_MAX_ATTEMPTS drain attempts
@@ -3895,7 +3931,7 @@ def main() -> int:
     )
     check(
         len(side_effects_aj) == 0,
-        "all 5 mocked requests consumed (1 poll (no diag self-fetch) + 3 drain attempts, no jobs/artifacts fetched)",
+        "all 6 mocked requests consumed (1 poll (no diag self-fetch) + mpr fetch + 3 drain attempts, no jobs/artifacts fetched)",
         "request deque not drained; %d entries left" % len(side_effects_aj),
     )
     check(rc_aj == 0, "main() returned 0", "main() returned %r" % rc_aj)
@@ -5262,6 +5298,179 @@ def main() -> int:
         "a row without a run_id key formats with no token (tolerant .get)",
         "expected no token for a run_id-less row; got %r" % (lines_be_norun,),
     )
+
+    # ── (bf) #748 main(): a failing NON-required check leaves the PR mergeable
+    #        (mergeable_state=unstable) -> Clear, not a false Blocked ─────────────
+    print("\n=== (bf) #748 main(): --pr Blocked/Infra terminal is gated by mergeable_state ===")
+
+    # Reproduces PR #734's false positive: 'enforce-exclusive-labels' (a NON-required
+    # check) fails while both required checks ('build-and-test', 'No blocking labels')
+    # pass. parse_check_result returns 'Blocked' from the raw per-check scan, but the
+    # PR is mergeable, so GitHub reports mergeable_state='unstable'. The monitor must
+    # consult mergeable_state and terminate Clear (mergeable_state=unstable) rather
+    # than short-circuiting to a spurious Blocked. The per-check summary still lists
+    # the failing non-required check as [BLOCKING] (that is diagnostic, not the
+    # terminal decision). The checks carry no Actions details_url, so poll_signals
+    # discovers no targets and issues no jobs/artifacts requests (as in (aj)).
+    CHECK_NONREQ_FAIL_BF = {
+        "total_count": 3,
+        "check_runs": [
+            {"name": "build-and-test", "status": "completed", "conclusion": "success"},
+            {"name": "No blocking labels", "status": "completed", "conclusion": "success"},
+            {"name": "enforce-exclusive-labels", "status": "completed", "conclusion": "failure"},
+        ],
+    }
+    PR_BF = {"head": {"sha": "748c0de1"}}
+    MPR_UNSTABLE_BF = {"merged": False, "state": "open", "mergeable_state": "unstable"}
+
+    # Single poll: pulls (sha), verdict check-runs (reused by poll_signals; no
+    # Actions targets -> fast exit), then the #748 mergeable_state fetch -> unstable
+    # -> Clear. No drain (the Clear path breaks immediately). 3 requests.
+    side_effects_bf = collections.deque(
+        [
+            PR_BF,  # pulls -> sha
+            CHECK_NONREQ_FAIL_BF,  # verdict check-runs -> Blocked (raw scan), reused by poll_signals
+            MPR_UNSTABLE_BF,  # #748 mergeable_state fetch -> unstable -> mergeable -> Clear
+        ]
+    )
+
+    def fake_request_bf(url, token, raw=False):
+        return side_effects_bf.popleft()
+
+    buf_bf = io.StringIO()
+    with (
+        unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_bf),
+        unittest.mock.patch.object(ci_monitor.time, "time", return_value=9100.0),
+        unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None),
+        unittest.mock.patch("sys.stdout", new=buf_bf),
+    ):
+        rc_bf = ci_monitor.main(["ci_monitor.py", "--pr", "748"])
+
+    out_bf = buf_bf.getvalue()
+    lines_bf = out_bf.splitlines()
+    clear_line_bf = "PR#748: Clear (mergeable_state=unstable)"
+
+    check(
+        clear_line_bf in lines_bf,
+        "a failing non-required check with mergeable_state=unstable terminates Clear",
+        "expected Clear (mergeable_state=unstable); output: %r" % out_bf,
+    )
+    check(
+        not any(ln.startswith("PR#748: Blocked") for ln in lines_bf),
+        "no spurious Blocked terminal is emitted (the bug's false positive)",
+        "unexpected Blocked terminal; output: %r" % out_bf,
+    )
+    check(
+        not any(ln.startswith("PR#748: Infra") for ln in lines_bf),
+        "no spurious Infra terminal is emitted",
+        "unexpected Infra terminal; output: %r" % out_bf,
+    )
+    # The failing non-required check is still surfaced in the per-check summary as a
+    # diagnostic, even though it did not block the merge.
+    check(
+        any(
+            "enforce-exclusive-labels" in ln and "failure" in ln and "[BLOCKING]" in ln
+            for ln in lines_bf
+        ),
+        "the per-check summary still lists the failing non-required check as [BLOCKING]",
+        "diagnostic summary row missing; output: %r" % out_bf,
+    )
+    check(
+        len(side_effects_bf) == 0,
+        "all 3 mocked requests consumed (no drain on the Clear path)",
+        "request deque not drained; %d entries left" % len(side_effects_bf),
+    )
+    check(rc_bf == 0, "main() returned 0", "main() returned %r" % rc_bf)
+
+    # An 'unknown' mergeable_state must NOT terminate: GitHub has not recomputed yet,
+    # so the monitor keeps polling and clears only once mergeable_state settles.
+    side_effects_bf2 = collections.deque(
+        [
+            PR_BF,  # poll 1: pulls -> sha
+            CHECK_NONREQ_FAIL_BF,  # poll 1: verdict -> Blocked (raw scan)
+            {"mergeable_state": "unknown"},  # poll 1: mpr -> unknown -> keep polling (no terminal)
+            PR_BF,  # poll 2: pulls -> sha
+            CHECK_NONREQ_FAIL_BF,  # poll 2: verdict -> Blocked (raw scan)
+            MPR_UNSTABLE_BF,  # poll 2: mpr -> unstable -> Clear
+        ]
+    )
+
+    def fake_request_bf2(url, token, raw=False):
+        return side_effects_bf2.popleft()
+
+    buf_bf2 = io.StringIO()
+    with (
+        unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_bf2),
+        unittest.mock.patch.object(ci_monitor.time, "time", return_value=9200.0),
+        unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None),
+        unittest.mock.patch("sys.stdout", new=buf_bf2),
+    ):
+        rc_bf2 = ci_monitor.main(["ci_monitor.py", "--pr", "748"])
+
+    out_bf2 = buf_bf2.getvalue()
+    lines_bf2 = out_bf2.splitlines()
+    check(
+        not any(ln.startswith("PR#748: Blocked") for ln in lines_bf2),
+        "mergeable_state=unknown does not produce a premature Blocked terminal",
+        "unexpected Blocked terminal on unknown; output: %r" % out_bf2,
+    )
+    check(
+        lines_bf2[-1] == "PR#748: Clear (mergeable_state=unstable)",
+        "the monitor keeps polling on unknown and clears once mergeable_state settles",
+        "expected trailing Clear; output: %r" % out_bf2,
+    )
+    check(
+        len(side_effects_bf2) == 0,
+        "all 6 mocked requests consumed (two polls: unknown then unstable)",
+        "request deque not drained; %d entries left" % len(side_effects_bf2),
+    )
+    check(rc_bf2 == 0, "main() returned 0", "main() returned %r" % rc_bf2)
+
+    # A NON-required check with an infra-shaped conclusion (cancelled) drives the raw
+    # scan to Infra, but the PR is still mergeable (unstable) -> Clear, not a false
+    # Infra escalation.
+    CHECK_NONREQ_INFRA_BF = {
+        "total_count": 3,
+        "check_runs": [
+            {"name": "build-and-test", "status": "completed", "conclusion": "success"},
+            {"name": "No blocking labels", "status": "completed", "conclusion": "success"},
+            {"name": "enforce-exclusive-labels", "status": "completed", "conclusion": "cancelled"},
+        ],
+    }
+    side_effects_bf3 = collections.deque(
+        [
+            PR_BF,  # pulls -> sha
+            CHECK_NONREQ_INFRA_BF,  # verdict -> Infra (raw scan: cancelled non-required check)
+            MPR_UNSTABLE_BF,  # mpr -> unstable -> mergeable -> Clear
+        ]
+    )
+
+    def fake_request_bf3(url, token, raw=False):
+        return side_effects_bf3.popleft()
+
+    buf_bf3 = io.StringIO()
+    with (
+        unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_bf3),
+        unittest.mock.patch.object(ci_monitor.time, "time", return_value=9300.0),
+        unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None),
+        unittest.mock.patch("sys.stdout", new=buf_bf3),
+    ):
+        rc_bf3 = ci_monitor.main(["ci_monitor.py", "--pr", "748"])
+
+    out_bf3 = buf_bf3.getvalue()
+    lines_bf3 = out_bf3.splitlines()
+    check(
+        "PR#748: Clear (mergeable_state=unstable)" in lines_bf3
+        and not any(ln.startswith("PR#748: Infra") for ln in lines_bf3),
+        "a cancelled non-required check with mergeable_state=unstable clears, not Infra",
+        "expected Clear, no Infra; output: %r" % out_bf3,
+    )
+    check(
+        len(side_effects_bf3) == 0,
+        "all 3 mocked requests consumed",
+        "request deque not drained; %d entries left" % len(side_effects_bf3),
+    )
+    check(rc_bf3 == 0, "main() returned 0", "main() returned %r" % rc_bf3)
 
     # ── Summary ────────────────────────────────────────────────────────────────────
     print("\nResults: %d passed, %d failed." % (PASS, FAIL))
