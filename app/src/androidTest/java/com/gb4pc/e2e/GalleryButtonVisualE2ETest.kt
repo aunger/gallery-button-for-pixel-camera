@@ -295,22 +295,30 @@ class GalleryButtonVisualE2ETest {
         val greenMask = ColorMatch.mask(s2, Rgb.GREEN)
         Screenshot.saveForArtifact(maskToBitmap(greenMask), "3a-green-mask.png")
 
+        // Evaluate both post-tap conditions and report every one that fails in a single message.
+        // The coverage and foreground checks are independent failure modes, so when both hold
+        // (for example, the tap opened some other, non-green screen) the report should name both
+        // reasons rather than throwing on the first and hiding the second.
         val coverage = ColorMatch.coverageFraction(greenMask)
-        if (coverage <= 0.40f) {
-            fail(
-                "test3a_populatedGalleryShowsGreenAfterTap: GREEN coverage after tap is " +
-                    "${coverage * 100f}%--expected > 40%. " +
-                    "The gallery did not open, or the captured photo is not green.",
-            )
-        }
         val foreground = fixture.foregroundPackage()
-        if (foreground != MOCK_GALLERY_PACKAGE) {
-            fail(
-                "test3a_populatedGalleryShowsGreenAfterTap: foreground package after tap is " +
-                    "$foreground--expected $MOCK_GALLERY_PACKAGE. The screen shows green, but the " +
-                    "gallery did not open (the pre-tap mock-camera feed is still in front after a " +
-                    "no-op tap).",
-            )
+        val failures =
+            buildList {
+                if (coverage <= 0.40f) {
+                    add(
+                        "GREEN coverage after tap is ${coverage * 100f}%--expected > 40% " +
+                            "(the gallery did not open, or the captured photo is not green)",
+                    )
+                }
+                if (foreground != MOCK_GALLERY_PACKAGE) {
+                    add(
+                        "foreground package after tap is $foreground--expected $MOCK_GALLERY_PACKAGE " +
+                            "(the gallery did not come to the foreground; a no-op tap leaves the " +
+                            "green mock camera in front)",
+                    )
+                }
+            }
+        if (failures.isNotEmpty()) {
+            fail("test3a_populatedGalleryShowsGreenAfterTap: " + failures.joinToString("; "))
         }
     }
 
