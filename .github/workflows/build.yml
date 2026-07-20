@@ -55,6 +55,17 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Install Python script dependencies
+        # Some scripts/test_*.sh drive Python scripts end-to-end: e.g.
+        # test_summarize_preflight_integration.sh runs summarize_test_results.py,
+        # which imports defusedxml. In build-and-test these tests ran after
+        # "Install Python script dependencies", so the deps were already present;
+        # the split job must install them itself. --require-hashes refuses any
+        # artifact whose SHA-256 is not in the generated lock scripts/requirements.txt
+        # (issue #723; see scripts/requirements.in for the top-level pins).
+        if: needs.check-diff.outputs.needs_full_build == 'true'
+        run: pip install --require-hashes -r scripts/requirements.txt
+
       - name: Install lint tools for shell tests
         # scripts/test_lint_hook.sh drives scripts/lint.sh and the pre-commit git
         # hook end-to-end, which needs the real lint tools. Provision the PyPI ones
@@ -120,8 +131,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
 
       - name: Install Python script dependencies
         if: needs.check-diff.outputs.needs_full_build == 'true'
