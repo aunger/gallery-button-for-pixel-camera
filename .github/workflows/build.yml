@@ -601,6 +601,21 @@ jobs:
           path: results/e2e-gallery.ndjson
           retention-days: 14
 
+      - name: (verify-pr-763) Force secure keyguard reassertion before PermissionsGrantedE2ETest
+        # Throwaway step for issue #764 (verification of PR #763 / issue #761): puts the
+        # display to sleep, which re-engages the secure PIN keyguard scripts/setup-e2e-emulator.sh
+        # configures, then wakes the display back up without dismissing it. This reproduces the
+        # "keyguard reasserted between CI steps" scenario the issue describes, so the next step's
+        # own start-of-test toast has a locked secure keyguard to contend with. Not part of the
+        # PR under test; removed before this test branch's throwaway PR is closed.
+        if: needs.check-diff.outputs.needs_full_build == 'true'
+        run: |
+          ADB="$ANDROID_HOME/platform-tools/adb"
+          "$ADB" shell input keyevent 223 # KEYCODE_SLEEP: engages the secure PIN keyguard
+          sleep 2
+          "$ADB" shell input keyevent 224 # KEYCODE_WAKEUP: display on, secure keyguard still locked
+          sleep 2
+
       - name: Run PermissionsGrantedE2ETest
         # No `continue-on-error` (issue #309): record the real outcome and defer
         # the pass/fail verdict to the "Gate on test failures" step.
@@ -660,9 +675,11 @@ jobs:
           wait "$RECPID_PERMISSIONS_GRANTED" 2>/dev/null || true
 
       - name: Pull PermissionsGrantedE2ETest video on failure
-        # Only pull and upload the recording when this suite failed (issue #604).
-        # On a green run the file is left on the device and discarded when the emulator exits.
-        if: always() && needs.check-diff.outputs.needs_full_build == 'true' && steps.run_permissions_granted_e2e.outputs.outcome == 'failure'
+        # (verify-pr-763): condition temporarily loosened to always() (was
+        # `... && steps.run_permissions_granted_e2e.outputs.outcome == 'failure'`, issue #604's
+        # original intent) so issue #764's verification run captures the video regardless of the
+        # suite's outcome. Restored before this throwaway test branch's PR is closed.
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true'
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
           mkdir -p /tmp/e2e-videos
@@ -670,7 +687,8 @@ jobs:
             echo "WARNING: could not pull e2e-permissions-granted.mp4"
 
       - name: Upload PermissionsGrantedE2ETest video
-        if: always() && needs.check-diff.outputs.needs_full_build == 'true' && steps.run_permissions_granted_e2e.outputs.outcome == 'failure'
+        # (verify-pr-763): condition temporarily loosened to always(), see the pull step above.
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: e2e-video-PermissionsGrantedE2ETest
