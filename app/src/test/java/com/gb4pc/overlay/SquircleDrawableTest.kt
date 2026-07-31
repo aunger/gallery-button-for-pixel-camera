@@ -5,6 +5,7 @@ import com.gb4pc.e2e.visual.MaskData
 import com.gb4pc.e2e.visual.Shape
 import com.gb4pc.e2e.visual.ShapeMatcher
 import com.gb4pc.e2e.visual.ShapeTemplates
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.abs
@@ -181,5 +182,52 @@ class SquircleDrawableTest {
                 "ShapeTemplates.squircle (${templateMask.pixelCount}), got ${relDiff * 100}%",
             relDiff <= 0.05,
         )
+    }
+
+    // ── Issue #767 follow-up: centeredSquareRegion ───────────────────────────
+
+    @Test
+    fun `centeredSquareRegion for a wide rect crops the horizontal axis`() {
+        val region = centeredSquareRegion(160, 90)
+        assertEquals(90, region.side)
+        assertEquals(35, region.left)
+        assertEquals(0, region.top)
+    }
+
+    @Test
+    fun `centeredSquareRegion for a tall rect crops the vertical axis`() {
+        val region = centeredSquareRegion(90, 160)
+        assertEquals(90, region.side)
+        assertEquals(0, region.left)
+        assertEquals(35, region.top)
+    }
+
+    @Test
+    fun `centeredSquareRegion for an already-square rect is a no-op`() {
+        val region = centeredSquareRegion(64, 64)
+        assertEquals(64, region.side)
+        assertEquals(0, region.left)
+        assertEquals(0, region.top)
+    }
+
+    @Test
+    fun `centeredSquareRegion always fits within the original rect for the issue's edge ratios`() {
+        // (w, h) pairs at the issue's four edge ratios (16:9, 4:3 wide; 9:16, 3:4 tall), at a
+        // pixel scale on the order of a typical Pixel Camera output photo.
+        val sizes =
+            listOf(
+                4032 to 2268, // 16:9 wide
+                4032 to 3024, // 4:3 wide
+                2268 to 4032, // 9:16 tall
+                3024 to 4032, // 3:4 tall
+            )
+        for ((w, h) in sizes) {
+            val region = centeredSquareRegion(w, h)
+            assertEquals("side must equal the short edge for $w x $h", minOf(w, h), region.side)
+            assertTrue("left must be non-negative for $w x $h", region.left >= 0)
+            assertTrue("top must be non-negative for $w x $h", region.top >= 0)
+            assertTrue("square must fit within width for $w x $h", region.left + region.side <= w)
+            assertTrue("square must fit within height for $w x $h", region.top + region.side <= h)
+        }
     }
 }

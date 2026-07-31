@@ -9,7 +9,39 @@ import android.graphics.drawable.AdaptiveIconDrawable
 import android.graphics.drawable.Drawable
 import android.os.Build
 import kotlin.math.abs
+import kotlin.math.min
 import kotlin.math.pow
+
+/** Top-left offset and side length of a centered square sub-region within a `w x h` rect. */
+internal data class SquareRegion(
+    val left: Int,
+    val top: Int,
+    val side: Int,
+)
+
+/**
+ * Computes the centered square sub-region of a `w x h` rect.
+ *
+ * Issue #767 follow-up: [ImageView.ScaleType.CENTER_CROP][android.widget.ImageView.ScaleType]
+ * leaves a [Drawable]'s own `bounds` at its raw, unscaled intrinsic size (`configureBounds()`
+ * applies the actual crop/scale through a [Canvas] matrix at draw time, not by resizing
+ * `bounds`), so for a non-square photo thumbnail `bounds` is not square. This codebase's
+ * overlay window is always square, so CENTER_CROP always crops such a drawable down to the
+ * centered square sub-region this function computes--exactly the window that ends up visible
+ * in the (square) overlay button. [SquircleDrawable] clips against this square, not the full
+ * (possibly non-square) `bounds`, so the squircle's shape is unaffected by the wrapped
+ * drawable's own aspect ratio.
+ *
+ * A no-op for an already-square rect (`left == top == 0`, `side == w == h`), so the gallery
+ * icon's clip (always square) is unchanged.
+ */
+internal fun centeredSquareRegion(
+    w: Int,
+    h: Int,
+): SquareRegion {
+    val side = min(w, h)
+    return SquareRegion(left = (w - side) / 2, top = (h - side) / 2, side = side)
+}
 
 /**
  * A [Drawable] wrapper that clips its content to a superellipse ("squircle") shape,
@@ -43,12 +75,17 @@ class SquircleDrawable(
         val b = bounds
         if (b.isEmpty) return
 
-        rebuildPathIfNeeded(b.width(), b.height())
+        // Issue #767 follow-up: clip against the centered square sub-region of `bounds`
+        // (see centeredSquareRegion's kdoc), not the full (possibly non-square) bounds.
+        val square = centeredSquareRegion(b.width(), b.height())
+        rebuildPathIfNeeded(square.side, square.side)
 
         val save = canvas.save()
         try {
             canvas.translate(b.left.toFloat(), b.top.toFloat())
+            canvas.translate(square.left.toFloat(), square.top.toFloat())
             canvas.clipPath(clipPath)
+            canvas.translate(-square.left.toFloat(), -square.top.toFloat())
 
             // Draw into the local (0,0) origin after translate.
             val localBounds = Rect(0, 0, b.width(), b.height())
