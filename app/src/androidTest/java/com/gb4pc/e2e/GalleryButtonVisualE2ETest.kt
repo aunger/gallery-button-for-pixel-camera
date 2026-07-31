@@ -19,6 +19,8 @@ import org.junit.Before
 import org.junit.FixMethodOrder
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.ExternalResource
+import org.junit.rules.RuleChain
 import org.junit.runner.RunWith
 import org.junit.runners.MethodSorters
 import kotlin.math.sqrt
@@ -50,9 +52,6 @@ class GalleryButtonVisualE2ETest {
     @get:Rule
     val screenshotRule = ScreenshotTestRule()
 
-    @get:Rule
-    val testNameToastRule = TestNameToastRule()
-
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
     private val fixture =
@@ -60,6 +59,29 @@ class GalleryButtonVisualE2ETest {
             context = context,
             uiAutomation = instrumentation.uiAutomation,
         )
+
+    // Dismiss the PIN-secured keyguard before the start-of-test toast so the slate renders over the
+    // app UI rather than behind the lock screen (issue #761 / #765). The suite's own setUp() only
+    // wires fixture.wakeAndDismissKeyguard() (a swipe), which does nothing against the secure
+    // keyguard scripts/setup-e2e-emulator.sh configures, and it runs from @Before, after the toast
+    // has already fired; if the keyguard has reasserted between CI steps the marker would be
+    // occluded.
+    private val keyguardDismiss =
+        object : ExternalResource() {
+            override fun before() {
+                fixture.dismissSecureKeyguard()
+            }
+        }
+
+    private val testNameToastRule = TestNameToastRule()
+
+    @get:Rule
+    val ruleChain: RuleChain =
+        // keyguardDismiss is outermost so the secure keyguard is cleared before testNameToastRule
+        // (innermost) shows the slate; the toast's ~3s duration therefore sits after dismissal,
+        // preserving the keyguard-dismissal-then-launch ordering TestNameToastRule.kt documents (the
+        // camera launch itself happens later, in each test body, via fixture.launchPixelCamera()).
+        RuleChain.outerRule(keyguardDismiss).around(testNameToastRule)
 
     @Before
     fun setUp() = fixture.setUp()
