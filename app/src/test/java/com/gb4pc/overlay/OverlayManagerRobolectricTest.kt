@@ -405,6 +405,10 @@ class OverlayManagerRobolectricTest {
      * [ImageView.ScaleType.CENTER_CROP], not FIT_CENTER. FIT_CENTER scales so the image's
      * long edge fits inside the view, leaving letterbox bars along the short axis;
      * CENTER_CROP scales so the short edge fills the view, cropping the long edge instead.
+     *
+     * What that scale type actually produces on screen, for each of the issue's edge ratios,
+     * is asserted from rendered pixels in [OverlayThumbnailFitPixelTest]; this test just pins
+     * the enum, so a change to it fails with an obvious message instead of a colour mismatch.
      */
     @Test
     fun `overlay ImageView uses CENTER_CROP scale type`() {
@@ -429,97 +433,5 @@ class OverlayManagerRobolectricTest {
             ImageView.ScaleType.CENTER_CROP,
             overlayView.scaleType,
         )
-    }
-
-    /**
-     * Regression guard for Issue #767: verifies the real [ImageView.ScaleType.CENTER_CROP]
-     * geometry Android computes for the overlay (via the framework's private `mDrawMatrix`,
-     * the same field [ImageView.onDraw] uses) crops the long edge and fits the short edge for
-     * each of the issue's four edge ratios (16:9, 4:3, 9:16, 3:4), leaving no letterbox gap on
-     * either axis of the square overlay view.
-     *
-     * A full pixel-rendered assertion (rendering a fixture bitmap through the view and reading
-     * back pixels) was tried and rejected: this Robolectric setup's native graphics shim does
-     * not apply a translated [android.graphics.Canvas.concat] to a subsequent bitmap draw
-     * (reproduced with a bare `Canvas` and `Bitmap`, independent of [ImageView] or
-     * [SquircleDrawable]), which would make such a test fail regardless of whether the overlay
-     * code is correct. Reading the matrix Android actually computed avoids that rendering gap
-     * while still exercising the framework's real CENTER_CROP calculation.
-     */
-    @Test
-    fun `CENTER_CROP matrix fits the short edge and crops the long edge for every edge ratio`() {
-        val context: Application = ApplicationProvider.getApplicationContext()
-        val prefsManager: PrefsManager =
-            mock {
-                on { galleryPackage } doReturn null
-                on { getOverlayPosition(any()) } doReturn OverlayPosition.default()
-                on { focusableOverlay } doReturn false
-            }
-
-        // (wRatio, hRatio) pairs for the issue's four edge ratios: 16:9, 4:3 (wide) and
-        // 9:16, 3:4 (tall). shortEdge is the fixture's minor-edge pixel count (an arbitrary,
-        // but non-trivial, size).
-        val ratios = listOf(16 to 9, 4 to 3, 9 to 16, 3 to 4)
-        val shortEdge = 90
-        val viewSize = 90
-
-        val matrixField = ImageView::class.java.getDeclaredField("mDrawMatrix").apply { isAccessible = true }
-
-        for ((wRatio, hRatio) in ratios) {
-            val drawableW = if (wRatio >= hRatio) shortEdge * wRatio / hRatio else shortEdge
-            val drawableH = if (wRatio >= hRatio) shortEdge else shortEdge * hRatio / wRatio
-
-            val overlayManager = OverlayManager(context, prefsManager)
-            overlayManager.show()
-
-            val windowManager = context.getSystemService(WindowManager::class.java)
-            val shadowWm = shadowOf(windowManager) as ShadowWindowManagerImpl
-            val overlayView = shadowWm.views.last() as ImageView
-
-            val fixtureBitmap = Bitmap.createBitmap(drawableW, drawableH, Bitmap.Config.ARGB_8888)
-            // Match the fixture's density to the resources used to wrap it, so
-            // BitmapDrawable's intrinsic size (which ImageView scales against) equals the
-            // fixture's actual pixel dimensions, not a density-rescaled size.
-            fixtureBitmap.density = context.resources.displayMetrics.densityDpi
-            overlayView.setImageDrawable(SquircleDrawable(BitmapDrawable(context.resources, fixtureBitmap)))
-            // Force a real size: the fake WindowManager does not run a layout pass.
-            overlayView.layout(0, 0, viewSize, viewSize)
-
-            val matrix = matrixField.get(overlayView) as android.graphics.Matrix?
-            assertNotNull(
-                "Issue #767: ratio $wRatio:$hRatio, expected a non-null CENTER_CROP " +
-                    "mDrawMatrix (a null matrix means ImageView drew the drawable unscaled).",
-                matrix,
-            )
-            val values = FloatArray(9)
-            matrix!!.getValues(values)
-            val scaleX = values[android.graphics.Matrix.MSCALE_X]
-            val scaleY = values[android.graphics.Matrix.MSCALE_Y]
-
-            val scaledW = drawableW * scaleX
-            val scaledH = drawableH * scaleY
-            // No letterbox gap on either axis: the scaled drawable must cover the full view.
-            assertTrue(
-                "Issue #767: ratio $wRatio:$hRatio, scaled width $scaledW must cover the " +
-                    "$viewSize px view (no vertical letterbox bar).",
-                scaledW >= viewSize - 1,
-            )
-            assertTrue(
-                "Issue #767: ratio $wRatio:$hRatio, scaled height $scaledH must cover the " +
-                    "$viewSize px view (no horizontal letterbox bar).",
-                scaledH >= viewSize - 1,
-            )
-            // The short edge must fit exactly (not overshoot far beyond the view), confirming
-            // the crop is keyed to the short edge, not merely an oversized scale on both axes.
-            val shortScaledEdge = kotlin.math.min(scaledW, scaledH)
-            assertTrue(
-                "Issue #767: ratio $wRatio:$hRatio, the short scaled edge $shortScaledEdge " +
-                    "must match the $viewSize px view almost exactly (CENTER_CROP fits the " +
-                    "short edge to the view).",
-                kotlin.math.abs(shortScaledEdge - viewSize) <= 1f,
-            )
-
-            overlayManager.hide()
-        }
     }
 }
