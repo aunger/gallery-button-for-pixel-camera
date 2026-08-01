@@ -120,10 +120,13 @@ fi
 
 # ───────────────────────────────────────────────────────────────────────────────
 # STEP 2c: SDK packages (only installs what is missing).
-# build-tools;34.0.0 is required by AGP 8.7.3 even though the project targets 35.
+# build-tools;36.0.0 is the version AGP 9.1.0 requires, even though the project
+# compiles and targets SDK 35. The 35.0.0 and 34.0.0 build-tools stay pinned here
+# so a session can still build older revisions of the tree.
 # ───────────────────────────────────────────────────────────────────────────────
 declare -A SDK_PACKAGES=(
     ["platforms;android-35"]="$ANDROID_HOME_DIR/platforms/android-35"
+    ["build-tools;36.0.0"]="$ANDROID_HOME_DIR/build-tools/36.0.0"
     ["build-tools;35.0.0"]="$ANDROID_HOME_DIR/build-tools/35.0.0"
     ["build-tools;34.0.0"]="$ANDROID_HOME_DIR/build-tools/34.0.0"
     ["platform-tools"]="$ANDROID_HOME_DIR/platform-tools"

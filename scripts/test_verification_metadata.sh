@@ -15,10 +15,13 @@
 #   (b) verify-metadata is "true" (metadata files are pinned)
 #   (c) verify-signatures is present and "false" (sha256-only scope, Decision 1)
 #   (d) the file actually pins artifacts (at least one <sha256> entry)
-#   (e) nothing downgrades or disables verification: no --dependency-verification
-#       lenient|off flag in a CI workflow, and no org.gradle.dependency.verification
-#       lenient|off property in a committed gradle.properties
-#   (f) gradle-wrapper.properties pins the distribution via distributionSha256Sum
+#   (e) nothing downgrades, disables, or deletes verification: no
+#       --dependency-verification lenient|off flag in a CI workflow, no
+#       org.gradle.dependency.verification lenient|off property in a committed
+#       gradle.properties, and no workflow removing verification-metadata.xml
+#       outside the one generator workflow allowlisted for it
+#   (f) gradle-wrapper.properties pins the distribution via distributionSha256Sum,
+#       names the expected Gradle version, and pins that release's checksum
 #   (g) gradle-wrapper.jar matches the SHA-256 Gradle officially publishes for its
 #       wrapper JAR (issue #744): the wrapper JAR is executed before
 #       verification-metadata.xml is consulted, so it cannot be covered there; this
@@ -36,18 +39,27 @@ WRAPPER_PROPS="$REPO_ROOT/gradle/wrapper/gradle-wrapper.properties"
 WRAPPER_JAR="$REPO_ROOT/gradle/wrapper/gradle-wrapper.jar"
 WORKFLOWS_DIR="$REPO_ROOT/.github/workflows"
 
-# Pinned SHA-256 of gradle/wrapper/gradle-wrapper.jar, authenticated against the
-# checksum Gradle officially publishes for its wrapper JAR (the same authoritative
-# source GitHub's gradle/wrapper-validation-action verifies against). Pinning the
-# published value, rather than the current file's own hash, makes this guard
-# authenticate the JAR against Gradle instead of trusting whatever bytes happen to
-# be committed. The committed JAR is the genuine Gradle 8.14 wrapper JAR:
-#   https://services.gradle.org/distributions/gradle-8.14-wrapper.jar.sha256
-# (This is newer than the 8.9 distribution pinned in gradle-wrapper.properties; a
-# newer wrapper JAR launches an older distribution without issue.) On a wrapper
-# upgrade, update this pin to the published checksum for the new version from the
-# gradle-<version>-wrapper.jar.sha256 URL above.
-WRAPPER_JAR_SHA256="7d3a4ac4de1c32b59bc6a4eb8ecb8e612ccd0cf1ae1e99f66902da64df296172"
+# The expected Gradle release, and the three values that together identify it.
+#
+# The wrapper-JAR pin alone is version-blind. Gradle republishes byte-identical
+# wrapper JARs across releases, so one checksum can be correct for several Gradle
+# versions at once (this JAR is shared by 9.5.0, 9.5.1, and 9.6.1). A matching JAR
+# therefore proves the bytes are genuinely Gradle's, but says nothing about which
+# distribution the wrapper will go on to download. That is how the original defect
+# (issue #744) hid: an 8.14 wrapper JAR sat against an 8.9 distribution, and no
+# single-value check could see the mismatch.
+#
+# So the version and distribution checksum are pinned here too, and checked against
+# gradle-wrapper.properties. The three constants must describe ONE release:
+#
+#   GRADLE_VERSION      the release the wrapper must be configured for
+#   GRADLE_DIST_SHA256  https://services.gradle.org/distributions/gradle-<ver>-bin.zip.sha256
+#   WRAPPER_JAR_SHA256  https://services.gradle.org/distributions/gradle-<ver>-wrapper.jar.sha256
+#
+# On a Gradle upgrade, update all three from those published URLs in one change.
+GRADLE_VERSION="9.5.1"
+GRADLE_DIST_SHA256="bafc141b619ad6350fd975fc903156dd5c151998cc8b058e8c1044ab5f7b031f"
+WRAPPER_JAR_SHA256="497c8c2a7e5031f6aa847f88104aa80a93532ec32ee17bdb8d1d2f67a194a9c7"
 
 PASS=0
 FAIL=0
@@ -113,13 +125,21 @@ PY
     fi
 fi
 
-# (e) nothing downgrades or disables verification. Two paths can weaken it: a
-# --dependency-verification lenient|off flag on a gradlew invocation in a CI
-# workflow, or the org.gradle.dependency.verification=lenient|off property in a
-# committed gradle.properties. The default (neither present) is strict, which is
-# what this change requires. In the flag pattern, [= ] already matches the
+# (e) nothing downgrades, disables, or deletes verification. Three paths can weaken
+# it: a --dependency-verification lenient|off flag on a gradlew invocation in a CI
+# workflow, the org.gradle.dependency.verification=lenient|off property in a
+# committed gradle.properties, or a workflow step that simply removes
+# verification-metadata.xml (deleting the file turns enforcement off just as
+# effectively as a flag). The default (none present) is strict, which is what this
+# change requires. In the flag pattern, [= ] already matches the
 # "--dependency-verification lenient" space form, so no separate alternation is
 # needed.
+#
+# One workflow is allowlisted by exact filename for the deletion pattern:
+# regenerate-gradle-toolchain.yml deletes the file on purpose, so the metadata it
+# regenerates is built from scratch rather than merged onto stale pins. It is
+# manual-dispatch only, it never pushes, and its output is a review artifact.
+DELETION_ALLOWLIST="regenerate-gradle-toolchain.yml"
 downgraded=0
 if grep -rnE -- "--dependency-verification[= ](lenient|off)" "$WORKFLOWS_DIR" >/dev/null 2>&1; then
     fail "a CI workflow downgrades verification via a --dependency-verification flag"
@@ -133,15 +153,44 @@ while IFS= read -r props; do
         downgraded=1
     fi
 done < <(git -C "$REPO_ROOT" ls-files -- '*gradle.properties' 2>/dev/null)
+while IFS= read -r wf; do
+    [ -n "$wf" ] || continue
+    [ "$(basename "$wf")" = "$DELETION_ALLOWLIST" ] && continue
+    if grep -nE '(^|[[:space:];&|])(rm([[:space:]]+-[^[:space:]]+)*|git[[:space:]]+rm([[:space:]]+-[^[:space:]]+)*|mv)[[:space:]]+[^#]*verification-metadata\.xml' \
+        "$wf" >/dev/null 2>&1; then
+        fail "a CI workflow deletes or moves verification-metadata.xml: ${wf#"$REPO_ROOT/"}"
+        downgraded=1
+    fi
+done < <(find "$WORKFLOWS_DIR" -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \) 2>/dev/null)
 if [ "$downgraded" -eq 0 ]; then
-    pass "nothing downgrades verification (no lenient/off flag or gradle.properties property)"
+    pass "nothing downgrades verification (no lenient/off flag, property, or metadata deletion)"
 fi
 
-# (f) the distribution is pinned.
+# (f) the distribution is pinned, and pinned to the expected release. The checksum
+# alone would happily authenticate the wrong Gradle version, so the version in
+# distributionUrl and the value of distributionSha256Sum are both asserted against
+# the constants above.
 if grep -Eq '^distributionSha256Sum=[0-9a-f]{64}$' "$WRAPPER_PROPS"; then
     pass "gradle-wrapper.properties pins the distribution via distributionSha256Sum"
 else
     fail "gradle-wrapper.properties is missing a valid distributionSha256Sum pin"
+fi
+
+ACTUAL_DIST_URL=$(sed -n 's/^distributionUrl=//p' "$WRAPPER_PROPS" | head -n 1)
+case "$ACTUAL_DIST_URL" in
+    *"gradle-${GRADLE_VERSION}-bin.zip")
+        pass "distributionUrl points at gradle-${GRADLE_VERSION}-bin.zip"
+        ;;
+    *)
+        fail "distributionUrl must end with gradle-${GRADLE_VERSION}-bin.zip, was '$ACTUAL_DIST_URL'"
+        ;;
+esac
+
+ACTUAL_DIST_SHA=$(sed -n 's/^distributionSha256Sum=//p' "$WRAPPER_PROPS" | head -n 1)
+if [ "$ACTUAL_DIST_SHA" = "$GRADLE_DIST_SHA256" ]; then
+    pass "distributionSha256Sum matches the published checksum for Gradle $GRADLE_VERSION"
+else
+    fail "distributionSha256Sum must be $GRADLE_DIST_SHA256 (Gradle $GRADLE_VERSION), was '$ACTUAL_DIST_SHA'"
 fi
 
 # (g) the committed wrapper JAR matches its pinned SHA-256. gradlew reads and runs
@@ -154,9 +203,9 @@ if [ ! -f "$WRAPPER_JAR" ]; then
 else
     ACTUAL_WRAPPER_SHA=$(sha256sum "$WRAPPER_JAR" | cut -d' ' -f1)
     if [ "$ACTUAL_WRAPPER_SHA" = "$WRAPPER_JAR_SHA256" ]; then
-        pass "gradle-wrapper.jar matches its pinned SHA-256"
+        pass "gradle-wrapper.jar matches the wrapper JAR published for Gradle $GRADLE_VERSION"
     else
-        fail "gradle-wrapper.jar SHA-256 mismatch: expected $WRAPPER_JAR_SHA256, got $ACTUAL_WRAPPER_SHA"
+        fail "gradle-wrapper.jar SHA-256 mismatch: expected $WRAPPER_JAR_SHA256 (Gradle $GRADLE_VERSION), got $ACTUAL_WRAPPER_SHA"
     fi
 fi
 
