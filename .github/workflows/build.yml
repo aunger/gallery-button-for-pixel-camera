@@ -441,6 +441,21 @@ jobs:
           cp -r app/build/outputs/androidTest-results/connected/debug/. \
             app/build/outputs/androidTest-results/instrumented/
 
+      - name: (verify-pr-768) Force secure keyguard reassertion before PixelCameraOverlayE2ETest
+        # Throwaway step for issue #769 (verification of PR #768 / issue #765): puts the
+        # display to sleep, which re-engages the secure PIN keyguard scripts/setup-e2e-emulator.sh
+        # configures, then wakes the display back up without dismissing it. This reproduces the
+        # "keyguard reasserted between CI steps" scenario the issue describes, so the next step's
+        # own start-of-test toast has a locked secure keyguard to contend with. Not part of the
+        # PR under test; removed before this test branch's throwaway PR is closed.
+        if: needs.check-diff.outputs.needs_full_build == 'true'
+        run: |
+          ADB="$ANDROID_HOME/platform-tools/adb"
+          "$ADB" shell input keyevent 223 # KEYCODE_SLEEP: engages the secure PIN keyguard
+          sleep 2
+          "$ADB" shell input keyevent 224 # KEYCODE_WAKEUP: display on, secure keyguard still locked
+          sleep 2
+
       - name: Run PixelCameraOverlayE2ETest
         # No `continue-on-error` (issue #309): record the real outcome and defer
         # the pass/fail verdict to the "Gate on test failures" step.
@@ -502,9 +517,11 @@ jobs:
             bash scripts/filter_logcat.sh | tee results/e2e-overlay-logcat.txt
 
       - name: Pull PixelCameraOverlayE2ETest video on failure
-        # Only pull and upload the recording when the overlay E2E suite failed (issue #520).
-        # On a green run the file is left on the device and discarded when the emulator exits.
-        if: always() && needs.check-diff.outputs.needs_full_build == 'true' && steps.run_overlay_e2e.outputs.outcome == 'failure'
+        # (verify-pr-768): condition temporarily loosened to always() (was
+        # `... && steps.run_overlay_e2e.outputs.outcome == 'failure'`, issue #520's
+        # original intent) so issue #769's verification run captures the video regardless of the
+        # suite's outcome. Restored before this throwaway test branch's PR is closed.
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true'
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
           mkdir -p /tmp/e2e-videos
@@ -512,7 +529,8 @@ jobs:
             echo "WARNING: could not pull e2e-overlay.mp4"
 
       - name: Upload PixelCameraOverlayE2ETest video
-        if: always() && needs.check-diff.outputs.needs_full_build == 'true' && steps.run_overlay_e2e.outputs.outcome == 'failure'
+        # (verify-pr-768): condition temporarily loosened to always(), see the pull step above.
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: e2e-video-PixelCameraOverlayE2ETest
