@@ -68,7 +68,7 @@ LABEL_PATTERNS: dict[str, re.Pattern[str]] = {
         rf"|{_B}bylines?{_B}"
         rf"|{_B}verif\w+{_B}"
         rf"|{_B}author{_B}"
-        rf"|{_B}review\w+{_B}"
+        rf"|{_B}reviewers?{_B}"
         rf"|{_B}orchestrat\w*"
         rf"|{_B}ci[\W_]*monitor\w*"
         rf"|{_B}sub[\W_]?agent\w*",

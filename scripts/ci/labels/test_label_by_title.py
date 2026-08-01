@@ -175,7 +175,13 @@ class TestMatchingLabelsAgents(unittest.TestCase):
 
     def test_review_requires_suffix(self):
         self.assertIn("agents", lpt.matching_labels("Clarify Reviewer account sharing"))
+        self.assertIn("agents", lpt.matching_labels("Add a reviewers checklist"))
         self.assertNotIn("agents", lpt.matching_labels("Leave a review"))
+
+    def test_reviewing_and_reviewed_do_not_match(self):
+        self.assertNotIn("agents", lpt.matching_labels("Reviewing PRs takes too long"))
+        self.assertNotIn("agents", lpt.matching_labels("The reviewed manuscript needs edits"))
+        self.assertNotIn("agents", lpt.matching_labels("Collect reviews from beta testers"))
 
     def test_orchestrat_suffixes_match(self):
         self.assertIn("agents", lpt.matching_labels("Orchestrator directions: CI review loop"))
