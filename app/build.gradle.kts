@@ -1,9 +1,11 @@
+import org.gradle.process.ExecOperations
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.time.LocalDate
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
+import javax.inject.Inject
 
 plugins {
     id("com.android.application")
@@ -224,7 +226,7 @@ dependencies {
 // the com.gb4pc.e2e package (the standard connectedDebugAndroidTest excludes it).
 // Usage: ./gradlew connectedE2EAndroidTest
 //
-// Note: captures SDK dir and APK paths at configuration time so they are available
+// Note: captures SDK dir, APK paths and -P properties at configuration time so they are available
 // inside the doLast execution closure where the project extension is out of scope.
 val e2eAdb = "${android.sdkDirectory.absolutePath}/platform-tools/adb"
 val e2eAppApk =
@@ -244,6 +246,20 @@ val e2eMockGalleryApk =
 val e2eXmlDir =
     layout.buildDirectory
         .dir("outputs/androidTest-results/connected/debug")
+val e2eGrantMediaPermission = (findProperty("mediaPermissionGranted") as String? ?: "true").toBoolean()
+val e2eClass = findProperty("e2eClass") as String?
+
+/**
+ * Carrier for an injected [ExecOperations], which is how the task below runs adb: the service has
+ * no public constructor and no accessor of its own, so the only way to obtain one is an `@Inject`
+ * getter that `ObjectFactory.newInstance` implements.
+ */
+interface E2EExecOps {
+    @get:Inject
+    val execOps: ExecOperations
+}
+
+val e2eExecOps = objects.newInstance<E2EExecOps>().execOps
 
 /**
  * Runs [command] via a plain ProcessBuilder, bounded by [timeoutSeconds]: `Process.waitFor(timeout,
@@ -288,12 +304,12 @@ tasks.register("connectedE2EAndroidTest") {
     dependsOn("assembleDebug", "assembleDebugAndroidTest", ":e2e-mock-camera:assembleDebug", ":e2e-mock-gallery:assembleDebug")
     doLast {
         // Install app first so permissions can be granted by package name.
-        exec { commandLine(e2eAdb, "install", "-r", e2eAppApk.get().asFile.absolutePath) }
+        e2eExecOps.exec { commandLine(e2eAdb, "install", "-r", e2eAppApk.get().asFile.absolutePath) }
         // Grant permissions now that the app UID exists on the device.
-        exec { commandLine(e2eAdb, "shell", "appops", "set", "com.gb4pc", "SYSTEM_ALERT_WINDOW", "allow") }
+        e2eExecOps.exec { commandLine(e2eAdb, "shell", "appops", "set", "com.gb4pc", "SYSTEM_ALERT_WINDOW", "allow") }
         // GET_USAGE_STATS (= PACKAGE_USAGE_STATS on API 29+) lets ForegroundDetector see
         // which app is in the foreground — without this the overlay never appears.
-        exec { commandLine(e2eAdb, "shell", "appops", "set", "com.gb4pc", "GET_USAGE_STATS", "allow") }
+        e2eExecOps.exec { commandLine(e2eAdb, "shell", "appops", "set", "com.gb4pc", "GET_USAGE_STATS", "allow") }
         // POST_NOTIFICATIONS (API 33+ runtime permission, declared in the main manifest) lets
         // OverlayService's postPermissionNotification() actually post anything. Without this
         // grant, NotificationManager.notify() is a silent no-op on API 33+ (no exception, no
@@ -302,7 +318,7 @@ tasks.register("connectedE2EAndroidTest") {
         // the production code posting it is correct (issue #509 follow-up, PR #564 review).
         // `pm grant` (not `appops set`) for the same reason as READ_MEDIA_IMAGES below: this is a
         // dangerous/runtime permission, not an appops-gated special permission.
-        exec { commandLine(e2eAdb, "shell", "pm", "grant", "com.gb4pc", "android.permission.POST_NOTIFICATIONS") }
+        e2eExecOps.exec { commandLine(e2eAdb, "shell", "pm", "grant", "com.gb4pc", "android.permission.POST_NOTIFICATIONS") }
         // READ_MEDIA_IMAGES lets E2EFixture see MediaStore rows inserted by other packages
         // (e2e-mock-camera). `am instrument` runs the instrumented test code inside this
         // app's process and UID (com.gb4pc), not com.gb4pc.test's, so the grant must target
@@ -328,13 +344,12 @@ tasks.register("connectedE2EAndroidTest") {
         // Android kill that process to re-establish its scoped-storage FUSE mount, which took down
         // an earlier version of this suite that called `pm grant`/`pm revoke` mid-test (see
         // PermissionsDeniedE2ETest's class doc for the full incident).
-        val grantMediaPermission = (project.findProperty("mediaPermissionGranted") as String? ?: "true").toBoolean()
-        exec {
+        e2eExecOps.exec {
             commandLine(
                 e2eAdb,
                 "shell",
                 "pm",
-                if (grantMediaPermission) "grant" else "revoke",
+                if (e2eGrantMediaPermission) "grant" else "revoke",
                 "com.gb4pc",
                 "android.permission.READ_MEDIA_IMAGES",
             )
@@ -342,20 +357,19 @@ tasks.register("connectedE2EAndroidTest") {
         // Install mock Pixel Camera so CameraManager callbacks and UsageStats detection are exercised.
         // CI also installs this APK explicitly before invoking the task (see build.yml) because
         // relying solely on this doLast install caused test failures in CI; kept here for local runs.
-        exec { commandLine(e2eAdb, "install", "-r", e2eMockCameraApk.get().asFile.absolutePath) }
-        exec { commandLine(e2eAdb, "shell", "pm", "grant", "com.google.android.GoogleCamera", "android.permission.CAMERA") }
+        e2eExecOps.exec { commandLine(e2eAdb, "install", "-r", e2eMockCameraApk.get().asFile.absolutePath) }
+        e2eExecOps.exec { commandLine(e2eAdb, "shell", "pm", "grant", "com.google.android.GoogleCamera", "android.permission.CAMERA") }
         // Install mock gallery so tapOverlay() can navigate to it in visual E2E tests.
-        exec { commandLine(e2eAdb, "install", "-r", e2eMockGalleryApk.get().asFile.absolutePath) }
+        e2eExecOps.exec { commandLine(e2eAdb, "install", "-r", e2eMockGalleryApk.get().asFile.absolutePath) }
         // READ_MEDIA_IMAGES lets mock gallery query MediaStore for the last captured photo.
         // Use `pm grant` (not `appops set`) for the same reason as the com.gb4pc grant above:
         // READ_MEDIA_IMAGES is a dangerous runtime permission, and `appops set ... allow` does
         // not flip its PackageManager-level grant state.
-        exec { commandLine(e2eAdb, "shell", "pm", "grant", "com.gb4pc.mockgallery", "android.permission.READ_MEDIA_IMAGES") }
-        exec { commandLine(e2eAdb, "install", "-r", e2eTestApk.get().asFile.absolutePath) }
+        e2eExecOps.exec { commandLine(e2eAdb, "shell", "pm", "grant", "com.gb4pc.mockgallery", "android.permission.READ_MEDIA_IMAGES") }
+        e2eExecOps.exec { commandLine(e2eAdb, "install", "-r", e2eTestApk.get().asFile.absolutePath) }
         // Run E2E tests with -r for machine-parseable per-test status lines.
         // am instrument exits non-zero on test failure but returns 0 on process crash;
         // capture stdout, write JUnit XML, then fail loudly on crash or test failure.
-        val e2eClass = project.findProperty("e2eClass") as String?
         val classArgs =
             if (e2eClass != null) {
                 listOf("-e", "class", e2eClass)
@@ -459,11 +473,11 @@ tasks.register("connectedE2EAndroidTest") {
             // level and does not itself wait on app cooperation, so this is not a source of a
             // second hang) so the device is guaranteed clean for whichever step runs next,
             // regardless of whether the local client's death alone would have propagated.
-            exec {
+            e2eExecOps.exec {
                 commandLine(e2eAdb, "shell", "am", "force-stop", "com.gb4pc")
                 isIgnoreExitValue = true
             }
-            exec {
+            e2eExecOps.exec {
                 commandLine(e2eAdb, "shell", "am", "force-stop", "com.gb4pc.test")
                 isIgnoreExitValue = true
             }
