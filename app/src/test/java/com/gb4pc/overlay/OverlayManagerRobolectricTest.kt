@@ -397,4 +397,41 @@ class OverlayManagerRobolectricTest {
             )
         }
     }
+
+    // ── Issue #767: thumbnail zooms to fit the short edge, not the long edge ─
+
+    /**
+     * Regression guard for Issue #767: the overlay's photo-thumbnail [ImageView] must use
+     * [ImageView.ScaleType.CENTER_CROP], not FIT_CENTER. FIT_CENTER scales so the image's
+     * long edge fits inside the view, leaving letterbox bars along the short axis;
+     * CENTER_CROP scales so the short edge fills the view, cropping the long edge instead.
+     *
+     * What that scale type actually produces on screen, for each of the issue's edge ratios,
+     * is asserted from rendered pixels in [OverlayThumbnailFitPixelTest]; this test just pins
+     * the enum, so a change to it fails with an obvious message instead of a colour mismatch.
+     */
+    @Test
+    fun `overlay ImageView uses CENTER_CROP scale type`() {
+        val context: Application = ApplicationProvider.getApplicationContext()
+        val prefsManager: PrefsManager =
+            mock {
+                on { galleryPackage } doReturn null
+                on { getOverlayPosition(any()) } doReturn OverlayPosition.default()
+                on { focusableOverlay } doReturn false
+            }
+
+        val overlayManager = OverlayManager(context, prefsManager)
+        overlayManager.show()
+
+        val windowManager = context.getSystemService(WindowManager::class.java)
+        val shadowWm = shadowOf(windowManager) as ShadowWindowManagerImpl
+        val overlayView = shadowWm.views[0] as ImageView
+
+        assertEquals(
+            "Issue #767: the overlay ImageView must use CENTER_CROP so thumbnails zoom to " +
+                "fit the short edge instead of letterboxing the long edge.",
+            ImageView.ScaleType.CENTER_CROP,
+            overlayView.scaleType,
+        )
+    }
 }

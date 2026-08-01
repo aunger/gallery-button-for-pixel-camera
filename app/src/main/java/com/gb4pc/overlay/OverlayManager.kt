@@ -260,7 +260,9 @@ class OverlayManager(
                     }
                 }
             }
-        imageView.scaleType = ImageView.ScaleType.FIT_CENTER
+        // Issue #767: CENTER_CROP scales so the short edge fills the view and the long
+        // edge is cropped, instead of FIT_CENTER's letterbox bars on the short axis.
+        imageView.scaleType = ImageView.ScaleType.CENTER_CROP
         updateIconDrawable(imageView)
         imageView.setOnClickListener { handleTap() }
         return imageView
