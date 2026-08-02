@@ -13,7 +13,7 @@ PR body, so every keyword variant and manually linked issue is covered.
 
 Labels are only ever added, never removed. A label already present on the PR
 is left alone. A candidate label is also skipped, rather than applied, when
-applying it would cause scripts/enforce_mutually_exclusive_labels.py's
+applying it would cause scripts/ci/labels/enforce_mutually_exclusive_labels.py's
 mutual-exclusion enforcement to remove a label the PR already carries--an
 existing PR label always wins over a conflicting label being copied in from a
 linked issue.
@@ -32,13 +32,13 @@ The pull_request trigger for this module's main() (see
 .github/workflows/propagate-issue-labels.yml) covers most sidebar-linked PRs
 by re-running on their next ordinary activity, since GitHub fires no webhook
 event for the sidebar-link action itself. This module is also imported by
-scripts/reconcile_issue_labels.py, an on-demand tool that applies the same
+scripts/ci/labels/reconcile_issue_labels.py, an on-demand tool that applies the same
 rule across every open PR for the residual case of a PR that sees no further
 activity before merge. See reconcile_issue_labels.py's docstring for the
 full rationale.
 
 Usage:
-    python3 scripts/propagate_issue_labels.py
+    python3 scripts/ci/labels/propagate_issue_labels.py
 
 Exit code:
     0  the PR has no closing issue references, its closing issues carry no

@@ -37,4 +37,4 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           ISSUE_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
           ADDED_LABEL: ${{ github.event.label.name }}
-        run: python3 scripts/enforce_mutually_exclusive_labels.py
+        run: python3 scripts/ci/labels/enforce_mutually_exclusive_labels.py

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Backfill title-based labels across every existing issue and pull request.
 
-Applies the same rules as scripts/label_by_title.py (see that module for
+Applies the same rules as scripts/ci/labels/label_by_title.py (see that module for
 the exact regexes) to the title of every issue and pull request in the
 repository, and applies any label a title matches that is not already
 present. Labels are only ever added, never removed.
@@ -17,7 +17,7 @@ Each category maps a label name to the sorted list of issue/PR numbers
 it applies to.
 
 Usage:
-    python3 scripts/backfill_labels_by_title.py (-n | -f) [-q] [--skip-matches[=LABELS]]
+    python3 scripts/ci/labels/backfill_labels_by_title.py (-n | -f) [-q] [--skip-matches[=LABELS]]
 
     -n, --dry-run   Compute and print the report; apply nothing.
     -f, --force     Apply the "add" category, then print the report.

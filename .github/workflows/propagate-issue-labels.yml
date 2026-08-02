@@ -3,7 +3,7 @@ name: Propagate issue labels to linked PR
 # When a pull request closes an issue via a closing-keyword relationship
 # ("Fixes #N", "Closes #N", the other variants GitHub recognizes, or a
 # manually linked issue), copies that issue's labels onto the pull request.
-# See scripts/propagate_issue_labels.py for the exact rules, including the
+# See scripts/ci/labels/propagate_issue_labels.py for the exact rules, including the
 # exception that protects an existing PR label from an indirect
 # mutual-exclusion removal.
 #
@@ -24,7 +24,7 @@ name: Propagate issue labels to linked PR
 # runs, since none of them carry a "changes" object to gate on.
 #
 # A PR that gets sidebar-linked and then sees none of these events before
-# merge is not covered automatically; scripts/reconcile_issue_labels.py is
+# merge is not covered automatically; scripts/ci/labels/reconcile_issue_labels.py is
 # available to reconcile every open PR on demand (run locally, or dispatch
 # it in Actions) for that residual case.
 
@@ -49,4 +49,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: python3 scripts/propagate_issue_labels.py
+        run: python3 scripts/ci/labels/propagate_issue_labels.py

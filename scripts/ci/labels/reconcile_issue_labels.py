@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Reconcile linked-issue label propagation across every open pull request.
 
-scripts/propagate_issue_labels.py runs from a `pull_request` webhook event
+scripts/ci/labels/propagate_issue_labels.py runs from a `pull_request` webhook event
 and only ever looks at the one PR that triggered it. GitHub fires no webhook
 event for linking a PR to an issue via the "Development" sidebar after the
 PR is already open, so propagate-issue-labels.yml widened its trigger types
@@ -11,7 +11,7 @@ and then sees none of those events before merge would still never be
 revisited, and its issue's labels would silently never propagate.
 
 This script closes that residual gap by walking every open pull request and
-applying scripts/propagate_issue_labels.py's exact propagation rule
+applying scripts/ci/labels/propagate_issue_labels.py's exact propagation rule
 (including the mutual-exclusion skip) to each one. It is meant to be run
 on demand--locally, or by dispatching
 .github/workflows/reconcile-issue-labels.yml in Actions--rather than on a
@@ -20,7 +20,7 @@ above, so polling every open PR indefinitely on a timer was judged not
 worth the ongoing cost (see issue #621).
 
 Usage:
-    python3 scripts/reconcile_issue_labels.py
+    python3 scripts/ci/labels/reconcile_issue_labels.py
 
 Exit code:
     0  every open PR was reconciled without error (whether or not any
