@@ -33,7 +33,7 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-HOOKS_DIR="$SCRIPT_DIR/git-hooks"
+HOOKS_DIR="$SCRIPT_DIR/../git-hooks"
 LINT_SH="$SCRIPT_DIR/lint.sh"
 export LINT_BIN_DIR="${LINT_BIN_DIR:-$HOME/.local/bin}"
 
