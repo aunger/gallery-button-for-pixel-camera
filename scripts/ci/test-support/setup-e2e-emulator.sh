@@ -32,7 +32,6 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 POST_BOOT_ONLY=false
 if [[ "${1:-}" == "--post-boot" ]]; then
