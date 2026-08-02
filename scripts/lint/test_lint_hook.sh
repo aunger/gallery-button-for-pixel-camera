@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test_lint_hook.sh: end-to-end tests for scripts/lint.sh and the first-party
+# test_lint_hook.sh: end-to-end tests for scripts/lint/lint.sh and the first-party
 # git pre-commit hook (scripts/git-hooks/pre-commit) that replaced the
 # pre-commit framework (issue #667).
 #
@@ -24,7 +24,7 @@
 #       even though mdformat itself has nothing to fix
 #
 # The lint tools are resolved from $LINT_BIN_DIR (default $HOME/.local/bin),
-# exactly as scripts/lint.sh resolves them; .claude/hooks/session-start.sh
+# exactly as scripts/lint/lint.sh resolves them; .claude/hooks/session-start.sh
 # installs them there. When the Python lint stack is not provisioned (a fresh
 # checkout, or CI before the tools are installed) the suite skips cleanly and
 # exits 0; with the tools present it exits 0 on success, non-zero on any failed
@@ -43,7 +43,7 @@ pass() { echo "  PASS: $1"; PASS=$((PASS + 1)); }
 fail() { echo "  FAIL: $1"; FAIL=$((FAIL + 1)); }
 
 # The Python lint tools (the six pre-commit-hooks checks, ruff, and mdformat)
-# all come from scripts/requirements-lint.txt as a unit, so they are present or
+# all come from scripts/lint/requirements-lint.txt as a unit, so they are present or
 # absent together. Their absence means a genuinely unprovisioned environment (a
 # fresh checkout where session-start has not run) rather than a broken hook, so
 # skip the whole suite cleanly and exit 0 instead of reporting a failure. A

@@ -6,14 +6,14 @@ language specified") was enforced by markdownlint-cli2 until issue #688
 replaced it with mdformat. mdformat reformats a fence's contents but does not
 check whether the fence declares a language, so a new offender (a bare
 ```` ``` ```` with nothing after it) would go uncaught. This script closes that
-gap: it runs as part of the markdown family in scripts/lint.sh (the git
+gap: it runs as part of the markdown family in scripts/lint/lint.sh (the git
 pre-commit hook) and in .github/workflows/lint.yml's markdown-mdformat job, so
 the hook and CI share one definition of the check.
 
 Only the Python standard library is used, so this runs under the ambient
-`python3` with no dependency install step, the same way scripts/lint.sh invokes
-other first-party scripts (see e.g. scripts/check_non_docs_changes.sh). This
-also sidesteps scripts/lint.sh's $LINT_BIN_DIR indirection, which exists to
+`python3` with no dependency install step, the same way scripts/lint/lint.sh invokes
+other first-party scripts (see e.g. scripts/ci/check_non_docs_changes.sh). This
+also sidesteps scripts/lint/lint.sh's $LINT_BIN_DIR indirection, which exists to
 resolve third-party tools installed from a trusted registry (issue #667) and
 does not apply to a first-party script checked out with the repo itself.
 
@@ -25,7 +25,7 @@ plain, unindented fences at column 0 (`--wrap keep` normalizes prose but not
 fence indentation), so full blockquote/list-nesting fidelity is not needed.
 
 Usage:
-    scripts/check_md040.py FILE [FILE ...]
+    scripts/lint/check_md040.py FILE [FILE ...]
 
 Exit code:
     0  no fenced code block is missing a language in any given file.

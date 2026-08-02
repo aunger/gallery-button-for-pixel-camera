@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# scripts/lint.sh -- run this repo's linters and formatters over a set of files.
+# scripts/lint/lint.sh -- run this repo's linters and formatters over a set of files.
 #
 # Usage:
-#   scripts/lint.sh FILE [FILE ...]   lint the named files
-#   scripts/lint.sh --all             lint every tracked file in the tree
+#   scripts/lint/lint.sh FILE [FILE ...]   lint the named files
+#   scripts/lint/lint.sh --all             lint every tracked file in the tree
 #
 # Options (combine with either form above):
 #   --check                 run each tool in its check-only invocation and report,
@@ -39,7 +39,7 @@
 # fails the run, without altering the pass/fail contract. On a clean tree check
 # mode writes nothing and exits 0.
 #
-# scripts/check_md040.py (markdown family) is read-only in both modes: MD040
+# scripts/lint/check_md040.py (markdown family) is read-only in both modes: MD040
 # (a fenced code block must name a language) has no auto-fix, so it always
 # reports rather than rewriting (issue #689).
 
