@@ -38,4 +38,4 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
           GITHUB_EVENT_PATH: ${{ github.event_path }}
-        run: python3 scripts/strip_session_bylines.py
+        run: python3 scripts/ci/prs-and-issues/strip_session_bylines.py

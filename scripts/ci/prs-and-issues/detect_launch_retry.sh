@@ -38,8 +38,8 @@
 #   GITHUB_SERVER_URL   Default: https://github.com
 #
 # Usage:
-#   scripts/detect_launch_retry.sh results/e2e-overlay-logcat.txt
-#   adb logcat -d | scripts/filter_logcat.sh | scripts/detect_launch_retry.sh
+#   scripts/ci/prs-and-issues/detect_launch_retry.sh results/e2e-overlay-logcat.txt
+#   adb logcat -d | scripts/ci/test-support/filter_logcat.sh | scripts/ci/prs-and-issues/detect_launch_retry.sh
 
 set -euo pipefail
 

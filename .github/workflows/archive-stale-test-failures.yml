@@ -19,4 +19,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           STALE_DAYS: '10'
-        run: python3 scripts/archive_stale_test_failures.py
+        run: python3 scripts/ci/prs-and-issues/archive_stale_test_failures.py
