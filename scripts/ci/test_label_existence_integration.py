@@ -10,9 +10,9 @@ These are the labels whose absence would cause silent misbehavior in the
 automation (as happened with the stale spellings in issue #477).
 
 Sources:
-  scripts/enforce_mutually_exclusive_labels.py: MUTUALLY_EXCLUSIVE_SETS
-  scripts/file_test_failure_issues.py:          LABELS constant
-  scripts/archive_stale_test_failures.py:       LABEL_TEST_FAILURE_ARCHIVE constant
+  scripts/ci/labels/enforce_mutually_exclusive_labels.py: MUTUALLY_EXCLUSIVE_SETS
+  scripts/ci/prs-and-issues/file_test_failure_issues.py:          LABELS constant
+  scripts/ci/prs-and-issues/archive_stale_test_failures.py:       LABEL_TEST_FAILURE_ARCHIVE constant
   .github/release.yml:                          changelog.exclude.labels
 """
 
@@ -25,14 +25,17 @@ import urllib.request
 
 import yaml
 
-# Scripts live in the same directory as this file; make them importable.
-sys.path.insert(0, os.path.dirname(__file__))
+# The three source scripts now live in two different sibling directories
+# (the labels concern and the prs-and-issues concern); make both importable.
+_CI_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(_CI_DIR, "labels"))
+sys.path.insert(0, os.path.join(_CI_DIR, "prs-and-issues"))
 
 from archive_stale_test_failures import LABEL_TEST_FAILURE_ARCHIVE  # noqa: E402
 from enforce_mutually_exclusive_labels import MUTUALLY_EXCLUSIVE_SETS  # noqa: E402
 from file_test_failure_issues import LABELS as _TEST_FAILURE_LABELS  # noqa: E402
 
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_REPO_ROOT = os.path.dirname(os.path.dirname(_CI_DIR))
 _RELEASE_CONFIG_PATH = os.path.join(_REPO_ROOT, ".github", "release.yml")
 
 
