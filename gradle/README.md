@@ -1,6 +1,6 @@
 # Gradle build integrity
 
-This directory carries two "verify what you download" controls for the Gradle build, matching the posture already applied to ktlint (SHA-256 verified in `scripts/install-ktlint.sh`) and the Python lint tools (pip `--require-hashes`, issue #723).
+This directory carries two "verify what you download" controls for the Gradle build, matching the posture already applied to ktlint (SHA-256 verified in `scripts/lint/install-ktlint.sh`) and the Python lint tools (pip `--require-hashes`, issue #723).
 
 ## `verification-metadata.xml` -- dependency verification (issue #714)
 

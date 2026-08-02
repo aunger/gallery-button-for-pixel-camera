@@ -47,7 +47,7 @@ ______________________________________________________________________
 
 The `SessionStart` hook installs and wires up the linting stack automatically (steps 3a-3c).
 No manual setup is needed.
-There is no `pre-commit` framework: every tool is installed from a trusted package registry, pinned to an exact version, and run from a checked-in git hook (`scripts/git-hooks/pre-commit`) via `scripts/lint.sh`.
+There is no `pre-commit` framework: every tool is installed from a trusted package registry, pinned to an exact version, and run from a checked-in git hook (`scripts/git-hooks/pre-commit`) via `scripts/lint/lint.sh`.
 Nothing is git-cloned or fetched from GitHub Releases at commit time (issue #667).
 
 ### Tools installed at session start
@@ -55,19 +55,19 @@ Nothing is git-cloned or fetched from GitHub Releases at commit time (issue #667
 | Tool              | Step | Source                                             | Purpose                                                                     |
 | ----------------- | ---- | -------------------------------------------------- | --------------------------------------------------------------------------- |
 | `ktlint`          | 3a   | Maven Central (`ktlint-cli` JAR, SHA-256 verified) | Kotlin formatting; wrapper at `~/.local/bin/ktlint` runs the JAR via `java` |
-| Python lint tools | 3b   | PyPI (`scripts/requirements-lint.txt`)             | `ruff`, `pre-commit-hooks` checks, `mdformat` + plugins; in `~/.local/bin`  |
-| git hook          | 3c   | `core.hooksPath` = `scripts/git-hooks`             | runs `scripts/lint.sh` on staged files on every `git commit`                |
+| Python lint tools | 3b   | PyPI (`scripts/lint/requirements-lint.txt`)        | `ruff`, `pre-commit-hooks` checks, `mdformat` + plugins; in `~/.local/bin`  |
+| git hook          | 3c   | `core.hooksPath` = `scripts/git-hooks`             | runs `scripts/lint/lint.sh` on staged files on every `git commit`           |
 
 The `ktlint` JAR is stored under `~/.local/lib/ktlint/`.
 `ruff` version tracks the ruff-pre-commit pin (issue #673); `pre-commit-hooks` is the same upstream project as before, now installed from PyPI instead of cloned, and exposes each generic check as a console script.
 
-`scripts/requirements-lint.txt` is a fully resolved lock: every package, top-level and transitive, is pinned to an exact version and a SHA-256 hash, and pip installs it with `--require-hashes` so a substituted or tampered wheel is rejected (issue #699).
-Edit the top-level pins in `scripts/requirements-lint.in` and regenerate the lock with the `uv pip compile` command recorded in that file's header.
+`scripts/lint/requirements-lint.txt` is a fully resolved lock: every package, top-level and transitive, is pinned to an exact version and a SHA-256 hash, and pip installs it with `--require-hashes` so a substituted or tampered wheel is rejected (issue #699).
+Edit the top-level pins in `scripts/lint/requirements-lint.in` and regenerate the lock with the `uv pip compile` command recorded in that file's header.
 `uv` is not installed by the session-start hook; install it first with `pip install uv`.
 
-### Checks run by `scripts/lint.sh`
+### Checks run by `scripts/lint/lint.sh`
 
-`scripts/lint.sh` is the single source of truth for "run the linters".
+`scripts/lint/lint.sh` is the single source of truth for "run the linters".
 It takes an explicit file list (the git hook passes the staged set) or `--all` to lint the whole tree.
 
 | Check                       | Files             | Behavior                                      |
@@ -92,7 +92,7 @@ Semgrep runs in CI (`.github/workflows/semgrep.yml`) on PRs and weekly.
 Rulesets: `p/python`, `p/kotlin`, `p/security-audit`.
 Results appear in the GitHub Security tab (SARIF upload).
 Findings block the PR.
-The engine is installed from `scripts/requirements-semgrep.txt`, a hash-pinned lock (top-level pin in `scripts/requirements-semgrep.in`), with `--require-hashes` (issue #723); the rulesets are still fetched from the Semgrep registry at scan time, so the weekly run keeps picking up new rules.
+The engine is installed from `scripts/ci/requirements-semgrep.txt`, a hash-pinned lock (top-level pin in `scripts/ci/requirements-semgrep.in`), with `--require-hashes` (issue #723); the rulesets are still fetched from the Semgrep registry at scan time, so the weekly run keeps picking up new rules.
 Regenerate the lock with the `uv pip compile` command recorded in that `.in` file's header.
 
 ### CI helper-script dependencies
@@ -133,8 +133,8 @@ endpoints.
 
 **Re-verified 2026-07 (issue #710 / PR #717):** `POST /issues/{n}/labels` (add) and
 `DELETE /issues/{n}/labels/{name}` (remove) both succeed with `GITHUB_TOKEN`. A
-round trip on issue #710's own `P3` label (`scripts/update_gh_labels.sh ... --remove P3`, then `--add P3`) was confirmed by a follow-up `get_labels` read after each
-call. `scripts/update_gh_labels.sh` (issue #710) relies on this, and is the
+round trip on issue #710's own `P3` label (`scripts/agents/update_gh_labels.sh ... --remove P3`, then `--add P3`) was confirmed by a follow-up `get_labels` read after each
+call. `scripts/agents/update_gh_labels.sh` (issue #710) relies on this, and is the
 supported way to add or remove specific labels without the replace-all behavior of
 `mcp__github__issue_write` (see "Applying label transitions" in
 `dev_orchestration.md`).

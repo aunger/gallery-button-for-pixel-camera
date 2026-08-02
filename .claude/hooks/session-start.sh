@@ -154,7 +154,7 @@ fi
 # uses that fetch-and-execute model (issue #667): every lint tool is installed
 # here from a trusted package registry (PyPI or Maven Central), pinned to an
 # exact version, and (for ktlint) integrity-checked, then run from a checked-in
-# git hook (scripts/git-hooks/pre-commit) via scripts/lint.sh.  No hook
+# git hook (scripts/git-hooks/pre-commit) via scripts/lint/lint.sh.  No hook
 # repository is cloned and nothing is fetched from GitHub Releases.
 # ───────────────────────────────────────────────────────────────────────────────
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -172,18 +172,18 @@ fi
 
 # STEP 3a: ktlint (Kotlin formatter), from Maven Central.
 #
-# The pinned, SHA-256-verified install lives in scripts/install-ktlint.sh, which
+# The pinned, SHA-256-verified install lives in scripts/lint/install-ktlint.sh, which
 # the CI ktlint lint job (.github/workflows/lint.yml) also runs, so both paths
 # provision the identical ktlint from one definition.  It installs the wrapper
 # into $HOME/.local/bin (the $LOCAL_BIN this step already put on PATH) and is
 # idempotent, so re-running is a fast no-op.  See that script for the rationale
 # on fetching the fat JAR from Maven Central rather than GitHub Releases.
 echo "[session-start] Step 3a: ensuring ktlint is installed..."
-"$REPO_ROOT/scripts/install-ktlint.sh"
+"$REPO_ROOT/scripts/lint/install-ktlint.sh"
 
 # STEP 3b: Python lint tools (ruff, pre-commit-hooks checks, mdformat), from PyPI.
 #
-# Installed from scripts/requirements-lint.txt, a fully resolved lock in which
+# Installed from scripts/lint/requirements-lint.txt, a fully resolved lock in which
 # every package (top-level and transitive) is pinned to an exact version and a
 # SHA-256 hash.  This replaces the pre-commit framework install (issue #667):
 # pre-commit-hooks provides the six generic hygiene checks as console scripts,
@@ -203,7 +203,7 @@ echo "[session-start] Step 3a: ensuring ktlint is installed..."
 # work.  --force-reinstall recreates the console-script entry points even if a
 # prior run left a package's dist-info without its scripts (PATH may not include
 # $LOCAL_BIN when pip decides whether to write them).
-LINT_REQ="$REPO_ROOT/scripts/requirements-lint.txt"
+LINT_REQ="$REPO_ROOT/scripts/lint/requirements-lint.txt"
 LINT_MARKER="$HOME/.local/share/gb4pc/requirements-lint.sha256"
 REQ_SHA=$(sha256sum "$LINT_REQ" | cut -d' ' -f1)
 if [[ -f "$LINT_MARKER" && "$(cat "$LINT_MARKER" 2>/dev/null)" == "$REQ_SHA" ]]; then
