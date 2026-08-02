@@ -156,7 +156,14 @@ jobs:
           # directory's own sys.path behavior exactly as before.
           while IFS= read -r dir; do
             echo "==> Discovering tests in $dir"
-            python3 -m unittest discover -s "$dir" -p "test_*.py" -v
+            python3 -m unittest discover -s "$dir" -p "test_*.py" -v && rc=0 || rc=$?
+            # Python 3.12+ exits 5 for "no tests were collected" instead of 0.
+            # scripts/ itself hits this legitimately: its only test_*.py is
+            # test_ci_monitor.py, which defines no unittest.TestCase tests (see
+            # below). Tolerate 5; any other nonzero code is a real failure.
+            if [[ $rc -ne 0 && $rc -ne 5 ]]; then
+              exit "$rc"
+            fi
           done < <(find scripts -name "test_*.py" -printf '%h\n' | sort -u)
           # test_ci_monitor.py is a procedural check()-based suite, not built from
           # unittest.TestCase classes, so `unittest discover` imports it but runs
