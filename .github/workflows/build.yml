@@ -38,10 +38,10 @@ jobs:
           else
             BASE_REF="${{ github.base_ref }}"
             git fetch origin "$BASE_REF" --depth=1
-            echo "needs_full_build=$(scripts/check_non_docs_changes.sh "origin/$BASE_REF")" >> $GITHUB_OUTPUT
+            echo "needs_full_build=$(scripts/ci/check_non_docs_changes.sh "origin/$BASE_REF")" >> $GITHUB_OUTPUT
           fi
 
-  # Run the shell script unit tests (scripts/test_*.sh) in their own job (issue #618).
+  # Run the shell script unit tests (scripts/**/test_*.sh) in their own job (issue #618).
   # They take about 30 seconds and need only a checkout, bash, and the lint tools,
   # with no dependency on the JDK/Android SDK setup or the Python steps they used to
   # sit next to in build-and-test. Running them here lets them execute concurrently
@@ -67,25 +67,25 @@ jobs:
         run: pip install --require-hashes -r scripts/requirements.txt
 
       - name: Install lint tools for shell tests
-        # scripts/test_lint_hook.sh drives scripts/lint.sh and the pre-commit git
+        # scripts/lint/test_lint_hook.sh drives scripts/lint/lint.sh and the pre-commit git
         # hook end-to-end, which needs the real lint tools. Provision the PyPI ones
-        # into a venv so scripts/lint.sh resolves them by explicit path via
+        # into a venv so scripts/lint/lint.sh resolves them by explicit path via
         # LINT_BIN_DIR (persisted to the next step through $GITHUB_ENV). ktlint (a
         # Maven Central JAR needing a JDK) is not installed here; the test skips
         # only its Kotlin case when ktlint is absent.
         if: needs.check-diff.outputs.needs_full_build == 'true'
         run: |
           python3 -m venv "$RUNNER_TEMP/lintvenv"
-          "$RUNNER_TEMP/lintvenv/bin/pip" install --quiet --require-hashes -r scripts/requirements-lint.txt
+          "$RUNNER_TEMP/lintvenv/bin/pip" install --quiet --require-hashes -r scripts/lint/requirements-lint.txt
           echo "LINT_BIN_DIR=$RUNNER_TEMP/lintvenv/bin" >> "$GITHUB_ENV"
 
       - name: Run shell script unit tests
         if: needs.check-diff.outputs.needs_full_build == 'true'
         run: |
-          for test_script in scripts/test_*.sh; do
+          while IFS= read -r test_script; do
             echo "==> Running $test_script"
             bash "$test_script"
-          done
+          done < <(find scripts -name 'test_*.sh' -type f | sort)
 
   # Gate for PRs and merges: compiles, runs unit tests, then E2E tests on an emulator.
   # Unit tests run first so a fast failure skips the slower emulator phase.
@@ -145,7 +145,19 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          python3 -m unittest discover -s scripts -p "test_*.py" -v
+          # A single recursive `unittest discover -s scripts` cannot be used now that
+          # scripts/ has subdirectories with no __init__.py: discover does not descend
+          # into them at all (namespace packages are not auto-discovered), and adding
+          # __init__.py so it would descend breaks the bare intra-directory imports
+          # several scripts rely on (e.g. backfill_labels_by_title.py's `import
+          # label_by_title`, which resolves only because both files' directory is on
+          # sys.path the same way a flat scripts/ directory used to be). Discovering
+          # each directory that actually holds test_*.py files separately keeps every
+          # directory's own sys.path behavior exactly as before.
+          while IFS= read -r dir; do
+            echo "==> Discovering tests in $dir"
+            python3 -m unittest discover -s "$dir" -p "test_*.py" -v
+          done < <(find scripts -name "test_*.py" -printf '%h\n' | sort -u)
           # test_ci_monitor.py is a procedural check()-based suite, not built from
           # unittest.TestCase classes, so `unittest discover` imports it but runs
           # none of its checks (issue #619). Run it directly too.
@@ -336,8 +348,8 @@ jobs:
           "$ADB" install -r \
             e2e-mock-camera/build/outputs/apk/debug/e2e-mock-camera-debug.apk
           # Adaptive ANR watcher: waits for Pixel Launcher to settle after install (Issue #194)
-          chmod +x scripts/dismiss_anr.sh
-          scripts/dismiss_anr.sh --adb "$ADB" &
+          chmod +x scripts/ci/test-support/dismiss_anr.sh
+          scripts/ci/test-support/dismiss_anr.sh --adb "$ADB" &
           SETTLE_PID=$!
           echo "==> Granting CAMERA permission..."
           "$ADB" shell pm grant com.google.android.GoogleCamera \
@@ -370,7 +382,7 @@ jobs:
 
           wait "$SETTLE_PID" || true
 
-          python3 scripts/check_green_feed.py --adb "$ADB" preflight.png
+          python3 scripts/ci/test-support/check_green_feed.py --adb "$ADB" preflight.png
 
       - name: Upload preflight screenshot on failure
         if: always() && needs.check-diff.outputs.needs_full_build == 'true' && steps.preflight.outcome == 'failure'
@@ -385,10 +397,10 @@ jobs:
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
 
-          chmod +x scripts/setup-e2e-emulator.sh
+          chmod +x scripts/ci/test-support/setup-e2e-emulator.sh
           # --post-boot skips AVD creation/boot; AVD is already running from the
           # boot step above. MockCameraActivity (solid-green View) is the camera.
-          scripts/setup-e2e-emulator.sh --post-boot
+          scripts/ci/test-support/setup-e2e-emulator.sh --post-boot
 
           # Install mock Pixel Camera before invoking the Gradle task. The Gradle
           # task's doLast block also installs it (for local dev convenience), but
@@ -499,7 +511,7 @@ jobs:
           # evidence on every passing run, so always tee it to a file and upload it.
           echo "=== LOGCAT (since test start) ==="
           "$ADB" logcat -d -T "$LOGCAT_SINCE" | \
-            bash scripts/filter_logcat.sh | tee results/e2e-overlay-logcat.txt
+            bash scripts/ci/test-support/filter_logcat.sh | tee results/e2e-overlay-logcat.txt
 
       - name: Pull PixelCameraOverlayE2ETest video on failure
         # Only pull and upload the recording when the overlay E2E suite failed (issue #520).
@@ -563,7 +575,7 @@ jobs:
             echo "outcome=failure" >> "$GITHUB_OUTPUT"
             echo "=== LOGCAT (since test start) ==="
             "$ADB" logcat -d -T "$LOGCAT_SINCE" | \
-              bash scripts/filter_logcat.sh
+              bash scripts/ci/test-support/filter_logcat.sh
           fi
           # Stop screenrecord cleanly so the moov atom is written and the MP4 is playable.
           echo "  stopping screenrecord (gallery suite)"
@@ -647,7 +659,7 @@ jobs:
             echo "outcome=failure" >> "$GITHUB_OUTPUT"
             echo "=== LOGCAT (since test start) ==="
             "$ADB" logcat -d -T "$LOGCAT_SINCE" | \
-              bash scripts/filter_logcat.sh
+              bash scripts/ci/test-support/filter_logcat.sh
           fi
           # Stop screenrecord cleanly so the moov atom is written and the MP4 is playable.
           echo "  stopping screenrecord (permissions-granted suite)"
@@ -721,7 +733,7 @@ jobs:
             echo "outcome=failure" >> "$GITHUB_OUTPUT"
             echo "=== LOGCAT (since test start) ==="
             "$ADB" logcat -d -T "$LOGCAT_SINCE" | \
-              bash scripts/filter_logcat.sh
+              bash scripts/ci/test-support/filter_logcat.sh
           fi
           # Stop screenrecord cleanly so the moov atom is written and the MP4 is playable.
           echo "  stopping screenrecord (permissions-denied suite)"
@@ -806,7 +818,7 @@ jobs:
             echo "outcome=failure" >> "$GITHUB_OUTPUT"
             echo "=== LOGCAT (since test start) ==="
             "$ADB" logcat -d -T "$LOGCAT_SINCE" | \
-              bash scripts/filter_logcat.sh
+              bash scripts/ci/test-support/filter_logcat.sh
           fi
           # Stop screenrecord cleanly so the moov atom is written and the MP4 is playable.
           echo "  stopping screenrecord (setup-activity-granted suite)"
@@ -877,7 +889,7 @@ jobs:
             echo "outcome=failure" >> "$GITHUB_OUTPUT"
             echo "=== LOGCAT (since test start) ==="
             "$ADB" logcat -d -T "$LOGCAT_SINCE" | \
-              bash scripts/filter_logcat.sh
+              bash scripts/ci/test-support/filter_logcat.sh
           fi
           # Stop screenrecord cleanly so the moov atom is written and the MP4 is playable.
           echo "  stopping screenrecord (setup-activity-denied suite)"
@@ -1002,7 +1014,7 @@ jobs:
               # a genuine test failure, not a process restart. Fail the build.
               echo "outcome=failure" >> "$GITHUB_OUTPUT"
               echo "=== LOGCAT (since test start) ==="
-              "$ADB" logcat -d -T "$LOGCAT_SINCE" | bash scripts/filter_logcat.sh
+              "$ADB" logcat -d -T "$LOGCAT_SINCE" | bash scripts/ci/test-support/filter_logcat.sh
             elif echo "$GRANT_LINE" | grep -q 'granted=true'; then
               # No terminal marker was emitted, so the instrumentation was torn down before it
               # could report--consistent with the media grant restarting com.gb4pc mid-test--
@@ -1014,7 +1026,7 @@ jobs:
               echo "         com.gb4pc process (pid before='${PID_BEFORE:-<none>}',"
               echo "         after='${PID_AFTER:-<none>}'), but READ_MEDIA_IMAGES is now granted."
               echo "=== LOGCAT (since test start) ==="
-              "$ADB" logcat -d -T "$LOGCAT_SINCE" | bash scripts/filter_logcat.sh
+              "$ADB" logcat -d -T "$LOGCAT_SINCE" | bash scripts/ci/test-support/filter_logcat.sh
 
               # A confirmed grant alone does not establish that setup progress survived the
               # restart: an unrelated regression that happens to crash com.gb4pc right after
@@ -1034,7 +1046,7 @@ jobs:
                 sleep 1
               done
               echo "com.gb4pc pid after recovery wait: '${RECOVERED_PID:-<not running>}'"
-              # This suite runs last in the job (see scripts/setup-e2e-emulator.sh's step 9 and
+              # This suite runs last in the job (see scripts/ci/test-support/setup-e2e-emulator.sh's step 9 and
               # SetupActivityDeniedE2ETest's class doc), so the PIN-secured keyguard the setup
               # script configures can have re-engaged by the time this recovery relaunch runs. A
               # swipe-only dismissal does nothing against it; replay the same PIN-aware sequence
@@ -1069,7 +1081,7 @@ jobs:
               # real failure (e.g. the dialog never appeared, or the grant did not land).
               echo "outcome=failure" >> "$GITHUB_OUTPUT"
               echo "=== LOGCAT (since test start) ==="
-              "$ADB" logcat -d -T "$LOGCAT_SINCE" | bash scripts/filter_logcat.sh
+              "$ADB" logcat -d -T "$LOGCAT_SINCE" | bash scripts/ci/test-support/filter_logcat.sh
             fi
           fi
           # The grant-poll retry loop's diagnostic (issue #581) logs via the GB4PC_E2E tag only
@@ -1181,7 +1193,7 @@ jobs:
               echo "         permission before the test can pass."
             fi
             echo "=== LOGCAT (since test start) ==="
-            "$ADB" logcat -d -T "$LOGCAT_SINCE" | bash scripts/filter_logcat.sh
+            "$ADB" logcat -d -T "$LOGCAT_SINCE" | bash scripts/ci/test-support/filter_logcat.sh
           fi
 
       - name: Re-grant media permission after PartialAccessPhotoPickerE2ETest
@@ -1266,8 +1278,8 @@ jobs:
         if: always() && steps.pull_e2e_screenshots.outcome == 'success'
         run: |
           sudo apt-get install -y tesseract-ocr > /dev/null 2>&1
-          chmod +x scripts/ocr_screenshots.sh
-          scripts/ocr_screenshots.sh /tmp/e2e-screenshots
+          chmod +x scripts/ci/test-support/ocr_screenshots.sh
+          scripts/ci/test-support/ocr_screenshots.sh /tmp/e2e-screenshots
 
       - name: Upload E2E screenshots on failure
         if: always() && steps.pull_e2e_screenshots.outcome == 'success'
@@ -1280,7 +1292,7 @@ jobs:
       - name: Write test-result summary
         if: always() && needs.check-diff.outputs.needs_full_build == 'true'
         run: |
-          python3 scripts/summarize_test_results.py \
+          python3 scripts/ci/test-support/summarize_test_results.py \
             app/build/test-results/testDebugUnitTest \
               --suite-label "Unit Tests" \
             app/build/outputs/androidTest-results/instrumented \
@@ -1301,7 +1313,7 @@ jobs:
       - name: Gate on test failures
         if: always() && needs.check-diff.outputs.needs_full_build == 'true'
         run: |
-          python3 scripts/check_allowed_failures.py \
+          python3 scripts/ci/test-support/check_allowed_failures.py \
             --allowlist .github/allowed-test-failures.txt \
             app/build/test-results/testDebugUnitTest \
               --suite-label "Unit Tests" \
@@ -1359,7 +1371,7 @@ jobs:
           WORKFLOW_RUN_BRANCH: ${{ github.head_ref || github.ref_name }}
           WORKFLOW_RUN_PR_URL: ${{ github.event.pull_request.html_url }}
         run: |
-          python3 scripts/file_test_failure_issues.py \
+          python3 scripts/ci/prs-and-issues/file_test_failure_issues.py \
             downloaded-artifacts/unit-test-results \
               --suite-label "Unit Tests" \
             downloaded-artifacts/instrumented-test-results \
@@ -1384,7 +1396,7 @@ jobs:
         with:
           script: |
             // This marker must stay in lockstep with MARKER in
-            // scripts/post_pr_ci_summary_link.py, which scans for it to find
+            // scripts/ci/prs-and-issues/post_pr_ci_summary_link.py, which scans for it to find
             // this comment and edit it in place once real CI results are ready.
             const marker = '<!-- gb4pc-ci-summary-link -->';
 
@@ -1440,7 +1452,7 @@ jobs:
           GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
           WORKFLOW_RUN_PR_URL: ${{ github.event.pull_request.html_url }}
           SUMMARY_WRITTEN: ${{ needs.build-and-test.outputs.needs_full_build }}
-        run: python3 scripts/post_pr_ci_summary_link.py
+        run: python3 scripts/ci/prs-and-issues/post_pr_ci_summary_link.py
 
   # Produce a signed release-config APK on every merge to main for easy sideloading.
   # Named gb4pc-dev.<run_number>.apk to distinguish from tagged releases.
