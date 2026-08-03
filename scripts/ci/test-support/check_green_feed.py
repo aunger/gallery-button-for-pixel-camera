@@ -8,10 +8,10 @@ so a passing check confirms the activity launched and its View is fully visible.
 
 Usage:
     # Single-shot check against an already-captured image:
-    python3 scripts/check_green_feed.py <image.png>
+    python3 scripts/ci/test-support/check_green_feed.py <image.png>
 
     # Retry loop: capture a fresh screencap via adb on each attempt:
-    python3 scripts/check_green_feed.py --adb <adb-path> <image.png>
+    python3 scripts/ci/test-support/check_green_feed.py --adb <adb-path> <image.png>
 
 Exits 0 on success, non-zero on failure (prints actual dominant color).
 """

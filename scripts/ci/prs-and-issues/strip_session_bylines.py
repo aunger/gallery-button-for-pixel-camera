@@ -28,7 +28,7 @@ which handles five event types:
   - pull_request_review [submitted]:               PR review body
 
 Usage (from the workflow shell step):
-    python3 scripts/strip_session_bylines.py
+    python3 scripts/ci/prs-and-issues/strip_session_bylines.py
 
 Environment variables (set by the workflow):
     GITHUB_TOKEN          GitHub token with issues:write and pull-requests:write.

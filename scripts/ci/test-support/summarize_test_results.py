@@ -6,7 +6,7 @@ by class name, and writes a pass/fail table to $GITHUB_STEP_SUMMARY (falling
 back to stdout when the env var is not set).
 
 Usage:
-    python3 scripts/summarize_test_results.py \\
+    python3 scripts/ci/test-support/summarize_test_results.py \\
         path/to/unit-results          --suite-label "Unit Tests" \\
         path/to/instrumented-results  --suite-label "Instrumented Tests" --outcome failure \\
         path/to/e2e-results           --suite-label "E2E Tests"        --outcome skipped

@@ -23,7 +23,7 @@ PR find and edit the existing comment in place rather than piling up a new one
 per push.
 
 Usage:
-    python3 scripts/post_pr_ci_summary_link.py
+    python3 scripts/ci/prs-and-issues/post_pr_ci_summary_link.py
 
 Environment:
     GITHUB_TOKEN          GitHub token for REST calls (required).

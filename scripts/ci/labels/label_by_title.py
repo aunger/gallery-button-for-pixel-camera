@@ -9,7 +9,7 @@ here, to avoid this docstring drifting out of sync with the code.
 Labels are only ever added, never removed.
 
 Usage:
-    python3 scripts/label_by_title.py
+    python3 scripts/ci/labels/label_by_title.py
 
 Exit code:
     0  no labels matched, or labels were applied successfully.

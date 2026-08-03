@@ -2,8 +2,8 @@
 # setup-e2e-emulator.sh: Prepare an Android emulator for E2E tests.
 #
 # Usage:
-#   scripts/setup-e2e-emulator.sh            # Full local setup (steps 1-9)
-#   scripts/setup-e2e-emulator.sh --post-boot # CI post-boot setup only (steps 4-9)
+#   scripts/ci/test-support/setup-e2e-emulator.sh            # Full local setup (steps 1-9)
+#   scripts/ci/test-support/setup-e2e-emulator.sh --post-boot # CI post-boot setup only (steps 4-9)
 #
 # Full setup (local):
 #   1. Create AVD (API 35, Google APIs, x86_64, Pixel_6 skin)

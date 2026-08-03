@@ -14,7 +14,7 @@
 #   3. Always exits 0; the green-feed check is the real correctness gate.
 #
 # Usage:
-#   scripts/dismiss_anr.sh [--adb <path>]
+#   scripts/ci/test-support/dismiss_anr.sh [--adb <path>]
 #
 # Arguments:
 #   --adb <path>   Path to the adb binary. Defaults to

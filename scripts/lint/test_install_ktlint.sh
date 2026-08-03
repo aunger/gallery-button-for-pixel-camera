@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test_install_ktlint.sh: unit tests for scripts/install-ktlint.sh's stale-JAR
+# test_install_ktlint.sh: unit tests for scripts/lint/install-ktlint.sh's stale-JAR
 # cleanup (issue #700).
 #
 # On a KTLINT_VERSION bump, the previous version's JAR is version-suffixed and

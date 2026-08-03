@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/install-ktlint.sh -- install the ktlint CLI, pinned and SHA-256 verified.
+# scripts/lint/install-ktlint.sh -- install the ktlint CLI, pinned and SHA-256 verified.
 #
 # Shared by .claude/hooks/session-start.sh (STEP 3a) and the CI ktlint lint job
 # (.github/workflows/lint.yml) so both provision the identical, integrity-checked

@@ -13,10 +13,10 @@
 # /pulls/comments/{id} instead.
 #
 # Usage:
-#   scripts/delete_gh_comment.sh <owner> <repo> <comment_id>
+#   scripts/agents/delete_gh_comment.sh <owner> <repo> <comment_id>
 #
 # Example:
-#   scripts/delete_gh_comment.sh aunger gallery-button-for-pixel-camera 4940940270
+#   scripts/agents/delete_gh_comment.sh aunger gallery-button-for-pixel-camera 4940940270
 #
 # Required environment variables:
 #   GITHUB_TOKEN   Token with permission to delete the comment (repo scope,

@@ -5,7 +5,7 @@ Reads TEST-*.xml files from one or more result directories and creates (or
 comments on) a GitHub issue for every failing test case.
 
 Usage:
-    python3 scripts/file_test_failure_issues.py \\
+    python3 scripts/ci/prs-and-issues/file_test_failure_issues.py \\
         path/to/unit-results          --suite-label "Unit Tests" \\
         path/to/instrumented-results  --suite-label "Instrumented Tests" \\
         path/to/e2e-results           --suite-label "E2E Tests"

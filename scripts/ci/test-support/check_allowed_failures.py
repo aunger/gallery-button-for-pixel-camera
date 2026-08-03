@@ -20,7 +20,7 @@ Blank lines and lines beginning with ``#`` are ignored.  A trailing inline
 separates a class from a method is preserved.
 
 Usage:
-    python3 scripts/check_allowed_failures.py \\
+    python3 scripts/ci/test-support/check_allowed_failures.py \\
         --allowlist .github/allowed-test-failures.txt \\
         path/to/unit-results          --suite-label "Unit Tests" \\
         path/to/instrumented-results  --suite-label "Instrumented Tests" --outcome failure \\

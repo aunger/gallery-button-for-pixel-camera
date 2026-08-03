@@ -16,8 +16,8 @@
 #      path observable), and any logcat error tag (E/<tag>).
 #
 # Usage:
-#   adb logcat -d | scripts/filter_logcat.sh
-#   SINCE=$(adb shell date +'%m-%d %H:%M:%S.000') && adb logcat -d -T "$SINCE" | scripts/filter_logcat.sh
+#   adb logcat -d | scripts/ci/test-support/filter_logcat.sh
+#   SINCE=$(adb shell date +'%m-%d %H:%M:%S.000') && adb logcat -d -T "$SINCE" | scripts/ci/test-support/filter_logcat.sh
 #
 # Examples of elided patterns:
 #   data:image/jpeg;base64,/9j/4AAQ...    →  data:image/jpeg;base64,[elided]

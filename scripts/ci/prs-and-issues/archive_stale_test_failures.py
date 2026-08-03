@@ -11,7 +11,7 @@ issue that still carries ``test-failure`` remains within
 later failure of the same test.
 
 Usage:
-    python3 scripts/archive_stale_test_failures.py
+    python3 scripts/ci/prs-and-issues/archive_stale_test_failures.py
 
 Exit code is always 0; API failures are logged but do not fail the
 CI run.

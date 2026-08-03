@@ -19,7 +19,7 @@
 # silently treating "unknown" as "no changes".
 #
 # Usage:
-#   scripts/check_non_docs_changes.sh <base-ref> [<head-ref>]
+#   scripts/ci/check_non_docs_changes.sh <base-ref> [<head-ref>]
 #     base-ref  a ref/commit already available locally (e.g. origin/main)
 #     head-ref  defaults to HEAD
 #
