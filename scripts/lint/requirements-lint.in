@@ -1,6 +1,6 @@
 # Source pins for the Python lint/format tools. This file lists only the
 # top-level tools; the fully resolved, hash-pinned lock that pip actually
-# installs is scripts/requirements-lint.txt (generated from this file).
+# installs is scripts/lint/requirements-lint.txt (generated from this file).
 #
 # Every tool is pinned to an exact version from PyPI, a trusted language
 # package registry. Nothing here is fetched from GitHub Releases and no
@@ -20,7 +20,7 @@
 # Regenerating the lock (do this whenever a pin here changes):
 #
 #   uv pip compile --universal --python-version 3.10 --generate-hashes \
-#       scripts/requirements-lint.in -o scripts/requirements-lint.txt
+#       scripts/lint/requirements-lint.in -o scripts/lint/requirements-lint.txt
 #
 # `uv` is not installed by the session-start hook. Install it first with
 # `pip install uv` (see .claude/environment.md).
