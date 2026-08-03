@@ -16,7 +16,7 @@ import org.junit.runner.RunWith
  * End-to-end tests for the overlay lifecycle against a real Pixel Camera process.
  *
  * Prerequisites:
- *   - Run on an emulator or device set up via scripts/setup-e2e-emulator.sh
+ *   - Run on an emulator or device set up via scripts/ci/test-support/setup-e2e-emulator.sh
  *   - Pixel Camera (com.google.android.GoogleCamera) must be installed
  *   - PACKAGE_USAGE_STATS and SYSTEM_ALERT_WINDOW must be granted (done by setup script)
  *
@@ -65,7 +65,7 @@ class PixelCameraOverlayE2ETest {
     // Dismiss the PIN-secured keyguard before the start-of-test toast so the slate renders over the
     // app UI rather than behind the lock screen (issue #761 / #765). The suite's own setUp() only
     // wires fixture.wakeAndDismissKeyguard() (a swipe), which does nothing against the secure
-    // keyguard scripts/setup-e2e-emulator.sh configures, and it runs from @Before, after the toast
+    // keyguard scripts/ci/test-support/setup-e2e-emulator.sh configures, and it runs from @Before, after the toast
     // has already fired; if the keyguard has reasserted between CI steps the marker would be
     // occluded.
     private val keyguardDismiss =

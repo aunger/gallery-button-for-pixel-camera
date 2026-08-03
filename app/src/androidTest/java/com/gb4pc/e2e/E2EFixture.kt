@@ -226,7 +226,7 @@ class E2EFixture(
      * An upward swipe is preferred over KEYCODE_MENU (82): KEYCODE_MENU can open a foreground
      * activity's options/overflow menu, obscuring the camera View.
      *
-     * **Not sufficient against the secure keyguard `scripts/setup-e2e-emulator.sh` configures for
+     * **Not sufficient against the secure keyguard `scripts/ci/test-support/setup-e2e-emulator.sh` configures for
      * this whole E2E suite** (a PIN, so `wm dismiss-keyguard` alone leaves it engaged, per that
      * script's own step 9 comment). A swipe gesture does nothing against a PIN prompt. Most E2E
      * tests never need to care, because the CI workflow's `stay_on_while_plugged_in 7` keeps the
@@ -244,7 +244,7 @@ class E2EFixture(
     }
 
     /**
-     * Wakes the display and dismisses the PIN-secured keyguard `scripts/setup-e2e-emulator.sh`
+     * Wakes the display and dismisses the PIN-secured keyguard `scripts/ci/test-support/setup-e2e-emulator.sh`
      * configures for this E2E suite (PIN `1234`), by replaying that script's own step-9 sequence:
      * wake, request dismissal, type the PIN, submit ENTER. [wakeAndDismissKeyguard]'s swipe
      * gesture does nothing against this secure keyguard; it only dismisses the emulator's
@@ -884,7 +884,7 @@ class E2EFixture(
         } catch (e: PackageManager.NameNotFoundException) {
             fail(
                 "Pixel Camera ($pcPackage) is not installed. " +
-                    "Run 'scripts/setup-e2e-emulator.sh' (or 'adb install e2e/pixel-camera.apk') " +
+                    "Run 'scripts/ci/test-support/setup-e2e-emulator.sh' (or 'adb install e2e/pixel-camera.apk') " +
                     "before executing the E2E suite.",
             )
         }

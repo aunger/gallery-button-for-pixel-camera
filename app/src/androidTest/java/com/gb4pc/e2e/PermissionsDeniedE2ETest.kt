@@ -73,7 +73,7 @@ class PermissionsDeniedE2ETest {
     // Dismiss the PIN-secured keyguard before the start-of-test toast so the slate renders over the
     // app UI rather than behind the lock screen (issue #761). The suite's own setUp() only wires
     // fixture.wakeAndDismissKeyguard() (a swipe), which does nothing against the secure keyguard
-    // scripts/setup-e2e-emulator.sh configures, and it runs from @Before, after the toast has
+    // scripts/ci/test-support/setup-e2e-emulator.sh configures, and it runs from @Before, after the toast has
     // already fired; if the keyguard has reasserted between CI steps the marker would be occluded.
     private val keyguardDismiss =
         object : ExternalResource() {
