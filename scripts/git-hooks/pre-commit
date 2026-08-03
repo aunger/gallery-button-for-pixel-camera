@@ -3,7 +3,7 @@
 # framework (issue #667).
 #
 # Wired in by `git config core.hooksPath scripts/git-hooks` at session start.
-# It lints the staged files through scripts/lint.sh (the single source of
+# It lints the staged files through scripts/lint/lint.sh (the single source of
 # truth for "run the linters") and aborts the commit if a check fails or an
 # auto-fixer had to modify a staged file, preserving the pre-commit contract of
 # "hooks modified files; re-stage and commit again".
@@ -16,7 +16,7 @@
 set -uo pipefail
 
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LINT_SH="$HOOK_DIR/../lint.sh"
+LINT_SH="$HOOK_DIR/../lint/lint.sh"
 
 # Staged additions/copies/modifications, NUL-delimited so paths with spaces or
 # other odd characters survive intact. Deletions and renames-away are excluded

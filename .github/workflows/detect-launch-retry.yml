@@ -50,4 +50,4 @@ jobs:
             echo "No overlay logcat artifact found (docs-only or skipped E2E run); nothing to scan."
             exit 0
           fi
-          bash scripts/detect_launch_retry.sh "$LOGCAT" || true
+          bash scripts/ci/prs-and-issues/detect_launch_retry.sh "$LOGCAT" || true

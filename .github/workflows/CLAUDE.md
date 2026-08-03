@@ -24,7 +24,7 @@ The allowlist does that narrowly:
 2. **Instrumented and E2E test steps** do not use `continue-on-error`.
    Each records its real exit status as a step output and lets later steps run, so results, artifacts, and issue filing are never skipped.
 3. **The `Gate on test failures` step** is the single authority on pass/fail.
-   It runs `scripts/check_allowed_failures.py` over the JUnit XML for each suite:
+   It runs `scripts/ci/test-support/check_allowed_failures.py` over the JUnit XML for each suite:
    - Any failing test fails the build, unless that test is named in `.github/allowed-test-failures.txt`.
    - Each test step's recorded outcome is passed via `--outcome`.
      A step that reported `failure` without writing any failing test result is treated as an infrastructure failure and still fails the build.
@@ -49,6 +49,6 @@ An empty allowlist means no failure is tolerated, which is the steady state.
 
 - `.github/workflows/build.yml`: the CI configuration, including the `Gate on test failures` step.
 - `.github/allowed-test-failures.txt`: the red-to-green allowlist.
-- `scripts/check_allowed_failures.py`: the gate script (unit-tested in `scripts/test_check_allowed_failures.py`).
-- `scripts/file_test_failure_issues.py`: auto-files issues for failed tests.
+- `scripts/ci/test-support/check_allowed_failures.py`: the gate script (unit-tested in `scripts/ci/test-support/test_check_allowed_failures.py`).
+- `scripts/ci/prs-and-issues/file_test_failure_issues.py`: auto-files issues for failed tests.
 - `.github/workflows/archive-stale-test-failures.yml`: archives test failure issues when tests pass.

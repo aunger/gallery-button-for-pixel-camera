@@ -30,9 +30,9 @@ jobs:
 
       - name: Install Semgrep
         # --require-hashes refuses any artifact whose SHA-256 is not in the
-        # generated lock scripts/requirements-semgrep.txt (issue #723; see
-        # scripts/requirements-semgrep.in for the top-level pin).
-        run: pip install --require-hashes -r scripts/requirements-semgrep.txt
+        # generated lock scripts/ci/requirements-semgrep.txt (issue #723; see
+        # scripts/ci/requirements-semgrep.in for the top-level pin).
+        run: pip install --require-hashes -r scripts/ci/requirements-semgrep.txt
 
       - name: Compute scan targets
         id: targets

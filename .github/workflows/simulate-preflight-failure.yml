@@ -53,7 +53,7 @@ jobs:
       - name: Write test-result summary
         if: always()
         run: |
-          env -u GITHUB_STEP_SUMMARY python3 scripts/summarize_test_results.py \
+          env -u GITHUB_STEP_SUMMARY python3 scripts/ci/test-support/summarize_test_results.py \
             /nonexistent/unit \
               --suite-label "Unit Tests" \
             /nonexistent/instrumented \

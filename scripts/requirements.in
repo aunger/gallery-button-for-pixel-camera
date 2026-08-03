@@ -6,7 +6,7 @@
 # package registry. The generated lock additionally pins the full transitive
 # closure to exact versions and SHA-256 hashes so pip --require-hashes can
 # refuse any artifact whose hash does not match (issue #723; same hardening as
-# scripts/requirements-lint.txt from issue #699).
+# scripts/lint/requirements-lint.txt from issue #699).
 #
 # defusedxml hardens XML parsing in the CI helper scripts; requests performs
 # the GitHub API calls; PyYAML parses the workflow/config YAML.

@@ -147,7 +147,7 @@ fi
 # (g) the committed wrapper JAR matches its pinned SHA-256. gradlew reads and runs
 # this JAR before gradle/verification-metadata.xml is ever consulted (issue #714,
 # Decision 3), so dependency verification cannot cover it. This first-party check
-# mirrors the pinned-checksum compare in scripts/install-ktlint.sh so a substituted
+# mirrors the pinned-checksum compare in scripts/lint/install-ktlint.sh so a substituted
 # or corrupted wrapper JAR is caught rather than silently trusted (issue #744).
 if [ ! -f "$WRAPPER_JAR" ]; then
     fail "gradle/wrapper/gradle-wrapper.jar is missing"

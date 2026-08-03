@@ -70,11 +70,11 @@ import org.junit.runner.RunWith
  * A second version dismissed the keyguard from inside the test process (via
  * [RuleChain.outerRule], see below), but called [E2EFixture.wakeAndDismissKeyguard], which only
  * performs a swipe gesture against the emulator's non-secure lock screen. It does nothing against
- * this suite's *actual* lock screen: `scripts/setup-e2e-emulator.sh` configures a real PIN
+ * this suite's *actual* lock screen: `scripts/ci/test-support/setup-e2e-emulator.sh` configures a real PIN
  * (`1234`), so the keyguard here is credential-secured, and a swipe alone left it engaged. The
  * exact same `RESUMED`-then-`PAUSED` symptom recurred in CI even with that fix in place. The fix
  * now uses [E2EFixture.dismissSecureKeyguard] instead, which replays
- * `scripts/setup-e2e-emulator.sh`'s own dismissal sequence: wake, request dismissal, type the
+ * `scripts/ci/test-support/setup-e2e-emulator.sh`'s own dismissal sequence: wake, request dismissal, type the
  * PIN, submit ENTER.
  *
  * A plain `@Before` method would run too late here regardless of which dismissal is used:

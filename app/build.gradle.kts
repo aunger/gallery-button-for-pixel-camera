@@ -420,7 +420,7 @@ tasks.register("connectedE2EAndroidTest") {
             // Issue #629: this class's own hang history has already shown two different
             // symptoms (a keyguard-driven RESUMED/PAUSED flicker, then later a launch that
             // never produced any further system activity at all), and the second recurrence
-            // left no real clue to work from: scripts/filter_logcat.sh's tag allowlist may
+            // left no real clue to work from: scripts/ci/test-support/filter_logcat.sh's tag allowlist may
             // have dropped lines relevant to a stuck launch, and nothing captured what was
             // actually on screen. Grab both BEFORE the force-stop below tears the activity
             // down, so the device state reflects the hang itself rather than a freshly
@@ -451,7 +451,7 @@ tasks.register("connectedE2EAndroidTest") {
                 diagnosticsTimeoutSeconds,
             )
             // Unfiltered: unlike every other CI failure branch (which pipes through
-            // scripts/filter_logcat.sh), this dumps the raw buffer so a symptom outside that
+            // scripts/ci/test-support/filter_logcat.sh), this dumps the raw buffer so a symptom outside that
             // script's tag allowlist can't be silently dropped again.
             val rawLogcat = runBestEffort(listOf(e2eAdb, "logcat", "-d"), diagnosticsTimeoutSeconds)
             File(diagnosticsDir, "$xmlSuiteName-timeout-logcat.txt").writeText(rawLogcat)

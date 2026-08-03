@@ -1,7 +1,7 @@
 name: Label issue/PR by title
 
 # Applies labels to an issue or pull request based on regex matches
-# against its title. See scripts/label_by_title.py for the exact rules.
+# against its title. See scripts/ci/labels/label_by_title.py for the exact rules.
 # Labels are only ever added, never removed.
 #
 # Runs on "opened" (a fresh title) or "edited" where the title itself
@@ -33,4 +33,4 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           ISSUE_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
           ISSUE_TITLE: ${{ github.event.pull_request.title || github.event.issue.title }}
-        run: python3 scripts/label_by_title.py
+        run: python3 scripts/ci/labels/label_by_title.py
