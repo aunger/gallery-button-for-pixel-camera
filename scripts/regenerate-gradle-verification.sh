@@ -13,6 +13,19 @@
 # This script wraps the exact generation command so the file is regenerated the
 # same way every time. Read it and review the resulting diff before committing.
 #
+# The Gradle invoked is $GRADLE_BIN, defaulting to ./gradlew. The generator
+# workflow (.github/workflows/regenerate-gradle-toolchain.yml) overrides it with
+# a standalone Gradle 9.5.1, because the wrapper committed at the time of a
+# toolchain bump is still the previous Gradle and cannot run the new AGP.
+#
+# Two regeneration modes, deliberately different:
+#   * This script MERGES into the existing gradle/verification-metadata.xml. That
+#     is the safe local behaviour: an interrupted or failed run never leaves the
+#     working tree with verification silently switched off.
+#   * The generator workflow DELETES the file first, so the regenerated one is
+#     built from scratch and carries no stale pins. That rm lives in the workflow
+#     (never here) precisely because this script also runs on developer machines.
+#
 # Requirements (the file cannot be produced or validated without them):
 #   * Linux. The merge-gating CI (.github/workflows/build.yml) runs on
 #     ubuntu-latest, and some artifacts are OS-classified (chiefly AGP's aapt2,
@@ -20,8 +33,8 @@
 #     Windows records that platform's classifier instead and fails verification
 #     on the Linux CI. Regenerate on Linux to match CI.
 #   * A full Android toolchain: JDK 17 and the Android SDK (platform android-35,
-#     build-tools 35.0.0, platform-tools), matching build.yml. A JDK-only box
-#     cannot resolve the Android dependency graph.
+#     build-tools 36.0.0, platform-tools), matching the generator workflow. A
+#     JDK-only box cannot resolve the Android dependency graph.
 #
 # The superset of resolving tasks below covers every configuration the CI
 # workflows resolve:
@@ -49,6 +62,10 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
+# Which Gradle runs the generation. Override with a standalone distribution when
+# the committed wrapper predates the AGP being generated for.
+GRADLE_BIN="${GRADLE_BIN:-./gradlew}"
+
 if [ -z "${ANDROID_HOME:-}${ANDROID_SDK_ROOT:-}" ]; then
     echo "error: ANDROID_HOME (or ANDROID_SDK_ROOT) is not set." >&2
     echo "This script needs a full Android SDK; see the header comment." >&2
@@ -60,8 +77,8 @@ GRADLE_USER_HOME="$(mktemp -d)"
 export GRADLE_USER_HOME
 trap 'rm -rf "$GRADLE_USER_HOME"' EXIT
 
-echo "==> Regenerating gradle/verification-metadata.xml (GRADLE_USER_HOME=$GRADLE_USER_HOME)"
-./gradlew --write-verification-metadata sha256 \
+echo "==> Regenerating gradle/verification-metadata.xml (GRADLE_BIN=$GRADLE_BIN, GRADLE_USER_HOME=$GRADLE_USER_HOME)"
+"$GRADLE_BIN" --write-verification-metadata sha256 \
     assembleDebug assembleRelease \
     assembleDebugAndroidTest \
     :e2e-mock-camera:assembleDebug :e2e-mock-gallery:assembleDebug \
