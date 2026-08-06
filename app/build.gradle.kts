@@ -116,12 +116,15 @@ android {
 
     // Shared pure-JVM test helpers compiled into both test and androidTest source sets.
     // AGP testFixtures does not support Kotlin on application modules (b/139438662).
+    // `directories` arrives prepopulated with the source set's defaults (src/<name>/java
+    // and src/<name>/kotlin) and is mutated in place, so `+=` adds to those defaults
+    // rather than replacing them.
     sourceSets {
         getByName("test") {
-            kotlin.srcDir("src/sharedTest/java")
+            kotlin.directories += "src/sharedTest/java"
         }
         getByName("androidTest") {
-            kotlin.srcDir("src/sharedTest/java")
+            kotlin.directories += "src/sharedTest/java"
         }
     }
 
