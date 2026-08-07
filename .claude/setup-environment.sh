@@ -125,8 +125,15 @@ SDK_PACKAGES=(
 # In this environment they are the same, and the default relies on that: sessions
 # run as root with HOME=/root, which is where the live wrapper cache sits. That is
 # an assumption about the environment, not a fact about Setup scripts, so the
-# script states it, checks what it can, and gives an override rather than quietly
-# guessing. If sessions ever run as a different user, set SESSION_HOME.
+# script states it and gives an override rather than quietly guessing.
+#
+# What it can check is only that the resolved home exists. That does not catch the
+# case that would actually hurt: sessions moving to another user while this script
+# still runs as root, where /root exists either way and the seeding would go
+# somewhere no session reads. Nothing available here can detect which user a future
+# session will run as, so the resolved home is logged rather than guessed at, and
+# reading that line is the check. If sessions ever run as a different user, set
+# SESSION_HOME.
 SESSION_HOME="${SESSION_HOME:-$HOME}"
 GRADLE_USER_HOME_DIR="${GRADLE_USER_HOME:-$SESSION_HOME/.gradle}"
 

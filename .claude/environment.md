@@ -32,7 +32,17 @@ It also provisions the Android SDK once into the cached image instead of once pe
 
 The Setup script and the session must agree on one home directory, because the wrapper looks for its cached distribution under the session's home.
 Here they do: sessions run as root with `HOME=/root`, which the script's default follows.
-If sessions ever run as a different user, set `SESSION_HOME` in the pasted block; the script fails rather than provisioning a home nothing reads, and logs which home it used.
+
+The script cannot confirm that agreement, and does not try to.
+It fails only when the resolved home does not exist, which is not the case that matters: if sessions move to another user while the Setup script still runs as root, `/root` is a perfectly good directory, so the script would seed `/root/.gradle`, report success, and provision a home no session ever reads.
+What it does instead is state its answer, as the first line of its output:
+
+```text
+[setup-environment] Provisioning for session home /root (owner root)
+```
+
+So if sessions ever run as a different user, set `SESSION_HOME` in the pasted block.
+Nothing will stop you if you forget; that log line is the only place it shows, which is why it is worth reading after a rebuild.
 
 ### Installing it
 
