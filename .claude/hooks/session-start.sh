@@ -18,6 +18,9 @@ ANDROID_HOME_DIR=/home/user/android-sdk
 CMDLINE_TOOLS_URL="https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
 SDKMANAGER="$ANDROID_HOME_DIR/cmdline-tools/latest/bin/sdkmanager"
 GRADLE_INIT="$HOME/.gradle/init.d/proxy-auth.gradle"
+# Where .claude/setup-environment.sh installs Temurin 17, if that environment
+# Setup script is configured (issue #792). Absent on an unconfigured environment.
+TEMURIN_HOME=/opt/java/temurin-17
 
 echo "[session-start] GB4PC environment setup..."
 
@@ -44,6 +47,32 @@ if echo "${JAVA_TOOL_OPTIONS:-}" | grep -qE '\*\.(google|googleapis)\.com'; then
     echo "[session-start] Step 0: stripped *.google.com from nonProxyHosts"
 else
     echo "[session-start] Step 0: JAVA_TOOL_OPTIONS already clean--skip"
+fi
+
+# ───────────────────────────────────────────────────────────────────────────────
+# STEP 0b: Use the environment's Temurin 17, when it provisioned one.
+#
+# The base image ships a newer JDK (21), while CI and the generator workflow build
+# on Temurin 17, so a local run on 17 is the one that reproduces them.  The JDK is
+# installed by .claude/setup-environment.sh, the environment Setup script
+# (issue #792), which runs as root before the session and is cached across
+# sessions.  That script is optional, so this step is conditional: without it the
+# session simply keeps the image's default JDK, exactly as before.
+#
+# Exported ahead of every Java-using step below (sdkmanager in 2a/2c, and Gradle
+# for the rest of the session).
+# ───────────────────────────────────────────────────────────────────────────────
+if [[ -x "$TEMURIN_HOME/bin/java" ]]; then
+    export JAVA_HOME="$TEMURIN_HOME"
+    export PATH="$JAVA_HOME/bin:$PATH"
+    if [[ -n "${CLAUDE_ENV_FILE:-}" ]] \
+            && ! grep -q 'JAVA_HOME' "${CLAUDE_ENV_FILE}" 2>/dev/null; then
+        echo "export JAVA_HOME=$TEMURIN_HOME" >> "$CLAUDE_ENV_FILE"
+        echo "export PATH=$TEMURIN_HOME/bin:\$PATH" >> "$CLAUDE_ENV_FILE"
+    fi
+    echo "[session-start] Step 0b: JAVA_HOME=$TEMURIN_HOME"
+else
+    echo "[session-start] Step 0b: no Setup-script JDK at $TEMURIN_HOME--using the image default"
 fi
 
 # ───────────────────────────────────────────────────────────────────────────────
