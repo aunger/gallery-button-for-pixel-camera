@@ -16,14 +16,83 @@ script for implementation details; each step is commented.
 
 ______________________________________________________________________
 
+## The environment Setup script (optional)
+
+`.claude/setup-environment.sh` is the checked-in copy of the block that goes in the **Setup script** field of the Claude Code for Web environment configuration (issue #792).
+That field runs as root once per environment build, before any session starts, and its filesystem output is cached across sessions.
+
+It is optional.
+Without it, sessions still work: the `SessionStart` hook provisions everything a build needs on its own.
+With it, two things stop being luck:
+
+- **The Gradle distribution.** The hook cannot cache it across sessions, so every session re-downloads it from `services.gradle.org`, which redirects to a `github.com` release asset. Whether the session proxy allows that has been observed to vary (hard-blocked in 2026-07 sessions, open in 2026-08 ones; see the comments on #774). The Setup script seeds the wrapper's own cache, so `./gradlew` starts offline.
+- **The JDK.** The base image ships JDK 21; CI and the generator workflow build on Temurin 17. The Setup script installs Temurin 17 to `/opt/java/temurin-17`, and the hook (STEP 0b) points `JAVA_HOME` there when it finds it. This matches CI at the major version, which is what makes a local run reproduce CI's Java behaviour; the workflows ask for `java-version: '17'` and float to the newest 17.x, while the script pins an exact build, so patch levels will diverge and nothing detects that.
+
+It also provisions the Android SDK once into the cached image instead of once per session, using the same pins as the hook, whose skip guards then turn those steps into fast no-ops.
+
+The Setup script and the session must agree on one home directory, because the wrapper looks for its cached distribution under the session's home.
+Here they do: sessions run as root with `HOME=/root`, which the script's default follows.
+
+The script cannot confirm that agreement, and does not try to.
+It fails only when the resolved home does not exist, which is not the case that matters: if sessions move to another user while the Setup script still runs as root, `/root` is a perfectly good directory, so the script would seed `/root/.gradle`, report success, and provision a home no session ever reads.
+What it does instead is state its answer, as the first line of its output:
+
+```text
+[setup-environment] Provisioning for session home /root (owner root)
+```
+
+So if sessions ever run as a different user, set `SESSION_HOME` in the pasted block.
+Nothing will stop you if you forget; that log line is the only place it shows, which is why it is worth reading after a rebuild.
+
+### Installing it
+
+Paste the entire contents of `.claude/setup-environment.sh` into the environment's Setup script field, then rebuild the environment.
+The script is idempotent, so a rebuild over an already provisioned image is fast.
+Each step skips only when the work is already done *at the pinned version*, so a rebuild after a version bump reinstalls rather than reporting a stale install as present.
+
+### Keeping it in sync
+
+The pasted copy lives in a web form that CI cannot read, so **re-paste it whenever `.claude/setup-environment.sh` changes**, most importantly on a Gradle version bump.
+A stale copy fails quietly: it seeds the previous distribution, the wrapper ignores it, and sessions silently go back to downloading.
+
+`scripts/test_setup_environment.sh` guards the half CI can see.
+It fails the build when the committed copy drifts from `gradle/wrapper/gradle-wrapper.properties` (version, distribution URL, checksum) or from `.claude/hooks/session-start.sh` (command-line tools URL, `ANDROID_HOME`, SDK package list, license hashes, Temurin path), when the checksum verification stops being fail-closed, when the wrapper cache path stops matching the one the wrapper actually reads, or when a step would skip its work on an image already holding a different version.
+
+### What it deliberately does not do
+
+- It never regenerates `gradle/verification-metadata.xml`. The generator workflow is that file's only provenance (#774).
+- It provisions no emulator. The E2E suites need KVM, which web sessions do not have, so they stay CI-only.
+- It never trusts a hash published by whatever served the bytes. `GRADLE_DIST_DOWNLOAD_URL` and `TEMURIN_DOWNLOAD_URL` can redirect those *downloads* to a mirror if a host is blocked; the pinned SHA-256 still gates what that mirror serves.
+
+### What is and is not checksummed
+
+The script makes three downloads, and two of them are checksum-pinned:
+
+| Download                   | Step | Verification                                 |
+| -------------------------- | ---- | -------------------------------------------- |
+| Gradle distribution        | 2    | SHA-256 pinned in the script, fail-closed    |
+| Temurin 17                 | 1    | SHA-256 pinned in the script, fail-closed    |
+| Android command-line tools | 3a   | **Not checksummed**; version-pinned URL only |
+
+The command-line tools are the exception because Google publishes no stable checksum for that archive, and the SDK packages `sdkmanager` subsequently fetches are verified by `sdkmanager` against its own repository manifest.
+This is the same trust boundary the `SessionStart` hook and the generator workflow already operate on (#774).
+It is stated explicitly because "everything here is checksummed" would be false, and this is the wrong place to be loose about which bytes are verified.
+
+The Gradle pin in particular carries more weight than it looks.
+The wrapper verifies a distribution it downloads against `distributionSha256Sum`, but a distribution it finds already installed is taken as given, and the zip is deleted once unpacked, so nothing is left to re-check.
+Seeding the cache moves that verification from the wrapper into the Setup script, which is why the script's check is fail-closed and why its pin is guarded by `scripts/test_setup_environment.sh`.
+
+______________________________________________________________________
+
 ## Environment variables
 
-| Variable            | Value                      | Set by             | Notes                                                      |
-| ------------------- | -------------------------- | ------------------ | ---------------------------------------------------------- |
-| `ANDROID_HOME`      | `/home/user/android-sdk`   | hook + `~/.bashrc` | Required by Gradle Android plugin and `adb`                |
-| `JAVA_TOOL_OPTIONS` | *(modified, not replaced)* | hook + `~/.bashrc` | Strips `*.google.com` from `nonProxyHosts` (see script §0) |
-| `PATH`              | `+$ANDROID_HOME/...`       | hook + `~/.bashrc` | Adds `sdkmanager`, `adb` to path                           |
-| `GITHUB_TOKEN`      | *(fine-grained PAT)*       | container          | Use with `curl` to query the GitHub REST API               |
+| Variable            | Value                      | Set by             | Notes                                                         |
+| ------------------- | -------------------------- | ------------------ | ------------------------------------------------------------- |
+| `ANDROID_HOME`      | `/home/user/android-sdk`   | hook + `~/.bashrc` | Required by Gradle Android plugin and `adb`                   |
+| `JAVA_HOME`         | `/opt/java/temurin-17`     | hook (§0b)         | Only when the Setup script provisioned it; else image default |
+| `JAVA_TOOL_OPTIONS` | *(modified, not replaced)* | hook + `~/.bashrc` | Strips `*.google.com` from `nonProxyHosts` (see script §0)    |
+| `PATH`              | `+$ANDROID_HOME/...`       | hook + `~/.bashrc` | Adds `sdkmanager`, `adb` to path                              |
+| `GITHUB_TOKEN`      | *(fine-grained PAT)*       | container          | Use with `curl` to query the GitHub REST API                  |
 
 `~/.bashrc` carries the same fixes for interactive terminal sessions.
 The proxy credentials in `JAVA_TOOL_OPTIONS` are a session-scoped JWT injected
