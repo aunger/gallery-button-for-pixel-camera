@@ -42,11 +42,21 @@
 #
 # INTEGRITY
 #
-# Every download is checked against a pinned SHA-256 and the script refuses to
-# install on a mismatch. The URLs are overridable (GRADLE_DIST_DOWNLOAD_URL,
-# TEMURIN_DOWNLOAD_URL) for an environment that blocks the canonical hosts, but
-# the checksum is not: a mirror is only ever trusted through the pin below, never
-# through a hash the mirror publishes about itself.
+# This script makes three downloads, and two of them are checksum-pinned:
+#
+#   - the Gradle distribution (Step 2) and Temurin (Step 1) are each checked
+#     against a SHA-256 pinned below, and the script refuses to install on a
+#     mismatch. Their URLs are overridable (GRADLE_DIST_DOWNLOAD_URL,
+#     TEMURIN_DOWNLOAD_URL) for an environment that blocks the canonical hosts,
+#     but the checksums are not: a mirror is only ever trusted through the pin
+#     here, never through a hash the mirror publishes about itself.
+#   - the Android command-line tools (Step 3a) are NOT checksum-verified. Google
+#     publishes no stable checksum for that archive, the URL is version-pinned,
+#     and the SDK packages sdkmanager then fetches are verified by sdkmanager
+#     against its own repository manifest. This matches what
+#     .claude/hooks/session-start.sh already does and the trust boundary issue
+#     #774 recorded for the generator workflow. It is called out rather than
+#     glossed, because "everything here is checksummed" would be false.
 #
 # KEEPING THE PINS IN SYNC
 #
@@ -57,8 +67,9 @@
 # than silently seeding the wrong Gradle. After changing this file, re-paste it
 # into the environment configuration; CI cannot see what is in the web form.
 #
-# Idempotent: every block checks whether its work is already done, so a re-run on a
-# partly provisioned image is safe and fast.
+# Idempotent: every block checks whether the work is already done *at the pinned
+# version*, not merely that something is there, so a re-run on a partly
+# provisioned image is safe and fast while a pin change still takes effect.
 
 set -euo pipefail
 
@@ -80,8 +91,13 @@ GRADLE_DIST_URL="https://services.gradle.org/distributions/gradle-${GRADLE_VERSI
 # override only if that host is blocked here. GRADLE_DIST_SHA256 gates it either way.
 GRADLE_DIST_DOWNLOAD_URL="${GRADLE_DIST_DOWNLOAD_URL:-$GRADLE_DIST_URL}"
 
-# Temurin 17: matches the JDK actions/setup-java provisions in CI and in the
-# generator workflow. Checksum from the Adoptium release's .sha256.txt.
+# Temurin 17: the same distribution and major version actions/setup-java provisions
+# in CI and in the generator workflow, which is what makes a local run reproduce
+# CI's Java behaviour. It matches at the major version only: the workflows ask for
+# java-version '17', which floats to whatever the newest 17.x is at run time, while
+# this is pinned to an exact build because it is downloaded, not resolved by an
+# action. Expect the patch levels to diverge; nothing detects that, and nothing
+# needs to. Checksum from the Adoptium release's .sha256.txt.
 TEMURIN_VERSION="17.0.20+8"
 TEMURIN_SHA256="be7668bc030d578b83d6d5ef9221d6d6729bbbca8cf94a7d52e16ac68b5a5a35"
 # Fixed path, because .claude/hooks/session-start.sh looks for exactly this one
@@ -100,8 +116,17 @@ SDK_PACKAGES=(
     "platform-tools"
 )
 
-# The home directory sessions run with. The Gradle wrapper looks for its cached
-# distribution under this home, so seeding the wrong one provisions nothing.
+# The home directory sessions run with, which is NOT automatically the home this
+# script runs with. The Gradle wrapper looks for its cached distribution under the
+# session's home, so seeding the wrong one provisions nothing, silently: every
+# session would simply download again and look no different from an environment
+# where this script was never configured.
+#
+# In this environment they are the same, and the default relies on that: sessions
+# run as root with HOME=/root, which is where the live wrapper cache sits. That is
+# an assumption about the environment, not a fact about Setup scripts, so the
+# script states it, checks what it can, and gives an override rather than quietly
+# guessing. If sessions ever run as a different user, set SESSION_HOME.
 SESSION_HOME="${SESSION_HOME:-$HOME}"
 GRADLE_USER_HOME_DIR="${GRADLE_USER_HOME:-$SESSION_HOME/.gradle}"
 
@@ -116,6 +141,17 @@ if [[ ${#MISSING_TOOLS[@]} -gt 0 ]]; then
     log "ERROR: missing required commands: ${MISSING_TOOLS[*]}" >&2
     exit 1
 fi
+
+# Everything Gradle-related is provisioned relative to the session home, so an
+# absent one means the seeding would go somewhere no session reads. Fail here
+# rather than "succeed" into the void, and echo the resolved value so the
+# environment build log records which home was actually provisioned.
+if [[ ! -d "$SESSION_HOME" ]]; then
+    log "ERROR: SESSION_HOME '$SESSION_HOME' is not a directory." >&2
+    log "       Set SESSION_HOME to the home directory sessions run with." >&2
+    exit 1
+fi
+log "Provisioning for session home $SESSION_HOME (owner $(stat -c '%U' "$SESSION_HOME"))"
 
 # Download to a caller-named path and refuse to proceed unless the bytes match the
 # pinned SHA-256. -f makes curl fail on an HTTP error status instead of saving a
@@ -145,9 +181,26 @@ download_verified() {
 # The base image ships a newer JDK; the build targets Java 17 and CI runs Temurin
 # 17, so a local run on 17 is the one that reproduces CI. Installed to a fixed
 # path that .claude/hooks/session-start.sh exports JAVA_HOME to when it exists.
-if [[ -x "$TEMURIN_HOME/bin/java" ]]; then
+# The skip is keyed on the version actually installed, read from the JDK's own
+# release file, rather than on something merely existing at this path.
+# TEMURIN_HOME is version-independent by design, because the session-start hook
+# has to look for one fixed path, so a presence-only check would make every future
+# TEMURIN_VERSION bump a silent no-op on an already provisioned image, and would
+# print a skip line claiming the new version was present when it was not.
+# FULL_VERSION is what Temurin records there, in the same "17.0.20+8" form pinned
+# above. An unrecognised or unversioned JDK at this path reads as a mismatch and
+# is replaced, so the pin always wins.
+INSTALLED_TEMURIN=""
+if [[ -r "$TEMURIN_HOME/release" ]]; then
+    INSTALLED_TEMURIN=$(sed -n 's/^FULL_VERSION="\(.*\)"$/\1/p' "$TEMURIN_HOME/release" | head -n 1)
+fi
+
+if [[ -x "$TEMURIN_HOME/bin/java" && "$INSTALLED_TEMURIN" == "$TEMURIN_VERSION" ]]; then
     log "Step 1: Temurin $TEMURIN_VERSION present--skip"
 else
+    if [[ -e "$TEMURIN_HOME" ]]; then
+        log "Step 1: replacing the JDK at $TEMURIN_HOME (${INSTALLED_TEMURIN:-unknown version}) with the pinned $TEMURIN_VERSION"
+    fi
     # jdk-17.0.20+8 -> tag jdk-17.0.20%2B8, file ...hotspot_17.0.20_8.tar.gz.
     # Derived from TEMURIN_VERSION so the version appears exactly once.
     TEMURIN_TAG="jdk-${TEMURIN_VERSION//+/%2B}"
@@ -319,15 +372,25 @@ else
     log "Step 3c: all SDK packages present--skip"
 fi
 
-# --- STEP 4: Ownership --------------------------------------------------------
+# --- STEP 4: Ownership and permissions ----------------------------------------
 #
-# This script runs as root. Anything it leaves root-owned is unusable by a session
-# running as another user, and Gradle in particular must be able to write inside
-# its user home. Match whatever owns the session home rather than naming a user:
-# when sessions also run as root this is a no-op.
+# The session user is the owner of the session home, whoever that is, so the trees
+# the session must WRITE are handed to that owner: Gradle writes throughout its
+# user home (the wrapper alone creates a .lck beside the distribution), and
+# sdkmanager writes into the SDK when a later session adds a package.
+#
+# The JDK is deliberately not included. It only needs to be readable and
+# executable, and giving the session write ownership of a tree whose integrity was
+# just established with a pinned checksum would hand back part of what that pin
+# bought. a+rX grants exactly what is needed (X sets the search bit on directories
+# and on files that are already executable, never on plain files).
+#
+# When Setup and sessions share a user, which is the case here, the chown is a
+# no-op and this step costs nothing.
 OWNER=$(stat -c '%u:%g' "$SESSION_HOME")
-chown -R "$OWNER" "$GRADLE_USER_HOME_DIR" "$ANDROID_HOME_DIR" "$TEMURIN_HOME"
-log "Step 4: ownership of the provisioned trees set to $OWNER"
+chown -R "$OWNER" "$GRADLE_USER_HOME_DIR" "$ANDROID_HOME_DIR"
+chmod -R a+rX "$TEMURIN_HOME"
+log "Step 4: Gradle home and SDK owned by $OWNER (session home $SESSION_HOME); JDK left read-only"
 
 log "Complete. JAVA_HOME=$TEMURIN_HOME ANDROID_HOME=$ANDROID_HOME_DIR"
 log "Gradle $GRADLE_VERSION seeded in $GRADLE_USER_HOME_DIR"

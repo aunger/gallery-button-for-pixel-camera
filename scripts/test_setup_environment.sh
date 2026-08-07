@@ -26,7 +26,11 @@
 #   (e) it computes the Gradle wrapper's cache directory the way the wrapper does
 #       (behavioral: a correctly seeded cache is detected and no download starts)
 #   (f) a checksum mismatch is fatal and installs nothing (behavioral)
-#   (g) it never writes gradle/verification-metadata.xml, which only the generator
+#   (g) a TEMURIN_VERSION bump reaches an image that already has a different JDK
+#       at the fixed path, rather than being skipped as "present" (behavioral)
+#   (h) the pinned JDK already installed is skipped, so rebuilds stay fast
+#       (behavioral)
+#   (i) it never writes gradle/verification-metadata.xml, which only the generator
 #       workflow may produce (issue #774)
 #
 # Always exits 0 on success, non-zero on failure.
@@ -159,10 +163,22 @@ else
 fi
 
 # License hashes are 40-hex SHA-1 digests inside the printf lines that write the
-# licence files. Scoped to those lines so the 64-hex artifact checksums elsewhere
-# in the file cannot match.
-SETUP_LICENSES=$(grep 'printf' "$SETUP" | grep -oE '[0-9a-f]{40}' | sort)
-HOOK_LICENSES=$(grep 'printf' "$HOOK" | grep -oE '[0-9a-f]{40}' | sort)
+# licence files. Anchored on both sides rather than matching a bare run of 40 hex
+# characters, which would also match the first 40 of a 64-hex SHA-256 if one ever
+# landed on such a line.
+extract_license_hashes() {
+    grep 'printf' "$1" | python3 -c '
+import re
+import sys
+
+pattern = re.compile(r"(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])")
+for line in sys.stdin:
+    for match in pattern.findall(line):
+        print(match)
+' | sort
+}
+SETUP_LICENSES=$(extract_license_hashes "$SETUP")
+HOOK_LICENSES=$(extract_license_hashes "$HOOK")
 if [ -n "$HOOK_LICENSES" ] && [ "$SETUP_LICENSES" = "$HOOK_LICENSES" ]; then
     pass "SDK license hashes match the session-start hook"
 else
@@ -171,6 +187,7 @@ fi
 
 # (d) the JDK path the Setup script installs to is the one the hook looks for.
 SETUP_TEMURIN=$(read_var "$SETUP" TEMURIN_HOME)
+SETUP_TEMURIN_VERSION=$(read_var "$SETUP" TEMURIN_VERSION)
 HOOK_TEMURIN=$(sed -n 's/^TEMURIN_HOME=//p' "$HOOK" | head -n 1)
 if [ -n "$HOOK_TEMURIN" ] && [ "$SETUP_TEMURIN" = "$HOOK_TEMURIN" ]; then
     pass "TEMURIN_HOME matches the path the session-start hook exports ($HOOK_TEMURIN)"
@@ -180,19 +197,29 @@ fi
 
 # --- Behavioral checks --------------------------------------------------------
 #
-# Both run the real script against a sandbox home, with every download URL
-# pointed at a nonexistent file:// path. Nothing touches the network: if the
-# script tries to download anything it is supposed to have found already, curl
-# fails and the case reports it.
+# Each case runs the real script against a sandbox home. Both overridable
+# download URLs are always pointed at a nonexistent file:// path, so any fetch the
+# script was supposed to have skipped fails loudly here instead of pulling ~190 MB
+# of JDK or ~130 MB of Gradle into a CI job.
+#
+# That accounts for two of the script's three downloads. The third, Step 3a's
+# Android command-line tools, has no URL override, so it cannot be redirected at
+# all; the sandbox instead pre-creates the sdkmanager and every package directory
+# so Step 3 finds its work done and never reaches that fetch. Both mechanisms are
+# load-bearing: neither alone isolates the script.
 SANDBOX=$(mktemp -d "${TMPDIR:-/tmp}/setup-env-test-XXXXXX")
 trap 'rm -rf "$SANDBOX"' EXIT
 
-# A stub JDK and SDK, so only the behavior under test is exercised.
+# A stub JDK and SDK, so only the behavior under test is exercised. The JDK gets a
+# release file carrying the pinned version, because Step 1 skips on the installed
+# version rather than on mere presence.
 make_sandbox() {
     local root="$1" pkg
     mkdir -p "$root/home" "$root/jdk/bin" "$root/sdk/cmdline-tools/latest/bin"
     : > "$root/jdk/bin/java"
     chmod +x "$root/jdk/bin/java"
+    printf 'IMPLEMENTOR="Eclipse Adoptium"\nFULL_VERSION="%s"\n' \
+        "$SETUP_TEMURIN_VERSION" > "$root/jdk/release"
     : > "$root/sdk/cmdline-tools/latest/bin/sdkmanager"
     chmod +x "$root/sdk/cmdline-tools/latest/bin/sdkmanager"
     mkdir -p "$root/sdk/licenses"
@@ -203,13 +230,29 @@ make_sandbox() {
     done
 }
 
+# Plant a distribution where the wrapper itself would put one: the observed
+# EXPECTED_DIST_HASH directory, holding an executable bin/gradle and the .ok marker
+# the wrapper writes on a successful install.
+seed_gradle_cache() {
+    local root="$1"
+    local dist="$root/home/.gradle/wrapper/dists/gradle-${SETUP_GRADLE_VERSION}-bin/$EXPECTED_DIST_HASH"
+    mkdir -p "$dist/gradle-${SETUP_GRADLE_VERSION}/bin"
+    : > "$dist/gradle-${SETUP_GRADLE_VERSION}/bin/gradle"
+    chmod +x "$dist/gradle-${SETUP_GRADLE_VERSION}/bin/gradle"
+    : > "$dist/gradle-${SETUP_GRADLE_VERSION}-bin.zip.ok"
+}
+
+# Every override the script accepts is set here, so no case can silently depend on
+# the network by forgetting one. The Gradle download URL is the only knob a case
+# needs to vary, so it is the optional argument.
 run_setup() {
     local root="$1"
+    local gradle_url="${2:-file://$root/absent-gradle.zip}"
     SESSION_HOME="$root/home" \
         GRADLE_USER_HOME="$root/home/.gradle" \
         ANDROID_HOME="$root/sdk" \
         TEMURIN_HOME="$root/jdk" \
-        GRADLE_DIST_DOWNLOAD_URL="file://$root/absent-gradle.zip" \
+        GRADLE_DIST_DOWNLOAD_URL="$gradle_url" \
         TEMURIN_DOWNLOAD_URL="file://$root/absent-jdk.tar.gz" \
         bash "$SETUP" > "$root/out.log" 2>&1
 }
@@ -220,11 +263,7 @@ run_setup() {
 # the (unreachable) download, and fail.
 SEED="$SANDBOX/seed"
 make_sandbox "$SEED"
-SEED_DIST="$SEED/home/.gradle/wrapper/dists/gradle-${SETUP_GRADLE_VERSION}-bin/$EXPECTED_DIST_HASH"
-mkdir -p "$SEED_DIST/gradle-${SETUP_GRADLE_VERSION}/bin"
-: > "$SEED_DIST/gradle-${SETUP_GRADLE_VERSION}/bin/gradle"
-chmod +x "$SEED_DIST/gradle-${SETUP_GRADLE_VERSION}/bin/gradle"
-: > "$SEED_DIST/gradle-${SETUP_GRADLE_VERSION}-bin.zip.ok"
+seed_gradle_cache "$SEED"
 if run_setup "$SEED"; then
     if grep -q "already seeded" "$SEED/out.log"; then
         pass "a cache seeded at the wrapper's own directory ($EXPECTED_DIST_HASH) is detected, no download"
@@ -255,12 +294,7 @@ with zipfile.ZipFile(archive, "w") as zf:
     entry.external_attr = 0o755 << 16
     zf.writestr(entry, "#!/bin/sh\necho not gradle\n")
 PY
-if SESSION_HOME="$BAD/home" \
-    GRADLE_USER_HOME="$BAD/home/.gradle" \
-    ANDROID_HOME="$BAD/sdk" \
-    TEMURIN_HOME="$BAD/jdk" \
-    GRADLE_DIST_DOWNLOAD_URL="file://$BAD/tampered.zip" \
-    bash "$SETUP" > "$BAD/out.log" 2>&1; then
+if run_setup "$BAD" "file://$BAD/tampered.zip"; then
     fail "a distribution failing the SHA-256 pin was accepted"
 elif grep -q "SHA-256 mismatch" "$BAD/out.log" \
     && [ ! -d "$BAD/home/.gradle/wrapper/dists/gradle-${SETUP_GRADLE_VERSION}-bin/$EXPECTED_DIST_HASH/gradle-${SETUP_GRADLE_VERSION}" ]; then
@@ -270,11 +304,50 @@ else
     sed 's/^/    /' "$BAD/out.log"
 fi
 
-# (g) the Setup script must never produce gradle/verification-metadata.xml. The
+# (g) a bump to TEMURIN_VERSION must actually reach an already provisioned image.
+# TEMURIN_HOME is version-independent on purpose (the session-start hook needs one
+# fixed path to look for), so a skip guard testing only that something exists there
+# would make every future JDK pin change a silent no-op, while printing a line
+# claiming the new version was installed. The sandbox holds a JDK at a different
+# version and the download is unreachable, so a correct script tries to replace it
+# and fails on the download; a script that skips on presence alone exits 0.
+#
+# The Gradle cache is seeded here too, so every other step is a skip and the JDK
+# is the only thing that can make the run fail. A script that wrongly skips the
+# JDK therefore exits 0 and is reported as such, rather than failing later for an
+# unrelated reason.
+STALE="$SANDBOX/stale"
+make_sandbox "$STALE"
+seed_gradle_cache "$STALE"
+printf 'IMPLEMENTOR="Eclipse Adoptium"\nFULL_VERSION="17.0.1+1"\n' > "$STALE/jdk/release"
+if run_setup "$STALE"; then
+    fail "a JDK at a version other than the pin was left in place (a TEMURIN_VERSION bump would be a no-op)"
+elif grep -q "replacing the JDK" "$STALE/out.log"; then
+    pass "a JDK at the wrong version is replaced rather than skipped"
+else
+    fail "the script failed, but not because it tried to replace the stale JDK"
+    sed 's/^/    /' "$STALE/out.log"
+fi
+
+# (h) the converse: the pinned version already installed is left alone, so a
+# rebuild over a provisioned image stays fast and does not re-download the JDK.
+# make_sandbox writes a release file carrying the pinned version.
+FRESH="$SANDBOX/fresh"
+make_sandbox "$FRESH"
+seed_gradle_cache "$FRESH"
+if run_setup "$FRESH" && grep -q "Temurin $SETUP_TEMURIN_VERSION present--skip" "$FRESH/out.log"; then
+    pass "the pinned JDK already installed is skipped, no download"
+else
+    fail "a fully provisioned sandbox did not skip the JDK"
+    sed 's/^/    /' "$FRESH/out.log"
+fi
+
+# (i) the Setup script must never produce gradle/verification-metadata.xml. The
 # generator workflow is that file's only provenance (issue #774), and a locally
 # generated one would look identical while carrying no review trail.
-if grep -q 'verification-metadata\.xml' "$SETUP" \
-    && grep 'verification-metadata\.xml' "$SETUP" | grep -qvE '^[[:space:]]*#'; then
+# Comments are stripped before looking, so a full-line OR a trailing inline comment
+# mentioning the file reads as prose rather than as an action.
+if sed 's/#.*$//' "$SETUP" | grep -q 'verification-metadata\.xml'; then
     fail "setup-environment.sh acts on verification-metadata.xml; only the generator workflow may"
 else
     pass "setup-environment.sh never writes verification-metadata.xml"
