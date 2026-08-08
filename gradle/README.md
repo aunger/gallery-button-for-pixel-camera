@@ -1,6 +1,7 @@
 # Gradle build integrity
 
 This directory carries two "verify what you download" controls for the Gradle build, matching the posture already applied to ktlint (SHA-256 verified in `scripts/lint/install-ktlint.sh`) and the Python lint tools (pip `--require-hashes`, issue #723).
+It also carries the procedure for moving the toolchain those controls pin, which reaches beyond this directory; see "Performing a toolchain bump" at the end.
 
 ## `verification-metadata.xml` -- dependency verification (issue #714)
 
@@ -81,52 +82,56 @@ Read `2.4.1x` the same way: up to but not including 2.4.20.
 Note that `codeql-action@v4` is a force-moved tag, not an immutable one.
 A previously red `analyze-kotlin` can turn green on a plain re-run once the tag moves to a bundle whose CLI supports the Kotlin version in use, with no change to this repository.
 
-This section deliberately records the procedure for recomputing the ceiling rather than a cached answer.
-A specific ceiling read off the tag on a given day decays silently as the tag moves; the procedure stays correct.
-
 ## KGP compatibility row
 
 Separately from the CodeQL ceiling, the Kotlin Gradle plugin documents which Gradle and AGP versions each KGP row supports, in the compatibility table on [Configure a Gradle project](https://kotlinlang.org/docs/gradle-configure-project.html).
 The row for the KGP version in use must cover both the intended Gradle version and the intended AGP version.
 
-Read that table at bump time.
-Like the CodeQL ceiling, it moves without notice, so no value from it is recorded here.
+Read that table at bump time, and recompute the CodeQL ceiling the same way.
+Neither value is recorded anywhere in this file: both move without notice, so a cached answer decays silently while a procedure stays correct.
 
 The two constraints are independent, and neither subsumes the other: this row bounds Gradle and AGP for a given KGP, while the CodeQL ceiling bounds the Kotlin version itself.
 A Gradle-only or AGP-only bump can be blocked by this row alone, and a Kotlin-only bump by the CodeQL ceiling alone.
 Check both, every time.
 
 Exceeding a row is a decision to record, not an error to avoid at all costs.
-#774 accepted Gradle 9.5.1, one patch above the fully-supported maximum of the KGP row it was on, because Gradle had already superseded that maximum with 9.5.1 (fixes ship only in the newest patch of the newest minor, so the older patch would receive none) and because 9.5.1 exists to fix an OOM regression.
+#774 accepted Gradle 9.5.1, one patch above the fully-supported maximum of the KGP row it was on.
+At that moment 9.5 was Gradle's newest minor and 9.5.1 its newest patch, so the row's maximum would receive no further fixes while 9.5.1 would, and 9.5.1 exists to fix an OOM regression in it.
 Weigh any future overage the same way, and write down the reasoning: a patch above the row is a far smaller step than a minor above it.
 
 ## Performing a toolchain bump
+
+This covers a Gradle, AGP, KGP, or Compose-plugin bump.
+A JDK change has a wider blast radius and is not covered here.
 
 1. Check the KGP compatibility row and the CodeQL Kotlin ceiling, both above.
    Do this **before** editing any version, not after a red CI run.
 
 2. Edit the versions.
    The root `build.gradle.kts` holds the KGP buildscript classpath pin, the AGP plugin version, and the Compose plugin version, which moves in lockstep with KGP.
-   Other pin sets travel with a bump depending on what moved:
 
-   - **A Gradle bump** touches every pin listed under the distribution-pin section above, *and* the `GRADLE_VERSION`, `DIST_SHA256`, and `WRAPPER_JAR_SHA256` values in `.github/workflows/regenerate-gradle-toolchain.yml`.
-     Miss those three and step 3 downloads the old Gradle and rewrites `gradle-wrapper.properties` back to it, so the run fails its own guard step and uploads no artifact, only the `DO-NOT-COMMIT` diagnostic.
-   - **An AGP bump** may move the required Android build-tools version, pinned in `.claude/hooks/session-start.sh`, `.claude/setup-environment.sh`, `.github/workflows/regenerate-gradle-toolchain.yml`, and the "Full Android toolchain" requirement above.
+   Every one of these versions is also written down outside the build files, and no enumeration here stays accurate.
+   **Grep the tree for the version string you are replacing and work through every hit.**
+   A Gradle version currently appears in the wrapper properties, two `.claude/` files, three `scripts/` files, the generator workflow, and this file's own prose; an Android build-tools version, which an AGP bump can move, appears in six files.
 
-   Know which of these are enforced.
-   `scripts/test_verification_metadata.sh` and `scripts/test_setup_environment.sh` fail the build on drift among the pins they compare, but nothing checks the generator workflow's three values against them, and nothing can check that `.claude/setup-environment.sh` has been re-pasted into the web form (see `.claude/environment.md`).
-   Those last two are human steps.
+   The generator workflow's `env:` block is the one worth naming, because it is the one that can silently undo the bump.
+   Step 3 regenerates the wrapper for whatever version that block declares, not the one you edited.
+   A stale block therefore either fails the run's own guard step, or, when the old and new releases happen to share a wrapper JAR, produces a **green** run whose artifact quietly reverts your version change.
+
+   Know what is enforced.
+   `scripts/test_verification_metadata.sh` and `scripts/test_setup_environment.sh` fail the build on drift among the pins they compare, but nothing reads `.github/workflows/regenerate-gradle-toolchain.yml` at all, and nothing can check that `.claude/setup-environment.sh` has been re-pasted into the web form (see `.claude/environment.md`).
+   Those are human steps.
 
 3. Commit the step 2 edits and push the branch, then dispatch `.github/workflows/regenerate-gradle-toolchain.yml` against it.
    The workflow checks out the pushed tip, not your working tree, so an uncommitted edit is silently regenerated against the old graph.
    It rebuilds the wrapper matched set and `verification-metadata.xml` from scratch and uploads them as an artifact rather than committing them.
 
 4. Review the artifact, then amend it into the step 2 commit and force-push.
+   Unpack the tarball outside the repository: it carries a review-only `metadata-components.txt` that is not gitignored.
    #774's Step 5 records the review recipe: verify the wrapper JAR against its published checksum; regenerate the wrapper from the verified distribution and compare with `cmp` for content **and** `stat` for modes, since neither `cmp` nor `diff` sees the exec bit that the tarball packaging exists to preserve; and diff the artifact's `metadata-components.txt` against the same listing derived from the committed file (the generator's "Emit the pinned-component listing" step holds the script that produces it) rather than reading the checksum hashes.
-   Unpack the tarball outside the repository: `metadata-components.txt` is review-only and is not gitignored.
+   Once reviewed, extract the tracked files over the working tree with `tar` rather than copying them, so `gradlew` keeps the exec bit the tarball exists to preserve.
 
-5. Open the PR and let the complete `build.yml` run validate it, per the regeneration requirements above.
-   That full run is the only thing that catches a configuration whose dependencies were missed during generation; on a verification failure, re-run the merge-mode script and repeat until green.
-   #774 also requires a check CI cannot perform: after merge, install the `dev-build` APK and exercise the overlay once, because the release variant has no runtime coverage anywhere in CI.
+5. Open the PR and let the complete `build.yml` run validate it, under "Review the diff" in the regeneration requirements above.
+   #774 additionally requires a check CI cannot perform: after merge, install the `dev-build` APK and exercise the overlay once, because the release variant has no runtime coverage anywhere in CI.
 
 The bump lands as one commit, so the version edits and the regenerated pins are never separated.
