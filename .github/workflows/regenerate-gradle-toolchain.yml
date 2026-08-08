@@ -3,6 +3,11 @@ name: Regenerate Gradle toolchain (wrapper + verification metadata)
 # Manual, deliberate trigger only. Lives on main so workflow_dispatch registers;
 # dispatch it with ref=<branch> to run a branch's version. Produces an artifact
 # for human review and commit; it never pushes.
+#
+# Dispatching this is step 3 of "Performing a toolchain bump" in gradle/README.md.
+# Read that first: the env: block below duplicates pins declared elsewhere, and
+# nothing compares them, so a bump that edits one and not the other can produce a
+# green run whose artifact reverts the version change.
 on:
   workflow_dispatch:
 
