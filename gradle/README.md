@@ -91,14 +91,17 @@ Separately from the CodeQL ceiling, the Kotlin Gradle plugin documents which Gra
 The row for the KGP version in use must cover both the intended Gradle version and the intended AGP version.
 
 Read that table at bump time, and recompute the CodeQL ceiling by its own procedure above.
-Neither value is recorded anywhere in this file: both move without notice, so a cached answer decays silently while a procedure stays correct.
+Treat no version printed anywhere in this file as a current bound: the wildcard forms above illustrate the notation, not today's ceiling, and both limits move without notice.
 
-The two constraints are independent, and neither subsumes the other: this row bounds Gradle and AGP for a given KGP, while the CodeQL ceiling bounds the Kotlin version itself.
-A Gradle-only or AGP-only bump can be blocked by this row alone, and a Kotlin-only bump by the CodeQL ceiling alone.
+The row constrains in both directions, which is what makes it easy to underestimate.
+For a given KGP it bounds Gradle and AGP, so a Gradle-only or AGP-only bump can be blocked by it.
+For a given Gradle and AGP pair it also bounds which KGP rows are available at all: #774 found KGP 2.4.x forced rather than chosen, because it was the only row covering Gradle 9.5.x together with AGP 9.1.0.
+So a KGP-only bump is governed by this row too, not by the CodeQL ceiling alone.
 
 Exceeding a row is a decision to record, not an error to avoid at all costs.
 #774 accepted Gradle 9.5.1, one patch above whatever the row's fully-supported maximum was at the time.
-That maximum carries an OOM regression, 9.5.1 is the release that fixes it, and no further patch of it will ever exist, so staying inside the row meant shipping a known bug.
+That maximum carries an OOM regression, and the fix for it shipped only in 9.5.1, outside the row.
+Gradle patches only its newest minor, so no later release inside the row would ever carry that fix, and staying in-row meant shipping a known bug indefinitely.
 #774 also rejected the obvious workaround of raising the daemon heap instead.
 Weigh any future overage the same way, and write down the reasoning: a patch above the row is a far smaller step than a minor above it.
 
@@ -107,7 +110,8 @@ Weigh any future overage the same way, and write down the reasoning: a patch abo
 This covers a Gradle, AGP, KGP, or Compose-plugin bump.
 A JDK change has a wider blast radius and is not covered here.
 
-1. Check the KGP compatibility row and the CodeQL Kotlin ceiling, both above.
+1. Check the KGP compatibility row above, which binds on every bump this section covers.
+   Add the CodeQL Kotlin ceiling check when the bump moves Kotlin, KGP, or the Kotlin compiler, per that section's own scope.
    Do this **before** editing any version, not after a red CI run.
 
 2. Edit the versions.
