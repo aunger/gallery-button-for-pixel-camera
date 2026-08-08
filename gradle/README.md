@@ -131,7 +131,7 @@ A JDK change has a wider blast radius and is not covered here.
    Do not grep-and-replace a version across the tree.
    `gradle/verification-metadata.xml` carries dozens of incidental matches per version and is regenerated wholesale by step 3, so exclude it from any search.
 
-   > [!WARNING]
+   > [!IMPORTANT]
    > Every version of this inventory has turned out incomplete when checked against the tree.
    > Treat it as a starting point, search deliberately for the rest, and add what you find.
 
@@ -151,7 +151,7 @@ A JDK change has a wider blast radius and is not covered here.
    #774 Step 6 also asks for one enforcing run against live registries before merge; note that `build.yml`'s cache falls back through a `restore-keys` prefix, so clearing the branch's own entries is not sufficient on its own to force a cold resolve.
    On a verification failure at this stage, re-dispatch the generator and re-amend rather than reaching for the local merge-mode remedy, for the reason given under "Review the diff" above.
 
-   > [!WARNING]
+   > [!CAUTION]
    > Review could not settle which remedy is correct here.
    > A re-dispatch is deterministic, so it will reproduce the same pin set unless the task list in `scripts/regenerate-gradle-verification.sh` is what needs extending.
    > Diagnose which of the two you are facing before spending a 20-45 minute run on it.
