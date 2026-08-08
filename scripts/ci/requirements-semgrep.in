@@ -27,4 +27,4 @@
 # --universal + --python-version 3.10 make the lock a superset covering every
 # interpreter the install site uses (setup-python's "3.x" in the workflow), so
 # every marker-gated and platform-gated entry resolves under --require-hashes.
-semgrep==1.170.0
+semgrep==1.172.0
