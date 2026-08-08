@@ -110,6 +110,11 @@ Weigh any future overage the same way, and write down the reasoning: a patch abo
 This covers a Gradle, AGP, KGP, or Compose-plugin bump.
 A JDK change has a wider blast radius and is not covered here.
 
+> [!WARNING]
+> This procedure was reconstructed by reading the repository and #774, not by performing a bump.
+> No step below has been executed end to end.
+> Treat it as a checklist to verify against the current tree, and correct it from what you observe on the first real bump.
+
 1. Check the KGP compatibility row above, which binds on every bump this section covers.
    Add the CodeQL Kotlin ceiling check when the bump moves Kotlin, KGP, or the Kotlin compiler, per that section's own scope.
    Do this **before** editing any version, not after a red CI run.
@@ -126,6 +131,10 @@ A JDK change has a wider blast radius and is not covered here.
    Do not grep-and-replace a version across the tree.
    `gradle/verification-metadata.xml` carries dozens of incidental matches per version and is regenerated wholesale by step 3, so exclude it from any search.
 
+   > [!WARNING]
+   > Every version of this inventory has turned out incomplete when checked against the tree.
+   > Treat it as a starting point, search deliberately for the rest, and add what you find.
+
 3. Commit the step 2 edits and push the branch, then dispatch `.github/workflows/regenerate-gradle-toolchain.yml` against it.
    Do not open the PR yet: `build.yml` runs on pull requests, so opening one now spends a full build on a commit that is still half-migrated by design.
    The workflow checks out the pushed tip, not your working tree, so an uncommitted edit is silently regenerated against the old graph.
@@ -141,6 +150,11 @@ A JDK change has a wider blast radius and is not covered here.
    `codeql.yml`'s `analyze-kotlin` job is what actually tests the ceiling computed in step 1, but on a pull request it runs only when the diff touches `.kt`, `.kts`, or `.java`, so a Gradle-only bump does not exercise it until the post-merge push to `main`.
    #774 Step 6 also asks for one enforcing run against live registries before merge; note that `build.yml`'s cache falls back through a `restore-keys` prefix, so clearing the branch's own entries is not sufficient on its own to force a cold resolve.
    On a verification failure at this stage, re-dispatch the generator and re-amend rather than reaching for the local merge-mode remedy, for the reason given under "Review the diff" above.
+
+   > [!WARNING]
+   > Review could not settle which remedy is correct here.
+   > A re-dispatch is deterministic, so it will reproduce the same pin set unless the task list in `scripts/regenerate-gradle-verification.sh` is what needs extending.
+   > Diagnose which of the two you are facing before spending a 20-45 minute run on it.
 
 6. Finish what CI cannot check.
    Re-paste `.claude/setup-environment.sh` into the web environment if it changed (see `.claude/environment.md`), and after merge install the `dev-build` APK and exercise the overlay once, because the release variant has no runtime coverage anywhere in CI.
