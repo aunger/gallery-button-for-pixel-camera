@@ -43,6 +43,8 @@ Requirements, and why they exist:
   A JDK-only environment cannot resolve the Android dependency graph, which is why this was split out of the pip-hashing work in issue #699.
 - **Review the diff** (`git diff gradle/verification-metadata.xml`) before committing, then let the complete `build.yml` run (including the instrumented and E2E steps) validate it end to end.
   That full run is the only way to catch a configuration whose dependencies were missed during generation; on a verification failure Gradle names the offending artifact, so re-run the script (it merges into the existing file) and repeat until CI is green.
+  That merge-mode remedy is for iterating on an unchanged toolchain.
+  During a toolchain bump, re-dispatch the generator workflow instead, since merging would reintroduce the pins its from-scratch run deliberately pruned (see "Performing a toolchain bump" below).
 
 Contributors on macOS or Windows who only need a local build can pass `--dependency-verification lenient` to downgrade a verification failure to a warning.
 Never commit that flag into CI, and do not commit a file regenerated on a non-Linux machine.
@@ -95,7 +97,9 @@ The two constraints are independent, and neither subsumes the other: this row bo
 A Gradle-only or AGP-only bump can be blocked by this row alone, and a Kotlin-only bump by the CodeQL ceiling alone.
 
 Exceeding a row is a decision to record, not an error to avoid at all costs.
-#774 accepted Gradle 9.5.1, one patch above whatever the row's fully-supported maximum was at the time, because that maximum carries an OOM regression and 9.5.1 is the release that fixes it.
+#774 accepted Gradle 9.5.1, one patch above whatever the row's fully-supported maximum was at the time.
+That maximum carries an OOM regression, 9.5.1 is the release that fixes it, and no further patch of it will ever exist, so staying inside the row meant shipping a known bug.
+#774 also rejected the obvious workaround of raising the daemon heap instead.
 Weigh any future overage the same way, and write down the reasoning: a patch above the row is a far smaller step than a minor above it.
 
 ## Performing a toolchain bump
@@ -108,29 +112,30 @@ A JDK change has a wider blast radius and is not covered here.
 
 2. Edit the versions.
    The root `build.gradle.kts` holds the KGP buildscript classpath pin, the AGP plugin version, and the Compose plugin version, which moves in lockstep with KGP.
-   A Gradle bump also moves every pin in the distribution-pin section above, plus the two places this file states the current Gradle version in prose: the docs link at the top and the distribution-pin paragraph.
-   An AGP bump can move the Android build-tools version, pinned in the generator workflow, in the `.claude/` provisioning scripts and their guard, and in the toolchain requirement above; it may also move `compileSdk`/`targetSdk` in the three module build files.
+   For the surrounding pins, work from two lists rather than one written here: the distribution-pin section above for a Gradle bump, and #774 Step 3 for the wider set a migration touches, including the build-tools and SDK-platform pins an AGP bump can move.
+   Expect a residue of version literals in prose and in script headers that no guard reads.
 
-   One site sits outside every section here and outside every guard: the `env:` block of `.github/workflows/regenerate-gradle-toolchain.yml`, which repeats the Gradle version and both checksums.
-   Step 3 regenerates for whatever that block declares rather than for what you edited, so a stale block can fail the run, or quietly produce an artifact that reverts the bump.
-   Nothing compares it against the constants it duplicates.
+   One site is easy to miss because no section above names it.
+   The `env:` block of `.github/workflows/regenerate-gradle-toolchain.yml` duplicates the Gradle version and both checksums.
+   The workflow runs the build-integrity guard in the same job, so a block that disagrees with `scripts/test_verification_metadata.sh` fails the run loudly; a bump that leaves **both** of them stale passes instead, and the resulting artifact silently reverts the version change.
 
    Do not grep-and-replace a version across the tree.
-   `gradle/verification-metadata.xml` holds hundreds of incidental matches and is regenerated wholesale in step 3, and the wrapper-JAR sharing note above and the #774 rationale in the previous section both cite past versions on purpose.
+   `gradle/verification-metadata.xml` alone holds hundreds of incidental matches, and it is regenerated wholesale in step 3.
 
 3. Commit the step 2 edits and push the branch, then dispatch `.github/workflows/regenerate-gradle-toolchain.yml` against it.
+   Do not open the PR yet.
+   `build.yml` runs on pull requests, so opening one now puts a full build against a half-migrated commit and auto-files an issue for every failure.
    The workflow checks out the pushed tip, not your working tree, so an uncommitted edit is silently regenerated against the old graph.
    It rebuilds `verification-metadata.xml` from scratch and then the wrapper matched set, an order chosen so the wrapper step runs under enforcement of the fresh pins, and uploads them as `gradle-toolchain-regenerated`.
    A **failed** run instead uploads `gradle-toolchain-partial-DO-NOT-COMMIT`, whose metadata Gradle may have written only partly; never amend that one in.
 
-4. Review the artifact per #774's Step 5, then amend it into the step 2 commit and force-push.
-   That recipe verifies the wrapper JAR against its published checksum, reproduces the wrapper from the verified distribution and compares content with `cmp` and modes with `stat`, and diffs the artifact's component listing against the same listing derived from the committed file rather than reading the checksum hashes.
-   Unpack the tarball outside the repository: it carries a review-only `metadata-components.txt` that is not gitignored.
-   Extract rather than copy when bringing the files in, and confirm `git diff` reports no mode change on `gradlew`; the tarball exists precisely because `upload-artifact` strips permissions.
+4. Review the artifact against #774's Step 5, which holds the recipe verbatim, then amend it into the step 2 commit and force-push.
+   Unpack the tarball somewhere outside the working tree: it carries a review-only `metadata-components.txt` whose path inside the archive is the repository root, and which is not gitignored.
+   When you bring the reviewed files in, keep `gradlew` executable and confirm `git diff` reports no mode change on it; the tarball format exists because `upload-artifact` strips permissions.
 
-5. Open the PR and let the complete `build.yml` run validate it end to end, which is the only thing that catches a configuration whose dependencies were missed during generation.
-   Before merging, delete the branch's Gradle cache entries and re-run it once, so at least one enforcing run resolves everything from the live registries (#774 Step 6).
-   On a verification failure, re-dispatch the generator and re-amend; do not re-run the regeneration script locally, since it merges and would reintroduce the pins the from-scratch run just pruned.
+5. Open the PR and let the full gate set validate it: `build.yml` end to end, and `codeql.yml`, whose `analyze-kotlin` job is what actually tests the ceiling you computed in step 1.
+   Before merging, delete the branch's Gradle cache entries and re-run `build.yml` once, so at least one enforcing run resolves everything from the live registries (#774 Step 6).
+   On a verification failure at this stage, re-dispatch the generator and re-amend rather than reaching for the local merge-mode remedy, for the reason given under "Review the diff" above.
 
 6. Finish what CI cannot check.
    Re-paste `.claude/setup-environment.sh` into the web environment if it changed (see `.claude/environment.md`), and after merge install the `dev-build` APK and exercise the overlay once, because the release variant has no runtime coverage anywhere in CI.
