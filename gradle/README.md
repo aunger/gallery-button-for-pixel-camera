@@ -89,23 +89,44 @@ A specific ceiling read off the tag on a given day decays silently as the tag mo
 Separately from the CodeQL ceiling, the Kotlin Gradle plugin documents which Gradle and AGP versions each KGP row supports, in the compatibility table on [Configure a Gradle project](https://kotlinlang.org/docs/gradle-configure-project.html).
 The row for the KGP version in use must cover both the intended Gradle version and the intended AGP version.
 
-This constraint usually binds before the CodeQL one.
-At the Gradle 9.5.1 / AGP 9.1.0 / KGP 2.4.0 pin (#774), the table's highest fully-supported Gradle is 9.5.0, on the row covering KGP 2.4.0 to 2.4.10, so no stable KGP row reaches Gradle 9.6 or above.
+Read that table at bump time.
+Like the CodeQL ceiling, it moves without notice, so no value from it is recorded here.
+
+The two constraints are independent, and neither subsumes the other: this row bounds Gradle and AGP for a given KGP, while the CodeQL ceiling bounds the Kotlin version itself.
+A Gradle-only or AGP-only bump can be blocked by this row alone, and a Kotlin-only bump by the CodeQL ceiling alone.
+Check both, every time.
 
 Exceeding a row is a decision to record, not an error to avoid at all costs.
-#774 accepted Gradle 9.5.1, one patch above KGP 2.4.x's fully-supported maximum of 9.5.0, because 9.5.0 is EOL (Gradle backports only to the latest minor of a major) and carries an OOM regression that 9.5.1 exists to fix.
+#774 accepted Gradle 9.5.1, one patch above the fully-supported maximum of the KGP row it was on, because Gradle had already superseded that maximum with 9.5.1 (fixes ship only in the newest patch of the newest minor, so the older patch would receive none) and because 9.5.1 exists to fix an OOM regression.
 Weigh any future overage the same way, and write down the reasoning: a patch above the row is a far smaller step than a minor above it.
 
 ## Performing a toolchain bump
 
 1. Check the KGP compatibility row and the CodeQL Kotlin ceiling, both above.
    Do this **before** editing any version, not after a red CI run.
+
 2. Edit the versions.
    The root `build.gradle.kts` holds the KGP buildscript classpath pin, the AGP plugin version, and the Compose plugin version, which moves in lockstep with KGP.
-   A Gradle bump additionally touches every pin listed under the distribution-pin section above; the guard scripts named there fail the build if any is forgotten.
-3. Dispatch `.github/workflows/regenerate-gradle-toolchain.yml` against the branch.
-   It regenerates the wrapper matched set and `verification-metadata.xml` from scratch, and uploads them as an artifact rather than committing them.
-4. Review the artifact, amend the regenerated files into the same commit as the step 2 edits, and open the PR.
-   #774's Step 5 records the review recipe: verify the wrapper JAR against its published checksum, reproduce the wrapper with `cmp` and `stat` (not `diff`, which is mode-blind), and diff the component listing rather than the checksum hashes.
+   Other pin sets travel with a bump depending on what moved:
+
+   - **A Gradle bump** touches every pin listed under the distribution-pin section above, *and* the `GRADLE_VERSION`, `DIST_SHA256`, and `WRAPPER_JAR_SHA256` values in `.github/workflows/regenerate-gradle-toolchain.yml`.
+     Miss those three and step 3 downloads the old Gradle and rewrites `gradle-wrapper.properties` back to it, so the run fails its own guard step and uploads no artifact, only the `DO-NOT-COMMIT` diagnostic.
+   - **An AGP bump** may move the required Android build-tools version, pinned in `.claude/hooks/session-start.sh`, `.claude/setup-environment.sh`, `.github/workflows/regenerate-gradle-toolchain.yml`, and the "Full Android toolchain" requirement above.
+
+   Know which of these are enforced.
+   `scripts/test_verification_metadata.sh` and `scripts/test_setup_environment.sh` fail the build on drift among the pins they compare, but nothing checks the generator workflow's three values against them, and nothing can check that `.claude/setup-environment.sh` has been re-pasted into the web form (see `.claude/environment.md`).
+   Those last two are human steps.
+
+3. Commit the step 2 edits and push the branch, then dispatch `.github/workflows/regenerate-gradle-toolchain.yml` against it.
+   The workflow checks out the pushed tip, not your working tree, so an uncommitted edit is silently regenerated against the old graph.
+   It rebuilds the wrapper matched set and `verification-metadata.xml` from scratch and uploads them as an artifact rather than committing them.
+
+4. Review the artifact, then amend it into the step 2 commit and force-push.
+   #774's Step 5 records the review recipe: verify the wrapper JAR against its published checksum; regenerate the wrapper from the verified distribution and compare with `cmp` for content **and** `stat` for modes, since neither `cmp` nor `diff` sees the exec bit that the tarball packaging exists to preserve; and diff the artifact's `metadata-components.txt` against the same listing derived from the committed file (the generator's "Emit the pinned-component listing" step holds the script that produces it) rather than reading the checksum hashes.
+   Unpack the tarball outside the repository: `metadata-components.txt` is review-only and is not gitignored.
+
+5. Open the PR and let the complete `build.yml` run validate it, per the regeneration requirements above.
+   That full run is the only thing that catches a configuration whose dependencies were missed during generation; on a verification failure, re-run the merge-mode script and repeat until green.
+   #774 also requires a check CI cannot perform: after merge, install the `dev-build` APK and exercise the overlay once, because the release variant has no runtime coverage anywhere in CI.
 
 The bump lands as one commit, so the version edits and the regenerated pins are never separated.
