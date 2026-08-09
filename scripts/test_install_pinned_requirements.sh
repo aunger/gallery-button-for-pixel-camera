@@ -13,6 +13,22 @@
 # second would be skipped as "already installed" on the strength of the first.
 # The script cannot see its own call sites, so that check lives here.
 #
+# HOW THE WIRING CASES FIND A LOCK
+#
+# Cases (g) and (h) grep for a spelling rather than parsing bash or YAML, so an
+# install written another way drops out of the comparison silently: (h) would
+# then still pass, because its non-empty guard only proves that some lock
+# matched, not that yours did. If you add an install, match these spellings, or
+# extend the patterns here:
+#
+#   .claude/hooks/session-start.sh   "$REPO_ROOT/scripts/<path>.txt", unquoted
+#                                    path, no variable standing in for it
+#   .github/workflows/build.yml      -r scripts/<path>.txt (not --requirement,
+#                                    not a quoted or variable path)
+#
+# Comments are stripped from both files first, so prose naming a lock is not
+# counted as an install.
+#
 # Always exits 0 on success, non-zero on failure.
 
 set -uo pipefail
@@ -117,7 +133,7 @@ fi
 
 # ── (c) an unchanged lock is skipped ─────────────────────────────────────────
 echo ""
-echo "=== (c) an unchanged lock is a no-op on the next session ==="
+echo "=== (c) an unchanged lock is a no-op on a re-run ==="
 if run_installer "$CASE" && [[ "$(pip_calls "$CASE")" -eq 1 ]]; then
     pass "the second run installed nothing"
 else
@@ -132,7 +148,7 @@ fi
 
 # ── (d) an edited lock is reinstalled ────────────────────────────────────────
 echo ""
-echo "=== (d) an edited lock reaches the next session ==="
+echo "=== (d) an edited lock is reinstalled ==="
 printf 'defusedxml==0.7.2 --hash=sha256:%064d\n' 2 > "$CASE/requirements-fake.txt"
 if run_installer "$CASE" && [[ "$(pip_calls "$CASE")" -eq 2 ]]; then
     pass "a changed lock triggers a reinstall"
@@ -152,7 +168,7 @@ else
     pass "the installer exits non-zero when pip fails"
 fi
 if [[ ! -f "$(marker_of "$BROKEN")" ]]; then
-    pass "no marker is written, so the next session retries"
+    pass "no marker is written, so the next run retries"
 else
     fail "a failed install must not write its marker"
 fi
@@ -179,7 +195,8 @@ fi
 # here, so a lock added to the hook is covered without editing this test.
 echo ""
 echo "=== (g) the session-start hook's locks ==="
-HOOK_LOCKS="$(grep -o '\$REPO_ROOT/scripts/[A-Za-z0-9_./-]*\.txt' "$HOOK" | sed 's|^\$REPO_ROOT/||' | sort -u)"
+HOOK_LOCKS="$(sed 's/#.*$//' "$HOOK" \
+    | grep -o '\$REPO_ROOT/scripts/[A-Za-z0-9_./-]*\.txt' | sed 's|^\$REPO_ROOT/||' | sort -u)"
 if [[ -n "$HOOK_LOCKS" ]]; then
     pass "the hook provisions locks: $(echo "$HOOK_LOCKS" | tr '\n' ' ')"
 else
@@ -220,8 +237,8 @@ fi
 # semgrep.yml installs an engine that is deliberately CI-only.
 echo ""
 echo "=== (h) every lock CI installs to run the tests is installed for sessions ==="
-CI_LOCKS="$(grep -o -- '-r scripts/[A-Za-z0-9_./-]*\.txt' "$REPO_ROOT/.github/workflows/build.yml" \
-    | sed 's/^-r //' | sort -u)"
+CI_LOCKS="$(sed 's/#.*$//' "$REPO_ROOT/.github/workflows/build.yml" \
+    | grep -o -- '-r scripts/[A-Za-z0-9_./-]*\.txt' | sed 's/^-r //' | sort -u)"
 if [[ -n "$CI_LOCKS" ]]; then
     pass "build.yml installs locks: $(echo "$CI_LOCKS" | tr '\n' ' ')"
 else

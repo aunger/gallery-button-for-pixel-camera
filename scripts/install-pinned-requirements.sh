@@ -21,15 +21,19 @@
 # --force-reinstall installs what the lock names even when something already
 # satisfies the requirement. That is what makes the lock authoritative: without
 # it, a package the base image happens to ship at the pinned version is left in
-# place and the session runs bytes the repository never declared. It also
-# recreates console-script entry points that a prior run may have left out (pip
-# skips writing them when $HOME/.local/bin is not on PATH at install time).
+# place and the session runs bytes the repository never declared.
 #
 # The install is gated on the SHA-256 of the lock: a marker file records the hash
-# that was last installed, so any edit to the pinned versions triggers a
-# reinstall on the next session while an unchanged lock skips the work. The
-# marker is named after the lock, and is written only after pip succeeds, so a
-# failed install is retried next session rather than being remembered as done.
+# that was last installed, so a re-run against an unchanged lock skips the work
+# while any edit to the pinned versions reinstalls. The marker is named after the
+# lock, and is written only after pip succeeds, so a failed install is retried
+# rather than being remembered as done.
+#
+# The marker lives under $HOME, which is the session's own filesystem and not the
+# cached image: only .claude/setup-environment.sh writes into that (see
+# .claude/environment.md). So this skips repeat runs within a container, which is
+# what the session-start hook's idempotence needs, and a later session installs
+# again from scratch.
 #
 # Idempotent: re-running against an already installed lock is a fast no-op.
 

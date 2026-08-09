@@ -62,7 +62,7 @@ It fails the build when the committed copy drifts from `gradle/wrapper/gradle-wr
 
 - It never regenerates `gradle/verification-metadata.xml`. The generator workflow is that file's only provenance (#774).
 - It provisions no emulator. The E2E suites need KVM, which web sessions do not have, so they stay CI-only.
-- It installs no pip packages. The two hash-pinned locks a session needs (`scripts/lint/requirements-lint.txt` and `scripts/requirements.txt`) are installed by the hook into the session user's `~/.local`, and its SHA-256 markers already make that a no-op once a lock is in place. They come to about a megabyte of wheels, against the ~130 MB Gradle distribution and ~190 MB JDK this script exists to keep out of every session, so seeding them here would duplicate the marker logic to save a few seconds (#806).
+- It installs no pip packages (#806). Both hash-pinned locks (`scripts/lint/requirements-lint.txt` and `scripts/requirements.txt`) are installed per session by the hook, into the session user's `~/.local`. Seeding them here would inherit the `SESSION_HOME` guess above, and a wrong guess would be invisible: the session would simply install them itself and look no different, where a mis-seeded Gradle at least shows up as a download. It would also put a second copy of the marker logic in a script CI can only partly verify, and to be coherent it would have to seed both locks, including the much larger lint one (about 31 MB installed, nearly all of it `ruff`). What that buys back is one `pip install` per session, about 5 MB installed for the helper deps and about 31 MB for the lint tools, from PyPI, which is not the path that has actually proved flaky here. That is the same cost this script exists to eliminate for the ~130 MB Gradle distribution and ~190 MB JDK, at a scale where it does not pay.
 - It never trusts a hash published by whatever served the bytes. `GRADLE_DIST_DOWNLOAD_URL` and `TEMURIN_DOWNLOAD_URL` can redirect those *downloads* to a mirror if a host is blocked; the pinned SHA-256 still gates what that mirror serves.
 
 ### What is and is not checksummed
@@ -128,6 +128,8 @@ Nothing is git-cloned or fetched from GitHub Releases at commit time (issue #667
 | Python lint tools | 3b   | PyPI (`scripts/lint/requirements-lint.txt`)        | `ruff`, `pre-commit-hooks` checks, `mdformat` + plugins; in `~/.local/bin`  |
 | git hook          | 3c   | `core.hooksPath` = `scripts/git-hooks`             | runs `scripts/lint/lint.sh` on staged files on every `git commit`           |
 
+That table is the lint stack only, not everything the hook installs: step 4 also installs the Python helper scripts' runtime dependencies, covered in its own section below.
+
 The `ktlint` JAR is stored under `~/.local/lib/ktlint/`.
 `ruff` version tracks the ruff-pre-commit pin (issue #673); `pre-commit-hooks` is the same upstream project as before, now installed from PyPI instead of cloned, and exposes each generic check as a console script.
 
@@ -174,11 +176,13 @@ The Python helper scripts' runtime deps (`defusedxml`, `requests`, `PyYAML`) com
 Regenerate the lock with the `uv pip compile` command recorded in that `.in` file's header.
 
 Both sides install it: CI in `.github/workflows/build.yml`, and the `SessionStart` hook in step 4 (issue #806).
-The session install is what makes the whole test suite runnable locally; without it, four of the Python test modules and `scripts/ci/test-support/test_summarize_preflight_integration.sh` fail with `No module named 'defusedxml'` whatever the change under test is.
-It also makes the versions this repository declares the ones a session runs: `requests` and `PyYAML` happen to resolve from the base image, so a change there would extend the same failure to them with no other signal.
+The session install is what makes the whole test suite runnable in a session; without it, four of the Python test modules and `scripts/ci/test-support/test_summarize_preflight_integration.sh` fail with `No module named 'defusedxml'` whatever the change under test is.
+The hook returns immediately unless `CLAUDE_CODE_REMOTE=true`, so a checkout on your own machine is not covered by it: install the lock there yourself with `pip install --require-hashes -r scripts/requirements.txt`, the command CI runs.
+The install also makes the versions this repository declares the ones a session runs: `requests` and `PyYAML` happen to resolve from the base image, so a change there would extend the same failure to them with no other signal.
 
 Steps 3b and 4 both install through `scripts/install-pinned-requirements.sh`, which records the SHA-256 of the lock it installed under `~/.local/share/gb4pc/`.
-An unchanged lock is therefore a no-op on later sessions, an edited one reinstalls, and a failed install writes no marker and is retried.
+A re-run against an unchanged lock is therefore a no-op, an edited lock reinstalls, and a failed install writes no marker and is retried.
+That marker sits in the session's own home rather than in the cached image, so it makes the hook cheap to re-run within a container; it does not carry across sessions, and a later session installs again.
 `scripts/test_install_pinned_requirements.sh` covers that behavior, and fails the build if `build.yml` installs a lock the hook does not.
 
 ______________________________________________________________________
