@@ -300,6 +300,24 @@ class TestMatchingLabelsCombined(unittest.TestCase):
         self.assertEqual(lpt.matching_labels("Set overlay default position to y=75%"), [])
 
 
+class TestFileDeterminedLabelSuppression(unittest.TestCase):
+    def test_issue_path_is_the_default_and_still_gets_agents(self):
+        self.assertIn("agents", lpt.matching_labels("Add PR verification agent instructions"))
+
+    def test_pull_request_path_suppresses_agents(self):
+        self.assertNotIn(
+            "agents",
+            lpt.matching_labels("Add PR verification agent instructions", is_pull_request=True),
+        )
+
+    def test_pull_request_path_keeps_every_other_matching_label(self):
+        title = "Add CiWatcher agent and fix Reviewer CI-polling loop"
+        self.assertEqual(lpt.matching_labels(title, is_pull_request=True), ["ci"])
+
+    def test_agents_is_the_only_file_determined_label(self):
+        self.assertEqual(lpt.FILE_DETERMINED_LABELS, frozenset({"agents"}))
+
+
 # ---------------------------------------------------------------------------
 # main() tests
 # ---------------------------------------------------------------------------
@@ -368,6 +386,67 @@ class TestMain(unittest.TestCase):
         body = mock_api.call_args[1]["body"]
         self.assertIn("ci", body["labels"])
         self.assertIn("agents", body["labels"])
+
+    def test_is_pull_request_true_omits_agents_from_the_post(self):
+        with patch.dict(
+            os.environ,
+            {
+                "ISSUE_TITLE": "Add CiWatcher agent and fix Reviewer CI-polling loop",
+                "IS_PULL_REQUEST": "true",
+            },
+        ):
+            with patch.object(lpt, "gh_api") as mock_api:
+                result = lpt.main()
+        self.assertEqual(result, 0)
+        self.assertEqual(mock_api.call_args[1]["body"], {"labels": ["ci"]})
+
+    def test_is_pull_request_is_case_and_whitespace_tolerant(self):
+        # GitHub Actions renders the boolean expression as "true"/"false",
+        # but a hand-run invocation may not be so tidy.
+        for value in ("TRUE", " true "):
+            with self.subTest(value=value):
+                with patch.dict(
+                    os.environ,
+                    {
+                        "ISSUE_TITLE": "Add CiWatcher agent and fix Reviewer CI-polling loop",
+                        "IS_PULL_REQUEST": value,
+                    },
+                ):
+                    with patch.object(lpt, "gh_api") as mock_api:
+                        lpt.main()
+                self.assertEqual(mock_api.call_args[1]["body"], {"labels": ["ci"]})
+
+    def test_omitted_or_false_is_pull_request_behaves_as_before(self):
+        # Fail open: a caller that forgets the variable labels a PR from its
+        # title exactly as it did before, and the file signal removes the
+        # label on the next push.
+        for env in ({}, {"IS_PULL_REQUEST": ""}, {"IS_PULL_REQUEST": "false"}):
+            with self.subTest(env=env):
+                with patch.dict(
+                    os.environ,
+                    {
+                        "ISSUE_TITLE": "Add CiWatcher agent and fix Reviewer CI-polling loop",
+                        **env,
+                    },
+                ):
+                    with patch.object(lpt, "gh_api") as mock_api:
+                        lpt.main()
+                body = mock_api.call_args[1]["body"]
+                self.assertIn("agents", body["labels"])
+                self.assertIn("ci", body["labels"])
+
+    def test_no_post_when_agents_was_the_only_match_on_a_pull_request(self):
+        with patch.dict(
+            os.environ,
+            {
+                "ISSUE_TITLE": "Tighten guidance for agents",
+                "IS_PULL_REQUEST": "true",
+            },
+        ):
+            with patch.object(lpt, "gh_api") as mock_api:
+                result = lpt.main()
+        self.assertEqual(result, 0)
+        mock_api.assert_not_called()
 
     def test_exit_1_on_http_error(self):
         error = urllib.error.HTTPError(url=None, code=422, msg="Unprocessable", hdrs=None, fp=None)

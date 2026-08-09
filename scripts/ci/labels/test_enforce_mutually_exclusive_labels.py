@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Unit tests for enforce_mutually_exclusive_labels.py."""
 
+import io
 import json
 import os
 import sys
 import unittest
 import urllib.error
+from contextlib import redirect_stdout
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -500,6 +502,25 @@ class TestRemoveLabels(unittest.TestCase):
 
         self.assertTrue(any("verification%20needed" in p for p in call_paths))
         self.assertTrue(result)
+
+    def test_default_reason_says_conflicting(self):
+        with patch.object(emxl, "gh_api"):
+            out = io.StringIO()
+            with redirect_stdout(out):
+                emxl.remove_labels(1, ["p2"], "owner/repo", "tok")
+        self.assertIn("Removed conflicting label 'p2' from #1.", out.getvalue())
+
+    def test_custom_reason_replaces_conflicting_in_the_log_line(self):
+        # scripts/ci/labels/label_by_files.py and
+        # scripts/ci/labels/audit_labels_by_files.py reuse this function for a
+        # removal where nothing conflicts, so they pass reason="unjustified"
+        # to keep the log line honest.
+        with patch.object(emxl, "gh_api"):
+            out = io.StringIO()
+            with redirect_stdout(out):
+                emxl.remove_labels(1, ["agents"], "owner/repo", "tok", reason="unjustified")
+        self.assertIn("Removed unjustified label 'agents' from #1.", out.getvalue())
+        self.assertNotIn("conflicting", out.getvalue())
 
 
 # ---------------------------------------------------------------------------
