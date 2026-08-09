@@ -170,24 +170,14 @@ def apply_labels(to_apply: dict[int, list[str]], repo: str, token: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def format_report(
-    add: dict[str, list[int]],
-    match: dict[str, list[int]],
-    miss: dict[str, list[int]],
-    include_match: bool = True,
-) -> str:
-    """Render the add/match/miss categories as JSON.
+def format_categories(categories: list[tuple[str, dict[str, list[int]]]]) -> str:
+    """Render named label-to-issue-numbers *categories* as JSON.
 
     Minimized except for a newline after each ``"category":`` and after
-    each label's number list, per the requested output shape. Pass
-    ``include_match=False`` to omit the "match" key entirely (the
-    ``--skip-matches`` flag given with no value).
+    each label's number list, per the requested output shape. Shared with
+    scripts/ci/labels/audit_labels_by_files.py so both reports have the
+    same shape.
     """
-    categories = [("add", add)]
-    if include_match:
-        categories.append(("match", match))
-    categories.append(("miss", miss))
-
     category_parts = []
     for name, labels in categories:
         label_parts = [
@@ -196,6 +186,24 @@ def format_report(
         ]
         category_parts.append(f"{json.dumps(name)}:\n{{{','.join(label_parts)}}}")
     return "{" + ",".join(category_parts) + "}"
+
+
+def format_report(
+    add: dict[str, list[int]],
+    match: dict[str, list[int]],
+    miss: dict[str, list[int]],
+    include_match: bool = True,
+) -> str:
+    """Render the add/match/miss categories as JSON.
+
+    Pass ``include_match=False`` to omit the "match" key entirely (the
+    ``--skip-matches`` flag given with no value).
+    """
+    categories = [("add", add)]
+    if include_match:
+        categories.append(("match", match))
+    categories.append(("miss", miss))
+    return format_categories(categories)
 
 
 def parse_skip_matches(value: str | None) -> tuple[bool, frozenset[str]]:
