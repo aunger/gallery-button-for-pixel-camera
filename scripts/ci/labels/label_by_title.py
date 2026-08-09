@@ -48,6 +48,13 @@ _E2E_TEST_IDENTIFIER = r"\w*e2etest\w*"
 _MERGE_COMPANION = rf"{_B}gat(ing|e[ds]?){_B}|{_B}(un)?block\w*|{_B}prs?{_B}"
 _MERGE = rf"(?=.*{_B}merg\w+)(?=.*({_MERGE_COMPANION}))"
 
+# "verif\w+" is only recognized alongside a companion word, since it
+# otherwise sweeps in unrelated Gradle dependency-verification work (#714,
+# #760). "agent" is deliberately excluded from the companion list: a title
+# containing it already matches the agent\w* sub-rule independently.
+_VERIF_COMPANION = rf"{_B}planner{_B}|{_B}labels?{_B}|{_B}prs?{_B}"
+_VERIF = rf"(?=.*{_B}verif\w+{_B})(?=.*({_VERIF_COMPANION}))"
+
 LABEL_PATTERNS: dict[str, re.Pattern[str]] = {
     "ci": re.compile(
         rf"{_B}ci{_B}"
@@ -66,7 +73,7 @@ LABEL_PATTERNS: dict[str, re.Pattern[str]] = {
         rf"|{_B}rules?{_B}"
         rf"|{_B}attributions?{_B}"
         rf"|{_B}bylines?{_B}"
-        rf"|{_B}verif\w+{_B}"
+        rf"|{_VERIF}"
         rf"|{_B}author{_B}"
         rf"|{_B}reviewers?{_B}"
         rf"|{_B}orchestrat\w*"
