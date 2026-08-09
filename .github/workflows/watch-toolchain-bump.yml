@@ -1,0 +1,39 @@
+name: Watch for toolchain-bump availability
+
+# Weekly poll for the upstream movement that could make a Gradle/AGP/KGP bump available,
+# reported on one long-lived tracking issue by scripts/ci/prs-and-issues/watch_toolchain_bump.py.
+#
+# A schedule is the only mechanism available here, unlike reconcile-issue-labels.yml, which
+# deliberately refuses one. That workflow polls for a gap that event triggers already close;
+# upstream version drift produces no events in this repository at all, so nothing else can notice
+# it.
+#
+# The script needs no contents: write: it recovers its previous observation from its own most
+# recent comment on the tracking issue rather than from a state file.
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'   # weekly, Monday at 06:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  issues: write
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install Python script dependencies
+        # --require-hashes refuses any artifact whose SHA-256 is not in the generated lock
+        # scripts/requirements.txt (issue #723; see scripts/requirements.in for the top-level
+        # pins). The watcher needs requests and defusedxml.
+        run: pip install --require-hashes -r scripts/requirements.txt
+
+      - name: Watch for toolchain-bump availability
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python3 scripts/ci/prs-and-issues/watch_toolchain_bump.py
