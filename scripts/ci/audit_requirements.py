@@ -369,9 +369,16 @@ def load_ignores(path: Path, known_locks: set[str]) -> list[IgnoreEntry]:
     if unknown_tables:
         raise AuditError(f"{path}: unknown top-level table(s): {', '.join(unknown_tables)}")
 
+    raw_ignore = data.get("ignore", {})
+    if not isinstance(raw_ignore, dict):
+        raise AuditError(
+            f"{path}: [ignore] must be a table mapping each lock path to an array of "
+            f"entries; got {type(raw_ignore).__name__}."
+        )
+
     entries: list[IgnoreEntry] = []
     seen: set[tuple[str, str]] = set()
-    for lock, raw_entries in sorted(data.get("ignore", {}).items()):
+    for lock, raw_entries in sorted(raw_ignore.items()):
         if lock not in known_locks:
             raise AuditError(
                 f"{path}: ignore entries are filed under {lock!r}, which is not a requirements "
@@ -381,13 +388,21 @@ def load_ignores(path: Path, known_locks: set[str]) -> list[IgnoreEntry]:
             )
         if not isinstance(raw_entries, list):
             raise AuditError(f'{path}: [ignore."{lock}"] must be an array of tables.')
-        for raw in raw_entries:
-            missing = [f for f in _IGNORE_FIELDS if not str(raw.get(f, "")).strip()]
-            if missing:
+        for index, raw in enumerate(raw_entries, start=1):
+            if not isinstance(raw, dict):
                 raise AuditError(
-                    f"{path}: entry {raw.get('id', '<no id>')!r} under {lock!r} is missing "
-                    f"required field(s): {', '.join(missing)}. Every entry must record why "
-                    "the finding is tolerated and what would make the entry unnecessary."
+                    f"{path}: entry {index} under {lock!r} must be a table with the fields "
+                    f"{', '.join(_IGNORE_FIELDS)}; got {type(raw).__name__}."
+                )
+            bad = [
+                f for f in _IGNORE_FIELDS if not isinstance(raw.get(f), str) or not raw[f].strip()
+            ]
+            if bad:
+                raise AuditError(
+                    f"{path}: entry {index} under {lock!r} (id {raw.get('id', '<none>')!r}) "
+                    f"has missing, blank or non-string field(s): {', '.join(bad)}. Every "
+                    "entry must record why the finding is tolerated and what would make the "
+                    "entry unnecessary."
                 )
             extra = sorted(set(raw) - set(_IGNORE_FIELDS))
             if extra:

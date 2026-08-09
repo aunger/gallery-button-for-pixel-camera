@@ -286,6 +286,27 @@ class TestLoadIgnores(IgnoreFileTestCase):
             ar.load_ignores(self.write_ignore(body), {"scripts/lock.txt"})
         self.assertIn("array of tables", str(ctx.exception))
 
+    # The three shapes below used to raise AttributeError. The file's whole job
+    # is to be re-read by a human under time pressure; a traceback is a worse
+    # thing to hand them than the messages every other branch produces.
+
+    def test_ignore_must_be_a_table(self):
+        with self.assertRaises(ar.AuditError) as ctx:
+            ar.load_ignores(self.write_ignore('ignore = "oops"\n'), {"scripts/lock.txt"})
+        self.assertIn("[ignore] must be a table", str(ctx.exception))
+
+    def test_array_elements_must_be_tables(self):
+        body = '[ignore]\n"scripts/lock.txt" = ["oops"]\n'
+        with self.assertRaises(ar.AuditError) as ctx:
+            ar.load_ignores(self.write_ignore(body), {"scripts/lock.txt"})
+        self.assertIn("must be a table with the fields", str(ctx.exception))
+
+    def test_non_string_field_is_an_error(self):
+        body = VALID_ENTRY.replace('id = "PYSEC-1"', "id = 1")
+        with self.assertRaises(ar.AuditError) as ctx:
+            ar.load_ignores(self.write_ignore(body), {"scripts/lock.txt"})
+        self.assertIn("non-string field(s): id", str(ctx.exception))
+
 
 def entry(lock="lock.txt", vuln_id="PYSEC-1", package="somepkg") -> ar.IgnoreEntry:
     return ar.IgnoreEntry(lock=lock, vuln_id=vuln_id, package=package, reason="r", remove_when="w")
