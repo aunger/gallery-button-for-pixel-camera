@@ -27,6 +27,11 @@ def _paths_from(mapping: dict[int, list[str] | None]):
     return lambda number: mapping[number]
 
 
+def _pulls(n: int, start: int = 0) -> list[dict]:
+    """Build *n* merged, unlabeled pull request dicts with distinct numbers."""
+    return [_pull(start + i, []) for i in range(n)]
+
+
 # ---------------------------------------------------------------------------
 # fetch_merged_pulls
 # ---------------------------------------------------------------------------
@@ -39,12 +44,23 @@ class TestFetchMergedPulls(unittest.TestCase):
             result = alf.fetch_merged_pulls("owner/repo", "tok")
         self.assertEqual([p["number"] for p in result], [3, 1])
 
-    def test_paginates_until_empty_page(self):
-        page1 = [_pull(i, []) for i in range(100, 0, -1)]
-        page2 = [_pull(0, [])]
+    def test_stops_on_short_page(self):
+        # Matches label_by_files.fetch_changed_files's own early stop: a page
+        # shorter than PER_PAGE is the normal end of the list, so a second
+        # request is wasted.
+        page1 = _pulls(alf.PER_PAGE)
+        page2 = _pulls(1, start=alf.PER_PAGE)
+        with patch.object(alf.label_by_title, "gh_api", side_effect=[page1, page2]) as mock_api:
+            result = alf.fetch_merged_pulls("owner/repo", "tok")
+        self.assertEqual(len(result), alf.PER_PAGE + 1)
+        self.assertEqual(mock_api.call_count, 2)
+
+    def test_stops_on_empty_page_after_full_pages(self):
+        page1 = _pulls(alf.PER_PAGE)
+        page2 = _pulls(alf.PER_PAGE, start=alf.PER_PAGE)
         with patch.object(alf.label_by_title, "gh_api", side_effect=[page1, page2, []]) as mock_api:
             result = alf.fetch_merged_pulls("owner/repo", "tok")
-        self.assertEqual(len(result), 101)
+        self.assertEqual(len(result), alf.PER_PAGE * 2)
         self.assertEqual(mock_api.call_count, 3)
 
     def test_limit_truncates_the_pull_request_list(self):
@@ -55,11 +71,15 @@ class TestFetchMergedPulls(unittest.TestCase):
         # Stopping mid-page means the walk never asks for a second page.
         self.assertEqual(mock_api.call_count, 1)
 
-    def test_requests_closed_pull_requests_newest_first(self):
+    def test_requests_closed_pull_requests_by_updated_newest_first(self):
+        # sort=updated, not sort=created: the REST API has no sort=merged
+        # option, but merging updates a pull request, so updated_at
+        # approximates merge recency far better than created_at does.
         with patch.object(alf.label_by_title, "gh_api", return_value=[]) as mock_api:
             alf.fetch_merged_pulls("owner/repo", "tok")
         path = mock_api.call_args[0][0]
         self.assertIn("pulls?state=closed", path)
+        self.assertIn("sort=updated", path)
         self.assertIn("direction=desc", path)
 
 

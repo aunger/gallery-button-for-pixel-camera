@@ -31,8 +31,7 @@ Usage:
     -f, --force     Apply the "add" and "remove" categories, then print the
                     report.
     -q, --quiet     Suppress the JSON report.
-    --limit N       Consider only the N most recently opened merged pull
-                    requests.
+    --limit N       Consider only the N most recently merged pull requests.
 
     Exactly one of -n or -f is required, matching backfill_labels_by_title.py
     and git clean's semantics: the script refuses to guess and does nothing
@@ -78,19 +77,32 @@ PER_PAGE = 100
 
 
 def fetch_merged_pulls(repo: str, token: str, limit: int | None = None) -> list[dict]:
-    """Return merged pull requests, most recently opened first.
+    """Return merged pull requests, most recently merged first.
 
-    Walks repos/{repo}/pulls?state=closed newest-first and keeps the ones
-    carrying a ``merged_at`` timestamp, since a closed pull request may
-    simply have been closed unmerged. Stops as soon as *limit* of them have
-    been collected, so a small --limit costs a page or two rather than a walk
-    of the whole history.
+    Walks repos/{repo}/pulls?state=closed by ``updated_at`` descending and
+    keeps the ones carrying a ``merged_at`` timestamp, since a closed pull
+    request may simply have been closed unmerged. Stops as soon as *limit* of
+    them have been collected, or as soon as a page comes back shorter than
+    PER_PAGE (the normal end of the list, matching
+    label_by_files.fetch_changed_files's own early stop), so a small --limit
+    costs a page or two rather than a walk of the whole history.
+
+    ``updated_at``, not ``created_at``, is what makes this "most recently
+    merged" rather than "most recently opened": the REST API has no
+    sort=merged option, but merging a pull request is itself an update to it,
+    so ``updated_at`` is set to the merge time and, for a closed and merged
+    pull request, rarely changes again. The one exception is a label added or
+    removed after merge (a manual correction, or a backfill run of this very
+    script), which would sort that pull request later than its actual merge
+    time. That is judged an acceptable approximation for a regression check
+    on the recent tail--the stated purpose of --limit--rather than a reason to
+    walk the full history client-side to sort by ``merged_at`` exactly.
     """
     pulls: list[dict] = []
     page = 1
     while True:
         batch = label_by_title.gh_api(
-            f"repos/{repo}/pulls?state=closed&sort=created&direction=desc"
+            f"repos/{repo}/pulls?state=closed&sort=updated&direction=desc"
             f"&per_page={PER_PAGE}&page={page}",
             token=token,
         )
@@ -102,6 +114,8 @@ def fetch_merged_pulls(repo: str, token: str, limit: int | None = None) -> list[
             pulls.append(pull)
             if limit is not None and len(pulls) >= limit:
                 return pulls
+        if len(batch) < PER_PAGE:
+            return pulls
         page += 1
 
 
@@ -222,7 +236,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         type=int,
         default=None,
         metavar="N",
-        help="Consider only the N most recently opened merged pull requests.",
+        help="Consider only the N most recently merged pull requests.",
     )
     return parser.parse_args(argv)
 
