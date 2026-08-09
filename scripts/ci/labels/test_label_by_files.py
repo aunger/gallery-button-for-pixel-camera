@@ -414,6 +414,18 @@ class TestMain(unittest.TestCase):
         mock_api.assert_not_called()
         self.mock_emxl_api.assert_not_called()
 
+    def test_no_current_label_fetch_when_diff_justifies_agents(self):
+        # labels_to_remove is [] when a changed path justifies "agents", so
+        # remove_unjustified_labels--and its GET of the PR's current
+        # labels--never runs at all. This is the path deciding whether an
+        # agents-touching PR pays an extra GET on every synchronize.
+        with patch.object(lbf, "fetch_changed_files", return_value=["agents/code_edit.md"]):
+            with patch.object(lbf.label_by_title, "gh_api") as mock_api:
+                result = lbf.main()
+        self.assertEqual(result, 0)
+        self.assertEqual(mock_api.call_args[1]["body"], {"labels": ["agents"]})
+        self.mock_emxl_api.assert_not_called()
+
     def test_removal_log_line_says_unjustified_not_conflicting(self):
         # enforce_mutually_exclusive_labels.remove_labels defaults its log
         # line to "conflicting", which would be false here: nothing conflicts,
