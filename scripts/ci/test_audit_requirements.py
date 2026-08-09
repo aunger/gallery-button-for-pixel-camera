@@ -439,7 +439,9 @@ class TestMain(IgnoreFileTestCase):
         self.assertEqual(code, 0)
         self.assertIn("Audited 2 requirements lock(s)", out)
         self.assertIn("scripts/requirements.txt", out)
-        self.assertIn(os.path.join("scripts", "ci", "requirements-tool.txt"), out)
+        # Forward slashes on every platform: these are the keys the checked-in
+        # ignore file uses, so they cannot depend on the OS separator.
+        self.assertIn("scripts/ci/requirements-tool.txt", out)
 
     def test_unignored_finding_fails(self):
         code, out = self.run_main(None, {"risky": [vuln("PYSEC-1")]})

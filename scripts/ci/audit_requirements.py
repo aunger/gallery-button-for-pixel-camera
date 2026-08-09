@@ -184,9 +184,14 @@ def discover_locks(root: Path) -> list[Path]:
 
 
 def relative_to_root(path: Path, root: Path) -> str:
-    """Return *path* as a root-relative string; the ignore file keys on that form."""
+    """Return *path* as a root-relative, forward-slash string.
+
+    The ignore file keys on this form, and it is checked into git, so it has to
+    mean the same thing on every platform.  ``str()`` of a relative path uses the
+    OS separator, which would make the checked-in keys unmatchable on Windows.
+    """
     try:
-        return str(path.relative_to(root))
+        return path.relative_to(root).as_posix()
     except ValueError as exc:
         raise AuditError(
             f"{path} is outside the repo root {root}; pass --root to widen it"
