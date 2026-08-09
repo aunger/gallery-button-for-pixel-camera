@@ -22,6 +22,9 @@
 #   * This script MERGES into the existing gradle/verification-metadata.xml. That
 #     is the safe local behaviour: an interrupted or failed run never leaves the
 #     working tree with verification silently switched off.
+#     Merge mode is for iterating on an unchanged toolchain. During a version
+#     bump, re-dispatch the generator workflow instead; see "Performing a
+#     toolchain bump" in gradle/README.md.
 #   * The generator workflow DELETES the file first, so the regenerated one is
 #     built from scratch and carries no stale pins. That rm lives in the workflow
 #     (never here) precisely because this script also runs on developer machines.

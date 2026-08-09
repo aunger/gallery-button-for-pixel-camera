@@ -10,6 +10,10 @@
 # resolve on the full Android toolchain can do that, which is what CI exercises end to
 # end); they assert the file's structural invariants.
 #
+# If a check here fails during a version bump, see "Performing a toolchain bump"
+# in gradle/README.md: the constants below are duplicated in the generator
+# workflow, and a bump has to move both.
+#
 # Covers:
 #   (a) gradle/verification-metadata.xml exists and is well-formed XML
 #   (b) verify-metadata is "true" (metadata files are pinned)
