@@ -250,7 +250,7 @@ _Filed automatically by CI on failure of `{failure.class_name}.{failure.method_n
 # ---------------------------------------------------------------------------
 
 
-def _github_headers(token: str) -> dict[str, str]:
+def github_headers(token: str) -> dict[str, str]:
     return {
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github+json",
@@ -259,6 +259,43 @@ def _github_headers(token: str) -> dict[str, str]:
 
 
 LABELS = ["test-failure"]
+
+
+def find_issue_by_title(
+    token: str,
+    repository: str,
+    title: str,
+    label: str,
+) -> tuple[int, str] | None:
+    """Search open and closed issues for one labelled *label* whose title matches.
+
+    Returns a (issue_number, state) tuple if found, else None.
+    *state* is the string returned by the GitHub API, e.g. ``"open"`` or
+    ``"closed"``.
+
+    Kept separate from find_existing_issue so that a caller tracking something
+    other than a test failure (see watch_toolchain_bump.py, which keeps one
+    long-lived tracking issue) can reuse the lookup without inheriting the
+    test-failure title format or label.
+    """
+    # Omit is:open / is:closed so both states are searched.
+    query = f'repo:{repository} is:issue label:{label} "{title}" in:title'
+    url = "https://api.github.com/search/issues"
+    try:
+        resp = requests.get(
+            url,
+            headers=github_headers(token),
+            params={"q": query, "per_page": 1},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        items = data.get("items", [])
+        if items:
+            return (items[0]["number"], items[0]["state"])
+    except Exception as exc:  # noqa: BLE001
+        print(f"  Warning: issue search failed: {exc}", file=sys.stderr)
+    return None
 
 
 def find_existing_issue(
@@ -273,27 +310,12 @@ def find_existing_issue(
     *state* is the string returned by the GitHub API, e.g. ``"open"`` or
     ``"closed"``.
     """
-    simple_class = class_name.split(".")[-1]
-    # Omit is:open / is:closed so both states are searched.
-    query = (
-        f'repo:{repository} is:issue label:test-failure "[{simple_class}] {method_name}" in:title'
+    return find_issue_by_title(
+        token,
+        repository,
+        make_issue_title(class_name, method_name),
+        LABELS[0],
     )
-    url = "https://api.github.com/search/issues"
-    try:
-        resp = requests.get(
-            url,
-            headers=_github_headers(token),
-            params={"q": query, "per_page": 1},
-            timeout=30,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        items = data.get("items", [])
-        if items:
-            return (items[0]["number"], items[0]["state"])
-    except Exception as exc:  # noqa: BLE001
-        print(f"  Warning: issue search failed: {exc}", file=sys.stderr)
-    return None
 
 
 def create_issue(
@@ -301,12 +323,16 @@ def create_issue(
     repository: str,
     title: str,
     body: str,
+    labels: list[str] | None = None,
 ) -> int | None:
-    """Create a new GitHub issue.  Returns the issue number or None on failure."""
+    """Create a new GitHub issue.  Returns the issue number or None on failure.
+
+    *labels* defaults to LABELS (the test-failure label).
+    """
     url = f"https://api.github.com/repos/{repository}/issues"
-    payload = {"title": title, "body": body, "labels": LABELS}
+    payload = {"title": title, "body": body, "labels": LABELS if labels is None else labels}
     try:
-        resp = requests.post(url, headers=_github_headers(token), json=payload, timeout=30)
+        resp = requests.post(url, headers=github_headers(token), json=payload, timeout=30)
         resp.raise_for_status()
         return resp.json()["number"]
     except Exception as exc:  # noqa: BLE001
@@ -323,7 +349,7 @@ def add_issue_comment(
     """Append a comment to an existing issue.  Returns True on success."""
     url = f"https://api.github.com/repos/{repository}/issues/{issue_number}/comments"
     try:
-        resp = requests.post(url, headers=_github_headers(token), json={"body": body}, timeout=30)
+        resp = requests.post(url, headers=github_headers(token), json={"body": body}, timeout=30)
         resp.raise_for_status()
         return True
     except Exception as exc:  # noqa: BLE001
@@ -341,7 +367,7 @@ def reopen_issue(
     try:
         resp = requests.patch(
             url,
-            headers=_github_headers(token),
+            headers=github_headers(token),
             json={"state": "open"},
             timeout=30,
         )
