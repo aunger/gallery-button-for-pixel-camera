@@ -1,0 +1,90 @@
+# Findings that scripts/ci/audit_requirements.py tolerates, one entry per
+# advisory ID per lock (issue #804).
+#
+# An entry says "this finding is real, and here is why it does not block this
+# repo". It is not a dismissal of the advisory; it is a record of a reachability
+# argument, and it has to carry enough to re-check that argument later:
+#
+#   id           the advisory ID exactly as pip-audit reports it (PYSEC-..., GHSA-...).
+#   package      the distribution the advisory is against; a mismatch fails the audit.
+#   reason       why the finding does not apply to this repo's usage.
+#   remove_when  what would have to become true for this entry to be deleted.
+#
+# Two rules make the list self-cleaning rather than a place things go to die:
+#
+# 1. An entry is scoped to one lock. A finding that is unreachable in the
+#    semgrep lock is not automatically unreachable in the script-runtime lock,
+#    so the same ID has to be justified again to be ignored again.
+# 2. An entry that stops matching a reported finding FAILS the audit. That
+#    usually means an upstream cap lifted or the package was dropped, which is
+#    exactly when the reasoning below deserves re-reading rather than quiet
+#    deletion. Issue #788's `click` case is the cautionary tale: semgrep
+#    relaxed its `click~=8.1.8` cap and nothing was watching, so a fixable HIGH
+#    was written off as unfixable for two weeks.
+#
+# This list is not the Dependabot dismissal list and is not kept in sync with
+# it. pip-audit reports from PyPI/OSV/PYSEC and GitHub alerts from its own
+# advisory database; their coverage differs (again per #788: OSV and PYSEC
+# carried CVE-2026-7246 against click 8.1.8 while GitHub did not alert on it).
+
+# ---------------------------------------------------------------------------
+# semgrep's transitive `mcp` pin. See issue #788 for the full analysis.
+#
+# semgrep declares `mcp==1.23.3` as an exact requirement, as a core dependency
+# rather than an extra, and has done so in every release through 1.172.0, so
+# regenerating this lock cannot move it -- `uv pip compile --upgrade` resolves
+# to 1.23.3 again at any semgrep version.
+#
+# All three advisories are bugs in MCP *server* transports, and each names an
+# explicit precondition that a server has to meet to be affected. Note that the
+# package is genuinely imported on every scan (semgrep/cli.py imports the `mcp`
+# subcommand at module import time to register it), so "the code never loads"
+# would be false; what is true is that no MCP server is ever started.
+# `semgrep scan` in .github/workflows/semgrep.yml is the only semgrep
+# invocation in this repo, and nothing runs `semgrep mcp`.
+# ---------------------------------------------------------------------------
+
+[[ignore."scripts/ci/requirements-semgrep.txt"]]
+id = "PYSEC-2026-3481"
+package = "mcp"
+reason = """
+CVE-2026-52870 / GHSA-hvrp-rf83-w775: the experimental tasks feature's default \
+request handlers do not check which session created a task, so on a server with \
+several connected clients one client can read and cancel another's tasks. \
+Affects only a server that calls `server.experimental.enable_tasks()`. This repo \
+starts no MCP server at all, and semgrep does not enable tasks."""
+remove_when = """
+semgrep relaxes its exact `mcp==1.23.3` requirement to admit 1.27.2 or later, or \
+this repo starts running `semgrep mcp`. In the first case, regenerating the lock \
+clears the finding; in the second, the reachability argument no longer holds and \
+the pin has to be forced or semgrep dropped."""
+
+[[ignore."scripts/ci/requirements-semgrep.txt"]]
+id = "PYSEC-2026-3482"
+package = "mcp"
+reason = """
+CVE-2026-52869 / GHSA-jpw9-pfvf-9f58: the SSE and stateful Streamable HTTP server \
+transports route a request to an existing session by session ID alone, without \
+checking that it is authenticated as the principal that created the session. \
+Affects only a server that serves one of those HTTP transports and authenticates \
+requests. This repo starts no MCP server at all, so neither transport is ever bound."""
+remove_when = """
+semgrep relaxes its exact `mcp==1.23.3` requirement to admit 1.27.2 or later, or \
+this repo starts running `semgrep mcp`. In the first case, regenerating the lock \
+clears the finding; in the second, the reachability argument no longer holds and \
+the pin has to be forced or semgrep dropped."""
+
+[[ignore."scripts/ci/requirements-semgrep.txt"]]
+id = "PYSEC-2026-3483"
+package = "mcp"
+reason = """
+CVE-2026-59950 / GHSA-vj7q-gjh5-988w: the deprecated WebSocket server transport \
+(`mcp.server.websocket.websocket_server`) completes the handshake with no Host or \
+Origin validation, because TransportSecuritySettings was never wired into it. \
+Affects only a server that exposes that transport. This repo starts no MCP server \
+at all, and semgrep does not expose a WebSocket transport."""
+remove_when = """
+semgrep relaxes its exact `mcp==1.23.3` requirement to admit 1.28.1 or later, or \
+this repo starts running `semgrep mcp`. In the first case, regenerating the lock \
+clears the finding; in the second, the reachability argument no longer holds and \
+the pin has to be forced or semgrep dropped."""
