@@ -22,6 +22,13 @@
 #   uv pip compile --universal --python-version 3.10 --generate-hashes \
 #       scripts/lint/requirements-lint.in -o scripts/lint/requirements-lint.txt
 #
+# That command keeps the versions already present in the lock, so on its own it
+# only re-resolves what a changed pin in this file forces. Transitive releases
+# published since the last run are left alone, including security fixes for
+# packages nothing here pins directly (issue #788). Add --upgrade to re-resolve
+# the whole closure, or -P/--upgrade-package NAME to move one package and
+# whatever it drags with it, which keeps a security bump to a reviewable diff.
+#
 # `uv` is not installed by the session-start hook. Install it first with
 # `pip install uv` (see .claude/environment.md).
 #

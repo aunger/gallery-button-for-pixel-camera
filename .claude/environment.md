@@ -132,6 +132,7 @@ The `ktlint` JAR is stored under `~/.local/lib/ktlint/`.
 
 `scripts/lint/requirements-lint.txt` is a fully resolved lock: every package, top-level and transitive, is pinned to an exact version and a SHA-256 hash, and pip installs it with `--require-hashes` so a substituted or tampered wheel is rejected (issue #699).
 Edit the top-level pins in `scripts/lint/requirements-lint.in` and regenerate the lock with the `uv pip compile` command recorded in that file's header.
+Regeneration is also how a transitive security fix reaches a lock, and the plain command will not pick one up; the `--upgrade` note in that header explains why (issue #788), and the same note appears in the other two `.in` files.
 `uv` is not installed by the session-start hook; install it first with `pip install uv`.
 
 ### Checks run by `scripts/lint/lint.sh`
