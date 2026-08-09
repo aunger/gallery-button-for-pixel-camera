@@ -6,6 +6,11 @@ addition to the normal ``\\b`` boundary, so e.g. ``ci_monitor`` matches the
 ``ci`` rule. See LABEL_PATTERNS below for the exact rules--not duplicated
 here, to avoid this docstring drifting out of sync with the code.
 
+On a pull request, FILE_DETERMINED_LABELS are suppressed: those are owned by
+scripts/ci/labels/label_by_files.py, which decides them from the PR's own
+changed files. Issues have no changed-file list, so nothing is suppressed
+there.
+
 Labels are only ever added, never removed.
 
 Usage:
@@ -21,6 +26,11 @@ Required environment variables:
     GITHUB_REPOSITORY   Owner/repo (e.g. "aunger/gallery-button-for-pixel-camera")
     ISSUE_NUMBER        Number of the issue or pull request
     ISSUE_TITLE         Title of the issue or pull request
+
+Optional environment variables:
+    IS_PULL_REQUEST     "true" when the target is a pull request rather than
+                        an issue, which suppresses FILE_DETERMINED_LABELS.
+                        Anything else (including unset) is treated as False.
 """
 
 import json
@@ -86,9 +96,31 @@ LABEL_PATTERNS: dict[str, re.Pattern[str]] = {
 }
 
 
-def matching_labels(title: str) -> list[str]:
-    """Return the labels whose rule matches *title*."""
-    return [label for label, pattern in LABEL_PATTERNS.items() if pattern.search(title)]
+# Labels that scripts/ci/labels/label_by_files.py determines from a pull
+# request's changed files under an if-and-only-if rule. On a pull request the
+# file signal owns them outright, so the title rule must not also write them:
+# the repository owner's precedence decision on issue #775 is that the file
+# list wins on PRs. Issues carry no changed-file list, so the title rule stays
+# the only signal there and nothing is suppressed.
+#
+# Precedence is made structural rather than a race. label-by-title.yml runs on
+# `pull_request: [opened, edited]` while label-by-files.yml runs on
+# `[opened, synchronize]`, so on `opened` both jobs run concurrently and
+# whichever lands last would otherwise decide, and a title edit alone would
+# re-add a label the file signal had removed.
+FILE_DETERMINED_LABELS: frozenset[str] = frozenset({"agents"})
+
+
+def matching_labels(title: str, is_pull_request: bool = False) -> list[str]:
+    """Return the labels whose rule matches *title*.
+
+    On a pull request (*is_pull_request*), FILE_DETERMINED_LABELS are left to
+    scripts/ci/labels/label_by_files.py and never applied from the title.
+    """
+    labels = [label for label, pattern in LABEL_PATTERNS.items() if pattern.search(title)]
+    if is_pull_request:
+        return [label for label in labels if label not in FILE_DETERMINED_LABELS]
+    return labels
 
 
 # ---------------------------------------------------------------------------
@@ -145,7 +177,12 @@ def main() -> int:
         print(f"Error: ISSUE_NUMBER is not a valid integer: {issue_number_str!r}", file=sys.stderr)
         return 1
 
-    labels = matching_labels(title)
+    # Defaulting to False makes an omission fail open: a caller that forgets
+    # the variable labels a pull request from its title as before, and the
+    # file signal removes any FILE_DETERMINED_LABELS label on the next push.
+    is_pull_request = os.environ.get("IS_PULL_REQUEST", "").strip().lower() == "true"
+
+    labels = matching_labels(title, is_pull_request=is_pull_request)
     if not labels:
         print(f"No label rules matched title {title!r} on #{issue_number}--nothing to do.")
         return 0

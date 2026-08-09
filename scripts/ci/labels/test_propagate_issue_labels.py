@@ -178,8 +178,11 @@ class TestLabelsToPropagate(unittest.TestCase):
         self.assertEqual(excluded, [])
 
     def test_labels_outside_any_exclusive_group_never_conflict(self):
-        to_add, skipped, excluded = pil.labels_to_propagate(["automated tests"], ["ci", "agents"])
-        self.assertEqual(to_add, ["ci", "agents"])
+        # "agents" was one of the examples here until issue #785 made it
+        # file-determined and therefore never propagated at all; "bug" keeps
+        # this case about mutual exclusion alone.
+        to_add, skipped, excluded = pil.labels_to_propagate(["automated tests"], ["ci", "bug"])
+        self.assertEqual(to_add, ["ci", "bug"])
         self.assertEqual(skipped, [])
         self.assertEqual(excluded, [])
 
@@ -222,6 +225,31 @@ class TestLabelsToPropagate(unittest.TestCase):
     def test_process_state_label_deduplicated_across_issues(self):
         to_add, skipped, excluded = pil.labels_to_propagate([], ["orchestrating", "orchestrating"])
         self.assertEqual(excluded, ["orchestrating"])
+
+    # -- FILE_DETERMINED_LABELS exclusion (issue #785) -----------------------
+
+    def test_excludes_agents_from_propagation(self):
+        to_add, skipped, excluded = pil.labels_to_propagate([], ["agents", "p1"])
+        self.assertEqual(to_add, ["p1"])
+        self.assertEqual(skipped, [])
+        self.assertEqual(excluded, ["agents"])
+
+    def test_excludes_agents_even_when_the_pr_already_carries_it(self):
+        # Ordered ahead of the already-present check, matching how
+        # PROCESS_STATE_LABELS is handled today.
+        to_add, skipped, excluded = pil.labels_to_propagate(["agents"], ["agents"])
+        self.assertEqual(to_add, [])
+        self.assertEqual(excluded, ["agents"])
+
+    def test_file_determined_exclusion_is_case_insensitive(self):
+        to_add, skipped, excluded = pil.labels_to_propagate([], ["Agents"])
+        self.assertEqual(to_add, [])
+        self.assertEqual(excluded, ["Agents"])
+
+    def test_file_determined_and_process_state_sets_are_disjoint(self):
+        # propagate_to_pr partitions `excluded` by these two sets for
+        # logging, which is only total if nothing belongs to both.
+        self.assertEqual(pil.FILE_DETERMINED_LABELS & pil.PROCESS_STATE_LABELS, frozenset())
 
     def test_process_state_exclusion_does_not_consume_a_skip_slot(self):
         # A process-state label and a genuinely conflicting label in the same
@@ -360,6 +388,19 @@ class TestPropagateToPr(unittest.TestCase):
                 pil.emxl, "gh_api", return_value={"labels": [{"name": "ci"}]}
             ) as mock_api:
                 result = pil.propagate_to_pr("owner", "repo", "owner/repo", 713, "tok")
+
+        self.assertTrue(result)
+        post_calls = [c for c in mock_api.call_args_list if c.kwargs.get("method") == "POST"]
+        self.assertEqual(len(post_calls), 1)
+        self.assertEqual(post_calls[0].kwargs["body"], {"labels": ["p1"]})
+
+    def test_does_not_propagate_agents_from_a_linked_issue(self):
+        # Issue #775 itself carries `agents`; a PR fixing it by touching only
+        # scripts/ci/labels/ must not inherit the label, on open or on any
+        # later body edit.
+        with patch.object(pil, "fetch_closing_issue_labels", return_value=["agents", "p1"]):
+            with patch.object(pil.emxl, "gh_api", return_value={"labels": []}) as mock_api:
+                result = pil.propagate_to_pr("owner", "repo", "owner/repo", 42, "tok")
 
         self.assertTrue(result)
         post_calls = [c for c in mock_api.call_args_list if c.kwargs.get("method") == "POST"]

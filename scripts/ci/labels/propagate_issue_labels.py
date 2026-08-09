@@ -25,7 +25,11 @@ agents/dev_orchestration.md deliberately lets an issue and its PR diverge on
 these mid-cycle (for example, `orchestrating` is removed from the PR alone,
 not the issue, to clear the "No blocking labels" merge gate while
 orchestration is still active), so blindly copying them from issue to PR
-fights that state machine instead of just adding a convenience label. See
+fights that state machine instead of just adding a convenience label.
+
+Labels a pull request's own changed files determine under an if-and-only-if
+rule (FILE_DETERMINED_LABELS, e.g. `agents`) are likewise never propagated:
+what a linked issue is about is not evidence about the PR's diff. See
 labels_to_propagate() for the exact rule.
 
 The pull_request trigger for this module's main() (see
@@ -44,7 +48,8 @@ Exit code:
     0  the PR has no closing issue references, its closing issues carry no
        labels, every eligible label was applied successfully, or every
        candidate was skipped due to a mutual-exclusion conflict or excluded
-       as orchestration-cycle state (neither is itself a failure).
+       as orchestration-cycle state or file-determined (none of these is
+       itself a failure).
     1  required configuration is missing/invalid, or fetching or applying
        labels failed.
 
@@ -185,6 +190,19 @@ PROCESS_STATE_LABELS: frozenset[str] = frozenset(
     }
 )
 
+# Labels a PR's own changed files determine under an if-and-only-if rule (see
+# scripts/ci/labels/label_by_files.py). What a linked issue is *about* is not
+# evidence about the PR's diff, so copying one of these across would
+# contradict the PR's own files. It would also fight the file signal on
+# timing: propagation runs on `opened` and on body edits, the file signal on
+# `opened` and `synchronize`, so a propagated label would sit on the PR until
+# the next push. Observed on 5 of the 21 PRs in issue #785's dry run that
+# carry `agents` without touching any agents path.
+#
+# Disjoint from PROCESS_STATE_LABELS by construction, so the two exclusion
+# reasons partition the excluded list cleanly for logging.
+FILE_DETERMINED_LABELS: frozenset[str] = frozenset({"agents"})
+
 
 def labels_to_propagate(
     current_pr_labels: list[str],
@@ -198,9 +216,11 @@ def labels_to_propagate(
                   enforce_mutually_exclusive_labels.py to remove a label
                   already staged on the PR (a real current PR label, or one
                   accepted earlier in this same call)
-        excluded  issue labels never considered at all because they are in
-                  PROCESS_STATE_LABELS--orchestration-cycle state the issue
-                  and its PR are allowed to carry differently by design
+        excluded  issue labels never considered at all: PROCESS_STATE_LABELS
+                  (orchestration-cycle state the issue and its PR are allowed
+                  to carry differently by design) and FILE_DETERMINED_LABELS
+                  (decided from the PR's own changed files, so the issue is
+                  not evidence about them)
 
     A label already present on the PR (case-insensitively) is dropped from
     every list--there is nothing to do for it. A label repeated across
@@ -226,7 +246,7 @@ def labels_to_propagate(
             continue
         seen_lower.add(lower)
 
-        if lower in PROCESS_STATE_LABELS:
+        if lower in PROCESS_STATE_LABELS or lower in FILE_DETERMINED_LABELS:
             excluded.append(label)
             continue
         if lower in already_lower:
@@ -288,11 +308,23 @@ def propagate_to_pr(owner: str, name: str, repo: str, pr_number: int, token: str
 
     to_add, skipped, excluded = labels_to_propagate(current_pr_labels, issue_labels)
 
-    if excluded:
+    # The two exclusions have different reasons, and the Actions log is the
+    # only debugging surface these scripts have, so they are reported apart.
+    process_state = [lbl for lbl in excluded if lbl.lower() in PROCESS_STATE_LABELS]
+    file_determined = [lbl for lbl in excluded if lbl.lower() in FILE_DETERMINED_LABELS]
+
+    if process_state:
         print(
-            f"Excluding orchestration-cycle labels {excluded} on PR #{pr_number}: the "
+            f"Excluding orchestration-cycle labels {process_state} on PR #{pr_number}: the "
             "issue and its PR are allowed to carry these differently while orchestration "
             "is active (see agents/dev_orchestration.md)."
+        )
+
+    if file_determined:
+        print(
+            f"Excluding file-determined labels {file_determined} on PR #{pr_number}: these "
+            "are decided from the PR's own changed files, so what the linked issue is about "
+            "is not evidence about them (see scripts/ci/labels/label_by_files.py)."
         )
 
     if skipped:

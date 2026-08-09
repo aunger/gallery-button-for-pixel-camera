@@ -16,6 +16,13 @@ def _issue(number: int, title: str, labels: list[str]) -> dict:
     return {"number": number, "title": title, "labels": [{"name": lbl} for lbl in labels]}
 
 
+def _pull_request(number: int, title: str, labels: list[str]) -> dict:
+    """Build an /issues item for a pull request (marked by the pull_request key)."""
+    item = _issue(number, title, labels)
+    item["pull_request"] = {"url": f"https://api.github.com/repos/owner/repo/pulls/{number}"}
+    return item
+
+
 # ---------------------------------------------------------------------------
 # TRACKED_LABELS
 # ---------------------------------------------------------------------------
@@ -123,6 +130,35 @@ class TestBuildReport(unittest.TestCase):
         add, match, miss, to_apply = blt.build_report(items)
         self.assertIn("ci", to_apply[1])
         self.assertIn("agents", to_apply[1])
+
+    # -- file-determined labels on pull requests (issue #785) ---------------
+
+    def test_pull_request_never_gets_a_file_determined_label_proposed(self):
+        # -f would otherwise reapply exactly what the if-and-only-if rule in
+        # label_by_files.py forbids.
+        items = [_pull_request(1, "Tighten guidance for agents", [])]
+        add, match, miss, to_apply = blt.build_report(items)
+        self.assertNotIn("agents", add)
+        self.assertNotIn(1, to_apply)
+
+    def test_pull_request_carrying_a_file_determined_label_is_not_a_miss(self):
+        # Reporting it would put every `agents`-labeled PR in "miss" on every
+        # run: the permanent noise TRACKED_LABELS exists to avoid.
+        items = [_pull_request(2, "Bump the version number", ["agents"])]
+        add, match, miss, to_apply = blt.build_report(items)
+        self.assertEqual(miss, {})
+
+    def test_pull_request_still_reports_labels_the_title_rule_owns(self):
+        items = [_pull_request(3, "Bump the version number", ["ci", "agents"])]
+        add, match, miss, to_apply = blt.build_report(items)
+        self.assertEqual(miss["ci"], [3])
+        self.assertNotIn("agents", miss)
+
+    def test_issue_without_a_pull_request_key_is_unchanged(self):
+        items = [_issue(4, "Tighten guidance for agents", [])]
+        add, match, miss, to_apply = blt.build_report(items)
+        self.assertEqual(add["agents"], [4])
+        self.assertEqual(to_apply[4], ["agents"])
 
 
 # ---------------------------------------------------------------------------

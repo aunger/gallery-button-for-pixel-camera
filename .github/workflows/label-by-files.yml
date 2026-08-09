@@ -1,9 +1,10 @@
 name: Label PR by changed files
 
-# Applies labels to a pull request based on the set of files it changed,
-# when every changed file maps to the same label. See
-# scripts/ci/labels/label_by_files.py for the exact rule. Labels are only
-# ever added, never removed.
+# Applies labels to a pull request based on the set of files it changed.
+# "ci" and "automated tests" are applied when every changed file maps to the
+# label, and never removed. "agents" follows an if-and-only-if rule instead:
+# applied when any changed file maps to it, and removed when none does. See
+# scripts/ci/labels/label_by_files.py for the exact rules.
 #
 # A separate workflow from label-by-title.yml because the two signals want
 # different triggers: title labeling only needs to run when the title
