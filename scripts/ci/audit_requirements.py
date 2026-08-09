@@ -415,15 +415,24 @@ def load_ignores(path: Path, known_locks: set[str]) -> list[IgnoreEntry]:
                     f"{path}: entry {raw['id']!r} under {lock!r} has unknown field(s): "
                     f"{', '.join(extra)}"
                 )
-            key = (lock, raw["id"])
+            # Unique on (lock, package, id), which is what evaluate() matches
+            # on. One advisory can hit two packages pinned in the same lock, and
+            # the reachability argument is per package, so each needs its own
+            # entry; keying uniqueness on (lock, id) alone would make the second
+            # one unwritable and leave that finding permanently red with no
+            # remedy inside the file.
+            package = normalize(raw["package"])
+            key = (lock, package, raw["id"])
             if key in seen:
-                raise AuditError(f"{path}: duplicate entry for {raw['id']!r} under {lock!r}")
+                raise AuditError(
+                    f"{path}: duplicate entry for {raw['id']!r} against {package!r} under {lock!r}"
+                )
             seen.add(key)
             entries.append(
                 IgnoreEntry(
                     lock=lock,
                     vuln_id=raw["id"],
-                    package=normalize(raw["package"]),
+                    package=package,
                     reason=raw["reason"].strip(),
                     remove_when=raw["remove_when"].strip(),
                 )
@@ -502,8 +511,8 @@ def format_report(report: Report, ignore_file: str) -> str:
         locks = sorted({entry.lock for entry in report.out_of_scope})
         lines.append("")
         lines.append(
-            f"Not the full gate: {len(report.out_of_scope)} ignore entry/entries were left "
-            f"unchecked because this run does not cover their lock ({', '.join(locks)})."
+            f"Not the full gate: {len(report.out_of_scope)} ignore entry(s) left unchecked "
+            f"because this run does not cover their lock ({', '.join(locks)})."
         )
 
     if report.honored:

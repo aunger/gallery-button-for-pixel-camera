@@ -17,6 +17,11 @@
 # entry would be noise. Both findings still appear in the report; only the
 # justification is shared.
 #
+# What has to be unique within a lock is the (package, id) pair, not the id. One
+# advisory can hit two packages pinned in the same lock, and reachability is
+# argued per package, so that case takes one entry each, with the same id and
+# different reasons.
+#
 # Two rules make the list self-cleaning rather than a place things go to die:
 #
 # 1. An entry is scoped to one lock. A finding that is unreachable in the

@@ -264,10 +264,20 @@ class TestLoadIgnores(IgnoreFileTestCase):
             ar.load_ignores(self.write_ignore(body), {"scripts/lock.txt"})
         self.assertIn("expires", str(ctx.exception))
 
-    def test_duplicate_id_under_one_lock_is_an_error(self):
+    def test_duplicate_id_for_the_same_package_under_one_lock_is_an_error(self):
         with self.assertRaises(ar.AuditError) as ctx:
             ar.load_ignores(self.write_ignore(VALID_ENTRY * 2), {"scripts/lock.txt"})
         self.assertIn("duplicate", str(ctx.exception))
+
+    def test_one_id_can_be_ignored_for_two_packages_in_one_lock(self):
+        # Uniqueness is (lock, package, id), matching what evaluate() matches
+        # on. One advisory covering two pinned packages is argued per package,
+        # so keying on (lock, id) would make the second entry unwritable and
+        # leave that finding red with no remedy inside the file.
+        body = VALID_ENTRY + VALID_ENTRY.replace('package = "somepkg"', 'package = "otherpkg"')
+        entries = ar.load_ignores(self.write_ignore(body), {"scripts/lock.txt"})
+        self.assertEqual([e.package for e in entries], ["somepkg", "otherpkg"])
+        self.assertEqual({e.vuln_id for e in entries}, {"PYSEC-1"})
 
     def test_unknown_top_level_table_is_an_error(self):
         body = VALID_ENTRY + "\n[settings]\nfail_on_stale = false\n"
@@ -462,6 +472,28 @@ class TestMain(IgnoreFileTestCase):
     def test_invalid_ignore_file_exits_two(self):
         code, _ = self.run_main('[[ignore."scripts/nope.txt"]]\nid = "X"\n', {})
         self.assertEqual(code, 2)
+
+    def test_one_advisory_hitting_two_packages_in_one_lock_can_be_fully_ignored(self):
+        # End to end for the (lock, package, id) key: load_ignores has to accept
+        # both entries and evaluate has to honor each against its own package,
+        # or the second finding stays red with no remedy inside the file.
+        (self.tmpdir / "scripts" / "ci" / "requirements-tool.txt").write_text(
+            "risky==1.23.3 \\\n    --hash=sha256:def\nalsorisky==2.0 \\\n    --hash=sha256:abc\n",
+            encoding="utf-8",
+        )
+        shared = "GHSA-shared-0000-0000"
+        body = "".join(
+            f'[[ignore."scripts/ci/requirements-tool.txt"]]\n'
+            f'id = "{shared}"\n'
+            f'package = "{pkg}"\n'
+            f'reason = "unreachable via {pkg}"\n'
+            f'remove_when = "upstream drops {pkg}"\n'
+            for pkg in ("risky", "alsorisky")
+        )
+        code, out = self.run_main(body, {"risky": [vuln(shared)], "alsorisky": [vuln(shared)]})
+        self.assertEqual(code, 0)
+        self.assertIn("unreachable via risky", out)
+        self.assertIn("unreachable via alsorisky", out)
 
     def test_narrowing_to_one_lock_does_not_misread_the_other_locks_entries(self):
         # Naming a lock is the documented interface, and it used to exit 2 with
