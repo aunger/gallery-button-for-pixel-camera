@@ -28,12 +28,34 @@ class TestLabelsForPath(unittest.TestCase):
 
     def test_test_script_basename_gives_automated_tests(self):
         self.assertEqual(
-            lbf.labels_for_path("scripts/ci/labels/test_label_by_files.py"),
+            lbf.labels_for_path("scripts/lint/test_check_md040.py"),
             frozenset({"automated tests"}),
         )
 
     def test_workflow_yaml_gives_ci(self):
         self.assertEqual(lbf.labels_for_path(".github/workflows/build.yml"), frozenset({"ci"}))
+
+    def test_ci_script_gives_ci(self):
+        for path in (
+            "scripts/ci/labels/label_by_title.py",
+            "scripts/ci/test-support/dismiss_anr.sh",
+        ):
+            self.assertEqual(lbf.labels_for_path(path), frozenset({"ci"}), msg=path)
+
+    def test_ci_test_script_gives_both_ci_and_automated_tests(self):
+        # Both rules fire on one path: the basename is a test script and the
+        # path is CI automation.
+        self.assertEqual(
+            lbf.labels_for_path("scripts/ci/labels/test_label_by_title.py"),
+            frozenset({"automated tests", "ci"}),
+        )
+
+    def test_lint_and_ci_monitor_scripts_are_not_ci(self):
+        # Pins the deliberate exclusions from CI_PATH_PREFIXES: lint.sh is a
+        # local pre-commit tool as much as a CI step, and ci_monitor is the
+        # Orchestrator's tool rather than repo CI.
+        for path in ("scripts/lint/lint.sh", "scripts/ci_monitor/ci_monitor.py"):
+            self.assertEqual(lbf.labels_for_path(path), frozenset(), msg=path)
 
     def test_unclassified_paths_give_empty_set(self):
         for path in (
@@ -116,6 +138,18 @@ class TestMatchingLabels(unittest.TestCase):
         # #665: a pure .github/workflows/*.yml version bump. The other miss
         # issue #775 cited.
         paths = [".github/workflows/strip-session-bylines.yml"]
+        self.assertEqual(lbf.matching_labels(paths), ["ci"])
+
+    def test_pr_782_regression_fixture(self):
+        # #782: the "a script under scripts/ci/ plus its test_* sibling"
+        # shape that motivates mapping scripts/ci/ to "ci". Without that
+        # mapping label_by_files.py itself is unclassified, which empties the
+        # intersection and the PR gets no label at all.
+        paths = [
+            ".github/workflows/label-by-files.yml",
+            "scripts/ci/labels/label_by_files.py",
+            "scripts/ci/labels/test_label_by_files.py",
+        ]
         self.assertEqual(lbf.matching_labels(paths), ["ci"])
 
 

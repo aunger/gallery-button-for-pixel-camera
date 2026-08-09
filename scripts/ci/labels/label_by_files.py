@@ -48,7 +48,18 @@ import label_by_title
 
 TEST_DIR_SEGMENTS = frozenset({"test", "androidTest", "sharedTest"})
 TEST_SCRIPT_BASENAME = re.compile(r"test_.+\.(py|sh)\Z")
-CI_PATH_PREFIXES = (".github/workflows/",)
+
+# scripts/ci/ holds the repository's CI automation itself, so it maps to "ci"
+# alongside the workflow YAML that invokes it. This repo's most common CI
+# change is "a script under scripts/ci/ plus its test_* sibling": without the
+# mapping the script is unclassified, which empties the intersection and the
+# PR gets nothing; with it the script scores {ci} and its test scores
+# {ci, automated tests}, so unanimity fires on {ci}.
+#
+# scripts/lint/ and scripts/ci_monitor/ are deliberately excluded: lint.sh is
+# a local pre-commit tool as much as a CI step, and ci_monitor is the
+# Orchestrator's own tool rather than repo CI.
+CI_PATH_PREFIXES = (".github/workflows/", "scripts/ci/")
 
 
 def labels_for_path(path: str) -> frozenset[str]:
