@@ -10,6 +10,13 @@
 # need pip-audit's fairly large closure (cyclonedx-python-lib, rich, requests,
 # CacheControl, ...). One CI tool, one lock, matching requirements-semgrep.in.
 #
+# This lock is deliberately CI-only, so the session-start hook does not install
+# it and scripts/install-pinned-requirements.sh never sees it (issue #806). That
+# is the same standing as the semgrep engine's lock: a session is not expected to
+# run either tool, so neither is provisioned per session. Section (h) of
+# scripts/test_install_pinned_requirements.sh compares only build.yml against the
+# hook for that reason.
+#
 # The lock generated from this file is itself audited by
 # scripts/ci/audit_requirements.py, which discovers every scripts/**/requirements*.txt,
 # so the scanner's own dependencies are covered by the same gate as everything else.

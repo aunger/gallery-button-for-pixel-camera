@@ -4,6 +4,10 @@ name: Label issue/PR by title
 # against its title. See scripts/ci/labels/label_by_title.py for the exact rules.
 # Labels are only ever added, never removed.
 #
+# IS_PULL_REQUEST tells the script which artifact it is labeling. On a pull
+# request it suppresses the labels label-by-files.yml determines from the
+# changed files, so the two signals never race for the same label.
+#
 # Runs on "opened" (a fresh title) or "edited" where the title itself
 # changed (github.event.changes.title is only present when the title was
 # part of the edit), so unrelated edits (body, labels, base branch) do
@@ -33,4 +37,5 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           ISSUE_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
           ISSUE_TITLE: ${{ github.event.pull_request.title || github.event.issue.title }}
+          IS_PULL_REQUEST: ${{ github.event_name == 'pull_request' }}
         run: python3 scripts/ci/labels/label_by_title.py
