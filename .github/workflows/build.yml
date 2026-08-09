@@ -158,7 +158,7 @@ jobs:
             echo "==> Discovering tests in $dir"
             python3 -m unittest discover -s "$dir" -p "test_*.py" -v && rc=0 || rc=$?
             # Python 3.12+ exits 5 for "no tests were collected" instead of 0.
-            # scripts/ itself hits this legitimately: its only test_*.py is
+            # scripts/ci_monitor itself hits this legitimately: its only test_*.py is
             # test_ci_monitor.py, which defines no unittest.TestCase tests (see
             # below). Tolerate 5; any other nonzero code is a real failure.
             if [[ $rc -ne 0 && $rc -ne 5 ]]; then
@@ -168,7 +168,7 @@ jobs:
           # test_ci_monitor.py is a procedural check()-based suite, not built from
           # unittest.TestCase classes, so `unittest discover` imports it but runs
           # none of its checks (issue #619). Run it directly too.
-          python3 scripts/test_ci_monitor.py
+          python3 scripts/ci_monitor/test_ci_monitor.py
 
       - name: Set up JDK 17
         if: needs.check-diff.outputs.needs_full_build == 'true'
