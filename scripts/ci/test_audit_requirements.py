@@ -241,10 +241,10 @@ class TestLoadIgnores(IgnoreFileTestCase):
         self.assertEqual(entries[0].vuln_id, "PYSEC-1")
         self.assertEqual(entries[0].package, "somepkg")
 
-    def test_entry_filed_under_an_unaudited_lock_is_an_error(self):
+    def test_entry_filed_under_a_path_that_is_not_a_lock_is_an_error(self):
         with self.assertRaises(ar.AuditError) as ctx:
             ar.load_ignores(self.write_ignore(VALID_ENTRY), {"scripts/other.txt"})
-        self.assertIn("not one of the audited locks", str(ctx.exception))
+        self.assertIn("not a requirements lock in this tree", str(ctx.exception))
 
     def test_missing_required_field_is_an_error(self):
         body = VALID_ENTRY.replace('remove_when = "the upstream cap lifts"\n', "")
@@ -371,9 +371,18 @@ class TestMain(IgnoreFileTestCase):
             "risky==1.23.3 \\\n    --hash=sha256:def\n", encoding="utf-8"
         )
 
-    def run_main(self, ignore_body: str | None, vulns: dict[str, list[dict]]):
+    TOOL_ENTRY = (
+        '[[ignore."scripts/ci/requirements-tool.txt"]]\n'
+        'id = "PYSEC-1"\n'
+        'package = "risky"\n'
+        'reason = "no server is ever started"\n'
+        'remove_when = "upstream relaxes its pin"\n'
+    )
+
+    def run_main(self, ignore_body: str | None, vulns: dict[str, list[dict]], *locks: str):
         argv = ["--root", str(self.tmpdir)]
         argv += ["--ignore-file", str(self.write_ignore(ignore_body or ""))]
+        argv += [str(self.tmpdir / lock) for lock in locks]
         buffer = io.StringIO()
         with redirect_stdout(buffer), redirect_stderr(buffer):
             code = ar.main(argv, runner=fake_runner(vulns))
@@ -392,33 +401,40 @@ class TestMain(IgnoreFileTestCase):
         self.assertIn("no ignore entry", out)
 
     def test_ignored_finding_passes_and_prints_the_rationale(self):
-        body = (
-            '[[ignore."scripts/ci/requirements-tool.txt"]]\n'
-            'id = "PYSEC-1"\n'
-            'package = "risky"\n'
-            'reason = "no server is ever started"\n'
-            'remove_when = "upstream relaxes its pin"\n'
-        )
-        code, out = self.run_main(body, {"risky": [vuln("PYSEC-1")]})
+        code, out = self.run_main(self.TOOL_ENTRY, {"risky": [vuln("PYSEC-1")]})
         self.assertEqual(code, 0)
         self.assertIn("no server is ever started", out)
         self.assertIn("upstream relaxes its pin", out)
 
     def test_ignore_entry_that_is_no_longer_reported_fails(self):
-        body = (
-            '[[ignore."scripts/ci/requirements-tool.txt"]]\n'
-            'id = "PYSEC-1"\n'
-            'package = "risky"\n'
-            'reason = "no server is ever started"\n'
-            'remove_when = "upstream relaxes its pin"\n'
-        )
-        code, out = self.run_main(body, {})
+        code, out = self.run_main(self.TOOL_ENTRY, {})
         self.assertEqual(code, 1)
         self.assertIn("Stale ignore entries", out)
 
     def test_invalid_ignore_file_exits_two(self):
         code, _ = self.run_main('[[ignore."scripts/nope.txt"]]\nid = "X"\n', {})
         self.assertEqual(code, 2)
+
+    def test_narrowing_to_one_lock_does_not_misread_the_other_locks_entries(self):
+        # Naming a lock is the documented interface, and it used to exit 2 with
+        # "not one of the audited locks" for every entry filed elsewhere.
+        code, out = self.run_main(self.TOOL_ENTRY, {}, "scripts/requirements.txt")
+        self.assertEqual(code, 0)
+        self.assertIn("Audited 1 requirements lock(s)", out)
+        self.assertIn("Not the full gate", out)
+        self.assertIn("scripts/ci/requirements-tool.txt", out)
+
+    def test_narrowing_still_enforces_the_entries_in_scope(self):
+        code, out = self.run_main(self.TOOL_ENTRY, {}, "scripts/ci/requirements-tool.txt")
+        self.assertEqual(code, 1)
+        self.assertIn("Stale ignore entries", out)
+        self.assertNotIn("Not the full gate", out)
+
+    def test_a_path_that_is_no_lock_at_all_is_still_an_error_when_narrowed(self):
+        body = '[[ignore."scripts/nope.txt"]]\nid = "X"\npackage = "p"\nreason = "r"\nremove_when = "w"\n'
+        code, out = self.run_main(body, {}, "scripts/requirements.txt")
+        self.assertEqual(code, 2)
+        self.assertIn("not a requirements lock in this tree", out)
 
     def test_unparseable_lock_exits_two(self):
         (self.tmpdir / "scripts" / "requirements.txt").write_text("-e .\n", encoding="utf-8")

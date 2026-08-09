@@ -61,7 +61,10 @@ Usage::
 
     python3 scripts/ci/audit_requirements.py [--ignore-file PATH] [LOCK ...]
 
-With no LOCK arguments every ``scripts/**/requirements*.txt`` is audited.
+With no LOCK arguments every ``scripts/**/requirements*.txt`` is audited, which
+is how CI runs it.  Naming locks narrows the run, for debugging one lock: ignore
+entries for the locks left out are reported as unchecked rather than treated as
+misfiled, so a narrowed run is visibly not the full gate.
 
 Exit codes:
     0  every lock is clean, or every finding is ignored and every ignore entry
@@ -156,6 +159,9 @@ class Report:
     unignored: list[Finding]
     stale: list[IgnoreEntry]
     mismatched: list[tuple[IgnoreEntry, Finding]]
+    # Entries for locks a narrowed run did not audit. Never a failure, but
+    # reported so a subset run is not mistaken for the full gate.
+    out_of_scope: list[IgnoreEntry]
 
     @property
     def failed(self) -> bool:
@@ -345,6 +351,11 @@ def load_ignores(path: Path, known_locks: set[str]) -> list[IgnoreEntry]:
     AuditError: a malformed or misfiled entry must not silently degrade into
     "ignores nothing" (which hides the entry's rationale) or into "ignores
     everything".
+
+    *known_locks* is every lock in the tree, not only the ones the current run
+    audits, so that narrowing a run to one lock does not make the entries for
+    the others look misfiled.  Scoping the loaded entries to the run is the
+    caller's job.
     """
     if not path.exists():
         return []
@@ -363,10 +374,10 @@ def load_ignores(path: Path, known_locks: set[str]) -> list[IgnoreEntry]:
     for lock, raw_entries in sorted(data.get("ignore", {}).items()):
         if lock not in known_locks:
             raise AuditError(
-                f"{path}: ignore entries are filed under {lock!r}, which is not one of the "
-                f"audited locks ({', '.join(sorted(known_locks))}). "
+                f"{path}: ignore entries are filed under {lock!r}, which is not a requirements "
+                f"lock in this tree ({', '.join(sorted(known_locks))}). "
                 "Ignoring is per-lock: a finding unreachable in one lock is not "
-                "automatically unreachable in another."
+                "automatically unreachable in another, so the path has to name a real lock."
             )
         if not isinstance(raw_entries, list):
             raise AuditError(f'{path}: [ignore."{lock}"] must be an array of tables.')
@@ -409,6 +420,7 @@ def evaluate(
     audited: list[tuple[str, int, int]],
     findings: list[Finding],
     ignores: list[IgnoreEntry],
+    out_of_scope: list[IgnoreEntry] | None = None,
 ) -> Report:
     """Match findings against ignore entries and classify every mismatch."""
     by_key = {(f.lock, f.vuln_id): f for f in findings}
@@ -433,6 +445,7 @@ def evaluate(
         unignored=unignored,
         stale=stale,
         mismatched=mismatched,
+        out_of_scope=list(out_of_scope or ()),
     )
 
 
@@ -443,6 +456,14 @@ def format_report(report: Report, ignore_file: str) -> str:
     for lock, pin_count, finding_count in report.audited:
         verdict = f"{finding_count} finding(s)" if finding_count else "no findings"
         lines.append(f"  {lock:<{width}}  {pin_count:>3} pins  {verdict}")
+
+    if report.out_of_scope:
+        locks = sorted({entry.lock for entry in report.out_of_scope})
+        lines.append("")
+        lines.append(
+            f"Not the full gate: {len(report.out_of_scope)} ignore entry/entries were left "
+            f"unchecked because this run does not cover their lock ({', '.join(locks)})."
+        )
 
     if report.honored:
         lines.append("")
@@ -499,7 +520,11 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
         "locks",
         nargs="*",
         type=Path,
-        help=f"locks to audit (default: every {LOCK_GLOB} under the repo root)",
+        help=(
+            f"locks to audit (default, and how CI runs it: every {LOCK_GLOB} under the "
+            "repo root). Naming locks narrows the run; ignore entries for the other "
+            "locks are reported as unchecked."
+        ),
     )
     parser.add_argument(
         "--ignore-file",
@@ -526,7 +551,16 @@ def main(argv: list[str] | None = None, runner=run_pip_audit) -> int:
             raise AuditError(f"no locks matched {LOCK_GLOB} under {root}")
 
         rels = [relative_to_root(lock, root) for lock in locks]
-        ignores = load_ignores(args.ignore_file, set(rels))
+        in_scope = set(rels)
+        # Validate ignore entries against every lock in the tree, not just the
+        # ones this run audits. An entry naming a path that is a lock nowhere is
+        # misfiled and must be loud; an entry naming a real lock that a narrowed
+        # run happens not to cover is simply out of scope, and treating that as
+        # misfiled made the documented `LOCK ...` form unusable.
+        known = in_scope | {relative_to_root(p, root) for p in discover_locks(root)}
+        loaded = load_ignores(args.ignore_file, known)
+        ignores = [entry for entry in loaded if entry.lock in in_scope]
+        out_of_scope = [entry for entry in loaded if entry.lock not in in_scope]
 
         audited: list[tuple[str, int, int]] = []
         findings: list[Finding] = []
@@ -538,7 +572,7 @@ def main(argv: list[str] | None = None, runner=run_pip_audit) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
-    report = evaluate(audited, findings, ignores)
+    report = evaluate(audited, findings, ignores, out_of_scope)
     try:
         ignore_file = relative_to_root(args.ignore_file.resolve(), root)
     except AuditError:
