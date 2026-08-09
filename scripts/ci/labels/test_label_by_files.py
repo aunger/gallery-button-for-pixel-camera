@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Unit tests for label_by_files.py."""
 
+import io
 import os
 import sys
 import unittest
 import urllib.error
+from contextlib import redirect_stdout
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -411,6 +413,20 @@ class TestMain(unittest.TestCase):
         self.assertEqual(result, 0)
         mock_api.assert_not_called()
         self.mock_emxl_api.assert_not_called()
+
+    def test_removal_log_line_says_unjustified_not_conflicting(self):
+        # enforce_mutually_exclusive_labels.remove_labels defaults its log
+        # line to "conflicting", which would be false here: nothing conflicts,
+        # the diff simply justifies nothing. reason="unjustified" keeps the
+        # log line honest instead of contradicting the "no changed file
+        # justifies them" line printed immediately before it.
+        self.mock_emxl_api.return_value = {"labels": [{"name": "agents"}]}
+        with patch.object(lbf, "fetch_changed_files", return_value=["app/src/main/java/Foo.kt"]):
+            with patch.object(lbf.label_by_title, "gh_api"):
+                out = io.StringIO()
+                with redirect_stdout(out):
+                    lbf.main()
+        self.assertIn("Removed unjustified label 'agents'", out.getvalue())
 
     def test_no_verdict_when_file_list_is_empty(self):
         # Removing a label on the strength of an empty file list is exactly

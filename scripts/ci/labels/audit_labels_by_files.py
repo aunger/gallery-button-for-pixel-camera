@@ -189,7 +189,7 @@ def apply_changes(
         if not label_by_files.add_labels(repo, number, labels, token):
             all_succeeded = False
     for number, labels in to_remove.items():
-        if not emxl.remove_labels(number, labels, repo, token):
+        if not emxl.remove_labels(number, labels, repo, token, reason="unjustified"):
             all_succeeded = False
     return all_succeeded
 

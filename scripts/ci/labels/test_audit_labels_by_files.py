@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Unit tests for audit_labels_by_files.py."""
 
+import io
 import json
 import os
 import sys
 import unittest
 import urllib.error
+from contextlib import redirect_stdout
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -144,6 +146,20 @@ class TestApplyChanges(unittest.TestCase):
         self.assertEqual(mock_add.call_args[1]["method"], "POST")
         self.assertEqual(mock_remove.call_args[0][0], "repos/owner/repo/issues/2/labels/agents")
         self.assertEqual(mock_remove.call_args[1]["method"], "DELETE")
+
+    def test_removal_log_line_says_unjustified_not_conflicting(self):
+        # Nothing conflicts here either: the removal reason is that no
+        # changed path justifies the label, so the log line must say so
+        # instead of defaulting to enforce_mutually_exclusive_labels's
+        # "conflicting" wording, which is the only line printed for this
+        # call site and would otherwise be the sole, wrong explanation on
+        # the Actions log.
+        with patch.object(alf.label_by_title, "gh_api"):
+            with patch.object(alf.emxl, "gh_api"):
+                out = io.StringIO()
+                with redirect_stdout(out):
+                    alf.apply_changes({}, {2: ["agents"]}, "owner/repo", "tok")
+        self.assertIn("Removed unjustified label 'agents' from #2.", out.getvalue())
 
     def test_no_calls_when_nothing_to_do(self):
         with patch.object(alf.label_by_title, "gh_api") as mock_add:

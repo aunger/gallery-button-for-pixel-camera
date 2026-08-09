@@ -258,7 +258,7 @@ def remove_unjustified_labels(repo: str, pr_number: int, labels: list[str], toke
         f"Removing labels {carried} from #{pr_number}: no changed file justifies them "
         "(see EXHAUSTIVE_LABELS in scripts/ci/labels/label_by_files.py)."
     )
-    return emxl.remove_labels(pr_number, carried, repo, token)
+    return emxl.remove_labels(pr_number, carried, repo, token, reason="unjustified")
 
 
 # ---------------------------------------------------------------------------
