@@ -109,7 +109,8 @@ Weigh any future overage the same way, and write down the reasoning: a patch abo
 ## Noticing when a bump becomes available
 
 The two sections above describe checks to make at bump time.
-`scripts/ci/prs-and-issues/watch_toolchain_bump.py` executes them on a schedule as well, so that noticing a bump became possible does not depend on anyone remembering to look.
+`scripts/ci/prs-and-issues/watch_toolchain_bump.py` executes **one** of them on a schedule, the CodeQL Kotlin ceiling, so that noticing a bump became possible does not depend on anyone remembering to look.
+It does not check the KGP compatibility row, which stays a manual step for the reasons below; what it watches instead is the KGP release that could move that row.
 `.github/workflows/watch-toolchain-bump.yml` runs it weekly, and it comments on one long-lived tracking issue only when something it watches moves.
 
 It is a watcher, not a bumper.
@@ -139,6 +140,7 @@ What it deliberately does not do:
 
 An input that is fetched but cannot be parsed, or whose URL 404s because upstream moved it, is reported as an upstream format change, never folded into a silent "nothing moved".
 A network-level failure reports nothing at all, since it is evidence of nothing.
+The same rule governs the tracking issue itself: the watcher creates one only on a *confirmed* absence, checked against the issue list rather than the eventually-consistent search index, because a duplicated tracking issue would split the watcher's only state store and needs a human to clean up.
 
 Run `python3 scripts/ci/prs-and-issues/watch_toolchain_bump.py --dry-run` to print the current observation without touching the tracking issue.
 That is also the quickest way to confirm the parsers still work after an upstream reformat.

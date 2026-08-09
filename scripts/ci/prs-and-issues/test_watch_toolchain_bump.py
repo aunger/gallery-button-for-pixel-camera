@@ -5,6 +5,7 @@ Every HTTP call is mocked; nothing here reaches Maven Central, raw.githubusercon
 the GitHub API.
 """
 
+import io
 import json
 import os
 import sys
@@ -16,6 +17,7 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(__file__))
 import watch_toolchain_bump as wtb  # noqa: E402
+from file_test_failure_issues import IssueLookup  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -182,6 +184,25 @@ class TestParseKotlinCeiling(unittest.TestCase):
     def test_reads_a_bound_without_a_wildcard(self):
         rst = '   Kotlin,"Kotlin 1.8.0 to 2.5.0","kotlinc",``.kt``'
         self.assertEqual(wtb.parse_kotlin_ceiling(rst), "2.5.0")
+
+    def test_tolerates_a_footnote_marker_on_the_label(self):
+        """The real codeql-cli/v2.18.0 row, from when Kotlin support carried a caveat."""
+        rst = r'   Kotlin [7]_,"Kotlin 1.5.0 to 2.0.0\ *x*","kotlinc",``.kt``'
+        self.assertEqual(wtb.parse_kotlin_ceiling(rst), "2.0.0x")
+
+    def test_tolerates_a_variants_cell_that_omits_the_language_name(self):
+        """Most rows of this table omit it already (TypeScript "2.6-5.9", Ruby "up to 3.3")."""
+        rst = r'   Kotlin,"1.8.0 to 2.4.1\ *x*","kotlinc",``.kt``'
+        self.assertEqual(wtb.parse_kotlin_ceiling(rst), "2.4.1x")
+
+    def test_tolerates_an_unquoted_variants_cell(self):
+        rst = "   Kotlin,Kotlin 1.8.0 to 2.4.1x,kotlinc,``.kt``"
+        self.assertEqual(wtb.parse_kotlin_ceiling(rst), "2.4.1x")
+
+    def test_the_bound_is_read_from_the_variants_cell_only(self):
+        """A "to <version>" elsewhere on the row must not be mistaken for the ceiling."""
+        rst = '   Kotlin,"Kotlin 1.8.0 to 2.4.1x","kotlinc up to 9.9.9",``.kt``'
+        self.assertEqual(wtb.parse_kotlin_ceiling(rst), "2.4.1x")
 
     def test_missing_kotlin_row_fails_loudly(self):
         rst = "\n".join(
@@ -550,6 +571,28 @@ class TestRenderComment(unittest.TestCase):
         self.assertIn("GHSA-test-1234", body)
         self.assertIn("directly actionable", body)
 
+    def test_an_unqueryable_coordinate_does_not_render_as_no_advisories(self):
+        state = make_state(
+            toolchain_advisories={
+                "org.gradle:gradle-core@9.5.1": None,
+                "com.android.tools.build:gradle@9.1.0": [],
+            },
+            errors=["OSV returned a list, not an object"],
+        )
+        body = wtb.render_comment(state, None)
+        self.assertIn(f"org.gradle:gradle-core@9.5.1: {wtb._UNKNOWN}", body)
+
+    def test_all_coordinates_clean_renders_as_none(self):
+        self.assertIn("| none |", wtb.render_comment(make_state(), None))
+
+    def test_a_differing_state_with_no_tracked_change_does_not_say_changed_nothing(self):
+        """Reachable when a recorded state carries a key this version no longer tracks."""
+        prior = make_state()
+        prior["retired_fact"] = "gone"
+        body = wtb.render_comment(make_state(), prior)
+        self.assertNotIn("Changed: \n", body)
+        self.assertIn("no tracked fact moved", body)
+
     def test_says_it_does_not_bump_anything(self):
         self.assertIn("does not bump anything", wtb.render_comment(make_state(), None))
 
@@ -591,24 +634,24 @@ class TestMain(unittest.TestCase):
 
     def test_transient_failure_reports_nothing(self):
         with patch.object(wtb, "collect_state", side_effect=wtb.TransientFetchError("down")):
-            with patch.object(wtb, "find_issue_by_title") as mock_find:
+            with patch.object(wtb, "find_tracking_issue") as mock_find:
                 self.assertEqual(wtb.main([]), 0)
         mock_find.assert_not_called()
 
     def test_creates_the_tracking_issue_and_posts_the_first_observation(self):
         with patch.object(wtb, "collect_state", return_value=make_state()):
-            with patch.object(wtb, "find_issue_by_title", return_value=None):
+            with patch.object(wtb, "find_tracking_issue", return_value=IssueLookup(True)):
                 with patch.object(wtb, "create_issue", return_value=321) as mock_create:
                     with patch.object(wtb, "add_issue_comment") as mock_comment:
                         self.assertEqual(wtb.main([]), 0)
         self.assertEqual(mock_create.call_args[0][2], wtb.TRACKING_ISSUE_TITLE)
-        self.assertEqual(mock_create.call_args[1]["labels"], wtb.TRACKING_ISSUE_LABELS)
+        self.assertEqual(mock_create.call_args[1]["labels"], [wtb.TRACKING_ISSUE_LABEL])
         self.assertEqual(mock_comment.call_args[0][2], 321)
         self.assertIn("First observation recorded", mock_comment.call_args[0][3])
 
     def test_gives_up_quietly_when_the_issue_cannot_be_created(self):
         with patch.object(wtb, "collect_state", return_value=make_state()):
-            with patch.object(wtb, "find_issue_by_title", return_value=None):
+            with patch.object(wtb, "find_tracking_issue", return_value=IssueLookup(True)):
                 with patch.object(wtb, "create_issue", return_value=None):
                     with patch.object(wtb, "add_issue_comment") as mock_comment:
                         self.assertEqual(wtb.main([]), 0)
@@ -618,7 +661,9 @@ class TestMain(unittest.TestCase):
         state = make_state()
         comments = [{"body": wtb.render_state_block(state)}]
         with patch.object(wtb, "collect_state", return_value=state):
-            with patch.object(wtb, "find_issue_by_title", return_value=(9, "open")):
+            with patch.object(
+                wtb, "find_tracking_issue", return_value=IssueLookup(True, 9, "open")
+            ):
                 with patch.object(wtb, "fetch_issue_comments", return_value=comments):
                     with patch.object(wtb, "add_issue_comment") as mock_comment:
                         self.assertEqual(wtb.main([]), 0)
@@ -628,7 +673,9 @@ class TestMain(unittest.TestCase):
         prior = make_state(latest_stable_kgp="2.4.0")
         comments = [{"body": wtb.render_state_block(prior)}]
         with patch.object(wtb, "collect_state", return_value=make_state()):
-            with patch.object(wtb, "find_issue_by_title", return_value=(9, "open")):
+            with patch.object(
+                wtb, "find_tracking_issue", return_value=IssueLookup(True, 9, "open")
+            ):
                 with patch.object(wtb, "fetch_issue_comments", return_value=comments):
                     with patch.object(wtb, "add_issue_comment") as mock_comment:
                         self.assertEqual(wtb.main([]), 0)
@@ -639,7 +686,9 @@ class TestMain(unittest.TestCase):
         prior = make_state(latest_stable_kgp="2.4.0")
         comments = [{"body": wtb.render_state_block(prior)}]
         with patch.object(wtb, "collect_state", return_value=make_state()):
-            with patch.object(wtb, "find_issue_by_title", return_value=(9, "closed")):
+            with patch.object(
+                wtb, "find_tracking_issue", return_value=IssueLookup(True, 9, "closed")
+            ):
                 with patch.object(wtb, "fetch_issue_comments", return_value=comments):
                     with patch.object(wtb, "add_issue_comment"):
                         with patch.object(wtb, "reopen_issue") as mock_reopen:
@@ -650,7 +699,9 @@ class TestMain(unittest.TestCase):
         state = make_state()
         comments = [{"body": wtb.render_state_block(state)}]
         with patch.object(wtb, "collect_state", return_value=state):
-            with patch.object(wtb, "find_issue_by_title", return_value=(9, "closed")):
+            with patch.object(
+                wtb, "find_tracking_issue", return_value=IssueLookup(True, 9, "closed")
+            ):
                 with patch.object(wtb, "fetch_issue_comments", return_value=comments):
                     with patch.object(wtb, "reopen_issue") as mock_reopen:
                         self.assertEqual(wtb.main([]), 0)
@@ -658,7 +709,9 @@ class TestMain(unittest.TestCase):
 
     def test_unreadable_prior_state_posts_nothing_rather_than_duplicating(self):
         with patch.object(wtb, "collect_state", return_value=make_state()):
-            with patch.object(wtb, "find_issue_by_title", return_value=(9, "open")):
+            with patch.object(
+                wtb, "find_tracking_issue", return_value=IssueLookup(True, 9, "open")
+            ):
                 with patch.object(
                     wtb, "fetch_issue_comments", side_effect=Exception("rate limited")
                 ):
@@ -666,14 +719,126 @@ class TestMain(unittest.TestCase):
                         self.assertEqual(wtb.main([]), 0)
         mock_comment.assert_not_called()
 
+    def test_a_failed_lookup_never_creates_a_second_tracking_issue(self):
+        """The singleton the whole design rests on must not be duplicated by an API blip."""
+        with patch.object(wtb, "collect_state", return_value=make_state()):
+            with patch.object(wtb, "find_tracking_issue", return_value=IssueLookup(False)):
+                with patch.object(wtb, "create_issue") as mock_create:
+                    with patch.object(wtb, "add_issue_comment") as mock_comment:
+                        self.assertEqual(wtb.main([]), 0)
+        mock_create.assert_not_called()
+        mock_comment.assert_not_called()
+
+    def test_a_failed_comment_post_is_logged_as_a_failure(self):
+        with patch.object(wtb, "collect_state", return_value=make_state()):
+            with patch.object(
+                wtb, "find_tracking_issue", return_value=IssueLookup(True, 9, "open")
+            ):
+                with patch.object(wtb, "fetch_issue_comments", return_value=[]):
+                    with patch.object(wtb, "add_issue_comment", return_value=False):
+                        with patch("sys.stderr", new_callable=io.StringIO) as err:
+                            self.assertEqual(wtb.main([]), 0)
+        self.assertIn("could not post the observation", err.getvalue())
+
     def test_dry_run_touches_no_github_state_and_needs_no_token(self):
         with patch.dict(os.environ, {"GITHUB_TOKEN": "", "GITHUB_REPOSITORY": ""}):
             with patch.object(wtb, "collect_state", return_value=make_state()):
-                with patch.object(wtb, "find_issue_by_title") as mock_find:
+                with patch.object(wtb, "find_tracking_issue") as mock_find:
                     with patch.object(wtb, "add_issue_comment") as mock_comment:
-                        self.assertEqual(wtb.main(["--dry-run"]), 0)
+                        with patch("sys.stdout", new_callable=io.StringIO) as out:
+                            self.assertEqual(wtb.main(["--dry-run"]), 0)
         mock_find.assert_not_called()
         mock_comment.assert_not_called()
+        self.assertIn("First observation recorded", out.getvalue())
+
+
+# ---------------------------------------------------------------------------
+# Locating the tracking issue without ever duplicating it
+# ---------------------------------------------------------------------------
+
+
+class TestFindTrackingIssue(unittest.TestCase):
+    def test_a_search_hit_is_used_directly(self):
+        hit = IssueLookup(True, 42, "open")
+        with patch.object(wtb, "lookup_issue_by_title", return_value=hit):
+            with patch.object(wtb, "confirm_tracking_issue_absent") as mock_confirm:
+                self.assertEqual(wtb.find_tracking_issue("tok", "owner/repo"), hit)
+        mock_confirm.assert_not_called()
+
+    def test_a_failed_search_is_not_confirmed_away(self):
+        with patch.object(wtb, "lookup_issue_by_title", return_value=IssueLookup(False)):
+            with patch.object(wtb, "confirm_tracking_issue_absent") as mock_confirm:
+                lookup = wtb.find_tracking_issue("tok", "owner/repo")
+        self.assertFalse(lookup.fetch_ok)
+        mock_confirm.assert_not_called()
+
+    def test_no_search_hit_is_confirmed_against_the_issue_list(self):
+        """The search index lags, so "nothing matched" alone must not authorize a create."""
+        with patch.object(wtb, "lookup_issue_by_title", return_value=IssueLookup(True)):
+            with patch.object(
+                wtb, "confirm_tracking_issue_absent", return_value=IssueLookup(True, 7, "open")
+            ) as mock_confirm:
+                lookup = wtb.find_tracking_issue("tok", "owner/repo")
+        mock_confirm.assert_called_once_with("tok", "owner/repo")
+        self.assertEqual(lookup.number, 7)
+
+
+class TestConfirmTrackingIssueAbsent(unittest.TestCase):
+    def _issue(self, number: int, title: str, state: str = "open") -> dict:
+        return {"number": number, "title": title, "state": state}
+
+    @patch("watch_toolchain_bump.requests")
+    def test_finds_the_issue_the_search_index_missed(self, mock_requests):
+        mock_requests.get.return_value = _response(
+            payload=[self._issue(7, wtb.TRACKING_ISSUE_TITLE, "closed")]
+        )
+        self.assertEqual(
+            wtb.confirm_tracking_issue_absent("tok", "owner/repo"),
+            IssueLookup(True, 7, "closed"),
+        )
+
+    @patch("watch_toolchain_bump.requests")
+    def test_confirms_absence_when_no_title_matches(self, mock_requests):
+        mock_requests.get.return_value = _response(payload=[self._issue(1, "Something else")])
+        lookup = wtb.confirm_tracking_issue_absent("tok", "owner/repo")
+        self.assertTrue(lookup.fetch_ok)
+        self.assertIsNone(lookup.number)
+
+    @patch("watch_toolchain_bump.requests")
+    def test_queries_all_states_with_the_tracking_label(self, mock_requests):
+        mock_requests.get.return_value = _response(payload=[])
+        wtb.confirm_tracking_issue_absent("tok", "owner/repo")
+        params = mock_requests.get.call_args[1]["params"]
+        self.assertEqual(params["labels"], wtb.TRACKING_ISSUE_LABEL)
+        self.assertEqual(params["state"], "all")
+
+    @patch("watch_toolchain_bump.requests")
+    def test_a_pull_request_with_the_same_title_is_skipped(self, mock_requests):
+        pr = self._issue(3, wtb.TRACKING_ISSUE_TITLE)
+        pr["pull_request"] = {"url": "https://example.test/pr/3"}
+        mock_requests.get.return_value = _response(payload=[pr])
+        self.assertIsNone(wtb.confirm_tracking_issue_absent("tok", "owner/repo").number)
+
+    @patch("watch_toolchain_bump.requests")
+    def test_paginates_past_a_full_page(self, mock_requests):
+        first = _response(payload=[self._issue(i, f"Issue {i}") for i in range(100)])
+        second = _response(payload=[self._issue(999, wtb.TRACKING_ISSUE_TITLE)])
+        mock_requests.get.side_effect = [first, second]
+        self.assertEqual(wtb.confirm_tracking_issue_absent("tok", "owner/repo").number, 999)
+
+    @patch("watch_toolchain_bump.requests")
+    def test_an_api_error_is_not_reported_as_absence(self, mock_requests):
+        mock_requests.get.side_effect = Exception("rate limited")
+        self.assertEqual(wtb.confirm_tracking_issue_absent("tok", "owner/repo"), IssueLookup(False))
+
+    @patch("watch_toolchain_bump.requests")
+    def test_exhausting_the_page_cap_is_not_reported_as_absence(self, mock_requests):
+        mock_requests.get.return_value = _response(
+            payload=[self._issue(i, f"Issue {i}") for i in range(100)]
+        )
+        lookup = wtb.confirm_tracking_issue_absent("tok", "owner/repo")
+        self.assertFalse(lookup.fetch_ok)
+        self.assertEqual(mock_requests.get.call_count, wtb._MAX_ISSUE_LIST_PAGES)
 
 
 if __name__ == "__main__":

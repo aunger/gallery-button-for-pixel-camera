@@ -80,10 +80,11 @@ import requests
 # scripts, so their own directory is on sys.path.  The GitHub calls are reused from there rather
 # than reimplemented.
 from file_test_failure_issues import (
+    IssueLookup,
     add_issue_comment,
     create_issue,
-    find_issue_by_title,
     github_headers,
+    lookup_issue_by_title,
     reopen_issue,
 )
 
@@ -94,10 +95,12 @@ from file_test_failure_issues import (
 
 TRACKING_ISSUE_TITLE = "Toolchain bump watch: KGP releases and the CodeQL Kotlin ceiling"
 
-# Only labels that already exist in the repository are used, and deliberately not `orchestrate`:
-# this issue is a noticeboard, not dispatchable work.  Treating an open issue as the holder of a
-# "check whether a bump became available yet" duty is exactly the pattern #803 replaced.
-TRACKING_ISSUE_LABELS = ["ci"]
+# The label the tracking issue carries, and the one the lookup identifies it by, so there is no
+# way for the two to drift apart.  Deliberately not `orchestrate`: this issue is a noticeboard,
+# not dispatchable work.  Treating an open issue as the holder of a "check whether a bump became
+# available yet" duty is exactly the pattern #803 replaced.  It is asserted to exist by
+# scripts/ci/test_label_existence_integration.py.
+TRACKING_ISSUE_LABEL = "ci"
 
 TRACKING_ISSUE_BODY = """\
 # Toolchain bump watch
@@ -369,33 +372,60 @@ def fetch_codeql_cli_version(ref: str) -> str:
     return parse_codeql_cli_version(fetch_text(CODEQL_DEFAULTS_URL.format(ref=ref)))
 
 
+# RST footnote reference, as in ``Kotlin [7]_`` or ``Swift [12]_ [13]_``.
+_RST_FOOTNOTE_RE = re.compile(r"\s*\[\d+\]_")
+
+
 def _strip_rst_markup(line: str) -> str:
     """Flatten the RST inline markup used in the supported-versions table.
 
     ``2.4.1\\ *x*`` is an escaped space joining an emphasised ``x`` to the version, and renders as
     ``2.4.1x``.
+
+    Footnote references are dropped as well.  The Kotlin row carried one (``Kotlin [7]_``) while
+    Kotlin support was in beta, and six of the thirteen rows still carry one today, so a caveat
+    added back to Kotlin must not read as "the table has no Kotlin row".
     """
+    line = _RST_FOOTNOTE_RE.sub("", line)
     return line.replace("\\ ", "").replace("\\", "").replace("*", "").replace("`", "")
 
 
-_KOTLIN_RANGE_RE = re.compile(r"Kotlin\s+[\d.]+\s+to\s+([\d.]+x?)")
+_KOTLIN_LABEL = "Kotlin,"
+
+# The upper end of a version range, e.g. the "2.4.1x" of "Kotlin 1.8.0 to 2.4.1x".  Deliberately
+# does not require the cell to repeat the language name: most rows of this table do not
+# ("2.6-5.9" for TypeScript, "up to 3.3" for Ruby), so the Kotlin row being normalized that way
+# should not break the parse.
+_VERSION_CEILING_RE = re.compile(r"\bto\s+(\d+(?:\.\d+)*x?)(?![\w.])")
+
+
+def _first_csv_cell(text: str) -> str:
+    """Return the first comma-separated cell of *text*, unquoted if it was quoted."""
+    text = text.strip()
+    if text.startswith('"'):
+        closing = text.find('"', 1)
+        return text[1:closing] if closing != -1 else text[1:]
+    return text.split(",", 1)[0]
 
 
 def parse_kotlin_ceiling(rst_text: str) -> str:
     """Return the Kotlin upper bound from the CodeQL supported-versions table.
 
     Raises FormatError rather than guessing, so an upstream reformat is reported as such instead
-    of silently reading as "no movement".
+    of silently reading as "no movement".  The two tolerated variations above (a footnote on the
+    label, and a Variants cell that does not repeat "Kotlin") are cosmetic shapes upstream has
+    actually used; anything beyond them is a real reformat and is reported.
     """
     for raw_line in rst_text.splitlines():
         line = _strip_rst_markup(raw_line).strip()
-        if not line.startswith("Kotlin,"):
+        if not line.startswith(_KOTLIN_LABEL):
             continue
-        match = _KOTLIN_RANGE_RE.search(line)
+        variants = _first_csv_cell(line[len(_KOTLIN_LABEL) :])
+        match = _VERSION_CEILING_RE.search(variants)
         if match is None:
             raise FormatError(
-                "the Kotlin row of the CodeQL supported-versions table no longer states a "
-                f'"<from> to <to>" range: {line!r}'
+                "the Kotlin row of the CodeQL supported-versions table no longer states its "
+                f'upper bound as "to <version>": {line!r}'
             )
         return match.group(1)
     raise FormatError("the CodeQL supported-versions table has no Kotlin row")
@@ -447,13 +477,14 @@ def collect_state(repo_root: Path) -> dict:
     cli_version = _collect(errors, fetch_codeql_cli_version, codeql_ref) if codeql_ref else None
     ceiling = _collect(errors, fetch_codeql_kotlin_ceiling, cli_version) if cli_version else None
 
-    advisories: dict[str, list[str]] = {}
+    # A coordinate whose query failed is recorded as None, not as an empty list: "we could not
+    # ask" must not render as "no advisories", which is what every other unreadable fact does.
+    advisories: dict[str, list[str] | None] = {}
     for pin, coordinate in COORDINATE_BY_PIN.items():
         version = pinned.get(pin)
         if not version:
             continue
-        found = _collect(errors, query_osv, coordinate, version)
-        advisories[f"{coordinate}@{version}"] = found if found is not None else []
+        advisories[f"{coordinate}@{version}"] = _collect(errors, query_osv, coordinate, version)
 
     return {
         "pinned": pinned,
@@ -507,6 +538,70 @@ def latest_recorded_state(comments: list[dict]) -> dict | None:
     return None
 
 
+# Page cap for the issue listing below. 20 pages of 100 is far more labelled issues than this
+# repository will hold; exhausting it means the answer is unknown, not that the issue is absent.
+_MAX_ISSUE_LIST_PAGES = 20
+
+
+def confirm_tracking_issue_absent(token: str, repository: str) -> IssueLookup:
+    """Re-check for the tracking issue against the issue list rather than the search index.
+
+    GitHub's issue search is backed by an eventually-consistent index, so an issue created
+    minutes ago can be missing from a search that otherwise succeeded.  Creating the tracking
+    issue on that evidence would permanently duplicate the singleton the whole design rests on,
+    and split the watcher's only state store across two comment feeds.
+
+    GET /repos/{repo}/issues reads through instead of through the index, so it sees a
+    just-created issue.  It is only worth its pagination cost on the one path that would
+    otherwise take an irreversible action, so it is not used for the ordinary lookup.
+    """
+    url = f"https://api.github.com/repos/{repository}/issues"
+    try:
+        for page in range(1, _MAX_ISSUE_LIST_PAGES + 1):
+            resp = requests.get(
+                url,
+                headers=github_headers(token),
+                params={
+                    "labels": TRACKING_ISSUE_LABEL,
+                    "state": "all",
+                    "per_page": 100,
+                    "page": page,
+                },
+                timeout=30,
+            )
+            resp.raise_for_status()
+            batch = resp.json()
+            for issue in batch:
+                # This endpoint returns pull requests as well as issues.
+                if "pull_request" in issue:
+                    continue
+                if issue.get("title") == TRACKING_ISSUE_TITLE:
+                    return IssueLookup(True, issue["number"], issue["state"])
+            if len(batch) < 100:
+                return IssueLookup(fetch_ok=True)
+    except Exception as exc:  # noqa: BLE001
+        print(f"  Warning: listing {TRACKING_ISSUE_LABEL} issues failed: {exc}", file=sys.stderr)
+        return IssueLookup(fetch_ok=False)
+
+    print(
+        f"  Warning: more than {_MAX_ISSUE_LIST_PAGES * 100} issues labelled "
+        f"{TRACKING_ISSUE_LABEL}; cannot confirm the tracking issue is absent.",
+        file=sys.stderr,
+    )
+    return IssueLookup(fetch_ok=False)
+
+
+def find_tracking_issue(token: str, repository: str) -> IssueLookup:
+    """Locate the tracking issue, keeping "absent" distinct from "could not tell".
+
+    Only a confirmed absence may lead to creating one; see confirm_tracking_issue_absent.
+    """
+    lookup = lookup_issue_by_title(token, repository, TRACKING_ISSUE_TITLE, TRACKING_ISSUE_LABEL)
+    if lookup.number is not None or not lookup.fetch_ok:
+        return lookup
+    return confirm_tracking_issue_absent(token, repository)
+
+
 def fetch_issue_comments(token: str, repository: str, issue_number: int) -> list[dict]:
     """Return every comment on *issue_number*, oldest first."""
     comments: list[dict] = []
@@ -544,10 +639,13 @@ def _show(value) -> str:
 def _advisory_cell(advisories: dict | None) -> str:
     if not advisories:
         return _UNKNOWN
-    hits = {coord: ids for coord, ids in advisories.items() if ids}
-    if not hits:
-        return "none"
-    return "; ".join(f"{coord}: {', '.join(ids)}" for coord, ids in sorted(hits.items()))
+    parts = []
+    for coordinate, ids in sorted(advisories.items()):
+        if ids is None:
+            parts.append(f"{coordinate}: {_UNKNOWN}")
+        elif ids:
+            parts.append(f"{coordinate}: {', '.join(ids)}")
+    return "; ".join(parts) if parts else "none"
 
 
 def _pinned_cell(pinned: dict | None) -> str:
@@ -617,8 +715,12 @@ def render_comment(state: dict, prior: dict | None) -> str:
     changed = changed_facts(state, prior)
     if prior is None:
         heading = "First observation recorded"
-    else:
+    elif changed:
         heading = "Changed: " + "; ".join(changed)
+    else:
+        # main() renders only when the states differ, so an empty change list means the recorded
+        # state carries a key this version no longer tracks. Say that, rather than "Changed: ".
+        heading = "Recorded state refreshed; no tracked fact moved"
 
     rows = "\n".join(f"| {label} | {was} | {now} |" for label, was, now in _fact_rows(state, prior))
 
@@ -702,15 +804,22 @@ def main(argv: list[str] | None = None) -> int:
         print(render_comment(state, None))
         return 0
 
-    found = find_issue_by_title(token, repository, TRACKING_ISSUE_TITLE, TRACKING_ISSUE_LABELS[0])
+    lookup = find_tracking_issue(token, repository)
+    if not lookup.fetch_ok:
+        print(
+            "Warning: could not determine whether the tracking issue exists; reporting nothing "
+            "this run rather than risking a second one.",
+            file=sys.stderr,
+        )
+        return 0
 
-    if found is None:
+    if lookup.number is None:
         issue_number = create_issue(
             token,
             repository,
             TRACKING_ISSUE_TITLE,
             TRACKING_ISSUE_BODY,
-            labels=TRACKING_ISSUE_LABELS,
+            labels=[TRACKING_ISSUE_LABEL],
         )
         if issue_number is None:
             print("Warning: could not create the tracking issue.", file=sys.stderr)
@@ -718,7 +827,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Created tracking issue #{issue_number}.", file=sys.stderr)
         prior = None
     else:
-        issue_number, issue_state = found
+        issue_number = lookup.number
         try:
             prior = latest_recorded_state(fetch_issue_comments(token, repository, issue_number))
         except Exception as exc:  # noqa: BLE001
@@ -731,11 +840,17 @@ def main(argv: list[str] | None = None) -> int:
         if prior == state:
             print(f"No change since the last observation on #{issue_number}.", file=sys.stderr)
             return 0
-        if issue_state == "closed":
+        if lookup.state == "closed":
             reopen_issue(token, repository, issue_number)
 
-    add_issue_comment(token, repository, issue_number, render_comment(state, prior))
-    print(f"Reported an observation on #{issue_number}.", file=sys.stderr)
+    if add_issue_comment(token, repository, issue_number, render_comment(state, prior)):
+        print(f"Reported an observation on #{issue_number}.", file=sys.stderr)
+    else:
+        print(
+            f"Warning: could not post the observation on #{issue_number}; nothing was recorded, "
+            "so the next run reports it again.",
+            file=sys.stderr,
+        )
     return 0
 
 
