@@ -165,6 +165,26 @@ class TestMatchingLabelsAgents(unittest.TestCase):
         self.assertIn("agents", lpt.matching_labels("Add PR verification agent instructions"))
         self.assertIn("agents", lpt.matching_labels("Test PR: verify remove-verified-on-push"))
 
+    def test_verif_with_planner_companion_matches(self):
+        self.assertIn(
+            "agents", lpt.matching_labels("Verification Planner should file tracking issues")
+        )
+
+    def test_verif_without_companion_does_not_match(self):
+        # "verif\\w+" alone is too generic: it sweeps in unrelated Gradle
+        # dependency-verification work (#714, #760) without a companion word.
+        self.assertNotIn(
+            "agents",
+            lpt.matching_labels("Harden the Gradle build with dependency verification metadata"),
+        )
+        self.assertNotIn(
+            "agents",
+            lpt.matching_labels(
+                "Migrate to Gradle 9.x: generate the wrapper and verification metadata"
+                " via a manual CI workflow"
+            ),
+        )
+
     def test_author_exact_word_matches(self):
         self.assertIn(
             "agents", lpt.matching_labels("Empower Author to file issues for review requests")
