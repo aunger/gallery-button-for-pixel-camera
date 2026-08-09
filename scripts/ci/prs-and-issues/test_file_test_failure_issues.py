@@ -489,7 +489,7 @@ class TestFindExistingIssue(unittest.TestCase):
         self.assertIn('"[FooTest] testBar" in:title', query)
 
 
-class TestFindIssueByTitle(unittest.TestCase):
+class TestLookupIssueByTitle(unittest.TestCase):
     """The generic lookup that find_existing_issue is built on."""
 
     @patch("file_test_failure_issues.requests")
@@ -497,7 +497,7 @@ class TestFindIssueByTitle(unittest.TestCase):
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"items": []}
         mock_requests.get.return_value = mock_resp
-        ftfi.find_issue_by_title("token", "owner/repo", "Some tracking issue", "ci")
+        ftfi.lookup_issue_by_title("token", "owner/repo", "Some tracking issue", "ci")
         query = mock_requests.get.call_args[1]["params"]["q"]
         self.assertIn("repo:owner/repo is:issue", query)
         self.assertIn("label:ci", query)
@@ -506,18 +506,38 @@ class TestFindIssueByTitle(unittest.TestCase):
         self.assertNotIn("is:closed", query)
 
     @patch("file_test_failure_issues.requests")
-    def test_returns_number_and_state(self, mock_requests):
+    def test_found_reports_number_state_and_fetch_ok(self, mock_requests):
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"items": [{"number": 5, "state": "closed"}]}
         mock_requests.get.return_value = mock_resp
-        result = ftfi.find_issue_by_title("token", "owner/repo", "Title", "ci")
-        self.assertEqual(result, (5, "closed"))
+        self.assertEqual(
+            ftfi.lookup_issue_by_title("token", "owner/repo", "Title", "ci"),
+            ftfi.IssueLookup(True, 5, "closed"),
+        )
 
     @patch("file_test_failure_issues.requests")
-    def test_returns_none_on_api_error(self, mock_requests):
+    def test_no_match_is_a_successful_fetch(self, mock_requests):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"items": []}
+        mock_requests.get.return_value = mock_resp
+        lookup = ftfi.lookup_issue_by_title("token", "owner/repo", "Title", "ci")
+        self.assertTrue(lookup.fetch_ok)
+        self.assertIsNone(lookup.number)
+
+    @patch("file_test_failure_issues.requests")
+    def test_api_error_is_distinguishable_from_no_match(self, mock_requests):
+        """The whole point of the type: a failed search must not read as "absent"."""
         mock_requests.get.side_effect = Exception("network error")
-        result = ftfi.find_issue_by_title("token", "owner/repo", "Title", "ci")
-        self.assertIsNone(result)
+        lookup = ftfi.lookup_issue_by_title("token", "owner/repo", "Title", "ci")
+        self.assertFalse(lookup.fetch_ok)
+        self.assertIsNone(lookup.number)
+
+    @patch("file_test_failure_issues.requests")
+    def test_http_error_status_is_an_api_error(self, mock_requests):
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status.side_effect = Exception("403 rate limited")
+        mock_requests.get.return_value = mock_resp
+        self.assertFalse(ftfi.lookup_issue_by_title("token", "owner/repo", "T", "ci").fetch_ok)
 
 
 class TestCreateIssue(unittest.TestCase):

@@ -29,6 +29,7 @@ import defusedxml.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import NamedTuple
 import requests
 
 
@@ -261,17 +262,34 @@ def github_headers(token: str) -> dict[str, str]:
 LABELS = ["test-failure"]
 
 
-def find_issue_by_title(
+class IssueLookup(NamedTuple):
+    """Result of a lookup_issue_by_title call.
+
+    Distinguishes three outcomes:
+      - Found:      fetch_ok=True,  number=<int>, state=<str>
+      - Not found:  fetch_ok=True,  number=None,  state=None
+      - API error:  fetch_ok=False, number=None,  state=None
+
+    Collapsing the last two into a bare None is safe for a dedup check, where
+    the cost of getting it wrong is a duplicate bug report.  It is not safe for
+    a caller that creates a singleton when nothing is found: a search that
+    failed is not evidence that the issue is absent, and acting on it duplicates
+    the singleton permanently.  post_pr_ci_summary_link.py's CommentLookup draws
+    the same distinction for the same reason.
+    """
+
+    fetch_ok: bool
+    number: int | None = None
+    state: str | None = None
+
+
+def lookup_issue_by_title(
     token: str,
     repository: str,
     title: str,
     label: str,
-) -> tuple[int, str] | None:
+) -> IssueLookup:
     """Search open and closed issues for one labelled *label* whose title matches.
-
-    Returns a (issue_number, state) tuple if found, else None.
-    *state* is the string returned by the GitHub API, e.g. ``"open"`` or
-    ``"closed"``.
 
     Kept separate from find_existing_issue so that a caller tracking something
     other than a test failure (see watch_toolchain_bump.py, which keeps one
@@ -290,12 +308,14 @@ def find_issue_by_title(
         )
         resp.raise_for_status()
         data = resp.json()
-        items = data.get("items", [])
-        if items:
-            return (items[0]["number"], items[0]["state"])
     except Exception as exc:  # noqa: BLE001
         print(f"  Warning: issue search failed: {exc}", file=sys.stderr)
-    return None
+        return IssueLookup(fetch_ok=False)
+
+    items = data.get("items", [])
+    if items:
+        return IssueLookup(fetch_ok=True, number=items[0]["number"], state=items[0]["state"])
+    return IssueLookup(fetch_ok=True)
 
 
 def find_existing_issue(
@@ -309,13 +329,22 @@ def find_existing_issue(
     Returns a (issue_number, state) tuple if found, else None.
     *state* is the string returned by the GitHub API, e.g. ``"open"`` or
     ``"closed"``.
+
+    A failed search is reported as None here, the same as no match.  For this
+    caller that is deliberate: a duplicate test-failure issue is noise that
+    archive_stale_test_failures.py eventually sweeps up, so the simpler return
+    type is worth it.  A caller that cannot tolerate a duplicate must use
+    lookup_issue_by_title and check fetch_ok.
     """
-    return find_issue_by_title(
+    lookup = lookup_issue_by_title(
         token,
         repository,
         make_issue_title(class_name, method_name),
         LABELS[0],
     )
+    if lookup.number is None:
+        return None
+    return (lookup.number, lookup.state)
 
 
 def create_issue(
