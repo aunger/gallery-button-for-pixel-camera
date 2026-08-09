@@ -6,6 +6,11 @@ the exact regexes) to the title of every issue and pull request in the
 repository, and applies any label a title matches that is not already
 present. Labels are only ever added, never removed.
 
+On a pull request, label_by_title.FILE_DETERMINED_LABELS are neither applied
+nor reported: those are decided from the PR's own changed files, so applying
+one from a title would reapply exactly what the if-and-only-if rule forbids.
+scripts/ci/labels/audit_labels_by_files.py is the tool that covers them.
+
 Before exiting, prints a JSON report of what happened (or would happen):
 
     add     labels that would be applied and are not already present
@@ -111,7 +116,16 @@ def build_report(
     for item in items:
         number = item["number"]
         current = {lbl["name"] for lbl in item.get("labels", [])}
-        matched = set(label_by_title.matching_labels(item["title"]))
+        # The /issues endpoint marks a pull request with a "pull_request" key.
+        is_pr = "pull_request" in item
+        matched = set(label_by_title.matching_labels(item["title"], is_pull_request=is_pr))
+        # Narrowing "tracked" as well as "matched" matters: leave it alone and
+        # every PR carrying a file-determined label lands in "miss" on every
+        # run, which is precisely the permanent noise TRACKED_LABELS exists to
+        # avoid.
+        tracked = (
+            TRACKED_LABELS - label_by_title.FILE_DETERMINED_LABELS if is_pr else TRACKED_LABELS
+        )
 
         for label in matched:
             if label in current:
@@ -120,7 +134,7 @@ def build_report(
                 add[label].append(number)
                 to_apply[number].append(label)
 
-        for label in TRACKED_LABELS:
+        for label in tracked:
             if label in current and label not in matched:
                 miss[label].append(number)
 
@@ -156,24 +170,14 @@ def apply_labels(to_apply: dict[int, list[str]], repo: str, token: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def format_report(
-    add: dict[str, list[int]],
-    match: dict[str, list[int]],
-    miss: dict[str, list[int]],
-    include_match: bool = True,
-) -> str:
-    """Render the add/match/miss categories as JSON.
+def format_categories(categories: list[tuple[str, dict[str, list[int]]]]) -> str:
+    """Render named label-to-issue-numbers *categories* as JSON.
 
     Minimized except for a newline after each ``"category":`` and after
-    each label's number list, per the requested output shape. Pass
-    ``include_match=False`` to omit the "match" key entirely (the
-    ``--skip-matches`` flag given with no value).
+    each label's number list, per the requested output shape. Shared with
+    scripts/ci/labels/audit_labels_by_files.py so both reports have the
+    same shape.
     """
-    categories = [("add", add)]
-    if include_match:
-        categories.append(("match", match))
-    categories.append(("miss", miss))
-
     category_parts = []
     for name, labels in categories:
         label_parts = [
@@ -182,6 +186,24 @@ def format_report(
         ]
         category_parts.append(f"{json.dumps(name)}:\n{{{','.join(label_parts)}}}")
     return "{" + ",".join(category_parts) + "}"
+
+
+def format_report(
+    add: dict[str, list[int]],
+    match: dict[str, list[int]],
+    miss: dict[str, list[int]],
+    include_match: bool = True,
+) -> str:
+    """Render the add/match/miss categories as JSON.
+
+    Pass ``include_match=False`` to omit the "match" key entirely (the
+    ``--skip-matches`` flag given with no value).
+    """
+    categories = [("add", add)]
+    if include_match:
+        categories.append(("match", match))
+    categories.append(("miss", miss))
+    return format_categories(categories)
 
 
 def parse_skip_matches(value: str | None) -> tuple[bool, frozenset[str]]:
