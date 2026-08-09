@@ -437,23 +437,44 @@ def evaluate(
     ignores: list[IgnoreEntry],
     out_of_scope: list[IgnoreEntry] | None = None,
 ) -> Report:
-    """Match findings against ignore entries and classify every mismatch."""
-    by_key = {(f.lock, f.vuln_id): f for f in findings}
+    """Match findings against ignore entries and classify every mismatch.
+
+    An entry covers its advisory for its package in its lock at *every* version
+    that lock pins the package at.  A universal lock can carry two versions of
+    one name under complementary markers (``rpds-py``), and the reachability
+    argument an entry records is about how this repo uses the package, not about
+    a version, so splitting one advisory into a per-version entry would be noise.
+    Both findings are still listed individually in the report; what is shared is
+    the justification, not the visibility.
+    """
+    by_package: dict[tuple[str, str, str], list[Finding]] = {}
+    by_id: dict[tuple[str, str], list[Finding]] = {}
+    for f in findings:
+        by_package.setdefault((f.lock, f.package, f.vuln_id), []).append(f)
+        by_id.setdefault((f.lock, f.vuln_id), []).append(f)
 
     honored: list[tuple[IgnoreEntry, Finding]] = []
     stale: list[IgnoreEntry] = []
     mismatched: list[tuple[IgnoreEntry, Finding]] = []
+    accounted: set[Finding] = set()
     for entry in ignores:
-        finding = by_key.get((entry.lock, entry.vuln_id))
-        if finding is None:
-            stale.append(entry)
-        elif finding.package != entry.package:
-            mismatched.append((entry, finding))
-        else:
-            honored.append((entry, finding))
+        matches = by_package.get((entry.lock, entry.package, entry.vuln_id), [])
+        if matches:
+            honored.extend((entry, f) for f in matches)
+            accounted.update(matches)
+            continue
+        others = by_id.get((entry.lock, entry.vuln_id), [])
+        if others:
+            # Reported, but against a package this entry does not name, so the
+            # entry is wrong rather than merely tolerant. These are accounted
+            # for so they are not *also* listed as having no entry at all,
+            # which would tell the reader to add one that already exists.
+            mismatched.extend((entry, f) for f in others)
+            accounted.update(others)
+            continue
+        stale.append(entry)
 
-    honored_keys = {(e.lock, e.vuln_id) for e, _ in honored}
-    unignored = [f for f in findings if (f.lock, f.vuln_id) not in honored_keys]
+    unignored = [f for f in findings if f not in accounted]
     return Report(
         audited=audited,
         honored=honored,
@@ -518,6 +539,11 @@ def format_report(report: Report, ignore_file: str) -> str:
                 f"  [{entry.lock}] {entry.vuln_id} is recorded against {entry.package!r} "
                 f"but is reported against {finding.package!r}"
             )
+        lines.append(
+            f"Correct the `package` field in {ignore_file}, or file the entry under the "
+            "advisory ID that actually covers the package it names. These are not listed "
+            "above as unignored: they already have an entry, it is just wrong."
+        )
 
     return "\n".join(lines)
 

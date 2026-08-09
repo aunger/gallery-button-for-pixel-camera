@@ -10,6 +10,13 @@
 #   reason       why the finding does not apply to this repo's usage.
 #   remove_when  what would have to become true for this entry to be deleted.
 #
+# One entry covers its advisory for its package in its lock at every version the
+# lock pins that package at. A universal lock can carry one name at two versions
+# under complementary markers (`rpds-py` does), and the argument an entry records
+# is about how this repo uses the package, not about a version, so a per-version
+# entry would be noise. Both findings still appear in the report; only the
+# justification is shared.
+#
 # Two rules make the list self-cleaning rather than a place things go to die:
 #
 # 1. An entry is scoped to one lock. A finding that is unreachable in the

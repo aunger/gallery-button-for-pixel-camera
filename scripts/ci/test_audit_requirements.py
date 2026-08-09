@@ -312,11 +312,11 @@ def entry(lock="lock.txt", vuln_id="PYSEC-1", package="somepkg") -> ar.IgnoreEnt
     return ar.IgnoreEntry(lock=lock, vuln_id=vuln_id, package=package, reason="r", remove_when="w")
 
 
-def finding(lock="lock.txt", vuln_id="PYSEC-1", package="somepkg") -> ar.Finding:
+def finding(lock="lock.txt", vuln_id="PYSEC-1", package="somepkg", version="1.0") -> ar.Finding:
     return ar.Finding(
         lock=lock,
         package=package,
-        version="1.0",
+        version=version,
         vuln_id=vuln_id,
         fix_versions=("2.0",),
         aliases=(),
@@ -361,7 +361,32 @@ class TestEvaluate(unittest.TestCase):
         self.assertTrue(report.failed)
         self.assertEqual(len(report.mismatched), 1)
         self.assertEqual(report.honored, [])
-        self.assertEqual(report.unignored, [finding()])
+        # Not also reported as having no entry: it has one, it is just wrong,
+        # and "add a justified entry" would be the wrong instruction.
+        self.assertEqual(report.unignored, [])
+
+    def test_one_entry_covers_both_versions_of_a_package_pinned_twice(self):
+        # A universal lock pins rpds-py at two versions under complementary
+        # markers. The reachability argument an entry records is about how the
+        # repo uses the package, not about a version, so one entry covers both
+        # -- but both findings still appear in the report.
+        both = [
+            finding(package="rpds-py", version="0.30.0"),
+            finding(package="rpds-py", version="2026.6.3"),
+        ]
+        report = ar.evaluate([("lock.txt", 3, 2)], both, [entry(package="rpds-py")])
+        self.assertFalse(report.failed)
+        self.assertEqual([f.version for _, f in report.honored], ["0.30.0", "2026.6.3"])
+        self.assertEqual(report.unignored, [])
+
+    def test_an_entry_for_one_package_does_not_cover_another_with_the_same_id(self):
+        # Two packages, one shared advisory ID: naming one leaves the other
+        # unignored rather than silently covering it.
+        findings = [finding(package="somepkg"), finding(package="otherpkg")]
+        report = ar.evaluate([("lock.txt", 3, 2)], findings, [entry(package="somepkg")])
+        self.assertTrue(report.failed)
+        self.assertEqual([f.package for _, f in report.honored], ["somepkg"])
+        self.assertEqual([f.package for f in report.unignored], ["otherpkg"])
 
 
 class TestFormatReport(unittest.TestCase):
