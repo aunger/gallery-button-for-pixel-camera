@@ -251,6 +251,16 @@ class TestLabelsToPropagate(unittest.TestCase):
         # logging, which is only total if nothing belongs to both.
         self.assertEqual(pil.FILE_DETERMINED_LABELS & pil.PROCESS_STATE_LABELS, frozenset())
 
+    def test_file_determined_labels_is_the_same_object_as_label_by_titles(self):
+        # label_by_title.FILE_DETERMINED_LABELS is the single canonical
+        # definition; this module references it directly instead of writing
+        # its own literal. An `is` check, not just `==`, is the point: it
+        # fails the moment someone reintroduces a separately written literal
+        # that happens to equal today's value, which is exactly the kind of
+        # silent drift that would break the "exactly one writer owns this
+        # label on a PR" precedence claim without any test noticing.
+        self.assertIs(pil.FILE_DETERMINED_LABELS, pil.label_by_title.FILE_DETERMINED_LABELS)
+
     def test_process_state_exclusion_does_not_consume_a_skip_slot(self):
         # A process-state label and a genuinely conflicting label in the same
         # run are reported in their own distinct lists, not conflated.

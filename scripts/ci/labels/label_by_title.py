@@ -108,6 +108,17 @@ LABEL_PATTERNS: dict[str, re.Pattern[str]] = {
 # `[opened, synchronize]`, so on `opened` both jobs run concurrently and
 # whichever lands last would otherwise decide, and a title edit alone would
 # re-add a label the file signal had removed.
+#
+# This is the single canonical definition. scripts/ci/labels/label_by_files.py
+# (as EXHAUSTIVE_LABELS) and scripts/ci/labels/propagate_issue_labels.py (as
+# its own FILE_DETERMINED_LABELS) both reference this frozenset object
+# directly rather than each writing their own literal, since label_by_files
+# already imports this module and propagate_issue_labels can too without a
+# cycle. Three independently written literals happening to agree is exactly
+# the kind of silent drift a structural precedence claim cannot rest on: with
+# a shared reference, the three can no longer diverge in value at all, and
+# each module's own test suite pins that it is still using this object (not a
+# copy of it).
 FILE_DETERMINED_LABELS: frozenset[str] = frozenset({"agents"})
 
 

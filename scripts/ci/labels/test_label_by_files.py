@@ -108,6 +108,25 @@ class TestLabelsForPath(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# EXHAUSTIVE_LABELS / FILE_DETERMINED_LABELS identity
+# ---------------------------------------------------------------------------
+
+
+class TestExhaustiveLabelsIdentity(unittest.TestCase):
+    def test_exhaustive_labels_is_the_same_object_as_file_determined_labels(self):
+        # label_by_title.FILE_DETERMINED_LABELS is the single canonical
+        # definition (label_by_title.py suppresses these from PR titles,
+        # propagate_issue_labels.py excludes them from propagation, and this
+        # module both adds and removes them from a PR's own changed files).
+        # An `is` check, not just `==`, is the point: it fails the moment
+        # someone reintroduces a separately written literal that happens to
+        # equal today's value, which is exactly the silent-drift risk a
+        # structural "exactly one writer owns this label" claim cannot rest
+        # on three independently maintained copies to avoid.
+        self.assertIs(lbf.EXHAUSTIVE_LABELS, lbf.label_by_title.FILE_DETERMINED_LABELS)
+
+
+# ---------------------------------------------------------------------------
 # matching_labels tests
 # ---------------------------------------------------------------------------
 

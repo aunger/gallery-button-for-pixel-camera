@@ -66,6 +66,7 @@ import urllib.error
 import urllib.request
 
 import enforce_mutually_exclusive_labels as emxl
+import label_by_title
 
 # ---------------------------------------------------------------------------
 # GraphQL
@@ -199,9 +200,16 @@ PROCESS_STATE_LABELS: frozenset[str] = frozenset(
 # the next push. Observed on 5 of the 21 PRs in issue #785's dry run that
 # carry `agents` without touching any agents path.
 #
+# References label_by_title.FILE_DETERMINED_LABELS directly rather than
+# repeating its own literal, for the same reason label_by_files.py does: three
+# independently written copies of "agents" could silently drift apart, which
+# would break the "exactly one writer owns this label on a PR" precedence
+# claim without any test noticing. See the comment on
+# label_by_title.FILE_DETERMINED_LABELS for the full rationale.
+#
 # Disjoint from PROCESS_STATE_LABELS by construction, so the two exclusion
 # reasons partition the excluded list cleanly for logging.
-FILE_DETERMINED_LABELS: frozenset[str] = frozenset({"agents"})
+FILE_DETERMINED_LABELS: frozenset[str] = label_by_title.FILE_DETERMINED_LABELS
 
 
 def labels_to_propagate(

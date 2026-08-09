@@ -116,7 +116,14 @@ UNANIMOUS_LABELS = frozenset({"ci", "automated tests"})
 # justifies it" *is* evidence of "not this label". Apply when any changed path
 # justifies it, regardless of what else the PR changes; remove when none does.
 # This is the if-and-only-if rule the repository owner recorded on issue #775.
-EXHAUSTIVE_LABELS = frozenset({"agents"})
+#
+# References label_by_title.FILE_DETERMINED_LABELS directly rather than
+# repeating its own literal: that module suppresses these same labels from a
+# pull request's title, and propagate_issue_labels.py excludes them from
+# issue-to-PR propagation, so all three have to name the identical set for the
+# "exactly one writer owns this label on a PR" precedence claim to hold. See
+# the comment on label_by_title.FILE_DETERMINED_LABELS for the full rationale.
+EXHAUSTIVE_LABELS = label_by_title.FILE_DETERMINED_LABELS
 
 
 def matching_labels(paths: list[str]) -> list[str]:
