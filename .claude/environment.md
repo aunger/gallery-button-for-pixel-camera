@@ -62,6 +62,7 @@ It fails the build when the committed copy drifts from `gradle/wrapper/gradle-wr
 
 - It never regenerates `gradle/verification-metadata.xml`. The generator workflow is that file's only provenance (#774).
 - It provisions no emulator. The E2E suites need KVM, which web sessions do not have, so they stay CI-only.
+- It installs no pip packages. The two hash-pinned locks a session needs (`scripts/lint/requirements-lint.txt` and `scripts/requirements.txt`) are installed by the hook into the session user's `~/.local`, and its SHA-256 markers already make that a no-op once a lock is in place. They come to about a megabyte of wheels, against the ~130 MB Gradle distribution and ~190 MB JDK this script exists to keep out of every session, so seeding them here would duplicate the marker logic to save a few seconds (#806).
 - It never trusts a hash published by whatever served the bytes. `GRADLE_DIST_DOWNLOAD_URL` and `TEMURIN_DOWNLOAD_URL` can redirect those *downloads* to a mirror if a host is blocked; the pinned SHA-256 still gates what that mirror serves.
 
 ### What is and is not checksummed
@@ -165,10 +166,20 @@ Findings block the PR.
 The engine is installed from `scripts/ci/requirements-semgrep.txt`, a hash-pinned lock (top-level pin in `scripts/ci/requirements-semgrep.in`), with `--require-hashes` (issue #723); the rulesets are still fetched from the Semgrep registry at scan time, so the weekly run keeps picking up new rules.
 Regenerate the lock with the `uv pip compile` command recorded in that `.in` file's header.
 
-### CI helper-script dependencies
+______________________________________________________________________
 
-The Python helper scripts' runtime deps (`defusedxml`, `requests`, `PyYAML`) install in CI (`.github/workflows/build.yml`) from `scripts/requirements.txt`, a hash-pinned lock (top-level pins in `scripts/requirements.in`), with `--require-hashes` (issue #723).
+## Python helper-script dependencies
+
+The Python helper scripts' runtime deps (`defusedxml`, `requests`, `PyYAML`) come from `scripts/requirements.txt`, a hash-pinned lock (top-level pins in `scripts/requirements.in`), installed with `--require-hashes` (issue #723).
 Regenerate the lock with the `uv pip compile` command recorded in that `.in` file's header.
+
+Both sides install it: CI in `.github/workflows/build.yml`, and the `SessionStart` hook in step 4 (issue #806).
+The session install is what makes the whole test suite runnable locally; without it, four of the Python test modules and `scripts/ci/test-support/test_summarize_preflight_integration.sh` fail with `No module named 'defusedxml'` whatever the change under test is.
+It also makes the versions this repository declares the ones a session runs: `requests` and `PyYAML` happen to resolve from the base image, so a change there would extend the same failure to them with no other signal.
+
+Steps 3b and 4 both install through `scripts/install-pinned-requirements.sh`, which records the SHA-256 of the lock it installed under `~/.local/share/gb4pc/`.
+An unchanged lock is therefore a no-op on later sessions, an edited one reinstalls, and a failed install writes no marker and is retried.
+`scripts/test_install_pinned_requirements.sh` covers that behavior, and fails the build if `build.yml` installs a lock the hook does not.
 
 ______________________________________________________________________
 

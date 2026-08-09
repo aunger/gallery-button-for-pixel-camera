@@ -206,6 +206,39 @@ else
     fail "two locks share a file name; their SHA-256 markers would collide"
 fi
 
+# ── (h) a session provisions every lock the test suites need ─────────────────
+#
+# The gap this closes (issue #806) was not a missing dependency but a
+# provisioning asymmetry: .github/workflows/build.yml installed
+# scripts/requirements.txt before running the Python and shell test suites, and
+# nothing on the session side did, so five of those tests failed locally with
+# "No module named 'defusedxml'" whatever the change under test was.
+#
+# Both lists are read from the files themselves, so a lock added to build.yml has
+# to be provisioned for sessions too. Only build.yml is compared: it is the
+# workflow that runs the test suites a session is expected to reproduce, whereas
+# semgrep.yml installs an engine that is deliberately CI-only.
+echo ""
+echo "=== (h) every lock CI installs to run the tests is installed for sessions ==="
+CI_LOCKS="$(grep -o -- '-r scripts/[A-Za-z0-9_./-]*\.txt' "$REPO_ROOT/.github/workflows/build.yml" \
+    | sed 's/^-r //' | sort -u)"
+if [[ -n "$CI_LOCKS" ]]; then
+    pass "build.yml installs locks: $(echo "$CI_LOCKS" | tr '\n' ' ')"
+else
+    fail "no requirements lock found in .github/workflows/build.yml (did the install steps move?)"
+fi
+
+UNPROVISIONED=""
+while IFS= read -r lock; do
+    [[ -z "$lock" ]] && continue
+    echo "$HOOK_LOCKS" | grep -qx -- "$lock" || UNPROVISIONED="$UNPROVISIONED $lock"
+done <<< "$CI_LOCKS"
+if [[ -z "$UNPROVISIONED" ]]; then
+    pass "the session-start hook installs every lock build.yml installs"
+else
+    fail "build.yml installs locks the session-start hook does not:$UNPROVISIONED"
+fi
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""
 echo "test_install_pinned_requirements.sh: $PASS passed, $FAIL failed"

@@ -247,16 +247,40 @@ else
 fi
 
 # ───────────────────────────────────────────────────────────────────────────────
-# STEP 4: Fetch remote refs.
+# STEP 4: Python helper-script runtime dependencies.
+#
+# scripts/requirements.txt is the hash-pinned lock for what this repository's own
+# Python helper scripts import at run time: defusedxml, requests, and PyYAML
+# (issue #723).  CI installs it in .github/workflows/build.yml before it runs
+# either test suite, and a session that does not is a session where part of the
+# suite cannot run: four of the Python test modules fail to import and
+# scripts/ci/test-support/test_summarize_preflight_integration.sh fails, all with
+# "No module named 'defusedxml'", for reasons unrelated to whatever is being
+# changed (issue #806).
+#
+# These are not lint tools, so they get their own step rather than joining STEP 3,
+# but they install through the same script and the same skip marker.
+#
+# Installing the lock also makes the versions this repository declares the ones a
+# session actually runs.  Only defusedxml is visibly absent today; requests and
+# PyYAML happen to resolve from the base image, so a change there would extend
+# the same failure to them with no other signal.
+# ───────────────────────────────────────────────────────────────────────────────
+echo "[session-start] Step 4: ensuring the Python helper-script dependencies are installed..."
+"$REPO_ROOT/scripts/install-pinned-requirements.sh" \
+    "$REPO_ROOT/scripts/requirements.txt" "Python helper-script dependencies"
+
+# ───────────────────────────────────────────────────────────────────────────────
+# STEP 5: Fetch remote refs.
 #
 # Keep local knowledge of the remote up to date at the start of every session.
 # git fetch is always safe (it never modifies the working tree), so no skip
 # guard is needed.  Failures are logged as warnings rather than aborting the
 # hook, so a transient network outage does not prevent the session from starting.
 # ───────────────────────────────────────────────────────────────────────────────
-echo "[session-start] Step 4: git fetch..."
+echo "[session-start] Step 5: git fetch..."
 git -C "$REPO_ROOT" fetch --prune --quiet \
-    && echo "[session-start] Step 4: fetch complete" \
-    || echo "[session-start] Step 4: warning: git fetch failed"
+    && echo "[session-start] Step 5: fetch complete" \
+    || echo "[session-start] Step 5: warning: git fetch failed"
 
 echo "[session-start] Complete. ANDROID_HOME=$ANDROID_HOME"
