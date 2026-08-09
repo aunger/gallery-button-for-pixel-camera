@@ -23,7 +23,7 @@ Per-lock ignore entries with a recorded rationale
 A stale ignore entry fails the build
     This is the property that actually matters.  When an ignored ID stops being
     reported, the entry has become stale, usually because an upstream cap
-    lifted or the package was dropped -- and that is the moment to revisit it.
+    lifted or the package was dropped, and that is the moment to revisit it.
     Without this, an ignore list only ever grows and rots into noise.  The
     ``click`` case in issue #788 was exactly this shape: semgrep quietly
     relaxed its ``click~=8.1.8`` cap, and nothing was watching, so a fixable
@@ -43,8 +43,8 @@ Why the locks are not handed to ``pip-audit`` directly
     the parser does not recognize is an error, not a skip, so a change in the
     lock format shows up as a red build rather than as silent under-coverage.
     (Names repeated at different versions, as ``rpds-py`` is, cannot share one
-    requirements file -- ``pip-audit`` rejects the duplicate -- so the pins are
-    audited in as many rounds as the most-repeated name requires.)
+    requirements file, because ``pip-audit`` rejects the duplicate, so the pins
+    are audited in as many rounds as the most-repeated name requires.)
 
 Locks are discovered rather than listed, so a lock added later is audited
 without anyone having to remember to register it here.
@@ -97,7 +97,7 @@ DEFAULT_IGNORE_FILE = "scripts/ci/requirements-audit-ignore.toml"
 # A pinned requirement in a uv-generated lock: always at column 0, with its
 # hashes and `# via` comment indented beneath it. The trailing marker
 # (`; python_full_version < '3.11'`) and line continuation are deliberately not
-# captured -- every pin is audited regardless of which environment it applies to.
+# captured; every pin is audited regardless of which environment it applies to.
 _PIN_RE = re.compile(r"^(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)==(?P<version>[^\s;\\]+)")
 
 _IGNORE_FIELDS = ("id", "package", "reason", "remove_when")

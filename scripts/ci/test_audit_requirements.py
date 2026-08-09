@@ -369,7 +369,7 @@ class TestEvaluate(unittest.TestCase):
         # A universal lock pins rpds-py at two versions under complementary
         # markers. The reachability argument an entry records is about how the
         # repo uses the package, not about a version, so one entry covers both
-        # -- but both findings still appear in the report.
+        # but both findings still appear in the report.
         both = [
             finding(package="rpds-py", version="0.30.0"),
             finding(package="rpds-py", version="2026.6.3"),

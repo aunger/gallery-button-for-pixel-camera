@@ -39,7 +39,7 @@
 #
 # semgrep declares `mcp==1.23.3` as an exact requirement, as a core dependency
 # rather than an extra, and has done so in every release through 1.172.0, so
-# regenerating this lock cannot move it -- `uv pip compile --upgrade` resolves
+# regenerating this lock cannot move it, because `uv pip compile --upgrade` resolves
 # to 1.23.3 again at any semgrep version.
 #
 # All three advisories are bugs in MCP *server* transports, and each names an
