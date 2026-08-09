@@ -170,6 +170,19 @@ Regenerate the lock with the `uv pip compile` command recorded in that `.in` fil
 The Python helper scripts' runtime deps (`defusedxml`, `requests`, `PyYAML`) install in CI (`.github/workflows/build.yml`) from `scripts/requirements.txt`, a hash-pinned lock (top-level pins in `scripts/requirements.in`), with `--require-hashes` (issue #723).
 Regenerate the lock with the `uv pip compile` command recorded in that `.in` file's header.
 
+### Requirements audit (CI only)
+
+`.github/workflows/dependency-audit.yml` runs `scripts/ci/audit_requirements.py` on PRs, on pushes to `main`, and weekly.
+It discovers every `scripts/**/requirements*.txt` and runs `pip-audit` over the pins in each, so a lock added later is audited without being registered anywhere (issue #804).
+`pip-audit` itself installs from `scripts/ci/requirements-audit.txt`, a hash-pinned lock of its own (top-level pin in `scripts/ci/requirements-audit.in`); that lock is one of the discovered ones, so the scanner's dependencies are covered by the same gate.
+
+The check fails on any finding without an entry in `scripts/ci/requirements-audit-ignore.toml`, and equally on any entry in that file that is *no longer* reported.
+The second half is the point: a stale entry usually means an upstream cap lifted, which is when the reasoning it records needs re-reading.
+Entries are per-lock and must state both why the finding is tolerated and what would make the entry unnecessary; see the file's header.
+This list is not the Dependabot dismissal list and is not kept in sync with it--the two advisory databases do not carry the same set.
+
+Take a fix by regenerating the affected lock with `--upgrade` (see the note in each `.in` file header), not by adding an ignore entry.
+
 ______________________________________________________________________
 
 ## GitHub MCP tool quirks
