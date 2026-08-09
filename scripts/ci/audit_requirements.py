@@ -246,8 +246,8 @@ def pins_to_requirements(pins: list[Pin]) -> str:
 # ---------------------------------------------------------------------------
 
 
-def run_pip_audit(requirements: str) -> dict:
-    """Run pip-audit over *requirements* and return its parsed JSON report.
+def pip_audit_argv(req_path: Path) -> list[str]:
+    """Return the pip-audit command line for the requirements file at *req_path*.
 
     ``--no-deps`` is required because the pins are already a full transitive
     closure; without it pip-audit tries to resolve and install.  ``--strict``
@@ -255,37 +255,55 @@ def run_pip_audit(requirements: str) -> dict:
     silent omission.  pip-audit is invoked through ``sys.executable -m`` so the
     interpreter running this script is the one that has it installed.
     """
+    return [
+        sys.executable,
+        "-m",
+        "pip_audit",
+        "--no-deps",
+        "--disable-pip",
+        "--strict",
+        "--progress-spinner",
+        "off",
+        "--desc",
+        "off",
+        "--format",
+        "json",
+        "--requirement",
+        str(req_path),
+    ]
+
+
+def parse_pip_audit_result(returncode: int, stdout: str, stderr: str) -> dict:
+    """Return pip-audit's JSON report, or raise AuditError quoting what it said.
+
+    pip-audit exits 1 both when it found vulnerabilities (with a JSON report on
+    stdout) and when ``--strict`` tripped over a dependency it could not audit
+    (with nothing on stdout and the diagnosis on stderr).  Only the exit code
+    does not distinguish those, so both codes are accepted and the verdict comes
+    from whether a report actually arrived.  Whatever pip-audit printed is
+    carried into the error either way: a gate whose whole argument is that it
+    should tell you what to do when it goes red cannot swallow the one line
+    naming the package that broke it.
+    """
+    detail = stderr.strip() or stdout.strip() or "(no output)"
+    if returncode not in (0, 1):
+        raise AuditError(f"pip-audit exited {returncode}:\n{detail}")
+    try:
+        return json.loads(stdout)
+    except json.JSONDecodeError as exc:
+        raise AuditError(
+            f"pip-audit exited {returncode} without a JSON report ({exc}). "
+            f"Its own output was:\n{detail}"
+        ) from exc
+
+
+def run_pip_audit(requirements: str) -> dict:
+    """Run pip-audit over *requirements* and return its parsed JSON report."""
     with tempfile.TemporaryDirectory() as tmpdir:
         req_path = Path(tmpdir) / "requirements.txt"
         req_path.write_text(requirements, encoding="utf-8")
-        argv = [
-            sys.executable,
-            "-m",
-            "pip_audit",
-            "--no-deps",
-            "--disable-pip",
-            "--strict",
-            "--progress-spinner",
-            "off",
-            "--desc",
-            "off",
-            "--format",
-            "json",
-            "--requirement",
-            str(req_path),
-        ]
-        proc = subprocess.run(argv, capture_output=True, text=True, check=False)
-
-    # pip-audit exits 1 when it finds vulnerabilities; anything else is a
-    # failure to produce a verdict at all.
-    if proc.returncode not in (0, 1):
-        raise AuditError(
-            f"pip-audit exited {proc.returncode}:\n{proc.stderr.strip() or proc.stdout.strip()}"
-        )
-    try:
-        return json.loads(proc.stdout)
-    except json.JSONDecodeError as exc:
-        raise AuditError(f"pip-audit produced unparseable JSON: {exc}") from exc
+        proc = subprocess.run(pip_audit_argv(req_path), capture_output=True, text=True, check=False)
+    return parse_pip_audit_result(proc.returncode, proc.stdout, proc.stderr)
 
 
 def findings_from_report(payload: dict, lock: str) -> list[Finding]:

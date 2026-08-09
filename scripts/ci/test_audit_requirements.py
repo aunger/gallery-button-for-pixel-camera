@@ -8,9 +8,11 @@ parsing, ignore-matching and verdict logic rather than the vulnerability feed.
 
 import io
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
@@ -112,6 +114,79 @@ class TestPlanRounds(unittest.TestCase):
             ar.pins_to_requirements([ar.Pin("a", "1"), ar.Pin("b", "2")]),
             "a==1\nb==2\n",
         )
+
+
+class TestParsePipAuditResult(unittest.TestCase):
+    """The subprocess contract: which exit codes mean what, and what the operator is told."""
+
+    CLEAN = '{"dependencies": [], "fixes": []}'
+
+    def test_exit_zero_with_a_report(self):
+        self.assertEqual(
+            ar.parse_pip_audit_result(0, self.CLEAN, ""), {"dependencies": [], "fixes": []}
+        )
+
+    def test_exit_one_with_a_report_is_vulnerabilities_found(self):
+        # pip-audit exits 1 when it finds something; that is a verdict, not an error.
+        payload = '{"dependencies": [{"name": "a", "version": "1", "vulns": []}], "fixes": []}'
+        self.assertEqual(len(ar.parse_pip_audit_result(1, payload, "")["dependencies"]), 1)
+
+    def test_exit_one_with_no_report_quotes_what_pip_audit_said(self):
+        # --strict exits 1 with an empty stdout and the diagnosis on stderr. The
+        # operator needs that line, not a JSON decoder complaint.
+        stderr = (
+            "ERROR:pip_audit._cli:nonesuch: Dependency not found on PyPI and "
+            "could not be audited: nonesuch (1.0.0)"
+        )
+        with self.assertRaises(ar.AuditError) as ctx:
+            ar.parse_pip_audit_result(1, "", stderr)
+        self.assertIn("Dependency not found on PyPI", str(ctx.exception))
+
+    def test_unexpected_exit_code_quotes_stderr(self):
+        with self.assertRaises(ar.AuditError) as ctx:
+            ar.parse_pip_audit_result(2, "", "usage: pip-audit [-h]")
+        self.assertIn("exited 2", str(ctx.exception))
+        self.assertIn("usage: pip-audit", str(ctx.exception))
+
+    def test_garbage_on_stdout_is_quoted_when_stderr_is_empty(self):
+        with self.assertRaises(ar.AuditError) as ctx:
+            ar.parse_pip_audit_result(0, "not json at all", "")
+        self.assertIn("not json at all", str(ctx.exception))
+
+    def test_silent_failure_still_names_the_exit_code(self):
+        with self.assertRaises(ar.AuditError) as ctx:
+            ar.parse_pip_audit_result(1, "", "")
+        self.assertIn("(no output)", str(ctx.exception))
+
+
+class TestRunPipAudit(unittest.TestCase):
+    """The plumbing around the subprocess, with the subprocess itself stubbed out."""
+
+    def test_pins_reach_pip_audit_in_a_requirements_file(self):
+        seen = {}
+
+        def fake_run(argv, **kwargs):
+            seen["argv"] = argv
+            seen["requirements"] = Path(argv[-1]).read_text(encoding="utf-8")
+            return subprocess.CompletedProcess(argv, 0, '{"dependencies": []}', "")
+
+        with unittest.mock.patch.object(ar.subprocess, "run", fake_run):
+            self.assertEqual(ar.run_pip_audit("a==1\nb==2\n"), {"dependencies": []})
+
+        self.assertEqual(seen["requirements"], "a==1\nb==2\n")
+        self.assertEqual(seen["argv"][:3], [sys.executable, "-m", "pip_audit"])
+        for flag in ("--no-deps", "--disable-pip", "--strict"):
+            self.assertIn(flag, seen["argv"])
+        self.assertEqual(seen["argv"][seen["argv"].index("--format") + 1], "json")
+
+    def test_a_failing_subprocess_becomes_an_audit_error(self):
+        def fake_run(argv, **kwargs):
+            return subprocess.CompletedProcess(argv, 1, "", "ERROR:pip_audit._cli:boom")
+
+        with unittest.mock.patch.object(ar.subprocess, "run", fake_run):
+            with self.assertRaises(ar.AuditError) as ctx:
+                ar.run_pip_audit("a==1\n")
+        self.assertIn("boom", str(ctx.exception))
 
 
 class TestFindingsFromReport(unittest.TestCase):
