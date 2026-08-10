@@ -42,6 +42,10 @@ name: Block merge when a blocking label is present
 #     recent run on the commit and would keep its siblings blocked with no
 #     blocking label applied anywhere and no automatic way out. Recovery would
 #     mean re-running the job by hand, toggling a label, or pushing a commit.
+#
+# No-op marker: distinguishing head commit for issue #866's live verification
+# of the `closed` trigger, so the test PRs do not share PR #857's own head
+# commit (which itself carries a blocking label mid-verification).
 
 on:
   pull_request:
