@@ -1,0 +1,31 @@
+name: Wake held issues
+
+# Daily check for issues whose "hold N days" snooze (see snooze-held-issues.yml
+# and HOLD_LABEL_DAYS in scripts/ci/labels/enforce_mutually_exclusive_labels.py)
+# has elapsed. Reopens each one, strips its hold label, and strips
+# propagate_issue_labels.PROCESS_STATE_LABELS so it lands back in plain
+# triage rather than resuming mid-orchestration-cycle. See
+# scripts/ci/labels/wake_held_issues.py's docstring for the full design.
+#
+# Offset an hour from archive-stale-test-failures.yml's 04:00 UTC cron so the
+# two daily issue-label jobs do not start at the same minute.
+
+on:
+  schedule:
+    - cron: '0 5 * * *'   # daily at 05:00 UTC
+
+permissions:
+  issues: write
+
+jobs:
+  wake:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Wake held issues past their snooze
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python3 scripts/ci/labels/wake_held_issues.py
