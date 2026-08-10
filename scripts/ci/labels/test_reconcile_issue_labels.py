@@ -21,13 +21,20 @@ class TestFetchOpenPrNumbers(unittest.TestCase):
             result = ril.fetch_open_pr_numbers("owner/repo", "tok")
         self.assertEqual(result, [5, 7])
 
-    def test_paginates_until_an_empty_page(self):
+    def test_paginates_until_a_short_page(self):
         page1 = [{"number": n} for n in range(1, 101)]
         page2 = [{"number": 101}]
-        with patch.object(ril.pil.emxl, "gh_api", side_effect=[page1, page2, []]) as mock_api:
+        with patch.object(ril.pil.emxl, "gh_api", side_effect=[page1, page2]) as mock_api:
             result = ril.fetch_open_pr_numbers("owner/repo", "tok")
         self.assertEqual(result, list(range(1, 102)))
-        self.assertEqual(mock_api.call_count, 3)
+        self.assertEqual(mock_api.call_count, 2)
+
+    def test_paginates_until_an_empty_page(self):
+        page1 = [{"number": n} for n in range(1, 101)]
+        with patch.object(ril.pil.emxl, "gh_api", side_effect=[page1, []]) as mock_api:
+            result = ril.fetch_open_pr_numbers("owner/repo", "tok")
+        self.assertEqual(result, list(range(1, 101)))
+        self.assertEqual(mock_api.call_count, 2)
 
     def test_returns_empty_when_no_open_prs(self):
         with patch.object(ril.pil.emxl, "gh_api", return_value=[]):

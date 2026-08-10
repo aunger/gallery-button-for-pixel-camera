@@ -94,25 +94,19 @@ def blocking_labels_in(labels: list[str]) -> list[str]:
 def fetch_open_prs_at_head(repo: str, token: str, head_sha: str) -> list[dict]:
     """Return every open pull request in *repo* whose head commit is *head_sha*.
 
-    Paginates through all open PRs. There is no server-side filter for "head
-    is this sha" (the list endpoint's `head` filter takes a branch name, and a
-    branch is not what the check run is keyed on), so the filtering happens
-    here. In this repo that is one API call in the ordinary case.
+    Filters the full open-PR listing locally, because no endpoint answers this
+    question server-side. The list endpoint's `head` filter takes a branch
+    name, and a branch is not what the check run is keyed on. The nearest
+    alternative, GET /repos/{owner}/{repo}/commits/{sha}/pulls, matches every
+    PR whose branch *contains* the commit rather than the PRs headed by it, so
+    it would over-match every descendant PR. In this repo the listing is one
+    API call in the ordinary case.
     """
-    matching: list[dict] = []
-    page = 1
-    while True:
-        batch = emxl.gh_api(
-            f"repos/{repo}/pulls?state=open&per_page=100&page={page}",
-            token=token,
-        )
-        if not batch:
-            break
-        matching.extend(pr for pr in batch if (pr.get("head") or {}).get("sha") == head_sha)
-        if len(batch) < 100:
-            break
-        page += 1
-    return matching
+    return [
+        pr
+        for pr in emxl.fetch_open_pull_requests(repo, token)
+        if (pr.get("head") or {}).get("sha") == head_sha
+    ]
 
 
 # ---------------------------------------------------------------------------

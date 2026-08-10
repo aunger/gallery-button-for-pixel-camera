@@ -172,6 +172,33 @@ def gh_api(
     raise AssertionError("gh_api retry loop exited without returning or raising")
 
 
+# GitHub caps a page of pull requests at 100, so a short page is the last page.
+PULLS_PER_PAGE = 100
+
+
+def fetch_open_pull_requests(repo: str, token: str) -> list[dict]:
+    """Return every open pull request in *repo*, following pagination.
+
+    Callers wanting a subset filter the returned objects themselves: the list
+    endpoint offers no server-side filter finer than state, base branch, and
+    head branch name.
+    """
+    pulls: list[dict] = []
+    page = 1
+    while True:
+        batch = gh_api(
+            f"repos/{repo}/pulls?state=open&per_page={PULLS_PER_PAGE}&page={page}",
+            token=token,
+        )
+        if not batch:
+            break
+        pulls.extend(batch)
+        if len(batch) < PULLS_PER_PAGE:
+            break
+        page += 1
+    return pulls
+
+
 # ---------------------------------------------------------------------------
 # Core logic
 # ---------------------------------------------------------------------------

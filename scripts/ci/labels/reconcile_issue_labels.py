@@ -45,18 +45,7 @@ import propagate_issue_labels as pil
 
 def fetch_open_pr_numbers(repo: str, token: str) -> list[int]:
     """Return the number of every open pull request in *repo*."""
-    numbers: list[int] = []
-    page = 1
-    while True:
-        batch = pil.emxl.gh_api(
-            f"repos/{repo}/pulls?state=open&per_page=100&page={page}",
-            token=token,
-        )
-        if not batch:
-            break
-        numbers.extend(pr["number"] for pr in batch)
-        page += 1
-    return numbers
+    return [pr["number"] for pr in pil.emxl.fetch_open_pull_requests(repo, token)]
 
 
 # ---------------------------------------------------------------------------
