@@ -45,7 +45,15 @@ jobs:
   regenerate:
     if: github.event.pull_request.user.login == 'dependabot[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # scripts/regenerate-gradle-verification.sh always sets a fresh mktemp
+    # GRADLE_USER_HOME (so no previously-cached artifact is silently omitted
+    # from the generated file), so this job's build+test invocation is just
+    # as uncached as regenerate-gradle-toolchain.yml's identical call to the
+    # same script. That sibling workflow documents a 20-45 minute cold run
+    # for it and budgets 90 minutes; match that here instead of assuming
+    # this job is faster. Never inherit GitHub's 360-minute default either
+    # (issue #611).
+    timeout-minutes: 90
     steps:
       - name: Check out the PR head
         uses: actions/checkout@v6

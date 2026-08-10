@@ -79,6 +79,22 @@ if [ -f "$GENERATE_WF" ]; then
     else
         pass "generate workflow declares no contents: write permission"
     fi
+
+    # (j) budgets enough time for the uncached Gradle invocation. The
+    # regenerate job runs the identical uncached build+test invocation as
+    # regenerate-gradle-toolchain.yml (both scripts share the same
+    # always-fresh mktemp GRADLE_USER_HOME), and that sibling workflow
+    # documents a 20-45 minute cold run for it while budgeting 90 minutes.
+    # A too-short timeout here does not fail loudly; it cancels a normal
+    # run, which the push workflow's `if: ... == 'success'` gate correctly
+    # declines to act on, so the PR just never goes green, silently
+    # defeating issue #842's whole purpose.
+    TIMEOUT="$(grep -E '^[[:space:]]*timeout-minutes:' "$GENERATE_WF" | head -1 | grep -oE '[0-9]+')"
+    if [ -n "$TIMEOUT" ] && [ "$TIMEOUT" -ge 90 ]; then
+        pass "generate workflow's timeout-minutes ($TIMEOUT) is at least 90, matching regenerate-gradle-toolchain.yml's budget for the identical uncached Gradle invocation"
+    else
+        fail "generate workflow's timeout-minutes (${TIMEOUT:-unset}) is below 90; regenerate-gradle-toolchain.yml documents a 20-45 minute cold run for the identical script, so anything below that risks cancelling a normal run"
+    fi
 fi
 
 if [ -f "$PUSH_WF" ]; then
