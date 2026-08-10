@@ -35,9 +35,10 @@ Only open PRs count. A closed PR cannot be merged, so its labels must not
 block anyone. That is a statement about this script's verdict, not about the
 gate: what gates a merge is the stored check run, so a failure a since-closed
 PR earned outlives it until something re-runs the check. That is why the
-workflow also triggers on `closed`; the closing PR is already gone from both
-sources by the time that run evaluates the commit, so the re-run is what
-actually retires its verdict.
+workflow also triggers on `closed`. That run excludes the closing PR from both
+of this script's sources by construction (see main()), rather than trusting the
+open-PR listing to have caught up with the close, so it is what actually
+retires the verdict that PR earned.
 
 The triggering PR's own labels are read from the event payload as well as from
 the API listing (see main()), so this check is never weaker about the
@@ -204,16 +205,28 @@ def main() -> int:
     # the verdict is never weaker about that PR than the payload alone would
     # have made it, even if the listing is momentarily stale about a PR that
     # was just opened or just labeled. Its labels from both sources are unioned
-    # rather than replaced. A closed triggering PR contributes nothing: it
-    # cannot be merged, and its label must not block a sibling that can. That
-    # is also what makes the workflow's `closed` trigger a recovery rather
-    # than a no-op, since on a `closed` event the triggering PR drops out of
-    # the payload and out of the listing at the same time.
+    # rather than replaced.
+    #
+    # A closed triggering PR is the mirror case, and gets the opposite
+    # treatment: it is dropped from both sources, the payload by its state and
+    # the listing by its number. It cannot be merged, so its label must not
+    # block a sibling that can. Dropping it from the listing too is what makes
+    # the workflow's `closed` trigger a reliable recovery rather than a race:
+    # that run is the last event the commit will see, so a copy of the listing
+    # that has not yet caught up with the close would otherwise leave the
+    # failing verdict the closing PR earned as the newest run on the commit,
+    # with a sibling blocked by a label nothing carries and no automatic exit.
+    # It cannot wrongly unblock, because a payload whose state is stale in the
+    # other direction (closed here, reopened since) is followed by a `reopened`
+    # event that re-runs this check.
     candidates: dict[int, list[str]] = {}
     if pr_state == "open":
         candidates[pr_number] = list(event_labels)
     for pull_request in open_prs:
-        candidates.setdefault(pull_request["number"], []).extend(label_names(pull_request))
+        number = pull_request["number"]
+        if number == pr_number and pr_state != "open":
+            continue
+        candidates.setdefault(number, []).extend(label_names(pull_request))
 
     listed = ", ".join(f"#{number}" for number in sorted(candidates)) or "none"
     print(f"Open pull request(s) whose head is {head_sha}: {listed}.")

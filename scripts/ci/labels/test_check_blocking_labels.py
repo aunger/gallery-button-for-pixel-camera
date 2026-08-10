@@ -200,6 +200,23 @@ class TestMain(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("OK: No blocking labels are present.", output)
 
+    def test_a_closed_triggering_pr_is_excluded_even_when_the_listing_lags(self):
+        """The `closed` recovery must not depend on the listing having caught up.
+
+        A `closed` event is the last one the commit will see, so a run that
+        still found the closing PR in `GET /pulls?state=open` would leave the
+        failing verdict that PR earned as the newest run on the commit, with a
+        sibling blocked by a label nothing carries. The payload's state
+        decides, and the listing's copy of the same PR is dropped by number.
+        """
+        code, output = _run_main(
+            _env(pr_number=832, pr_state="closed", pr_labels=["orchestrating"]),
+            [[_pr(808, []), _pr(832, ["orchestrating"])]],
+        )
+        self.assertEqual(code, 0)
+        self.assertIn("OK: No blocking labels are present.", output)
+        self.assertIn(f"Open pull request(s) whose head is {_SHA}: #808.", output)
+
     def test_a_closed_triggering_pr_is_still_blocked_by_an_open_sibling(self):
         """Closing a PR retires only its own labels, not a sibling's."""
         code, output = _run_main(
