@@ -398,6 +398,34 @@ class TestEvaluate(unittest.TestCase):
         self.assertEqual([f.package for _, f in report.honored], ["somepkg"])
         self.assertEqual([f.package for f in report.unignored], ["otherpkg"])
 
+    def test_spent_entry_is_stale_not_mismatched_when_a_sibling_entry_covers_the_other_package(
+        self,
+    ):
+        # Issue #815: one advisory ID legitimately covers two packages in one
+        # lock, each with its own entry. When one of the two findings stops
+        # being reported, that entry's own match disappears while the ID is
+        # still reported against the other package. That package is already
+        # accounted for by its own entry, so the vanished entry is spent
+        # (stale), not naming the wrong package (mismatched).
+        entries = [entry(package="somepkg"), entry(package="otherpkg")]
+        findings = [finding(package="somepkg")]  # otherpkg's finding disappeared
+        report = ar.evaluate([("lock.txt", 3, 1)], findings, entries)
+        self.assertTrue(report.failed)
+        self.assertEqual([f.package for _, f in report.honored], ["somepkg"])
+        self.assertEqual(report.mismatched, [])
+        self.assertEqual([e.package for e in report.stale], ["otherpkg"])
+
+    def test_spent_entry_verdict_does_not_depend_on_entry_order(self):
+        # Same scenario as above with the entries reversed: the vanished
+        # entry is processed before the one that is still honored. The
+        # verdict must not depend on which entry happens to run first.
+        entries = [entry(package="otherpkg"), entry(package="somepkg")]
+        findings = [finding(package="somepkg")]
+        report = ar.evaluate([("lock.txt", 3, 1)], findings, entries)
+        self.assertEqual([f.package for _, f in report.honored], ["somepkg"])
+        self.assertEqual(report.mismatched, [])
+        self.assertEqual([e.package for e in report.stale], ["otherpkg"])
+
 
 class TestFormatReport(unittest.TestCase):
     def test_stale_entry_report_names_the_removal_condition(self):
@@ -494,6 +522,29 @@ class TestMain(IgnoreFileTestCase):
         self.assertEqual(code, 0)
         self.assertIn("unreachable via risky", out)
         self.assertIn("unreachable via alsorisky", out)
+
+    def test_one_of_two_packages_sharing_an_advisory_going_spent_is_reported_stale(self):
+        # Companion to the fully-ignored case above (issue #815). When
+        # alsorisky's finding stops being reported, its entry is spent, not
+        # misfiled: risky already has its own entry accounting for it.
+        (self.tmpdir / "scripts" / "ci" / "requirements-tool.txt").write_text(
+            "risky==1.23.3 \\\n    --hash=sha256:def\nalsorisky==2.0 \\\n    --hash=sha256:abc\n",
+            encoding="utf-8",
+        )
+        shared = "GHSA-shared-0000-0000"
+        body = "".join(
+            f'[[ignore."scripts/ci/requirements-tool.txt"]]\n'
+            f'id = "{shared}"\n'
+            f'package = "{pkg}"\n'
+            f'reason = "unreachable via {pkg}"\n'
+            f'remove_when = "upstream drops {pkg}"\n'
+            for pkg in ("risky", "alsorisky")
+        )
+        code, out = self.run_main(body, {"risky": [vuln(shared)]})
+        self.assertEqual(code, 1)
+        self.assertIn("Stale ignore entries", out)
+        self.assertIn("alsorisky", out)
+        self.assertNotIn("naming the wrong package", out)
 
     def test_narrowing_to_one_lock_does_not_misread_the_other_locks_entries(self):
         # Naming a lock is the documented interface, and it used to exit 2 with
