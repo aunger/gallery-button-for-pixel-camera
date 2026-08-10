@@ -8,9 +8,10 @@ member of each set is present at any time.
 This module is also where the label scripts in this directory keep their shared
 GitHub access, since it is the one they all already import: `gh_api` (a request
 with retry and backoff) and `fetch_open_pull_requests` (that request, paginated
-over the open-PR listing). Both are exercised by
-test_enforce_mutually_exclusive_labels.py, so a caller need not re-assert their
-contract.
+over the open-PR listing). Their contract, pagination and its stop conditions
+included, is asserted against them in test_enforce_mutually_exclusive_labels.py.
+A caller's own tests therefore cover only what that caller adds: which listing
+it reads, and the filter or projection it applies to the result.
 
 Mutually exclusive sets (fixed):
     [p1, p2, p3]

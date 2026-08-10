@@ -100,28 +100,19 @@ class TestBlockingLabelsIn(unittest.TestCase):
 
 
 class TestFetchOpenPrsAtHead(unittest.TestCase):
-    def test_keeps_only_prs_whose_head_is_the_commit(self):
+    """What this function adds to the shared listing helper is the head-sha filter.
+
+    The pagination it inherits is asserted against
+    emxl.fetch_open_pull_requests in test_enforce_mutually_exclusive_labels.py,
+    which is where that contract lives.
+    """
+
+    def test_reads_the_open_pr_listing_and_keeps_only_prs_headed_by_the_commit(self):
         page = [_pr(808, []), _pr(900, [], head_sha=_OTHER_SHA), _pr(832, [])]
         with patch.object(cbl.emxl, "gh_api", side_effect=[page]) as gh_api:
             found = cbl.fetch_open_prs_at_head("o/r", "tok", _SHA)
         self.assertEqual([pr["number"] for pr in found], [808, 832])
         self.assertIn("state=open", gh_api.call_args[0][0])
-
-    def test_paginates_until_a_short_page(self):
-        full_page = [_pr(n, [], head_sha=_OTHER_SHA) for n in range(100)]
-        second_page = [_pr(832, [])]
-        with patch.object(cbl.emxl, "gh_api", side_effect=[full_page, second_page]) as gh_api:
-            found = cbl.fetch_open_prs_at_head("o/r", "tok", _SHA)
-        self.assertEqual([pr["number"] for pr in found], [832])
-        self.assertEqual(gh_api.call_count, 2)
-        self.assertIn("page=2", gh_api.call_args[0][0])
-
-    def test_stops_on_an_empty_page(self):
-        full_page = [_pr(n, [], head_sha=_OTHER_SHA) for n in range(100)]
-        with patch.object(cbl.emxl, "gh_api", side_effect=[full_page, []]) as gh_api:
-            found = cbl.fetch_open_prs_at_head("o/r", "tok", _SHA)
-        self.assertEqual(found, [])
-        self.assertEqual(gh_api.call_count, 2)
 
 
 # ---------------------------------------------------------------------------
