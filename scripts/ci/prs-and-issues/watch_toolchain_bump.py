@@ -510,7 +510,16 @@ def collect_state(repo_root: Path) -> dict:
         if not version:
             continue
         for coordinate in coordinates:
-            advisories[f"{coordinate}@{version}"] = _collect(errors, query_osv, coordinate, version)
+            key = f"{coordinate}@{version}"
+            # Nothing collides today: every coordinate in COORDINATES_BY_PIN is unique across all
+            # pins (#838). This guards the assumption instead of letting a future pin silently
+            # overwrite another pin's advisory record under the same coordinate@version key.
+            assert key not in advisories, (
+                f"duplicate coordinate@version key {key!r} in toolchain_advisories: two entries "
+                "in COORDINATES_BY_PIN resolved to the same key, so one would silently overwrite "
+                "the other's advisory result"
+            )
+            advisories[key] = _collect(errors, query_osv, coordinate, version)
 
     return {
         "pinned": pinned,
