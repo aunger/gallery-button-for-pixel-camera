@@ -23,6 +23,13 @@
 # it, a package the base image happens to ship at the pinned version is left in
 # place and the session runs bytes the repository never declared.
 #
+# CI does not call this script for its own installs (its pip is not always on
+# PATH, e.g. the shell-tests job's venv, and it has no marker to gate). Its
+# inline pip install lines pass --force-reinstall independently instead, and
+# scripts/test_install_pinned_requirements.sh case (i) checks every one of them
+# does, so CI cannot drift back to running whatever a runner image happens to
+# ship (issue #810).
+#
 # The install is gated on the SHA-256 of the lock: a marker file records the hash
 # that was last installed, so a re-run against an unchanged lock skips the work
 # while any edit to the pinned versions reinstalls. The marker is named after the

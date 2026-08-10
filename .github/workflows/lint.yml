@@ -33,8 +33,14 @@ jobs:
         with:
           python-version: '3.x'
       - name: Install Python lint tools
+        # --force-reinstall matches scripts/install-pinned-requirements.sh, the
+        # session-start hook's installer: without it, a runner image that already
+        # ships a package at exactly the pinned version keeps its own copy instead
+        # of the artifact the lock names (issue #810). --user is not used here:
+        # LINT_BIN_DIR below is sysconfig's own scripts path, which a --user
+        # install would not populate.
         run: |
-          pip install --require-hashes -r scripts/lint/requirements-lint.txt
+          pip install --force-reinstall --require-hashes -r scripts/lint/requirements-lint.txt
           echo "LINT_BIN_DIR=$(python -c 'import sysconfig; print(sysconfig.get_path("scripts"))')" >> "$GITHUB_ENV"
       - name: Ruff check
         run: scripts/lint/lint.sh --check --only python --all
@@ -47,8 +53,10 @@ jobs:
         with:
           python-version: '3.x'
       - name: Install Python lint tools
+        # --force-reinstall matches the session-start hook's installer (issue
+        # #810); see the python-ruff job above for the full rationale.
         run: |
-          pip install --require-hashes -r scripts/lint/requirements-lint.txt
+          pip install --force-reinstall --require-hashes -r scripts/lint/requirements-lint.txt
           echo "LINT_BIN_DIR=$(python -c 'import sysconfig; print(sysconfig.get_path("scripts"))')" >> "$GITHUB_ENV"
       - name: mdformat check
         # Also runs scripts/lint/check_md040.py (issue #689): MD040 (a fenced code
@@ -63,8 +71,10 @@ jobs:
         with:
           python-version: '3.x'
       - name: Install Python lint tools
+        # --force-reinstall matches the session-start hook's installer (issue
+        # #810); see the python-ruff job above for the full rationale.
         run: |
-          pip install --require-hashes -r scripts/lint/requirements-lint.txt
+          pip install --force-reinstall --require-hashes -r scripts/lint/requirements-lint.txt
           echo "LINT_BIN_DIR=$(python -c 'import sysconfig; print(sysconfig.get_path("scripts"))')" >> "$GITHUB_ENV"
       - name: Hygiene checks
         run: scripts/lint/lint.sh --check --only hygiene --all

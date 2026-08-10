@@ -63,8 +63,12 @@ jobs:
         # the split job must install them itself. --require-hashes refuses any
         # artifact whose SHA-256 is not in the generated lock scripts/requirements.txt
         # (issue #723; see scripts/requirements.in for the top-level pins).
+        # --force-reinstall matches scripts/install-pinned-requirements.sh, the
+        # session-start hook's installer: without it, a runner image that already
+        # ships a package at exactly the pinned version keeps its own copy instead
+        # of the artifact the lock names (issue #810).
         if: needs.check-diff.outputs.needs_full_build == 'true'
-        run: pip install --require-hashes -r scripts/requirements.txt
+        run: pip install --force-reinstall --require-hashes -r scripts/requirements.txt
 
       - name: Install lint tools for shell tests
         # scripts/lint/test_lint_hook.sh drives scripts/lint/lint.sh and the pre-commit git
@@ -72,11 +76,13 @@ jobs:
         # into a venv so scripts/lint/lint.sh resolves them by explicit path via
         # LINT_BIN_DIR (persisted to the next step through $GITHUB_ENV). ktlint (a
         # Maven Central JAR needing a JDK) is not installed here; the test skips
-        # only its Kotlin case when ktlint is absent.
+        # only its Kotlin case when ktlint is absent. --force-reinstall matches the
+        # session-start hook's installer (issue #810); --user is not applicable
+        # here because the venv's own pip refuses --user installs outright.
         if: needs.check-diff.outputs.needs_full_build == 'true'
         run: |
           python3 -m venv "$RUNNER_TEMP/lintvenv"
-          "$RUNNER_TEMP/lintvenv/bin/pip" install --quiet --require-hashes -r scripts/lint/requirements-lint.txt
+          "$RUNNER_TEMP/lintvenv/bin/pip" install --quiet --force-reinstall --require-hashes -r scripts/lint/requirements-lint.txt
           echo "LINT_BIN_DIR=$RUNNER_TEMP/lintvenv/bin" >> "$GITHUB_ENV"
 
       - name: Run shell script unit tests
@@ -136,8 +142,9 @@ jobs:
         if: needs.check-diff.outputs.needs_full_build == 'true'
         # --require-hashes refuses any artifact whose SHA-256 is not in the
         # generated lock scripts/requirements.txt (issue #723; see
-        # scripts/requirements.in for the top-level pins).
-        run: pip install --require-hashes -r scripts/requirements.txt
+        # scripts/requirements.in for the top-level pins). --force-reinstall
+        # matches the session-start hook's installer (issue #810).
+        run: pip install --force-reinstall --require-hashes -r scripts/requirements.txt
 
       - name: Run Python script unit tests
         if: needs.check-diff.outputs.needs_full_build == 'true'
@@ -1365,8 +1372,9 @@ jobs:
       - name: Install Python script dependencies
         # --require-hashes refuses any artifact whose SHA-256 is not in the
         # generated lock scripts/requirements.txt (issue #723; see
-        # scripts/requirements.in for the top-level pins).
-        run: pip install --require-hashes -r scripts/requirements.txt
+        # scripts/requirements.in for the top-level pins). --force-reinstall
+        # matches the session-start hook's installer (issue #810).
+        run: pip install --force-reinstall --require-hashes -r scripts/requirements.txt
 
       - name: File issues for failed tests
         env:
