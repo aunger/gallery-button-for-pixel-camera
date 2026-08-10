@@ -223,30 +223,13 @@ echo "[session-start] Step 3a: ensuring ktlint is installed..."
 # See requirements-lint.in for the per-package rationale and the top-level pins
 # the lock is generated from.
 #
-# --require-hashes makes pip refuse to install anything whose artifact does not
-# match a hash in the lock, so a compromised or substituted wheel on PyPI (or an
-# intercepted download) cannot slip in (issue #699).  It also forces every
-# dependency to be hash-pinned, which is why the lock lists the full transitive
-# closure rather than just the top-level tools.
-#
-# The install is gated on the SHA-256 of requirements-lint.txt: a marker file
-# records the hash that was last installed, so any edit to the pinned versions
-# triggers a reinstall on the next session while an unchanged file skips the
-# work.  --force-reinstall recreates the console-script entry points even if a
-# prior run left a package's dist-info without its scripts (PATH may not include
-# $LOCAL_BIN when pip decides whether to write them).
-LINT_REQ="$REPO_ROOT/scripts/lint/requirements-lint.txt"
-LINT_MARKER="$HOME/.local/share/gb4pc/requirements-lint.sha256"
-REQ_SHA=$(sha256sum "$LINT_REQ" | cut -d' ' -f1)
-if [[ -f "$LINT_MARKER" && "$(cat "$LINT_MARKER" 2>/dev/null)" == "$REQ_SHA" ]]; then
-    echo "[session-start] Step 3b: Python lint tools up to date--skip"
-else
-    echo "[session-start] Step 3b: installing Python lint tools..."
-    pip install --user --force-reinstall --require-hashes --quiet -r "$LINT_REQ"
-    mkdir -p "$(dirname "$LINT_MARKER")"
-    echo "$REQ_SHA" > "$LINT_MARKER"
-    echo "[session-start] Step 3b: Python lint tools installed"
-fi
+# The hash-pinned install and its skip marker live in
+# scripts/install-pinned-requirements.sh, which every lock a session provisions
+# goes through; see that script for why --require-hashes and --force-reinstall
+# are used and how the marker gates the work.
+echo "[session-start] Step 3b: ensuring the Python lint tools are installed..."
+"$REPO_ROOT/scripts/install-pinned-requirements.sh" \
+    "$REPO_ROOT/scripts/lint/requirements-lint.txt" "Python lint tools"
 
 # STEP 3c: wire the first-party git hook into this repo.
 #
@@ -264,16 +247,40 @@ else
 fi
 
 # ───────────────────────────────────────────────────────────────────────────────
-# STEP 4: Fetch remote refs.
+# STEP 4: Python helper-script runtime dependencies.
+#
+# scripts/requirements.txt is the hash-pinned lock for what this repository's own
+# Python helper scripts import at run time: defusedxml, requests, and PyYAML
+# (issue #723).  CI installs it in .github/workflows/build.yml before it runs
+# either test suite, and a session that does not is a session where part of the
+# suite cannot run: four of the Python test modules fail to import and
+# scripts/ci/test-support/test_summarize_preflight_integration.sh fails, all with
+# "No module named 'defusedxml'", for reasons unrelated to whatever is being
+# changed (issue #806).
+#
+# These are not lint tools, so they get their own step rather than joining STEP 3,
+# but they install through the same script and the same skip marker.
+#
+# Installing the lock also makes the versions this repository declares the ones a
+# session actually runs.  Only defusedxml is visibly absent today; requests and
+# PyYAML happen to resolve from the base image, so a change there would extend
+# the same failure to them with no other signal.
+# ───────────────────────────────────────────────────────────────────────────────
+echo "[session-start] Step 4: ensuring the Python helper-script dependencies are installed..."
+"$REPO_ROOT/scripts/install-pinned-requirements.sh" \
+    "$REPO_ROOT/scripts/requirements.txt" "Python helper-script dependencies"
+
+# ───────────────────────────────────────────────────────────────────────────────
+# STEP 5: Fetch remote refs.
 #
 # Keep local knowledge of the remote up to date at the start of every session.
 # git fetch is always safe (it never modifies the working tree), so no skip
 # guard is needed.  Failures are logged as warnings rather than aborting the
 # hook, so a transient network outage does not prevent the session from starting.
 # ───────────────────────────────────────────────────────────────────────────────
-echo "[session-start] Step 4: git fetch..."
+echo "[session-start] Step 5: git fetch..."
 git -C "$REPO_ROOT" fetch --prune --quiet \
-    && echo "[session-start] Step 4: fetch complete" \
-    || echo "[session-start] Step 4: warning: git fetch failed"
+    && echo "[session-start] Step 5: fetch complete" \
+    || echo "[session-start] Step 5: warning: git fetch failed"
 
 echo "[session-start] Complete. ANDROID_HOME=$ANDROID_HOME"

@@ -118,7 +118,7 @@ import unittest.mock
 import urllib.error
 import zipfile
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "ci_monitor"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import ci_monitor  # noqa: E402
 
@@ -1336,9 +1336,7 @@ def main() -> int:
     # SIGTERM to that exact PID, and confirm the process exits via the signal. A
     # bogus token + the unreachable real API_BASE means the loop never gets past the
     # SHA fetch, so it stays alive (sleeping) until we signal it; no network needed.
-    _MONITOR_PATH = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "ci_monitor", "ci_monitor.py"
-    )
+    _MONITOR_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ci_monitor.py")
     _proc = subprocess.Popen(
         [sys.executable, _MONITOR_PATH, "--pr", "1"],
         stdout=subprocess.PIPE,
@@ -3154,7 +3152,7 @@ def main() -> int:
 
     # The committed repo config carries this repo's values, including the dual marker.
     _repo_cfg_path = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "ci_monitor", "ci_monitor.config.json"
+        os.path.dirname(os.path.abspath(__file__)), "ci_monitor.config.json"
     )
     cfg_repo = ci_monitor.load_config(_repo_cfg_path)
     check(
@@ -3324,7 +3322,7 @@ def main() -> int:
     )
 
     _MONITOR_SRC = open(
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), "ci_monitor", "ci_monitor.py"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "ci_monitor.py"),
         encoding="utf-8",
     ).read()
 
@@ -3808,7 +3806,7 @@ def main() -> int:
 
     # Committed repo config carries 'No blocking labels'.
     _repo_cfg_path_ai = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "ci_monitor", "ci_monitor.config.json"
+        os.path.dirname(os.path.abspath(__file__)), "ci_monitor.config.json"
     )
     cfg_ai_repo = ci_monitor.load_config(_repo_cfg_path_ai)
     check(
@@ -3944,7 +3942,7 @@ def main() -> int:
     )
 
     _MONITOR_SRC_AK = open(
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), "ci_monitor", "ci_monitor.py"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "ci_monitor.py"),
         encoding="utf-8",
     ).read()
 
