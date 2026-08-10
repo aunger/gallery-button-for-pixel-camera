@@ -1,0 +1,122 @@
+name: Push regenerated verification metadata (Dependabot)
+
+# Second half of the automation from dependabot-verification-metadata-regen.yml;
+# read that file's header first for the full rationale (issue #842) and why
+# this is split into two workflow files.
+#
+# This workflow never checks out or runs code from the PR: it only downloads
+# the file the other workflow already generated and treats it as inert data
+# to copy into place. Workflow files must live on the base branch to run at
+# all, so what actually executes here is always this reviewed file on main,
+# never anything from a Dependabot branch.
+#
+# The push authenticates with a personal access token
+# (secrets.DEPENDABOT_VERIFICATION_PAT), not the default GITHUB_TOKEN. A
+# GITHUB_TOKEN-authored push never triggers a new workflow run--that is
+# GitHub's own anti-recursion rule for the GITHUB_TOKEN, and it applies here
+# too, not just to the plain `push` event--which would leave the PR's other
+# checks (build.yml, lint.yml, ...) stuck against the pre-regeneration commit
+# forever. That is exactly the manual step issue #842 wants gone: someone
+# would still have to nudge CI by hand. A PAT-authenticated push is
+# indistinguishable from an ordinary human push, so it re-triggers every
+# `pull_request`-triggered workflow normally, with no extra bookkeeping here
+# and nothing that goes stale as new required checks are added later.
+#
+# One-time setup: create a fine-grained personal access token scoped to just
+# this repository with "Contents: Read and write" permission and nothing
+# else, and add it as a repository secret named DEPENDABOT_VERIFICATION_PAT.
+# Until that secret exists, this workflow fails loudly (see "Confirm the push
+# token is configured" below) rather than silently falling back to a token
+# that cannot do the job; regenerate gradle/verification-metadata.xml for
+# Dependabot PRs by hand in the meantime, per gradle/README.md.
+
+on:
+  workflow_run:
+    workflows: ["Regenerate verification metadata for Dependabot PRs"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  push:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      # Downloaded outside $GITHUB_WORKSPACE: the checkout step below runs
+      # `git clean -ffdx` after checkout, which would otherwise delete this
+      # untracked download.
+      - name: Download the regenerated file, if one was produced
+        uses: actions/download-artifact@v7
+        with:
+          name: dependabot-verification-metadata
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+          path: ${{ runner.temp }}/dependabot-verification-metadata
+        continue-on-error: true
+
+      - name: Decide whether there is anything to push
+        id: gate
+        env:
+          ARTIFACT_DIR: ${{ runner.temp }}/dependabot-verification-metadata
+        run: |
+          if [ -f "$ARTIFACT_DIR/verification-metadata.xml" ]; then
+            echo "has_artifact=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No regenerated file was uploaded (no dependency-graph change, or the generate workflow's author gate did not pass); nothing to push."
+            echo "has_artifact=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Confirm the push token is configured
+        if: steps.gate.outputs.has_artifact == 'true'
+        env:
+          PAT: ${{ secrets.DEPENDABOT_VERIFICATION_PAT }}
+        run: |
+          if [ -z "$PAT" ]; then
+            echo "::error::DEPENDABOT_VERIFICATION_PAT is not set. See this workflow's header comment to create it. Until then, regenerate gradle/verification-metadata.xml for Dependabot PRs by hand, per gradle/README.md."
+            exit 1
+          fi
+
+      - name: Check out the Dependabot branch
+        if: steps.gate.outputs.has_artifact == 'true'
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_branch }}
+          token: ${{ secrets.DEPENDABOT_VERIFICATION_PAT }}
+
+      - name: Apply and push the regenerated file
+        if: steps.gate.outputs.has_artifact == 'true'
+        env:
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          EXPECTED_SHA: ${{ github.event.workflow_run.head_sha }}
+          ARTIFACT_DIR: ${{ runner.temp }}/dependabot-verification-metadata
+        run: |
+          set -euo pipefail
+
+          # The file was regenerated against workflow_run.head_sha. If the
+          # branch's current tip is a different commit, something pushed to
+          # it since generation started (a Dependabot rebase, or a second
+          # round of this same automation); abandon this round rather than
+          # overwrite work the stale artifact knows nothing about. Whatever
+          # moved the branch triggers a fresh pair of runs on its own.
+          CURRENT_SHA="$(git rev-parse HEAD)"
+          if [ "$CURRENT_SHA" != "$EXPECTED_SHA" ]; then
+            echo "::warning::$HEAD_BRANCH moved (was $EXPECTED_SHA, now $CURRENT_SHA) since the file was generated; skipping this stale regeneration."
+            exit 0
+          fi
+
+          cp "$ARTIFACT_DIR/verification-metadata.xml" gradle/verification-metadata.xml
+
+          if git diff --quiet -- gradle/verification-metadata.xml; then
+            echo "Working tree already matches the regenerated file; nothing to commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add gradle/verification-metadata.xml
+          git commit -m "Regenerate gradle/verification-metadata.xml for this Dependabot bump"
+          git push origin "HEAD:refs/heads/$HEAD_BRANCH"

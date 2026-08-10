@@ -32,8 +32,9 @@ There are two regeneration modes, and the difference is deliberate:
   That `rm` lives in the workflow rather than in the script for exactly the reason above, and `scripts/test_verification_metadata.sh` check (e) allowlists that one workflow filename for the pattern while failing any other workflow that deletes or moves the file.
 
 Any change that moves the dependency graph, an AGP, Kotlin, Compose, AndroidX, or test-library version bump, a new dependency, or a new plugin, requires regenerating this file **in the same commit**, or the build will fail verification.
-There is no automated dependency bumper in this repo, so the graph only moves on manual, reviewed version changes.
-The scheduled watcher described under "Noticing when a bump becomes available" below reports that a bump may have become possible; it never performs one.
+There is no automated bumper for the toolchain pins (root `build.gradle.kts`, the Gradle wrapper) in this repo, so that graph only moves on manual, reviewed version changes.
+The scheduled watcher described under "Noticing when a bump becomes available" below reports that a toolchain bump may have become possible; it never performs one.
+Dependabot bumps `app/build.gradle.kts` pins on its own schedule instead, and "Automated regeneration for Dependabot PRs" right below covers how this file stays in sync with those.
 
 Requirements, and why they exist:
 
@@ -49,6 +50,23 @@ Requirements, and why they exist:
 
 Contributors on macOS or Windows who only need a local build can pass `--dependency-verification lenient` to downgrade a verification failure to a warning.
 Never commit that flag into CI, and do not commit a file regenerated on a non-Linux machine.
+
+### Automated regeneration for Dependabot PRs (issue #842)
+
+Dependabot (`.github/dependabot.yml`, issue #819) opens PRs that bump pins in `app/build.gradle.kts`, which moves the dependency graph the same as any other bump above, but Dependabot cannot run `scripts/regenerate-gradle-verification.sh` itself.
+`.github/workflows/dependabot-verification-metadata-regen.yml` and `dependabot-verification-metadata-push.yml` do that for it, regenerating the file and pushing the result back onto the Dependabot branch so its PR can go green without a human running the script by hand.
+
+The two are split across separate workflow files so the half with write access never runs code from a Dependabot bump.
+The first runs on the ordinary `pull_request` trigger, the same read-only, secret-less treatment GitHub already forces on Dependabot's own PRs, and only uploads the regenerated file as a build artifact.
+The second, triggered by `workflow_run` once the first completes, downloads that artifact, treats it as inert data, and is the only one of the two ever granted `contents: write`.
+See the two workflows' header comments for the full rationale, including the confused-deputy attack (`github.actor` versus `github.event.pull_request.user.login`) the generate workflow's PR-author gate defends against.
+
+**One-time setup:** the push workflow pushes with a personal access token, not the default `GITHUB_TOKEN`, because a `GITHUB_TOKEN`-authored push never triggers a new workflow run, which would leave the PR's other checks stuck against the pre-regeneration commit forever.
+Create a fine-grained PAT scoped to just this repository with "Contents: Read and write" permission and nothing else, and add it as a repository secret named `DEPENDABOT_VERIFICATION_PAT`.
+Until that secret exists, the push workflow fails loudly rather than silently no-op'ing; regenerate the file for Dependabot PRs by hand in the meantime, the same as for any other bump above.
+
+This automation only ever runs `scripts/regenerate-gradle-verification.sh` in its normal merge mode; it never deletes the file first, and it never touches the toolchain (root `build.gradle.kts`, the Gradle wrapper).
+It has nothing to do with "Performing a toolchain bump" below, which stays entirely manual.
 
 ## `wrapper/gradle-wrapper.properties` -- distribution pin
 
@@ -78,7 +96,7 @@ Any Kotlin, KGP, or Kotlin-compiler bump must check that ceiling **before** it i
 To check it:
 
 1. Read `cliVersion` from `src/defaults.json` in `github/codeql-action`, at the ref `codeql.yml` actually uses (currently `v4`).
-2. Read the Kotlin row of `docs/codeql/reusables/supported-versions-compilers.rst` in `github/codeql`, at tag `codeql-cli/v<cliVersion>`.
+1. Read the Kotlin row of `docs/codeql/reusables/supported-versions-compilers.rst` in `github/codeql`, at tag `codeql-cli/v<cliVersion>`.
 
 The upper bound uses a trailing-`x` wildcard for the patch digit, so `2.4.0x` means "any 2.4.0 patch", that is, everything below 2.4.10.
 Read `2.4.1x` the same way: up to but not including 2.4.20.
@@ -138,7 +156,7 @@ What it deliberately does not do:
   `verification-metadata.xml` pins the build graph, not what ships in the APK, so a scan over it says nothing about the app; every advisory it finds today arrives transitively through Gradle and AGP build tooling, and none through a declared dependency.
   A weekly report of the same few dozen standing build-tool advisories would train everyone to ignore the job, which is the same failure mode as an open issue that is not really actionable.
   The pinned toolchain coordinates are different: a hit there is directly actionable, and is a reason to bump that overrides the standing lack of urgency.
-  App-runtime CVE coverage would be Dependabot over `app/build.gradle.kts`, which is separate work; there is no `.github/dependabot.yml` here today.
+  App-runtime CVE coverage is Dependabot over `app/build.gradle.kts` (`.github/dependabot.yml`, issue #819), which is separate work from this watcher; see "Automated regeneration for Dependabot PRs" above for how those bumps get their `verification-metadata.xml` pins.
   This is also not the repo's general advisory scan: `.github/workflows/dependency-audit.yml` runs `pip-audit` weekly over every hash-pinned Python lock under `scripts/` (issue #804).
   The two do not overlap, and neither subsumes the other; that one watches what CI's own helper scripts import, this one watches the Maven coordinates tied to the pinned toolchain because a hit against them is an argument for a toolchain bump.
 
@@ -164,7 +182,7 @@ A JDK change has a wider blast radius and is not covered here.
    Do this **before** editing any version, not after a red CI run.
    The watcher's latest comment already carries the ceiling and the newest published KGP, but it does not read the compatibility row, so that part is still yours to do by hand.
 
-2. Edit the versions.
+1. Edit the versions.
    The root `build.gradle.kts` holds the KGP buildscript classpath pin, the AGP plugin version, and the Compose plugin version, which moves in lockstep with KGP.
    For a Gradle bump the surrounding pins are the ones named in the distribution-pin section above.
    Beyond those, a handful of version literals sit in prose and script headers that no guard reads: the docs URL and the toolchain requirement near the top of this file, the header of `scripts/regenerate-gradle-verification.sh`, and the AGP comment in `.claude/hooks/session-start.sh`.
@@ -180,18 +198,18 @@ A JDK change has a wider blast radius and is not covered here.
    > Every version of this inventory has turned out incomplete when checked against the tree.
    > Treat it as a starting point, search deliberately for the rest, and add what you find.
 
-3. Commit the step 2 edits and push the branch, then dispatch `.github/workflows/regenerate-gradle-toolchain.yml` against it.
+1. Commit the step 2 edits and push the branch, then dispatch `.github/workflows/regenerate-gradle-toolchain.yml` against it.
    Do not open the PR yet: `build.yml` runs on pull requests, so opening one now spends a full build on a commit that is still half-migrated by design.
    The workflow checks out the pushed tip, not your working tree, so an uncommitted edit is silently regenerated against the old graph.
    It rebuilds `verification-metadata.xml` from scratch and then the wrapper matched set, an order chosen so the wrapper step runs under enforcement of the fresh pins, and uploads them as `gradle-toolchain-regenerated`.
    A **failed** run instead uploads `gradle-toolchain-partial-DO-NOT-COMMIT`, whose metadata Gradle may have written only partly; never amend that one in.
 
-4. Review the downloaded artifact, then bring the files into the tree, amend them into the step 2 commit, and force-push.
+1. Review the downloaded artifact, then bring the files into the tree, amend them into the step 2 commit, and force-push.
    #774's Step 5 holds the review recipe, but it is written with 9.5.1 literals throughout, so substitute your own version and checksum rather than running its commands as printed.
    Unpack the tarball somewhere outside the working tree: it carries a review-only `metadata-components.txt` whose path inside the archive is the repository root, and which is not gitignored.
    Keep `gradlew` executable, and confirm `git diff` reports no mode change on it; the tarball format exists because `upload-artifact` strips permissions.
 
-5. Open the PR and let `build.yml` validate it end to end.
+1. Open the PR and let `build.yml` validate it end to end.
    `codeql.yml`'s `analyze-kotlin` job is what actually tests the ceiling computed in step 1, but on a pull request it runs only when the diff touches `.kt`, `.kts`, or `.java`, so a Gradle-only bump does not exercise it until the post-merge push to `main`.
    #774 Step 6 also asks for one enforcing run against live registries before merge; note that `build.yml`'s cache falls back through a `restore-keys` prefix, so clearing the branch's own entries is not sufficient on its own to force a cold resolve.
    On a verification failure at this stage, re-dispatch the generator and re-amend rather than reaching for the local merge-mode remedy, for the reason given under "Review the diff" above.
@@ -201,7 +219,7 @@ A JDK change has a wider blast radius and is not covered here.
    > A re-dispatch is deterministic, so it will reproduce the same pin set unless the task list in `scripts/regenerate-gradle-verification.sh` is what needs extending.
    > Diagnose which of the two you are facing before spending a 20-45 minute run on it.
 
-6. Finish what CI cannot check.
+1. Finish what CI cannot check.
    Re-paste `.claude/setup-environment.sh` into the web environment if it changed (see `.claude/environment.md`), and after merge install the `dev-build` APK and exercise the overlay once, because the release variant has no runtime coverage anywhere in CI.
 
 The bump lands as one commit, so the version edits and the regenerated pins are never separated.
