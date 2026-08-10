@@ -31,6 +31,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 import requests
 
+from github_headers import github_headers
+
 
 # ---------------------------------------------------------------------------
 # Data model
@@ -250,14 +252,6 @@ _Filed automatically by CI on failure of `{failure.class_name}.{failure.method_n
 # ---------------------------------------------------------------------------
 
 
-def _github_headers(token: str) -> dict[str, str]:
-    return {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-    }
-
-
 LABELS = ["test-failure"]
 
 
@@ -282,7 +276,7 @@ def find_existing_issue(
     try:
         resp = requests.get(
             url,
-            headers=_github_headers(token),
+            headers=github_headers(token),
             params={"q": query, "per_page": 1},
             timeout=30,
         )
@@ -306,7 +300,7 @@ def create_issue(
     url = f"https://api.github.com/repos/{repository}/issues"
     payload = {"title": title, "body": body, "labels": LABELS}
     try:
-        resp = requests.post(url, headers=_github_headers(token), json=payload, timeout=30)
+        resp = requests.post(url, headers=github_headers(token), json=payload, timeout=30)
         resp.raise_for_status()
         return resp.json()["number"]
     except Exception as exc:  # noqa: BLE001
@@ -323,7 +317,7 @@ def add_issue_comment(
     """Append a comment to an existing issue.  Returns True on success."""
     url = f"https://api.github.com/repos/{repository}/issues/{issue_number}/comments"
     try:
-        resp = requests.post(url, headers=_github_headers(token), json={"body": body}, timeout=30)
+        resp = requests.post(url, headers=github_headers(token), json={"body": body}, timeout=30)
         resp.raise_for_status()
         return True
     except Exception as exc:  # noqa: BLE001
@@ -341,7 +335,7 @@ def reopen_issue(
     try:
         resp = requests.patch(
             url,
-            headers=_github_headers(token),
+            headers=github_headers(token),
             json={"state": "open"},
             timeout=30,
         )

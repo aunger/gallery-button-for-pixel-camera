@@ -47,6 +47,8 @@ import sys
 
 import requests
 
+from github_headers import github_headers
+
 # Regex strips every occurrence of a Claude session-URL byline.
 # Two forms are matched:
 #
@@ -75,14 +77,6 @@ def strip_bylines(text: str) -> str:
     return _BYLINE_RE.sub("", text)
 
 
-def _github_headers(token: str) -> dict[str, str]:
-    return {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-    }
-
-
 def _update(method: str, token: str, url: str, body: str) -> bool:
     """Update *url* with {"body": body} using the specified HTTP method.
 
@@ -99,7 +93,7 @@ def _update(method: str, token: str, url: str, body: str) -> bool:
         req_method = getattr(requests, method)
         resp = req_method(
             url,
-            headers=_github_headers(token),
+            headers=github_headers(token),
             json={"body": body},
             timeout=30,
         )
