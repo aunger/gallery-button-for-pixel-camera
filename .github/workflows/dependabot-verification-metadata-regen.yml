@@ -1,0 +1,107 @@
+name: Regenerate verification metadata for Dependabot PRs
+
+# Automates the manual step PR #834 flagged and issue #842 asked for: every
+# Dependabot PR that bumps a pin in app/build.gradle.kts moves the dependency
+# graph, so gradle/verification-metadata.xml needs the same regeneration
+# (scripts/regenerate-gradle-verification.sh) any other dependency bump in
+# this repo requires (issue #714), or build.yml's Gradle invocation fails
+# verification. Dependabot cannot run that script itself.
+#
+# This is one half of a two-workflow split; the other half,
+# dependabot-verification-metadata-push.yml, does the actual write. Splitting
+# them means the half with write access never runs code from the PR. This
+# workflow runs on the ordinary `pull_request` trigger, exactly what
+# build.yml already uses for every PR, so it gets the exact same treatment
+# GitHub already forces on Dependabot's own PRs: GITHUB_TOKEN is read-only
+# and no secrets are available (GitHub's own Dependabot-on-Actions security
+# default). It only ever builds and uploads a file for the other workflow to
+# pick up; it never writes to the repository, and permissions below never
+# grant it contents: write. See the push workflow's header for why the write
+# half needs a separate file and a personal access token, and
+# https://securitylab.github.com/resources/github-actions-preventing-pwn-requests/
+# for the pattern (an untrusted build workflow hands off an artifact to a
+# privileged workflow_run workflow, which never checks out or executes PR
+# code) this split follows.
+#
+# Gated on github.event.pull_request.user.login (the PR's original author,
+# which no later push to the PR can change), not github.actor (who
+# triggered THIS particular event, which a "@dependabot recreate" comment can
+# set to dependabot[bot] on a PR that someone else actually opened and
+# controls). See
+# https://labs.boostsecurity.io/articles/weaponizing-dependabot-pwn-request-at-its-finest
+# for the confused-deputy attack this specifically defends against.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+    paths:
+      - 'app/build.gradle.kts'
+
+permissions:
+  contents: read
+
+jobs:
+  regenerate:
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    # scripts/regenerate-gradle-verification.sh always sets a fresh mktemp
+    # GRADLE_USER_HOME (so no previously-cached artifact is silently omitted
+    # from the generated file), so this job's build+test invocation is just
+    # as uncached as regenerate-gradle-toolchain.yml's identical call to the
+    # same script. That sibling workflow documents a 20-45 minute cold run
+    # for it and budgets 90 minutes; match that here instead of assuming
+    # this job is faster. Never inherit GitHub's 360-minute default either
+    # (issue #611).
+    timeout-minutes: 90
+    steps:
+      - name: Check out the PR head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4
+        with:
+          packages: ''
+
+      - name: Pin the SDK components explicitly
+        # Matches regenerate-gradle-toolchain.yml: platform-tools is required
+        # because app/build.gradle.kts resolves adb via
+        # sdkComponents.sdkDirectory + platform-tools/adb.
+        run: sdkmanager --install "build-tools;36.0.0" "platforms;android-35" "platform-tools"
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Regenerate gradle/verification-metadata.xml
+        # The committed wrapper is used (GRADLE_BIN defaults to ./gradlew),
+        # unlike the toolchain generator's standalone Gradle: Dependabot is
+        # scoped to app/build.gradle.kts (dependabot.yml, directory "/app"),
+        # never the root build.gradle.kts toolchain pins, so the committed
+        # wrapper is always new enough to run the bumped dependency graph.
+        run: bash scripts/regenerate-gradle-verification.sh
+
+      - name: Check whether regeneration changed anything
+        id: diff
+        run: |
+          if git diff --quiet -- gradle/verification-metadata.xml; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No verification-metadata.xml change from this bump; nothing to hand off."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload the regenerated file
+        if: steps.diff.outputs.changed == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: dependabot-verification-metadata
+          path: gradle/verification-metadata.xml
+          retention-days: 1

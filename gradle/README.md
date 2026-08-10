@@ -32,8 +32,9 @@ There are two regeneration modes, and the difference is deliberate:
   That `rm` lives in the workflow rather than in the script for exactly the reason above, and `scripts/test_verification_metadata.sh` check (e) allowlists that one workflow filename for the pattern while failing any other workflow that deletes or moves the file.
 
 Any change that moves the dependency graph, an AGP, Kotlin, Compose, AndroidX, or test-library version bump, a new dependency, or a new plugin, requires regenerating this file **in the same commit**, or the build will fail verification.
-There is no automated dependency bumper in this repo, so the graph only moves on manual, reviewed version changes.
-The scheduled watcher described under "Noticing when a bump becomes available" below reports that a bump may have become possible; it never performs one.
+There is no automated bumper for the toolchain pins (root `build.gradle.kts`, the Gradle wrapper) in this repo, so that graph only moves on manual, reviewed version changes.
+The scheduled watcher described under "Noticing when a bump becomes available" below reports that a toolchain bump may have become possible; it never performs one.
+Dependabot bumps `app/build.gradle.kts` pins on its own schedule instead, and "Automated regeneration for Dependabot PRs" right below covers how this file stays in sync with those.
 
 Requirements, and why they exist:
 
@@ -49,6 +50,23 @@ Requirements, and why they exist:
 
 Contributors on macOS or Windows who only need a local build can pass `--dependency-verification lenient` to downgrade a verification failure to a warning.
 Never commit that flag into CI, and do not commit a file regenerated on a non-Linux machine.
+
+### Automated regeneration for Dependabot PRs (issue #842)
+
+Dependabot (`.github/dependabot.yml`, issue #819) opens PRs that bump pins in `app/build.gradle.kts`, which moves the dependency graph the same as any other bump above, but Dependabot cannot run `scripts/regenerate-gradle-verification.sh` itself.
+`.github/workflows/dependabot-verification-metadata-regen.yml` and `dependabot-verification-metadata-push.yml` do that for it, regenerating the file and pushing the result back onto the Dependabot branch so its PR can go green without a human running the script by hand.
+
+The two are split across separate workflow files so the half with write access never runs code from a Dependabot bump.
+The first runs on the ordinary `pull_request` trigger, the same read-only, secret-less treatment GitHub already forces on Dependabot's own PRs, and only uploads the regenerated file as a build artifact.
+The second, triggered by `workflow_run` once the first completes, downloads that artifact, treats it as inert data, and is the only one of the two ever granted `contents: write`.
+See the two workflows' header comments for the full rationale, including the confused-deputy attack (`github.actor` versus `github.event.pull_request.user.login`) the generate workflow's PR-author gate defends against.
+
+**One-time setup:** the push workflow pushes with a personal access token, not the default `GITHUB_TOKEN`, because a `GITHUB_TOKEN`-authored push never triggers a new workflow run, which would leave the PR's other checks stuck against the pre-regeneration commit forever.
+Create a fine-grained PAT scoped to just this repository with "Contents: Read and write" permission and nothing else, and add it as a repository secret named `DEPENDABOT_VERIFICATION_PAT`.
+Until that secret exists, the push workflow fails loudly rather than silently no-op'ing; regenerate the file for Dependabot PRs by hand in the meantime, the same as for any other bump above.
+
+This automation only ever runs `scripts/regenerate-gradle-verification.sh` in its normal merge mode; it never deletes the file first, and it never touches the toolchain (root `build.gradle.kts`, the Gradle wrapper).
+It has nothing to do with "Performing a toolchain bump" below, which stays entirely manual.
 
 ## `wrapper/gradle-wrapper.properties` -- distribution pin
 
@@ -138,7 +156,7 @@ What it deliberately does not do:
   `verification-metadata.xml` pins the build graph, not what ships in the APK, so a scan over it says nothing about the app; every advisory it finds today arrives transitively through Gradle and AGP build tooling, and none through a declared dependency.
   A weekly report of the same few dozen standing build-tool advisories would train everyone to ignore the job, which is the same failure mode as an open issue that is not really actionable.
   The pinned toolchain coordinates are different: a hit there is directly actionable, and is a reason to bump that overrides the standing lack of urgency.
-  App-runtime CVE coverage would be Dependabot over `app/build.gradle.kts`, which is separate work; there is no `.github/dependabot.yml` here today.
+  App-runtime CVE coverage is Dependabot over `app/build.gradle.kts` (`.github/dependabot.yml`, issue #819), which is separate work from this watcher; see "Automated regeneration for Dependabot PRs" above for how those bumps get their `verification-metadata.xml` pins.
   This is also not the repo's general advisory scan: `.github/workflows/dependency-audit.yml` runs `pip-audit` weekly over every hash-pinned Python lock under `scripts/` (issue #804).
   The two do not overlap, and neither subsumes the other; that one watches what CI's own helper scripts import, this one watches the Maven coordinates tied to the pinned toolchain because a hit against them is an argument for a toolchain bump.
 
