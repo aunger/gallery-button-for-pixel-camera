@@ -51,6 +51,8 @@ from typing import NamedTuple
 
 import requests
 
+from github_headers import github_headers
+
 MARKER = "<!-- gb4pc-ci-summary-link -->"
 
 DEFAULT_JOB_NAME = "build-and-test"
@@ -86,14 +88,6 @@ class CommentLookup(NamedTuple):
     body: str | None
 
 
-def _github_headers(token: str) -> dict[str, str]:
-    return {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-    }
-
-
 def find_job(
     token: str,
     repository: str,
@@ -111,7 +105,7 @@ def find_job(
     try:
         resp = requests.get(
             url,
-            headers=_github_headers(token),
+            headers=github_headers(token),
             params={"per_page": 100},
             timeout=30,
         )
@@ -213,7 +207,7 @@ def find_existing_comment(token: str, repository: str, pr_number: str) -> Commen
     try:
         resp = requests.get(
             url,
-            headers=_github_headers(token),
+            headers=github_headers(token),
             params={"per_page": 100},
             timeout=30,
         )
@@ -236,7 +230,7 @@ def upsert_comment(
     When *existing_id* is provided the caller has already fetched the comment;
     pass it here so we do not make a redundant list-comments API call.
     """
-    headers = _github_headers(token)
+    headers = github_headers(token)
     try:
         if existing_id is not None:
             url = f"https://api.github.com/repos/{repository}/issues/comments/{existing_id}"

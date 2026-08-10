@@ -84,16 +84,16 @@ import defusedxml.ElementTree as ET
 import requests
 
 # Bare intra-directory import, matching the rest of scripts/ci/**: these files are run as
-# scripts, so their own directory is on sys.path.  The GitHub calls are reused from there rather
-# than reimplemented.
+# scripts, so their own directory is on sys.path.  The issue-management calls are reused from
+# there rather than reimplemented.
 from file_test_failure_issues import (
     IssueLookup,
     add_issue_comment,
     create_issue,
-    github_headers,
     lookup_issue_by_title,
     reopen_issue,
 )
+from github_headers import github_headers
 
 
 # ---------------------------------------------------------------------------

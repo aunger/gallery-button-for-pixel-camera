@@ -32,6 +32,8 @@ from pathlib import Path
 from typing import NamedTuple
 import requests
 
+from github_headers import github_headers
+
 
 # ---------------------------------------------------------------------------
 # Data model
@@ -249,14 +251,6 @@ _Filed automatically by CI on failure of `{failure.class_name}.{failure.method_n
 # ---------------------------------------------------------------------------
 # GitHub API helpers
 # ---------------------------------------------------------------------------
-
-
-def github_headers(token: str) -> dict[str, str]:
-    return {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-    }
 
 
 LABELS = ["test-failure"]
