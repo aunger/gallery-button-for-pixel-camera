@@ -41,8 +41,17 @@ open-PR listing to have caught up with the close, so it is what actually
 retires the verdict that PR earned.
 
 The triggering PR's own labels are read from the event payload as well as from
-the API listing (see main()), so this check is never weaker about the
-triggering PR than the payload-only check it replaced.
+the API listing (see main()). Both are snapshots that go stale in opposite
+directions, so unioning them is what keeps either staleness blocking rather
+than opening, and it also makes this check never weaker about the triggering PR
+than the payload-only check it replaced.
+
+The price of that is a verdict that can name a label the PR no longer carries,
+since a run whose event has been superseded, or whose listing lagged a label
+removal, reports the labels of the moment it read. Re-running the job re-reads
+both sources and clears it. Over-blocking is the safe direction, so this is the
+trade taken deliberately; agents/dev_orchestration.md's `labelGateBlock` branch
+is where an Orchestrator is told to recognize such a log.
 
 Usage:
     python3 scripts/ci/labels/check_blocking_labels.py
@@ -201,11 +210,20 @@ def main() -> int:
         )
         return 1
 
-    # The triggering PR's payload labels are folded in alongside the listing so
-    # the verdict is never weaker about that PR than the payload alone would
-    # have made it, even if the listing is momentarily stale about a PR that
-    # was just opened or just labeled. Its labels from both sources are unioned
-    # rather than replaced.
+    # The triggering PR's labels are taken from both sources and unioned rather
+    # than either replacing the other, because each source is stale in the
+    # direction the other covers. The payload is fixed at event time, so the
+    # listing is what catches a label applied after this run's event fired,
+    # which a superseded run would otherwise report as a clean commit. The
+    # listing is a separate read, so the payload is what catches a listing that
+    # has not yet caught up with a PR just opened or just labeled. Blocking on
+    # either is also why the verdict is never weaker about the triggering PR
+    # than the payload alone would have made it.
+    #
+    # The union can therefore name a label that is no longer applied: a
+    # superseded run landing last, or a listing lagging a removal. That is
+    # over-blocking, it is cleared by re-running the job, and it is the safe
+    # direction; the alternative is a gate that opens on a stale reading.
     #
     # A closed triggering PR is the mirror case, and gets the opposite
     # treatment: it is dropped from both sources, the payload by its state and

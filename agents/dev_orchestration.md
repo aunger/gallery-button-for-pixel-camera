@@ -302,11 +302,13 @@ labelGateBlock:
   // treats it as a concurrency guard.
   //
   // The gate can also fail while this PR carries no blocking label at all (issue #833), for
-  // either of two reasons. A check run is stored against a head commit rather than against a
-  // pull request, so the check asks whether *any* open PR at this commit is blocked; and the
-  // check fails closed when it cannot be evaluated at all. The job log distinguishes the two,
-  // and their remedies differ, so the no-blocking-label branch reads the log rather than
-  // assuming a sibling. Expect the sibling case to cost a wasted cycle before it surfaces:
+  // more than one reason. A check run is stored against a head commit rather than against a
+  // pull request, so the check asks whether *any* open PR at this commit is blocked; the
+  // check fails closed when it cannot be evaluated at all; and its two readings of the labels
+  // are snapshots, so a verdict can name a label that has since been removed. The job log
+  // distinguishes them, and their remedies differ, so the no-blocking-label branch reads the
+  // log rather than assuming a cause. Expect the sibling case to cost a wasted cycle before it
+  // surfaces:
   // `orchestrating` really is the only blocking label on this PR, so the first pass takes the
   // expected-case branch, removes it, re-launches the Monitor, and is blocked again by the
   // sibling. Only the second pass, with no blocking label left here, reaches the branch that
@@ -320,10 +322,12 @@ labelGateBlock:
     Inform the user that a process-label gate blocked the merge (code is review-approved) and that the Orchestrator removed the blocking label automatically.
     Re-launch the Monitor tool call (same command as the original, fresh invocation).
     Resume the routing above from "Act only on the terminal lines..." with the fresh invocation.
-  If no blocking label is applied to this PR at all: the gate is reporting something other than this PR's labels, and the job log for the "No blocking labels" check says which of two things (see `scripts/ci/labels/check_blocking_labels.py`). Read the log before relaying, because the two have different remedies. Either way: do not remove any label; escalate to the user; stop.
+  If no blocking label is applied to this PR at all: the gate is not reporting this PR's labels as they stand now, and the job log for the "No blocking labels" check says what it is reporting instead (see `scripts/ci/labels/check_blocking_labels.py`). Read the log before relaying, because the causes have different remedies. In every case, including a log that matches none of the shapes below: do not remove any label; escalate to the user; stop.
 
     - The log names another PR and its label (`ERROR: PR #<n>, which shares this head commit, has a blocking label: <label>`). A check run is stored against the head commit, so an open PR sharing this PR's head commit blocks it too. Do not touch that PR; relay its number and label, since clearing it is the user's call.
     - The log names an error instead (`Error listing open pull requests at <sha>`, or a missing or unparseable environment variable), and names no PR and no label. The check could not be evaluated and failed closed, which is not evidence that any label exists anywhere. Relay that, and that re-running the job is what clears a transient one.
+    - The log names *this* PR and a label it does not currently carry (`ERROR: This PR has a blocking label: <label>`). The check reads the labels twice, from the event payload and from a listing, and both are snapshots, so a run whose event has since been superseded, or whose listing lagged a label removal, stores a verdict for a label that is already gone. Re-running the job re-reads both and clears it. This cause is older than issue #833 and is not evidence that anything is wrong with the PR.
+    - The log matches none of these shapes: relay it verbatim rather than fitting it to one of the above.
   Otherwise (`verification needed`, `changes requested`, or `changes done` is applied instead of, or alongside, `orchestrating`): this is an unexpected state the routing above should not produce. Do not remove any label; escalate to the user; stop.
 
 surfaceBeforeMergingRequirements:

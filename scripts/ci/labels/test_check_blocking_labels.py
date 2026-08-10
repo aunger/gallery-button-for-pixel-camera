@@ -227,7 +227,14 @@ class TestMain(unittest.TestCase):
         self.assertIn("ERROR: This PR has a blocking label: changes requested", output)
 
     def test_listing_labels_block_even_if_the_payload_is_stale(self):
-        """A label applied after the event fired still blocks the same PR."""
+        """A label applied after the event fired still blocks the same PR.
+
+        Without the listing's copy of the triggering PR, a run whose event has
+        been superseded would report a clean commit. The same path is what can
+        blame this PR for a label a lagging listing still shows after removal,
+        which is the third log shape agents/dev_orchestration.md's
+        `labelGateBlock` branch teaches the Orchestrator to recognize.
+        """
         code, output = _run_main(_env(pr_labels=[]), [[_pr(808, ["orchestrating"])]])
         self.assertEqual(code, 1)
         self.assertIn("ERROR: This PR has a blocking label: orchestrating", output)
