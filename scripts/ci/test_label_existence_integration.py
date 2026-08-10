@@ -11,6 +11,7 @@ automation (as happened with the stale spellings in issue #477).
 
 Sources:
   scripts/ci/labels/enforce_mutually_exclusive_labels.py: MUTUALLY_EXCLUSIVE_SETS
+  scripts/ci/labels/check_blocking_labels.py:            BLOCKING_LABELS constant
   scripts/ci/prs-and-issues/file_test_failure_issues.py:          LABELS constant
   scripts/ci/prs-and-issues/archive_stale_test_failures.py:       LABEL_TEST_FAILURE_ARCHIVE constant
   scripts/ci/prs-and-issues/watch_toolchain_bump.py:              TRACKING_ISSUE_LABEL constant
@@ -33,6 +34,7 @@ sys.path.insert(0, os.path.join(_CI_DIR, "labels"))
 sys.path.insert(0, os.path.join(_CI_DIR, "prs-and-issues"))
 
 from archive_stale_test_failures import LABEL_TEST_FAILURE_ARCHIVE  # noqa: E402
+from check_blocking_labels import BLOCKING_LABELS  # noqa: E402
 from enforce_mutually_exclusive_labels import MUTUALLY_EXCLUSIVE_SETS  # noqa: E402
 from file_test_failure_issues import LABELS as _TEST_FAILURE_LABELS  # noqa: E402
 from watch_toolchain_bump import TRACKING_ISSUE_LABEL  # noqa: E402
@@ -75,10 +77,14 @@ REQUIRED_LABELS: frozenset[str] = (
     | frozenset({TRACKING_ISSUE_LABEL})
     # Labels excluded from GitHub's auto-generated release notes.
     | _release_notes_excluded_labels()
-    # Note: the labels referenced in block-merge-on-blocking-labels.yml
-    # (verification needed, changes requested, changes done, orchestrating)
-    # and remove-verified-on-push.yml (verified) are all already members of
-    # MUTUALLY_EXCLUSIVE_SETS, so no additional entries are needed here.
+    # Labels that block a merge via the "No blocking labels" required check.
+    # Every current member is also in MUTUALLY_EXCLUSIVE_SETS above, so this
+    # adds nothing today; it is named explicitly so that a blocking label
+    # added later without an exclusive sibling is still covered.
+    | BLOCKING_LABELS
+    # Note: the label referenced in remove-verified-on-push.yml (verified) is
+    # already a member of MUTUALLY_EXCLUSIVE_SETS, so no additional entry is
+    # needed here.
 )
 
 
