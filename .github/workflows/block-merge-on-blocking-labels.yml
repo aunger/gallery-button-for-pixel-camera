@@ -21,8 +21,18 @@ name: Block merge when a blocking label is present
 # scripts/ci/labels/check_blocking_labels.py for the full rationale and for
 # what the script does with the event payload.
 #
-# Triggers on the full set of PR events, because the answer stored on the
-# commit has to be re-earned whenever anything that feeds it changes:
+# Every event that can change a commit's verdict, and that fires a run against
+# that commit, is a trigger. Both halves are narrower than "all pull_request
+# events", so this list is not the full set and does not keep every stored
+# verdict current:
+#   - `edited`, `ready_for_review`, `converted_to_draft` and the rest cannot
+#     change the verdict, so they are deliberately absent.
+#   - A force-push does change the set of PRs at the commit it leaves behind,
+#     but the run it fires lands on the pusher's new head, so the abandoned
+#     commit keeps the verdict it already had. That is the `closed` case below
+#     without an event that can fix it, and it is not addressed here.
+#
+# The events that are listed:
 #   - opened / reopened / synchronize: ensure fresh PRs are blocked from the start.
 #   - labeled / unlabeled: re-evaluate immediately when the label changes.
 #   - closed: closing a PR removes it from the set the script considers, so
