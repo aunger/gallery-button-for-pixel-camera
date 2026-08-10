@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Unit tests for wake_held_issues.py."""
 
+import io
 import os
 import sys
 import unittest
+from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
@@ -159,49 +161,109 @@ class TestFindLabelAppliedAt(unittest.TestCase):
 
 
 class TestWakeIssue(unittest.TestCase):
-    def test_strips_hold_label_and_reopens(self):
+    """wake_issue() re-fetches live, then reopens (label-free PATCH) and
+    removes only the specific labels it targets (via emxl.remove_labels(),
+    patched separately from the raw gh_api calls it wraps)."""
+
+    def test_reopens_via_a_labels_free_patch(self):
         issue = _make_issue(7, ["hold 30 days", "bug"])
-        with patch.object(whi.emxl, "gh_api") as mock_api:
-            whi.wake_issue(issue, "hold 30 days", "owner/repo", "tok")
+        with patch.object(whi.emxl, "gh_api", side_effect=[issue, None, None]) as mock_api:
+            with patch.object(whi.emxl, "remove_labels", return_value=True):
+                result = whi.wake_issue(7, "hold 30 days", "owner/repo", "tok")
 
-        patch_call = mock_api.call_args_list[0]
+        self.assertTrue(result)
+        patch_call = mock_api.call_args_list[1]
         self.assertEqual(patch_call[1]["method"], "PATCH")
-        self.assertEqual(patch_call[1]["body"]["state"], "open")
-        self.assertEqual(patch_call[1]["body"]["labels"], ["bug"])
+        self.assertEqual(patch_call[1]["body"], {"state": "open"})
 
-    def test_strips_process_state_labels(self):
+    def test_targets_only_the_hold_label_when_nothing_else_conflicts(self):
+        issue = _make_issue(7, ["hold 30 days", "p1", "ci"])
+        with patch.object(whi.emxl, "gh_api", side_effect=[issue, None, None]):
+            with patch.object(whi.emxl, "remove_labels", return_value=True) as mock_remove:
+                whi.wake_issue(7, "hold 30 days", "owner/repo", "tok")
+
+        mock_remove.assert_called_once_with(
+            7, ["hold 30 days"], "owner/repo", "tok", reason="expired-hold"
+        )
+
+    def test_targets_process_state_labels_alongside_the_hold_label(self):
         issue = _make_issue(7, ["hold 90 days", "orchestrate", "changes requested", "ci"])
-        with patch.object(whi.emxl, "gh_api") as mock_api:
-            whi.wake_issue(issue, "hold 90 days", "owner/repo", "tok")
+        with patch.object(whi.emxl, "gh_api", side_effect=[issue, None, None]):
+            with patch.object(whi.emxl, "remove_labels", return_value=True) as mock_remove:
+                whi.wake_issue(7, "hold 90 days", "owner/repo", "tok")
 
-        patch_call = mock_api.call_args_list[0]
-        self.assertEqual(patch_call[1]["body"]["labels"], ["ci"])
+        targeted = mock_remove.call_args[0][1]
+        self.assertCountEqual(targeted, ["hold 90 days", "orchestrate", "changes requested"])
+        self.assertNotIn("ci", targeted)
 
     def test_posts_a_comment(self):
         issue = _make_issue(7, ["hold 30 days"])
-        with patch.object(whi.emxl, "gh_api") as mock_api:
-            whi.wake_issue(issue, "hold 30 days", "owner/repo", "tok")
+        with patch.object(whi.emxl, "gh_api", side_effect=[issue, None, None]) as mock_api:
+            with patch.object(whi.emxl, "remove_labels", return_value=True):
+                whi.wake_issue(7, "hold 30 days", "owner/repo", "tok")
 
-        comment_call = mock_api.call_args_list[1]
+        comment_call = mock_api.call_args_list[2]
         self.assertIn("comments", comment_call[0][0])
         self.assertEqual(comment_call[1]["method"], "POST")
         self.assertIn("hold 30 days", comment_call[1]["body"]["body"])
 
     def test_comment_notes_other_stripped_labels(self):
         issue = _make_issue(7, ["hold 30 days", "orchestrating"])
-        with patch.object(whi.emxl, "gh_api") as mock_api:
-            whi.wake_issue(issue, "hold 30 days", "owner/repo", "tok")
+        with patch.object(whi.emxl, "gh_api", side_effect=[issue, None, None]) as mock_api:
+            with patch.object(whi.emxl, "remove_labels", return_value=True):
+                whi.wake_issue(7, "hold 30 days", "owner/repo", "tok")
 
-        comment_body = mock_api.call_args_list[1][1]["body"]["body"]
+        comment_body = mock_api.call_args_list[2][1]["body"]["body"]
         self.assertIn("orchestrating", comment_body)
 
-    def test_no_other_labels_left_intact(self):
-        issue = _make_issue(7, ["hold 30 days", "p1", "ci"])
-        with patch.object(whi.emxl, "gh_api") as mock_api:
-            whi.wake_issue(issue, "hold 30 days", "owner/repo", "tok")
+    def test_case_insensitive_hold_label_still_matches(self):
+        issue = _make_issue(7, ["Hold 30 Days"])
+        with patch.object(whi.emxl, "gh_api", side_effect=[issue, None, None]):
+            with patch.object(whi.emxl, "remove_labels", return_value=True) as mock_remove:
+                result = whi.wake_issue(7, "hold 30 days", "owner/repo", "tok")
 
-        patch_call = mock_api.call_args_list[0]
-        self.assertCountEqual(patch_call[1]["body"]["labels"], ["p1", "ci"])
+        self.assertTrue(result)
+        mock_remove.assert_called_once()
+
+    def test_raises_on_non_dict_get_response(self):
+        with patch.object(whi.emxl, "gh_api", return_value=None):
+            with self.assertRaises(RuntimeError):
+                whi.wake_issue(7, "hold 30 days", "owner/repo", "tok")
+
+    # ------------------------------------------------------------------
+    # Concurrency guards (PR #837 review)
+    # ------------------------------------------------------------------
+
+    def test_returns_false_and_touches_nothing_when_hold_label_already_gone(self):
+        """A live re-fetch showing the hold label already replaced (e.g. an
+        escalation from hold 30 days to hold 90 days that landed between
+        main()'s list call and this call) is left alone entirely: no reopen,
+        no label removal, no comment."""
+        issue = _make_issue(7, ["hold 90 days", "ci"])
+        with patch.object(whi.emxl, "gh_api", side_effect=[issue]) as mock_api:
+            with patch.object(whi.emxl, "remove_labels") as mock_remove:
+                result = whi.wake_issue(7, "hold 30 days", "owner/repo", "tok")
+
+        self.assertFalse(result)
+        self.assertEqual(mock_api.call_count, 1)  # only the re-fetch GET
+        mock_remove.assert_not_called()
+
+    def test_reopen_and_strip_are_not_undone_by_a_failed_comment(self):
+        issue = _make_issue(7, ["hold 30 days"])
+
+        def gh_api_side_effect(path, token, method="GET", body=None):
+            if method == "POST":
+                raise Exception("comment API down")
+            return issue if method == "GET" else None
+
+        with patch.object(whi.emxl, "gh_api", side_effect=gh_api_side_effect):
+            with patch.object(whi.emxl, "remove_labels", return_value=True) as mock_remove:
+                result = whi.wake_issue(7, "hold 30 days", "owner/repo", "tok")
+
+        # The reopen and label removal both already happened; a failed
+        # notification comment does not retroactively fail the wake.
+        self.assertTrue(result)
+        mock_remove.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -244,7 +306,7 @@ class TestMain(unittest.TestCase):
                     result = whi.main()
 
         self.assertEqual(result, 0)
-        mock_wake.assert_called_once_with(issue, "hold 30 days", "owner/repo", "test-token")
+        mock_wake.assert_called_once_with(1, "hold 30 days", "owner/repo", "test-token")
 
     def test_leaves_issue_within_hold_period(self):
         """applied_at 5 days before real "now" has not yet cleared the 30-day hold."""
@@ -308,6 +370,25 @@ class TestMain(unittest.TestCase):
 
         self.assertEqual(result, 0)
         mock_wake.assert_not_called()
+
+    def test_does_not_count_a_no_op_wake_as_woken(self):
+        """wake_issue() returning False (hold label already gone by the time it
+        re-fetched, e.g. an escalation) must not inflate the woken count."""
+        issue = _make_issue(1, ["hold 30 days"])
+        applied_at = datetime.now(timezone.utc) - timedelta(days=31)
+
+        def fetch_side_effect(repo, token, label):
+            return [issue] if label == "hold 30 days" else []
+
+        out = io.StringIO()
+        with patch.object(whi, "fetch_issues_with_label", side_effect=fetch_side_effect):
+            with patch.object(whi, "find_label_applied_at", return_value=applied_at):
+                with patch.object(whi, "wake_issue", return_value=False):
+                    with redirect_stdout(out):
+                        result = whi.main()
+
+        self.assertEqual(result, 0)
+        self.assertIn("Woke 0 issue(s)", out.getvalue())
 
 
 if __name__ == "__main__":
