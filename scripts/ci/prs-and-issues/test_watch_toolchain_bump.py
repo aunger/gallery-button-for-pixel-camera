@@ -118,6 +118,7 @@ def make_state(**overrides) -> dict:
             "org.gradle:gradle-core@9.5.1": [],
             "com.android.tools.build:gradle@9.1.0": [],
             "org.jetbrains.kotlin:kotlin-gradle-plugin@2.4.0": [],
+            "org.jetbrains.kotlin:kotlin-stdlib@2.4.0": [],
         },
         "errors": [],
     }
@@ -346,6 +347,25 @@ class TestFetchText(unittest.TestCase):
             wtb.fetch_text("https://example.test/x")
 
 
+class TestCoordinatesByPin(unittest.TestCase):
+    """#820: widen the watched OSV coordinates beyond one per pin where a companion coordinate
+    is known to carry a pin's real advisory history."""
+
+    def test_kgp_pin_queries_both_kotlin_gradle_plugin_and_the_stdlib_companion(self):
+        self.assertEqual(
+            wtb.COORDINATES_BY_PIN["kgp"],
+            [
+                "org.jetbrains.kotlin:kotlin-gradle-plugin",
+                "org.jetbrains.kotlin:kotlin-stdlib",
+            ],
+        )
+
+    def test_gradle_and_agp_pins_stay_single_coordinate(self):
+        """No companion coordinate carrying real advisories has been found for either."""
+        self.assertEqual(wtb.COORDINATES_BY_PIN["gradle"], ["org.gradle:gradle-core"])
+        self.assertEqual(wtb.COORDINATES_BY_PIN["agp"], ["com.android.tools.build:gradle"])
+
+
 class TestQueryOsv(unittest.TestCase):
     @patch("watch_toolchain_bump.requests")
     def test_no_advisories_returns_empty_list(self, mock_requests):
@@ -405,6 +425,25 @@ class TestCollectState(unittest.TestCase):
             with patch.object(wtb, "query_osv", return_value=[]):
                 state = wtb.collect_state(self.root)
         self.assertEqual(state, make_state())
+
+    def test_queries_the_kotlin_stdlib_companion_coordinate_for_the_kgp_pin(self):
+        """org.jetbrains.kotlin:kotlin-gradle-plugin has never itself carried an OSV advisory;
+        Kotlin's advisories are filed against kotlin-stdlib instead (#820)."""
+        calls: list[tuple[str, str]] = []
+
+        def fake_query_osv(coordinate: str, version: str) -> list[str]:
+            calls.append((coordinate, version))
+            return []
+
+        with patch.object(wtb, "fetch_text", side_effect=self._fake_fetch()):
+            with patch.object(wtb, "query_osv", side_effect=fake_query_osv):
+                state = wtb.collect_state(self.root)
+        self.assertIn(("org.jetbrains.kotlin:kotlin-gradle-plugin", "2.4.0"), calls)
+        self.assertIn(("org.jetbrains.kotlin:kotlin-stdlib", "2.4.0"), calls)
+        # AGP and Gradle keep a single coordinate; no companion has been found for either.
+        self.assertEqual(calls.count(("com.android.tools.build:gradle", "9.1.0")), 1)
+        self.assertEqual(calls.count(("org.gradle:gradle-core", "9.5.1")), 1)
+        self.assertIn("org.jetbrains.kotlin:kotlin-stdlib@2.4.0", state["toolchain_advisories"])
 
     def test_codeql_tag_is_built_from_the_observed_cli_version(self):
         seen = []
