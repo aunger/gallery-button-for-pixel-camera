@@ -5,6 +5,13 @@ When a label that belongs to a mutually exclusive set is added to an issue or
 pull request, remove all other labels in the same set so that at most one
 member of each set is present at any time.
 
+This module is also where the label scripts in this directory keep their shared
+GitHub access, since it is the one they all already import: `gh_api` (a request
+with retry and backoff) and `fetch_open_pull_requests` (that request, paginated
+over the open-PR listing). Both are exercised by
+test_enforce_mutually_exclusive_labels.py, so a caller need not re-assert their
+contract.
+
 Mutually exclusive sets (fixed):
     [p1, p2, p3]
     [verification needed, verified]
