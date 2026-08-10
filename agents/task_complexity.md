@@ -99,3 +99,6 @@ Author: 3 / 2 / 3 / 3 / 3 / 3; Reviewer: 3 / 2 / 3 / 3 / 2 / 2
 Full system design with competing approaches; undocumented API behavior; 5-file implementation plan.
 Investigation and ambiguity both drop for review.
 Author: 3 / 3 / 3 / 3 / 3 / 3; Reviewer: 3 / 2 / 3 / 3 / 3 / 2
+
+<!-- Verify #827: label-by-files should apply "agents" to this PR (this path plus an unrelated SPEC.md edit). -->
+

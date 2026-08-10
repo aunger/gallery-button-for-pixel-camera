@@ -356,3 +356,6 @@ Non-Pixel devices running Pixel Camera ports would not be covered.
 
 **Feasibility:** High.
 This approach combines the precision of AccessibilityService detection with the zero-permission simplicity of a static database, at the cost of a build-time maintenance process that can be largely automated.
+
+<!-- Verify #827: unrelated file included alongside an agents-path change in agents/task_complexity.md. -->
+
