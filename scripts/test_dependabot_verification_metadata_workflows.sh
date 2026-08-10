@@ -138,6 +138,23 @@ if [ -f "$PUSH_WF" ]; then
     else
         pass "push workflow does not check out the Dependabot branch"
     fi
+
+    # (i) the push job's permissions block grants actions: read. It downloads
+    # an artifact from the *generate* workflow's run (a different run than
+    # its own, via workflow_run.id), which actions/download-artifact's docs
+    # say requires an actions:read-scoped token. A job-level `permissions:`
+    # block fully replaces the workflow-level one rather than merging with
+    # it, so this job would silently have `actions: none` without an
+    # explicit grant here, even though the workflow-level block above does
+    # not need one. Without it, the download 403s, continue-on-error
+    # swallows that, and the job reports a false "nothing to push" on every
+    # run: the exact silent-failure mode this whole automation exists to
+    # avoid.
+    if awk '/^jobs:/{injobs=1} injobs && /^  push:/{inpush=1} inpush && /^  [a-z]/ && !/^  push:/{inpush=0} inpush' "$PUSH_WF" | grep -qE '^[[:space:]]*actions:[[:space:]]*read'; then
+        pass "push job's permissions block grants actions: read"
+    else
+        fail "push job's permissions block is missing actions: read (actions/download-artifact needs it to pull the generate workflow's cross-run artifact; without it the download 403s and continue-on-error silently reports nothing to push, every time)"
+    fi
 fi
 
 echo

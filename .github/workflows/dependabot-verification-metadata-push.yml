@@ -52,6 +52,14 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
+      # download-artifact below pulls from the *generate* workflow's run
+      # (run-id: github.event.workflow_run.id), a different run than this
+      # job's own. actions/download-artifact's docs require an actions:read
+      # token for that cross-run case; a job-level permissions block fully
+      # replaces the workflow-level one for that job rather than merging
+      # with it, so this must be listed explicitly even though the
+      # workflow-level block above does not have it.
+      actions: read
     steps:
       - name: Download the regenerated file, if one was produced
         uses: actions/download-artifact@v7
