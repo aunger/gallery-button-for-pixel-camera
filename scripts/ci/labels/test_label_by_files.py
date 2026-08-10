@@ -241,6 +241,18 @@ class TestMatchingLabels(unittest.TestCase):
         ]
         self.assertIn("agents", lbf.matching_labels(paths))
 
+    def test_unanimous_and_exhaustive_labels_are_disjoint(self):
+        # matching_labels()'s docstring claims that restricting the
+        # intersection to UNANIMOUS_LABELS and the union to EXHAUSTIVE_LABELS
+        # is what keeps the two rule shapes from contaminating each
+        # other--true only while the two sets stay disjoint. If a label ever
+        # landed in both, the existential add would silently subsume the
+        # unanimity add for it and the unanimity restriction would become
+        # dead code for that label, with no test noticing (issue #830).
+        # Mirrors propagate_issue_labels.py's
+        # test_file_determined_and_process_state_sets_are_disjoint.
+        self.assertEqual(lbf.UNANIMOUS_LABELS & lbf.EXHAUSTIVE_LABELS, frozenset())
+
 
 # ---------------------------------------------------------------------------
 # labels_to_remove tests
