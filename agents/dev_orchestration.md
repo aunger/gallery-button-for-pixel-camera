@@ -300,6 +300,14 @@ labelGateBlock:
   // of this branch. Never auto-remove `verification needed`--it is real outstanding process
   // state, not bookkeeping. Removing `orchestrating` early is fine; nothing in this document
   // treats it as a concurrency guard.
+  //
+  // The gate can also fail on account of a label this PR does not carry (issue #833). A check
+  // run is stored against a head commit rather than against a pull request, so the check asks
+  // whether *any* open PR at this commit is blocked. Expect that to cost a wasted cycle before
+  // it surfaces: `orchestrating` really is the only blocking label on this PR, so the first
+  // pass takes the branch below, removes it, re-launches the Monitor, and is blocked again by
+  // the sibling. Only the second pass, with no blocking label left here, reaches the branch
+  // that names the real cause.
   If `orchestrating` is the only blocking label currently applied to the PR (the expected case): apply this transition to the PR:
 
     | Remove label    |
@@ -309,6 +317,7 @@ labelGateBlock:
     Inform the user that a process-label gate blocked the merge (code is review-approved) and that the Orchestrator removed the blocking label automatically.
     Re-launch the Monitor tool call (same command as the original, fresh invocation).
     Resume the routing above from "Act only on the terminal lines..." with the fresh invocation.
+  If no blocking label is applied to this PR at all: another open PR whose head is this PR's head commit is carrying one, and the commit-scoped check is reporting its state (see `scripts/ci/labels/check_blocking_labels.py`). The job log for the "No blocking labels" check names that PR and its label. Do not remove any label, and do not touch the other PR; relay the sibling PR and label named in the log; escalate to the user; stop.
   Otherwise (`verification needed`, `changes requested`, or `changes done` is applied instead of, or alongside, `orchestrating`): this is an unexpected state the routing above should not produce. Do not remove any label; escalate to the user; stop.
 
 surfaceBeforeMergingRequirements:
