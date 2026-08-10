@@ -301,13 +301,16 @@ labelGateBlock:
   // state, not bookkeeping. Removing `orchestrating` early is fine; nothing in this document
   // treats it as a concurrency guard.
   //
-  // The gate can also fail on account of a label this PR does not carry (issue #833). A check
-  // run is stored against a head commit rather than against a pull request, so the check asks
-  // whether *any* open PR at this commit is blocked. Expect that to cost a wasted cycle before
-  // it surfaces: `orchestrating` really is the only blocking label on this PR, so the first
-  // pass takes the branch below, removes it, re-launches the Monitor, and is blocked again by
-  // the sibling. Only the second pass, with no blocking label left here, reaches the branch
-  // that names the real cause.
+  // The gate can also fail while this PR carries no blocking label at all (issue #833), for
+  // either of two reasons. A check run is stored against a head commit rather than against a
+  // pull request, so the check asks whether *any* open PR at this commit is blocked; and the
+  // check fails closed when it cannot be evaluated at all. The job log distinguishes the two,
+  // and their remedies differ, so the no-blocking-label branch reads the log rather than
+  // assuming a sibling. Expect the sibling case to cost a wasted cycle before it surfaces:
+  // `orchestrating` really is the only blocking label on this PR, so the first pass takes the
+  // expected-case branch, removes it, re-launches the Monitor, and is blocked again by the
+  // sibling. Only the second pass, with no blocking label left here, reaches the branch that
+  // names the real cause.
   If `orchestrating` is the only blocking label currently applied to the PR (the expected case): apply this transition to the PR:
 
     | Remove label    |
@@ -317,7 +320,10 @@ labelGateBlock:
     Inform the user that a process-label gate blocked the merge (code is review-approved) and that the Orchestrator removed the blocking label automatically.
     Re-launch the Monitor tool call (same command as the original, fresh invocation).
     Resume the routing above from "Act only on the terminal lines..." with the fresh invocation.
-  If no blocking label is applied to this PR at all: another open PR whose head is this PR's head commit is carrying one, and the commit-scoped check is reporting its state (see `scripts/ci/labels/check_blocking_labels.py`). The job log for the "No blocking labels" check names that PR and its label. Do not remove any label, and do not touch the other PR; relay the sibling PR and label named in the log; escalate to the user; stop.
+  If no blocking label is applied to this PR at all: the gate is reporting something other than this PR's labels, and the job log for the "No blocking labels" check says which of two things (see `scripts/ci/labels/check_blocking_labels.py`). Read the log before relaying, because the two have different remedies. Either way: do not remove any label; escalate to the user; stop.
+
+    - The log names another PR and its label (`ERROR: PR #<n>, which shares this head commit, has a blocking label: <label>`). A check run is stored against the head commit, so an open PR sharing this PR's head commit blocks it too. Do not touch that PR; relay its number and label, since clearing it is the user's call.
+    - The log names an error instead (`Error listing open pull requests at <sha>`, or a missing or unparseable environment variable), and names no PR and no label. The check could not be evaluated and failed closed, which is not evidence that any label exists anywhere. Relay that, and that re-running the job is what clears a transient one.
   Otherwise (`verification needed`, `changes requested`, or `changes done` is applied instead of, or alongside, `orchestrating`): this is an unexpected state the routing above should not produce. Do not remove any label; escalate to the user; stop.
 
 surfaceBeforeMergingRequirements:
@@ -409,7 +415,7 @@ Orchestrator-specific notes:
 
 - The 30-minute escalation threshold is enforced by `timeout_ms: 1800000` on the Monitor call--no elapsed-time tracking needed.
 - `step`/`FAIL`/`SKIP`/`PASS` lines, `summary` header lines, and per-check summary rows are informational test-result deltas, not terminal outcomes: relay them to the user but do not start a new Author round. Only a `Blocked` (or `Blocked by: ...`) line does that.
-- The `Blocked by: <name>` attributed form (issue #516) names which check-run blocked CI. A terminal ending with `[label gate]` means only a process-label gate (not a code/test failure) is blocking; the Orchestrator removes the blocking label and re-launches the Monitor rather than routing a new Author round (see the `labelGateBlock` branch in the Monitor loop above).
+- The `Blocked by: <name>` attributed form (issue #516) names which check-run blocked CI. A terminal ending with `[label gate]` means only a process-label gate (not a code/test failure) is blocking; the Orchestrator usually removes the blocking label and re-launches the Monitor rather than routing a new Author round. Not always: since issue #833 the gate answers about the head commit rather than about this PR, so it can be red with no blocking label to remove, and then the Orchestrator escalates instead (see the `labelGateBlock` branch in the Monitor loop above).
 - Do not subscribe to PR events or delay dispatching the Reviewer while waiting for CI; the Monitor loop replaces that pattern.
 
 ## Delegation rules
