@@ -15,18 +15,19 @@
 #
 # HOW THE WIRING CASES FIND A LOCK
 #
-# Cases (g) and (h) grep for a spelling rather than parsing bash or YAML, so an
-# install written another way drops out of the comparison silently: (h) would
-# then still pass, because its non-empty guard only proves that some lock
+# Cases (g), (h), and (i) grep for a spelling rather than parsing bash or YAML, so
+# an install written another way drops out of the comparison silently: (h) and (i)
+# would then still pass, because their non-empty guards only prove that some lock
 # matched, not that yours did. If you add an install, match these spellings, or
 # extend the patterns here:
 #
 #   .claude/hooks/session-start.sh   "$REPO_ROOT/scripts/<path>.txt", unquoted
 #                                    path, no variable standing in for it
-#   .github/workflows/build.yml      -r scripts/<path>.txt (not --requirement,
-#                                    not a quoted or variable path)
+#   .github/workflows/build.yml,     -r scripts/<path>.txt (not --requirement,
+#   .github/workflows/lint.yml       not a quoted or variable path); (i) also
+#                                    requires --force-reinstall on that same line
 #
-# Comments are stripped from both files first, so prose naming a lock is not
+# Comments are stripped from all three files first, so prose naming a lock is not
 # counted as an install.
 #
 # Always exits 0 on success, non-zero on failure.
@@ -257,6 +258,47 @@ if [[ -z "$UNPROVISIONED" ]]; then
     pass "the session-start hook installs every lock build.yml installs"
 else
     fail "build.yml installs locks the session-start hook does not:$UNPROVISIONED"
+fi
+
+# ── (i) CI installs the locks the same way the hook does ─────────────────────
+#
+# Issue #810: (h) above confirms both sides install the same *locks*, but not
+# that they install them the same *way*. Every call site already agreed on
+# --require-hashes, so the integrity property held either way, but only the
+# hook's installer (this script) passed --force-reinstall. Without it, pip
+# leaves a package alone when something already satisfies the pinned
+# requirement, so a runner image that ships a package at exactly the locked
+# version keeps the runner's own copy instead of the artifact the lock names,
+# while a session force-reinstalls it--both sides pass --require-hashes, but
+# only one of them is provably running the bytes the lock declares.
+#
+# --user is deliberately NOT compared here: it stays session-only. build.yml's
+# shell-tests job installs the lint lock into a dedicated venv, where pip
+# refuses a --user install outright, and lint.yml's three jobs derive
+# LINT_BIN_DIR from sysconfig's own scripts path, which a --user install does
+# not populate. Both are legitimate divergences from the hook, which has no
+# venv of its own and installs into the session user's site instead.
+echo ""
+echo "=== (i) every CI lock install forces the pinned version, like the hook does ==="
+CI_INSTALL_LINES="$( { sed 's/#.*$//' "$REPO_ROOT/.github/workflows/build.yml"; \
+                       sed 's/#.*$//' "$REPO_ROOT/.github/workflows/lint.yml"; } \
+    | grep -- '-r scripts/[A-Za-z0-9_./-]*\.txt' )"
+if [[ -n "$CI_INSTALL_LINES" ]]; then
+    pass "found $(echo "$CI_INSTALL_LINES" | grep -c .) CI lock-install line(s) to check"
+else
+    fail "no CI lock-install line found in build.yml or lint.yml (did the install steps move?)"
+fi
+
+UNFORCED=""
+while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    [[ "$line" == *"--force-reinstall"* ]] || UNFORCED="$UNFORCED
+    $line"
+done <<< "$CI_INSTALL_LINES"
+if [[ -z "$UNFORCED" ]]; then
+    pass "every CI lock install passes --force-reinstall"
+else
+    fail "CI installs a lock without --force-reinstall:$UNFORCED"
 fi
 
 # ── Summary ──────────────────────────────────────────────────────────────────

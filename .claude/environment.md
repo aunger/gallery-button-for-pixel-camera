@@ -194,8 +194,11 @@ Regenerate the lock with the `uv pip compile` command recorded in that `.in` fil
 
 Both sides install it: CI in `.github/workflows/build.yml`, and the `SessionStart` hook in step 4 (issue #806).
 The session install is what makes the whole test suite runnable in a session; without it, four of the Python test modules and `scripts/ci/test-support/test_summarize_preflight_integration.sh` fail with `No module named 'defusedxml'` whatever the change under test is.
-The hook returns immediately unless `CLAUDE_CODE_REMOTE=true`, so a checkout on your own machine is not covered by it: install the lock there yourself with `pip install --require-hashes -r scripts/requirements.txt`, the command CI runs.
+The hook returns immediately unless `CLAUDE_CODE_REMOTE=true`, so a checkout on your own machine is not covered by it: install the lock there yourself with `pip install --force-reinstall --require-hashes -r scripts/requirements.txt`, the command CI runs.
 The install also makes the versions this repository declares the ones a session runs: `requests` and `PyYAML` happen to resolve from the base image, so a change there would extend the same failure to them with no other signal.
+`--force-reinstall` is what guarantees that: without it, pip leaves a package alone when the runner image already ships the pinned version, and CI would silently run the image's copy instead of the artifact the lock names (issue #810).
+CI and the hook now match on both `--require-hashes` and `--force-reinstall`; only `--user` differs, because CI has no per-session home to isolate into and installs straight into the runner's own site (`build.yml`'s `shell-tests` job installs the lint lock into a dedicated venv instead, where `--user` is not even valid; `lint.yml` relies on `sysconfig`'s own scripts path, which a `--user` install would not populate).
+`scripts/test_install_pinned_requirements.sh` case (i) checks every CI install line still carries `--force-reinstall`.
 
 Steps 3b and 4 both install through `scripts/install-pinned-requirements.sh`, which records the SHA-256 of the lock it installed under `~/.local/share/gb4pc/`.
 A re-run against an unchanged lock is therefore a no-op, an edited lock reinstalls, and a failed install writes no marker and is retried.
