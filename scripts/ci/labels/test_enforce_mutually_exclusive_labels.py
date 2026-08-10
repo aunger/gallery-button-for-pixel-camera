@@ -232,6 +232,18 @@ class TestFindConflictingSet(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertIn("orchestrate", result)
 
+    def test_hold_labels_found(self):
+        for label in ("hold 30 days", "hold 90 days", "hold 180 days"):
+            with self.subTest(label=label):
+                result = emxl.find_conflicting_set(label)
+                self.assertIsNotNone(result)
+                self.assertIn("hold 30 days", result)
+                self.assertIn("hold 90 days", result)
+                self.assertIn("hold 180 days", result)
+
+    def test_hold_label_case_insensitive(self):
+        self.assertIsNotNone(emxl.find_conflicting_set("Hold 30 Days"))
+
     def test_unknown_label_returns_none(self):
         self.assertIsNone(emxl.find_conflicting_set("bug"))
         self.assertIsNone(emxl.find_conflicting_set("ci"))
@@ -657,6 +669,23 @@ class TestMain(unittest.TestCase):
         self.assertEqual(result, 0)
         delete_call = mock_api.call_args_list[1]
         self.assertIn("orchestrate", delete_call[0][0])
+
+    def test_escalating_hold_label_removes_shorter_one(self):
+        """Adding hold 90 days when hold 30 days is present removes hold 30 days."""
+        with patch.dict(os.environ, {"ADDED_LABEL": "hold 90 days", "ISSUE_NUMBER": "9"}):
+            with patch.object(
+                emxl,
+                "gh_api",
+                side_effect=[
+                    self._make_issue_response(["hold 30 days", "ci"]),
+                    None,  # DELETE hold 30 days
+                ],
+            ) as mock_api:
+                result = emxl.main()
+
+        self.assertEqual(result, 0)
+        delete_call = mock_api.call_args_list[1]
+        self.assertIn("hold%2030%20days", delete_call[0][0])
 
     def test_exit_1_when_fetch_raises(self):
         with patch.object(emxl, "gh_api", side_effect=Exception("network error")):

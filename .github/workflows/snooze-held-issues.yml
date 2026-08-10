@@ -1,0 +1,33 @@
+name: Snooze held issues
+
+# When a "hold N days" label (see HOLD_LABEL_DAYS in
+# scripts/ci/labels/enforce_mutually_exclusive_labels.py) is added to an
+# issue, closes it. This is the snooze half of issue #821: the issue stops
+# reading as open, dispatchable work while it waits out its hold.
+# wake-held-issues.yml is the other half, reopening it once the hold elapses.
+#
+# Scoped to issues only, not pull requests: closing an open PR is a different
+# action (abandoning work) from snoozing an issue, and the hold-label ladder
+# is meant for issues whose revisit condition is elapsed time, not PRs.
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  issues: write
+
+jobs:
+  snooze:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Snooze held issue
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ADDED_LABEL: ${{ github.event.label.name }}
+        run: python3 scripts/ci/labels/snooze_held_issues.py
