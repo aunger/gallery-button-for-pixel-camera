@@ -32,10 +32,16 @@ Two consequences of that scoping are deliberate:
     otherwise overwrite this verdict.
 
 Only open PRs count. A closed PR cannot be merged, so its labels must not
-block anyone; that also means closing a PR never leaves its label blocking a
-sibling. The triggering PR's own labels are read from the event payload as
-well as from the API listing (see main()), so this check is never weaker about
-the triggering PR than the payload-only check it replaced.
+block anyone. That is a statement about this script's verdict, not about the
+gate: what gates a merge is the stored check run, so a failure a since-closed
+PR earned outlives it until something re-runs the check. That is why the
+workflow also triggers on `closed`; the closing PR is already gone from both
+sources by the time that run evaluates the commit, so the re-run is what
+actually retires its verdict.
+
+The triggering PR's own labels are read from the event payload as well as from
+the API listing (see main()), so this check is never weaker about the
+triggering PR than the payload-only check it replaced.
 
 Usage:
     python3 scripts/ci/labels/check_blocking_labels.py
@@ -43,9 +49,12 @@ Usage:
 Exit code:
     0  no open pull request at HEAD_SHA carries a blocking label.
     1  at least one does, or the check could not be evaluated (missing
-       configuration, an unparseable PR_LABELS value, or a GitHub API failure
-       that outlived gh_api's retries). Failing closed is the point: a gate
-       that cannot prove the merge is safe must not open it.
+       configuration, an unparseable PR_LABELS value, or a GitHub API
+       failure). gh_api retries only a 429, a 5xx, or a network error, so a
+       single 403, which is how GitHub answers some rate-limit and
+       abuse-detection cases, fails the gate on the first attempt. Failing
+       closed is the point: a gate that cannot prove the merge is safe must
+       not open it.
 
 Required environment variables:
     GITHUB_TOKEN        Token with pull-requests: read
@@ -196,7 +205,10 @@ def main() -> int:
     # have made it, even if the listing is momentarily stale about a PR that
     # was just opened or just labeled. Its labels from both sources are unioned
     # rather than replaced. A closed triggering PR contributes nothing: it
-    # cannot be merged, and its label must not block a sibling that can.
+    # cannot be merged, and its label must not block a sibling that can. That
+    # is also what makes the workflow's `closed` trigger a recovery rather
+    # than a no-op, since on a `closed` event the triggering PR drops out of
+    # the payload and out of the listing at the same time.
     candidates: dict[int, list[str]] = {}
     if pr_state == "open":
         candidates[pr_number] = list(event_labels)

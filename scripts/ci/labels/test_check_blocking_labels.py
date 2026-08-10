@@ -10,8 +10,16 @@ import urllib.error
 from contextlib import redirect_stderr, redirect_stdout
 from unittest.mock import patch
 
-sys.path.insert(0, os.path.dirname(__file__))
+import yaml
+
+_LABELS_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _LABELS_DIR)
 import check_blocking_labels as cbl  # noqa: E402
+
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(_LABELS_DIR)))
+_WORKFLOW_PATH = os.path.join(
+    _REPO_ROOT, ".github", "workflows", "block-merge-on-blocking-labels.yml"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -178,6 +186,12 @@ class TestMain(unittest.TestCase):
 
         Its labels arrive in the event payload (`labeled` fires on closed PRs
         too) but it is absent from the open-PR listing.
+
+        This is also the `closed` event's own run: closing the PR that was
+        blocking the commit re-evaluates it with that PR gone from both
+        sources, which is what retires the failing run it earned. Without the
+        `closed` trigger nothing would re-run, and #808 would stay blocked
+        with no blocking label applied anywhere.
         """
         code, output = _run_main(
             _env(pr_number=832, pr_state="closed", pr_labels=["orchestrating"]),
@@ -185,6 +199,18 @@ class TestMain(unittest.TestCase):
         )
         self.assertEqual(code, 0)
         self.assertIn("OK: No blocking labels are present.", output)
+
+    def test_a_closed_triggering_pr_is_still_blocked_by_an_open_sibling(self):
+        """Closing a PR retires only its own labels, not a sibling's."""
+        code, output = _run_main(
+            _env(pr_number=832, pr_state="closed", pr_labels=[]),
+            [[_pr(808, ["orchestrating"])]],
+        )
+        self.assertEqual(code, 1)
+        self.assertIn(
+            "ERROR: PR #808, which shares this head commit, has a blocking label: orchestrating",
+            output,
+        )
 
     def test_payload_labels_block_even_if_the_listing_is_stale(self):
         """The verdict is never weaker about the triggering PR than the payload."""
@@ -241,6 +267,44 @@ class TestMain(unittest.TestCase):
         code, output = _run_main(env, [])
         self.assertEqual(code, 1)
         self.assertIn("PR_LABELS is not a JSON array", output)
+
+
+# ---------------------------------------------------------------------------
+# Workflow wiring
+# ---------------------------------------------------------------------------
+
+
+class TestWorkflowTriggers(unittest.TestCase):
+    """The script's verdict only reaches the commit when an event re-runs it.
+
+    Every source the script reads can change without the PR that fired the
+    last run being touched, so the trigger list is part of this gate's
+    behavior rather than incidental configuration.
+    """
+
+    def _trigger_types(self) -> set[str]:
+        with open(_WORKFLOW_PATH, encoding="utf-8") as f:
+            workflow = yaml.safe_load(f)
+        # YAML 1.1 resolves a bare `on` key to the boolean True, which is what
+        # PyYAML hands back for a GitHub workflow's trigger block.
+        triggers = workflow[True] if True in workflow else workflow["on"]
+        return set(triggers["pull_request"]["types"])
+
+    def test_every_event_that_can_change_the_verdict_is_a_trigger(self):
+        self.assertEqual(
+            self._trigger_types(),
+            {"opened", "reopened", "synchronize", "labeled", "unlabeled", "closed"},
+        )
+
+    def test_closed_is_a_trigger(self):
+        """Closing a blocked PR must re-evaluate the commit it was blocking.
+
+        The failing check run a PR earned is stored on the commit and stays
+        the most recent run of this check there after the PR is closed, so
+        without this event a sibling stays blocked with no blocking label
+        applied anywhere and no automatic way out.
+        """
+        self.assertIn("closed", self._trigger_types())
 
 
 if __name__ == "__main__":
