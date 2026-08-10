@@ -62,6 +62,7 @@ jobs:
       actions: read
     steps:
       - name: Download the regenerated file, if one was produced
+        id: download
         uses: actions/download-artifact@v7
         with:
           name: dependabot-verification-metadata
@@ -69,6 +70,31 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
           path: ${{ runner.temp }}/dependabot-verification-metadata
         continue-on-error: true
+
+      - name: Confirm a failed download really means "no artifact produced"
+        # continue-on-error above means a real failure (a transient API
+        # error, or this job's own permissions regressing again) would
+        # otherwise fall through to "Decide whether there is anything to
+        # push" and get silently reported as a clean no-op, exactly the
+        # failure mode this whole step exists to avoid. Ask the Actions API
+        # directly whether an artifact actually exists for this run: if it
+        # does, the download step's failure was a real problem, not an
+        # empty result, so fail loudly instead of staying silent.
+        if: steps.download.outcome != 'success'
+        env:
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          COUNT="$(curl -sf -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$REPO/actions/runs/$RUN_ID/artifacts?name=dependabot-verification-metadata" \
+            | jq -r '.total_count')"
+          if [ "$COUNT" -gt 0 ]; then
+            echo "::error::A dependabot-verification-metadata artifact exists for run $RUN_ID, but downloading it failed for some other reason (see the failed 'Download the regenerated file' step's own log above). Failing loudly instead of silently reporting nothing to push."
+            exit 1
+          fi
+          echo "No dependabot-verification-metadata artifact exists for run $RUN_ID (the generate workflow found no dependency-graph change, or its author gate did not pass); nothing to push."
 
       - name: Decide whether there is anything to push
         id: gate
