@@ -5,10 +5,17 @@ name: Push regenerated verification metadata (Dependabot)
 # this is split into two workflow files.
 #
 # This workflow never checks out or runs code from the PR: it only downloads
-# the file the other workflow already generated and treats it as inert data
-# to copy into place. Workflow files must live on the base branch to run at
-# all, so what actually executes here is always this reviewed file on main,
-# never anything from a Dependabot branch.
+# the file the other workflow already generated and writes it back through
+# the GitHub Contents API, treating it as inert data. An earlier revision
+# used `actions/checkout` on the Dependabot branch, under the one credential
+# in this whole design that can write, so it could still materialize the
+# untrusted branch's full tree (and any build-time code a bumped dependency
+# ships) under a privileged token; CodeQL flagged that ("Checkout of
+# untrusted code in a privileged context"), and it was right to. Reading and
+# writing exactly one named file through the API instead means the branch's
+# tree is never checked out here at all. Workflow files must live on the
+# base branch to run at all, so what actually executes here is always this
+# reviewed file on main, never anything from a Dependabot branch.
 #
 # The push authenticates with a personal access token
 # (secrets.DEPENDABOT_VERIFICATION_PAT), not the default GITHUB_TOKEN. A
@@ -46,9 +53,6 @@ jobs:
     permissions:
       contents: write
     steps:
-      # Downloaded outside $GITHUB_WORKSPACE: the checkout step below runs
-      # `git clean -ffdx` after checkout, which would otherwise delete this
-      # untracked download.
       - name: Download the regenerated file, if one was produced
         uses: actions/download-artifact@v7
         with:
@@ -80,21 +84,22 @@ jobs:
             exit 1
           fi
 
-      - name: Check out the Dependabot branch
-        if: steps.gate.outputs.has_artifact == 'true'
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ github.event.workflow_run.head_branch }}
-          token: ${{ secrets.DEPENDABOT_VERIFICATION_PAT }}
-
-      - name: Apply and push the regenerated file
+      - name: Push the regenerated file through the Contents API
         if: steps.gate.outputs.has_artifact == 'true'
         env:
+          PAT: ${{ secrets.DEPENDABOT_VERIFICATION_PAT }}
+          REPO: ${{ github.repository }}
           HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
           EXPECTED_SHA: ${{ github.event.workflow_run.head_sha }}
           ARTIFACT_DIR: ${{ runner.temp }}/dependabot-verification-metadata
+          FILE_PATH: gradle/verification-metadata.xml
         run: |
           set -euo pipefail
+
+          AUTH_HEADER="Authorization: Bearer $PAT"
+          ACCEPT_HEADER="Accept: application/vnd.github+json"
+          VERSION_HEADER="X-GitHub-Api-Version: 2022-11-28"
+          API="https://api.github.com/repos/$REPO"
 
           # The file was regenerated against workflow_run.head_sha. If the
           # branch's current tip is a different commit, something pushed to
@@ -102,21 +107,35 @@ jobs:
           # round of this same automation); abandon this round rather than
           # overwrite work the stale artifact knows nothing about. Whatever
           # moved the branch triggers a fresh pair of runs on its own.
-          CURRENT_SHA="$(git rev-parse HEAD)"
+          CURRENT_SHA="$(curl -sf -H "$AUTH_HEADER" -H "$ACCEPT_HEADER" -H "$VERSION_HEADER" \
+            "$API/git/ref/heads/$HEAD_BRANCH" | jq -r '.object.sha')"
           if [ "$CURRENT_SHA" != "$EXPECTED_SHA" ]; then
             echo "::warning::$HEAD_BRANCH moved (was $EXPECTED_SHA, now $CURRENT_SHA) since the file was generated; skipping this stale regeneration."
             exit 0
           fi
 
-          cp "$ARTIFACT_DIR/verification-metadata.xml" gradle/verification-metadata.xml
+          # Read the file's current blob sha and content at that same tip.
+          # Reading it through the API, rather than a checkout, is what
+          # keeps this job from ever materializing the rest of the
+          # (untrusted) branch under the PAT.
+          EXISTING="$(curl -sf -H "$AUTH_HEADER" -H "$ACCEPT_HEADER" -H "$VERSION_HEADER" \
+            "$API/contents/$FILE_PATH?ref=$EXPECTED_SHA")"
+          EXISTING_SHA="$(echo "$EXISTING" | jq -r '.sha')"
 
-          if git diff --quiet -- gradle/verification-metadata.xml; then
-            echo "Working tree already matches the regenerated file; nothing to commit."
+          if echo "$EXISTING" | jq -r '.content' | base64 -d | cmp -s - "$ARTIFACT_DIR/verification-metadata.xml"; then
+            echo "$FILE_PATH already matches the regenerated file; nothing to commit."
             exit 0
           fi
 
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add gradle/verification-metadata.xml
-          git commit -m "Regenerate gradle/verification-metadata.xml for this Dependabot bump"
-          git push origin "HEAD:refs/heads/$HEAD_BRANCH"
+          CONTENT_B64="$(base64 -w0 "$ARTIFACT_DIR/verification-metadata.xml")"
+          BODY="$(jq -n \
+            --arg message "Regenerate gradle/verification-metadata.xml for this Dependabot bump" \
+            --arg content "$CONTENT_B64" \
+            --arg sha "$EXISTING_SHA" \
+            --arg branch "$HEAD_BRANCH" \
+            '{message: $message, content: $content, sha: $sha, branch: $branch,
+              committer: {name: "github-actions[bot]", email: "github-actions[bot]@users.noreply.github.com"},
+              author: {name: "github-actions[bot]", email: "github-actions[bot]@users.noreply.github.com"}}')"
+
+          curl -sf -X PUT -H "$AUTH_HEADER" -H "$ACCEPT_HEADER" -H "$VERSION_HEADER" \
+            -d "$BODY" "$API/contents/$FILE_PATH" >/dev/null

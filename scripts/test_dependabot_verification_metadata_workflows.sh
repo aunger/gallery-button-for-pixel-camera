@@ -123,6 +123,21 @@ if [ -f "$PUSH_WF" ]; then
     else
         fail "push workflow has no staleness check against workflow_run.head_sha"
     fi
+
+    # (h) never checks out the Dependabot branch. An earlier revision used
+    # actions/checkout on the branch inside this job, the one job in the
+    # pair holding contents: write, and CodeQL correctly flagged that as
+    # "Checkout of untrusted code in a privileged context": it materialized
+    # the untrusted branch's full tree under the PAT. The fix reads and
+    # writes the single named file through the GitHub Contents API instead,
+    # so nothing here ever checks out PR code. Anchored to a `uses:` step
+    # invocation (leading whitespace only) so this does not also match
+    # prose mentions of actions/checkout, such as this comment's own.
+    if grep -qE '^[[:space:]]*uses:[[:space:]]*actions/checkout' "$PUSH_WF"; then
+        fail "push workflow uses actions/checkout (materializes the untrusted Dependabot branch under the contents:write PAT; write the single file through the Contents API instead)"
+    else
+        pass "push workflow does not check out the Dependabot branch"
+    fi
 fi
 
 echo
