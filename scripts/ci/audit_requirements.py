@@ -460,12 +460,28 @@ def evaluate(
     a version, so splitting one advisory into a per-version entry would be noise.
     Both findings are still listed individually in the report; what is shared is
     the justification, not the visibility.
+
+    One advisory ID can also cover two different packages pinned in the same
+    lock, each with its own ``(lock, package, id)`` entry.  When one of those
+    findings stops being reported, that entry's own match disappears while the
+    ID is still reported against the *other* package.  That other package
+    already has its own entry accounting for it, so the vanished entry is
+    spent, not misfiled: it is reported as stale rather than as naming the
+    wrong package.  An entry is only reported as naming the wrong package when
+    the ID is reported against a package that has no entry of its own to
+    explain it.
     """
     by_package: dict[tuple[str, str, str], list[Finding]] = {}
     by_id: dict[tuple[str, str], list[Finding]] = {}
     for f in findings:
         by_package.setdefault((f.lock, f.package, f.vuln_id), []).append(f)
         by_id.setdefault((f.lock, f.vuln_id), []).append(f)
+
+    # Every (lock, package, id) an ignore entry claims, regardless of whether
+    # it currently matches a finding. Computed once over the whole list so the
+    # stale/mismatched split below does not depend on the order entries are
+    # processed in.
+    entry_keys = {(e.lock, e.package, e.vuln_id) for e in ignores}
 
     honored: list[tuple[IgnoreEntry, Finding]] = []
     stale: list[IgnoreEntry] = []
@@ -478,13 +494,15 @@ def evaluate(
             accounted.update(matches)
             continue
         others = by_id.get((entry.lock, entry.vuln_id), [])
-        if others:
-            # Reported, but against a package this entry does not name, so the
-            # entry is wrong rather than merely tolerant. These are accounted
-            # for so they are not *also* listed as having no entry at all,
-            # which would tell the reader to add one that already exists.
-            mismatched.extend((entry, f) for f in others)
-            accounted.update(others)
+        unclaimed = [f for f in others if (f.lock, f.package, f.vuln_id) not in entry_keys]
+        if unclaimed:
+            # Reported, but against a package that has no entry of its own
+            # either, so this entry is naming the wrong package rather than
+            # merely being spent. Accounted for so it is not *also* listed as
+            # having no entry at all, which would tell the reader to add one
+            # that already exists.
+            mismatched.extend((entry, f) for f in unclaimed)
+            accounted.update(unclaimed)
             continue
         stale.append(entry)
 
