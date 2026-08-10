@@ -13,6 +13,7 @@ Sources:
   scripts/ci/labels/enforce_mutually_exclusive_labels.py: MUTUALLY_EXCLUSIVE_SETS
   scripts/ci/prs-and-issues/file_test_failure_issues.py:          LABELS constant
   scripts/ci/prs-and-issues/archive_stale_test_failures.py:       LABEL_TEST_FAILURE_ARCHIVE constant
+  scripts/ci/prs-and-issues/watch_toolchain_bump.py:              TRACKING_ISSUE_LABEL constant
   .github/release.yml:                          changelog.exclude.labels
 """
 
@@ -34,6 +35,7 @@ sys.path.insert(0, os.path.join(_CI_DIR, "prs-and-issues"))
 from archive_stale_test_failures import LABEL_TEST_FAILURE_ARCHIVE  # noqa: E402
 from enforce_mutually_exclusive_labels import MUTUALLY_EXCLUSIVE_SETS  # noqa: E402
 from file_test_failure_issues import LABELS as _TEST_FAILURE_LABELS  # noqa: E402
+from watch_toolchain_bump import TRACKING_ISSUE_LABEL  # noqa: E402
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(_CI_DIR))
 _RELEASE_CONFIG_PATH = os.path.join(_REPO_ROOT, ".github", "release.yml")
@@ -68,6 +70,9 @@ REQUIRED_LABELS: frozenset[str] = (
     | frozenset(_TEST_FAILURE_LABELS)
     # Label swapped in when a test-failure issue goes stale.
     | frozenset({LABEL_TEST_FAILURE_ARCHIVE})
+    # Label the toolchain watcher applies to its tracking issue, and identifies it by: without
+    # it, the watcher cannot find its own issue and would file a fresh one every week.
+    | frozenset({TRACKING_ISSUE_LABEL})
     # Labels excluded from GitHub's auto-generated release notes.
     | _release_notes_excluded_labels()
     # Note: the labels referenced in block-merge-on-blocking-labels.yml

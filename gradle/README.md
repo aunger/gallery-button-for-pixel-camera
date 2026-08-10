@@ -33,6 +33,7 @@ There are two regeneration modes, and the difference is deliberate:
 
 Any change that moves the dependency graph, an AGP, Kotlin, Compose, AndroidX, or test-library version bump, a new dependency, or a new plugin, requires regenerating this file **in the same commit**, or the build will fail verification.
 There is no automated dependency bumper in this repo, so the graph only moves on manual, reviewed version changes.
+The scheduled watcher described under "Noticing when a bump becomes available" below reports that a bump may have become possible; it never performs one.
 
 Requirements, and why they exist:
 
@@ -105,6 +106,47 @@ Gradle patches only its newest minor, so no later release inside the row would e
 #774 also rejected the obvious workaround of raising the daemon heap instead.
 Weigh any future overage the same way, and write down the reasoning: a patch above the row is a far smaller step than a minor above it.
 
+## Noticing when a bump becomes available
+
+The two sections above describe checks to make at bump time.
+`scripts/ci/prs-and-issues/watch_toolchain_bump.py` executes **one** of them on a schedule, the CodeQL Kotlin ceiling, so that noticing a bump became possible does not depend on anyone remembering to look.
+It does not check the KGP compatibility row, which stays a manual step for the reasons below; what it watches instead is the KGP release that could move that row.
+`.github/workflows/watch-toolchain-bump.yml` runs it weekly, and it comments on one long-lived tracking issue only when something it watches moves.
+
+It is a watcher, not a bumper.
+A comment on that issue does not move the dependency graph, and the issue is not dispatchable work.
+It carries no `orchestrate` label for exactly that reason: an open issue standing in for a "has a bump become available yet" reminder is the pattern #803 replaced, because its candidate list decays (the one in #789 named Gradle 9.6.x and was wrong within two days).
+
+What it tracks:
+
+- The highest stable `org.jetbrains.kotlin:kotlin-gradle-plugin` version published to Maven Central.
+  The `<latest>` and `<release>` elements of `maven-metadata.xml` are not used, because Kotlin sets both to the newest upload, which is routinely a Beta or RC.
+- The CodeQL Kotlin upper bound, by executing the two-step procedure under "CodeQL Kotlin ceiling" above, including reading the `codeql-action` ref out of `codeql.yml` rather than assuming it is still `v4`.
+- Whether OSV reports an advisory against `org.gradle:gradle-core`, `com.android.tools.build:gradle`, or `org.jetbrains.kotlin:kotlin-gradle-plugin` at the versions this tree pins.
+
+Every version it compares against is read out of the tree (`gradle-wrapper.properties`, `build.gradle.kts`, `codeql.yml`), so a bump does not also require editing the watcher, and the watcher cannot quietly compare against a stale pin.
+
+What it deliberately does not do:
+
+- **It does not read the KGP compatibility table.**
+  That table is the one input with no machine-readable form, and it is also the input that takes judgment to apply, per the overage reasoning recorded above.
+  A new stable KGP release is the event that can move the row, so watching releases gets the same trigger without depending on the table's HTML.
+  When the watcher comments, re-read the table by hand.
+- **It does not scan the whole dependency graph for CVEs.**
+  `verification-metadata.xml` pins the build graph, not what ships in the APK, so a scan over it says nothing about the app; every advisory it finds today arrives transitively through Gradle and AGP build tooling, and none through a declared dependency.
+  A weekly report of the same few dozen standing build-tool advisories would train everyone to ignore the job, which is the same failure mode as an open issue that is not really actionable.
+  The three toolchain coordinates are different: a hit there is directly actionable, and is a reason to bump that overrides the standing lack of urgency.
+  App-runtime CVE coverage would be Dependabot over `app/build.gradle.kts`, which is separate work; there is no `.github/dependabot.yml` here today.
+  This is also not the repo's general advisory scan: `.github/workflows/dependency-audit.yml` runs `pip-audit` weekly over every hash-pinned Python lock under `scripts/` (issue #804).
+  The two do not overlap, and neither subsumes the other; that one watches what CI's own helper scripts import, this one watches three Maven coordinates because a hit against them is an argument for a toolchain bump.
+
+An input that is fetched but cannot be parsed, or whose URL 404s because upstream moved it, is reported as an upstream format change, never folded into a silent "nothing moved".
+A network-level failure reports nothing at all, since it is evidence of nothing.
+The same rule governs the tracking issue itself: the watcher creates one only on a *confirmed* absence, checked against the issue list rather than the eventually-consistent search index, because a duplicated tracking issue would split the watcher's only state store and needs a human to clean up.
+
+Run `python3 scripts/ci/prs-and-issues/watch_toolchain_bump.py --dry-run` to print the current observation without touching the tracking issue.
+That is also the quickest way to confirm the parsers still work after an upstream reformat.
+
 ## Performing a toolchain bump
 
 This covers a Gradle, AGP, KGP, or Compose-plugin bump.
@@ -118,6 +160,7 @@ A JDK change has a wider blast radius and is not covered here.
 1. Check the KGP compatibility row above, which binds on every bump this section covers.
    Add the CodeQL Kotlin ceiling check when the bump moves Kotlin, KGP, or the Kotlin compiler, per that section's own scope.
    Do this **before** editing any version, not after a red CI run.
+   The watcher's latest comment already carries the ceiling and the newest published KGP, but it does not read the compatibility row, so that part is still yours to do by hand.
 
 2. Edit the versions.
    The root `build.gradle.kts` holds the KGP buildscript classpath pin, the AGP plugin version, and the Compose plugin version, which moves in lockstep with KGP.

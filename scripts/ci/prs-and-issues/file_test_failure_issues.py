@@ -29,6 +29,7 @@ import defusedxml.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import NamedTuple
 import requests
 
 from github_headers import github_headers
@@ -255,6 +256,62 @@ _Filed automatically by CI on failure of `{failure.class_name}.{failure.method_n
 LABELS = ["test-failure"]
 
 
+class IssueLookup(NamedTuple):
+    """Result of a lookup_issue_by_title call.
+
+    Distinguishes three outcomes:
+      - Found:      fetch_ok=True,  number=<int>, state=<str>
+      - Not found:  fetch_ok=True,  number=None,  state=None
+      - API error:  fetch_ok=False, number=None,  state=None
+
+    Collapsing the last two into a bare None is safe for a dedup check, where
+    the cost of getting it wrong is a duplicate bug report.  It is not safe for
+    a caller that creates a singleton when nothing is found: a search that
+    failed is not evidence that the issue is absent, and acting on it duplicates
+    the singleton permanently.  post_pr_ci_summary_link.py's CommentLookup draws
+    the same distinction for the same reason.
+    """
+
+    fetch_ok: bool
+    number: int | None = None
+    state: str | None = None
+
+
+def lookup_issue_by_title(
+    token: str,
+    repository: str,
+    title: str,
+    label: str,
+) -> IssueLookup:
+    """Search open and closed issues for one labelled *label* whose title matches.
+
+    Kept separate from find_existing_issue so that a caller tracking something
+    other than a test failure (see watch_toolchain_bump.py, which keeps one
+    long-lived tracking issue) can reuse the lookup without inheriting the
+    test-failure title format or label.
+    """
+    # Omit is:open / is:closed so both states are searched.
+    query = f'repo:{repository} is:issue label:{label} "{title}" in:title'
+    url = "https://api.github.com/search/issues"
+    try:
+        resp = requests.get(
+            url,
+            headers=github_headers(token),
+            params={"q": query, "per_page": 1},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as exc:  # noqa: BLE001
+        print(f"  Warning: issue search failed: {exc}", file=sys.stderr)
+        return IssueLookup(fetch_ok=False)
+
+    items = data.get("items", [])
+    if items:
+        return IssueLookup(fetch_ok=True, number=items[0]["number"], state=items[0]["state"])
+    return IssueLookup(fetch_ok=True)
+
+
 def find_existing_issue(
     token: str,
     repository: str,
@@ -266,28 +323,22 @@ def find_existing_issue(
     Returns a (issue_number, state) tuple if found, else None.
     *state* is the string returned by the GitHub API, e.g. ``"open"`` or
     ``"closed"``.
+
+    A failed search is reported as None here, the same as no match.  For this
+    caller that is deliberate: a duplicate test-failure issue is noise that
+    archive_stale_test_failures.py eventually sweeps up, so the simpler return
+    type is worth it.  A caller that cannot tolerate a duplicate must use
+    lookup_issue_by_title and check fetch_ok.
     """
-    simple_class = class_name.split(".")[-1]
-    # Omit is:open / is:closed so both states are searched.
-    query = (
-        f'repo:{repository} is:issue label:test-failure "[{simple_class}] {method_name}" in:title'
+    lookup = lookup_issue_by_title(
+        token,
+        repository,
+        make_issue_title(class_name, method_name),
+        LABELS[0],
     )
-    url = "https://api.github.com/search/issues"
-    try:
-        resp = requests.get(
-            url,
-            headers=github_headers(token),
-            params={"q": query, "per_page": 1},
-            timeout=30,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        items = data.get("items", [])
-        if items:
-            return (items[0]["number"], items[0]["state"])
-    except Exception as exc:  # noqa: BLE001
-        print(f"  Warning: issue search failed: {exc}", file=sys.stderr)
-    return None
+    if lookup.number is None:
+        return None
+    return (lookup.number, lookup.state)
 
 
 def create_issue(
@@ -295,10 +346,14 @@ def create_issue(
     repository: str,
     title: str,
     body: str,
+    labels: list[str] | None = None,
 ) -> int | None:
-    """Create a new GitHub issue.  Returns the issue number or None on failure."""
+    """Create a new GitHub issue.  Returns the issue number or None on failure.
+
+    *labels* defaults to LABELS (the test-failure label).
+    """
     url = f"https://api.github.com/repos/{repository}/issues"
-    payload = {"title": title, "body": body, "labels": LABELS}
+    payload = {"title": title, "body": body, "labels": LABELS if labels is None else labels}
     try:
         resp = requests.post(url, headers=github_headers(token), json=payload, timeout=30)
         resp.raise_for_status()
