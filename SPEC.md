@@ -358,4 +358,5 @@ Non-Pixel devices running Pixel Camera ports would not be covered.
 This approach combines the precision of AccessibilityService detection with the zero-permission simplicity of a static database, at the cost of a build-time maintenance process that can be largely automated.
 
 <!-- Verify #828 commit 1: this PR touches no agents path; the "agents" label is added by hand next. -->
+<!-- Verify #828 commit 2: synchronize push to trigger the DELETE of the manually-added "agents" label. -->
 
