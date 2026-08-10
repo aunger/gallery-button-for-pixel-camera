@@ -168,6 +168,23 @@ Findings block the PR.
 The engine is installed from `scripts/ci/requirements-semgrep.txt`, a hash-pinned lock (top-level pin in `scripts/ci/requirements-semgrep.in`), with `--require-hashes` (issue #723); the rulesets are still fetched from the Semgrep registry at scan time, so the weekly run keeps picking up new rules.
 Regenerate the lock with the `uv pip compile` command recorded in that `.in` file's header.
 
+### Requirements audit (CI only)
+
+`.github/workflows/dependency-audit.yml` runs `scripts/ci/audit_requirements.py` on PRs, on pushes to `main`, and weekly.
+It discovers every `scripts/**/requirements*.txt` and runs `pip-audit` over the pins in each, so a lock added later is audited without being registered anywhere (issue #804).
+That covers all four locks: the two the session-start hook installs, the semgrep engine's, and the auditor's own.
+
+`pip-audit` installs from `scripts/ci/requirements-audit.txt`, a hash-pinned lock of its own (top-level pin in `scripts/ci/requirements-audit.in`).
+It is deliberately CI-only, like the semgrep engine above and unlike the two locks in the section below, so it is not provisioned for sessions and `scripts/install-pinned-requirements.sh` does not install it.
+Keeping it out of `scripts/lint/requirements-lint.in` keeps its 29-package closure out of every session and out of the four CI steps that install the lint lock.
+
+The check fails on any finding without an entry in `scripts/ci/requirements-audit-ignore.toml`, and equally on any entry in that file that is *no longer* reported.
+The second half is the point: a stale entry usually means an upstream cap lifted, which is when the reasoning it records needs re-reading.
+Entries are per-lock and must state both why the finding is tolerated and what would make the entry unnecessary; see the file's header.
+This list is not the Dependabot dismissal list and is not kept in sync with it--the two advisory databases do not carry the same set.
+
+Take a fix by regenerating the affected lock with `--upgrade` (see the note in each `.in` file header), not by adding an ignore entry.
+
 ______________________________________________________________________
 
 ## Python helper-script dependencies

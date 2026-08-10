@@ -234,7 +234,10 @@ fi
 # Both lists are read from the files themselves, so a lock added to build.yml has
 # to be provisioned for sessions too. Only build.yml is compared: it is the
 # workflow that runs the test suites a session is expected to reproduce, whereas
-# semgrep.yml installs an engine that is deliberately CI-only.
+# semgrep.yml and dependency-audit.yml each install a tool that is deliberately
+# CI-only (the semgrep engine and pip-audit, issue #804). A new workflow that
+# installs a lock belongs in this comparison only if a session is expected to
+# run what it runs.
 echo ""
 echo "=== (h) every lock CI installs to run the tests is installed for sessions ==="
 CI_LOCKS="$(sed 's/#.*$//' "$REPO_ROOT/.github/workflows/build.yml" \

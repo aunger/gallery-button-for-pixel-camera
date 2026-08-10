@@ -1,0 +1,62 @@
+name: Dependency audit
+
+# pip-audit over every hash-pinned requirements lock in the repo (issue #804).
+#
+# The locks are pinned hard and installed with --require-hashes (issue #723),
+# which is what makes them go quietly stale: a dependency ships a fix and the
+# pin keeps the old version indefinitely. Nothing here noticed when
+# cryptography 49.0.0 picked up a HIGH advisory, and it sat for a week while
+# attention went to a different, unfixable finding in the same lock
+# (issue #788, PR #801).
+#
+# This is a separate workflow rather than a fifth job in lint.yml, which is
+# otherwise the natural home: the failure mode is a new advisory published
+# against an unchanged lock, which no PR causes, so the schedule below is the
+# primary trigger rather than an extra. lint.yml has no schedule, and giving it
+# one would also run ruff, mdformat, ktlint and the hygiene checks weekly
+# against pinned tools and an unchanged tree, where they are a guaranteed
+# no-op. Security scanning with a weekly cron already lives in its own
+# workflow here (semgrep.yml); this follows that shape.
+#
+# The PR and push triggers still carry most of the value: they catch a lock
+# that arrives with a known-vulnerable pin, on the PR that introduces it. The
+# schedule bounds how long a newly-published advisory can sit unnoticed during
+# a quiet period.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly on Monday at 09:00 UTC, an hour after semgrep.yml, to catch
+    # advisories published against a lock no PR has touched.
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pip-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+
+      - name: Install pip-audit
+        # --require-hashes refuses any artifact whose SHA-256 is not in the
+        # generated lock scripts/ci/requirements-audit.txt (issue #723; see
+        # scripts/ci/requirements-audit.in for the top-level pin).
+        run: pip install --require-hashes -r scripts/ci/requirements-audit.txt
+
+      - name: Audit requirements locks
+        # Discovers every scripts/**/requirements*.txt, including its own lock,
+        # so a lock added later is audited without registering it anywhere.
+        # Fails on any finding that is not justified in
+        # scripts/ci/requirements-audit-ignore.toml, and equally on any entry
+        # in that file that is no longer reported.
+        run: python3 scripts/ci/audit_requirements.py
