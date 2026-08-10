@@ -1,0 +1,43 @@
+# App-runtime CVE coverage for the dependencies declared directly in
+# app/build.gradle.kts (issue #819, a follow-on suggestion from PR #812's
+# "Follow-up suggestions" section).
+#
+# #803 looked at general CVE scanning over the whole resolved dependency
+# graph (gradle/verification-metadata.xml, 585 artifacts) and recommended
+# against it: none of the 20 flagged artifacts at the time were declared app
+# dependencies, all 20 arrived transitively through Gradle/AGP build tooling
+# that never ships in the APK, and that toolchain gets its own, narrower
+# coverage separately: PR #812 adds a report-only watch
+# (scripts/ci/prs-and-issues/watch_toolchain_bump.py) over exactly those
+# toolchain coordinates, on top of the manual bump procedure in
+# gradle/README.md. #803's conclusion: "If app-runtime CVE coverage is
+# wanted, that is Dependabot over app/build.gradle.kts, a separate piece of
+# work from this one."
+#
+# directory is "/app", not "/", so this does not touch the root
+# build.gradle.kts toolchain pins (the Gradle/AGP/KGP versions), which
+# gradle/README.md documents as deliberately un-automated: any bump there
+# also needs a KGP-compatibility-row check, a CodeQL Kotlin ceiling check,
+# and a gradle/verification-metadata.xml regeneration, none of which
+# Dependabot performs.
+#
+# That last point still applies within app/: every dependency version bump
+# changes which artifacts Gradle resolves, so gradle/verification-metadata.xml
+# needs the same manual regeneration (scripts/regenerate-gradle-verification.sh)
+# on top of any Dependabot pull request here before its CI can pass. Dependabot
+# cannot do that step itself; a human pushes the regenerated file onto the
+# Dependabot branch, the same as any other dependency bump in this repo.
+#
+# Weekly on Monday, offset an hour past dependency-audit.yml's 09:00 UTC
+# Monday cron (which is itself offset from semgrep.yml's 08:00), so the three
+# don't land in the same CI-minute window.
+
+version: 2
+updates:
+  - package-ecosystem: "gradle"
+    directory: "/app"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "10:00"
+      timezone: "UTC"
