@@ -122,7 +122,9 @@ What it tracks:
 - The highest stable `org.jetbrains.kotlin:kotlin-gradle-plugin` version published to Maven Central.
   The `<latest>` and `<release>` elements of `maven-metadata.xml` are not used, because Kotlin sets both to the newest upload, which is routinely a Beta or RC.
 - The CodeQL Kotlin upper bound, by executing the two-step procedure under "CodeQL Kotlin ceiling" above, including reading the `codeql-action` ref out of `codeql.yml` rather than assuming it is still `v4`.
-- Whether OSV reports an advisory against `org.gradle:gradle-core`, `com.android.tools.build:gradle`, or `org.jetbrains.kotlin:kotlin-gradle-plugin` at the versions this tree pins.
+- Whether OSV reports an advisory against `org.gradle:gradle-core`, `com.android.tools.build:gradle`, `org.jetbrains.kotlin:kotlin-gradle-plugin`, or `org.jetbrains.kotlin:kotlin-stdlib` at the versions this tree pins.
+  The last is queried at the KGP pin alongside `kotlin-gradle-plugin` itself (#820): `kotlin-gradle-plugin` has never carried an OSV advisory, and Kotlin's advisories are filed against `kotlin-stdlib` instead, which Kotlin releases at the same version.
+  No comparable companion coordinate is known for AGP, so it stays a single coordinate.
 
 Every version it compares against is read out of the tree (`gradle-wrapper.properties`, `build.gradle.kts`, `codeql.yml`), so a bump does not also require editing the watcher, and the watcher cannot quietly compare against a stale pin.
 
@@ -135,10 +137,10 @@ What it deliberately does not do:
 - **It does not scan the whole dependency graph for CVEs.**
   `verification-metadata.xml` pins the build graph, not what ships in the APK, so a scan over it says nothing about the app; every advisory it finds today arrives transitively through Gradle and AGP build tooling, and none through a declared dependency.
   A weekly report of the same few dozen standing build-tool advisories would train everyone to ignore the job, which is the same failure mode as an open issue that is not really actionable.
-  The three toolchain coordinates are different: a hit there is directly actionable, and is a reason to bump that overrides the standing lack of urgency.
+  The pinned toolchain coordinates are different: a hit there is directly actionable, and is a reason to bump that overrides the standing lack of urgency.
   App-runtime CVE coverage would be Dependabot over `app/build.gradle.kts`, which is separate work; there is no `.github/dependabot.yml` here today.
   This is also not the repo's general advisory scan: `.github/workflows/dependency-audit.yml` runs `pip-audit` weekly over every hash-pinned Python lock under `scripts/` (issue #804).
-  The two do not overlap, and neither subsumes the other; that one watches what CI's own helper scripts import, this one watches three Maven coordinates because a hit against them is an argument for a toolchain bump.
+  The two do not overlap, and neither subsumes the other; that one watches what CI's own helper scripts import, this one watches the Maven coordinates tied to the pinned toolchain because a hit against them is an argument for a toolchain bump.
 
 An input that is fetched but cannot be parsed, or whose URL 404s because upstream moved it, is reported as an upstream format change, never folded into a silent "nothing moved".
 A network-level failure reports nothing at all, since it is evidence of nothing.

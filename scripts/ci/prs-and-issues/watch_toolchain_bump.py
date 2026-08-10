@@ -31,12 +31,19 @@ Two facts are tracked, and a comment is posted only when the pair changes:
     the Kotlin row of ``docs/codeql/reusables/supported-versions-compilers.rst`` in
     ``github/codeql`` at tag ``codeql-cli/v<cliVersion>``.
 
-Alongside those, OSV is queried for the three toolchain coordinates this repository pins, at the
-versions it pins them to.  That narrowness is the point.  Scanning every artifact in
-`gradle/verification-metadata.xml` measures the build graph rather than the APK, and reports the
-same few dozen standing build-tool advisories forever, which trains the reader to ignore the job.
-An advisory against one of the three pins is a different thing: it is directly actionable, and it
-is a reason to bump that overrides the standing "no urgency" default.
+Alongside those, OSV is queried for the Maven coordinates tied to the three toolchain pins this
+repository holds, at the versions each pin resolves to.  Narrowness to the pinned toolchain is the
+point.  Scanning every artifact in `gradle/verification-metadata.xml` measures the build graph
+rather than the APK, and reports the same few dozen standing build-tool advisories forever, which
+trains the reader to ignore the job.  An advisory against one of the pinned coordinates is a
+different thing: it is directly actionable, and it is a reason to bump that overrides the standing
+"no urgency" default.
+
+A pin's own build-plugin coordinate is not always where its advisories are filed.
+`org.jetbrains.kotlin:kotlin-gradle-plugin` has never itself carried an OSV advisory; Kotlin's
+advisories are filed against `org.jetbrains.kotlin:kotlin-stdlib` instead, which Kotlin releases
+at the same version as KGP, so both are queried for the KGP pin (#820).  No such companion
+coordinate is known for AGP, so it stays a single coordinate.
 
 State lives in this script's own most recent comment on the tracking issue, embedded in an HTML
 comment.  There is no state file, so the workflow needs no ``contents: write``.
@@ -118,7 +125,10 @@ The watcher tracks two facts and comments only when one of them changes:
    Central.
 2. The CodeQL Kotlin upper bound, computed by executing the procedure in `gradle/README.md`.
 
-It also queries OSV for the three toolchain coordinates this repository pins.
+It also queries OSV for the Maven coordinates tied to the three toolchain pins this repository
+holds, including a companion coordinate where a pin's own build-plugin coordinate is a null OSV
+channel (Kotlin's advisories are filed against `org.jetbrains.kotlin:kotlin-stdlib`, not
+`kotlin-gradle-plugin`).
 
 The KGP compatibility table on kotlinlang.org is not scraped: it has no machine-readable form,
 and applying it needs judgment.  A new stable KGP release is the event that can move the row, so
@@ -157,14 +167,29 @@ CODEQL_SUPPORTED_VERSIONS_URL = (
 
 OSV_QUERY_URL = "https://api.osv.dev/v1/query"
 
-# The three coordinates whose advisories would be directly actionable, keyed by the pin they are
-# read from.  Gradle itself is not published to Maven Central as a single "gradle" artifact;
-# org.gradle:gradle-core is the coordinate OSV advisories against the Gradle build tool are filed
-# under.
-COORDINATE_BY_PIN: dict[str, str] = {
-    "gradle": "org.gradle:gradle-core",
-    "agp": "com.android.tools.build:gradle",
-    "kgp": "org.jetbrains.kotlin:kotlin-gradle-plugin",
+# The coordinates whose advisories would be directly actionable, keyed by the pin each is read
+# from and queried at.  Gradle itself is not published to Maven Central as a single "gradle"
+# artifact; org.gradle:gradle-core is the coordinate OSV advisories against the Gradle build tool
+# are filed under.
+#
+# #820 widened this list beyond one coordinate per pin, since a pin's own build-plugin coordinate
+# is not always where its advisories live.  org.jetbrains.kotlin:kotlin-gradle-plugin has never
+# itself carried an OSV advisory (queried package-wide, no version filter, both here and by the
+# #812 reviewer); Kotlin's advisories (for example GHSA-2qp4-g3q3-f92w, GHSA-cqj8-47ch-rvvq) are
+# filed against org.jetbrains.kotlin:kotlin-stdlib instead.  Kotlin releases stdlib at the same
+# version as KGP, so it is queried at the KGP pin alongside kotlin-gradle-plugin itself.
+#
+# No comparable companion coordinate was found for AGP: com.android.tools.build:gradle and every
+# other com.android.tools(.build) artifact checked while widening this list (gradle-api, builder,
+# aapt2, apksig, manifest-merger, sdk-common, bundletool, and more) have never carried an OSV
+# advisory either, so the AGP channel stays a single coordinate until a real one turns up.
+COORDINATES_BY_PIN: dict[str, list[str]] = {
+    "gradle": ["org.gradle:gradle-core"],
+    "agp": ["com.android.tools.build:gradle"],
+    "kgp": [
+        "org.jetbrains.kotlin:kotlin-gradle-plugin",
+        "org.jetbrains.kotlin:kotlin-stdlib",
+    ],
 }
 
 HUMAN_PIN_NAME: dict[str, str] = {
@@ -480,11 +505,12 @@ def collect_state(repo_root: Path) -> dict:
     # A coordinate whose query failed is recorded as None, not as an empty list: "we could not
     # ask" must not render as "no advisories", which is what every other unreadable fact does.
     advisories: dict[str, list[str] | None] = {}
-    for pin, coordinate in COORDINATE_BY_PIN.items():
+    for pin, coordinates in COORDINATES_BY_PIN.items():
         version = pinned.get(pin)
         if not version:
             continue
-        advisories[f"{coordinate}@{version}"] = _collect(errors, query_osv, coordinate, version)
+        for coordinate in coordinates:
+            advisories[f"{coordinate}@{version}"] = _collect(errors, query_osv, coordinate, version)
 
     return {
         "pinned": pinned,
@@ -653,7 +679,7 @@ def _pinned_cell(pinned: dict | None) -> str:
         return _UNKNOWN
     return ", ".join(
         f"{HUMAN_PIN_NAME.get(pin, pin)} {pinned[pin]}"
-        for pin in COORDINATE_BY_PIN
+        for pin in COORDINATES_BY_PIN
         if pin in pinned
     )
 
