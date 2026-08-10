@@ -486,6 +486,22 @@ class TestCollectState(unittest.TestCase):
         self.assertEqual(mock_osv.call_count, 0)
         self.assertEqual(state["toolchain_advisories"], {})
 
+    def test_colliding_coordinate_version_key_is_guarded(self):
+        """#838: a future pin whose coordinate coincides with another pin's coordinate at the
+        same version must not silently overwrite that pin's advisory record."""
+        colliding = {
+            "gradle": ["org.gradle:gradle-core"],
+            "agp": ["org.gradle:gradle-core"],
+        }
+        with patch.object(wtb, "COORDINATES_BY_PIN", colliding):
+            with patch.object(
+                wtb, "read_pinned_versions", return_value={"gradle": "9.5.1", "agp": "9.5.1"}
+            ):
+                with patch.object(wtb, "fetch_text", side_effect=self._fake_fetch()):
+                    with patch.object(wtb, "query_osv", return_value=[]):
+                        with self.assertRaises(AssertionError):
+                            wtb.collect_state(self.root)
+
 
 # ---------------------------------------------------------------------------
 # State round-trip through comments
