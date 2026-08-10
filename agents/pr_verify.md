@@ -48,10 +48,16 @@ The workflow must run on a real PR; you cannot mock it.
    Creating the test branch from it ensures the workflow runs from the correct version.
 2. Create a test branch from the feature branch:
    `git checkout -b test/verify-pr-{N}-{short-description} origin/{feature-branch}`
-3. Push the test branch.
-4. Open a test PR (base: `main`) with a description that names the items under test and states "Do not merge."
+3. Give the test branch one distinguishing commit, so that it does not share a head commit with the PR under test:
+   `git commit --allow-empty -m "Distinguish this test branch from PR #{N}'s head"`
+   An empty commit is enough; it changes no file, so the workflow under test still runs from the version on the feature branch.
+   Do this before the test PR exists, so it produces no `synchronize` event.
+   Check runs are stored against a head commit rather than against a pull request, so two open PRs at the same commit share one set of check runs and overwrite each other's results (issue #833).
+   The PR under test is mid-verification and normally carries `verification needed`, which is exactly the state the "No blocking labels" gate exists to hold, so sharing its head commit is the worst case for that collision.
+4. Push the test branch.
+5. Open a test PR (base: `main`) with a description that names the items under test and states "Do not merge."
    The PR creation event is `opened`, which does not trigger `pull_request: synchronize` or `pull_request: reopened` workflows; that is intentional.
-5. Note the test PR number for later cleanup.
+6. Note the test PR number for later cleanup.
 
 ### Trigger workflow events
 

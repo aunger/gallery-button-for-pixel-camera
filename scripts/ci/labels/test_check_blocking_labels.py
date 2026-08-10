@@ -1,0 +1,326 @@
+#!/usr/bin/env python3
+"""Unit tests for check_blocking_labels.py."""
+
+import io
+import json
+import os
+import sys
+import unittest
+import urllib.error
+from contextlib import redirect_stderr, redirect_stdout
+from unittest.mock import patch
+
+import yaml
+
+_LABELS_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _LABELS_DIR)
+import check_blocking_labels as cbl  # noqa: E402
+
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(_LABELS_DIR)))
+_WORKFLOW_PATH = os.path.join(
+    _REPO_ROOT, ".github", "workflows", "block-merge-on-blocking-labels.yml"
+)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+_SHA = "43a3ce7" + "0" * 33
+_OTHER_SHA = "b" * 40
+
+
+def _pr(number: int, labels: list[str], head_sha: str = _SHA) -> dict:
+    """Build the subset of a GitHub pull request object this script reads."""
+    return {
+        "number": number,
+        "head": {"sha": head_sha},
+        "labels": [{"name": lbl} for lbl in labels],
+    }
+
+
+def _env(
+    pr_number: int = 808,
+    pr_state: str = "open",
+    pr_labels: list[str] | None = None,
+    head_sha: str = _SHA,
+) -> dict[str, str]:
+    return {
+        "GITHUB_TOKEN": "tok",
+        "GITHUB_REPOSITORY": "aunger/gallery-button-for-pixel-camera",
+        "HEAD_SHA": head_sha,
+        "PR_NUMBER": str(pr_number),
+        "PR_STATE": pr_state,
+        "PR_LABELS": json.dumps(pr_labels if pr_labels is not None else []),
+    }
+
+
+def _run_main(env: dict[str, str], pages: list[list[dict]] | Exception) -> tuple[int, str]:
+    """Run main() with *env* and a gh_api that serves *pages* (or raises).
+
+    Returns (exit code, combined stdout+stderr).
+    """
+    out, err = io.StringIO(), io.StringIO()
+    side_effect = pages if isinstance(pages, Exception) else list(pages)
+    with patch.dict(os.environ, env, clear=True):
+        with patch.object(cbl.emxl, "gh_api", side_effect=side_effect):
+            with redirect_stdout(out), redirect_stderr(err):
+                code = cbl.main()
+    return code, out.getvalue() + err.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# blocking_labels_in
+# ---------------------------------------------------------------------------
+
+
+class TestBlockingLabelsIn(unittest.TestCase):
+    def test_no_labels_is_not_blocking(self):
+        self.assertEqual(cbl.blocking_labels_in([]), [])
+
+    def test_non_blocking_labels_are_ignored(self):
+        self.assertEqual(cbl.blocking_labels_in(["ci", "p1", "verified", "orchestrate"]), [])
+
+    def test_each_blocking_label_is_detected(self):
+        for label in ("verification needed", "changes requested", "changes done", "orchestrating"):
+            with self.subTest(label=label):
+                self.assertEqual(cbl.blocking_labels_in(["ci", label]), [label])
+
+    def test_matching_is_case_insensitive(self):
+        self.assertEqual(cbl.blocking_labels_in(["Verification Needed"]), ["verification needed"])
+
+    def test_multiple_blocking_labels_are_sorted_and_deduplicated(self):
+        found = cbl.blocking_labels_in(["orchestrating", "changes done", "ORCHESTRATING"])
+        self.assertEqual(found, ["changes done", "orchestrating"])
+
+
+# ---------------------------------------------------------------------------
+# fetch_open_prs_at_head
+# ---------------------------------------------------------------------------
+
+
+class TestFetchOpenPrsAtHead(unittest.TestCase):
+    """What this function adds to the shared listing helper is the head-sha filter.
+
+    The pagination it inherits is asserted against
+    emxl.fetch_open_pull_requests in test_enforce_mutually_exclusive_labels.py,
+    which is where that contract lives.
+    """
+
+    def test_reads_the_open_pr_listing_and_keeps_only_prs_headed_by_the_commit(self):
+        page = [_pr(808, []), _pr(900, [], head_sha=_OTHER_SHA), _pr(832, [])]
+        with patch.object(cbl.emxl, "gh_api", side_effect=[page]) as gh_api:
+            found = cbl.fetch_open_prs_at_head("o/r", "tok", _SHA)
+        self.assertEqual([pr["number"] for pr in found], [808, 832])
+        self.assertIn("state=open", gh_api.call_args[0][0])
+
+
+# ---------------------------------------------------------------------------
+# main
+# ---------------------------------------------------------------------------
+
+
+class TestMain(unittest.TestCase):
+    def test_passes_when_no_pr_at_the_commit_is_blocked(self):
+        code, output = _run_main(_env(pr_labels=["ci"]), [[_pr(808, ["ci"])]])
+        self.assertEqual(code, 0)
+        self.assertIn("OK: No blocking labels are present.", output)
+
+    def test_fails_when_the_triggering_pr_is_blocked(self):
+        code, output = _run_main(
+            _env(pr_labels=["verification needed"]),
+            [[_pr(808, ["verification needed"])]],
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("ERROR: This PR has a blocking label: verification needed", output)
+
+    def test_fails_when_a_sibling_pr_at_the_same_commit_is_blocked(self):
+        """Issue #833: a clean test PR must not answer the gate for a blocked sibling.
+
+        PR #832 was opened from #808's head, so both check runs land on the
+        same commit. Evaluating #832's labels alone reported success and
+        unblocked #808 while it still carried `verification needed`.
+        """
+        code, output = _run_main(
+            _env(pr_number=832, pr_labels=[]),
+            [[_pr(808, ["verification needed"]), _pr(832, [])]],
+        )
+        self.assertEqual(code, 1)
+        self.assertIn(
+            "ERROR: PR #808, which shares this head commit, has a blocking label:"
+            " verification needed",
+            output,
+        )
+
+    def test_a_blocked_pr_at_a_different_commit_does_not_block(self):
+        code, output = _run_main(
+            _env(pr_labels=[]),
+            [[_pr(808, []), _pr(900, ["orchestrating"], head_sha=_OTHER_SHA)]],
+        )
+        self.assertEqual(code, 0)
+        self.assertIn("OK: No blocking labels are present.", output)
+
+    def test_reports_every_blocked_pr_at_the_commit(self):
+        code, output = _run_main(
+            _env(pr_number=832, pr_labels=["changes done"]),
+            [[_pr(808, ["orchestrating"]), _pr(832, ["changes done"])]],
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("ERROR: This PR has a blocking label: changes done", output)
+        self.assertIn(
+            "ERROR: PR #808, which shares this head commit, has a blocking label: orchestrating",
+            output,
+        )
+
+    def test_a_closed_triggering_pr_does_not_block_its_open_sibling(self):
+        """A closed PR cannot merge, so labeling it must not block a sibling.
+
+        Its labels arrive in the event payload (`labeled` fires on closed PRs
+        too) but it is absent from the open-PR listing.
+
+        This is also the `closed` event's own run: closing the PR that was
+        blocking the commit re-evaluates it with that PR gone from both
+        sources, which is what retires the failing run it earned. Without the
+        `closed` trigger nothing would re-run, and #808 would stay blocked
+        with no blocking label applied anywhere.
+        """
+        code, output = _run_main(
+            _env(pr_number=832, pr_state="closed", pr_labels=["orchestrating"]),
+            [[_pr(808, [])]],
+        )
+        self.assertEqual(code, 0)
+        self.assertIn("OK: No blocking labels are present.", output)
+
+    def test_a_closed_triggering_pr_is_excluded_even_when_the_listing_lags(self):
+        """The `closed` recovery must not depend on the listing having caught up.
+
+        A `closed` event is the last one the commit will see, so a run that
+        still found the closing PR in `GET /pulls?state=open` would leave the
+        failing verdict that PR earned as the newest run on the commit, with a
+        sibling blocked by a label nothing carries. The payload's state
+        decides, and the listing's copy of the same PR is dropped by number.
+        """
+        code, output = _run_main(
+            _env(pr_number=832, pr_state="closed", pr_labels=["orchestrating"]),
+            [[_pr(808, []), _pr(832, ["orchestrating"])]],
+        )
+        self.assertEqual(code, 0)
+        self.assertIn("OK: No blocking labels are present.", output)
+        self.assertIn(f"Open pull request(s) whose head is {_SHA}: #808.", output)
+
+    def test_a_closed_triggering_pr_is_still_blocked_by_an_open_sibling(self):
+        """Closing a PR retires only its own labels, not a sibling's."""
+        code, output = _run_main(
+            _env(pr_number=832, pr_state="closed", pr_labels=[]),
+            [[_pr(808, ["orchestrating"])]],
+        )
+        self.assertEqual(code, 1)
+        self.assertIn(
+            "ERROR: PR #808, which shares this head commit, has a blocking label: orchestrating",
+            output,
+        )
+
+    def test_payload_labels_block_even_if_the_listing_is_stale(self):
+        """The verdict is never weaker about the triggering PR than the payload."""
+        code, output = _run_main(_env(pr_labels=["changes requested"]), [[]])
+        self.assertEqual(code, 1)
+        self.assertIn("ERROR: This PR has a blocking label: changes requested", output)
+
+    def test_listing_labels_block_even_if_the_payload_is_stale(self):
+        """A label applied after the event fired still blocks the same PR.
+
+        Without the listing's copy of the triggering PR, a run whose event has
+        been superseded would report a clean commit. The same path is what can
+        blame this PR for a label a lagging listing still shows after removal,
+        which is the third log shape agents/dev_orchestration.md's
+        `labelGateBlock` branch teaches the Orchestrator to recognize.
+        """
+        code, output = _run_main(_env(pr_labels=[]), [[_pr(808, ["orchestrating"])]])
+        self.assertEqual(code, 1)
+        self.assertIn("ERROR: This PR has a blocking label: orchestrating", output)
+
+    def test_lists_the_prs_at_the_commit(self):
+        _, output = _run_main(
+            _env(pr_number=832, pr_labels=[]),
+            [[_pr(808, []), _pr(832, [])]],
+        )
+        self.assertIn(f"Open pull request(s) whose head is {_SHA}: #808, #832.", output)
+
+    def test_fails_closed_when_the_api_call_fails(self):
+        error = urllib.error.HTTPError(url=None, code=500, msg="boom", hdrs=None, fp=None)
+        code, output = _run_main(_env(pr_labels=[]), error)
+        self.assertEqual(code, 1)
+        self.assertIn("Error listing open pull requests", output)
+        self.assertIn("treated as blocked", output)
+
+    def test_fails_when_a_required_variable_is_missing(self):
+        for name in (
+            "GITHUB_TOKEN",
+            "GITHUB_REPOSITORY",
+            "HEAD_SHA",
+            "PR_NUMBER",
+            "PR_STATE",
+            "PR_LABELS",
+        ):
+            with self.subTest(missing=name):
+                env = _env()
+                del env[name]
+                code, output = _run_main(env, [])
+                self.assertEqual(code, 1)
+                self.assertIn(name, output)
+
+    def test_fails_when_pr_number_is_not_an_integer(self):
+        env = _env()
+        env["PR_NUMBER"] = "not-a-number"
+        code, output = _run_main(env, [])
+        self.assertEqual(code, 1)
+        self.assertIn("PR_NUMBER is not a valid integer", output)
+
+    def test_fails_when_pr_labels_is_not_json(self):
+        env = _env()
+        env["PR_LABELS"] = "verification needed"
+        code, output = _run_main(env, [])
+        self.assertEqual(code, 1)
+        self.assertIn("PR_LABELS is not a JSON array", output)
+
+
+# ---------------------------------------------------------------------------
+# Workflow wiring
+# ---------------------------------------------------------------------------
+
+
+class TestWorkflowTriggers(unittest.TestCase):
+    """The script's verdict only reaches the commit when an event re-runs it.
+
+    Every source the script reads can change without the PR that fired the
+    last run being touched, so the trigger list is part of this gate's
+    behavior rather than incidental configuration.
+    """
+
+    def _trigger_types(self) -> set[str]:
+        with open(_WORKFLOW_PATH, encoding="utf-8") as f:
+            workflow = yaml.safe_load(f)
+        # YAML 1.1 resolves a bare `on` key to the boolean True, which is what
+        # PyYAML hands back for a GitHub workflow's trigger block.
+        triggers = workflow[True] if True in workflow else workflow["on"]
+        return set(triggers["pull_request"]["types"])
+
+    def test_every_event_that_can_change_the_verdict_is_a_trigger(self):
+        self.assertEqual(
+            self._trigger_types(),
+            {"opened", "reopened", "synchronize", "labeled", "unlabeled", "closed"},
+        )
+
+    def test_closed_is_a_trigger(self):
+        """Closing a blocked PR must re-evaluate the commit it was blocking.
+
+        The failing check run a PR earned is stored on the commit and stays
+        the most recent run of this check there after the PR is closed, so
+        without this event a sibling stays blocked with no blocking label
+        applied anywhere and no automatic way out.
+        """
+        self.assertIn("closed", self._trigger_types())
+
+
+if __name__ == "__main__":
+    unittest.main()

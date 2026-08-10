@@ -183,6 +183,69 @@ class TestIsTransientError(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# fetch_open_pull_requests tests
+# ---------------------------------------------------------------------------
+
+
+def _pull(number: int) -> dict:
+    """A pull request object with enough shape for a caller to project from."""
+    return {"number": number, "head": {"sha": f"{number:040d}"}, "labels": []}
+
+
+class TestFetchOpenPullRequests(unittest.TestCase):
+    """Tests for the listing helper shared by check_blocking_labels and
+    reconcile_issue_labels.
+
+    Both callers inherit the pagination contract asserted here, so it is
+    asserted once against the helper rather than once per caller.
+    """
+
+    def test_returns_the_raw_objects_so_callers_can_project_them(self):
+        page = [_pull(808), _pull(832)]
+        with patch.object(emxl, "gh_api", side_effect=[page]):
+            found = emxl.fetch_open_pull_requests("o/r", "tok")
+        self.assertEqual(found, page)
+
+    def test_requests_open_pull_requests_a_full_page_at_a_time(self):
+        with patch.object(emxl, "gh_api", side_effect=[[_pull(808)]]) as gh_api:
+            emxl.fetch_open_pull_requests("o/r", "tok")
+        path = gh_api.call_args[0][0]
+        self.assertEqual(path, f"repos/o/r/pulls?state=open&per_page={emxl.PULLS_PER_PAGE}&page=1")
+        self.assertEqual(gh_api.call_args.kwargs["token"], "tok")
+
+    def test_a_short_first_page_costs_one_call(self):
+        with patch.object(emxl, "gh_api", side_effect=[[_pull(808)]]) as gh_api:
+            found = emxl.fetch_open_pull_requests("o/r", "tok")
+        self.assertEqual([pr["number"] for pr in found], [808])
+        self.assertEqual(gh_api.call_count, 1)
+
+    def test_paginates_until_a_short_page(self):
+        full_page = [_pull(n) for n in range(emxl.PULLS_PER_PAGE)]
+        with patch.object(emxl, "gh_api", side_effect=[full_page, [_pull(808)]]) as gh_api:
+            found = emxl.fetch_open_pull_requests("o/r", "tok")
+        self.assertEqual(len(found), emxl.PULLS_PER_PAGE + 1)
+        self.assertEqual(gh_api.call_count, 2)
+        self.assertIn("page=2", gh_api.call_args[0][0])
+
+    def test_paginates_until_an_empty_page_when_the_last_page_is_exactly_full(self):
+        full_page = [_pull(n) for n in range(emxl.PULLS_PER_PAGE)]
+        with patch.object(emxl, "gh_api", side_effect=[full_page, []]) as gh_api:
+            found = emxl.fetch_open_pull_requests("o/r", "tok")
+        self.assertEqual(len(found), emxl.PULLS_PER_PAGE)
+        self.assertEqual(gh_api.call_count, 2)
+
+    def test_no_open_pull_requests_yields_an_empty_list(self):
+        with patch.object(emxl, "gh_api", side_effect=[[]]) as gh_api:
+            self.assertEqual(emxl.fetch_open_pull_requests("o/r", "tok"), [])
+        self.assertEqual(gh_api.call_count, 1)
+
+    def test_an_api_error_propagates_to_the_caller(self):
+        with patch.object(emxl, "gh_api", side_effect=_http_error(403)):
+            with self.assertRaises(urllib.error.HTTPError):
+                emxl.fetch_open_pull_requests("o/r", "tok")
+
+
+# ---------------------------------------------------------------------------
 # find_conflicting_set tests
 # ---------------------------------------------------------------------------
 

@@ -1,7 +1,8 @@
 name: Block merge when a blocking label is present
 
-# Fails the required status check whenever the PR carries any blocking label,
-# preventing merge until the label is removed.
+# Fails the required status check whenever a blocking label is present on any
+# open PR whose head is this commit, preventing merge until the label is
+# removed.
 #
 # Blocking labels:
 #   - verification needed
@@ -9,35 +10,61 @@ name: Block merge when a blocking label is present
 #   - changes done
 #   - orchestrating
 #
-# Triggers on the full set of PR events so the check always reflects the
-# current label state:
+# The question is asked about the *commit*, not about the PR that fired the
+# event, because that is what the answer is stored against: a check run
+# attaches to a head commit, and GitHub evaluates a required check by taking
+# the most recent run of that check name on that commit, regardless of which
+# PR produced it. Reading only github.event.pull_request.labels therefore let
+# two open PRs sharing a head commit answer for each other, and
+# agents/pr_verify.md's live-fire recipe manufactured exactly that collision
+# on PRs that were mid-verification (issue #833). See
+# scripts/ci/labels/check_blocking_labels.py for the full rationale and for
+# what the script does with the event payload.
+#
+# Every event that can change a commit's verdict, and that fires a run against
+# that commit, is a trigger. Both halves are narrower than "all pull_request
+# events", so this list is not the full set and does not keep every stored
+# verdict current:
+#   - `edited`, `ready_for_review`, `converted_to_draft` and the rest cannot
+#     change the verdict, so they are deliberately absent.
+#   - A force-push does change the set of PRs at the commit it leaves behind,
+#     but the run it fires lands on the pusher's new head, so the abandoned
+#     commit keeps the verdict it already had. That is the `closed` case below
+#     without an event that can fix it, and it is not addressed here.
+#
+# The events that are listed:
 #   - opened / reopened / synchronize: ensure fresh PRs are blocked from the start.
 #   - labeled / unlabeled: re-evaluate immediately when the label changes.
+#   - closed: closing a PR removes it from the set the script considers, so
+#     closing one can be exactly what unblocks a commit. The gate's observable
+#     state is the stored check run rather than any one script run, so without
+#     this event the failing run a since-closed PR earned would remain the most
+#     recent run on the commit and would keep its siblings blocked with no
+#     blocking label applied anywhere and no automatic way out. Recovery would
+#     mean re-running the job by hand, toggling a label, or pushing a commit.
 
 on:
   pull_request:
-    types: [opened, reopened, synchronize, labeled, unlabeled]
+    types: [opened, reopened, synchronize, labeled, unlabeled, closed]
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   check-blocking-labels:
     name: No blocking labels
     runs-on: ubuntu-latest
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
       - name: Check for blocking labels
         env:
-          LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
-        run: |
-          BLOCKING_LABELS='["verification needed","changes requested","changes done","orchestrating"]'
-          PRESENT=$(echo "$LABELS" | jq --argjson blocking "$BLOCKING_LABELS" \
-            '[.[] | ascii_downcase] as $pr | $blocking | map(. as $b | $pr | any(. == $b)) | any')
-          if [ "$PRESENT" = "true" ]; then
-            MATCHED=$(echo "$LABELS" | jq --argjson blocking "$BLOCKING_LABELS" \
-              '[.[] | ascii_downcase] as $pr | $blocking | map(select(. as $b | $pr | any(. == $b))) | join(", ")')
-            echo "ERROR: This PR has a blocking label: $MATCHED"
-            echo "Remove the label once the blocking condition is resolved."
-            exit 1
-          fi
-          echo "OK: No blocking labels are present."
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_STATE: ${{ github.event.pull_request.state }}
+          PR_LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
+        run: python3 scripts/ci/labels/check_blocking_labels.py

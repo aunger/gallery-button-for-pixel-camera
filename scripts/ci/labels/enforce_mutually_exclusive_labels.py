@@ -5,6 +5,14 @@ When a label that belongs to a mutually exclusive set is added to an issue or
 pull request, remove all other labels in the same set so that at most one
 member of each set is present at any time.
 
+This module is also where the label scripts in this directory keep their shared
+GitHub access, since it is the one they all already import: `gh_api` (a request
+with retry and backoff) and `fetch_open_pull_requests` (that request, paginated
+over the open-PR listing). Their contract, pagination and its stop conditions
+included, is asserted against them in test_enforce_mutually_exclusive_labels.py.
+A caller's own tests therefore cover only what that caller adds: which listing
+it reads, and the filter or projection it applies to the result.
+
 Mutually exclusive sets (fixed):
     [p1, p2, p3]
     [verification needed, verified]
@@ -170,6 +178,33 @@ def gh_api(
     # Unreachable: the final attempt above either returns or raises. Present so
     # the function has a definite terminal on every path.
     raise AssertionError("gh_api retry loop exited without returning or raising")
+
+
+# GitHub caps a page of pull requests at 100, so a short page is the last page.
+PULLS_PER_PAGE = 100
+
+
+def fetch_open_pull_requests(repo: str, token: str) -> list[dict]:
+    """Return every open pull request in *repo*, following pagination.
+
+    Callers wanting a subset filter the returned objects themselves: the list
+    endpoint offers no server-side filter finer than state, base branch, and
+    head branch name.
+    """
+    pulls: list[dict] = []
+    page = 1
+    while True:
+        batch = gh_api(
+            f"repos/{repo}/pulls?state=open&per_page={PULLS_PER_PAGE}&page={page}",
+            token=token,
+        )
+        if not batch:
+            break
+        pulls.extend(batch)
+        if len(batch) < PULLS_PER_PAGE:
+            break
+        page += 1
+    return pulls
 
 
 # ---------------------------------------------------------------------------
