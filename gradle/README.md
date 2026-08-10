@@ -137,6 +137,8 @@ What it deliberately does not do:
   A weekly report of the same few dozen standing build-tool advisories would train everyone to ignore the job, which is the same failure mode as an open issue that is not really actionable.
   The three toolchain coordinates are different: a hit there is directly actionable, and is a reason to bump that overrides the standing lack of urgency.
   App-runtime CVE coverage would be Dependabot over `app/build.gradle.kts`, which is separate work; there is no `.github/dependabot.yml` here today.
+  This is also not the repo's general advisory scan: `.github/workflows/dependency-audit.yml` runs `pip-audit` weekly over every hash-pinned Python lock under `scripts/` (issue #804).
+  The two do not overlap, and neither subsumes the other; that one watches what CI's own helper scripts import, this one watches three Maven coordinates because a hit against them is an argument for a toolchain bump.
 
 An input that is fetched but cannot be parsed, or whose URL 404s because upstream moved it, is reported as an upstream format change, never folded into a silent "nothing moved".
 A network-level failure reports nothing at all, since it is evidence of nothing.
