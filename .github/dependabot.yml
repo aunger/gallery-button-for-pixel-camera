@@ -6,11 +6,13 @@
 # graph (gradle/verification-metadata.xml, 585 artifacts) and recommended
 # against it: none of the 20 flagged artifacts at the time were declared app
 # dependencies, all 20 arrived transitively through Gradle/AGP build tooling
-# that never ships in the APK, and that toolchain already has its own,
-# narrower watch (scripts/ci/prs-and-issues/watch_toolchain_bump.py, added by
-# PR #812) plus the manual bump procedure in gradle/README.md. #803's
-# conclusion: "If app-runtime CVE coverage is wanted, that is Dependabot over
-# app/build.gradle.kts, a separate piece of work from this one."
+# that never ships in the APK, and that toolchain gets its own, narrower
+# coverage separately: PR #812 adds a report-only watch
+# (scripts/ci/prs-and-issues/watch_toolchain_bump.py) over exactly those
+# toolchain coordinates, on top of the manual bump procedure in
+# gradle/README.md. #803's conclusion: "If app-runtime CVE coverage is
+# wanted, that is Dependabot over app/build.gradle.kts, a separate piece of
+# work from this one."
 #
 # directory is "/app", not "/", so this does not touch the root
 # build.gradle.kts toolchain pins (the Gradle/AGP/KGP versions), which
