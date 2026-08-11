@@ -31,6 +31,14 @@
 # Weekly on Monday, offset an hour past dependency-audit.yml's 09:00 UTC
 # Monday cron (which is itself offset from semgrep.yml's 08:00), so the three
 # don't land in the same CI-minute window.
+#
+# open-pull-requests-limit and groups (issue #871): the default limit of 5 was fully consumed by test-only bumps (#845 through #849), so no app-runtime bump, the coverage this file exists for, could be proposed until one of those closed.
+# Raising the limit to 10 leaves room for both kinds of bump at once.
+# The test-dependencies group then collapses every test-only bump into a single pull request, so a run of test-only bumps costs one gradle/verification-metadata.xml regeneration instead of one per package; app-runtime dependencies stay ungrouped, so each keeps its own pull request and review.
+#
+# The group patterns cover every testImplementation and androidTestImplementation coordinate in app/build.gradle.kts.
+# The one exception is androidx.compose:compose-bom, declared identically under both androidTestImplementation and the shipping implementation block; it stays ungrouped and travels with the app-runtime Compose bump instead, since grouping it would fold a shipping dependency into the test group.
+# androidx.test* is scoped to the "androidx.test" package prefix, so it does not capture the shipping androidx.core, androidx.lifecycle, androidx.activity, androidx.compose, or androidx.viewpager2 artifacts.
 
 version: 2
 updates:
@@ -41,3 +49,14 @@ updates:
       day: "monday"
       time: "10:00"
       timezone: "UTC"
+    open-pull-requests-limit: 10
+    groups:
+      test-dependencies:
+        patterns:
+          - "junit:junit"
+          - "org.mockito*"
+          - "org.robolectric*"
+          - "androidx.test*"
+          - "androidx.compose.ui:ui-test-junit4"
+          - "org.jetbrains.kotlinx:kotlinx-coroutines-test"
+          - "org.json:json"
