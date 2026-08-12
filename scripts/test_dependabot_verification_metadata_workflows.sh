@@ -171,6 +171,280 @@ if [ -f "$PUSH_WF" ]; then
     else
         fail "push job's permissions block is missing actions: read (actions/download-artifact needs it to pull the generate workflow's cross-run artifact; without it the download 403s and continue-on-error silently reports nothing to push, every time)"
     fi
+
+    # (k) the base64'd file content reaches jq through a file (--rawfile),
+    # never through argv (--arg). A base64'd gradle/verification-metadata.xml
+    # is well past Linux's 131072-byte MAX_ARG_STRLEN, so an --arg carrying it
+    # makes execve fail with E2BIG before jq even starts (issue #875).
+    if grep -q -- '--rawfile content' "$PUSH_WF"; then
+        pass "push workflow reads the file content into jq via --rawfile, not argv"
+    else
+        fail "push workflow does not use 'jq --rawfile content' (the base64'd file content must reach jq through a file, not argv, or a realistic-size run hits Linux's per-argument MAX_ARG_STRLEN; see issue #875)"
+    fi
+    if grep -q -- '--arg content' "$PUSH_WF"; then
+        fail "push workflow still passes file content to jq via --arg (argv), which fails with 'Argument list too long' at the file's current size; use --rawfile instead"
+    else
+        pass "push workflow does not pass file content to jq via --arg"
+    fi
+
+    # (l) the assembled request body reaches curl through a file
+    # (--data-binary @file), never through argv (-d). The same argv-limit
+    # problem in (k) applies here to the whole assembled JSON body, which is
+    # even larger than the base64 payload alone.
+    if grep -qE -- '--data-binary[[:space:]]+@' "$PUSH_WF"; then
+        pass "push workflow sends the request body via --data-binary @<file>, not argv"
+    else
+        fail "push workflow does not use 'curl --data-binary @<file>' (the assembled request body must reach curl through a file, not argv, or a realistic-size run hits Linux's per-argument MAX_ARG_STRLEN; see issue #875)"
+    fi
+    if grep -qE -- '-d[[:space:]]+"\$BODY"' "$PUSH_WF"; then
+        fail "push workflow still passes the assembled body to curl via -d \"\$BODY\" (argv), which fails with 'Argument list too long' at the file's current size; use --data-binary @<file> instead"
+    else
+        pass "push workflow does not pass the assembled body to curl via -d \"\$BODY\""
+    fi
+
+    # (m) behavioral: run the push step's real "Push the regenerated file
+    # through the Contents API" script against a realistic-size artifact
+    # (issue #875's file was 266562 bytes, base64ing to about 2.7 times the
+    # 131072-byte MAX_ARG_STRLEN). This does not simulate the bug: it runs
+    # the real jq and curl binaries (curl mocked only to avoid a network
+    # call and to let the test inspect the assembled request), so an
+    # argv-limit regression fails here exactly as it failed on PR #874.
+    # Also confirms the pushed content, once base64-decoded, is
+    # byte-identical to the regenerated artifact.
+    set +e
+    M_OUTPUT="$(python3 - "$PUSH_WF" <<'PY'
+import base64
+import hashlib
+import json
+import os
+import stat
+import subprocess
+import sys
+import tempfile
+import textwrap
+
+push_wf_path = sys.argv[1]
+
+try:
+    import yaml
+except ImportError:
+    print("  FAIL: PyYAML is not installed (see scripts/requirements.txt); cannot run the behavioral push-body test")
+    sys.exit(1)
+
+results = []
+
+
+def check(ok, msg):
+    results.append(ok)
+    print(("  PASS: " if ok else "  FAIL: ") + msg)
+    return ok
+
+
+with open(push_wf_path) as f:
+    doc = yaml.safe_load(f)
+
+steps = doc["jobs"]["push"]["steps"]
+step = next(
+    (s for s in steps if s.get("name") == "Push the regenerated file through the Contents API"),
+    None,
+)
+if step is None:
+    check(False, "could not find the 'Push the regenerated file through the Contents API' step to extract for the behavioral test")
+    sys.exit(1)
+
+run_text = step["run"]
+
+with tempfile.TemporaryDirectory(prefix="dependabot-push-body-test-") as tmp:
+    script_path = os.path.join(tmp, "push_step.sh")
+    with open(script_path, "w") as f:
+        f.write(run_text)
+
+    artifact_dir = os.path.join(tmp, "artifact")
+    os.makedirs(artifact_dir)
+    # Vary the bytes (not a repeated pattern) so a truncation or reordering
+    # bug cannot hide behind compressibility.
+    body = bytearray()
+    chunk = b"seed"
+    while len(body) < 270000:
+        chunk = hashlib.sha256(chunk).digest()
+        body += chunk
+    artifact_bytes = (
+        b'<?xml version="1.0"?>\n<verification-metadata>\n'
+        + bytes(body)
+        + b"\n</verification-metadata>\n"
+    )
+    artifact_path = os.path.join(artifact_dir, "verification-metadata.xml")
+    with open(artifact_path, "wb") as f:
+        f.write(artifact_bytes)
+
+    b64_len = len(base64.b64encode(artifact_bytes))
+    if not check(
+        b64_len > 131072,
+        "test artifact's base64 encoding (%d bytes) exceeds Linux's 131072-byte "
+        "MAX_ARG_STRLEN, so this test actually exercises the argv limit" % b64_len,
+    ):
+        sys.exit(1)
+
+    runner_temp = os.path.join(tmp, "runner_temp")
+    os.makedirs(runner_temp)
+
+    calls_dir = os.path.join(tmp, "calls")
+    os.makedirs(calls_dir)
+
+    bin_dir = os.path.join(tmp, "bin")
+    os.makedirs(bin_dir)
+    mock_curl_path = os.path.join(bin_dir, "curl")
+    with open(mock_curl_path, "w") as f:
+        f.write(
+            textwrap.dedent(
+                """\
+                #!/usr/bin/env python3
+                # Mock curl for the behavioral check in
+                # scripts/test_dependabot_verification_metadata_workflows.sh (issue #875).
+                # Records every invocation's argv so the test can inspect the real push
+                # request, and answers the two GET calls the push step makes before it,
+                # without any real network access.
+                import json
+                import os
+                import sys
+
+                args = sys.argv[1:]
+                calls_dir = os.environ["MOCK_CALLS_DIR"]
+                existing = [n for n in os.listdir(calls_dir) if n.startswith("call_")]
+                call_path = os.path.join(calls_dir, "call_{}.json".format(len(existing) + 1))
+                with open(call_path, "w") as f:
+                    json.dump(args, f)
+
+                url = args[-1] if args else ""
+                if "/git/ref/heads/" in url:
+                    print(json.dumps({"object": {"sha": os.environ["MOCK_EXPECTED_SHA"]}}))
+                elif "?ref=" in url:
+                    print(json.dumps({
+                        "sha": os.environ["MOCK_EXISTING_BLOB_SHA"],
+                        "content": os.environ["MOCK_EXISTING_CONTENT_B64"],
+                    }))
+                elif "/contents/" in url:
+                    print(json.dumps({"content": {"sha": "0" * 40}}))
+                else:
+                    sys.stderr.write("mock curl: unrecognized URL: {}\\n".format(url))
+                    sys.exit(99)
+                """
+            )
+        )
+    st = os.stat(mock_curl_path)
+    os.chmod(mock_curl_path, st.st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+
+    existing_content_b64 = base64.b64encode(
+        b"stale placeholder content, not the regenerated artifact"
+    ).decode()
+
+    env = dict(os.environ)
+    env["PATH"] = bin_dir + os.pathsep + env["PATH"]
+    env["PAT"] = "test-pat-not-a-real-secret"
+    env["REPO"] = "octocat/example-repo"
+    env["HEAD_BRANCH"] = "dependabot/gradle/app/some-dependency-1.2.3"
+    env["EXPECTED_SHA"] = "1" * 40
+    env["ARTIFACT_DIR"] = artifact_dir
+    env["FILE_PATH"] = "gradle/verification-metadata.xml"
+    env["RUNNER_TEMP"] = runner_temp
+    env["MOCK_CALLS_DIR"] = calls_dir
+    env["MOCK_EXPECTED_SHA"] = env["EXPECTED_SHA"]
+    env["MOCK_EXISTING_BLOB_SHA"] = "d" * 40
+    env["MOCK_EXISTING_CONTENT_B64"] = existing_content_b64
+
+    result = subprocess.run(
+        ["bash", script_path],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    ok = check(
+        result.returncode == 0,
+        "push step's body-construction script exits 0 against a realistic-size payload "
+        "(exit %d; stderr: %s)" % (result.returncode, result.stderr.strip()[-800:]),
+    )
+    if not ok:
+        sys.exit(1)
+
+    put_call = None
+    for name in sorted(os.listdir(calls_dir)):
+        with open(os.path.join(calls_dir, name)) as f:
+            args = json.load(f)
+        url = args[-1] if args else ""
+        if "/git/ref/heads/" not in url and "?ref=" not in url and "/contents/" in url:
+            put_call = args
+            break
+
+    if not check(put_call is not None, "the push step made a PUT request to the Contents API"):
+        sys.exit(1)
+
+    huge_inline_arg = next((a for a in put_call if len(a) > 8192), None)
+    check(
+        huge_inline_arg is None,
+        "no argument in the PUT curl invocation carries the file content inline (the "
+        "largest is %d bytes)" % max((len(a) for a in put_call), default=0),
+    )
+
+    check("--data-binary" in put_call, "the PUT request uses --data-binary, not -d, to send the body")
+    check("-d" not in put_call, "the PUT request does not also pass -d")
+
+    body_arg = None
+    for i, a in enumerate(put_call):
+        if a == "--data-binary" and i + 1 < len(put_call):
+            body_arg = put_call[i + 1]
+            break
+
+    if not check(
+        bool(body_arg) and body_arg.startswith("@"),
+        "found a --data-binary @<file> argument naming the assembled request body",
+    ):
+        sys.exit(1)
+
+    body_file = body_arg[1:]
+    with open(body_file) as f:
+        pushed_body = json.load(f)
+
+    check(
+        pushed_body.get("branch") == env["HEAD_BRANCH"],
+        "pushed body's branch matches the workflow_run's head branch",
+    )
+    check(
+        pushed_body.get("sha") == env["MOCK_EXISTING_BLOB_SHA"],
+        "pushed body's sha matches the existing file's blob sha",
+    )
+    check(
+        "Regenerate gradle/verification-metadata.xml" in pushed_body.get("message", ""),
+        "pushed body's commit message names the regenerated file",
+    )
+
+    pushed_content_b64 = pushed_body.get("content", "")
+    pushed_bytes = None
+    try:
+        pushed_bytes = base64.b64decode(pushed_content_b64, validate=True)
+    except Exception as exc:
+        check(False, "pushed body's content is not valid base64: %s" % exc)
+
+    if pushed_bytes is not None:
+        check(
+            pushed_bytes == artifact_bytes,
+            "pushed content, once base64-decoded, is byte-identical to the regenerated artifact",
+        )
+
+sys.exit(0 if all(results) else 1)
+PY
+)"
+    M_STATUS=$?
+    set -e
+    echo "$M_OUTPUT"
+    M_PASS=$(grep -c '^  PASS:' <<<"$M_OUTPUT" || true)
+    M_FAIL=$(grep -c '^  FAIL:' <<<"$M_OUTPUT" || true)
+    PASS=$((PASS + M_PASS))
+    FAIL=$((FAIL + M_FAIL))
+    if [ "$M_STATUS" -ne 0 ] && [ "$M_FAIL" -eq 0 ]; then
+        fail "push step's body-construction behavioral test errored before reporting individual checks (exit $M_STATUS)"
+    fi
 fi
 
 echo
