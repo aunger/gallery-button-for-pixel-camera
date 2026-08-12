@@ -161,15 +161,35 @@ jobs:
             exit 0
           fi
 
-          CONTENT_B64="$(base64 -w0 "$ARTIFACT_DIR/verification-metadata.xml")"
-          BODY="$(jq -n \
+          # Keep the file content out of argv at both call sites below.
+          # Base64 of gradle/verification-metadata.xml (currently about 355
+          # KB) is well past Linux's per-argument MAX_ARG_STRLEN (128 KiB),
+          # a cap `ulimit -s` does not raise. Passing it as a `jq --arg` or
+          # a `curl -d` argument makes execve fail with E2BIG before the
+          # target program even starts, which bash reports as "Argument
+          # list too long" (issue #875). `jq --rawfile` reads the content
+          # from a file instead of argv, and `curl --data-binary @file`
+          # sends the assembled body the same way; only short paths ever
+          # reach argv.
+          #
+          # `tr -d '\n'` strips any newline base64's output might carry
+          # (`-w0` disables line wrapping, but whether it also omits a
+          # trailing newline is not guaranteed across implementations), so
+          # `--rawfile`, which reads bytes verbatim, never picks one up into
+          # the committed content.
+          B64_FILE="$RUNNER_TEMP/verification-metadata.b64"
+          BODY_FILE="$RUNNER_TEMP/verification-metadata-body.json"
+          base64 -w0 "$ARTIFACT_DIR/verification-metadata.xml" | tr -d '\n' > "$B64_FILE"
+
+          jq -n \
             --arg message "Regenerate gradle/verification-metadata.xml for this Dependabot bump" \
-            --arg content "$CONTENT_B64" \
+            --rawfile content "$B64_FILE" \
             --arg sha "$EXISTING_SHA" \
             --arg branch "$HEAD_BRANCH" \
             '{message: $message, content: $content, sha: $sha, branch: $branch,
               committer: {name: "github-actions[bot]", email: "github-actions[bot]@users.noreply.github.com"},
-              author: {name: "github-actions[bot]", email: "github-actions[bot]@users.noreply.github.com"}}')"
+              author: {name: "github-actions[bot]", email: "github-actions[bot]@users.noreply.github.com"}}' \
+            > "$BODY_FILE"
 
           curl -sf -X PUT -H "$AUTH_HEADER" -H "$ACCEPT_HEADER" -H "$VERSION_HEADER" \
-            -d "$BODY" "$API/contents/$FILE_PATH" >/dev/null
+            --data-binary @"$BODY_FILE" "$API/contents/$FILE_PATH" >/dev/null
