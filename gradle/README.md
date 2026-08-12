@@ -68,6 +68,31 @@ Until that secret exists, the push workflow fails loudly rather than silently no
 This automation only ever runs `scripts/regenerate-gradle-verification.sh` in its normal merge mode; it never deletes the file first, and it never touches the toolchain (root `build.gradle.kts`, the Gradle wrapper).
 It has nothing to do with "Performing a toolchain bump" below, which stays entirely manual.
 
+#### Re-running the pair on an open PR
+
+Fixing one of these workflows does not retroactively help a PR that is already open.
+The pair only runs again when something triggers it, and the regen artifact expires after a day (`retention-days: 1`), so there is usually nothing left to reuse.
+Three levers exist, and they are not equivalent.
+
+- **Re-run the regen workflow run**, from the Actions tab or the API `rerun` endpoint.
+  This is usually the right one.
+  A re-run keeps the original `pull_request` payload, and the `workflow_run` half is always taken from `main`, so a re-run picks up a newly-fixed push workflow rather than the one that failed.
+  It does need a prior run to still exist.
+- **Comment `@dependabot rebase`** on the PR.
+  This rebuilds the branch from scratch and re-triggers everything.
+  Read the warning below before reaching for it from an agent session.
+- **Push a commit to the branch**, firing `synchronize`.
+  This works, but Dependabot stops maintaining a PR once a non-Dependabot commit lands on it, so it permanently costs that branch its auto-updates.
+  Prefer either of the other two.
+
+> [!WARNING]
+> An agent cannot issue `@dependabot` commands.
+> A comment posted by an agent is passed through mention-sanitization before it reaches GitHub, which injects `U+00B7` (middle dot) characters into the mention: `@dependabot rebase` is posted as `·@·d·ependabot r·ebase`.
+> Dependabot never sees a command and does nothing.
+> Nothing reports an error, and the comment looks correct unless its characters are inspected, so the failure is silent at both ends.
+> A worked example is #874's [comment 5260994286](https://github.com/aunger/gallery-button-for-pixel-camera/pull/874#issuecomment-5260994286), which cost about eight hours before anyone noticed it had not worked.
+> Re-run the regen workflow run instead, or ask a human to post the comment.
+
 ## `wrapper/gradle-wrapper.properties` -- distribution pin
 
 `distributionSha256Sum` pins the Gradle 9.5.1 distribution (`gradle-9.5.1-bin.zip`) to its published SHA-256.

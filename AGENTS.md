@@ -8,3 +8,4 @@
 - If carrying out the before-merging steps from a Verification Planner report on a PR (as a Verification Agent), read `./agents/pr_verify.md`.
 - If a sub-agent that is delegating work to nested sub-agents via the Agent tool, read `./agents/subagent_delegation.md`.
 - If bumping the Gradle, AGP, KGP, or Compose-plugin version, read `./gradle/README.md`.
+- If working on a Dependabot PR, or on the `gradle/verification-metadata.xml` regeneration workflows, read `./gradle/README.md`.
