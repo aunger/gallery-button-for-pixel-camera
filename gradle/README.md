@@ -71,27 +71,40 @@ It has nothing to do with "Performing a toolchain bump" below, which stays entir
 #### Re-running the pair on an open PR
 
 Fixing one of these workflows does not retroactively help a PR that is already open.
-The pair only runs again when something triggers it, and the regen artifact expires after a day (`retention-days: 1`), so there is usually nothing left to reuse.
-Three levers exist, and they are not equivalent.
+The pair only runs again when something triggers it.
+Four levers exist, and they are not equivalent.
 
 - **Re-run the regen workflow run**, from the Actions tab or the API `rerun` endpoint.
   This is usually the right one.
-  A re-run keeps the original `pull_request` payload, and the `workflow_run` half is always taken from `main`, so a re-run picks up a newly-fixed push workflow rather than the one that failed.
-  It does need a prior run to still exist.
-- **Comment `@dependabot rebase`** on the PR.
+  Its completion fires a fresh `workflow_run` event, and GitHub requires a `workflow_run` workflow to live on the default branch and always runs that copy, so this is the lever that picks up a push workflow fixed since the failure.
+  It needs a prior regen run to still exist, though not its artifact, which the re-run regenerates.
+- **Re-run the failed push run.** This is the obvious move when the push half is the half that failed, and it does not work.
+  A re-run reuses the original event's `GITHUB_SHA` and `GITHUB_REF`, so it re-executes the push workflow as it stood at that commit, carrying whatever defect the re-run was meant to escape.
+  On #874 the failed run was pinned to `f13db5c`, which predates the #876 fix, so re-running it would have failed identically.
+  It is worth knowing this is a dead end, because it looks like the cheap option: the push job budgets `timeout-minutes: 10` against the regen's 20 to 45.
+- **Comment the `@dependabot` rebase command** on the PR.
   This rebuilds the branch from scratch and re-triggers everything.
-  Read the warning below before reaching for it from an agent session.
+  An agent cannot do this; see the warning below.
 - **Push a commit to the branch**, firing `synchronize`.
-  This works, but Dependabot stops maintaining a PR once a non-Dependabot commit lands on it, so it permanently costs that branch its auto-updates.
-  Prefer either of the other two.
+  This works, and costs the branch Dependabot's automatic rebasing (see the note below).
+  In the case that brings you here, the push half has failed, so no automation commit has landed yet and the branch still has that to lose.
+  Prefer the other levers while it does.
+
+If none of these is open to you, say so and stop.
+Adding `workflow_dispatch` (#878) is the intended fix for that dead end.
 
 > [!WARNING]
-> An agent cannot issue `@dependabot` commands.
-> A comment posted by an agent is passed through mention-sanitization before it reaches GitHub, which injects `U+00B7` (middle dot) characters into the mention: `@dependabot rebase` is posted as `·@·d·ependabot r·ebase`.
-> Dependabot never sees a command and does nothing.
-> Nothing reports an error, and the comment looks correct unless its characters are inspected, so the failure is silent at both ends.
-> A worked example is #874's [comment 5260994286](https://github.com/aunger/gallery-button-for-pixel-camera/pull/874#issuecomment-5260994286), which cost about eight hours before anyone noticed it had not worked.
-> Re-run the regen workflow run instead, or ask a human to post the comment.
+> An agent cannot post the `@dependabot` rebase command, or any other `@` mention.
+> Agent-posted GitHub text is sanitized so that mentions are broken, silently and with no error reported anywhere.
+> See `.claude/rules/github-mention-sanitization.md` for the rule, the evidence behind it, and how to check whether it still holds.
+> #874's [comment 5260994286](https://github.com/aunger/gallery-button-for-pixel-camera/pull/874#issuecomment-5260994286) is the worked example, and it cost about eight hours before anyone noticed it had not worked.
+> Re-run the regen workflow run instead, or ask a human to post the command.
+
+> [!NOTE]
+> Dependabot stops rebasing a PR once a commit it did not author lands on the branch, unless that commit's message carries a skip marker.
+> The push workflow's commit carries none, so every PR this automation succeeds on has already lost automatic rebasing.
+> #883 tracks that.
+> An explicit rebase command still works afterwards; it is the automatic rebasing that is gone.
 
 ## `wrapper/gradle-wrapper.properties` -- distribution pin
 
