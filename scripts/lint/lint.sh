@@ -33,7 +33,8 @@
 # Check mode (--check): each fixer runs in its check-only invocation instead:
 # `ruff check` (no --fix), `ruff format --check`, `mdformat --check`, and
 # `ktlint` (no --format). The read-only hygiene checks (check-yaml, check-toml,
-# check-merge-conflict, check-added-large-files) are unchanged. The two
+# check-json, check-xml, check-merge-conflict, check-added-large-files,
+# check-shebang-scripts-are-executable) are unchanged. The two
 # whitespace fixers (trailing-whitespace-fixer, end-of-file-fixer) have no
 # check-only mode, so they run as usual and their non-zero exit on any change
 # fails the run, without altering the pass/fail contract. On a clean tree check
@@ -120,7 +121,7 @@ is_binary() {
     [[ "$sample" -ne "$stripped" ]]
 }
 
-declare -a TEXT=() PY=() MD=() KT=() YAML=() TOML=()
+declare -a TEXT=() PY=() MD=() KT=() YAML=() TOML=() JSON=() XML=() SH=()
 for f in "${FILES[@]}"; do
     is_binary "$f" || TEXT+=("$f")
     case "$f" in
@@ -129,6 +130,9 @@ for f in "${FILES[@]}"; do
         *.kt | *.kts) KT+=("$f") ;;
         *.yaml | *.yml) YAML+=("$f") ;;
         *.toml) TOML+=("$f") ;;
+        *.json) JSON+=("$f") ;;
+        *.xml) XML+=("$f") ;;
+        *.sh) SH+=("$f") ;;
     esac
 done
 
@@ -150,10 +154,35 @@ run() {
 declare -a LARGE_FILES_ARGS=()
 [[ $ALL -eq 1 ]] && LARGE_FILES_ARGS+=(--enforce-all)
 
-# hygiene family: the six generic pre-commit-hooks checks. These behave
-# identically in fix and check mode -- the read-only checks never write, and the
-# two whitespace fixers have no check-only mode, so they run as usual and fail
-# the run via their exit status if they change anything.
+# hygiene family: the generic pre-commit-hooks checks. These behave identically
+# in fix and check mode -- the read-only checks never write, and the two
+# whitespace fixers have no check-only mode, so they run as usual and fail the
+# run via their exit status if they change anything.
+#
+# check-shebang-scripts-are-executable reads git's recorded filemode rather than
+# the filesystem, so it is accurate no matter how the working tree was checked
+# out or which user runs it. It is scoped to SH rather than the whole set. Every
+# *.sh in this tree is 100755 and .claude/settings.json runs two of them as bare
+# commands, so for shell the invariant is real and already universally held: a
+# missing bit there is a live "Permission denied", which is what it is guarding.
+# The *.py scripts are a different case -- 41 are 100644 against 4 that are not,
+# and CI always invokes them as `python3 <path>`, so the bit is inert and
+# whether to set it or drop the shebangs is an open question rather than a bug.
+# Widening this check to Python means answering that first.
+#
+# Two sibling checks from the same package are deliberately absent:
+#
+#   check-executables-have-shebangs uses git's filemode only when
+#   core.fileMode is false; otherwise it flags every path it is handed that
+#   lacks a shebang, because pre-commit narrowed the set to `types:
+#   [executable]` before invoking it. There is no executable-file bucket here to
+#   reproduce that filter, so it would report every .md and .json in the tree.
+#
+#   mixed-line-ending is a fixer, not a check, and it rewrites binaries: run
+#   over the whole tree it silently modifies gradle/wrapper/gradle-wrapper.jar,
+#   whose SHA-256 scripts/test_verification_metadata.sh check (g) pins. TEXT
+#   would exclude the jar, but .bat files legitimately need CRLF, so there is no
+#   filter that makes it safe and useful at once.
 if want hygiene; then
     if [[ ${#TEXT[@]} -gt 0 ]]; then
         run "$LINT_BIN_DIR/trailing-whitespace-fixer" "${TEXT[@]}"
@@ -161,8 +190,11 @@ if want hygiene; then
     fi
     run "$LINT_BIN_DIR/check-merge-conflict" "${FILES[@]}"
     run "$LINT_BIN_DIR/check-added-large-files" "${LARGE_FILES_ARGS[@]}" "${FILES[@]}"
+    [[ ${#SH[@]} -gt 0 ]] && run "$LINT_BIN_DIR/check-shebang-scripts-are-executable" "${SH[@]}"
     [[ ${#YAML[@]} -gt 0 ]] && run "$LINT_BIN_DIR/check-yaml" "${YAML[@]}"
     [[ ${#TOML[@]} -gt 0 ]] && run "$LINT_BIN_DIR/check-toml" "${TOML[@]}"
+    [[ ${#JSON[@]} -gt 0 ]] && run "$LINT_BIN_DIR/check-json" "${JSON[@]}"
+    [[ ${#XML[@]} -gt 0 ]] && run "$LINT_BIN_DIR/check-xml" "${XML[@]}"
 fi
 
 # python family: lint + format Python.
