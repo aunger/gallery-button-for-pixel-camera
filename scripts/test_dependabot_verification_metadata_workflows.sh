@@ -33,6 +33,36 @@ FAIL=0
 pass() { echo "  PASS: $1"; PASS=$((PASS + 1)); }
 fail() { echo "  FAIL: $1"; FAIL=$((FAIL + 1)); }
 
+# Print the YAML block of one top-level job, so a check can assert against
+# that job alone rather than the whole file. Job-level `permissions:` fully
+# replaces the workflow-level block, so "does this job grant X" is the only
+# question worth asking, and it cannot be asked with a plain grep.
+#
+# Every caller below captures this output and matches it with a reader that
+# consumes all of its input. The obvious `awk '...' "$WF" | grep -q ...`
+# instead is a race: `grep -q` exits at its first match and closes the pipe,
+# `awk` dies of SIGPIPE (141), and `set -o pipefail` above turns that into a
+# failed pipeline, so a pattern that IS present is reported missing. The
+# window opens only once awk's output no longer fits a single buffered
+# write, which is why the pattern survived here until the push job grew past
+# that size and CI run 31978297339 reported "statuses: write" missing from a
+# job that declares it. `head -1` closes a pipe the same way, and in a
+# `VAR="$(...)"` assignment a 141 aborts the whole script under `set -e`.
+# Nothing here may depend on a workflow file staying under a buffer size.
+job_block() {
+    awk -v job="$2" '
+        /^jobs:/ { in_jobs = 1 }
+        in_jobs && $0 == "  " job ":" { in_job = 1 }
+        in_job && /^  [A-Za-z_]/ && $0 != "  " job ":" { in_job = 0 }
+        in_job
+    ' "$1"
+}
+
+# Whether $1 (a captured block) has a line matching the ERE $2. Plain grep,
+# not `grep -q`: it reads to end of input, so there is no early close and no
+# writer to kill. The block arrives by here-string, not by pipe.
+block_has() { grep -E "$2" <<<"$1" >/dev/null; }
+
 # (a) both halves exist.
 for f in "$GENERATE_WF" "$PUSH_WF"; do
     if [ -f "$f" ]; then
@@ -89,8 +119,12 @@ if [ -f "$GENERATE_WF" ]; then
     # run, which the push workflow's `if: ... == 'success'` gate correctly
     # declines to act on, so the PR just never goes green, silently
     # defeating issue #842's whole purpose.
-    TIMEOUT="$(awk '/^jobs:/{injobs=1} injobs && /^  regenerate:/{injob=1} injob && /^  [a-z]/ && !/^  regenerate:/{injob=0} injob' "$GENERATE_WF" \
-        | grep -E '^[[:space:]]*timeout-minutes:' | head -1 | grep -oE '[0-9]+')"
+    # Read the regenerate job's own budget, not the first timeout-minutes in
+    # the file, which belongs to the triage job in front of it. One awk over
+    # the captured block, rather than a `grep | head -1` pipeline: see the
+    # SIGPIPE note on job_block above.
+    TIMEOUT="$(awk '!seen && /^[[:space:]]*timeout-minutes:/ { gsub(/[^0-9]/, "", $0); print; seen = 1 }' \
+        <<<"$(job_block "$GENERATE_WF" regenerate)")"
     if [ -n "$TIMEOUT" ] && [ "$TIMEOUT" -ge 90 ]; then
         pass "generate workflow's timeout-minutes ($TIMEOUT) is at least 90, matching regenerate-gradle-toolchain.yml's budget for the identical uncached Gradle invocation"
     else
@@ -368,7 +402,8 @@ if [ -f "$PUSH_WF" ]; then
     # swallows that, and the job reports a false "nothing to push" on every
     # run: the exact silent-failure mode this whole automation exists to
     # avoid.
-    if awk '/^jobs:/{injobs=1} injobs && /^  push:/{inpush=1} inpush && /^  [a-z]/ && !/^  push:/{inpush=0} inpush' "$PUSH_WF" | grep -qE '^[[:space:]]*actions:[[:space:]]*read'; then
+    PUSH_JOB="$(job_block "$PUSH_WF" push)"
+    if block_has "$PUSH_JOB" '^[[:space:]]*actions:[[:space:]]*read'; then
         pass "push job's permissions block grants actions: read"
     else
         fail "push job's permissions block is missing actions: read (actions/download-artifact needs it to pull the generate workflow's cross-run artifact; without it the download 403s and continue-on-error silently reports nothing to push, every time)"
@@ -411,7 +446,7 @@ if [ -f "$PUSH_WF" ]; then
     # needs statuses: write in this job's permissions block. As with (i),
     # a job-level block fully replaces the workflow-level one, so the grant
     # has to be listed here.
-    if awk '/^jobs:/{injobs=1} injobs && /^  push:/{inpush=1} inpush && /^  [a-z]/ && !/^  push:/{inpush=0} inpush' "$PUSH_WF" | grep -qE '^[[:space:]]*statuses:[[:space:]]*write'; then
+    if block_has "$PUSH_JOB" '^[[:space:]]*statuses:[[:space:]]*write'; then
         pass "push job's permissions block grants statuses: write"
     else
         fail "push job's permissions block is missing statuses: write (without it the push half cannot report its outcome onto the pull request, and a failure leaves no signal there at all; see issue #877)"
