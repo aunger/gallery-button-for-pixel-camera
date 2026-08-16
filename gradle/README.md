@@ -79,6 +79,10 @@ It asks the API what the head commit changed, and skips the regeneration when th
 The discriminator is what the commit does rather than who it says it is from: a commit with that diff cannot have moved the dependency graph, and keying on the committer identity would have tied the gate to the exact email string the push half writes.
 Triage checks nothing out, so the regen half's read-only, no-secrets posture is unchanged.
 
+"Once per push" is the claim, not "once per PR".
+A Dependabot rebase force-pushes the branch, which discards the metadata commit and earns a fresh full regeneration, and the `[dependabot skip]` marker in the section below is what keeps those rebases happening.
+That is the intended trade (a branch that rebases and regenerates beats one that silently goes stale), but it does mean a long-lived PR can regenerate several times.
+
 A regen wrongly skipped is much worse than the run it saves, since it leaves a PR red with stale metadata.
 Every uncertain answer therefore regenerates: an unreachable commits API, or a payload with no usable file list, warns and falls back to the behavior this gate optimizes away, which was correct all along.
 The one state that still reaches a wrong skip is a commit pushed by hand whose entire diff is `gradle/verification-metadata.xml`, carrying contents not generated from that branch's graph.
@@ -128,6 +132,9 @@ Four levers exist, and they are not equivalent.
   This is usually the right one.
   Its completion fires a fresh `workflow_run` event, and GitHub requires a `workflow_run` workflow to live on the default branch and always runs that copy, so this is the lever that picks up a push workflow fixed since the failure.
   It needs a prior regen run to still exist, though not its artifact, which the re-run regenerates.
+  It does nothing, however, when the PR's head is already a metadata commit, because triage skips it (see "Regenerating once per Dependabot push" above).
+  That is the case where the push half already succeeded and you want a *fresh* regeneration, rather than the case where it failed and never landed anything.
+  Reach for the last lever below then, and give the commit a real change in it.
 - **Re-run the failed push run.** This is the obvious move when the push half is the half that failed, and it does not work.
   A re-run reuses the original event's `GITHUB_SHA` and `GITHUB_REF`, so it re-executes the push workflow as it stood at that commit, carrying whatever defect the re-run was meant to escape.
   On #874 the failed run was pinned to `f13db5c`, which predates the #876 fix, so re-running it would have failed identically.
