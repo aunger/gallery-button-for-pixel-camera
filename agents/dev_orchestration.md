@@ -113,7 +113,7 @@ For each sub-agent role, use the first rule that applies:
 
 1. **User-specified**: the user named a model for this role--use it.
 2. **Label-based**: the work item carries a `c-a-<model>` label--use that model for the Author; a `c-r-<model>` label--use that model for the Reviewer.
-3. **Default**: Sonnet.
+3. **Default**: Opus.
 
 ## Dispatch template
 
