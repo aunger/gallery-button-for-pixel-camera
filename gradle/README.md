@@ -68,6 +68,20 @@ Until that secret exists, the push workflow fails loudly rather than silently no
 This automation only ever runs `scripts/regenerate-gradle-verification.sh` in its normal merge mode; it never deletes the file first, and it never touches the toolchain (root `build.gradle.kts`, the Gradle wrapper).
 It has nothing to do with "Performing a toolchain bump" below, which stays entirely manual.
 
+#### Keeping Dependabot rebasing the branch (issue #883)
+
+Dependabot stops rebasing a pull request once a commit it did not author lands on the branch, unless that commit's message carries one of its skip markers.
+[GitHub's documentation](https://docs.github.com/en/code-security/dependabot/working-with-dependabot/managing-pull-requests-for-dependency-updates) names four, in either case: `[dependabot skip]`, `[skip dependabot]`, `[dependabot-skip]` and `[skip-dependabot]`.
+
+The push workflow's commit message therefore ends with a `[dependabot skip]` trailer.
+Without it, the automation built to help these pull requests would silently end Dependabot's maintenance of every branch it succeeds on.
+What that costs is automatic rebasing in the window between the metadata commit landing and the pull request merging, which is worst for a grouped bump left open across other merges: exactly the pull request most likely to need a rebase.
+An explicit rebase command still works either way; it is the automatic rebasing that is lost.
+
+That trailer is not a cosmetic part of the message.
+`scripts/test_dependabot_verification_metadata_workflows.sh` asserts a marker is present in the request body the push step assembles, so dropping it fails the `shell-tests` job rather than going unnoticed until a branch quietly goes stale.
+Any commit pushed onto a Dependabot branch by hand needs the same marker for the same reason.
+
 #### Re-running the pair on an open PR
 
 Fixing one of these workflows does not retroactively help a PR that is already open.
@@ -86,9 +100,8 @@ Four levers exist, and they are not equivalent.
   This rebuilds the branch from scratch and re-triggers everything.
   An agent cannot do this; see the warning below.
 - **Push a commit to the branch**, firing `synchronize`.
-  This works, and costs the branch Dependabot's automatic rebasing (see the note below).
-  In the case that brings you here, the push half has failed, so no automation commit has landed yet and the branch still has that to lose.
-  Prefer the other levers while it does.
+  This works.
+  Give the commit message a `[dependabot skip]` trailer, or the branch loses Dependabot's automatic rebasing (see "Keeping Dependabot rebasing the branch" above).
 
 If none of these is open to you, say so and stop.
 Adding `workflow_dispatch` (#878) is the intended fix for that dead end.
@@ -99,12 +112,6 @@ Adding `workflow_dispatch` (#878) is the intended fix for that dead end.
 > See `.claude/rules/github-mention-sanitization.md` for the rule, the evidence behind it, and how to check whether it still holds.
 > #874's [comment 5260994286](https://github.com/aunger/gallery-button-for-pixel-camera/pull/874#issuecomment-5260994286) is the worked example, and it cost about eight hours before anyone noticed it had not worked.
 > Re-run the regen workflow run instead, or ask a human to post the command.
-
-> [!NOTE]
-> Dependabot stops rebasing a PR once a commit it did not author lands on the branch, unless that commit's message carries a skip marker.
-> The push workflow's commit carries none, so every PR this automation succeeds on has already lost automatic rebasing.
-> #883 tracks that.
-> An explicit rebase command still works afterwards; it is the automatic rebasing that is gone.
 
 ## `wrapper/gradle-wrapper.properties` -- distribution pin
 

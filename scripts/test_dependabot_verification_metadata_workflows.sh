@@ -483,6 +483,24 @@ with tempfile.TemporaryDirectory(prefix="dependabot-push-body-test-") as tmp:
         "pushed body's commit message names the regenerated file",
     )
 
+    # Dependabot stops rebasing a pull request once a commit it did not author
+    # lands on the branch, unless the message carries one of its skip markers
+    # (issue #883). Without one, the automation built to help these pull
+    # requests silently ends Dependabot's maintenance of every branch it
+    # succeeds on.
+    skip_markers = (
+        "[dependabot skip]",
+        "[skip dependabot]",
+        "[dependabot-skip]",
+        "[skip-dependabot]",
+    )
+    message = pushed_body.get("message", "")
+    check(
+        any(m in message.lower() for m in skip_markers),
+        "pushed body's commit message carries a Dependabot skip marker, so the branch keeps "
+        "being rebased automatically (got %r)" % message,
+    )
+
     # The ID-prefixed noreply address is what links the commit to the
     # github-actions[bot] account's profile; the bare form renders as an
     # unlinked name and email pair instead (issue #864).

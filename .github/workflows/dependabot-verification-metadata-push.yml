@@ -210,8 +210,21 @@ jobs:
           # the owner of the PAT it pushes with.
           BOT_EMAIL="41898282+github-actions[bot]@users.noreply.github.com"
 
+          # Dependabot stops rebasing a pull request once a commit it did not
+          # author lands on the branch, unless that commit's message carries
+          # one of its skip markers ([dependabot skip], [skip dependabot],
+          # [dependabot-skip] or [skip-dependabot], in either case). Without
+          # one, this automation silently ends Dependabot's maintenance of
+          # every branch it succeeds on, which matters most for a grouped bump
+          # left open across other merges: exactly the pull request most
+          # likely to need a rebase (issue #883). Keep the marker on its own
+          # trailer line; deleting it is not a cosmetic edit to the message.
+          COMMIT_MESSAGE="$(printf '%s\n\n%s\n' \
+            "Regenerate gradle/verification-metadata.xml for this Dependabot bump" \
+            "[dependabot skip]")"
+
           jq -n \
-            --arg message "Regenerate gradle/verification-metadata.xml for this Dependabot bump" \
+            --arg message "$COMMIT_MESSAGE" \
             --rawfile content "$B64_FILE" \
             --arg sha "$EXISTING_SHA" \
             --arg branch "$HEAD_BRANCH" \
