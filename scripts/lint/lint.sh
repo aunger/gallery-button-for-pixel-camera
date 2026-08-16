@@ -33,7 +33,8 @@
 # Check mode (--check): each fixer runs in its check-only invocation instead:
 # `ruff check` (no --fix), `ruff format --check`, `mdformat --check`, and
 # `ktlint` (no --format). The read-only hygiene checks (check-yaml, check-toml,
-# check-merge-conflict, check-added-large-files) are unchanged. The two
+# check-json, check-xml, check-merge-conflict, check-added-large-files,
+# check-shebang-scripts-are-executable) are unchanged. The two
 # whitespace fixers (trailing-whitespace-fixer, end-of-file-fixer) have no
 # check-only mode, so they run as usual and their non-zero exit on any change
 # fails the run, without altering the pass/fail contract. On a clean tree check
@@ -120,15 +121,18 @@ is_binary() {
     [[ "$sample" -ne "$stripped" ]]
 }
 
-declare -a TEXT=() PY=() MD=() KT=() YAML=() TOML=()
+declare -a TEXT=() PY=() MD=() KT=() YAML=() TOML=() JSON=() XML=() SHEBANG_SCOPE=()
 for f in "${FILES[@]}"; do
     is_binary "$f" || TEXT+=("$f")
+    [[ "$f" == *.py ]] || SHEBANG_SCOPE+=("$f")
     case "$f" in
         *.py) PY+=("$f") ;;
         *.md) MD+=("$f") ;;
         *.kt | *.kts) KT+=("$f") ;;
         *.yaml | *.yml) YAML+=("$f") ;;
         *.toml) TOML+=("$f") ;;
+        *.json) JSON+=("$f") ;;
+        *.xml) XML+=("$f") ;;
     esac
 done
 
@@ -150,10 +154,48 @@ run() {
 declare -a LARGE_FILES_ARGS=()
 [[ $ALL -eq 1 ]] && LARGE_FILES_ARGS+=(--enforce-all)
 
-# hygiene family: the six generic pre-commit-hooks checks. These behave
-# identically in fix and check mode -- the read-only checks never write, and the
-# two whitespace fixers have no check-only mode, so they run as usual and fail
-# the run via their exit status if they change anything.
+# hygiene family: the generic pre-commit-hooks checks. These behave identically
+# in fix and check mode -- the read-only checks never write, and the two
+# whitespace fixers have no check-only mode, so they run as usual and fail the
+# run via their exit status if they change anything.
+#
+# check-shebang-scripts-are-executable reads git's recorded filemode rather than
+# the filesystem, so it is accurate no matter how the working tree was checked
+# out or which user runs it.
+#
+# SHEBANG_SCOPE is every file except *.py, rather than a list of shell globs,
+# because the two scripts where a lost mode bit does the most damage carry no
+# extension: scripts/git-hooks/pre-commit, which git runs through
+# core.hooksPath, and gradlew. The check detects shebangs itself, so handing it
+# a file without one costs nothing, and an extensionless script added later is
+# covered with no glob to update.
+#
+# The pre-commit hook is the case worth naming. A non-executable hook is not an
+# error to git: it prints one `advice.ignoredHook` hint and lets the commit
+# through, so every linter in this repository, this check included, is skipped
+# silently. It is the one instance the guard cannot self-heal, because the thing
+# that would catch the missing bit is the hook the missing bit disabled. That is
+# strictly worse than the "Permission denied" that .claude/hooks/session-start.sh
+# produced, which at least printed something.
+#
+# The *.py scripts are excluded for now: 41 are 100644 against 4 that are not,
+# and CI always invokes them as `python3 <path>`, so the bit is inert and
+# whether to set it or drop the shebangs is an open question (#887) rather than
+# a bug. Widening this check to Python means answering that first.
+#
+# Two sibling checks from the same package are deliberately absent:
+#
+#   check-executables-have-shebangs uses git's filemode only when
+#   core.fileMode is false; otherwise it flags every path it is handed that
+#   lacks a shebang, because pre-commit narrowed the set to `types:
+#   [executable]` before invoking it. There is no executable-file bucket here to
+#   reproduce that filter, so it would report every .md and .json in the tree.
+#
+#   mixed-line-ending is a fixer, not a check, and it rewrites binaries: run
+#   over the whole tree it silently modifies gradle/wrapper/gradle-wrapper.jar,
+#   whose SHA-256 scripts/test_verification_metadata.sh check (g) pins. TEXT
+#   would exclude the jar, but .bat files legitimately need CRLF, so there is no
+#   filter that makes it safe and useful at once.
 if want hygiene; then
     if [[ ${#TEXT[@]} -gt 0 ]]; then
         run "$LINT_BIN_DIR/trailing-whitespace-fixer" "${TEXT[@]}"
@@ -161,8 +203,11 @@ if want hygiene; then
     fi
     run "$LINT_BIN_DIR/check-merge-conflict" "${FILES[@]}"
     run "$LINT_BIN_DIR/check-added-large-files" "${LARGE_FILES_ARGS[@]}" "${FILES[@]}"
+    [[ ${#SHEBANG_SCOPE[@]} -gt 0 ]] && run "$LINT_BIN_DIR/check-shebang-scripts-are-executable" "${SHEBANG_SCOPE[@]}"
     [[ ${#YAML[@]} -gt 0 ]] && run "$LINT_BIN_DIR/check-yaml" "${YAML[@]}"
     [[ ${#TOML[@]} -gt 0 ]] && run "$LINT_BIN_DIR/check-toml" "${TOML[@]}"
+    [[ ${#JSON[@]} -gt 0 ]] && run "$LINT_BIN_DIR/check-json" "${JSON[@]}"
+    [[ ${#XML[@]} -gt 0 ]] && run "$LINT_BIN_DIR/check-xml" "${XML[@]}"
 fi
 
 # python family: lint + format Python.

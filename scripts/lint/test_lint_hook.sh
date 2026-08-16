@@ -22,6 +22,11 @@
 #       file-list (hook) path leaves an unlisted large file alone
 #   (m) an .md with an unlabeled fenced code block (MD040) blocks the commit,
 #       even though mdformat itself has nothing to fix
+#   (n) invalid JSON blocks the commit, valid JSON does not
+#   (o) invalid XML blocks the commit, valid XML does not
+#   (p) a script with a shebang but no executable bit blocks the commit, and the
+#       same script marked executable does not; an extensionless script is
+#       covered, while a .py is deferred (#887)
 #
 # The lint tools are resolved from $LINT_BIN_DIR (default $HOME/.local/bin),
 # exactly as scripts/lint/lint.sh resolves them; .claude/hooks/session-start.sh
@@ -42,7 +47,7 @@ FAIL=0
 pass() { echo "  PASS: $1"; PASS=$((PASS + 1)); }
 fail() { echo "  FAIL: $1"; FAIL=$((FAIL + 1)); }
 
-# The Python lint tools (the six pre-commit-hooks checks, ruff, and mdformat)
+# The Python lint tools (the pre-commit-hooks checks, ruff, and mdformat)
 # all come from scripts/lint/requirements-lint.txt as a unit, so they are present or
 # absent together. Their absence means a genuinely unprovisioned environment (a
 # fresh checkout where session-start has not run) rather than a broken hook, so
@@ -51,7 +56,8 @@ fail() { echo "  FAIL: $1"; FAIL=$((FAIL + 1)); }
 # installs them and the suite runs for real.
 PYTHON_TOOLS=(
     trailing-whitespace-fixer end-of-file-fixer check-yaml check-toml
-    check-merge-conflict check-added-large-files ruff mdformat
+    check-json check-xml check-merge-conflict check-added-large-files
+    check-shebang-scripts-are-executable ruff mdformat
 )
 for t in "${PYTHON_TOOLS[@]}"; do
     if [[ ! -x "$LINT_BIN_DIR/$t" ]]; then
@@ -266,6 +272,68 @@ printf '# Title\n\n```python\nprint(1)\n```\n' > "$REPO/labeled.md"
 ( cd "$REPO" && "$LINT_SH" --check --only markdown labeled.md >/dev/null 2>&1 )
 RC=$?
 if [[ "$RC" -eq 0 ]]; then pass "--check passes a labeled fence"; else fail "--check should pass a labeled fence, rc=$RC"; fi
+
+# ── (n) invalid JSON blocks the commit ───────────────────────────────────────
+echo ""
+echo "=== (n) invalid JSON blocks ==="
+REPO="$(new_repo)"
+printf '{"a": 1,}\n' > "$REPO/broken.json"
+RC="$(attempt_commit "$REPO")"
+if [[ "$RC" -ne 0 ]]; then pass "invalid JSON -> commit blocked"; else fail "invalid JSON should block"; fi
+# Valid JSON is not a violation.
+REPO="$(new_repo)"
+printf '{"a": 1}\n' > "$REPO/ok.json"
+RC="$(attempt_commit "$REPO")"
+if [[ "$RC" -eq 0 ]]; then pass "valid JSON -> commit allowed"; else fail "valid JSON should commit, rc=$RC"; fi
+
+# ── (o) invalid XML blocks the commit ────────────────────────────────────────
+echo ""
+echo "=== (o) invalid XML blocks ==="
+REPO="$(new_repo)"
+printf '<a><b></a>\n' > "$REPO/broken.xml"
+RC="$(attempt_commit "$REPO")"
+if [[ "$RC" -ne 0 ]]; then pass "invalid XML -> commit blocked"; else fail "invalid XML should block"; fi
+# Valid XML is not a violation.
+REPO="$(new_repo)"
+printf '<a><b/></a>\n' > "$REPO/ok.xml"
+RC="$(attempt_commit "$REPO")"
+if [[ "$RC" -eq 0 ]]; then pass "valid XML -> commit allowed"; else fail "valid XML should commit, rc=$RC"; fi
+
+# ── (p) a shebang script without the executable bit blocks the commit ────────
+#
+# This is the case that was live in this repository: .claude/settings.json wires
+# .claude/hooks/session-start.sh as a bare command, and the file was recorded
+# 100644, so the hook failed with "Permission denied" and never ran. The check
+# reads git's filemode, so the fixture must be staged at mode 100644 rather than
+# merely chmod'd in the working tree.
+echo ""
+echo "=== (p) shebang script not marked executable blocks ==="
+REPO="$(new_repo)"
+printf '#!/usr/bin/env bash\necho hi\n' > "$REPO/tool.sh"
+chmod -x "$REPO/tool.sh"
+RC="$(attempt_commit "$REPO")"
+if [[ "$RC" -ne 0 ]]; then pass "non-executable shebang script -> commit blocked"; else fail "non-executable shebang script should block"; fi
+# The same script with the executable bit set is not a violation.
+REPO="$(new_repo)"
+printf '#!/usr/bin/env bash\necho hi\n' > "$REPO/tool.sh"
+chmod +x "$REPO/tool.sh"
+RC="$(attempt_commit "$REPO")"
+if [[ "$RC" -eq 0 ]]; then pass "executable shebang script -> commit allowed"; else fail "executable shebang script should commit, rc=$RC"; fi
+# An extensionless script is covered too. This is the case that matters most:
+# scripts/git-hooks/pre-commit and gradlew both carry a shebang and no
+# extension, and git does not error on a non-executable hook, it prints an
+# advice.ignoredHook hint and commits anyway, silently skipping every linter.
+REPO="$(new_repo)"
+printf '#!/usr/bin/env bash\necho hi\n' > "$REPO/extensionless-tool"
+chmod -x "$REPO/extensionless-tool"
+RC="$(attempt_commit "$REPO")"
+if [[ "$RC" -ne 0 ]]; then pass "non-executable extensionless script -> commit blocked"; else fail "non-executable extensionless script should block"; fi
+# A .py file is out of scope for now (see the hygiene block in lint.sh, #887).
+REPO="$(new_repo)"
+printf '#!/usr/bin/env python3\nprint(1)\n' > "$REPO/tool.py"
+chmod -x "$REPO/tool.py"
+RC="$(attempt_commit "$REPO")"
+if [[ "$RC" -eq 0 ]]; then pass "non-executable .py -> commit allowed (deferred)"; else fail "non-executable .py should not block yet, rc=$RC"; fi
 
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""
