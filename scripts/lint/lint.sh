@@ -121,9 +121,10 @@ is_binary() {
     [[ "$sample" -ne "$stripped" ]]
 }
 
-declare -a TEXT=() PY=() MD=() KT=() YAML=() TOML=() JSON=() XML=() SH=()
+declare -a TEXT=() PY=() MD=() KT=() YAML=() TOML=() JSON=() XML=() SHEBANG_SCOPE=()
 for f in "${FILES[@]}"; do
     is_binary "$f" || TEXT+=("$f")
+    [[ "$f" == *.py ]] || SHEBANG_SCOPE+=("$f")
     case "$f" in
         *.py) PY+=("$f") ;;
         *.md) MD+=("$f") ;;
@@ -132,7 +133,6 @@ for f in "${FILES[@]}"; do
         *.toml) TOML+=("$f") ;;
         *.json) JSON+=("$f") ;;
         *.xml) XML+=("$f") ;;
-        *.sh) SH+=("$f") ;;
     esac
 done
 
@@ -161,14 +161,27 @@ declare -a LARGE_FILES_ARGS=()
 #
 # check-shebang-scripts-are-executable reads git's recorded filemode rather than
 # the filesystem, so it is accurate no matter how the working tree was checked
-# out or which user runs it. It is scoped to SH rather than the whole set. Every
-# *.sh in this tree is 100755 and .claude/settings.json runs two of them as bare
-# commands, so for shell the invariant is real and already universally held: a
-# missing bit there is a live "Permission denied", which is what it is guarding.
-# The *.py scripts are a different case -- 41 are 100644 against 4 that are not,
+# out or which user runs it.
+#
+# SHEBANG_SCOPE is every file except *.py, rather than a list of shell globs,
+# because the two scripts where a lost mode bit does the most damage carry no
+# extension: scripts/git-hooks/pre-commit, which git runs through
+# core.hooksPath, and gradlew. The check detects shebangs itself, so handing it
+# a file without one costs nothing, and an extensionless script added later is
+# covered with no glob to update.
+#
+# The pre-commit hook is the case worth naming. A non-executable hook is not an
+# error to git: it prints one `advice.ignoredHook` hint and lets the commit
+# through, so every linter in this repository, this check included, is skipped
+# silently. It is the one instance the guard cannot self-heal, because the thing
+# that would catch the missing bit is the hook the missing bit disabled. That is
+# strictly worse than the "Permission denied" that .claude/hooks/session-start.sh
+# produced, which at least printed something.
+#
+# The *.py scripts are excluded for now: 41 are 100644 against 4 that are not,
 # and CI always invokes them as `python3 <path>`, so the bit is inert and
-# whether to set it or drop the shebangs is an open question rather than a bug.
-# Widening this check to Python means answering that first.
+# whether to set it or drop the shebangs is an open question (#887) rather than
+# a bug. Widening this check to Python means answering that first.
 #
 # Two sibling checks from the same package are deliberately absent:
 #
@@ -190,7 +203,7 @@ if want hygiene; then
     fi
     run "$LINT_BIN_DIR/check-merge-conflict" "${FILES[@]}"
     run "$LINT_BIN_DIR/check-added-large-files" "${LARGE_FILES_ARGS[@]}" "${FILES[@]}"
-    [[ ${#SH[@]} -gt 0 ]] && run "$LINT_BIN_DIR/check-shebang-scripts-are-executable" "${SH[@]}"
+    [[ ${#SHEBANG_SCOPE[@]} -gt 0 ]] && run "$LINT_BIN_DIR/check-shebang-scripts-are-executable" "${SHEBANG_SCOPE[@]}"
     [[ ${#YAML[@]} -gt 0 ]] && run "$LINT_BIN_DIR/check-yaml" "${YAML[@]}"
     [[ ${#TOML[@]} -gt 0 ]] && run "$LINT_BIN_DIR/check-toml" "${TOML[@]}"
     [[ ${#JSON[@]} -gt 0 ]] && run "$LINT_BIN_DIR/check-json" "${JSON[@]}"

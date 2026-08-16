@@ -7,11 +7,14 @@
 # hook repository is git-cloned at commit time (issue #667).
 #
 # ruff tracks the version pinned for the ruff-pre-commit hook (issue #673).
-# pre-commit-hooks provides the six generic hygiene checks as console
-# scripts (trailing-whitespace-fixer, end-of-file-fixer, check-yaml,
-# check-toml, check-merge-conflict, check-added-large-files); it is the same
+# pre-commit-hooks provides the generic hygiene checks as console scripts
+# (trailing-whitespace-fixer, end-of-file-fixer, check-yaml, check-toml,
+# check-json, check-xml, check-merge-conflict, check-added-large-files,
+# check-shebang-scripts-are-executable); it is the same
 # pre-commit/pre-commit-hooks project, just installed from PyPI instead of
-# cloned. mdformat and its plugins format Markdown (issue #681).
+# cloned. scripts/lint/lint.sh is the authority on which are wired up and why
+# some of the package's other checks are not. mdformat and its plugins format
+# Markdown (issue #681).
 #
 # mdformat-gfm (not mdformat-tables) provides GFM pipe-table support;
 # mdformat-tables is deprecated and its repo archived. See

@@ -25,7 +25,8 @@
 #   (n) invalid JSON blocks the commit, valid JSON does not
 #   (o) invalid XML blocks the commit, valid XML does not
 #   (p) a script with a shebang but no executable bit blocks the commit, and the
-#       same script marked executable does not
+#       same script marked executable does not; an extensionless script is
+#       covered, while a .py is deferred (#887)
 #
 # The lint tools are resolved from $LINT_BIN_DIR (default $HOME/.local/bin),
 # exactly as scripts/lint/lint.sh resolves them; .claude/hooks/session-start.sh
@@ -46,7 +47,7 @@ FAIL=0
 pass() { echo "  PASS: $1"; PASS=$((PASS + 1)); }
 fail() { echo "  FAIL: $1"; FAIL=$((FAIL + 1)); }
 
-# The Python lint tools (the six pre-commit-hooks checks, ruff, and mdformat)
+# The Python lint tools (the pre-commit-hooks checks, ruff, and mdformat)
 # all come from scripts/lint/requirements-lint.txt as a unit, so they are present or
 # absent together. Their absence means a genuinely unprovisioned environment (a
 # fresh checkout where session-start has not run) rather than a broken hook, so
@@ -318,6 +319,21 @@ printf '#!/usr/bin/env bash\necho hi\n' > "$REPO/tool.sh"
 chmod +x "$REPO/tool.sh"
 RC="$(attempt_commit "$REPO")"
 if [[ "$RC" -eq 0 ]]; then pass "executable shebang script -> commit allowed"; else fail "executable shebang script should commit, rc=$RC"; fi
+# An extensionless script is covered too. This is the case that matters most:
+# scripts/git-hooks/pre-commit and gradlew both carry a shebang and no
+# extension, and git does not error on a non-executable hook, it prints an
+# advice.ignoredHook hint and commits anyway, silently skipping every linter.
+REPO="$(new_repo)"
+printf '#!/usr/bin/env bash\necho hi\n' > "$REPO/extensionless-tool"
+chmod -x "$REPO/extensionless-tool"
+RC="$(attempt_commit "$REPO")"
+if [[ "$RC" -ne 0 ]]; then pass "non-executable extensionless script -> commit blocked"; else fail "non-executable extensionless script should block"; fi
+# A .py file is out of scope for now (see the hygiene block in lint.sh, #887).
+REPO="$(new_repo)"
+printf '#!/usr/bin/env python3\nprint(1)\n' > "$REPO/tool.py"
+chmod -x "$REPO/tool.py"
+RC="$(attempt_commit "$REPO")"
+if [[ "$RC" -eq 0 ]]; then pass "non-executable .py -> commit allowed (deferred)"; else fail "non-executable .py should not block yet, rc=$RC"; fi
 
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""

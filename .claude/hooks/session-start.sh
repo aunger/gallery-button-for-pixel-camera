@@ -218,7 +218,7 @@ echo "[session-start] Step 3a: ensuring ktlint is installed..."
 # Installed from scripts/lint/requirements-lint.txt, a fully resolved lock in which
 # every package (top-level and transitive) is pinned to an exact version and a
 # SHA-256 hash.  This replaces the pre-commit framework install (issue #667):
-# pre-commit-hooks provides the six generic hygiene checks as console scripts,
+# pre-commit-hooks provides the generic hygiene checks as console scripts,
 # ruff lints/formats Python, and mdformat (with its plugins) formats Markdown.
 # See requirements-lint.in for the per-package rationale and the top-level pins
 # the lock is generated from.
