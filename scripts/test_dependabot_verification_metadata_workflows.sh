@@ -483,6 +483,17 @@ with tempfile.TemporaryDirectory(prefix="dependabot-push-body-test-") as tmp:
         "pushed body's commit message names the regenerated file",
     )
 
+    # The ID-prefixed noreply address is what links the commit to the
+    # github-actions[bot] account's profile; the bare form renders as an
+    # unlinked name and email pair instead (issue #864).
+    bot_email = "41898282+github-actions[bot]@users.noreply.github.com"
+    for role in ("author", "committer"):
+        check(
+            pushed_body.get(role, {}).get("email") == bot_email,
+            "pushed body's %s email is the ID-prefixed github-actions[bot] noreply address "
+            "(got %r)" % (role, pushed_body.get(role, {}).get("email")),
+        )
+
     pushed_content_b64 = pushed_body.get("content", "")
     pushed_bytes = None
     try:

@@ -202,14 +202,23 @@ jobs:
           BODY_FILE="$RUNNER_TEMP/verification-metadata-body.json"
           base64 -w0 "$ARTIFACT_DIR/verification-metadata.xml" | tr -d '\n' > "$B64_FILE"
 
+          # 41898282 is the github-actions[bot] account's own numeric id, and
+          # the ID-prefixed noreply address is what actually links a commit to
+          # that account's profile (issue #864). Without the prefix the commit
+          # renders as an unlinked name and email pair, which defeats the
+          # point of attributing this commit to the automation rather than to
+          # the owner of the PAT it pushes with.
+          BOT_EMAIL="41898282+github-actions[bot]@users.noreply.github.com"
+
           jq -n \
             --arg message "Regenerate gradle/verification-metadata.xml for this Dependabot bump" \
             --rawfile content "$B64_FILE" \
             --arg sha "$EXISTING_SHA" \
             --arg branch "$HEAD_BRANCH" \
+            --arg bot_email "$BOT_EMAIL" \
             '{message: $message, content: $content, sha: $sha, branch: $branch,
-              committer: {name: "github-actions[bot]", email: "github-actions[bot]@users.noreply.github.com"},
-              author: {name: "github-actions[bot]", email: "github-actions[bot]@users.noreply.github.com"}}' \
+              committer: {name: "github-actions[bot]", email: $bot_email},
+              author: {name: "github-actions[bot]", email: $bot_email}}' \
             > "$BODY_FILE"
 
           curl -sf -X PUT -H "$AUTH_HEADER" -H "$ACCEPT_HEADER" -H "$VERSION_HEADER" \
