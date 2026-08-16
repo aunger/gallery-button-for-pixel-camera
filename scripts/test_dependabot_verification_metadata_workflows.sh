@@ -254,6 +254,51 @@ if step is None:
 
 run_text = step["run"]
 
+# Mock curl for the behavioral checks in
+# scripts/test_dependabot_verification_metadata_workflows.sh (issue #875).
+# Records every invocation's argv so the test can inspect the real push
+# request, and answers the two GET calls the push step makes before it,
+# without any real network access.
+MOCK_CURL = textwrap.dedent(
+    """\
+    #!/usr/bin/env python3
+    import json
+    import os
+    import sys
+
+    args = sys.argv[1:]
+    calls_dir = os.environ["MOCK_CALLS_DIR"]
+    existing = [n for n in os.listdir(calls_dir) if n.startswith("call_")]
+    call_path = os.path.join(calls_dir, "call_{}.json".format(len(existing) + 1))
+    with open(call_path, "w") as f:
+        json.dump(args, f)
+
+    url = args[-1] if args else ""
+    if "/git/ref/heads/" in url:
+        print(json.dumps({"object": {"sha": os.environ["MOCK_EXPECTED_SHA"]}}))
+    elif "?ref=" in url:
+        print(json.dumps({
+            "sha": os.environ["MOCK_EXISTING_BLOB_SHA"],
+            "content": os.environ["MOCK_EXISTING_CONTENT_B64"],
+        }))
+    elif "/contents/" in url:
+        print(json.dumps({"content": {"sha": "0" * 40}}))
+    else:
+        sys.stderr.write("mock curl: unrecognized URL: {}\\n".format(url))
+        sys.exit(99)
+    """
+)
+
+
+def put_call_of(calls):
+    """Return the argv of the Contents API PUT, or None if it never ran."""
+    for args in calls:
+        url = args[-1] if args else ""
+        if "/git/ref/heads/" not in url and "?ref=" not in url and "/contents/" in url:
+            return args
+    return None
+
+
 with tempfile.TemporaryDirectory(prefix="dependabot-push-body-test-") as tmp:
     script_path = os.path.join(tmp, "push_step.sh")
     with open(script_path, "w") as f:
@@ -285,52 +330,11 @@ with tempfile.TemporaryDirectory(prefix="dependabot-push-body-test-") as tmp:
     ):
         sys.exit(1)
 
-    runner_temp = os.path.join(tmp, "runner_temp")
-    os.makedirs(runner_temp)
-
-    calls_dir = os.path.join(tmp, "calls")
-    os.makedirs(calls_dir)
-
     bin_dir = os.path.join(tmp, "bin")
     os.makedirs(bin_dir)
     mock_curl_path = os.path.join(bin_dir, "curl")
     with open(mock_curl_path, "w") as f:
-        f.write(
-            textwrap.dedent(
-                """\
-                #!/usr/bin/env python3
-                # Mock curl for the behavioral check in
-                # scripts/test_dependabot_verification_metadata_workflows.sh (issue #875).
-                # Records every invocation's argv so the test can inspect the real push
-                # request, and answers the two GET calls the push step makes before it,
-                # without any real network access.
-                import json
-                import os
-                import sys
-
-                args = sys.argv[1:]
-                calls_dir = os.environ["MOCK_CALLS_DIR"]
-                existing = [n for n in os.listdir(calls_dir) if n.startswith("call_")]
-                call_path = os.path.join(calls_dir, "call_{}.json".format(len(existing) + 1))
-                with open(call_path, "w") as f:
-                    json.dump(args, f)
-
-                url = args[-1] if args else ""
-                if "/git/ref/heads/" in url:
-                    print(json.dumps({"object": {"sha": os.environ["MOCK_EXPECTED_SHA"]}}))
-                elif "?ref=" in url:
-                    print(json.dumps({
-                        "sha": os.environ["MOCK_EXISTING_BLOB_SHA"],
-                        "content": os.environ["MOCK_EXISTING_CONTENT_B64"],
-                    }))
-                elif "/contents/" in url:
-                    print(json.dumps({"content": {"sha": "0" * 40}}))
-                else:
-                    sys.stderr.write("mock curl: unrecognized URL: {}\\n".format(url))
-                    sys.exit(99)
-                """
-            )
-        )
+        f.write(MOCK_CURL)
     st = os.stat(mock_curl_path)
     os.chmod(mock_curl_path, st.st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
 
@@ -338,27 +342,62 @@ with tempfile.TemporaryDirectory(prefix="dependabot-push-body-test-") as tmp:
         b"stale placeholder content, not the regenerated artifact"
     ).decode()
 
-    env = dict(os.environ)
-    env["PATH"] = bin_dir + os.pathsep + env["PATH"]
-    env["PAT"] = "test-pat-not-a-real-secret"
-    env["REPO"] = "octocat/example-repo"
-    env["HEAD_BRANCH"] = "dependabot/gradle/app/some-dependency-1.2.3"
-    env["EXPECTED_SHA"] = "1" * 40
-    env["ARTIFACT_DIR"] = artifact_dir
-    env["FILE_PATH"] = "gradle/verification-metadata.xml"
-    env["RUNNER_TEMP"] = runner_temp
-    env["MOCK_CALLS_DIR"] = calls_dir
-    env["MOCK_EXPECTED_SHA"] = env["EXPECTED_SHA"]
-    env["MOCK_EXISTING_BLOB_SHA"] = "d" * 40
-    env["MOCK_EXISTING_CONTENT_B64"] = existing_content_b64
+    runs = [0]
 
-    result = subprocess.run(
-        ["bash", script_path],
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
+    def run_push_step(**mock_overrides):
+        """Run the extracted push step once, in its own scratch directories.
+
+        Returns the completed process, the argv of every curl invocation it
+        made in order, and the step outputs it wrote to $GITHUB_OUTPUT.
+        """
+        runs[0] += 1
+        run_dir = os.path.join(tmp, "run_%d" % runs[0])
+        calls_dir = os.path.join(run_dir, "calls")
+        runner_temp = os.path.join(run_dir, "runner_temp")
+        os.makedirs(calls_dir)
+        os.makedirs(runner_temp)
+        github_output = os.path.join(run_dir, "github_output")
+        open(github_output, "w").close()
+
+        env = dict(os.environ)
+        env["PATH"] = bin_dir + os.pathsep + env["PATH"]
+        env["PAT"] = "test-pat-not-a-real-secret"
+        env["REPO"] = "octocat/example-repo"
+        env["HEAD_BRANCH"] = "dependabot/gradle/app/some-dependency-1.2.3"
+        env["EXPECTED_SHA"] = "1" * 40
+        env["ARTIFACT_DIR"] = artifact_dir
+        env["FILE_PATH"] = "gradle/verification-metadata.xml"
+        env["RUNNER_TEMP"] = runner_temp
+        env["GITHUB_OUTPUT"] = github_output
+        env["MOCK_CALLS_DIR"] = calls_dir
+        env["MOCK_EXPECTED_SHA"] = env["EXPECTED_SHA"]
+        env["MOCK_EXISTING_BLOB_SHA"] = "d" * 40
+        env["MOCK_EXISTING_CONTENT_B64"] = existing_content_b64
+        env.update(mock_overrides)
+
+        proc = subprocess.run(
+            ["bash", script_path],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+        calls = []
+        for name in sorted(
+            os.listdir(calls_dir), key=lambda n: int(n.split("_")[1].split(".")[0])
+        ):
+            with open(os.path.join(calls_dir, name)) as f:
+                calls.append(json.load(f))
+
+        with open(github_output) as f:
+            outputs = dict(
+                line.split("=", 1) for line in f.read().splitlines() if "=" in line
+            )
+
+        return proc, calls, outputs
+
+    result, calls, outputs = run_push_step()
 
     ok = check(
         result.returncode == 0,
@@ -368,14 +407,7 @@ with tempfile.TemporaryDirectory(prefix="dependabot-push-body-test-") as tmp:
     if not ok:
         sys.exit(1)
 
-    put_call = None
-    for name in sorted(os.listdir(calls_dir)):
-        with open(os.path.join(calls_dir, name)) as f:
-            args = json.load(f)
-        url = args[-1] if args else ""
-        if "/git/ref/heads/" not in url and "?ref=" not in url and "/contents/" in url:
-            put_call = args
-            break
+    put_call = put_call_of(calls)
 
     if not check(put_call is not None, "the push step made a PUT request to the Contents API"):
         sys.exit(1)
@@ -407,11 +439,11 @@ with tempfile.TemporaryDirectory(prefix="dependabot-push-body-test-") as tmp:
         pushed_body = json.load(f)
 
     check(
-        pushed_body.get("branch") == env["HEAD_BRANCH"],
+        pushed_body.get("branch") == "dependabot/gradle/app/some-dependency-1.2.3",
         "pushed body's branch matches the workflow_run's head branch",
     )
     check(
-        pushed_body.get("sha") == env["MOCK_EXISTING_BLOB_SHA"],
+        pushed_body.get("sha") == "d" * 40,
         "pushed body's sha matches the existing file's blob sha",
     )
     check(
