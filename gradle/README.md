@@ -91,10 +91,16 @@ The regen half runs on `pull_request`, so its `regenerate` job appears in the PR
 The push half runs on `workflow_run`, which executes in the base branch's context, so its check runs attach to `main` and the PR shows no trace of them.
 That asymmetry once cost fourteen hours on #874: `build-and-test` was red for dependency verification and nothing on the PR pointed at the workflow that was supposed to have fixed it.
 
-The push job's last step therefore writes a commit status onto the PR's head SHA, named "Dependabot verification-metadata push", whose description names the step that failed and whose link goes to the run.
+The push job's last step therefore writes a commit status onto the PR's head SHA, named "Dependabot verification-metadata push", whose description names the outcome and whose link goes to the run.
 It reports every unsuccessful outcome, cancellations included, because it reads which step failed from the run's own jobs rather than enumerating failure modes one by one.
-It also reports success, to the same status context, which is what clears a failure an earlier attempt left on that same commit.
-A run that found no artifact to push reports nothing at all: that is the ordinary outcome whenever a bump does not move the dependency graph, and on any non-Dependabot PR touching `app/build.gradle.kts`, where a status would just be noise on someone else's PR.
+It reports the successful ones too, to the same status context, which is also what clears a failure an earlier attempt left on that same commit: the file was pushed, it already matched, the branch moved during regeneration, or the branch is gone.
+The last two are skips rather than failures, so they are reported green, saying which skip it was.
+
+One run reports nothing: the one where no artifact was produced, so the push step never ran and reached no verdict.
+That is the ordinary outcome whenever a bump does not move the dependency graph, and on any non-Dependabot PR touching `app/build.gradle.kts`, where a status would just be noise on someone else's PR.
+
+A status can land on a commit the PR no longer displays, since both skips mean the head has moved on, and a deleted branch's commit may be unreachable altogether.
+The step treats a 404 or 422 from the status API as a warning rather than an error for that reason, instead of trying to work out in advance which SHAs are still visible.
 
 Writing a commit status needs `statuses: write` and no checkout, so the property the two-workflow split exists for is untouched: the half holding write credentials still never materializes the Dependabot branch.
 

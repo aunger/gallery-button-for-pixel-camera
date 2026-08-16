@@ -987,16 +987,27 @@ with tempfile.TemporaryDirectory(prefix="dependabot-push-body-test-") as tmp:
         "a long failed-step name is truncated to the 140-character status description cap",
     )
 
-    # The success report is not decoration: posted to the same context, it is
-    # what clears a failure a previous attempt left on this same commit.
-    for push_result, label in (("pushed", "a push"), ("already-current", "a no-op")):
+    # Every verdict the push step can reach is reported, the two skips
+    # included: #877 names the stale-branch-tip guard among the modes that
+    # must stop being silent. A skip is a success, since nothing went wrong,
+    # and each description has to say which outcome it was rather than
+    # falling through to a generic one.
+    verdicts = (
+        ("pushed", "Pushed"),
+        ("already-current", "already matched"),
+        ("branch-moved", "the branch moved"),
+        ("branch-gone", "no longer exists"),
+    )
+    for push_result, expected_phrase in verdicts:
         ok_run, ok_calls, _ = run_report_step(JOB_STATUS="success", PUSH_RESULT=push_result)
         _, ok_body = posted_status(ok_calls)
         check(
             ok_run.returncode == 0
             and ok_body is not None
-            and ok_body.get("state") == "success",
-            "the reporting step posts a success status after %s (got %r)" % (label, ok_body),
+            and ok_body.get("state") == "success"
+            and expected_phrase in ok_body.get("description", ""),
+            "result=%s is reported as a success naming that outcome (got %r)"
+            % (push_result, ok_body),
         )
 
     # The commit can be gone by the time the status is written (the branch was
@@ -1018,20 +1029,20 @@ with tempfile.TemporaryDirectory(prefix="dependabot-push-body-test-") as tmp:
     )
 
 # The reporting step's own `if` decides which runs report at all: every
-# unsuccessful one, plus the successful ones that acted on an artifact. A run
-# that found no artifact is the ordinary outcome on any pull request that does
-# not move the dependency graph, including a non-Dependabot one, and must
-# leave no status behind.
-report_if = str(report_step.get("if", ""))
+# unsuccessful one, plus every one where the push step reached a verdict. A
+# run that found no artifact never sets `result`, and it is the ordinary
+# outcome on any pull request that does not move the dependency graph,
+# including a non-Dependabot one, so it must leave no status behind.
+report_if = " ".join(str(report_step.get("if", "")).split())
 check(
-    "always()" in report_if and "job.status" in report_if,
+    "always()" in report_if and "job.status != 'success'" in report_if,
     "the reporting step runs on every unsuccessful outcome, cancellations included (if: %r)"
     % report_if,
 )
 check(
-    "steps.push.outputs.result" in report_if,
-    "the reporting step's success path is gated on the push step's result, so a run with no "
-    "artifact reports nothing (if: %r)" % report_if,
+    "steps.push.outputs.result != ''" in report_if,
+    "the reporting step reports on any push verdict, and only a run that never reached one "
+    "(no artifact) is excluded (if: %r)" % report_if,
 )
 
 sys.exit(0 if all(results) else 1)

@@ -274,18 +274,30 @@ jobs:
         # which needs the actions: read already granted above; writing the
         # status needs the statuses: write added alongside it.
         #
-        # Reported when this job did not succeed, and when it acted on an
-        # artifact. A run that found no artifact is the ordinary outcome
+        # Reported whenever this job did not succeed, and whenever the push
+        # step reached a verdict of any kind, which is what a non-empty
+        # `result` means. That covers all four of its outcomes, the two
+        # skips included: #877 names the stale-branch-tip guard among the
+        # modes that must stop being silent, and a skip is exactly the case
+        # where someone is left wondering why no commit arrived.
+        #
+        # The only run that reports nothing is one where the push step never
+        # ran because no artifact was produced. That is the ordinary outcome
         # whenever a bump does not move the dependency graph, and on every
         # non-Dependabot PR touching app/build.gradle.kts, so a status there
-        # would be noise on someone else's PR. The success report is not
+        # would be noise on someone else's PR.
+        #
+        # A skip is reported as success, not failure: nothing went wrong,
+        # and the branch it declined to write to has a fresh pair of runs
+        # coming, or no longer exists. Both may land on a commit the PR no
+        # longer shows, and a deleted branch's commit may be unreachable
+        # altogether; that is handled below and is cheaper than reasoning
+        # here about which SHAs are still visible. The success report is not
         # decoration either: posted to the same context, it clears a failure
         # a previous attempt left on this same commit.
         if: >-
           always()
-          && (job.status != 'success'
-          || steps.push.outputs.result == 'pushed'
-          || steps.push.outputs.result == 'already-current')
+          && (job.status != 'success' || steps.push.outputs.result != '')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
@@ -308,11 +320,13 @@ jobs:
 
           if [ "$JOB_STATUS" = "success" ]; then
             STATE="success"
-            if [ "$PUSH_RESULT" = "pushed" ]; then
-              DESCRIPTION="Pushed the regenerated gradle/verification-metadata.xml"
-            else
-              DESCRIPTION="gradle/verification-metadata.xml already matched the regenerated file"
-            fi
+            case "$PUSH_RESULT" in
+              pushed) DESCRIPTION="Pushed the regenerated gradle/verification-metadata.xml" ;;
+              already-current) DESCRIPTION="gradle/verification-metadata.xml already matched the regenerated file" ;;
+              branch-moved) DESCRIPTION="Skipped: the branch moved while the file was being regenerated, so a fresh run follows" ;;
+              branch-gone) DESCRIPTION="Skipped: the branch no longer exists" ;;
+              *) DESCRIPTION="Nothing to push" ;;
+            esac
           else
             STATE="failure"
             # Name the step that actually failed, whichever it was: the
@@ -329,8 +343,12 @@ jobs:
               DESCRIPTION="The regenerated file was not pushed (job $JOB_STATUS)"
             fi
           fi
-          # A commit status description is capped at 140 characters.
-          DESCRIPTION="$(printf '%.140s' "$DESCRIPTION")"
+          # A commit status description is capped at 140 characters. Bash's
+          # substring expansion counts characters rather than bytes under a
+          # UTF-8 locale, so a step name carrying a multi-byte character is
+          # not cut mid-sequence into invalid UTF-8 that jq would then
+          # reject, in the one step whose whole job is to not be silent.
+          DESCRIPTION="${DESCRIPTION:0:140}"
 
           STATUS_BODY="$RUNNER_TEMP/commit-status.json"
           STATUS_RESPONSE="$RUNNER_TEMP/commit-status-response.json"
@@ -353,7 +371,7 @@ jobs:
               echo "::warning::$HEAD_SHA is no longer reachable (HTTP $STATUS_CODE), so the '$STATE' status could not be posted; the pull request or its branch is probably gone."
               ;;
             *)
-              echo "::error::Posting the '$STATE' status on $HEAD_SHA returned HTTP $STATUS_CODE: $(head -c 500 "$STATUS_RESPONSE"). The job's own outcome above is unaffected; only reporting it onto the pull request failed."
+              echo "::error::Posting the '$STATE' status on $HEAD_SHA returned HTTP $STATUS_CODE: $(head -c 500 "$STATUS_RESPONSE"). Whatever the steps above did has already happened, the push included; what failed is reporting it onto the pull request, and this step is what turns the run red."
               exit 1
               ;;
           esac
