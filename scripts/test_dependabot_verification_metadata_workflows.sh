@@ -202,6 +202,19 @@ if [ -f "$PUSH_WF" ]; then
         pass "push workflow does not pass the assembled body to curl via -d \"\$BODY\""
     fi
 
+    # (m) the push job can write commit statuses. Running on workflow_run
+    # attaches this job's own check runs to the base branch, so the affected
+    # PR shows no trace of a failure here (issue #877); the outcome is
+    # mirrored onto the PR's head commit as a commit status instead, which
+    # needs statuses: write in this job's permissions block. As with (i),
+    # a job-level block fully replaces the workflow-level one, so the grant
+    # has to be listed here.
+    if awk '/^jobs:/{injobs=1} injobs && /^  push:/{inpush=1} inpush && /^  [a-z]/ && !/^  push:/{inpush=0} inpush' "$PUSH_WF" | grep -qE '^[[:space:]]*statuses:[[:space:]]*write'; then
+        pass "push job's permissions block grants statuses: write"
+    else
+        fail "push job's permissions block is missing statuses: write (without it the push half cannot report its outcome onto the pull request, and a failure leaves no signal there at all; see issue #877)"
+    fi
+
     # (m) behavioral: run the push step's real "Push the regenerated file
     # through the Contents API" script against a realistic-size artifact
     # (issue #875's file was 266562 bytes, base64ing to about 2.7 times the
@@ -244,15 +257,19 @@ with open(push_wf_path) as f:
     doc = yaml.safe_load(f)
 
 steps = doc["jobs"]["push"]["steps"]
-step = next(
-    (s for s in steps if s.get("name") == "Push the regenerated file through the Contents API"),
-    None,
-)
-if step is None:
-    check(False, "could not find the 'Push the regenerated file through the Contents API' step to extract for the behavioral test")
-    sys.exit(1)
 
-run_text = step["run"]
+
+def extract_step(name):
+    """Return the named step, or report a failure and stop the whole block."""
+    found = next((s for s in steps if s.get("name") == name), None)
+    if found is None:
+        check(False, "could not find the %r step to extract for the behavioral test" % name)
+        sys.exit(1)
+    return found
+
+
+push_step = extract_step("Push the regenerated file through the Contents API")
+report_step = extract_step("Report this job's outcome onto the pull request")
 
 # Mock curl for the behavioral checks in
 # scripts/test_dependabot_verification_metadata_workflows.sh (issue #875).
@@ -288,16 +305,25 @@ MOCK_CURL = textwrap.dedent(
 
     url = args[-1] if args else ""
     status = "200"
-    if "/git/ref/heads/" in url:
+    if url.endswith("/jobs"):
+        body = os.environ.get("MOCK_JOBS_JSON", '{"jobs": []}')
+    elif "/statuses/" in url:
+        status = os.environ.get("MOCK_STATUS_POST_CODE", "201")
+        body = json.dumps({"state": "recorded"})
+    elif "/git/ref/heads/" in url:
         status = os.environ.get("MOCK_REF_STATUS", "200")
         if status == "200":
             body = json.dumps({"object": {"sha": os.environ["MOCK_EXPECTED_SHA"]}})
         else:
             body = json.dumps({"message": "mock curl: answering HTTP " + status})
     elif "?ref=" in url:
+        # Read through a file: the committed file's base64 is far past
+        # MAX_ARG_STRLEN, which applies to environment strings too.
+        with open(os.environ["MOCK_EXISTING_CONTENT_B64_FILE"]) as f:
+            existing_content = f.read()
         body = json.dumps({
             "sha": os.environ["MOCK_EXISTING_BLOB_SHA"],
-            "content": os.environ["MOCK_EXISTING_CONTENT_B64"],
+            "content": existing_content,
         })
     elif "/contents/" in url:
         body = json.dumps({"content": {"sha": "0" * 40}})
@@ -332,9 +358,12 @@ def put_call_of(calls):
 
 
 with tempfile.TemporaryDirectory(prefix="dependabot-push-body-test-") as tmp:
-    script_path = os.path.join(tmp, "push_step.sh")
-    with open(script_path, "w") as f:
-        f.write(run_text)
+    push_script = os.path.join(tmp, "push_step.sh")
+    with open(push_script, "w") as f:
+        f.write(push_step["run"])
+    report_script = os.path.join(tmp, "report_step.sh")
+    with open(report_script, "w") as f:
+        f.write(report_step["run"])
 
     artifact_dir = os.path.join(tmp, "artifact")
     os.makedirs(artifact_dir)
@@ -370,14 +399,20 @@ with tempfile.TemporaryDirectory(prefix="dependabot-push-body-test-") as tmp:
     st = os.stat(mock_curl_path)
     os.chmod(mock_curl_path, st.st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
 
-    existing_content_b64 = base64.b64encode(
-        b"stale placeholder content, not the regenerated artifact"
-    ).decode()
+    # The mock reads the committed file's base64 from a file rather than an
+    # environment variable: at this file's real size it is past
+    # MAX_ARG_STRLEN, which bounds environment strings just as it bounds argv.
+    stale_b64_path = os.path.join(tmp, "committed-stale.b64")
+    with open(stale_b64_path, "w") as f:
+        f.write(base64.b64encode(b"stale placeholder content, not the regenerated artifact").decode())
+    current_b64_path = os.path.join(tmp, "committed-current.b64")
+    with open(current_b64_path, "w") as f:
+        f.write(base64.b64encode(artifact_bytes).decode())
 
     runs = [0]
 
-    def run_push_step(**mock_overrides):
-        """Run the extracted push step once, in its own scratch directories.
+    def run_step(script, step_env):
+        """Run one extracted step, in its own scratch directories.
 
         Returns the completed process, the argv of every curl invocation it
         made in order, and the step outputs it wrote to $GITHUB_OUTPUT.
@@ -393,22 +428,13 @@ with tempfile.TemporaryDirectory(prefix="dependabot-push-body-test-") as tmp:
 
         env = dict(os.environ)
         env["PATH"] = bin_dir + os.pathsep + env["PATH"]
-        env["PAT"] = "test-pat-not-a-real-secret"
-        env["REPO"] = "octocat/example-repo"
-        env["HEAD_BRANCH"] = "dependabot/gradle/app/some-dependency-1.2.3"
-        env["EXPECTED_SHA"] = "1" * 40
-        env["ARTIFACT_DIR"] = artifact_dir
-        env["FILE_PATH"] = "gradle/verification-metadata.xml"
         env["RUNNER_TEMP"] = runner_temp
         env["GITHUB_OUTPUT"] = github_output
         env["MOCK_CALLS_DIR"] = calls_dir
-        env["MOCK_EXPECTED_SHA"] = env["EXPECTED_SHA"]
-        env["MOCK_EXISTING_BLOB_SHA"] = "d" * 40
-        env["MOCK_EXISTING_CONTENT_B64"] = existing_content_b64
-        env.update(mock_overrides)
+        env.update(step_env)
 
         proc = subprocess.run(
-            ["bash", script_path],
+            ["bash", script],
             env=env,
             capture_output=True,
             text=True,
@@ -428,6 +454,49 @@ with tempfile.TemporaryDirectory(prefix="dependabot-push-body-test-") as tmp:
             )
 
         return proc, calls, outputs
+
+    def run_push_step(**overrides):
+        """Run the push step with the workflow's own env, as GitHub sets it."""
+        step_env = {
+            "PAT": "test-pat-not-a-real-secret",
+            "REPO": "octocat/example-repo",
+            "HEAD_BRANCH": "dependabot/gradle/app/some-dependency-1.2.3",
+            "EXPECTED_SHA": "1" * 40,
+            "ARTIFACT_DIR": artifact_dir,
+            "FILE_PATH": "gradle/verification-metadata.xml",
+            "MOCK_EXPECTED_SHA": "1" * 40,
+            "MOCK_EXISTING_BLOB_SHA": "d" * 40,
+            "MOCK_EXISTING_CONTENT_B64_FILE": stale_b64_path,
+        }
+        step_env.update(overrides)
+        return run_step(push_script, step_env)
+
+    def run_report_step(**overrides):
+        """Run the outcome-reporting step with the workflow's own env."""
+        step_env = {
+            "GH_TOKEN": "test-token-not-a-real-secret",
+            "REPO": "octocat/example-repo",
+            "HEAD_SHA": "1" * 40,
+            "JOB_STATUS": "success",
+            "PUSH_RESULT": "pushed",
+            "RUN_ID": "31584288707",
+            "RUN_ATTEMPT": "1",
+            "RUN_URL": "https://github.com/octocat/example-repo/actions/runs/31584288707",
+        }
+        step_env.update(overrides)
+        return run_step(report_script, step_env)
+
+    def posted_status(calls):
+        """Return the body of the commit-status POST, or None if never made."""
+        for args in calls:
+            url = args[-1] if args else ""
+            if "/statuses/" not in url:
+                continue
+            for i, a in enumerate(args):
+                if a == "--data-binary" and i + 1 < len(args):
+                    with open(args[i + 1].lstrip("@")) as f:
+                        return url, json.load(f)
+        return None, None
 
     result, calls, outputs = run_push_step()
 
@@ -525,11 +594,20 @@ with tempfile.TemporaryDirectory(prefix="dependabot-push-body-test-") as tmp:
             "pushed content, once base64-decoded, is byte-identical to the regenerated artifact",
         )
 
+    # The step's `result` output is what the reporting step below keys on to
+    # tell the outcomes apart, so each path has to declare the right one
+    # (issue #877).
+    check(
+        outputs.get("result") == "pushed",
+        "push step reports result=pushed after a successful push (got %r)"
+        % outputs.get("result"),
+    )
+
     # (n) behavioral: the Dependabot branch was deleted between generation and
     # this run, so the branch-tip lookup 404s (issue #863). That is a "nothing
     # to push" outcome, not a fault: the step must skip cleanly rather than
     # hard-fail under `set -e` and leave a red run carrying no real signal.
-    gone, gone_calls, _ = run_push_step(MOCK_REF_STATUS="404")
+    gone, gone_calls, gone_outputs = run_push_step(MOCK_REF_STATUS="404")
     check(
         gone.returncode == 0,
         "push step exits 0 when the Dependabot branch no longer exists (exit %d; stderr: %s)"
@@ -542,6 +620,11 @@ with tempfile.TemporaryDirectory(prefix="dependabot-push-body-test-") as tmp:
     check(
         "::warning::" in gone.stdout,
         "push step warns, rather than staying silent, when the Dependabot branch no longer exists",
+    )
+    check(
+        gone_outputs.get("result") == "branch-gone",
+        "push step reports result=branch-gone when the Dependabot branch no longer exists (got %r)"
+        % gone_outputs.get("result"),
     )
 
     # (o) behavioral: any other failure on that same lookup is a genuine API
@@ -562,6 +645,157 @@ with tempfile.TemporaryDirectory(prefix="dependabot-push-body-test-") as tmp:
         "::error::" in broken.stdout,
         "push step reports an error annotation when the branch-tip lookup returns an unexpected status",
     )
+
+    # (p) behavioral: the two remaining no-op paths. Both are successes with
+    # nothing to push, and the reporting step tells them apart by `result`.
+    moved, moved_calls, moved_outputs = run_push_step(MOCK_EXPECTED_SHA="9" * 40)
+    check(
+        moved.returncode == 0 and put_call_of(moved_calls) is None,
+        "push step skips without pushing when the branch tip moved during regeneration",
+    )
+    check(
+        moved_outputs.get("result") == "branch-moved",
+        "push step reports result=branch-moved when the branch tip moved during regeneration (got %r)"
+        % moved_outputs.get("result"),
+    )
+
+    current, current_calls, current_outputs = run_push_step(
+        MOCK_EXISTING_CONTENT_B64_FILE=current_b64_path
+    )
+    check(
+        current.returncode == 0 and put_call_of(current_calls) is None,
+        "push step commits nothing when the committed file already matches the regenerated one",
+    )
+    check(
+        current_outputs.get("result") == "already-current",
+        "push step reports result=already-current when the committed file already matches (got %r)"
+        % current_outputs.get("result"),
+    )
+
+    # (q) behavioral: the outcome-reporting step (issue #877). Running on
+    # workflow_run puts this job's own check runs on the base branch, so the
+    # commit status it writes onto the head SHA is the only trace the pull
+    # request ever sees.
+    failed_jobs_json = json.dumps(
+        {
+            "jobs": [
+                {
+                    "steps": [
+                        {"name": "Download the regenerated file, if one was produced", "conclusion": "success"},
+                        {"name": "Confirm the push token is configured", "conclusion": "failure"},
+                    ]
+                }
+            ]
+        }
+    )
+    failed, failed_calls, _ = run_report_step(
+        JOB_STATUS="failure", PUSH_RESULT="", MOCK_JOBS_JSON=failed_jobs_json
+    )
+    check(
+        failed.returncode == 0,
+        "reporting step exits 0 after reporting a failure (exit %d; stderr: %s)"
+        % (failed.returncode, failed.stderr.strip()[-400:]),
+    )
+    status_url, status_body = posted_status(failed_calls)
+    if not check(
+        status_body is not None,
+        "reporting step posts a commit status when the job failed",
+    ):
+        sys.exit(1)
+    check(
+        status_url.endswith("/statuses/" + "1" * 40),
+        "the failure status is posted against the pull request's head SHA (got %r)" % status_url,
+    )
+    check(
+        status_body.get("state") == "failure",
+        "the reported state is 'failure' (got %r)" % status_body.get("state"),
+    )
+    check(
+        "Confirm the push token is configured" in status_body.get("description", ""),
+        "the failure status names the step that failed (got %r)" % status_body.get("description"),
+    )
+    check(
+        status_body.get("target_url", "").endswith("/actions/runs/31584288707"),
+        "the failure status links this workflow run (got %r)" % status_body.get("target_url"),
+    )
+    check(
+        bool(status_body.get("context")),
+        "the failure status carries a context, so a later run replaces it rather than piling up",
+    )
+
+    # A failure the jobs API cannot attribute to a named step, such as a
+    # cancelled job, still has to reach the pull request.
+    cancelled, cancelled_calls, _ = run_report_step(JOB_STATUS="cancelled", PUSH_RESULT="")
+    _, cancelled_body = posted_status(cancelled_calls)
+    check(
+        cancelled.returncode == 0
+        and cancelled_body is not None
+        and cancelled_body.get("state") == "failure"
+        and bool(cancelled_body.get("description")),
+        "an unattributable failure is still reported, with a description (got %r)" % cancelled_body,
+    )
+
+    # A commit status description is capped at 140 characters; a long step
+    # name must be truncated rather than rejected by the API.
+    long_name = "Confirm " + ("a very long step name " * 12)
+    long_jobs_json = json.dumps(
+        {"jobs": [{"steps": [{"name": long_name, "conclusion": "failure"}]}]}
+    )
+    long_run, long_calls, _ = run_report_step(
+        JOB_STATUS="failure", PUSH_RESULT="", MOCK_JOBS_JSON=long_jobs_json
+    )
+    _, long_body = posted_status(long_calls)
+    check(
+        long_body is not None and len(long_body.get("description", "")) <= 140,
+        "a long failed-step name is truncated to the 140-character status description cap",
+    )
+
+    # The success report is not decoration: posted to the same context, it is
+    # what clears a failure a previous attempt left on this same commit.
+    for push_result, label in (("pushed", "a push"), ("already-current", "a no-op")):
+        ok_run, ok_calls, _ = run_report_step(JOB_STATUS="success", PUSH_RESULT=push_result)
+        _, ok_body = posted_status(ok_calls)
+        check(
+            ok_run.returncode == 0
+            and ok_body is not None
+            and ok_body.get("state") == "success",
+            "the reporting step posts a success status after %s (got %r)" % (label, ok_body),
+        )
+
+    # The commit can be gone by the time the status is written (the branch was
+    # deleted, the pull request closed). That is not worth failing over, and
+    # it must not mask the job's real outcome.
+    unreachable, _, _ = run_report_step(MOCK_STATUS_POST_CODE="422")
+    check(
+        unreachable.returncode == 0 and "::warning::" in unreachable.stdout,
+        "the reporting step warns, rather than failing, when the head commit is unreachable",
+    )
+
+    # Any other API failure means the pull request silently lost its only
+    # signal, which is the whole defect this step exists to fix, so it fails
+    # loudly and says the job's own outcome is unaffected.
+    unreported, _, _ = run_report_step(MOCK_STATUS_POST_CODE="500")
+    check(
+        unreported.returncode != 0 and "::error::" in unreported.stdout,
+        "the reporting step fails loudly when the commit status cannot be posted at all",
+    )
+
+# The reporting step's own `if` decides which runs report at all: every
+# unsuccessful one, plus the successful ones that acted on an artifact. A run
+# that found no artifact is the ordinary outcome on any pull request that does
+# not move the dependency graph, including a non-Dependabot one, and must
+# leave no status behind.
+report_if = str(report_step.get("if", ""))
+check(
+    "always()" in report_if and "job.status" in report_if,
+    "the reporting step runs on every unsuccessful outcome, cancellations included (if: %r)"
+    % report_if,
+)
+check(
+    "steps.push.outputs.result" in report_if,
+    "the reporting step's success path is gated on the push step's result, so a run with no "
+    "artifact reports nothing (if: %r)" % report_if,
+)
 
 sys.exit(0 if all(results) else 1)
 PY

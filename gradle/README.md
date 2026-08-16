@@ -68,6 +68,19 @@ Until that secret exists, the push workflow fails loudly rather than silently no
 This automation only ever runs `scripts/regenerate-gradle-verification.sh` in its normal merge mode; it never deletes the file first, and it never touches the toolchain (root `build.gradle.kts`, the Gradle wrapper).
 It has nothing to do with "Performing a toolchain bump" below, which stays entirely manual.
 
+#### Where the pair reports (issue #877)
+
+The regen half runs on `pull_request`, so its `regenerate` job appears in the PR's own checks list.
+The push half runs on `workflow_run`, which executes in the base branch's context, so its check runs attach to `main` and the PR shows no trace of them.
+That asymmetry once cost fourteen hours on #874: `build-and-test` was red for dependency verification and nothing on the PR pointed at the workflow that was supposed to have fixed it.
+
+The push job's last step therefore writes a commit status onto the PR's head SHA, named "Dependabot verification-metadata push", whose description names the step that failed and whose link goes to the run.
+It reports every unsuccessful outcome, cancellations included, because it reads which step failed from the run's own jobs rather than enumerating failure modes one by one.
+It also reports success, to the same status context, which is what clears a failure an earlier attempt left on that same commit.
+A run that found no artifact to push reports nothing at all: that is the ordinary outcome whenever a bump does not move the dependency graph, and on any non-Dependabot PR touching `app/build.gradle.kts`, where a status would just be noise on someone else's PR.
+
+Writing a commit status needs `statuses: write` and no checkout, so the property the two-workflow split exists for is untouched: the half holding write credentials still never materializes the Dependabot branch.
+
 #### Keeping Dependabot rebasing the branch (issue #883)
 
 Dependabot stops rebasing a pull request once a commit it did not author lands on the branch, unless that commit's message carries one of its skip markers.
