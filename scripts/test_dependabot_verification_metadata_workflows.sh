@@ -89,11 +89,213 @@ if [ -f "$GENERATE_WF" ]; then
     # run, which the push workflow's `if: ... == 'success'` gate correctly
     # declines to act on, so the PR just never goes green, silently
     # defeating issue #842's whole purpose.
-    TIMEOUT="$(grep -E '^[[:space:]]*timeout-minutes:' "$GENERATE_WF" | head -1 | grep -oE '[0-9]+')"
+    TIMEOUT="$(awk '/^jobs:/{injobs=1} injobs && /^  regenerate:/{injob=1} injob && /^  [a-z]/ && !/^  regenerate:/{injob=0} injob' "$GENERATE_WF" \
+        | grep -E '^[[:space:]]*timeout-minutes:' | head -1 | grep -oE '[0-9]+')"
     if [ -n "$TIMEOUT" ] && [ "$TIMEOUT" -ge 90 ]; then
         pass "generate workflow's timeout-minutes ($TIMEOUT) is at least 90, matching regenerate-gradle-toolchain.yml's budget for the identical uncached Gradle invocation"
     else
         fail "generate workflow's timeout-minutes (${TIMEOUT:-unset}) is below 90; regenerate-gradle-toolchain.yml documents a 20-45 minute cold run for the identical script, so anything below that risks cancelling a normal run"
+    fi
+
+    # (n) behavioral: the triage gate that keeps the push half's own metadata
+    # commit from buying a second, identical regeneration (issue #879). Runs
+    # the real extracted step against a mocked commits API, so what is tested
+    # is the shell the workflow actually executes. The skip must stay
+    # conservative: a regen wrongly skipped leaves a Dependabot PR red with
+    # stale metadata, which is far worse than the wasted run this saves.
+    set +e
+    N_OUTPUT="$(python3 - "$GENERATE_WF" <<'PY'
+import json
+import os
+import stat
+import subprocess
+import sys
+import tempfile
+import textwrap
+
+generate_wf_path = sys.argv[1]
+
+try:
+    import yaml
+except ImportError:
+    print("  FAIL: PyYAML is not installed (see scripts/requirements.txt); cannot run the behavioral triage test")
+    sys.exit(1)
+
+results = []
+
+
+def check(ok, msg):
+    results.append(ok)
+    print(("  PASS: " if ok else "  FAIL: ") + msg)
+    return ok
+
+
+with open(generate_wf_path) as f:
+    doc = yaml.safe_load(f)
+
+jobs = doc["jobs"]
+
+if not check("triage" in jobs, "generate workflow has a triage job in front of the regeneration"):
+    sys.exit(1)
+
+regenerate_if = str(jobs.get("regenerate", {}).get("if", ""))
+check(
+    "needs.triage.outputs.needs_regen" in regenerate_if,
+    "the regenerate job is gated on the triage job's verdict (if: %r)" % regenerate_if,
+)
+check(
+    "pull_request.user.login" in regenerate_if,
+    "the regenerate job still carries the dependabot author gate itself, not only through "
+    "`needs` (if: %r)" % regenerate_if,
+)
+
+step = next(
+    (
+        s
+        for s in jobs["triage"]["steps"]
+        if s.get("name") == "Check whether the head commit only carries regenerated metadata"
+    ),
+    None,
+)
+if step is None:
+    check(False, "could not find the triage job's head-commit step to extract for the behavioral test")
+    sys.exit(1)
+
+MOCK_CURL = textwrap.dedent(
+    """\
+    #!/usr/bin/env python3
+    import os
+    import sys
+
+    if os.environ.get("MOCK_COMMIT_FAILS") == "1":
+        sys.stderr.write("mock curl: the commits API is unavailable\\n")
+        sys.exit(22)
+    out_path = None
+    args = sys.argv[1:]
+    for i, a in enumerate(args):
+        if a == "-o" and i + 1 < len(args):
+            out_path = args[i + 1]
+    body = os.environ["MOCK_COMMIT_JSON"]
+    if out_path:
+        with open(out_path, "w") as f:
+            f.write(body)
+    else:
+        sys.stdout.write(body)
+    """
+)
+
+
+def files_payload(*filenames):
+    return json.dumps({"files": [{"filename": n} for n in filenames]})
+
+
+with tempfile.TemporaryDirectory(prefix="dependabot-triage-test-") as tmp:
+    script_path = os.path.join(tmp, "triage_step.sh")
+    with open(script_path, "w") as f:
+        f.write(step["run"])
+
+    bin_dir = os.path.join(tmp, "bin")
+    os.makedirs(bin_dir)
+    mock_curl_path = os.path.join(bin_dir, "curl")
+    with open(mock_curl_path, "w") as f:
+        f.write(MOCK_CURL)
+    st = os.stat(mock_curl_path)
+    os.chmod(mock_curl_path, st.st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+
+    runs = [0]
+
+    def run_triage_step(commit_json, **overrides):
+        runs[0] += 1
+        run_dir = os.path.join(tmp, "run_%d" % runs[0])
+        os.makedirs(run_dir)
+        github_output = os.path.join(run_dir, "github_output")
+        open(github_output, "w").close()
+
+        env = dict(os.environ)
+        env["PATH"] = bin_dir + os.pathsep + env["PATH"]
+        env["GH_TOKEN"] = "test-token-not-a-real-secret"
+        env["REPO"] = "octocat/example-repo"
+        env["HEAD_SHA"] = "a" * 40
+        env["FILE_PATH"] = "gradle/verification-metadata.xml"
+        env["RUNNER_TEMP"] = run_dir
+        env["GITHUB_OUTPUT"] = github_output
+        env["MOCK_COMMIT_JSON"] = commit_json
+        env.update(overrides)
+
+        proc = subprocess.run(
+            ["bash", script_path], env=env, capture_output=True, text=True, timeout=60
+        )
+        with open(github_output) as f:
+            outputs = dict(
+                line.split("=", 1) for line in f.read().splitlines() if "=" in line
+            )
+        return proc, outputs
+
+    cases = [
+        (
+            files_payload("gradle/verification-metadata.xml"),
+            "false",
+            "a head commit whose entire diff is gradle/verification-metadata.xml is recognized as "
+            "this automation's own commit and skipped",
+        ),
+        (
+            files_payload("app/build.gradle.kts"),
+            "true",
+            "a Dependabot bump of app/build.gradle.kts is regenerated",
+        ),
+        (
+            files_payload("app/build.gradle.kts", "gradle/verification-metadata.xml"),
+            "true",
+            "a head commit that touches the metadata file alongside a real bump is still "
+            "regenerated",
+        ),
+        (
+            files_payload("gradle/libs.versions.toml"),
+            "true",
+            "a head commit that touches neither file is regenerated rather than skipped",
+        ),
+    ]
+    for commit_json, expected, description in cases:
+        proc, outputs = run_triage_step(commit_json)
+        check(
+            proc.returncode == 0 and outputs.get("needs_regen") == expected,
+            "%s (needs_regen=%r, exit %d)" % (description, outputs.get("needs_regen"), proc.returncode),
+        )
+
+    # Every uncertain answer regenerates: this gate is an optimization over
+    # behavior that was already correct, so an unreachable API or a payload
+    # with no usable file list must fall back to it rather than block the
+    # pull request or, worse, decide there is nothing to do.
+    broken, broken_outputs = run_triage_step(
+        files_payload("app/build.gradle.kts"), MOCK_COMMIT_FAILS="1"
+    )
+    check(
+        broken.returncode == 0
+        and broken_outputs.get("needs_regen") == "true"
+        and "::warning::" in broken.stdout,
+        "an unreachable commits API regenerates, with a warning, rather than skipping or failing "
+        "(exit %d, outputs %r)" % (broken.returncode, broken_outputs),
+    )
+
+    malformed, malformed_outputs = run_triage_step('{"sha": "aaa"}')
+    check(
+        malformed.returncode == 0 and malformed_outputs.get("needs_regen") == "true",
+        "a commits payload carrying no file list regenerates rather than skipping (exit %d, "
+        "outputs %r)" % (malformed.returncode, malformed_outputs),
+    )
+
+sys.exit(0 if all(results) else 1)
+PY
+)"
+    N_STATUS=$?
+    set -e
+    echo "$N_OUTPUT"
+    N_PASS=$(grep -c '^  PASS:' <<<"$N_OUTPUT" || true)
+    N_FAIL=$(grep -c '^  FAIL:' <<<"$N_OUTPUT" || true)
+    PASS=$((PASS + N_PASS))
+    FAIL=$((FAIL + N_FAIL))
+    if [ "$N_STATUS" -ne 0 ] && [ "$N_FAIL" -eq 0 ]; then
+        fail "triage-gate behavioral test errored before reporting individual checks (exit $N_STATUS)"
     fi
 fi
 

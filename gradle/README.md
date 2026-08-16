@@ -68,6 +68,23 @@ Until that secret exists, the push workflow fails loudly rather than silently no
 This automation only ever runs `scripts/regenerate-gradle-verification.sh` in its normal merge mode; it never deletes the file first, and it never touches the toolchain (root `build.gradle.kts`, the Gradle wrapper).
 It has nothing to do with "Performing a toolchain bump" below, which stays entirely manual.
 
+#### Regenerating once per Dependabot push (issue #879)
+
+The push half's metadata commit is a push to the PR head, so it fires `synchronize` and re-triggers the regen half.
+The path filter does not stop it: GitHub evaluates `paths` against the PR's whole base-to-head diff, and `app/build.gradle.kts` is still in it.
+Left alone, that bought a second full regeneration on every Dependabot PR whose result could not differ from the first, since the file it regenerates is the one that commit just landed, generated against that commit's own parent.
+
+The regen workflow's `triage` job cuts it off.
+It asks the API what the head commit changed, and skips the regeneration when the answer is `gradle/verification-metadata.xml` and nothing else.
+The discriminator is what the commit does rather than who it says it is from: a commit with that diff cannot have moved the dependency graph, and keying on the committer identity would have tied the gate to the exact email string the push half writes.
+Triage checks nothing out, so the regen half's read-only, no-secrets posture is unchanged.
+
+A regen wrongly skipped is much worse than the run it saves, since it leaves a PR red with stale metadata.
+Every uncertain answer therefore regenerates: an unreachable commits API, or a payload with no usable file list, warns and falls back to the behavior this gate optimizes away, which was correct all along.
+The one state that still reaches a wrong skip is a commit pushed by hand whose entire diff is `gradle/verification-metadata.xml`, carrying contents not generated from that branch's graph.
+Nothing here produces that: Dependabot's own pushes always carry `app/build.gradle.kts`, and the push half only ever commits a file it generated against the very commit it is committing onto.
+If you do hit it, regenerate by hand as for any other bump; re-running the regen workflow will take the same skip.
+
 #### Where the pair reports (issue #877)
 
 The regen half runs on `pull_request`, so its `regenerate` job appears in the PR's own checks list.
@@ -115,6 +132,7 @@ Four levers exist, and they are not equivalent.
 - **Push a commit to the branch**, firing `synchronize`.
   This works.
   Give the commit message a `[dependabot skip]` trailer, or the branch loses Dependabot's automatic rebasing (see "Keeping Dependabot rebasing the branch" above).
+  Change something other than `gradle/verification-metadata.xml` too, or the triage job takes the commit for this automation's own and skips the regeneration (see "Regenerating once per Dependabot push" above).
 
 If none of these is open to you, say so and stop.
 Adding `workflow_dispatch` (#878) is the intended fix for that dead end.
