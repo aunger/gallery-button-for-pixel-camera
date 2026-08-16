@@ -258,7 +258,12 @@ run_text = step["run"]
 # scripts/test_dependabot_verification_metadata_workflows.sh (issue #875).
 # Records every invocation's argv so the test can inspect the real push
 # request, and answers the two GET calls the push step makes before it,
-# without any real network access.
+# without any real network access. It honours -o (write the body to a file
+# instead of stdout), -w (append the write-out format, with %{http_code}
+# substituted) and the -f family (exit 22 on a >=400 status), so a step that
+# reads the status code itself is exercised the same way curl would exercise
+# it. MOCK_REF_STATUS drives the branch-tip lookup's status code (issue
+# #863).
 MOCK_CURL = textwrap.dedent(
     """\
     #!/usr/bin/env python3
@@ -273,19 +278,46 @@ MOCK_CURL = textwrap.dedent(
     with open(call_path, "w") as f:
         json.dump(args, f)
 
+    out_path = None
+    write_out = None
+    for i, a in enumerate(args):
+        if a == "-o" and i + 1 < len(args):
+            out_path = args[i + 1]
+        elif a == "-w" and i + 1 < len(args):
+            write_out = args[i + 1]
+
     url = args[-1] if args else ""
+    status = "200"
     if "/git/ref/heads/" in url:
-        print(json.dumps({"object": {"sha": os.environ["MOCK_EXPECTED_SHA"]}}))
+        status = os.environ.get("MOCK_REF_STATUS", "200")
+        if status == "200":
+            body = json.dumps({"object": {"sha": os.environ["MOCK_EXPECTED_SHA"]}})
+        else:
+            body = json.dumps({"message": "mock curl: answering HTTP " + status})
     elif "?ref=" in url:
-        print(json.dumps({
+        body = json.dumps({
             "sha": os.environ["MOCK_EXISTING_BLOB_SHA"],
             "content": os.environ["MOCK_EXISTING_CONTENT_B64"],
-        }))
+        })
     elif "/contents/" in url:
-        print(json.dumps({"content": {"sha": "0" * 40}}))
+        body = json.dumps({"content": {"sha": "0" * 40}})
     else:
         sys.stderr.write("mock curl: unrecognized URL: {}\\n".format(url))
         sys.exit(99)
+
+    if out_path:
+        with open(out_path, "w") as f:
+            f.write(body)
+    else:
+        sys.stdout.write(body + "\\n")
+    if write_out:
+        sys.stdout.write(write_out.replace("%{http_code}", status))
+
+    fail_fast = any(
+        a.startswith("-") and not a.startswith("--") and "f" in a for a in args
+    )
+    if fail_fast and int(status) >= 400:
+        sys.exit(22)
     """
 )
 
@@ -463,6 +495,44 @@ with tempfile.TemporaryDirectory(prefix="dependabot-push-body-test-") as tmp:
             pushed_bytes == artifact_bytes,
             "pushed content, once base64-decoded, is byte-identical to the regenerated artifact",
         )
+
+    # (n) behavioral: the Dependabot branch was deleted between generation and
+    # this run, so the branch-tip lookup 404s (issue #863). That is a "nothing
+    # to push" outcome, not a fault: the step must skip cleanly rather than
+    # hard-fail under `set -e` and leave a red run carrying no real signal.
+    gone, gone_calls, _ = run_push_step(MOCK_REF_STATUS="404")
+    check(
+        gone.returncode == 0,
+        "push step exits 0 when the Dependabot branch no longer exists (exit %d; stderr: %s)"
+        % (gone.returncode, gone.stderr.strip()[-400:]),
+    )
+    check(
+        put_call_of(gone_calls) is None,
+        "push step makes no Contents API PUT when the Dependabot branch no longer exists",
+    )
+    check(
+        "::warning::" in gone.stdout,
+        "push step warns, rather than staying silent, when the Dependabot branch no longer exists",
+    )
+
+    # (o) behavioral: any other failure on that same lookup is a genuine API
+    # error, not a deleted branch, and must still fail loudly. Treating it as
+    # "the branch is gone" would silently drop a regeneration the pull request
+    # is waiting on.
+    broken, broken_calls, _ = run_push_step(MOCK_REF_STATUS="500")
+    check(
+        broken.returncode != 0,
+        "push step fails when the branch-tip lookup returns an unexpected status (exit %d)"
+        % broken.returncode,
+    )
+    check(
+        put_call_of(broken_calls) is None,
+        "push step makes no Contents API PUT when the branch-tip lookup returns an unexpected status",
+    )
+    check(
+        "::error::" in broken.stdout,
+        "push step reports an error annotation when the branch-tip lookup returns an unexpected status",
+    )
 
 sys.exit(0 if all(results) else 1)
 PY

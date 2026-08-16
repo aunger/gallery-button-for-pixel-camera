@@ -141,8 +141,29 @@ jobs:
           # round of this same automation); abandon this round rather than
           # overwrite work the stale artifact knows nothing about. Whatever
           # moved the branch triggers a fresh pair of runs on its own.
-          CURRENT_SHA="$(curl -sf -H "$AUTH_HEADER" -H "$ACCEPT_HEADER" -H "$VERSION_HEADER" \
-            "$API/git/ref/heads/$HEAD_BRANCH" | jq -r '.object.sha')"
+          #
+          # The branch can also be gone by the time this runs: the PR was
+          # closed, or Dependabot recreated the branch mid-flight (issue
+          # #863). That is the same "nothing to push here" situation as a
+          # moved tip, not a fault, so read the status code rather than
+          # running this lookup under `curl -sf`, which would abort the job
+          # under `set -e` and leave a red run carrying no real signal. Any
+          # other non-200 is a genuine API failure and still fails loudly:
+          # treating it as "the branch is gone" would silently drop a
+          # regeneration the PR is waiting on.
+          REF_BODY="$RUNNER_TEMP/branch-ref.json"
+          REF_STATUS="$(curl -s -o "$REF_BODY" -w '%{http_code}' \
+            -H "$AUTH_HEADER" -H "$ACCEPT_HEADER" -H "$VERSION_HEADER" \
+            "$API/git/ref/heads/$HEAD_BRANCH")"
+          if [ "$REF_STATUS" = "404" ]; then
+            echo "::warning::$HEAD_BRANCH no longer exists (the pull request was closed, or Dependabot recreated the branch) since the file was generated; skipping this regeneration."
+            exit 0
+          fi
+          if [ "$REF_STATUS" != "200" ]; then
+            echo "::error::Looking up $HEAD_BRANCH's tip returned HTTP $REF_STATUS: $(head -c 500 "$REF_BODY")"
+            exit 1
+          fi
+          CURRENT_SHA="$(jq -r '.object.sha' < "$REF_BODY")"
           if [ "$CURRENT_SHA" != "$EXPECTED_SHA" ]; then
             echo "::warning::$HEAD_BRANCH moved (was $EXPECTED_SHA, now $CURRENT_SHA) since the file was generated; skipping this stale regeneration."
             exit 0
