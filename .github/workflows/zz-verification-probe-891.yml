@@ -1,0 +1,57 @@
+name: Verification probe for PR 891 (test branch only)
+
+# Throwaway probe used by the Verification Agent for PR #891, issue #894.
+# It exists only on test/verify-pr-891-github-behaviors and is never proposed
+# for main. It answers one external-behavior question the mocked suite cannot:
+# when a later success commit status is posted to the same context as an
+# earlier failure, does the success supersede the failure in the combined
+# status GitHub renders?
+
+on:
+  push:
+    branches: [test/verify-pr-891-github-behaviors]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      statuses: write
+    steps:
+      - name: Post a failure status, then a success status, in one context
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          API="https://api.github.com/repos/$REPO"
+          CONTEXT="Dependabot verification-metadata push"
+
+          post() {
+            jq -n --arg state "$1" --arg description "$2" --arg context "$CONTEXT" \
+              '{state: $state, description: $description, context: $context}' \
+              > "$RUNNER_TEMP/body.json"
+            curl -sf -X POST -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              -H "Content-Type: application/json" \
+              --data-binary @"$RUNNER_TEMP/body.json" "$API/statuses/$HEAD_SHA" >/dev/null
+            echo "Posted $1 in context '$CONTEXT' on $HEAD_SHA"
+          }
+
+          post failure "Probe: simulated push-half failure"
+          echo "--- combined status after the failure ---"
+          curl -sf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "$API/commits/$HEAD_SHA/status" \
+            | jq -c '{state, statuses: [.statuses[] | {context, state, description}]}'
+
+          post success "Probe: simulated push-half success"
+          echo "--- combined status after the success ---"
+          curl -sf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "$API/commits/$HEAD_SHA/status" \
+            | jq -c '{state, statuses: [.statuses[] | {context, state, description}]}'
