@@ -17,6 +17,13 @@ name: Push regenerated verification metadata (Dependabot)
 # base branch to run at all, so what actually executes here is always this
 # reviewed file on main, never anything from a Dependabot branch.
 #
+# The last step writes one more thing through the API: a commit status on
+# the PR's head commit, mirroring this job's outcome onto the PR that
+# triggered it (issue #877). Running on workflow_run means this job's own
+# check runs attach to the base branch, where the PR never shows them, so
+# without that status a failure here is invisible exactly where someone
+# would look for it. It needs no checkout either.
+#
 # The push authenticates with a personal access token
 # (secrets.DEPENDABOT_VERIFICATION_PAT), not the default GITHUB_TOKEN. A
 # GITHUB_TOKEN-authored push never triggers a new workflow run--that is
@@ -60,6 +67,13 @@ jobs:
       # with it, so this must be listed explicitly even though the
       # workflow-level block above does not have it.
       actions: read
+      # "Report this job's outcome onto the pull request" below mirrors the
+      # job's result onto the PR's head commit as a commit status, because
+      # this job's own check run attaches to the base branch where the PR
+      # never shows it (issue #877). Writing a commit status needs no
+      # checkout and no PR code, so it costs this job nothing that the split
+      # in the header comment is protecting.
+      statuses: write
     steps:
       - name: Download the regenerated file, if one was produced
         id: download
@@ -119,6 +133,7 @@ jobs:
           fi
 
       - name: Push the regenerated file through the Contents API
+        id: push
         if: steps.gate.outputs.has_artifact == 'true'
         env:
           PAT: ${{ secrets.DEPENDABOT_VERIFICATION_PAT }}
@@ -141,9 +156,32 @@ jobs:
           # round of this same automation); abandon this round rather than
           # overwrite work the stale artifact knows nothing about. Whatever
           # moved the branch triggers a fresh pair of runs on its own.
-          CURRENT_SHA="$(curl -sf -H "$AUTH_HEADER" -H "$ACCEPT_HEADER" -H "$VERSION_HEADER" \
-            "$API/git/ref/heads/$HEAD_BRANCH" | jq -r '.object.sha')"
+          #
+          # The branch can also be gone by the time this runs: the PR was
+          # closed, or Dependabot recreated the branch mid-flight (issue
+          # #863). That is the same "nothing to push here" situation as a
+          # moved tip, not a fault, so read the status code rather than
+          # running this lookup under `curl -sf`, which would abort the job
+          # under `set -e` and leave a red run carrying no real signal. Any
+          # other non-200 is a genuine API failure and still fails loudly:
+          # treating it as "the branch is gone" would silently drop a
+          # regeneration the PR is waiting on.
+          REF_BODY="$RUNNER_TEMP/branch-ref.json"
+          REF_STATUS="$(curl -s -o "$REF_BODY" -w '%{http_code}' \
+            -H "$AUTH_HEADER" -H "$ACCEPT_HEADER" -H "$VERSION_HEADER" \
+            "$API/git/ref/heads/$HEAD_BRANCH")"
+          if [ "$REF_STATUS" = "404" ]; then
+            echo "result=branch-gone" >> "$GITHUB_OUTPUT"
+            echo "::warning::$HEAD_BRANCH no longer exists (the pull request was closed, or Dependabot recreated the branch) since the file was generated; skipping this regeneration."
+            exit 0
+          fi
+          if [ "$REF_STATUS" != "200" ]; then
+            echo "::error::Looking up $HEAD_BRANCH's tip returned HTTP $REF_STATUS: $(head -c 500 "$REF_BODY")"
+            exit 1
+          fi
+          CURRENT_SHA="$(jq -r '.object.sha' < "$REF_BODY")"
           if [ "$CURRENT_SHA" != "$EXPECTED_SHA" ]; then
+            echo "result=branch-moved" >> "$GITHUB_OUTPUT"
             echo "::warning::$HEAD_BRANCH moved (was $EXPECTED_SHA, now $CURRENT_SHA) since the file was generated; skipping this stale regeneration."
             exit 0
           fi
@@ -157,6 +195,7 @@ jobs:
           EXISTING_SHA="$(echo "$EXISTING" | jq -r '.sha')"
 
           if echo "$EXISTING" | jq -r '.content' | base64 -d | cmp -s - "$ARTIFACT_DIR/verification-metadata.xml"; then
+            echo "result=already-current" >> "$GITHUB_OUTPUT"
             echo "$FILE_PATH already matches the regenerated file; nothing to commit."
             exit 0
           fi
@@ -181,15 +220,158 @@ jobs:
           BODY_FILE="$RUNNER_TEMP/verification-metadata-body.json"
           base64 -w0 "$ARTIFACT_DIR/verification-metadata.xml" | tr -d '\n' > "$B64_FILE"
 
+          # 41898282 is the github-actions[bot] account's own numeric id, and
+          # the ID-prefixed noreply address is what actually links a commit to
+          # that account's profile (issue #864). Without the prefix the commit
+          # renders as an unlinked name and email pair, which defeats the
+          # point of attributing this commit to the automation rather than to
+          # the owner of the PAT it pushes with.
+          BOT_EMAIL="41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Dependabot stops rebasing a pull request once a commit it did not
+          # author lands on the branch, unless that commit's message carries
+          # one of its skip markers ([dependabot skip], [skip dependabot],
+          # [dependabot-skip] or [skip-dependabot], in either case). Without
+          # one, this automation silently ends Dependabot's maintenance of
+          # every branch it succeeds on, which matters most for a grouped bump
+          # left open across other merges: exactly the pull request most
+          # likely to need a rebase (issue #883). Keep the marker on its own
+          # trailer line; deleting it is not a cosmetic edit to the message.
+          COMMIT_MESSAGE="$(printf '%s\n\n%s\n' \
+            "Regenerate gradle/verification-metadata.xml for this Dependabot bump" \
+            "[dependabot skip]")"
+
           jq -n \
-            --arg message "Regenerate gradle/verification-metadata.xml for this Dependabot bump" \
+            --arg message "$COMMIT_MESSAGE" \
             --rawfile content "$B64_FILE" \
             --arg sha "$EXISTING_SHA" \
             --arg branch "$HEAD_BRANCH" \
+            --arg bot_email "$BOT_EMAIL" \
             '{message: $message, content: $content, sha: $sha, branch: $branch,
-              committer: {name: "github-actions[bot]", email: "github-actions[bot]@users.noreply.github.com"},
-              author: {name: "github-actions[bot]", email: "github-actions[bot]@users.noreply.github.com"}}' \
+              committer: {name: "github-actions[bot]", email: $bot_email},
+              author: {name: "github-actions[bot]", email: $bot_email}}' \
             > "$BODY_FILE"
 
           curl -sf -X PUT -H "$AUTH_HEADER" -H "$ACCEPT_HEADER" -H "$VERSION_HEADER" \
             --data-binary @"$BODY_FILE" "$API/contents/$FILE_PATH" >/dev/null
+
+          echo "result=pushed" >> "$GITHUB_OUTPUT"
+
+      - name: Report this job's outcome onto the pull request
+        # This workflow runs on workflow_run, so it executes in the base
+        # branch's context and its check runs attach to that branch, not to
+        # the PR's head SHA. The PR therefore shows no trace of this job at
+        # all: when the push half fails, the PR looks exactly as it would if
+        # the automation had never been wired up, and #875 went fourteen
+        # hours before anyone thought to look in the Actions tab (issue
+        # #877). Mirror the outcome onto the head commit as a commit status,
+        # which the PR does display, naming the step that failed and linking
+        # this run.
+        #
+        # workflow_run.head_sha is the PR branch's tip, already relied on by
+        # the push step above, so nothing is checked out and no PR code runs
+        # to obtain it. Naming the failed step reads this run's own jobs,
+        # which needs the actions: read already granted above; writing the
+        # status needs the statuses: write added alongside it.
+        #
+        # Reported whenever this job did not succeed, and whenever the push
+        # step reached a verdict of any kind, which is what a non-empty
+        # `result` means. That covers all four of its outcomes, the two
+        # skips included: #877 names the stale-branch-tip guard among the
+        # modes that must stop being silent, and a skip is exactly the case
+        # where someone is left wondering why no commit arrived.
+        #
+        # The only run that reports nothing is one where the push step never
+        # ran because no artifact was produced. That is the ordinary outcome
+        # whenever a bump does not move the dependency graph, and on every
+        # non-Dependabot PR touching app/build.gradle.kts, so a status there
+        # would be noise on someone else's PR.
+        #
+        # A skip is reported as success, not failure: nothing went wrong,
+        # and the branch it declined to write to has a fresh pair of runs
+        # coming, or no longer exists. Both may land on a commit the PR no
+        # longer shows, and a deleted branch's commit may be unreachable
+        # altogether; that is handled below and is cheaper than reasoning
+        # here about which SHAs are still visible. The success report is not
+        # decoration either: posted to the same context, it clears a failure
+        # a previous attempt left on this same commit.
+        if: >-
+          always()
+          && (job.status != 'success' || steps.push.outputs.result != '')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          JOB_STATUS: ${{ job.status }}
+          PUSH_RESULT: ${{ steps.push.outputs.result }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          # No `set -e`: every failure below is handled explicitly, so that
+          # reporting cannot itself turn a completed push into a red run
+          # without saying why.
+          set -uo pipefail
+
+          AUTH_HEADER="Authorization: Bearer $GH_TOKEN"
+          ACCEPT_HEADER="Accept: application/vnd.github+json"
+          VERSION_HEADER="X-GitHub-Api-Version: 2022-11-28"
+          API="https://api.github.com/repos/$REPO"
+
+          if [ "$JOB_STATUS" = "success" ]; then
+            STATE="success"
+            case "$PUSH_RESULT" in
+              pushed) DESCRIPTION="Pushed the regenerated gradle/verification-metadata.xml" ;;
+              already-current) DESCRIPTION="gradle/verification-metadata.xml already matched the regenerated file" ;;
+              branch-moved) DESCRIPTION="Skipped: the branch moved while the file was being regenerated, so a fresh run follows" ;;
+              branch-gone) DESCRIPTION="Skipped: the branch no longer exists" ;;
+              *) DESCRIPTION="Nothing to push" ;;
+            esac
+          else
+            STATE="failure"
+            # Name the step that actually failed, whichever it was: the
+            # missing-PAT guard, the artifact confirmation, the push itself,
+            # or a cancellation. Reading it from the run's own jobs keeps
+            # this out of the business of enumerating failure modes, so a
+            # step added later is covered without touching this one.
+            FAILED_STEP="$(curl -sf -H "$AUTH_HEADER" -H "$ACCEPT_HEADER" -H "$VERSION_HEADER" \
+              "$API/actions/runs/$RUN_ID/attempts/$RUN_ATTEMPT/jobs" \
+              | jq -r 'first(.jobs[]?.steps[]? | select(.conclusion == "failure") | .name) // empty')"
+            if [ -n "$FAILED_STEP" ]; then
+              DESCRIPTION="Failed at: $FAILED_STEP"
+            else
+              DESCRIPTION="The regenerated file was not pushed (job $JOB_STATUS)"
+            fi
+          fi
+          # A commit status description is capped at 140 characters. Bash's
+          # substring expansion counts characters rather than bytes under a
+          # UTF-8 locale, so a step name carrying a multi-byte character is
+          # not cut mid-sequence into invalid UTF-8 that jq would then
+          # reject, in the one step whose whole job is to not be silent.
+          DESCRIPTION="${DESCRIPTION:0:140}"
+
+          STATUS_BODY="$RUNNER_TEMP/commit-status.json"
+          STATUS_RESPONSE="$RUNNER_TEMP/commit-status-response.json"
+          jq -n \
+            --arg state "$STATE" \
+            --arg description "$DESCRIPTION" \
+            --arg target_url "$RUN_URL" \
+            '{state: $state, description: $description, target_url: $target_url,
+              context: "Dependabot verification-metadata push"}' \
+            > "$STATUS_BODY"
+
+          STATUS_CODE="$(curl -s -o "$STATUS_RESPONSE" -w '%{http_code}' -X POST \
+            -H "$AUTH_HEADER" -H "$ACCEPT_HEADER" -H "$VERSION_HEADER" \
+            --data-binary @"$STATUS_BODY" "$API/statuses/$HEAD_SHA")"
+          case "$STATUS_CODE" in
+            2*)
+              echo "Reported $STATE on $HEAD_SHA: $DESCRIPTION"
+              ;;
+            404 | 422)
+              echo "::warning::$HEAD_SHA is no longer reachable (HTTP $STATUS_CODE), so the '$STATE' status could not be posted; the pull request or its branch is probably gone."
+              ;;
+            *)
+              echo "::error::Posting the '$STATE' status on $HEAD_SHA returned HTTP $STATUS_CODE: $(head -c 500 "$STATUS_RESPONSE"). Whatever the steps above did has already happened, the push included; what failed is reporting it onto the pull request, and this step is what turns the run red."
+              exit 1
+              ;;
+          esac

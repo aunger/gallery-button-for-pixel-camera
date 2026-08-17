@@ -42,8 +42,85 @@ permissions:
   contents: read
 
 jobs:
-  regenerate:
+  # A cheap gate in front of the expensive job below (issue #879).
+  #
+  # The push half's metadata commit is itself a push to the PR head, so it
+  # fires `synchronize` and matches the path filter above, which GitHub
+  # evaluates against the PR's whole base-to-head diff rather than against
+  # the new commit alone. Ungated, every Dependabot PR therefore pays a
+  # second full regeneration whose result cannot differ from the first: the
+  # file it would regenerate is the one that commit just landed, generated
+  # against that commit's own parent. On #874 that was 7.5 wasted minutes on
+  # a warm cache, and this job is uncached by design (see the timeout note
+  # below), so a cold one costs proportionally more.
+  #
+  # The discriminator is what the head commit *does*, not who it claims to be
+  # from: a commit whose entire diff is gradle/verification-metadata.xml
+  # cannot have moved the dependency graph, so regenerating against it
+  # reproduces the file already on the branch. Keying on the committer
+  # identity instead would have tied this gate to the exact email string the
+  # push half writes, which issue #864 was changing in the same breath.
+  #
+  # Skipping wrongly costs far more than the run it saves: it leaves a
+  # Dependabot PR red with stale metadata and no automated way back. So every
+  # uncertain answer regenerates, and the only state that still reaches a
+  # wrong skip is a commit pushed by hand whose entire diff is
+  # gradle/verification-metadata.xml and whose contents were not generated
+  # from this branch's graph. Nothing in this repository produces it,
+  # Dependabot's own pushes always carry app/build.gradle.kts, and the way
+  # out is the by-hand regeneration gradle/README.md already documents.
+  triage:
     if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      needs_regen: ${{ steps.head_commit.outputs.needs_regen }}
+    steps:
+      - name: Check whether the head commit only carries regenerated metadata
+        id: head_commit
+        # Asks the API what the head commit changed rather than checking the
+        # branch out, so this job runs no code from the PR either.
+        #
+        # Every uncertain answer regenerates. This gate is an optimization,
+        # and the behavior it optimizes away was correct, so an unreachable
+        # API or a payload without a usable file list falls back to it rather
+        # than blocking the PR on a transient error or, worse, guessing that
+        # nothing needs doing.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          FILE_PATH: gradle/verification-metadata.xml
+        run: |
+          set -uo pipefail
+          COMMIT_BODY="$RUNNER_TEMP/head-commit.json"
+          if ! curl -sf -o "$COMMIT_BODY" -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$REPO/commits/$HEAD_SHA"; then
+            echo "needs_regen=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::Could not read $HEAD_SHA from the commits API, so what it changes is unknown; regenerating rather than assuming there is nothing to do."
+            exit 0
+          fi
+          # An absent or unusable file list yields an empty string, which
+          # never equals $FILE_PATH and so regenerates.
+          CHANGED="$(jq -r 'if (.files | type) == "array" then (.files | map(.filename) | sort | join("\n")) else "" end' \
+            "$COMMIT_BODY")"
+          if [ "$CHANGED" = "$FILE_PATH" ]; then
+            echo "needs_regen=false" >> "$GITHUB_OUTPUT"
+            echo "$HEAD_SHA changes $FILE_PATH and nothing else, so it is this automation's own metadata commit; regenerating against it would reproduce the file it already carries. Skipping."
+          else
+            echo "needs_regen=true" >> "$GITHUB_OUTPUT"
+            echo "$HEAD_SHA changes more than $FILE_PATH, so the dependency graph may have moved; regenerating."
+          fi
+
+  regenerate:
+    needs: [triage]
+    # The author gate is repeated here rather than left to `needs` alone: it
+    # is the confused-deputy defense described in this file's header, and it
+    # should not be one edit to the job graph away from disappearing.
+    if: >-
+      github.event.pull_request.user.login == 'dependabot[bot]'
+      && needs.triage.outputs.needs_regen == 'true'
     runs-on: ubuntu-latest
     # scripts/regenerate-gradle-verification.sh always sets a fresh mktemp
     # GRADLE_USER_HOME (so no previously-cached artifact is silently omitted

@@ -33,6 +33,36 @@ FAIL=0
 pass() { echo "  PASS: $1"; PASS=$((PASS + 1)); }
 fail() { echo "  FAIL: $1"; FAIL=$((FAIL + 1)); }
 
+# Print the YAML block of one top-level job, so a check can assert against
+# that job alone rather than the whole file. Job-level `permissions:` fully
+# replaces the workflow-level block, so "does this job grant X" is the only
+# question worth asking, and it cannot be asked with a plain grep.
+#
+# Every caller below captures this output and matches it with a reader that
+# consumes all of its input. The obvious `awk '...' "$WF" | grep -q ...`
+# instead is a race: `grep -q` exits at its first match and closes the pipe,
+# `awk` dies of SIGPIPE (141), and `set -o pipefail` above turns that into a
+# failed pipeline, so a pattern that IS present is reported missing. The
+# window opens only once awk's output no longer fits a single buffered
+# write, which is why the pattern survived here until the push job grew past
+# that size and CI run 31978297339 reported "statuses: write" missing from a
+# job that declares it. `head -1` closes a pipe the same way, and in a
+# `VAR="$(...)"` assignment a 141 aborts the whole script under `set -e`.
+# Nothing here may depend on a workflow file staying under a buffer size.
+job_block() {
+    awk -v job="$2" '
+        /^jobs:/ { in_jobs = 1 }
+        in_jobs && $0 == "  " job ":" { in_job = 1 }
+        in_job && /^  [A-Za-z_]/ && $0 != "  " job ":" { in_job = 0 }
+        in_job
+    ' "$1"
+}
+
+# Whether $1 (a captured block) has a line matching the ERE $2. Plain grep,
+# not `grep -q`: it reads to end of input, so there is no early close and no
+# writer to kill. The block arrives by here-string, not by pipe.
+block_has() { grep -E "$2" <<<"$1" >/dev/null; }
+
 # (a) both halves exist.
 for f in "$GENERATE_WF" "$PUSH_WF"; do
     if [ -f "$f" ]; then
@@ -89,11 +119,217 @@ if [ -f "$GENERATE_WF" ]; then
     # run, which the push workflow's `if: ... == 'success'` gate correctly
     # declines to act on, so the PR just never goes green, silently
     # defeating issue #842's whole purpose.
-    TIMEOUT="$(grep -E '^[[:space:]]*timeout-minutes:' "$GENERATE_WF" | head -1 | grep -oE '[0-9]+')"
+    # Read the regenerate job's own budget, not the first timeout-minutes in
+    # the file, which belongs to the triage job in front of it. One awk over
+    # the captured block, rather than a `grep | head -1` pipeline: see the
+    # SIGPIPE note on job_block above.
+    TIMEOUT="$(awk '!seen && /^[[:space:]]*timeout-minutes:/ { gsub(/[^0-9]/, "", $0); print; seen = 1 }' \
+        <<<"$(job_block "$GENERATE_WF" regenerate)")"
     if [ -n "$TIMEOUT" ] && [ "$TIMEOUT" -ge 90 ]; then
         pass "generate workflow's timeout-minutes ($TIMEOUT) is at least 90, matching regenerate-gradle-toolchain.yml's budget for the identical uncached Gradle invocation"
     else
         fail "generate workflow's timeout-minutes (${TIMEOUT:-unset}) is below 90; regenerate-gradle-toolchain.yml documents a 20-45 minute cold run for the identical script, so anything below that risks cancelling a normal run"
+    fi
+
+    # (n) behavioral: the triage gate that keeps the push half's own metadata
+    # commit from buying a second, identical regeneration (issue #879). Runs
+    # the real extracted step against a mocked commits API, so what is tested
+    # is the shell the workflow actually executes. The skip must stay
+    # conservative: a regen wrongly skipped leaves a Dependabot PR red with
+    # stale metadata, which is far worse than the wasted run this saves.
+    set +e
+    N_OUTPUT="$(python3 - "$GENERATE_WF" <<'PY'
+import json
+import os
+import stat
+import subprocess
+import sys
+import tempfile
+import textwrap
+
+generate_wf_path = sys.argv[1]
+
+try:
+    import yaml
+except ImportError:
+    print("  FAIL: PyYAML is not installed (see scripts/requirements.txt); cannot run the behavioral triage test")
+    sys.exit(1)
+
+results = []
+
+
+def check(ok, msg):
+    results.append(ok)
+    print(("  PASS: " if ok else "  FAIL: ") + msg)
+    return ok
+
+
+with open(generate_wf_path) as f:
+    doc = yaml.safe_load(f)
+
+jobs = doc["jobs"]
+
+if not check("triage" in jobs, "generate workflow has a triage job in front of the regeneration"):
+    sys.exit(1)
+
+regenerate_if = str(jobs.get("regenerate", {}).get("if", ""))
+check(
+    "needs.triage.outputs.needs_regen" in regenerate_if,
+    "the regenerate job is gated on the triage job's verdict (if: %r)" % regenerate_if,
+)
+check(
+    "pull_request.user.login" in regenerate_if,
+    "the regenerate job still carries the dependabot author gate itself, not only through "
+    "`needs` (if: %r)" % regenerate_if,
+)
+
+step = next(
+    (
+        s
+        for s in jobs["triage"]["steps"]
+        if s.get("name") == "Check whether the head commit only carries regenerated metadata"
+    ),
+    None,
+)
+if step is None:
+    check(False, "could not find the triage job's head-commit step to extract for the behavioral test")
+    sys.exit(1)
+
+MOCK_CURL = textwrap.dedent(
+    """\
+    #!/usr/bin/env python3
+    import os
+    import sys
+
+    if os.environ.get("MOCK_COMMIT_FAILS") == "1":
+        sys.stderr.write("mock curl: the commits API is unavailable\\n")
+        sys.exit(22)
+    out_path = None
+    args = sys.argv[1:]
+    for i, a in enumerate(args):
+        if a == "-o" and i + 1 < len(args):
+            out_path = args[i + 1]
+    body = os.environ["MOCK_COMMIT_JSON"]
+    if out_path:
+        with open(out_path, "w") as f:
+            f.write(body)
+    else:
+        sys.stdout.write(body)
+    """
+)
+
+
+def files_payload(*filenames):
+    return json.dumps({"files": [{"filename": n} for n in filenames]})
+
+
+with tempfile.TemporaryDirectory(prefix="dependabot-triage-test-") as tmp:
+    script_path = os.path.join(tmp, "triage_step.sh")
+    with open(script_path, "w") as f:
+        f.write(step["run"])
+
+    bin_dir = os.path.join(tmp, "bin")
+    os.makedirs(bin_dir)
+    mock_curl_path = os.path.join(bin_dir, "curl")
+    with open(mock_curl_path, "w") as f:
+        f.write(MOCK_CURL)
+    st = os.stat(mock_curl_path)
+    os.chmod(mock_curl_path, st.st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+
+    runs = [0]
+
+    def run_triage_step(commit_json, **overrides):
+        runs[0] += 1
+        run_dir = os.path.join(tmp, "run_%d" % runs[0])
+        os.makedirs(run_dir)
+        github_output = os.path.join(run_dir, "github_output")
+        open(github_output, "w").close()
+
+        env = dict(os.environ)
+        env["PATH"] = bin_dir + os.pathsep + env["PATH"]
+        env["GH_TOKEN"] = "test-token-not-a-real-secret"
+        env["REPO"] = "octocat/example-repo"
+        env["HEAD_SHA"] = "a" * 40
+        env["FILE_PATH"] = "gradle/verification-metadata.xml"
+        env["RUNNER_TEMP"] = run_dir
+        env["GITHUB_OUTPUT"] = github_output
+        env["MOCK_COMMIT_JSON"] = commit_json
+        env.update(overrides)
+
+        proc = subprocess.run(
+            ["bash", script_path], env=env, capture_output=True, text=True, timeout=60
+        )
+        with open(github_output) as f:
+            outputs = dict(
+                line.split("=", 1) for line in f.read().splitlines() if "=" in line
+            )
+        return proc, outputs
+
+    cases = [
+        (
+            files_payload("gradle/verification-metadata.xml"),
+            "false",
+            "a head commit whose entire diff is gradle/verification-metadata.xml is recognized as "
+            "this automation's own commit and skipped",
+        ),
+        (
+            files_payload("app/build.gradle.kts"),
+            "true",
+            "a Dependabot bump of app/build.gradle.kts is regenerated",
+        ),
+        (
+            files_payload("app/build.gradle.kts", "gradle/verification-metadata.xml"),
+            "true",
+            "a head commit that touches the metadata file alongside a real bump is still "
+            "regenerated",
+        ),
+        (
+            files_payload("gradle/libs.versions.toml"),
+            "true",
+            "a head commit that touches neither file is regenerated rather than skipped",
+        ),
+    ]
+    for commit_json, expected, description in cases:
+        proc, outputs = run_triage_step(commit_json)
+        check(
+            proc.returncode == 0 and outputs.get("needs_regen") == expected,
+            "%s (needs_regen=%r, exit %d)" % (description, outputs.get("needs_regen"), proc.returncode),
+        )
+
+    # Every uncertain answer regenerates: this gate is an optimization over
+    # behavior that was already correct, so an unreachable API or a payload
+    # with no usable file list must fall back to it rather than block the
+    # pull request or, worse, decide there is nothing to do.
+    broken, broken_outputs = run_triage_step(
+        files_payload("app/build.gradle.kts"), MOCK_COMMIT_FAILS="1"
+    )
+    check(
+        broken.returncode == 0
+        and broken_outputs.get("needs_regen") == "true"
+        and "::warning::" in broken.stdout,
+        "an unreachable commits API regenerates, with a warning, rather than skipping or failing "
+        "(exit %d, outputs %r)" % (broken.returncode, broken_outputs),
+    )
+
+    malformed, malformed_outputs = run_triage_step('{"sha": "aaa"}')
+    check(
+        malformed.returncode == 0 and malformed_outputs.get("needs_regen") == "true",
+        "a commits payload carrying no file list regenerates rather than skipping (exit %d, "
+        "outputs %r)" % (malformed.returncode, malformed_outputs),
+    )
+
+sys.exit(0 if all(results) else 1)
+PY
+)"
+    N_STATUS=$?
+    set -e
+    echo "$N_OUTPUT"
+    N_PASS=$(grep -c '^  PASS:' <<<"$N_OUTPUT" || true)
+    N_FAIL=$(grep -c '^  FAIL:' <<<"$N_OUTPUT" || true)
+    PASS=$((PASS + N_PASS))
+    FAIL=$((FAIL + N_FAIL))
+    if [ "$N_STATUS" -ne 0 ] && [ "$N_FAIL" -eq 0 ]; then
+        fail "triage-gate behavioral test errored before reporting individual checks (exit $N_STATUS)"
     fi
 fi
 
@@ -166,7 +402,8 @@ if [ -f "$PUSH_WF" ]; then
     # swallows that, and the job reports a false "nothing to push" on every
     # run: the exact silent-failure mode this whole automation exists to
     # avoid.
-    if awk '/^jobs:/{injobs=1} injobs && /^  push:/{inpush=1} inpush && /^  [a-z]/ && !/^  push:/{inpush=0} inpush' "$PUSH_WF" | grep -qE '^[[:space:]]*actions:[[:space:]]*read'; then
+    PUSH_JOB="$(job_block "$PUSH_WF" push)"
+    if block_has "$PUSH_JOB" '^[[:space:]]*actions:[[:space:]]*read'; then
         pass "push job's permissions block grants actions: read"
     else
         fail "push job's permissions block is missing actions: read (actions/download-artifact needs it to pull the generate workflow's cross-run artifact; without it the download 403s and continue-on-error silently reports nothing to push, every time)"
@@ -200,6 +437,19 @@ if [ -f "$PUSH_WF" ]; then
         fail "push workflow still passes the assembled body to curl via -d \"\$BODY\" (argv), which fails with 'Argument list too long' at the file's current size; use --data-binary @<file> instead"
     else
         pass "push workflow does not pass the assembled body to curl via -d \"\$BODY\""
+    fi
+
+    # (m) the push job can write commit statuses. Running on workflow_run
+    # attaches this job's own check runs to the base branch, so the affected
+    # PR shows no trace of a failure here (issue #877); the outcome is
+    # mirrored onto the PR's head commit as a commit status instead, which
+    # needs statuses: write in this job's permissions block. As with (i),
+    # a job-level block fully replaces the workflow-level one, so the grant
+    # has to be listed here.
+    if block_has "$PUSH_JOB" '^[[:space:]]*statuses:[[:space:]]*write'; then
+        pass "push job's permissions block grants statuses: write"
+    else
+        fail "push job's permissions block is missing statuses: write (without it the push half cannot report its outcome onto the pull request, and a failure leaves no signal there at all; see issue #877)"
     fi
 
     # (m) behavioral: run the push step's real "Push the regenerated file
@@ -244,20 +494,113 @@ with open(push_wf_path) as f:
     doc = yaml.safe_load(f)
 
 steps = doc["jobs"]["push"]["steps"]
-step = next(
-    (s for s in steps if s.get("name") == "Push the regenerated file through the Contents API"),
-    None,
-)
-if step is None:
-    check(False, "could not find the 'Push the regenerated file through the Contents API' step to extract for the behavioral test")
-    sys.exit(1)
 
-run_text = step["run"]
+
+def extract_step(name):
+    """Return the named step, or report a failure and stop the whole block."""
+    found = next((s for s in steps if s.get("name") == name), None)
+    if found is None:
+        check(False, "could not find the %r step to extract for the behavioral test" % name)
+        sys.exit(1)
+    return found
+
+
+push_step = extract_step("Push the regenerated file through the Contents API")
+report_step = extract_step("Report this job's outcome onto the pull request")
+
+# Mock curl for the behavioral checks in
+# scripts/test_dependabot_verification_metadata_workflows.sh (issue #875).
+# Records every invocation's argv so the test can inspect the real push
+# request, and answers the two GET calls the push step makes before it,
+# without any real network access. It honours -o (write the body to a file
+# instead of stdout), -w (append the write-out format, with %{http_code}
+# substituted) and the -f family (exit 22 on a >=400 status), so a step that
+# reads the status code itself is exercised the same way curl would exercise
+# it. MOCK_REF_STATUS drives the branch-tip lookup's status code (issue
+# #863).
+MOCK_CURL = textwrap.dedent(
+    """\
+    #!/usr/bin/env python3
+    import json
+    import os
+    import sys
+
+    args = sys.argv[1:]
+    calls_dir = os.environ["MOCK_CALLS_DIR"]
+    existing = [n for n in os.listdir(calls_dir) if n.startswith("call_")]
+    call_path = os.path.join(calls_dir, "call_{}.json".format(len(existing) + 1))
+    with open(call_path, "w") as f:
+        json.dump(args, f)
+
+    out_path = None
+    write_out = None
+    for i, a in enumerate(args):
+        if a == "-o" and i + 1 < len(args):
+            out_path = args[i + 1]
+        elif a == "-w" and i + 1 < len(args):
+            write_out = args[i + 1]
+
+    url = args[-1] if args else ""
+    status = "200"
+    if url.endswith("/jobs"):
+        body = os.environ.get("MOCK_JOBS_JSON", '{"jobs": []}')
+    elif "/statuses/" in url:
+        status = os.environ.get("MOCK_STATUS_POST_CODE", "201")
+        body = json.dumps({"state": "recorded"})
+    elif "/git/ref/heads/" in url:
+        status = os.environ.get("MOCK_REF_STATUS", "200")
+        if status == "200":
+            body = json.dumps({"object": {"sha": os.environ["MOCK_EXPECTED_SHA"]}})
+        else:
+            body = json.dumps({"message": "mock curl: answering HTTP " + status})
+    elif "?ref=" in url:
+        # Read through a file: the committed file's base64 is far past
+        # MAX_ARG_STRLEN, which applies to environment strings too.
+        with open(os.environ["MOCK_EXISTING_CONTENT_B64_FILE"]) as f:
+            existing_content = f.read()
+        body = json.dumps({
+            "sha": os.environ["MOCK_EXISTING_BLOB_SHA"],
+            "content": existing_content,
+        })
+    elif "/contents/" in url:
+        body = json.dumps({"content": {"sha": "0" * 40}})
+    else:
+        sys.stderr.write("mock curl: unrecognized URL: {}\\n".format(url))
+        sys.exit(99)
+
+    if out_path:
+        with open(out_path, "w") as f:
+            f.write(body)
+    else:
+        sys.stdout.write(body + "\\n")
+    if write_out:
+        sys.stdout.write(write_out.replace("%{http_code}", status))
+
+    fail_fast = any(
+        a.startswith("-") and not a.startswith("--") and "f" in a for a in args
+    )
+    if fail_fast and int(status) >= 400:
+        sys.exit(22)
+    """
+)
+
+
+def put_call_of(calls):
+    """Return the argv of the Contents API PUT, or None if it never ran."""
+    for args in calls:
+        url = args[-1] if args else ""
+        if "/git/ref/heads/" not in url and "?ref=" not in url and "/contents/" in url:
+            return args
+    return None
+
 
 with tempfile.TemporaryDirectory(prefix="dependabot-push-body-test-") as tmp:
-    script_path = os.path.join(tmp, "push_step.sh")
-    with open(script_path, "w") as f:
-        f.write(run_text)
+    push_script = os.path.join(tmp, "push_step.sh")
+    with open(push_script, "w") as f:
+        f.write(push_step["run"])
+    report_script = os.path.join(tmp, "report_step.sh")
+    with open(report_script, "w") as f:
+        f.write(report_step["run"])
 
     artifact_dir = os.path.join(tmp, "artifact")
     os.makedirs(artifact_dir)
@@ -285,80 +628,114 @@ with tempfile.TemporaryDirectory(prefix="dependabot-push-body-test-") as tmp:
     ):
         sys.exit(1)
 
-    runner_temp = os.path.join(tmp, "runner_temp")
-    os.makedirs(runner_temp)
-
-    calls_dir = os.path.join(tmp, "calls")
-    os.makedirs(calls_dir)
-
     bin_dir = os.path.join(tmp, "bin")
     os.makedirs(bin_dir)
     mock_curl_path = os.path.join(bin_dir, "curl")
     with open(mock_curl_path, "w") as f:
-        f.write(
-            textwrap.dedent(
-                """\
-                #!/usr/bin/env python3
-                # Mock curl for the behavioral check in
-                # scripts/test_dependabot_verification_metadata_workflows.sh (issue #875).
-                # Records every invocation's argv so the test can inspect the real push
-                # request, and answers the two GET calls the push step makes before it,
-                # without any real network access.
-                import json
-                import os
-                import sys
-
-                args = sys.argv[1:]
-                calls_dir = os.environ["MOCK_CALLS_DIR"]
-                existing = [n for n in os.listdir(calls_dir) if n.startswith("call_")]
-                call_path = os.path.join(calls_dir, "call_{}.json".format(len(existing) + 1))
-                with open(call_path, "w") as f:
-                    json.dump(args, f)
-
-                url = args[-1] if args else ""
-                if "/git/ref/heads/" in url:
-                    print(json.dumps({"object": {"sha": os.environ["MOCK_EXPECTED_SHA"]}}))
-                elif "?ref=" in url:
-                    print(json.dumps({
-                        "sha": os.environ["MOCK_EXISTING_BLOB_SHA"],
-                        "content": os.environ["MOCK_EXISTING_CONTENT_B64"],
-                    }))
-                elif "/contents/" in url:
-                    print(json.dumps({"content": {"sha": "0" * 40}}))
-                else:
-                    sys.stderr.write("mock curl: unrecognized URL: {}\\n".format(url))
-                    sys.exit(99)
-                """
-            )
-        )
+        f.write(MOCK_CURL)
     st = os.stat(mock_curl_path)
     os.chmod(mock_curl_path, st.st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
 
-    existing_content_b64 = base64.b64encode(
-        b"stale placeholder content, not the regenerated artifact"
-    ).decode()
+    # The mock reads the committed file's base64 from a file rather than an
+    # environment variable: at this file's real size it is past
+    # MAX_ARG_STRLEN, which bounds environment strings just as it bounds argv.
+    stale_b64_path = os.path.join(tmp, "committed-stale.b64")
+    with open(stale_b64_path, "w") as f:
+        f.write(base64.b64encode(b"stale placeholder content, not the regenerated artifact").decode())
+    current_b64_path = os.path.join(tmp, "committed-current.b64")
+    with open(current_b64_path, "w") as f:
+        f.write(base64.b64encode(artifact_bytes).decode())
 
-    env = dict(os.environ)
-    env["PATH"] = bin_dir + os.pathsep + env["PATH"]
-    env["PAT"] = "test-pat-not-a-real-secret"
-    env["REPO"] = "octocat/example-repo"
-    env["HEAD_BRANCH"] = "dependabot/gradle/app/some-dependency-1.2.3"
-    env["EXPECTED_SHA"] = "1" * 40
-    env["ARTIFACT_DIR"] = artifact_dir
-    env["FILE_PATH"] = "gradle/verification-metadata.xml"
-    env["RUNNER_TEMP"] = runner_temp
-    env["MOCK_CALLS_DIR"] = calls_dir
-    env["MOCK_EXPECTED_SHA"] = env["EXPECTED_SHA"]
-    env["MOCK_EXISTING_BLOB_SHA"] = "d" * 40
-    env["MOCK_EXISTING_CONTENT_B64"] = existing_content_b64
+    runs = [0]
 
-    result = subprocess.run(
-        ["bash", script_path],
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
+    def run_step(script, step_env):
+        """Run one extracted step, in its own scratch directories.
+
+        Returns the completed process, the argv of every curl invocation it
+        made in order, and the step outputs it wrote to $GITHUB_OUTPUT.
+        """
+        runs[0] += 1
+        run_dir = os.path.join(tmp, "run_%d" % runs[0])
+        calls_dir = os.path.join(run_dir, "calls")
+        runner_temp = os.path.join(run_dir, "runner_temp")
+        os.makedirs(calls_dir)
+        os.makedirs(runner_temp)
+        github_output = os.path.join(run_dir, "github_output")
+        open(github_output, "w").close()
+
+        env = dict(os.environ)
+        env["PATH"] = bin_dir + os.pathsep + env["PATH"]
+        env["RUNNER_TEMP"] = runner_temp
+        env["GITHUB_OUTPUT"] = github_output
+        env["MOCK_CALLS_DIR"] = calls_dir
+        env.update(step_env)
+
+        proc = subprocess.run(
+            ["bash", script],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+        calls = []
+        for name in sorted(
+            os.listdir(calls_dir), key=lambda n: int(n.split("_")[1].split(".")[0])
+        ):
+            with open(os.path.join(calls_dir, name)) as f:
+                calls.append(json.load(f))
+
+        with open(github_output) as f:
+            outputs = dict(
+                line.split("=", 1) for line in f.read().splitlines() if "=" in line
+            )
+
+        return proc, calls, outputs
+
+    def run_push_step(**overrides):
+        """Run the push step with the workflow's own env, as GitHub sets it."""
+        step_env = {
+            "PAT": "test-pat-not-a-real-secret",
+            "REPO": "octocat/example-repo",
+            "HEAD_BRANCH": "dependabot/gradle/app/some-dependency-1.2.3",
+            "EXPECTED_SHA": "1" * 40,
+            "ARTIFACT_DIR": artifact_dir,
+            "FILE_PATH": "gradle/verification-metadata.xml",
+            "MOCK_EXPECTED_SHA": "1" * 40,
+            "MOCK_EXISTING_BLOB_SHA": "d" * 40,
+            "MOCK_EXISTING_CONTENT_B64_FILE": stale_b64_path,
+        }
+        step_env.update(overrides)
+        return run_step(push_script, step_env)
+
+    def run_report_step(**overrides):
+        """Run the outcome-reporting step with the workflow's own env."""
+        step_env = {
+            "GH_TOKEN": "test-token-not-a-real-secret",
+            "REPO": "octocat/example-repo",
+            "HEAD_SHA": "1" * 40,
+            "JOB_STATUS": "success",
+            "PUSH_RESULT": "pushed",
+            "RUN_ID": "31584288707",
+            "RUN_ATTEMPT": "1",
+            "RUN_URL": "https://github.com/octocat/example-repo/actions/runs/31584288707",
+        }
+        step_env.update(overrides)
+        return run_step(report_script, step_env)
+
+    def posted_status(calls):
+        """Return the body of the commit-status POST, or None if never made."""
+        for args in calls:
+            url = args[-1] if args else ""
+            if "/statuses/" not in url:
+                continue
+            for i, a in enumerate(args):
+                if a == "--data-binary" and i + 1 < len(args):
+                    with open(args[i + 1].lstrip("@")) as f:
+                        return url, json.load(f)
+        return None, None
+
+    result, calls, outputs = run_push_step()
 
     ok = check(
         result.returncode == 0,
@@ -368,14 +745,7 @@ with tempfile.TemporaryDirectory(prefix="dependabot-push-body-test-") as tmp:
     if not ok:
         sys.exit(1)
 
-    put_call = None
-    for name in sorted(os.listdir(calls_dir)):
-        with open(os.path.join(calls_dir, name)) as f:
-            args = json.load(f)
-        url = args[-1] if args else ""
-        if "/git/ref/heads/" not in url and "?ref=" not in url and "/contents/" in url:
-            put_call = args
-            break
+    put_call = put_call_of(calls)
 
     if not check(put_call is not None, "the push step made a PUT request to the Contents API"):
         sys.exit(1)
@@ -407,17 +777,46 @@ with tempfile.TemporaryDirectory(prefix="dependabot-push-body-test-") as tmp:
         pushed_body = json.load(f)
 
     check(
-        pushed_body.get("branch") == env["HEAD_BRANCH"],
+        pushed_body.get("branch") == "dependabot/gradle/app/some-dependency-1.2.3",
         "pushed body's branch matches the workflow_run's head branch",
     )
     check(
-        pushed_body.get("sha") == env["MOCK_EXISTING_BLOB_SHA"],
+        pushed_body.get("sha") == "d" * 40,
         "pushed body's sha matches the existing file's blob sha",
     )
     check(
         "Regenerate gradle/verification-metadata.xml" in pushed_body.get("message", ""),
         "pushed body's commit message names the regenerated file",
     )
+
+    # Dependabot stops rebasing a pull request once a commit it did not author
+    # lands on the branch, unless the message carries one of its skip markers
+    # (issue #883). Without one, the automation built to help these pull
+    # requests silently ends Dependabot's maintenance of every branch it
+    # succeeds on.
+    skip_markers = (
+        "[dependabot skip]",
+        "[skip dependabot]",
+        "[dependabot-skip]",
+        "[skip-dependabot]",
+    )
+    message = pushed_body.get("message", "")
+    check(
+        any(m in message.lower() for m in skip_markers),
+        "pushed body's commit message carries a Dependabot skip marker, so the branch keeps "
+        "being rebased automatically (got %r)" % message,
+    )
+
+    # The ID-prefixed noreply address is what links the commit to the
+    # github-actions[bot] account's profile; the bare form renders as an
+    # unlinked name and email pair instead (issue #864).
+    bot_email = "41898282+github-actions[bot]@users.noreply.github.com"
+    for role in ("author", "committer"):
+        check(
+            pushed_body.get(role, {}).get("email") == bot_email,
+            "pushed body's %s email is the ID-prefixed github-actions[bot] noreply address "
+            "(got %r)" % (role, pushed_body.get(role, {}).get("email")),
+        )
 
     pushed_content_b64 = pushed_body.get("content", "")
     pushed_bytes = None
@@ -431,6 +830,220 @@ with tempfile.TemporaryDirectory(prefix="dependabot-push-body-test-") as tmp:
             pushed_bytes == artifact_bytes,
             "pushed content, once base64-decoded, is byte-identical to the regenerated artifact",
         )
+
+    # The step's `result` output is what the reporting step below keys on to
+    # tell the outcomes apart, so each path has to declare the right one
+    # (issue #877).
+    check(
+        outputs.get("result") == "pushed",
+        "push step reports result=pushed after a successful push (got %r)"
+        % outputs.get("result"),
+    )
+
+    # (n) behavioral: the Dependabot branch was deleted between generation and
+    # this run, so the branch-tip lookup 404s (issue #863). That is a "nothing
+    # to push" outcome, not a fault: the step must skip cleanly rather than
+    # hard-fail under `set -e` and leave a red run carrying no real signal.
+    gone, gone_calls, gone_outputs = run_push_step(MOCK_REF_STATUS="404")
+    check(
+        gone.returncode == 0,
+        "push step exits 0 when the Dependabot branch no longer exists (exit %d; stderr: %s)"
+        % (gone.returncode, gone.stderr.strip()[-400:]),
+    )
+    check(
+        put_call_of(gone_calls) is None,
+        "push step makes no Contents API PUT when the Dependabot branch no longer exists",
+    )
+    check(
+        "::warning::" in gone.stdout,
+        "push step warns, rather than staying silent, when the Dependabot branch no longer exists",
+    )
+    check(
+        gone_outputs.get("result") == "branch-gone",
+        "push step reports result=branch-gone when the Dependabot branch no longer exists (got %r)"
+        % gone_outputs.get("result"),
+    )
+
+    # (o) behavioral: any other failure on that same lookup is a genuine API
+    # error, not a deleted branch, and must still fail loudly. Treating it as
+    # "the branch is gone" would silently drop a regeneration the pull request
+    # is waiting on.
+    broken, broken_calls, _ = run_push_step(MOCK_REF_STATUS="500")
+    check(
+        broken.returncode != 0,
+        "push step fails when the branch-tip lookup returns an unexpected status (exit %d)"
+        % broken.returncode,
+    )
+    check(
+        put_call_of(broken_calls) is None,
+        "push step makes no Contents API PUT when the branch-tip lookup returns an unexpected status",
+    )
+    check(
+        "::error::" in broken.stdout,
+        "push step reports an error annotation when the branch-tip lookup returns an unexpected status",
+    )
+
+    # (p) behavioral: the two remaining no-op paths. Both are successes with
+    # nothing to push, and the reporting step tells them apart by `result`.
+    moved, moved_calls, moved_outputs = run_push_step(MOCK_EXPECTED_SHA="9" * 40)
+    check(
+        moved.returncode == 0 and put_call_of(moved_calls) is None,
+        "push step skips without pushing when the branch tip moved during regeneration",
+    )
+    check(
+        moved_outputs.get("result") == "branch-moved",
+        "push step reports result=branch-moved when the branch tip moved during regeneration (got %r)"
+        % moved_outputs.get("result"),
+    )
+
+    current, current_calls, current_outputs = run_push_step(
+        MOCK_EXISTING_CONTENT_B64_FILE=current_b64_path
+    )
+    check(
+        current.returncode == 0 and put_call_of(current_calls) is None,
+        "push step commits nothing when the committed file already matches the regenerated one",
+    )
+    check(
+        current_outputs.get("result") == "already-current",
+        "push step reports result=already-current when the committed file already matches (got %r)"
+        % current_outputs.get("result"),
+    )
+
+    # (q) behavioral: the outcome-reporting step (issue #877). Running on
+    # workflow_run puts this job's own check runs on the base branch, so the
+    # commit status it writes onto the head SHA is the only trace the pull
+    # request ever sees.
+    failed_jobs_json = json.dumps(
+        {
+            "jobs": [
+                {
+                    "steps": [
+                        {"name": "Download the regenerated file, if one was produced", "conclusion": "success"},
+                        {"name": "Confirm the push token is configured", "conclusion": "failure"},
+                    ]
+                }
+            ]
+        }
+    )
+    failed, failed_calls, _ = run_report_step(
+        JOB_STATUS="failure", PUSH_RESULT="", MOCK_JOBS_JSON=failed_jobs_json
+    )
+    check(
+        failed.returncode == 0,
+        "reporting step exits 0 after reporting a failure (exit %d; stderr: %s)"
+        % (failed.returncode, failed.stderr.strip()[-400:]),
+    )
+    status_url, status_body = posted_status(failed_calls)
+    if not check(
+        status_body is not None,
+        "reporting step posts a commit status when the job failed",
+    ):
+        sys.exit(1)
+    check(
+        status_url.endswith("/statuses/" + "1" * 40),
+        "the failure status is posted against the pull request's head SHA (got %r)" % status_url,
+    )
+    check(
+        status_body.get("state") == "failure",
+        "the reported state is 'failure' (got %r)" % status_body.get("state"),
+    )
+    check(
+        "Confirm the push token is configured" in status_body.get("description", ""),
+        "the failure status names the step that failed (got %r)" % status_body.get("description"),
+    )
+    check(
+        status_body.get("target_url", "").endswith("/actions/runs/31584288707"),
+        "the failure status links this workflow run (got %r)" % status_body.get("target_url"),
+    )
+    check(
+        bool(status_body.get("context")),
+        "the failure status carries a context, so a later run replaces it rather than piling up",
+    )
+
+    # A failure the jobs API cannot attribute to a named step, such as a
+    # cancelled job, still has to reach the pull request.
+    cancelled, cancelled_calls, _ = run_report_step(JOB_STATUS="cancelled", PUSH_RESULT="")
+    _, cancelled_body = posted_status(cancelled_calls)
+    check(
+        cancelled.returncode == 0
+        and cancelled_body is not None
+        and cancelled_body.get("state") == "failure"
+        and bool(cancelled_body.get("description")),
+        "an unattributable failure is still reported, with a description (got %r)" % cancelled_body,
+    )
+
+    # A commit status description is capped at 140 characters; a long step
+    # name must be truncated rather than rejected by the API.
+    long_name = "Confirm " + ("a very long step name " * 12)
+    long_jobs_json = json.dumps(
+        {"jobs": [{"steps": [{"name": long_name, "conclusion": "failure"}]}]}
+    )
+    long_run, long_calls, _ = run_report_step(
+        JOB_STATUS="failure", PUSH_RESULT="", MOCK_JOBS_JSON=long_jobs_json
+    )
+    _, long_body = posted_status(long_calls)
+    check(
+        long_body is not None and len(long_body.get("description", "")) <= 140,
+        "a long failed-step name is truncated to the 140-character status description cap",
+    )
+
+    # Every verdict the push step can reach is reported, the two skips
+    # included: #877 names the stale-branch-tip guard among the modes that
+    # must stop being silent. A skip is a success, since nothing went wrong,
+    # and each description has to say which outcome it was rather than
+    # falling through to a generic one.
+    verdicts = (
+        ("pushed", "Pushed"),
+        ("already-current", "already matched"),
+        ("branch-moved", "the branch moved"),
+        ("branch-gone", "no longer exists"),
+    )
+    for push_result, expected_phrase in verdicts:
+        ok_run, ok_calls, _ = run_report_step(JOB_STATUS="success", PUSH_RESULT=push_result)
+        _, ok_body = posted_status(ok_calls)
+        check(
+            ok_run.returncode == 0
+            and ok_body is not None
+            and ok_body.get("state") == "success"
+            and expected_phrase in ok_body.get("description", ""),
+            "result=%s is reported as a success naming that outcome (got %r)"
+            % (push_result, ok_body),
+        )
+
+    # The commit can be gone by the time the status is written (the branch was
+    # deleted, the pull request closed). That is not worth failing over, and
+    # it must not mask the job's real outcome.
+    unreachable, _, _ = run_report_step(MOCK_STATUS_POST_CODE="422")
+    check(
+        unreachable.returncode == 0 and "::warning::" in unreachable.stdout,
+        "the reporting step warns, rather than failing, when the head commit is unreachable",
+    )
+
+    # Any other API failure means the pull request silently lost its only
+    # signal, which is the whole defect this step exists to fix, so it fails
+    # loudly and says the job's own outcome is unaffected.
+    unreported, _, _ = run_report_step(MOCK_STATUS_POST_CODE="500")
+    check(
+        unreported.returncode != 0 and "::error::" in unreported.stdout,
+        "the reporting step fails loudly when the commit status cannot be posted at all",
+    )
+
+# The reporting step's own `if` decides which runs report at all: every
+# unsuccessful one, plus every one where the push step reached a verdict. A
+# run that found no artifact never sets `result`, and it is the ordinary
+# outcome on any pull request that does not move the dependency graph,
+# including a non-Dependabot one, so it must leave no status behind.
+report_if = " ".join(str(report_step.get("if", "")).split())
+check(
+    "always()" in report_if and "job.status != 'success'" in report_if,
+    "the reporting step runs on every unsuccessful outcome, cancellations included (if: %r)"
+    % report_if,
+)
+check(
+    "steps.push.outputs.result != ''" in report_if,
+    "the reporting step reports on any push verdict, and only a run that never reached one "
+    "(no artifact) is excluded (if: %r)" % report_if,
+)
 
 sys.exit(0 if all(results) else 1)
 PY

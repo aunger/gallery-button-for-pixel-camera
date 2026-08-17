@@ -68,6 +68,60 @@ Until that secret exists, the push workflow fails loudly rather than silently no
 This automation only ever runs `scripts/regenerate-gradle-verification.sh` in its normal merge mode; it never deletes the file first, and it never touches the toolchain (root `build.gradle.kts`, the Gradle wrapper).
 It has nothing to do with "Performing a toolchain bump" below, which stays entirely manual.
 
+#### Regenerating once per Dependabot push (issue #879)
+
+The push half's metadata commit is a push to the PR head, so it fires `synchronize` and re-triggers the regen half.
+The path filter does not stop it: GitHub evaluates `paths` against the PR's whole base-to-head diff, and `app/build.gradle.kts` is still in it.
+Left alone, that bought a second full regeneration on every Dependabot PR whose result could not differ from the first, since the file it regenerates is the one that commit just landed, generated against that commit's own parent.
+
+The regen workflow's `triage` job cuts it off.
+It asks the API what the head commit changed, and skips the regeneration when the answer is `gradle/verification-metadata.xml` and nothing else.
+The discriminator is what the commit does rather than who it says it is from: a commit with that diff cannot have moved the dependency graph, and keying on the committer identity would have tied the gate to the exact email string the push half writes.
+Triage checks nothing out, so the regen half's read-only, no-secrets posture is unchanged.
+
+"Once per push" is the claim, not "once per PR".
+A Dependabot rebase force-pushes the branch, which discards the metadata commit and earns a fresh full regeneration, and the `[dependabot skip]` marker in the section below is what keeps those rebases happening.
+That is the intended trade (a branch that rebases and regenerates beats one that silently goes stale), but it does mean a long-lived PR can regenerate several times.
+
+A regen wrongly skipped is much worse than the run it saves, since it leaves a PR red with stale metadata.
+Every uncertain answer therefore regenerates: an unreachable commits API, or a payload with no usable file list, warns and falls back to the behavior this gate optimizes away, which was correct all along.
+The one state that still reaches a wrong skip is a commit pushed by hand whose entire diff is `gradle/verification-metadata.xml`, carrying contents not generated from that branch's graph.
+Nothing here produces that: Dependabot's own pushes always carry `app/build.gradle.kts`, and the push half only ever commits a file it generated against the very commit it is committing onto.
+If you do hit it, regenerate by hand as for any other bump; re-running the regen workflow will take the same skip.
+
+#### Where the pair reports (issue #877)
+
+The regen half runs on `pull_request`, so its `regenerate` job appears in the PR's own checks list.
+The push half runs on `workflow_run`, which executes in the base branch's context, so its check runs attach to `main` and the PR shows no trace of them.
+That asymmetry once cost fourteen hours on #874: `build-and-test` was red for dependency verification and nothing on the PR pointed at the workflow that was supposed to have fixed it.
+
+The push job's last step therefore writes a commit status onto the PR's head SHA, named "Dependabot verification-metadata push", whose description names the outcome and whose link goes to the run.
+It reports every unsuccessful outcome, cancellations included, because it reads which step failed from the run's own jobs rather than enumerating failure modes one by one.
+It reports the successful ones too, to the same status context, which is also what clears a failure an earlier attempt left on that same commit: the file was pushed, it already matched, the branch moved during regeneration, or the branch is gone.
+The last two are skips rather than failures, so they are reported green, saying which skip it was.
+
+One run reports nothing: the one where no artifact was produced, so the push step never ran and reached no verdict.
+That is the ordinary outcome whenever a bump does not move the dependency graph, and on any non-Dependabot PR touching `app/build.gradle.kts`, where a status would just be noise on someone else's PR.
+
+A status can land on a commit the PR no longer displays, since both skips mean the head has moved on, and a deleted branch's commit may be unreachable altogether.
+The step treats a 404 or 422 from the status API as a warning rather than an error for that reason, instead of trying to work out in advance which SHAs are still visible.
+
+Writing a commit status needs `statuses: write` and no checkout, so the property the two-workflow split exists for is untouched: the half holding write credentials still never materializes the Dependabot branch.
+
+#### Keeping Dependabot rebasing the branch (issue #883)
+
+Dependabot stops rebasing a pull request once a commit it did not author lands on the branch, unless that commit's message carries one of its skip markers.
+[GitHub's documentation](https://docs.github.com/en/code-security/dependabot/working-with-dependabot/managing-pull-requests-for-dependency-updates) names four, in either case: `[dependabot skip]`, `[skip dependabot]`, `[dependabot-skip]` and `[skip-dependabot]`.
+
+The push workflow's commit message therefore ends with a `[dependabot skip]` trailer.
+Without it, the automation built to help these pull requests would silently end Dependabot's maintenance of every branch it succeeds on.
+What that costs is automatic rebasing in the window between the metadata commit landing and the pull request merging, which is worst for a grouped bump left open across other merges: exactly the pull request most likely to need a rebase.
+An explicit rebase command still works either way; it is the automatic rebasing that is lost.
+
+That trailer is not a cosmetic part of the message.
+`scripts/test_dependabot_verification_metadata_workflows.sh` asserts a marker is present in the request body the push step assembles, so dropping it fails the `shell-tests` job rather than going unnoticed until a branch quietly goes stale.
+Any commit pushed onto a Dependabot branch by hand needs the same marker for the same reason.
+
 #### Re-running the pair on an open PR
 
 Fixing one of these workflows does not retroactively help a PR that is already open.
@@ -78,6 +132,9 @@ Four levers exist, and they are not equivalent.
   This is usually the right one.
   Its completion fires a fresh `workflow_run` event, and GitHub requires a `workflow_run` workflow to live on the default branch and always runs that copy, so this is the lever that picks up a push workflow fixed since the failure.
   It needs a prior regen run to still exist, though not its artifact, which the re-run regenerates.
+  It does nothing, however, when the PR's head is already a metadata commit, because triage skips it (see "Regenerating once per Dependabot push" above).
+  That is the case where the push half already succeeded and you want a *fresh* regeneration, rather than the case where it failed and never landed anything.
+  Reach for the last lever below then, and give the commit a real change in it.
 - **Re-run the failed push run.** This is the obvious move when the push half is the half that failed, and it does not work.
   A re-run reuses the original event's `GITHUB_SHA` and `GITHUB_REF`, so it re-executes the push workflow as it stood at that commit, carrying whatever defect the re-run was meant to escape.
   On #874 the failed run was pinned to `f13db5c`, which predates the #876 fix, so re-running it would have failed identically.
@@ -86,9 +143,9 @@ Four levers exist, and they are not equivalent.
   This rebuilds the branch from scratch and re-triggers everything.
   An agent cannot do this; see the warning below.
 - **Push a commit to the branch**, firing `synchronize`.
-  This works, and costs the branch Dependabot's automatic rebasing (see the note below).
-  In the case that brings you here, the push half has failed, so no automation commit has landed yet and the branch still has that to lose.
-  Prefer the other levers while it does.
+  This works.
+  Give the commit message a `[dependabot skip]` trailer, or the branch loses Dependabot's automatic rebasing (see "Keeping Dependabot rebasing the branch" above).
+  Change something other than `gradle/verification-metadata.xml` too, or the triage job takes the commit for this automation's own and skips the regeneration (see "Regenerating once per Dependabot push" above).
 
 If none of these is open to you, say so and stop.
 Adding `workflow_dispatch` (#878) is the intended fix for that dead end.
@@ -99,12 +156,6 @@ Adding `workflow_dispatch` (#878) is the intended fix for that dead end.
 > See `.claude/rules/github-mention-sanitization.md` for the rule, the evidence behind it, and how to check whether it still holds.
 > #874's [comment 5260994286](https://github.com/aunger/gallery-button-for-pixel-camera/pull/874#issuecomment-5260994286) is the worked example, and it cost about eight hours before anyone noticed it had not worked.
 > Re-run the regen workflow run instead, or ask a human to post the command.
-
-> [!NOTE]
-> Dependabot stops rebasing a PR once a commit it did not author lands on the branch, unless that commit's message carries a skip marker.
-> The push workflow's commit carries none, so every PR this automation succeeds on has already lost automatic rebasing.
-> #883 tracks that.
-> An explicit rebase command still works afterwards; it is the automatic rebasing that is gone.
 
 ## `wrapper/gradle-wrapper.properties` -- distribution pin
 
