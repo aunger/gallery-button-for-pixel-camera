@@ -48,7 +48,10 @@
 #
 # A `maven-repository` registry is added to the repositories Dependabot consults, not substituted for them (that would need `replaces-base`), so Central still serves junit, mockito, robolectric, kotlinx-coroutines-test, org.json and subsampling-scale-image-view.
 # The url is exactly https://maven.google.com, the URL Dependabot itself uses when it reads a `google()` declaration, which routes the lookup through its group-index.xml handling for that host rather than a maven-metadata.xml fetch.
-# username and password are empty because this repository is public and needs no credentials; they are present because GitHub documents them as the authentication parameters of a `maven-repository` registry, and they are inert here, as the group-index path sends no Authorization header.
+# username and password are empty because this repository is public and needs no credentials; they are present because GitHub documents them as the authentication parameters of a `maven-repository` registry, and the empty-string form is the one with evidence of the service accepting it.
+# They are not quite inert: Ruby reads an empty string as a username that is present, so Dependabot attaches `Authorization: Basic Og==` (an empty user:password pair) to the maven-metadata.xml and release-date fetches, though not to the group-index version listing, which sends no headers at all.
+# Google answers 200 with that header and without it, checked directly and through a full resolution run with cooldown enabled, so it costs nothing today.
+# Dropping both keys removes the header and was not done: an unaccepted registry disables this whole file, which is the failure being fixed here, and that is not testable before the change is on the default branch.
 #
 # Widening `directory` to "/" would also expose google(), since Dependabot does read `dependencyResolutionManagement` from a settings file inside the configured directory, but it was rejected: it pulls the root toolchain pins (AGP, KGP, the Compose plugin) and the e2e modules into scope, which is exactly what #834 scoped this file to "/app" to avoid, and gradle/README.md documents those pins as deliberately un-automated.
 #

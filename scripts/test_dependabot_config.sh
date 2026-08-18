@@ -15,10 +15,21 @@
 # with twelve Google-hosted coordinates unqueried and eleven of them stale.
 #
 # The `registries` entry re-supplies Google's Maven repository, and these
-# checks assert it stays wired up: declared, referenced, pointed at Google,
-# and additive rather than replacing Maven Central (which still serves
-# junit, mockito, robolectric, kotlinx-coroutines-test, org.json and
-# subsampling-scale-image-view).
+# checks assert it stays wired up: declared, referenced, pointed at a URL
+# Dependabot actually resolves against, and additive rather than replacing
+# Maven Central (which still serves junit, mockito, robolectric,
+# kotlinx-coroutines-test, org.json and subsampling-scale-image-view).
+#
+# The URL check is an exact match, not a hostname match, because Dependabot
+# does not treat every URL under a Google host alike: it routes a lookup
+# through its group-index.xml handling only when the URL is exactly
+# `https://maven.google.com`, its own constant for a `google()` declaration
+# (gradle/package/package_details_fetcher.rb compares by string equality).
+# `https://dl.google.com/dl/android/maven2`, where that host redirects,
+# resolves through the ordinary maven-metadata.xml path and is accepted too.
+# A plausible-looking hybrid such as `https://maven.google.com/dl/android/maven2`
+# has a Google hostname and serves 404 for both, which is why hostname alone
+# is not the test.
 #
 # What this cannot check is whether GitHub's Dependabot service accepts the
 # file and whether a run actually opens pull requests. Only a live run on
@@ -31,7 +42,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-CONFIG="$REPO_ROOT/.github/dependabot.yml"
+CONFIG="${1:-$REPO_ROOT/.github/dependabot.yml}"
 
 PASS=0
 FAIL=0
@@ -39,20 +50,19 @@ FAIL=0
 pass() { echo "  PASS: $1"; PASS=$((PASS + 1)); }
 fail() { echo "  FAIL: $1"; FAIL=$((FAIL + 1)); }
 
-echo "Checking .github/dependabot.yml"
+echo "Checking $CONFIG"
 
 if [ ! -f "$CONFIG" ]; then
-    fail ".github/dependabot.yml exists"
+    fail "$CONFIG exists"
     echo
     echo "test_dependabot_config.sh: $PASS passed, $FAIL failed"
     exit 1
 fi
-pass ".github/dependabot.yml exists"
+pass "$CONFIG exists"
 
 set +e
 OUTPUT="$(python3 - "$CONFIG" <<'PY'
 import sys
-from urllib.parse import urlparse
 
 config_path = sys.argv[1]
 
@@ -71,8 +81,12 @@ def check(ok, msg):
     return ok
 
 
-with open(config_path) as f:
-    doc = yaml.safe_load(f)
+try:
+    with open(config_path) as f:
+        doc = yaml.safe_load(f)
+except yaml.YAMLError as err:
+    check(False, "dependabot.yml is valid YAML (%s)" % str(err).replace("\n", " "))
+    sys.exit(1)
 
 if not check(isinstance(doc, dict) and "updates" in doc, "dependabot.yml parses as a mapping with an updates key"):
     sys.exit(1)
@@ -80,60 +94,98 @@ if not check(isinstance(doc, dict) and "updates" in doc, "dependabot.yml parses 
 registries = doc.get("registries") or {}
 updates = doc.get("updates") or []
 
-# Hosts that serve Google's Maven repository. Dependabot's own constant for a
-# google() declaration is https://maven.google.com, which routes the lookup
-# through its group-index.xml handling; dl.google.com is where that host
-# redirects and works through the ordinary maven-metadata.xml path.
-GOOGLE_HOSTS = ("maven.google.com", "dl.google.com")
+if not check(isinstance(registries, dict), "the top-level registries key is a mapping of name to registry"):
+    sys.exit(1)
+if not check(isinstance(updates, list), "the top-level updates key is a list of update entries"):
+    sys.exit(1)
+
+# The two URLs Dependabot resolves Google-hosted coordinates against. See the
+# file header for why this is an exact match rather than a hostname match.
+GOOGLE_MAVEN_URLS = ("https://maven.google.com", "https://dl.google.com/dl/android/maven2")
+
+
+def normalized_url(raw):
+    url = str(raw or "").strip().rstrip("/")
+    if url and "://" not in url:
+        # Dependabot assumes https:// when the protocol is omitted.
+        url = "https://" + url
+    return url
+
+
+def is_maven_registry(registry):
+    return isinstance(registry, dict) and registry.get("type") == "maven-repository"
 
 
 def is_google_maven(registry):
-    if not isinstance(registry, dict):
-        return False
-    if registry.get("type") != "maven-repository":
-        return False
-    url = str(registry.get("url", ""))
-    if "://" not in url:
-        url = "https://" + url
-    return urlparse(url).hostname in GOOGLE_HOSTS
+    return is_maven_registry(registry) and normalized_url(registry.get("url")) in GOOGLE_MAVEN_URLS
 
 
 referenced = set()
+gradle_entries = []
 
 for index, entry in enumerate(updates):
-    if entry.get("package-ecosystem") != "gradle":
+    if not check(isinstance(entry, dict), "updates entry %d is a mapping" % index):
         continue
 
-    directories = entry.get("directories") or [entry.get("directory")]
-    label = "gradle update entry %d (%s)" % (index, ", ".join(str(d) for d in directories))
-    names = entry.get("registries") or []
-    referenced.update(names)
+    names = entry.get("registries")
+    if names is None:
+        names = []
+    elif not isinstance(names, list):
+        check(False, "update entry %d's registries key is a list of registry names (found %r)" % (index, names))
+        names = []
+
+    # Collected for every ecosystem, not just gradle, so the "declared
+    # registry is referenced" check below cannot fail on a registry that a
+    # non-gradle entry legitimately uses.
+    referenced.update(str(name) for name in names)
 
     for name in names:
         check(
             name in registries,
-            "%s references registry %r, which is declared under the top-level registries key" % (label, name),
+            "update entry %d references registry %r, which is declared under the top-level registries key"
+            % (index, name),
         )
+
+    if entry.get("package-ecosystem") == "gradle":
+        gradle_entries.append((index, entry, names))
+
+# replaces-base applies to every referenced maven-repository registry,
+# whatever ecosystem references it and whatever directory that entry covers:
+# Dependabot's RepositoriesFinder takes the first such credential and returns
+# its url in place of Maven Central's.
+for name in sorted(referenced):
+    registry = registries.get(name)
+    if is_maven_registry(registry):
+        check(
+            registry.get("replaces-base") is not True,
+            "registry %r does not set replaces-base, so Maven Central still serves the coordinates that "
+            "live there (junit, mockito, robolectric, kotlinx-coroutines-test, org.json, "
+            "subsampling-scale-image-view)" % name,
+        )
+
+for index, entry, names in gradle_entries:
+    if "directories" in entry:
+        directories = entry["directories"]
+        if not check(isinstance(directories, list), "gradle update entry %d's directories key is a list" % index):
+            continue
+    elif "directory" in entry:
+        directories = [entry["directory"]]
+    else:
+        check(False, "gradle update entry %d declares a directory or directories key" % index)
+        continue
+
+    label = "gradle update entry %d (%s)" % (index, ", ".join(str(d) for d in directories))
 
     # A root-scoped entry reads settings.gradle.kts itself, so it finds
     # google() there without a registry; anything narrower cannot.
     if all(str(d) == "/" for d in directories):
         continue
 
-    google = [name for name in names if is_google_maven(registries.get(name))]
     check(
-        bool(google),
+        any(is_google_maven(registries.get(name)) for name in names),
         "%s references a maven-repository registry for Google's Maven repository, without which no "
         "androidx.* or com.google.android.material coordinate is ever queried (issue #897)" % label,
     )
-
-    for name in google:
-        check(
-            registries[name].get("replaces-base") is not True,
-            "registry %r does not set replaces-base, so Maven Central still serves the coordinates that "
-            "live there (junit, mockito, robolectric, kotlinx-coroutines-test, org.json, "
-            "subsampling-scale-image-view)" % name,
-        )
 
 for name in registries:
     check(name in referenced, "declared registry %r is referenced by an update entry" % name)
