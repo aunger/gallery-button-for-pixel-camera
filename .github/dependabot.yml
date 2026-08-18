@@ -40,10 +40,36 @@
 # The one exception is androidx.compose:compose-bom, declared identically under both androidTestImplementation and the shipping implementation block; it stays ungrouped and travels with the app-runtime Compose bump instead, since grouping it would fold a shipping dependency into the test group.
 # androidx.test* is scoped to the "androidx.test" package prefix, so it does not capture the shipping androidx.core, androidx.lifecycle, androidx.activity, androidx.compose, or androidx.viewpager2 artifacts.
 
+# maven-google (issue #897): without it, this file has never proposed an app-runtime bump and cannot.
+# Dependabot resolves versions against the repositories it finds in the files it fetched, and its Gradle file fetcher never walks up out of `directory`, so with "/app" that set is app/build.gradle.kts alone.
+# That file declares no `repositories` block and cannot: settings.gradle.kts sets `RepositoriesMode.FAIL_ON_PROJECT_REPOS`, and its `dependencyResolutionManagement { repositories { google() } }` sits outside the fetched directory.
+# Finding no repository, Dependabot falls back to its built-in default of Maven Central alone, where every `androidx.*` and `com.google.android.material` coordinate 404s.
+# The 2026-08-17 run recorded "No update possible" for twelve Google-hosted coordinates, eleven of them genuinely out of date (compose-bom was twenty months stale), then reported success and opened nothing.
+#
+# A `maven-repository` registry is added to the repositories Dependabot consults, not substituted for them (that would need `replaces-base`), so Central still serves junit, mockito, robolectric, kotlinx-coroutines-test, org.json and subsampling-scale-image-view.
+# The url is exactly https://maven.google.com, the URL Dependabot itself uses when it reads a `google()` declaration, which routes the lookup through its group-index.xml handling for that host rather than a maven-metadata.xml fetch.
+# username and password are empty because this repository is public and needs no credentials; they are present because GitHub documents them as the authentication parameters of a `maven-repository` registry, and they are inert here, as the group-index path sends no Authorization header.
+#
+# Widening `directory` to "/" would also expose google(), since Dependabot does read `dependencyResolutionManagement` from a settings file inside the configured directory, but it was rejected: it pulls the root toolchain pins (AGP, KGP, the Compose plugin) and the e2e modules into scope, which is exactly what #834 scoped this file to "/app" to avoid, and gradle/README.md documents those pins as deliberately un-automated.
+#
+# Cooldown (issue #897, second half): a version update is held until its release is three days old.
+# That is GitHub's default since 2026-07-14 and applies with no `cooldown` key in this file; it does not apply to security updates.
+# It is why the 2026-08-17 run logged "No update needed for org.json:json 20260719" against a 20260814 release: that release was 2 days 17 hours old at the time, short of the three-day window by 6 hours.
+# A held bump is not a lost one; it is proposed by the next run past the third day.
+
 version: 2
+registries:
+  maven-google:
+    type: maven-repository
+    url: https://maven.google.com
+    username: ""
+    password: ""
+
 updates:
   - package-ecosystem: "gradle"
     directory: "/app"
+    registries:
+      - maven-google
     schedule:
       interval: "weekly"
       day: "monday"
