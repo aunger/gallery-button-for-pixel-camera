@@ -52,3 +52,27 @@ An empty allowlist means no failure is tolerated, which is the steady state.
 - `scripts/ci/test-support/check_allowed_failures.py`: the gate script (unit-tested in `scripts/ci/test-support/test_check_allowed_failures.py`).
 - `scripts/ci/prs-and-issues/file_test_failure_issues.py`: auto-files issues for failed tests.
 - `.github/workflows/archive-stale-test-failures.yml`: archives test failure issues when tests pass.
+
+## A privileged pull-request job must not check out pull request code
+
+A job that a `pull_request` event can trigger, and that holds `issues: write` or `pull-requests: write`, must pin the `ref:` of every `actions/checkout` step:
+
+```yaml
+- uses: actions/checkout@v6
+  with:
+    ref: ${{ github.event.pull_request.base.sha || github.sha }}
+```
+
+The default checkout on a `pull_request` event is the pull request's own merge ref, so a job that then runs a script out of the checkout is executing pull-request-controlled code (issue #882).
+Today that is inert: GitHub hands a fork's `pull_request` run a read-only `GITHUB_TOKEN` whatever the `permissions:` block asks for.
+It stops being inert the moment "Send write tokens to workflows from fork pull requests" is enabled, and nothing in the tree would notice.
+The jobs holding those two scopes act only through the API, on titles, labels, comment bodies and downloaded artifacts, so none of them needs pull request file contents.
+
+The `|| github.sha` half covers the events that carry no pull request context (`issues`, `issue_comment`, `push`, `workflow_dispatch`).
+It has to come second: on a `pull_request` event `github.sha` is the merge ref itself.
+Where a workflow is triggered only by `pull_request`, use `${{ github.event.pull_request.base.sha }}` alone.
+
+Do not reach for `pull_request_target` instead.
+It grants a full write token and secrets in the base-repository context, so pairing it with a checkout of pull request code creates the vulnerability this rule exists to prevent.
+
+`scripts/ci/test_privileged_workflow_checkouts.py` enforces the rule over every workflow, and its docstring carries the full rationale, including why jobs holding only `security-events: write` (codeql.yml, semgrep.yml) and `contents: read` (`dependabot-verification-metadata-regen.yml`) are correctly exempt.
