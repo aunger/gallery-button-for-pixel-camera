@@ -28,8 +28,16 @@ class ForegroundDetector(
      * single signal instead of a coincidence between two log lines. It never takes part in
      * detection: [getForegroundPackage]'s return value is unaffected by this property existing.
      *
-     * Volatile because camera callbacks can drive queries from different threads; each query
-     * publishes its own finished set, so a reader always sees one complete window's candidates.
+     * Every call site today is on the main thread: [com.gb4pc.service.OverlayService] registers
+     * the camera availability callback with a main-looper Handler, posts its retry and debounce
+     * runnables to that same Handler, and reaches the detector otherwise only from a UI click.
+     * Volatile is therefore not load-bearing, and is kept only so that a future caller on another
+     * thread reads a published set rather than a torn one; it costs a field read.
+     *
+     * It does not make the pairing atomic, and no caller should assume it does: a reader takes
+     * [getForegroundPackage]'s result and this property in two steps, so off the main thread the
+     * set could belong to a later query than the package being judged. Harmless for a diagnostic,
+     * wrong for anything that must decide from the two together.
      */
     @Volatile
     var lastForegroundCandidates: Set<String> = emptySet()
