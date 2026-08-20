@@ -120,6 +120,23 @@ def is_google_maven(registry):
     return is_maven_registry(registry) and normalized_url(registry.get("url")) in GOOGLE_MAVEN_URLS
 
 
+def entry_directories(index, entry):
+    """The directory paths an update entry covers, or None if it declares none."""
+    if "directories" in entry:
+        directories = entry["directories"]
+        if not check(isinstance(directories, list), "gradle update entry %d's directories key is a list" % index):
+            return None
+        return directories
+    if "directory" in entry:
+        return [entry["directory"]]
+    check(False, "gradle update entry %d declares a directory or directories key" % index)
+    return None
+
+
+def entry_label(index, directories):
+    return "gradle update entry %d (%s)" % (index, ", ".join(str(d) for d in directories))
+
+
 referenced = set()
 gradle_entries = []
 
@@ -147,7 +164,9 @@ for index, entry in enumerate(updates):
         )
 
     if entry.get("package-ecosystem") == "gradle":
-        gradle_entries.append((index, entry, names))
+        directories = entry_directories(index, entry)
+        if directories is not None:
+            gradle_entries.append((index, entry, names, directories))
 
 # replaces-base applies to every referenced maven-repository registry,
 # whatever ecosystem references it and whatever directory that entry covers:
@@ -163,18 +182,8 @@ for name in sorted(referenced):
             "subsampling-scale-image-view)" % name,
         )
 
-for index, entry, names in gradle_entries:
-    if "directories" in entry:
-        directories = entry["directories"]
-        if not check(isinstance(directories, list), "gradle update entry %d's directories key is a list" % index):
-            continue
-    elif "directory" in entry:
-        directories = [entry["directory"]]
-    else:
-        check(False, "gradle update entry %d declares a directory or directories key" % index)
-        continue
-
-    label = "gradle update entry %d (%s)" % (index, ", ".join(str(d) for d in directories))
+for index, entry, names, directories in gradle_entries:
+    label = entry_label(index, directories)
 
     # A root-scoped entry reads settings.gradle.kts itself, so it finds
     # google() there without a registry; anything narrower cannot.
