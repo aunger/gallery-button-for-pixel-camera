@@ -64,6 +64,11 @@ class OverlayServiceLogic(
     private var activationRetryPending = false
     private var activationRetryAttempts = 0
 
+    // Issue #907: how many times this instance has seen the Issue #86 race fingerprint, i.e. for
+    // the lifetime of the service. Reported in the log signal so that repeat occurrences within a
+    // single session are distinguishable from a one-off; see [logCameraForegroundRace].
+    private var cameraForegroundRaceCount = 0
+
     // ── Camera callback delegation ──────────────────────────────────────────
 
     fun onCameraUnavailable(cameraId: String) {
@@ -152,17 +157,48 @@ class OverlayServiceLogic(
 
         val pkg = foregroundDetector.getForegroundPackage()
         val isPixelCamera = ForegroundDetector.isPixelCameraPackage(pkg)
+        val cameraHeld = cameraState.anyCameraUnavailable()
         DebugLog.log(
-            "Logic: evaluateForeground: overlayActive=$isOverlayActive, anyCameraUnavailable=${cameraState.anyCameraUnavailable()}",
+            "Logic: evaluateForeground: overlayActive=$isOverlayActive, anyCameraUnavailable=$cameraHeld",
         )
+        if (!isPixelCamera && cameraHeld) logCameraForegroundRace(pkg)
 
         if (isPixelCamera && !isOverlayActive) {
             cancelActivationRetry()
             showOverlay()
-        } else if (!isOverlayActive && cameraState.anyCameraUnavailable()) {
+        } else if (!isOverlayActive && cameraHeld) {
             // UsageStats may not have caught up yet; schedule a retry (DT-06a).
             scheduleActivationRetry()
         }
+    }
+
+    /**
+     * Issue #907: logs the fingerprint of the Issue #86 race as one named, counted signal.
+     *
+     * The caller has already established the first two thirds of that fingerprint: a camera is
+     * held, and the latest foreground event belongs to some app other than Pixel Camera. This adds
+     * the third, that Pixel Camera nevertheless produced a foreground event inside the same query
+     * window, so it is an app the detector saw and did not pick. That combination is exactly the
+     * case where Pixel Camera holds the camera while a later event from another app wins the
+     * foreground lookup, and today it is silent: the overlay simply does not appear, and the
+     * evidence is split across a [ForegroundDetector] log line and an [evaluateForeground] one.
+     *
+     * Purely diagnostic. It reports the condition and changes nothing about activation, so that a
+     * fix for #86 can be chosen (or declined) against evidence of how often this really fires.
+     * The count makes repeat occurrences within one service lifetime visible at a glance. An
+     * occurrence with `overlayActive=true` is benign (another app came to the front over a camera
+     * the overlay is already tracking), so the message carries that state for filtering.
+     */
+    private fun logCameraForegroundRace(foregroundPackage: String?) {
+        val candidates = foregroundDetector.lastForegroundCandidates
+        if (Constants.PIXEL_CAMERA_PACKAGE !in candidates) return
+        cameraForegroundRaceCount++
+        DebugLog.log(
+            "Logic: $CAMERA_FOREGROUND_RACE #$cameraForegroundRaceCount: camera held " +
+                "(unavailable=${cameraState.getUnavailableCameraIds()}) but foreground=$foregroundPackage " +
+                "while ${Constants.PIXEL_CAMERA_PACKAGE} is among the window's FG apps=$candidates; " +
+                "overlayActive=$isOverlayActive (Issue #86)",
+        )
     }
 
     /**
@@ -424,5 +460,14 @@ class OverlayServiceLogic(
             sessionTracker.startSession()
             onRegisterMediaObserver()
         }
+    }
+
+    companion object {
+        /**
+         * Marker word in the Issue #907 diagnostic log line, chosen to be greppable on its own.
+         * Logcat under [com.gb4pc.util.DebugLog.LOGCAT_TAG], the in-app debug log, and the E2E
+         * logcat CI artifact all carry it verbatim.
+         */
+        const val CAMERA_FOREGROUND_RACE = "CAMERA_FOREGROUND_RACE"
     }
 }
