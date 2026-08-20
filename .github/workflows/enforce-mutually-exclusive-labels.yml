@@ -33,8 +33,8 @@ jobs:
         # (issue #882). This job holds issues: write and pull-requests: write
         # and then runs a script out of this checkout, so with the default ref
         # that script is pull-request-controlled content. It acts only through
-        # the API, on titles, labels and comment bodies, and never needs pull
-        # request file contents. github.sha covers the issues event, which
+        # the API, on titles and labels, and never needs pull request file
+        # contents. github.sha covers the issues event, which
         # carries no pull request context; on a pull_request event github.sha
         # is the merge ref itself, so base.sha has to come first. Guarded by
         # scripts/ci/test_privileged_workflow_checkouts.py.
