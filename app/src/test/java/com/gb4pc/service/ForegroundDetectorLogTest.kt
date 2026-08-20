@@ -35,32 +35,7 @@ class ForegroundDetectorLogTest {
         DebugLog.clear()
     }
 
-    private fun eventsOf(vararg specs: Triple<String, Int, Long>): UsageEvents {
-        val specList = specs.toList()
-        var index = 0
-        val events: UsageEvents = mock()
-        whenever(events.hasNextEvent()).thenAnswer { index < specList.size }
-        whenever(events.getNextEvent(any())).thenAnswer { invocation ->
-            val event = invocation.getArgument<UsageEvents.Event>(0)
-            val spec = specList[index++]
-            setEventField(event, "mPackage", spec.first)
-            setEventField(event, "mEventType", spec.second)
-            setEventField(event, "mTimeStamp", spec.third)
-            true
-        }
-        whenever(usm.queryEvents(any(), any())).thenReturn(events)
-        return events
-    }
-
-    private fun setEventField(
-        event: UsageEvents.Event,
-        fieldName: String,
-        value: Any,
-    ) {
-        val field = event.javaClass.getDeclaredField(fieldName)
-        field.isAccessible = true
-        field.set(event, value)
-    }
+    private fun eventsOf(vararg specs: Triple<String, Int, Long>) = stubUsageEvents(usm, *specs)
 
     private fun loggedMessages(): List<String> = DebugLog.getEntries().map { it.message }
 
