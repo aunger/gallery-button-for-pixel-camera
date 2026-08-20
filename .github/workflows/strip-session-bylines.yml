@@ -30,7 +30,18 @@ jobs:
     if: github.actor != 'github-actions[bot]'
 
     steps:
+      # Pinned to the base branch, never the pull request's own merge ref
+      # (issue #882). This job holds issues: write and pull-requests: write
+      # and then runs a script out of this checkout, so with the default ref
+      # that script is pull-request-controlled content. It only rewrites
+      # bodies through the API and never needs pull request file contents.
+      # github.sha covers the issues and issue_comment events, which carry no
+      # pull request context; on a pull_request event github.sha is the merge
+      # ref itself, so base.sha has to come first. Guarded by
+      # scripts/ci/test_privileged_workflow_checkouts.py.
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
 
       - name: Strip session-URL bylines
         env:
