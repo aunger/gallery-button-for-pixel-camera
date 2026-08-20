@@ -273,6 +273,19 @@ class CameraForegroundRaceTest {
     }
 
     @Test
+    fun `the retry fires on the DT-06a delay, not sooner`() {
+        launcherWinsWindow()
+
+        logic.onCameraUnavailable("0")
+
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(Constants.ACTIVATION_RETRY_MS - 1))
+        assertEquals("No retry may fire before ACTIVATION_RETRY_MS has elapsed", 0, retryFirings())
+
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1))
+        assertEquals("The first retry fires exactly at ACTIVATION_RETRY_MS", 1, retryFirings())
+    }
+
+    @Test
     fun `the race is not reported when no camera is held`() {
         launcherWinsWindow()
 
