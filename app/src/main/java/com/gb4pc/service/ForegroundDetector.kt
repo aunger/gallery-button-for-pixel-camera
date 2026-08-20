@@ -18,6 +18,24 @@ class ForegroundDetector(
     private val selfPackage: String,
 ) {
     /**
+     * The distinct non-self packages that produced a foreground event during the most recent
+     * [getForegroundPackage] call, which is the same set the summary line reports as `all FG
+     * apps`. Empty before the first call, and empty after a call that found no foreground event.
+     *
+     * Exposed for callers that hold state this class cannot see (Issue #907): joining this set
+     * with the camera state is what makes the Issue #86 race (a camera held while some other app
+     * carries the latest foreground event and Pixel Camera carries an earlier one) visible as a
+     * single signal instead of a coincidence between two log lines. It never takes part in
+     * detection: [getForegroundPackage]'s return value is unaffected by this property existing.
+     *
+     * Volatile because camera callbacks can drive queries from different threads; each query
+     * publishes its own finished set, so a reader always sees one complete window's candidates.
+     */
+    @Volatile
+    var lastForegroundCandidates: Set<String> = emptySet()
+        private set
+
+    /**
      * Queries UsageStatsManager for the most recent foreground event
      * in the last [Constants.USAGE_STATS_WINDOW_MS] milliseconds.
      *
@@ -35,6 +53,7 @@ class ForegroundDetector(
 
         val events = usageStatsManager.queryEvents(beginTime, endTime)
         if (events == null) {
+            lastForegroundCandidates = emptySet()
             DebugLog.log("ForegroundDetector: queryEvents returned null; usage-stats permission missing?")
             return null
         }
@@ -76,6 +95,7 @@ class ForegroundDetector(
             }
         }
 
+        lastForegroundCandidates = allForegroundPackages
         val selfNote = if (skippedSelfEvents > 0) ", skipped $skippedSelfEvents self-event(s)" else ""
         if (latestForegroundPackage != null) {
             DebugLog.log(
