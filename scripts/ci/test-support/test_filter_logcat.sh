@@ -137,6 +137,9 @@ KEPT_CASES["OverlayService"]="05-25 14:08:16.131  1204  1204 D OverlayService: s
 KEPT_CASES["MockCamera"]="05-25 14:08:16.131  1204  1204 D MockCamera: some message"
 KEPT_CASES["CameraService"]="05-25 14:08:16.131  1204  1204 D CameraService: some message"
 KEPT_CASES["GB4PC_E2E"]="05-25 14:08:16.131  1204  1204 I GB4PC_E2E: launchPixelCamera: am start attempt 1/3"
+# Issue #907: the race marker is the only thing kept from the GB4PC tag, so this case also
+# guards that the tag itself stays unfiltered (see the DROPPED case for a plain GB4PC line).
+KEPT_CASES["CAMERA_FOREGROUND_RACE"]="05-25 14:08:16.131  1204  1204 D GB4PC   : Logic: CAMERA_FOREGROUND_RACE #1: camera held (unavailable=[0]) but foreground=com.google.android.apps.nexuslauncher"
 KEPT_CASES["E/<tag>"]="05-25 14:08:16.131  1204  1204 E/SomeTag: some error"
 
 for LABEL in "${!KEPT_CASES[@]}"; do
@@ -160,6 +163,18 @@ if [[ -z "$OUTPUT_H" ]]; then
   pass "irrelevant line dropped"
 else
   fail "irrelevant line was not dropped: got '$OUTPUT_H'"
+fi
+
+# Issue #907: the GB4PC tag carries every DebugLog line the app emits, which is far too much for
+# a failure-diagnosis artifact. Only the race marker is whitelisted, so an ordinary GB4PC line
+# must still be dropped; if this ever starts passing, the filter has been widened to the whole tag.
+CHATTY_GB4PC="05-25 14:08:16.131  1204  1204 D GB4PC   : Logic: evaluateForeground: overlayActive=false, anyCameraUnavailable=true"
+OUTPUT_H2="$(echo "$CHATTY_GB4PC" | bash "$FILTER")"
+
+if [[ -z "$OUTPUT_H2" ]]; then
+  pass "ordinary GB4PC-tagged line still dropped"
+else
+  fail "ordinary GB4PC-tagged line was not dropped: got '$OUTPUT_H2'"
 fi
 
 # ── Summary ──────────────────────────────────────────────────────────────────

@@ -510,8 +510,13 @@ class OverlayServiceLogic(
     companion object {
         /**
          * Marker word in the Issue #907 diagnostic log line, chosen to be greppable on its own.
-         * Logcat under [com.gb4pc.util.DebugLog.LOGCAT_TAG], the in-app debug log, and the E2E
-         * logcat CI artifact all carry it verbatim.
+         *
+         * Device logcat carries it under [com.gb4pc.util.DebugLog.LOGCAT_TAG], as does the in-app
+         * debug log. The E2E logcat CI artifact carries it only because this exact string is
+         * whitelisted in `scripts/ci/test-support/filter_logcat.sh`: that filter keeps a short
+         * list of tags, `GB4PC` is not among them, so without the entry every line below would be
+         * dropped before the artifact was written. Changing this constant means changing the
+         * filter with it, and `test_filter_logcat.sh` fails if the two drift apart.
          */
         const val CAMERA_FOREGROUND_RACE = "CAMERA_FOREGROUND_RACE"
     }
