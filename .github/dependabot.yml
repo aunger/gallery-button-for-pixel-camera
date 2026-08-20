@@ -58,7 +58,28 @@
 # Cooldown (issue #897, second half): a version update is held until its release is three days old.
 # That is GitHub's default since 2026-07-14 and applies with no `cooldown` key in this file; it does not apply to security updates.
 # It is why the 2026-08-17 run logged "No update needed for org.json:json 20260719" against a 20260814 release: that release was 2 days 17 hours old at the time, short of the three-day window by 6 hours.
-# A held bump is not a lost one; it is proposed by the next run past the third day.
+# For a Central-hosted coordinate such as org.json:json that is the intended behavior, and a held bump is not a lost one; it is proposed by the next run past the third day.
+#
+# For a Google-hosted coordinate the same default silently drops the bump instead, which is why `cooldown` is written out below with an `exclude` list (issue #905).
+# On https://maven.google.com Dependabot lists versions from group-index.xml, which carries version numbers and no dates, and gets dates from a separate step that reads maven-metadata.xml and records the date of `<release>` alone.
+# A candidate that is not `<release>` therefore has no date, and cooldown holds an undated release ("Release date not available for version 2.11.0 - filtering out").
+# That empties the candidate set, so the run reports success and opens nothing, the same silent shape as #897.
+# It hits any Google-hosted coordinate whose newest published version is a prerelease, which AndroidX publishes continuously: androidx.lifecycle 2.11.0 was hidden this way because 2.12.0-alpha01 holds `<release>`.
+# It also hits any coordinate an `ignore` rule caps to a version line, since a capped target is by definition not `<release>`.
+#
+# The trade being made: cooldown is given up for the twelve Google-hosted coordinates, so an androidx.* or Material release can be proposed the day it is published with no window for a bad release to be noticed first.
+# It is kept for the seven Central-hosted ones (junit, org.mockito x2, org.robolectric, org.jetbrains.kotlinx, org.json, com.davemorrissey.labs), where dates resolve correctly and the delay does real work.
+# `default-days: 3` is written explicitly and must stay, though not for the reason #905's implementation note 1 gives.
+# That note says a `cooldown` block listing only `exclude` yields default_days 0 and so disables cooldown repo-wide. It does not.
+# `Dependabot::Job::DEFAULT_COOLDOWN_DAYS` is 3, and `build_cooldown` passes it into `CooldownDefinition#to_options`, which substitutes it wherever the YAML left `default-days` unset, so an exclude-only block still cools down for three days.
+# `ReleaseCooldownOptions`' own constructor does default `default_days` to 0, which is where that note's evidence came from, but a `cooldown` block in this file never reaches it that way.
+# The real reason to write the 3 out: it pins the delay here rather than inheriting GitHub's default, so a change to that default cannot move this repo's cooldown silently.
+# The patterns match `group:artifact` through File.fnmatch?, so they are anchored on the group prefix rather than on the substring "androidx": com.davemorrissey.labs:subsampling-scale-image-view-androidx is Central-hosted despite its artifact name and must keep its cooldown.
+# Excluding by prefix rather than naming androidx.lifecycle alone also covers the ignore-rule case above for any coordinate the maven-google registry serves.
+# scripts/test_dependabot_config.sh asserts both halves of this against the real coordinate list in app/build.gradle.kts.
+#
+# The underlying defect is in dependabot-core, not here: the Google repository could supply a per-version date (the .pom or .module timestamp) instead of only `<release>`'s lastUpdated, or treat "date unknown" as "not in cooldown" as it does when no cooldown is configured at all.
+# If that is fixed upstream, this `exclude` can be removed and the three-day delay restored for these packages.
 
 version: 2
 registries:
@@ -79,6 +100,11 @@ updates:
       time: "10:00"
       timezone: "UTC"
     open-pull-requests-limit: 10
+    cooldown:
+      default-days: 3
+      exclude:
+        - "androidx.*"
+        - "com.google.android.material:*"
     groups:
       test-dependencies:
         patterns:
