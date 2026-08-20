@@ -68,8 +68,10 @@ class OverlayServiceLogic(
     // the service. cameraForegroundRaceEpisode is the running total and never resets; it is the
     // number the log signal reports. openRaceEpisode is the episode currently being observed, or
     // 0 when none is: it suppresses the duplicate sightings the DT-06a retry chain would otherwise
-    // produce, and is reset per camera-open sequence by cancelActivationRetry(), exactly like
-    // activationRetryAttempts above. See [logCameraForegroundRace].
+    // produce, and lives exactly as long as the camera-open sequence it belongs to. It ends either
+    // at [logCameraForegroundRaceResolved], when the overlay really did appear, or silently at
+    // [closeRaceEpisodeUnresolved] when the cameras are released without one. See
+    // [logCameraForegroundRace].
     private var cameraForegroundRaceEpisode = 0
     private var openRaceEpisode = 0
 
@@ -88,6 +90,10 @@ class OverlayServiceLogic(
         DebugLog.log(
             "Logic: camera $cameraId available; allAvailable=$allAvailable, remaining=${cameraState.getUnavailableCameraIds()}, overlayActive=$isOverlayActive",
         )
+        // Issue #907: the camera-open sequence is over once every camera is back. Any race
+        // episode still open at this point never ended in an overlay, which is the miss the
+        // signal exists to count, so it closes here without a resolution line.
+        if (allAvailable) closeRaceEpisodeUnresolved()
         // Issue #89: If the overlay is not active there is nothing to deactivate.
         if (!isOverlayActive) {
             cancelActivationRetry()
@@ -151,9 +157,8 @@ class OverlayServiceLogic(
         if (isKeyguardLocked() && cameraState.anyCameraUnavailable()) {
             if (!isOverlayActive) {
                 DebugLog.log("Logic: evaluateForeground: device locked with camera in use; activating overlay without UsageStats lookup")
-                logCameraForegroundRaceResolved("lock-screen bypass, Issue #81")
                 cancelActivationRetry()
-                showOverlay()
+                showOverlay("lock-screen bypass, Issue #81")
             } else {
                 DebugLog.log("Logic: evaluateForeground: device locked, overlay already active; skipping UsageStats lookup")
             }
@@ -169,9 +174,8 @@ class OverlayServiceLogic(
         if (!isPixelCamera && cameraHeld) logCameraForegroundRace(pkg)
 
         if (isPixelCamera && !isOverlayActive) {
-            logCameraForegroundRaceResolved("Pixel Camera won a later foreground lookup")
             cancelActivationRetry()
-            showOverlay()
+            showOverlay("Pixel Camera won a later foreground lookup")
         } else if (!isOverlayActive && cameraHeld) {
             // UsageStats may not have caught up yet; schedule a retry (DT-06a).
             scheduleActivationRetry()
@@ -196,15 +200,15 @@ class OverlayServiceLogic(
      * [Constants.USAGE_STATS_WINDOW_MS], so every attempt re-reads the same window and re-sees the
      * same fingerprint. Logging each of those would report a single failure as six, and an
      * analyst counting lines on a device would overstate the rate by that factor. Only the first
-     * sighting of an episode is logged; the episode is closed by [cancelActivationRetry], so the
+     * sighting of an episode is logged; the episode closes when every camera is released, so the
      * next camera-open sequence reports again.
      *
      * An episode that ends with the overlay appearing anyway was not a missed overlay, and
      * [logCameraForegroundRaceResolved] marks it as such so those can be subtracted from the
-     * count. Every path that makes the overlay visible marks its episode, so an episode with no
-     * resolution line is a camera open where the overlay never appeared. That rule is only as
-     * good as that coverage, which is why the resolution call, and not this comment, is where a
-     * new activation path has to be accounted for.
+     * count. It is called from the two places the overlay actually becomes visible, both past
+     * their own permission guard, so an activation that PM-04 refuses is never claimed as one.
+     * An episode with no resolution line is therefore a camera open where the overlay never
+     * appeared, whether it was the race, a revoked permission, or anything else.
      *
      * Purely diagnostic. It reports the condition and changes nothing about activation, so that a
      * fix for #86 can be chosen (or declined) against evidence of how often this really fires.
@@ -239,34 +243,58 @@ class OverlayServiceLogic(
      * episodes that recovered. The difference is the number #86 is waiting on, which is what makes
      * the absence of this line load-bearing: it is what lets an episode read as a real miss.
      *
-     * That rule holds only if **every** path that makes the overlay visible calls this first.
-     * There are three, and each passes its own [how] because they recover for different reasons:
-     * the normal UsageStats path, Issue #81's lock-screen bypass, and Issue #92's focus-regained
-     * path. A fourth would have to call it too. The only other way an episode may end is the
-     * camera-open sequence finishing with no overlay, which is the miss, and stays silent.
+     * That rule holds only if this is called wherever the overlay becomes visible, and *after*
+     * whatever guard could still refuse. So it lives at the two places `isOverlayActive` turns
+     * true -- inside [showOverlay] past the PM-04 check, and in [onOverlayFocusGained] past its
+     * own -- rather than at the call sites that lead there, which cannot see an early return.
+     * That also means a future caller of [showOverlay] is accounted for without knowing this
+     * exists. [how] is supplied by the caller, since only it knows why the overlay went up.
      *
-     * Clears the episode itself, so it is safe both before [cancelActivationRetry] (which clears
-     * it too) and on the focus-regained path (which never calls that).
+     * The only other way an episode may end is [closeRaceEpisodeUnresolved], the miss, which is
+     * silent. Clears the episode itself so neither path double-reports one.
      */
-    private fun logCameraForegroundRaceResolved(how: String) {
+    private fun logCameraForegroundRaceResolved(how: String?) {
         if (openRaceEpisode == 0) return
+        val cause = if (how == null) "" else " ($how)"
         DebugLog.log(
-            "Logic: $CAMERA_FOREGROUND_RACE #$openRaceEpisode resolved ($how): the overlay " +
+            "Logic: $CAMERA_FOREGROUND_RACE #$openRaceEpisode resolved$cause: the overlay " +
                 "activated after all; this episode was not a missed overlay",
         )
         openRaceEpisode = 0
     }
 
     /**
+     * Issue #907: closes an open race episode that ended without the overlay ever appearing.
+     *
+     * Deliberately silent. The absence of a resolution line is what marks an episode as a real
+     * miss, so this only frees the number for the next camera-open sequence to use.
+     *
+     * Called when every camera has been released, which is the honest end of a camera-open
+     * sequence, and on teardown. Not from [cancelActivationRetry]: that runs mid-sequence too,
+     * immediately before each activation attempt, and closing the episode there would retire it a
+     * moment before the code could find out whether the overlay actually appeared.
+     */
+    private fun closeRaceEpisodeUnresolved() {
+        openRaceEpisode = 0
+    }
+
+    /**
      * PM-04 / SF-01: Show the overlay, guarding against missing permissions.
      * Starts a secure session if the device is already locked at activation time.
+     *
+     * @param raceResolutionCause Issue #907: why this activation happened, for the resolution
+     *   line of an open race episode. Passed in because only the caller knows, and read only
+     *   after the PM-04 guard, so an activation this method refuses never claims to have
+     *   happened. Null (the default) still resolves the episode, just without naming a cause:
+     *   the overlay is up either way, which is the part the metric counts.
      */
-    fun showOverlay() {
+    fun showOverlay(raceResolutionCause: String? = null) {
         if (!hasOverlayPermission()) {
             DebugLog.log("Logic: showOverlay: overlay permission missing; cannot show")
             onOverlayPermissionLost()
             return
         }
+        logCameraForegroundRaceResolved(raceResolutionCause)
         val locked = isKeyguardLocked()
         DebugLog.log("Logic: showOverlay: showing overlay; keyguardLocked=$locked")
         // Issue #608: a fresh activation starts a new session; clear any stale
@@ -393,10 +421,6 @@ class OverlayServiceLogic(
         }
         activationRetryPending = false
         activationRetryAttempts = 0
-        // Issue #907: every caller of this method marks the end of a camera-open sequence (the
-        // overlay activated, the camera was released, or usage access was lost), which is also the
-        // end of any race episode being observed. Clearing it here lets the next sequence report.
-        openRaceEpisode = 0
     }
 
     /** Called from onDestroy to clean up mutable state. */
@@ -404,6 +428,7 @@ class OverlayServiceLogic(
         cancelPendingDeactivation()
         cancelActivationRetry()
         cancelGalleryLaunchRecheck()
+        closeRaceEpisodeUnresolved()
         onUnregisterThumbnailObserver()
         isOverlayActive = false
         secureViewerLaunched = false

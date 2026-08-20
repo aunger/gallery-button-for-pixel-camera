@@ -52,6 +52,7 @@ class CameraForegroundRaceTest {
     private lateinit var sessionTracker: SessionTracker
     private lateinit var cameraState: CameraState
     private var keyguardLocked = false
+    private var overlayPermission = true
     private lateinit var detector: ForegroundDetector
     private lateinit var logic: OverlayServiceLogic
 
@@ -62,11 +63,12 @@ class CameraForegroundRaceTest {
         sessionTracker = mock()
         cameraState = CameraState()
         keyguardLocked = false
+        overlayPermission = true
         detector = ForegroundDetector(usm, selfPkg)
         logic =
             OverlayServiceLogic(
                 hasUsageStatsPermission = { true },
-                hasOverlayPermission = { true },
+                hasOverlayPermission = { overlayPermission },
                 overlayManager = overlayManager,
                 cameraState = cameraState,
                 foregroundDetector = detector,
@@ -270,6 +272,69 @@ class CameraForegroundRaceTest {
             1,
             raceSignals().count { it.contains("resolved") },
         )
+    }
+
+    @Test
+    fun `an activation PM-04 refuses is not claimed as a resolution`() {
+        launcherWinsWindow()
+        logic.onCameraUnavailable("0")
+        assertEquals("The race is reported first", 1, raceSignals().size)
+
+        // EC-03/PM-04: DRAW_OVERLAYS is revoked while the service runs, and the service finds out
+        // on its next show attempt -- which here is the retry that would otherwise have recovered.
+        overlayPermission = false
+        stubUsageEvents(
+            usm,
+            Triple(launcherPkg, UsageEvents.Event.ACTIVITY_RESUMED, 2_000L),
+            Triple(cameraPkg, UsageEvents.Event.ACTIVITY_RESUMED, 3_000L),
+        )
+        idleRetryChain()
+
+        assertFalse("Without DRAW_OVERLAYS the overlay cannot appear", logic.isOverlayActive)
+        verify(overlayManager, never()).show()
+        assertTrue(
+            "An activation the PM-04 guard refused must not be logged as a recovery: " +
+                "the overlay never appeared, so the episode is a miss like any other",
+            raceSignals().none { it.contains("resolved") },
+        )
+    }
+
+    @Test
+    fun `an episode the lock-screen bypass cannot show is not claimed as a resolution`() {
+        launcherWinsWindow()
+        logic.onCameraUnavailable("0")
+
+        // The same refusal on the other path that reaches showOverlay().
+        overlayPermission = false
+        keyguardLocked = true
+        idleRetryChain()
+
+        assertFalse("Without DRAW_OVERLAYS the bypass cannot show the overlay", logic.isOverlayActive)
+        assertTrue(
+            "The lock-screen bypass must not claim a recovery it could not perform",
+            raceSignals().none { it.contains("resolved") },
+        )
+    }
+
+    @Test
+    fun `an episode that never showed the overlay is still counted as a miss`() {
+        launcherWinsWindow()
+
+        // Race, then the permission is revoked, then the camera is released with no overlay.
+        logic.onCameraUnavailable("0")
+        overlayPermission = false
+        idleRetryChain()
+        logic.onCameraAvailable("0")
+
+        // Releasing the camera closes the episode, so the next camera open is free to report its
+        // own. Two episodes, no resolutions: two misses, which is what a reader should count.
+        overlayPermission = true
+        logic.onCameraUnavailable("0")
+
+        val signals = raceSignals()
+        assertEquals("Both camera opens must be reported", 2, signals.size)
+        assertTrue("The second must be a new episode: ${signals[1]}", signals[1].contains("#2"))
+        assertTrue("Neither may claim a recovery", signals.none { it.contains("resolved") })
     }
 
     @Test
