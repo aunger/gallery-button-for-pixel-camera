@@ -64,10 +64,14 @@ class OverlayServiceLogic(
     private var activationRetryPending = false
     private var activationRetryAttempts = 0
 
-    // Issue #907: how many times this instance has seen the Issue #86 race fingerprint, i.e. for
-    // the lifetime of the service. Reported in the log signal so that repeat occurrences within a
-    // single session are distinguishable from a one-off; see [logCameraForegroundRace].
-    private var cameraForegroundRaceCount = 0
+    // Issue #907: episodes of the Issue #86 race seen by this instance, i.e. over the lifetime of
+    // the service. cameraForegroundRaceEpisode is the running total and never resets; it is the
+    // number the log signal reports. openRaceEpisode is the episode currently being observed, or
+    // 0 when none is: it suppresses the duplicate sightings the DT-06a retry chain would otherwise
+    // produce, and is reset per camera-open sequence by cancelActivationRetry(), exactly like
+    // activationRetryAttempts above. See [logCameraForegroundRace].
+    private var cameraForegroundRaceEpisode = 0
+    private var openRaceEpisode = 0
 
     // ── Camera callback delegation ──────────────────────────────────────────
 
@@ -164,6 +168,7 @@ class OverlayServiceLogic(
         if (!isPixelCamera && cameraHeld) logCameraForegroundRace(pkg)
 
         if (isPixelCamera && !isOverlayActive) {
+            logCameraForegroundRaceResolved()
             cancelActivationRetry()
             showOverlay()
         } else if (!isOverlayActive && cameraHeld) {
@@ -183,21 +188,57 @@ class OverlayServiceLogic(
      * foreground lookup, and today it is silent: the overlay simply does not appear, and the
      * evidence is split across a [ForegroundDetector] log line and an [evaluateForeground] one.
      *
+     * Counted per *episode*, not per evaluation, because those are very different numbers. One
+     * camera open drives [evaluateForeground] up to
+     * `1 + `[Constants.ACTIVATION_RETRY_MAX_ATTEMPTS] times as the DT-06a retry chain re-checks
+     * for UsageStats lag, and for a race the whole chain fits inside
+     * [Constants.USAGE_STATS_WINDOW_MS], so every attempt re-reads the same window and re-sees the
+     * same fingerprint. Logging each of those would report a single failure as six, and an
+     * analyst counting lines on a device would overstate the rate by that factor. Only the first
+     * sighting of an episode is logged; the episode is closed by [cancelActivationRetry], so the
+     * next camera-open sequence reports again.
+     *
+     * An episode that ends in activation was UsageStats lag resolving, not a missed overlay, and
+     * [logCameraForegroundRaceResolved] marks it as such so those can be subtracted from the
+     * count. An episode with no resolution line is a camera open where the overlay never appeared.
+     *
      * Purely diagnostic. It reports the condition and changes nothing about activation, so that a
      * fix for #86 can be chosen (or declined) against evidence of how often this really fires.
-     * The count makes repeat occurrences within one service lifetime visible at a glance. An
-     * occurrence with `overlayActive=true` is benign (another app came to the front over a camera
-     * the overlay is already tracking), so the message carries that state for filtering.
+     *
+     * The message carries `overlayActive` because the condition is benign while the overlay is
+     * already up: another app has come to the front over a camera the overlay is already tracking.
+     * Note that `overlayActive=false` alone does not prove a miss either. Issue #91's
+     * [onGalleryLaunched] hides the overlay while Pixel Camera may still hold the camera, so a
+     * camera event in that gap logs the fingerprint with nothing wrong. Weigh an episode by its
+     * resolution line and its surrounding log context, not by the flag alone.
      */
     private fun logCameraForegroundRace(foregroundPackage: String?) {
         val candidates = foregroundDetector.lastForegroundCandidates
         if (Constants.PIXEL_CAMERA_PACKAGE !in candidates) return
-        cameraForegroundRaceCount++
+        if (openRaceEpisode != 0) return // same episode, re-observed by the DT-06a retry chain
+        cameraForegroundRaceEpisode++
+        openRaceEpisode = cameraForegroundRaceEpisode
         DebugLog.log(
-            "Logic: $CAMERA_FOREGROUND_RACE #$cameraForegroundRaceCount: camera held " +
+            "Logic: $CAMERA_FOREGROUND_RACE #$cameraForegroundRaceEpisode: camera held " +
                 "(unavailable=${cameraState.getUnavailableCameraIds()}) but foreground=$foregroundPackage " +
                 "while ${Constants.PIXEL_CAMERA_PACKAGE} is among the window's FG apps=$candidates; " +
                 "overlayActive=$isOverlayActive (Issue #86)",
+        )
+    }
+
+    /**
+     * Issue #907: closes an open race episode that ended with the overlay activating anyway.
+     *
+     * Called just before an activation. If a race was reported for this camera-open sequence, the
+     * overlay did appear in the end, so the episode was UsageStats lag that the DT-06a retry
+     * resolved rather than the silent failure #86 describes. Saying so on the same marker keeps
+     * both numbers greppable: episodes reported, and of those, episodes that recovered.
+     */
+    private fun logCameraForegroundRaceResolved() {
+        if (openRaceEpisode == 0) return
+        DebugLog.log(
+            "Logic: $CAMERA_FOREGROUND_RACE #$openRaceEpisode resolved: Pixel Camera won a later " +
+                "foreground lookup and the overlay is activating; this episode was not a missed overlay",
         )
     }
 
@@ -337,6 +378,10 @@ class OverlayServiceLogic(
         }
         activationRetryPending = false
         activationRetryAttempts = 0
+        // Issue #907: every caller of this method marks the end of a camera-open sequence (the
+        // overlay activated, the camera was released, or usage access was lost), which is also the
+        // end of any race episode being observed. Clearing it here lets the next sequence report.
+        openRaceEpisode = 0
     }
 
     /** Called from onDestroy to clean up mutable state. */

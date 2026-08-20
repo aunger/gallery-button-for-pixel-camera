@@ -3,6 +3,7 @@ package com.gb4pc.service
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.os.Handler
+import android.os.Looper
 import com.gb4pc.Constants
 import com.gb4pc.overlay.OverlayManager
 import com.gb4pc.util.DebugLog
@@ -13,6 +14,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.kotlin.*
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
+import java.time.Duration
 
 /**
  * Issue #907: pins the behavior of, and the diagnostic signal for, the Issue #86 race where
@@ -29,7 +32,13 @@ import org.robolectric.RobolectricTestRunner
  * activation predicate, and landing it is exactly what should flip them; a failure here after that
  * change is the expected signal, not a regression.
  *
- * Robolectric is required so that [UsageEvents.Event]'s fields can be populated; see
+ * The Handler is a real main-looper one rather than a mock, and Robolectric leaves that looper
+ * paused, so posted work runs only when a test asks for it via [idleRetryChain]. That matters
+ * here: [OverlayServiceLogic]'s DT-06a retry chain re-enters `evaluateForeground()` several times
+ * per camera open, which is exactly the traffic a diagnostic counter has to survive, and a mocked
+ * Handler would silently drop all of it.
+ *
+ * Robolectric is also required so that [UsageEvents.Event]'s fields can be populated; see
  * [stubUsageEvents].
  */
 @RunWith(RobolectricTestRunner::class)
@@ -41,7 +50,6 @@ class CameraForegroundRaceTest {
     private lateinit var usm: UsageStatsManager
     private lateinit var overlayManager: OverlayManager
     private lateinit var sessionTracker: SessionTracker
-    private lateinit var handler: Handler
     private lateinit var cameraState: CameraState
     private lateinit var detector: ForegroundDetector
     private lateinit var logic: OverlayServiceLogic
@@ -51,7 +59,6 @@ class CameraForegroundRaceTest {
         usm = mock()
         overlayManager = mock()
         sessionTracker = mock()
-        handler = mock()
         cameraState = CameraState()
         detector = ForegroundDetector(usm, selfPkg)
         logic =
@@ -62,7 +69,7 @@ class CameraForegroundRaceTest {
                 cameraState = cameraState,
                 foregroundDetector = detector,
                 sessionTracker = sessionTracker,
-                handler = handler,
+                handler = Handler(Looper.getMainLooper()),
                 debounceMs = 0L,
                 onUsageAccessLost = {},
                 onOverlayPermissionLost = {},
@@ -86,6 +93,19 @@ class CameraForegroundRaceTest {
             .getEntries()
             .map { it.message }
             .filter { it.contains(OverlayServiceLogic.CAMERA_FOREGROUND_RACE) }
+
+    /**
+     * Runs the posted DT-06a retry chain to exhaustion by advancing the (paused) main looper past
+     * the whole retry budget. The Handler here is a real main-looper Handler precisely so that
+     * this is possible: a mock would swallow every runnable, and the retry chain is the one path
+     * most likely to interact with anything counted per evaluation.
+     */
+    private fun idleRetryChain() =
+        shadowOf(Looper.getMainLooper()).idleFor(
+            Duration.ofMillis(Constants.ACTIVATION_RETRY_MS * (Constants.ACTIVATION_RETRY_MAX_ATTEMPTS + 1)),
+        )
+
+    private fun retryFirings(): Int = DebugLog.getEntries().count { it.message.contains("activation retry firing") }
 
     // ── Characterization: what happens today ────────────────────────────────
 
@@ -139,18 +159,63 @@ class CameraForegroundRaceTest {
     }
 
     @Test
-    fun `repeat occurrences within one session are counted`() {
+    fun `each camera-open sequence that races is one more numbered episode`() {
+        launcherWinsWindow()
+
+        // Camera opened, raced, and closed again without the overlay ever appearing.
+        logic.onCameraUnavailable("0")
+        logic.onCameraAvailable("0")
+        // A second, separate camera open that races the same way.
+        logic.onCameraUnavailable("0")
+
+        val signals = raceSignals()
+        assertEquals("Two camera opens that both race must be two episodes", 2, signals.size)
+        assertTrue("First episode must be numbered #1: ${signals[0]}", signals[0].contains("#1"))
+        assertTrue("Second episode must be numbered #2: ${signals[1]}", signals[1].contains("#2"))
+    }
+
+    @Test
+    fun `the DT-06a retry chain re-observes one episode without re-counting it`() {
         launcherWinsWindow()
 
         logic.onCameraUnavailable("0")
-        logic.evaluateForeground()
-        logic.evaluateForeground()
+        idleRetryChain()
 
-        val signals = raceSignals()
-        assertEquals("Every occurrence must be logged", 3, signals.size)
-        assertTrue("First occurrence must be numbered #1: ${signals[0]}", signals[0].contains("#1"))
-        assertTrue("Second occurrence must be numbered #2: ${signals[1]}", signals[1].contains("#2"))
-        assertTrue("Third occurrence must be numbered #3: ${signals[2]}", signals[2].contains("#3"))
+        // The retry chain is untouched: it still re-checks for UsageStats lag the full budget of
+        // times, and each of those re-entries re-reads the same window and re-sees the fingerprint.
+        assertEquals(
+            "DT-06a must still retry its full budget",
+            Constants.ACTIVATION_RETRY_MAX_ATTEMPTS,
+            retryFirings(),
+        )
+        assertEquals(
+            "One camera open is one episode, however many times the retry chain re-observes it. " +
+                "Counting per evaluation would report this single failure as " +
+                "${Constants.ACTIVATION_RETRY_MAX_ATTEMPTS + 1}, inflating a device log by that factor.",
+            1,
+            raceSignals().size,
+        )
+        assertFalse("The overlay still never appears", logic.isOverlayActive)
+    }
+
+    @Test
+    fun `an episode the retry resolves is marked resolved, not left looking like a miss`() {
+        launcherWinsWindow()
+        logic.onCameraUnavailable("0")
+        assertEquals("The race is reported first", 1, raceSignals().size)
+
+        // UsageStats catches up mid-chain: Pixel Camera now carries the latest event, so a retry
+        // activates the overlay after all. This episode was lag resolving, not a missed overlay.
+        stubUsageEvents(
+            usm,
+            Triple(launcherPkg, UsageEvents.Event.ACTIVITY_RESUMED, 2_000L),
+            Triple(cameraPkg, UsageEvents.Event.ACTIVITY_RESUMED, 3_000L),
+        )
+        idleRetryChain()
+
+        assertTrue("The overlay activates once Pixel Camera wins a later lookup", logic.isOverlayActive)
+        val resolution = raceSignals().single { it.contains("resolved") }
+        assertTrue("The resolution must name the episode it closes: $resolution", resolution.contains("#1"))
     }
 
     @Test
@@ -195,17 +260,5 @@ class CameraForegroundRaceTest {
         assertTrue("The overlay must stay active; this change is observability only", logic.isOverlayActive)
         val signal = raceSignals().single()
         assertTrue("The signal must report the overlay as active: $signal", signal.contains("overlayActive=true"))
-    }
-
-    // ── Activation behavior is unchanged ────────────────────────────────────
-
-    @Test
-    fun `the race signal does not disturb the activation retry`() {
-        launcherWinsWindow()
-
-        logic.onCameraUnavailable("0")
-
-        // DT-06a still treats a non-camera winner with a held camera as possible UsageStats lag.
-        verify(handler).postDelayed(any(), eq(Constants.ACTIVATION_RETRY_MS))
     }
 }
