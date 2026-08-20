@@ -51,6 +51,7 @@ class CameraForegroundRaceTest {
     private lateinit var overlayManager: OverlayManager
     private lateinit var sessionTracker: SessionTracker
     private lateinit var cameraState: CameraState
+    private var keyguardLocked = false
     private lateinit var detector: ForegroundDetector
     private lateinit var logic: OverlayServiceLogic
 
@@ -60,6 +61,7 @@ class CameraForegroundRaceTest {
         overlayManager = mock()
         sessionTracker = mock()
         cameraState = CameraState()
+        keyguardLocked = false
         detector = ForegroundDetector(usm, selfPkg)
         logic =
             OverlayServiceLogic(
@@ -73,7 +75,7 @@ class CameraForegroundRaceTest {
                 debounceMs = 0L,
                 onUsageAccessLost = {},
                 onOverlayPermissionLost = {},
-                isKeyguardLocked = { false },
+                isKeyguardLocked = { keyguardLocked },
                 onRegisterMediaObserver = {},
                 onUnregisterMediaObserver = {},
             )
@@ -216,6 +218,58 @@ class CameraForegroundRaceTest {
         assertTrue("The overlay activates once Pixel Camera wins a later lookup", logic.isOverlayActive)
         val resolution = raceSignals().single { it.contains("resolved") }
         assertTrue("The resolution must name the episode it closes: $resolution", resolution.contains("#1"))
+    }
+
+    @Test
+    fun `an episode the lock-screen bypass resolves is marked resolved (Issue #81)`() {
+        launcherWinsWindow()
+        logic.onCameraUnavailable("0")
+        assertEquals("The race is reported first", 1, raceSignals().size)
+
+        // The screen turns off inside the retry window, so the next DT-06a retry takes Issue #81's
+        // lock-screen bypass instead of the UsageStats path, and the overlay appears that way.
+        keyguardLocked = true
+        idleRetryChain()
+
+        assertTrue("The lock-screen bypass activates the overlay", logic.isOverlayActive)
+        val resolution = raceSignals().single { it.contains("resolved") }
+        assertTrue("The resolution must name the episode it closes: $resolution", resolution.contains("#1"))
+        assertTrue("The resolution must name the path that recovered: $resolution", resolution.contains("Issue #81"))
+    }
+
+    @Test
+    fun `an episode resolved by regaining overlay focus is marked resolved (Issue #92)`() {
+        launcherWinsWindow()
+        logic.onCameraUnavailable("0")
+        assertEquals("The race is reported first", 1, raceSignals().size)
+
+        // Issue #92's focusable-overlay path activates without going through evaluateForeground()
+        // at all, so it is the one activation that could leave an episode looking like a miss.
+        logic.onOverlayFocusGained()
+
+        assertTrue("Regaining focus activates the overlay", logic.isOverlayActive)
+        val resolution = raceSignals().single { it.contains("resolved") }
+        assertTrue("The resolution must name the episode it closes: $resolution", resolution.contains("#1"))
+        assertTrue("The resolution must name the path that recovered: $resolution", resolution.contains("Issue #92"))
+    }
+
+    @Test
+    fun `a resolved episode is not re-resolved when the same sequence activates again`() {
+        launcherWinsWindow()
+        logic.onCameraUnavailable("0")
+        logic.onOverlayFocusGained()
+        assertEquals("One resolution so far", 1, raceSignals().count { it.contains("resolved") })
+
+        // Focus lost and regained again inside the same camera hold: the episode is already closed,
+        // so nothing further is claimed about it.
+        logic.onOverlayFocusLost()
+        logic.onOverlayFocusGained()
+
+        assertEquals(
+            "An episode must be resolved once, not once per activation",
+            1,
+            raceSignals().count { it.contains("resolved") },
+        )
     }
 
     @Test
