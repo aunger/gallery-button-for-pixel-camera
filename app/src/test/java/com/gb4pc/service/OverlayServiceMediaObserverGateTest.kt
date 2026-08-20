@@ -5,7 +5,6 @@ import android.app.Application
 import android.provider.MediaStore
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
@@ -43,8 +42,11 @@ class OverlayServiceMediaObserverGateTest {
      * Invokes the private `registerMediaObserver()`. Reflection rather than a widened visibility:
      * the production seam here is the observer registration the method performs, which the tests
      * assert directly, so there is no reason to expose the method itself. A rename fails loudly.
+     *
+     * Named unlike the method it invokes, so a call site cannot be misread as a direct call to
+     * the production method.
      */
-    private fun OverlayService.registerMediaObserver() {
+    private fun OverlayService.invokeRegisterMediaObserver() {
         OverlayService::class.java
             .getDeclaredMethod("registerMediaObserver")
             .apply {
@@ -70,7 +72,7 @@ class OverlayServiceMediaObserverGateTest {
         val service = createService()
         assertEquals("No observer should be registered before session start", 0, registeredObserverCount())
 
-        service.registerMediaObserver()
+        service.invokeRegisterMediaObserver()
 
         assertEquals(
             "With the media permission granted the session observer must watch both the image " +
@@ -86,7 +88,7 @@ class OverlayServiceMediaObserverGateTest {
         // media step, or by Android revoking the permission later (issue #563).
         val service = createService()
 
-        service.registerMediaObserver()
+        service.invokeRegisterMediaObserver()
 
         assertEquals(
             "Without the media permission the session query can only ever return this app's own " +
@@ -100,21 +102,31 @@ class OverlayServiceMediaObserverGateTest {
      * The gate must return early without recording an observer, so a later session (after the
      * user acts on the tap-to-fix notification and grants the permission) still registers one.
      * A gate that set the `mediaObserver` field before checking would wedge the service for its
-     * whole lifetime.
+     * whole lifetime, because `registerMediaObserver` returns early on a non-null field.
+     *
+     * This is a forward-looking guard on that ordering, not a regression test: no version of the
+     * service has been shown to get it wrong, and against the pre-fix code this test goes red on
+     * its first assertion, which is the second test's claim rather than this one's. It earns its
+     * place by pinning the ordering the fix depends on, not by reproducing a past failure.
      */
     @Test
     fun `registerMediaObserver still registers on a later session once the permission is granted`() {
         val service = createService()
-        service.registerMediaObserver()
-        assertEquals(0, registeredObserverCount())
+        service.invokeRegisterMediaObserver()
+        assertEquals(
+            "Precondition: the denied registration must have registered nothing",
+            0,
+            registeredObserverCount(),
+        )
 
         grantMediaPermission()
-        service.registerMediaObserver()
+        service.invokeRegisterMediaObserver()
 
-        assertTrue(
+        assertEquals(
             "A denied registration must not latch; granting the permission and starting another " +
-                "session must register the observer",
-            registeredObserverCount() > 0,
+                "session must register the observer on both collections",
+            2,
+            registeredObserverCount(),
         )
     }
 }

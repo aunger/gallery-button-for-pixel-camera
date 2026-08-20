@@ -304,6 +304,12 @@ class OverlayService : Service() {
         // Camera's, so queryAllMedia can only ever hand SessionTracker an empty list however often
         // the observer fires. Skip the futile registration rather than doing that work per shutter.
         //
+        // Below API 29 it was worse than futile. minSdk is 26, and on API 26-28 a MediaStore
+        // external query without READ_EXTERNAL_STORAGE throws SecurityException rather than
+        // quietly filtering. queryAllFromMediaStore does not catch it and mediaChangeDispatcher
+        // runs the query on the main looper, so an ungated observer crashed the app on the first
+        // shutter press of a locked session. This gate is the only thing standing in front of that.
+        //
         // Deliberately silent: registerThumbnailObserver fires the tap-to-fix notification on the
         // same camera open, and a second one from here would double up behind a locked screen.
         // What the filmstrip itself should say when it is blind is issue #906.
