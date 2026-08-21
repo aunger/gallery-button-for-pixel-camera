@@ -8,4 +8,4 @@ that issue #927's acceptance criterion requires.
 It is inert: no workflow, script or test reads it. Every other file on this
 branch is byte-identical to PR #926's head.
 
-E2E run trigger: 3
+E2E run trigger: 4
