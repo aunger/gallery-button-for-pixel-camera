@@ -357,6 +357,33 @@ tasks.register("connectedE2EAndroidTest") {
                 "android.permission.READ_MEDIA_IMAGES",
             )
         }
+        // Partial access goes with it, so -PmediaPermissionGranted=false means "no media access of
+        // any kind" rather than "no full access" (issue #925). Revoking READ_MEDIA_IMAGES alone
+        // leaves an API 34+ device able to enter a suite with READ_MEDIA_VISUAL_USER_SELECTED still
+        // granted from an earlier one -- PartialAccessPhotoPickerE2ETest asserts a denied-to-granted
+        // transition of exactly that permission, and run 32448535492 observed the leftover grant
+        // making that assertion vacuous. Revoking it here rather than in build.yml keeps the
+        // baseline with the flag that promises it, so the documented
+        // `connectedE2EAndroidTest -Pe2eClass=... -PmediaPermissionGranted=false` command sets up
+        // the suites it claims to run, on CI and on a dev machine alike.
+        //
+        // No `grant` counterpart: full access supersedes partial, so the granted branch has nothing
+        // to say about it. Exit value ignored because this is the one permission here that does not
+        // exist below API 34 (`pm` fails with "Unknown permission" on such a device, where there is
+        // also nothing to revoke); revoking an already-revoked permission is a no-op either way.
+        if (!e2eGrantMediaPermission) {
+            e2eExecOps.exec {
+                commandLine(
+                    e2eAdb.get(),
+                    "shell",
+                    "pm",
+                    "revoke",
+                    "com.gb4pc",
+                    "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+                )
+                isIgnoreExitValue = true
+            }
+        }
         // Install mock Pixel Camera so CameraManager callbacks and UsageStats detection are exercised.
         // CI also installs this APK explicitly before invoking the task (see build.yml) because
         // relying solely on this doLast install caused test failures in CI; kept here for local runs.
