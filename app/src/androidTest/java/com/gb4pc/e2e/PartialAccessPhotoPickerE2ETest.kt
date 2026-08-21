@@ -429,18 +429,29 @@ class PartialAccessPhotoPickerE2ETest {
      * that does not depend on identifying which window did the obscuring.
      *
      * The old objection to retrying was real, and it is answered by bounding the retries rather
-     * than by abandoning them. A re-tap must not land after the dialog has dismissed, where the
-     * picker may already own that patch of screen and a stray tap in its grid would select or
-     * deselect the very photo this test is about. Three limits keep that narrow:
+     * than by abandoning them. A re-tap must not land while the picker is launching, because the
+     * option's centre on this emulator is (540, 1233) -- inside the grid the picker puts there,
+     * where a stray tap would select or deselect the one seeded photo every later assertion
+     * depends on. Three limits keep that narrow:
      *
-     *  - a tick re-taps only while the picker window is absent *and* the option is still findable,
-     *  - taps are spaced [RETAP_INTERVAL_MS] apart rather than fired on every 100 ms tick, so each
-     *    gets time to take effect instead of a storm arriving during the transition it triggered,
-     *  - and there are at most [MAX_RETAPS] of them, so the tapping is confined to the first few
-     *    seconds where a dropped touch is plausible, leaving the rest of [PICKER_TIMEOUT_MS] as a
-     *    silent wait for a picker that is merely slow.
+     *  - a tick re-taps only while the picker window is absent *and* the option is still findable;
+     *  - the first re-tap waits [RETAP_INTERVAL_MS], set from measurement rather than intuition
+     *    (see below), and each later one waits that long again, so a tap always has time to take
+     *    effect before another follows it;
+     *  - there are at most [MAX_RETAPS] of them, which is simply what that spacing affords inside
+     *    [PICKER_TIMEOUT_MS] with room left to watch the last one take effect.
      *
-     * Past that cap, more taps would not help anyway: a drop that outlives it is not the transient
+     * [RETAP_INTERVAL_MS] is set against a healthy launch, not a guess about how long a dropped
+     * touch takes to notice. Run 32468442166 passed this suite and logged `picker window appeared
+     * after 1126ms`, timed from the same point this loop starts from, so a re-tap at 5 s sits at
+     * roughly four times a healthy launch: one could only land inside a launch that was four times
+     * slower than the only healthy measurement there is. The generosity is deliberate, because the
+     * two ways of being wrong are not symmetric. Waiting too long costs seconds of a budget the
+     * healthy path uses 1.1 s of, and a dropped tap leaves the dialog up indefinitely (the failing
+     * run's dialog was still there 30 s later), so nothing is lost by asking again late. Tapping
+     * too early corrupts the selection under test and reports it as something else.
+     *
+     * Past the cap, more taps would not help anyway: a drop that outlives it is not the transient
      * condition this guards against, and would need diagnosing rather than re-sending.
      */
     private fun awaitPickerWindow(): Boolean {
@@ -663,12 +674,13 @@ class PartialAccessPhotoPickerE2ETest {
         const val BANNER_TIMEOUT_MS = 10_000L
 
         // Spacing and count for re-taps of the dialog's partial-access option (see
-        // awaitPickerWindow). Deliberately not the 100 ms poll tick: a dropped touch needs
-        // re-sending, but a tap storm arriving during the window transition a successful tap just
-        // triggered is its own hazard. Together these confine the tapping to the first ~5 s, which
-        // is where a transiently obscured touch lives; the remaining budget is a silent wait.
-        const val RETAP_INTERVAL_MS = 500L
-        const val MAX_RETAPS = 10
+        // awaitPickerWindow for the full reasoning). 5 s is ~4x the 1126 ms a healthy picker
+        // launch took on the green run 32468442166, measured from the same point the re-tap clock
+        // starts: the first re-tap must sit clearly outside a normal launch, because one landing
+        // inside it would tap the picker's photo grid. The cap is what this spacing affords inside
+        // PICKER_TIMEOUT_MS with time left to see the last re-tap take effect.
+        const val RETAP_INTERVAL_MS = 5_000L
+        const val MAX_RETAPS = 5
 
         /** The `pkg:id/name` selector pattern for [id] in whichever picker package is installed. */
         fun pickerRes(id: String): Pattern = Pattern.compile("${PICKER_PKG.pattern()}:id/$id")
