@@ -396,11 +396,16 @@ class PartialAccessPhotoPickerE2ETest {
      * the thumbnail lookup, which is the flake tracked by issue #813: the CI logs for it show the
      * dialog tap landing and then 10.1 s of silence, two [DIALOG_TIMEOUT_MS] windows expiring back
      * to back, with no evidence of anything else going wrong. Now both package names are a single
-     * [PICKER_PKG] [Pattern], and
-     * every lookup polls with the non-blocking [UiDevice.findObject] (the same treatment
-     * [SetupActivityPermissionDialogE2ETest.findAllowAllButtonNow] already gives its dialog), so a
-     * tick that finds nothing costs one tree read instead of a full timeout, and an added fallback
-     * selector costs no wall clock at all.
+     * [PICKER_PKG] [Pattern], and every lookup polls with the non-blocking [UiDevice.findObject]
+     * (the same treatment [SetupActivityPermissionDialogE2ETest.findAllowAllButtonNow] already
+     * gives its dialog), so a tick that finds nothing costs one tree read per selector instead of
+     * a full timeout apiece, and an added fallback selector costs no wall clock at all.
+     *
+     * What a fallback selector does still cost is precision, which is why every selector below is
+     * scoped to [PICKER_PKG]. Under the old blocking chain the loose text matches were unreachable
+     * until the scoped one had been absent for two full [DIALOG_TIMEOUT_MS] windows; under the poll
+     * they get their first look ~100 ms in, while the picker may still be animating, so anything
+     * they can match outside the picker they will eventually match at the wrong moment.
      *
      * The picker's *window* is awaited before its contents are hunted for, so the two failure modes
      * this step used to have to hedge between -- the picker never opened, versus it opened onto a
@@ -429,13 +434,22 @@ class PartialAccessPhotoPickerE2ETest {
                 "(see the class doc's H2 caveat)."
         }
 
+        // Every selector is scoped to the picker's own package, the text fallbacks included. They
+        // are consulted ~100 ms after the thumbnail tap now rather than after two 5 s windows had
+        // expired, which is exactly the interval where the picker's bottom bar has not animated in
+        // yet and `button_add` is legitimately absent. Unscoped, `.*(allow|done|add).*` full-matches
+        // this app's own `setup_media_button` ("Allow Photo Access"), `setup_media_desc` and
+        // `setup_notification_button`, and the permission dialog's "Allow all" -- and since
+        // UiObject2.click() reports nothing back, tapping SetupActivity's button behind the picker
+        // would look exactly like confirming the selection, then fail 10 s later at the grant
+        // assertion with a message blaming the grant (PR #926 review).
         val confirmTapped =
             awaitAndTap(
                 "confirm button",
                 listOf(
                     By.res(pickerRes("button_add")),
-                    By.textContains("Add"),
-                    By.text(Pattern.compile(".*(allow|done|add).*", Pattern.CASE_INSENSITIVE)),
+                    By.pkg(PICKER_PKG).textContains("Add"),
+                    By.pkg(PICKER_PKG).text(Pattern.compile(".*(allow|done|add).*", Pattern.CASE_INSENSITIVE)),
                 ),
             )
         require(confirmTapped) {
