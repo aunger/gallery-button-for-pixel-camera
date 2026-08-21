@@ -502,12 +502,22 @@ class PartialAccessPhotoPickerE2ETest {
                     false
                 }
             }
+        val elapsedMs = SystemClock.uptimeMillis() - startMs
         if (tapped) {
-            Log.i(
-                TAG,
-                "picker $what found and tapped after ${SystemClock.uptimeMillis() - startMs}ms " +
-                    "of its ${PICKER_TIMEOUT_MS}ms budget",
-            )
+            Log.i(TAG, "picker $what found and tapped after ${elapsedMs}ms of its ${PICKER_TIMEOUT_MS}ms budget")
+            // waitForCondition evaluates its condition once more *after* the deadline, and this
+            // condition taps as a side effect, so a tap can land past the budget and still report
+            // success. Say so when it does: this line is the headroom signal issue #925's
+            // acceptance criteria are read off, and it must not be able to overstate the budget it
+            // fit inside.
+            if (elapsedMs > PICKER_TIMEOUT_MS) {
+                Log.w(
+                    TAG,
+                    "picker $what was found only by waitForCondition's post-deadline retry, " +
+                        "${elapsedMs - PICKER_TIMEOUT_MS}ms past its ${PICKER_TIMEOUT_MS}ms budget; " +
+                        "the line above is an overrun, not headroom",
+                )
+            }
         } else {
             Log.w(TAG, "picker $what never appeared within its ${PICKER_TIMEOUT_MS}ms budget")
         }

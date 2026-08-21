@@ -6,7 +6,6 @@ import androidx.test.uiautomator.UiDevice
 import org.junit.rules.TestWatcher
 import org.junit.runner.Description
 import java.io.File
-import java.io.IOException
 
 /**
  * JUnit [TestWatcher] rule that captures a screenshot and a window-hierarchy dump whenever a test
@@ -66,7 +65,14 @@ class FailureScreenshotRule : TestWatcher() {
         val hierarchyFile = File(dir, "$className-${description.methodName}-failure-window-hierarchy.xml")
         try {
             device.dumpWindowHierarchy(hierarchyFile)
-        } catch (e: IOException) {
+        } catch (e: Exception) {
+            // Deliberately broader than the declared IOException: the dump walks the accessibility
+            // tree of whatever is on screen at the moment of a failure, and that layer throws
+            // unchecked exceptions of its own. Letting one escape would add a second, unrelated
+            // failure to the one this rule exists to document (JUnit folds it into a
+            // MultipleFailureException rather than replacing the real one, so the cost is noise
+            // rather than a lost result -- but noise on top of a failure is what this rule is
+            // supposed to prevent).
             Log.w(TAG, "Failed to write failure window hierarchy to ${hierarchyFile.absolutePath}", e)
         }
     }
