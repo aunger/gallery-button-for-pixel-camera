@@ -15,6 +15,30 @@ on:
 
 permissions:
   issues: write
+  # The download step below reads an artifact from the triggering "Build &
+  # Test" run (run-id: github.event.workflow_run.id), not from this job's own
+  # run, and actions/download-artifact's docs require an actions:read-scoped
+  # token for that cross-run case.
+  #
+  # It has worked without one: run 32352974182 downloaded the artifact and
+  # scanned it while this workflow still granted `issues: write` alone, so
+  # `actions` was implicitly none (issue #860 predicted a 403; the logs say
+  # otherwise). The likeliest reason is that this repository is public and its
+  # artifacts are readable without an actions-scoped token.
+  #
+  # So this grant fixes nothing that is broken today; it ends a dependency on
+  # an allowance nothing documents and nothing here controls, which stops
+  # applying the day this repository goes private. It would stop quietly: the
+  # download carries continue-on-error, and the scan step treats a missing
+  # logcat as "nothing to scan" and exits 0, so the workflow would go on
+  # reporting green while never again looking for the issue #233/#364
+  # launch-retry signal. scripts/test_cross_run_artifact_permissions.sh keeps
+  # the grant from being dropped.
+  #
+  # This workflow has one job and no narrower scoping to preserve, so the
+  # grant lives here rather than in a job-level block, which would replace
+  # this block for that job rather than merging with it.
+  actions: read
 
 jobs:
   detect:
