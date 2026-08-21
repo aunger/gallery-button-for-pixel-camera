@@ -470,7 +470,7 @@ class PartialAccessPhotoPickerE2ETest {
                         TAG,
                         "picker flow: no picker window ${nowMs - startMs}ms after the dialog tap, and the " +
                             "partial-access option is still on screen, so that tap was dropped " +
-                            "(issue #581's SecureButton case); re-tapping (attempt ${retaps + 1})",
+                            "(issue #581's SecureButton case); re-tap $retaps of $MAX_RETAPS",
                     )
                     try {
                         option.click()
@@ -482,12 +482,20 @@ class PartialAccessPhotoPickerE2ETest {
                 }
                 false
             }
+        // Both paths report the re-tap count as one number, so neither a green run's headroom nor
+        // a red run's "how hard did it have to try" has to be reconstructed by counting log lines.
         val elapsedMs = SystemClock.uptimeMillis() - startMs
         if (opened) {
             Log.i(
                 TAG,
                 "picker flow: picker window appeared after ${elapsedMs}ms of its ${PICKER_TIMEOUT_MS}ms " +
                     "budget, after $retaps re-tap(s) of the dialog's partial-access option",
+            )
+        } else {
+            Log.w(
+                TAG,
+                "picker flow: picker window never appeared within its ${PICKER_TIMEOUT_MS}ms budget, " +
+                    "after $retaps re-tap(s) of the dialog's partial-access option",
             )
         }
         return opened
