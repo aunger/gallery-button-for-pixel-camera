@@ -64,6 +64,17 @@ class OverlayServiceLogic(
     private var activationRetryPending = false
     private var activationRetryAttempts = 0
 
+    // Issue #907: episodes of the Issue #86 race seen by this instance, i.e. over the lifetime of
+    // the service. cameraForegroundRaceEpisode is the running total and never resets; it is the
+    // number the log signal reports. openRaceEpisode is the episode currently being observed, or
+    // 0 when none is: it suppresses the duplicate sightings the DT-06a retry chain would otherwise
+    // produce, and lives exactly as long as the camera-open sequence it belongs to. It ends either
+    // at [logCameraForegroundRaceResolved], when the overlay really did appear, or silently at
+    // [closeRaceEpisodeUnresolved] when the cameras are released without one. See
+    // [logCameraForegroundRace].
+    private var cameraForegroundRaceEpisode = 0
+    private var openRaceEpisode = 0
+
     // ── Camera callback delegation ──────────────────────────────────────────
 
     fun onCameraUnavailable(cameraId: String) {
@@ -79,6 +90,10 @@ class OverlayServiceLogic(
         DebugLog.log(
             "Logic: camera $cameraId available; allAvailable=$allAvailable, remaining=${cameraState.getUnavailableCameraIds()}, overlayActive=$isOverlayActive",
         )
+        // Issue #907: the camera-open sequence is over once every camera is back. Any race
+        // episode still open at this point never ended in an overlay, which is the miss the
+        // signal exists to count, so it closes here without a resolution line.
+        if (allAvailable) closeRaceEpisodeUnresolved()
         // Issue #89: If the overlay is not active there is nothing to deactivate.
         if (!isOverlayActive) {
             cancelActivationRetry()
@@ -143,7 +158,7 @@ class OverlayServiceLogic(
             if (!isOverlayActive) {
                 DebugLog.log("Logic: evaluateForeground: device locked with camera in use; activating overlay without UsageStats lookup")
                 cancelActivationRetry()
-                showOverlay()
+                showOverlay("lock-screen bypass, Issue #81")
             } else {
                 DebugLog.log("Logic: evaluateForeground: device locked, overlay already active; skipping UsageStats lookup")
             }
@@ -152,29 +167,134 @@ class OverlayServiceLogic(
 
         val pkg = foregroundDetector.getForegroundPackage()
         val isPixelCamera = ForegroundDetector.isPixelCameraPackage(pkg)
+        val cameraHeld = cameraState.anyCameraUnavailable()
         DebugLog.log(
-            "Logic: evaluateForeground: overlayActive=$isOverlayActive, anyCameraUnavailable=${cameraState.anyCameraUnavailable()}",
+            "Logic: evaluateForeground: overlayActive=$isOverlayActive, anyCameraUnavailable=$cameraHeld",
         )
+        if (!isPixelCamera && cameraHeld) logCameraForegroundRace(pkg)
 
         if (isPixelCamera && !isOverlayActive) {
             cancelActivationRetry()
-            showOverlay()
-        } else if (!isOverlayActive && cameraState.anyCameraUnavailable()) {
+            showOverlay("Pixel Camera won a later foreground lookup")
+        } else if (!isOverlayActive && cameraHeld) {
             // UsageStats may not have caught up yet; schedule a retry (DT-06a).
             scheduleActivationRetry()
         }
     }
 
     /**
+     * Issue #907: logs the fingerprint of the Issue #86 race as one named, counted signal.
+     *
+     * The caller has already established the first two thirds of that fingerprint: a camera is
+     * held, and the latest foreground event belongs to some app other than Pixel Camera. This adds
+     * the third, that Pixel Camera nevertheless produced a foreground event inside the same query
+     * window, so it is an app the detector saw and did not pick. That combination is exactly the
+     * case where Pixel Camera holds the camera while a later event from another app wins the
+     * foreground lookup, and today it is silent: the overlay simply does not appear, and the
+     * evidence is split across a [ForegroundDetector] log line and an [evaluateForeground] one.
+     *
+     * Counted per *episode*, not per evaluation, because those are very different numbers. One
+     * camera open drives [evaluateForeground] up to
+     * `1 + `[Constants.ACTIVATION_RETRY_MAX_ATTEMPTS] times as the DT-06a retry chain re-checks
+     * for UsageStats lag, and for a race the whole chain fits inside
+     * [Constants.USAGE_STATS_WINDOW_MS], so every attempt re-reads the same window and re-sees the
+     * same fingerprint. Logging each of those would report a single failure as six, and an
+     * analyst counting lines on a device would overstate the rate by that factor. Only the first
+     * sighting of an episode is logged; the episode closes when every camera is released, so the
+     * next camera-open sequence reports again.
+     *
+     * An episode that ends with the overlay appearing anyway was not a missed overlay, and
+     * [logCameraForegroundRaceResolved] marks it as such so those can be subtracted from the
+     * count. It is called from the two places the overlay actually becomes visible, both past
+     * their own permission guard, so an activation that PM-04 refuses is never claimed as one.
+     * An episode with no resolution line is therefore a camera open where the overlay never
+     * appeared, whether it was the race, a revoked permission, or anything else.
+     *
+     * Purely diagnostic. It reports the condition and changes nothing about activation, so that a
+     * fix for #86 can be chosen (or declined) against evidence of how often this really fires.
+     *
+     * The message carries `overlayActive` because the condition is benign while the overlay is
+     * already up: another app has come to the front over a camera the overlay is already tracking.
+     * Note that `overlayActive=false` alone does not prove a miss either. Issue #91's
+     * [onGalleryLaunched] hides the overlay while Pixel Camera may still hold the camera, so a
+     * camera event in that gap logs the fingerprint with nothing wrong. Weigh an episode by its
+     * resolution line and its surrounding log context, not by the flag alone.
+     */
+    private fun logCameraForegroundRace(foregroundPackage: String?) {
+        val candidates = foregroundDetector.lastForegroundCandidates
+        if (Constants.PIXEL_CAMERA_PACKAGE !in candidates) return
+        if (openRaceEpisode != 0) return // same episode, re-observed by the DT-06a retry chain
+        cameraForegroundRaceEpisode++
+        openRaceEpisode = cameraForegroundRaceEpisode
+        DebugLog.log(
+            "Logic: $CAMERA_FOREGROUND_RACE #$cameraForegroundRaceEpisode: camera held " +
+                "(unavailable=${cameraState.getUnavailableCameraIds()}) but foreground=$foregroundPackage " +
+                "while ${Constants.PIXEL_CAMERA_PACKAGE} is among the window's FG apps=$candidates; " +
+                "overlayActive=$isOverlayActive (Issue #86)",
+        )
+    }
+
+    /**
+     * Issue #907: closes an open race episode that ended with the overlay activating anyway.
+     *
+     * If a race was reported for this camera-open sequence and the overlay then appeared, the
+     * episode was not the silent failure #86 describes, whatever eventually put the overlay up.
+     * Saying so on the same marker keeps both numbers greppable: episodes reported, and of those,
+     * episodes that recovered. The difference is the number #86 is waiting on, which is what makes
+     * the absence of this line load-bearing: it is what lets an episode read as a real miss.
+     *
+     * That rule holds only if this is called wherever the overlay becomes visible, and *after*
+     * whatever guard could still refuse. So it lives at the two places `isOverlayActive` turns
+     * true -- inside [showOverlay] past the PM-04 check, and in [onOverlayFocusGained] past its
+     * own -- rather than at the call sites that lead there, which cannot see an early return.
+     * That also means a future caller of [showOverlay] is accounted for without knowing this
+     * exists. [how] is supplied by the caller, since only it knows why the overlay went up.
+     *
+     * The only other way an episode may end is [closeRaceEpisodeUnresolved], the miss, which is
+     * silent. Clears the episode itself so neither path double-reports one.
+     */
+    private fun logCameraForegroundRaceResolved(how: String?) {
+        if (openRaceEpisode == 0) return
+        val cause = if (how == null) "" else " ($how)"
+        DebugLog.log(
+            "Logic: $CAMERA_FOREGROUND_RACE #$openRaceEpisode resolved$cause: the overlay " +
+                "activated after all; this episode was not a missed overlay",
+        )
+        openRaceEpisode = 0
+    }
+
+    /**
+     * Issue #907: closes an open race episode that ended without the overlay ever appearing.
+     *
+     * Deliberately silent. The absence of a resolution line is what marks an episode as a real
+     * miss, so this only frees the number for the next camera-open sequence to use.
+     *
+     * Called when every camera has been released, which is the honest end of a camera-open
+     * sequence, and on teardown. Not from [cancelActivationRetry]: that runs mid-sequence too,
+     * immediately before each activation attempt, and closing the episode there would retire it a
+     * moment before the code could find out whether the overlay actually appeared.
+     */
+    private fun closeRaceEpisodeUnresolved() {
+        openRaceEpisode = 0
+    }
+
+    /**
      * PM-04 / SF-01: Show the overlay, guarding against missing permissions.
      * Starts a secure session if the device is already locked at activation time.
+     *
+     * @param raceResolutionCause Issue #907: why this activation happened, for the resolution
+     *   line of an open race episode. Passed in because only the caller knows, and read only
+     *   after the PM-04 guard, so an activation this method refuses never claims to have
+     *   happened. Null (the default) still resolves the episode, just without naming a cause:
+     *   the overlay is up either way, which is the part the metric counts.
      */
-    fun showOverlay() {
+    fun showOverlay(raceResolutionCause: String? = null) {
         if (!hasOverlayPermission()) {
             DebugLog.log("Logic: showOverlay: overlay permission missing; cannot show")
             onOverlayPermissionLost()
             return
         }
+        logCameraForegroundRaceResolved(raceResolutionCause)
         val locked = isKeyguardLocked()
         DebugLog.log("Logic: showOverlay: showing overlay; keyguardLocked=$locked")
         // Issue #608: a fresh activation starts a new session; clear any stale
@@ -308,6 +428,7 @@ class OverlayServiceLogic(
         cancelPendingDeactivation()
         cancelActivationRetry()
         cancelGalleryLaunchRecheck()
+        closeRaceEpisodeUnresolved()
         onUnregisterThumbnailObserver()
         isOverlayActive = false
         secureViewerLaunched = false
@@ -415,6 +536,7 @@ class OverlayServiceLogic(
             onOverlayPermissionLost()
             return
         }
+        logCameraForegroundRaceResolved("overlay focus regained, Issue #92")
         overlayManager.show()
         isOverlayActive = true
         onOverlayStateChanged(true)
@@ -424,5 +546,19 @@ class OverlayServiceLogic(
             sessionTracker.startSession()
             onRegisterMediaObserver()
         }
+    }
+
+    companion object {
+        /**
+         * Marker word in the Issue #907 diagnostic log line, chosen to be greppable on its own.
+         *
+         * Device logcat carries it under [com.gb4pc.util.DebugLog.LOGCAT_TAG], as does the in-app
+         * debug log. The E2E logcat CI artifact carries it only because this exact string is
+         * whitelisted in `scripts/ci/test-support/filter_logcat.sh`: that filter keeps a short
+         * list of tags, `GB4PC` is not among them, so without the entry every line below would be
+         * dropped before the artifact was written. Changing this constant means changing the
+         * filter with it, and `test_filter_logcat.sh` fails if the two drift apart.
+         */
+        const val CAMERA_FOREGROUND_RACE = "CAMERA_FOREGROUND_RACE"
     }
 }

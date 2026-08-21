@@ -33,35 +33,16 @@ FAIL=0
 pass() { echo "  PASS: $1"; PASS=$((PASS + 1)); }
 fail() { echo "  FAIL: $1"; FAIL=$((FAIL + 1)); }
 
-# Print the YAML block of one top-level job, so a check can assert against
-# that job alone rather than the whole file. Job-level `permissions:` fully
-# replaces the workflow-level block, so "does this job grant X" is the only
-# question worth asking, and it cannot be asked with a plain grep.
-#
-# Every caller below captures this output and matches it with a reader that
-# consumes all of its input. The obvious `awk '...' "$WF" | grep -q ...`
-# instead is a race: `grep -q` exits at its first match and closes the pipe,
-# `awk` dies of SIGPIPE (141), and `set -o pipefail` above turns that into a
-# failed pipeline, so a pattern that IS present is reported missing. The
-# window opens only once awk's output no longer fits a single buffered
-# write, which is why the pattern survived here until the push job grew past
-# that size and CI run 31978297339 reported "statuses: write" missing from a
-# job that declares it. `head -1` closes a pipe the same way, and in a
-# `VAR="$(...)"` assignment a 141 aborts the whole script under `set -e`.
-# Nothing here may depend on a workflow file staying under a buffer size.
-job_block() {
-    awk -v job="$2" '
-        /^jobs:/ { in_jobs = 1 }
-        in_jobs && $0 == "  " job ":" { in_job = 1 }
-        in_job && /^  [A-Za-z_]/ && $0 != "  " job ":" { in_job = 0 }
-        in_job
-    ' "$1"
-}
+# Shape helpers (job_block and friends) live in scripts/lib/workflow_yaml.sh,
+# shared with the other tests that assert things about workflow files: two
+# hand-rolled indentation readers for the same questions is one too many, and
+# the SIGPIPE lesson documented there is worth keeping in a single place.
+# shellcheck source=lib/workflow_yaml.sh
+. "$REPO_ROOT/scripts/lib/workflow_yaml.sh"
 
-# Whether $1 (a captured block) has a line matching the ERE $2. Plain grep,
-# not `grep -q`: it reads to end of input, so there is no early close and no
-# writer to kill. The block arrives by here-string, not by pipe.
-block_has() { grep -E "$2" <<<"$1" >/dev/null; }
+# job_block(FILE, JOB): this file's original name for the shared helper, kept
+# so the checks below read as they always did.
+job_block() { workflow_job_block "$1" "$2"; }
 
 # (a) both halves exist.
 for f in "$GENERATE_WF" "$PUSH_WF"; do
@@ -391,23 +372,16 @@ if [ -f "$PUSH_WF" ]; then
         pass "push workflow does not check out the Dependabot branch"
     fi
 
-    # (i) the push job's permissions block grants actions: read. It downloads
-    # an artifact from the *generate* workflow's run (a different run than
-    # its own, via workflow_run.id), which actions/download-artifact's docs
-    # say requires an actions:read-scoped token. A job-level `permissions:`
-    # block fully replaces the workflow-level one rather than merging with
-    # it, so this job would silently have `actions: none` without an
-    # explicit grant here, even though the workflow-level block above does
-    # not need one. Without it, the download 403s, continue-on-error
-    # swallows that, and the job reports a false "nothing to push" on every
-    # run: the exact silent-failure mode this whole automation exists to
-    # avoid.
+    # (i) moved. The push job needs actions: read, because it downloads an
+    # artifact from the *generate* workflow's run rather than its own, and a
+    # job-level permissions block replaces the workflow-level one rather than
+    # merging with it, so the grant has to be written out here. That is no
+    # longer this file's check: scripts/test_cross_run_artifact_permissions.sh
+    # asserts it for every job in every workflow that reads run artifacts,
+    # this one included, and names this job explicitly so it cannot drop out
+    # of that coverage unnoticed. Restating it here would be a second copy of
+    # one property, drifting independently.
     PUSH_JOB="$(job_block "$PUSH_WF" push)"
-    if block_has "$PUSH_JOB" '^[[:space:]]*actions:[[:space:]]*read'; then
-        pass "push job's permissions block grants actions: read"
-    else
-        fail "push job's permissions block is missing actions: read (actions/download-artifact needs it to pull the generate workflow's cross-run artifact; without it the download 403s and continue-on-error silently reports nothing to push, every time)"
-    fi
 
     # (k) the base64'd file content reaches jq through a file (--rawfile),
     # never through argv (--arg). A base64'd gradle/verification-metadata.xml

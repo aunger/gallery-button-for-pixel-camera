@@ -3,6 +3,7 @@ package com.gb4pc.service
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import com.gb4pc.util.DebugLog
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -35,32 +36,7 @@ class ForegroundDetectorLogTest {
         DebugLog.clear()
     }
 
-    private fun eventsOf(vararg specs: Triple<String, Int, Long>): UsageEvents {
-        val specList = specs.toList()
-        var index = 0
-        val events: UsageEvents = mock()
-        whenever(events.hasNextEvent()).thenAnswer { index < specList.size }
-        whenever(events.getNextEvent(any())).thenAnswer { invocation ->
-            val event = invocation.getArgument<UsageEvents.Event>(0)
-            val spec = specList[index++]
-            setEventField(event, "mPackage", spec.first)
-            setEventField(event, "mEventType", spec.second)
-            setEventField(event, "mTimeStamp", spec.third)
-            true
-        }
-        whenever(usm.queryEvents(any(), any())).thenReturn(events)
-        return events
-    }
-
-    private fun setEventField(
-        event: UsageEvents.Event,
-        fieldName: String,
-        value: Any,
-    ) {
-        val field = event.javaClass.getDeclaredField(fieldName)
-        field.isAccessible = true
-        field.set(event, value)
-    }
+    private fun eventsOf(vararg specs: Triple<String, Int, Long>) = stubUsageEvents(usm, *specs)
 
     private fun loggedMessages(): List<String> = DebugLog.getEntries().map { it.message }
 
@@ -175,6 +151,84 @@ class ForegroundDetectorLogTest {
         assertTrue(
             "When no events found, the summary must not contain 'all FG apps'",
             messages.none { it.contains("all FG apps=") },
+        )
+    }
+
+    // ── The same candidate set, exposed to callers (Issue #907) ─────────────
+
+    @Test
+    fun `lastForegroundCandidates holds the packages the summary log reports (Issue #907)`() {
+        eventsOf(
+            Triple(otherPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 1000L),
+            Triple(cameraPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 2000L),
+            Triple(otherPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 3000L),
+        )
+
+        detector.getForegroundPackage()
+
+        assertEquals(
+            "The exposed candidates must be the deduplicated set of non-self foreground packages",
+            setOf(otherPkg, cameraPkg),
+            detector.lastForegroundCandidates,
+        )
+    }
+
+    @Test
+    fun `lastForegroundCandidates excludes the self package (Issue #907)`() {
+        eventsOf(
+            Triple(cameraPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 1000L),
+            Triple(selfPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 2000L),
+        )
+
+        detector.getForegroundPackage()
+
+        assertEquals(
+            "The self-filter of Issue #80 must apply to the exposed candidates too",
+            setOf(cameraPkg),
+            detector.lastForegroundCandidates,
+        )
+    }
+
+    @Test
+    fun `lastForegroundCandidates describes only the most recent query (Issue #907)`() {
+        eventsOf(Triple(cameraPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 1000L))
+        detector.getForegroundPackage()
+
+        eventsOf(Triple(otherPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 2000L))
+        detector.getForegroundPackage()
+
+        assertEquals(
+            "A later query must replace the previous window's candidates, not add to them",
+            setOf(otherPkg),
+            detector.lastForegroundCandidates,
+        )
+    }
+
+    @Test
+    fun `lastForegroundCandidates is empty when no foreground event is found (Issue #907)`() {
+        eventsOf(Triple(cameraPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 1000L))
+        detector.getForegroundPackage()
+
+        eventsOf(Triple(otherPkg, UsageEvents.Event.MOVE_TO_BACKGROUND, 2000L))
+        detector.getForegroundPackage()
+
+        assertTrue(
+            "A window with no foreground event must leave no stale candidates behind",
+            detector.lastForegroundCandidates.isEmpty(),
+        )
+    }
+
+    @Test
+    fun `lastForegroundCandidates is empty when queryEvents returns null (Issue #907)`() {
+        eventsOf(Triple(cameraPkg, UsageEvents.Event.MOVE_TO_FOREGROUND, 1000L))
+        detector.getForegroundPackage()
+
+        whenever(usm.queryEvents(any(), any())).thenReturn(null)
+        detector.getForegroundPackage()
+
+        assertTrue(
+            "Losing usage-stats access must leave no stale candidates behind",
+            detector.lastForegroundCandidates.isEmpty(),
         )
     }
 }

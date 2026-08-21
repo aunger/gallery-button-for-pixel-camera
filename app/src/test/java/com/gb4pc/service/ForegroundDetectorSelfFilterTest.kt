@@ -36,42 +36,8 @@ class ForegroundDetectorSelfFilterTest {
         DebugLog.clear()
     }
 
-    /**
-     * Helper: returns a mock UsageEvents whose getNextEvent() populates the passed Event
-     * object with each successive event descriptor.
-     *
-     * Each descriptor is a Triple(packageName, eventType, timestamp).
-     *
-     * Field names (mPackage, mEventType, mTimeStamp) are set via reflection because the
-     * compile-time android.jar exposes only stubs. Robolectric's android-all implementation
-     * makes these fields public and settable at runtime.
-     */
-    private fun eventsOf(vararg specs: Triple<String, Int, Long>): UsageEvents {
-        val specList = specs.toList()
-        var index = 0
-        val events: UsageEvents = mock()
-        whenever(events.hasNextEvent()).thenAnswer { index < specList.size }
-        whenever(events.getNextEvent(any())).thenAnswer { invocation ->
-            val event = invocation.getArgument<UsageEvents.Event>(0)
-            val spec = specList[index++]
-            setEventField(event, "mPackage", spec.first)
-            setEventField(event, "mEventType", spec.second)
-            setEventField(event, "mTimeStamp", spec.third)
-            true
-        }
-        whenever(usm.queryEvents(any(), any())).thenReturn(events)
-        return events
-    }
-
-    private fun setEventField(
-        event: UsageEvents.Event,
-        fieldName: String,
-        value: Any,
-    ) {
-        val field = event.javaClass.getDeclaredField(fieldName)
-        field.isAccessible = true
-        field.set(event, value)
-    }
+    /** Stubs [usm] with the given Triple(packageName, eventType, timestamp) descriptors. */
+    private fun eventsOf(vararg specs: Triple<String, Int, Long>) = stubUsageEvents(usm, *specs)
 
     // ── Self-filter: GB4PC events are skipped ───────────────────────────────
 

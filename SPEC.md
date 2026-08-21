@@ -132,7 +132,7 @@ This mirrors the behavior of AOSP's secure camera implementation.
 
 - **SF-01** A "camera session" begins when the overlay is activated (Pixel Camera acquires the camera while in the foreground) and the device is locked. It ends when either: (a) the overlay is deactivated (Pixel Camera releases the camera or leaves the foreground), or (b) the device is unlocked.
 - **SF-02** On session start, record the session start timestamp.
-- **SF-03** Register a `ContentObserver` on `MediaStore.Images.Media.EXTERNAL_CONTENT_URI` and `MediaStore.Video.Media.EXTERNAL_CONTENT_URI` to detect new media captured during the session.
+- **SF-03** Register a `ContentObserver` on `MediaStore.Images.Media.EXTERNAL_CONTENT_URI` and `MediaStore.Video.Media.EXTERNAL_CONTENT_URI` to detect new media captured during the session. This registration is gated on the media read permission (PM-06): without full read access the query behind the observer returns only GB4PC's own rows, never Pixel Camera's, so no observer is registered rather than one that can only ever deliver an empty session (issue #565).
 - **SF-04** A media item belongs to the current session if all of the following are true:
   - Its `DATE_ADDED` (or `DATE_TAKEN` if available) is ≥ the session start timestamp minus a 2-second tolerance (to account for filesystem/MediaStore timing differences).
   - Its `RELATIVE_PATH` starts with `DCIM/Camera/` (the standard path for camera-captured media on Pixel devices).
