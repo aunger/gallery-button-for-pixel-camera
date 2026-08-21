@@ -1155,8 +1155,10 @@ jobs:
         # (READ_MEDIA_VISUAL_USER_SELECTED-only) grant as not granted, and that MainActivity's
         # banner and OverlayService's tap-to-fix notification still appear for it.
         # -PmediaPermissionGranted=false makes connectedE2EAndroidTest's doLast block `pm revoke`
-        # READ_MEDIA_IMAGES before `am instrument` starts the com.gb4pc process, so the MEDIA
-        # step is actually reached (same precondition as the denied/dialog suites above).
+        # READ_MEDIA_IMAGES *and* READ_MEDIA_VISUAL_USER_SELECTED before `am instrument` starts the
+        # com.gb4pc process, so the MEDIA step is actually reached (same precondition as the
+        # denied/dialog suites above) and this suite starts from no media access of any kind, which
+        # is what makes its denied-to-granted assertion mean something (issue #925).
         id: run_partial_access_photo_picker_e2e
         if: needs.check-diff.outputs.needs_full_build == 'true'
         run: |
@@ -1174,6 +1176,14 @@ jobs:
             -PmediaPermissionGranted=false \
             | tee >(grep '^##GB4PC_TEST##' > results/e2e-partial-access-photo-picker.ndjson); then
             echo "outcome=success" >> "$GITHUB_OUTPUT"
+            # Issue #925: the system photo picker is this suite's slow step, and the run that
+            # only just fits its budget looks exactly like the run that fits comfortably unless
+            # the margin is printed. The test logs each picker wait under GB4PC_E2E, so surface
+            # those lines on green runs too, and let a shrinking margin be seen before it becomes
+            # the next flake rather than after.
+            echo "=== PartialAccessPhotoPickerE2ETest: system photo picker wait margins ==="
+            "$ADB" logcat -d -T "$LOGCAT_SINCE" | grep -E 'GB4PC_E2E.*picker ' \
+              || echo "(no picker timing lines found in the logcat buffer)"
           else
             # Gradle exited non-zero. Diagnose host-side, immune to com.gb4pc having died.
             #
@@ -1210,14 +1220,25 @@ jobs:
             "$ADB" logcat -d -T "$LOGCAT_SINCE" | bash scripts/ci/test-support/filter_logcat.sh
           fi
 
-      - name: Re-grant media permission after PartialAccessPhotoPickerE2ETest
+      - name: Restore media permission state after PartialAccessPhotoPickerE2ETest
         # Mirrors "Re-grant media permission after PermissionsDeniedE2ETest" above: this suite
         # leaves com.gb4pc with only partial (or no) media access, so restore the default
         # granted state every other E2E suite assumes, keeping device state honest for any
         # future step added after this one.
+        #
+        # Both permissions, not just READ_MEDIA_IMAGES (issue #925). This is the one suite that
+        # deliberately *ends* with READ_MEDIA_VISUAL_USER_SELECTED granted, and a partial grant
+        # inherited by a later suite is precisely the leftover state that made this suite's own
+        # entry assertion vacuous before this change. Nothing runs after this step today, which was
+        # equally true of the entry side until an earlier suite's "Allow all" started leaking into
+        # it; closing one end of that loop and leaving the other open is how the next one starts.
+        # `|| true` on the revoke: the permission does not exist below API 34, where `pm` fails with
+        # "Unknown permission" and there is nothing to revoke anyway.
         if: always() && needs.check-diff.outputs.needs_full_build == 'true'
         run: |
-          "$ANDROID_HOME/platform-tools/adb" shell pm grant com.gb4pc android.permission.READ_MEDIA_IMAGES
+          ADB="$ANDROID_HOME/platform-tools/adb"
+          "$ADB" shell pm grant com.gb4pc android.permission.READ_MEDIA_IMAGES
+          "$ADB" shell pm revoke com.gb4pc android.permission.READ_MEDIA_VISUAL_USER_SELECTED || true
 
       - name: Upload PartialAccessPhotoPickerE2ETest monitor feed
         if: always() && needs.check-diff.outputs.needs_full_build == 'true'
@@ -1242,7 +1263,11 @@ jobs:
 
       - name: Pull and upload E2E screenshots on failure
         id: pull_e2e_screenshots
-        if: always() && needs.check-diff.outputs.needs_full_build == 'true' && (steps.run_overlay_e2e.outputs.outcome == 'failure' || steps.run_gallery_e2e.outputs.outcome == 'failure')
+        # PartialAccessPhotoPickerE2ETest joined this list in issue #925: it now carries
+        # FailureScreenshotRule, which writes a screenshot and a window-hierarchy dump into the
+        # same on-device directory, and without pulling them a failure in the system photo picker
+        # leaves nothing behind showing what was actually on screen.
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true' && (steps.run_overlay_e2e.outputs.outcome == 'failure' || steps.run_gallery_e2e.outputs.outcome == 'failure' || steps.run_partial_access_photo_picker_e2e.outputs.outcome == 'failure')
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
           mkdir -p /tmp/e2e-screenshots
