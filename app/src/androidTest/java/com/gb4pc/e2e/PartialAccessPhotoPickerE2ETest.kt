@@ -3,6 +3,8 @@ package com.gb4pc.e2e
 import android.Manifest
 import android.app.NotificationManager
 import android.content.pm.PackageManager
+import android.os.SystemClock
+import android.util.Log
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -12,6 +14,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
+import androidx.test.uiautomator.StaleObjectException
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
@@ -131,12 +134,14 @@ import java.util.regex.Pattern
  *    "Select photos" text match -- the exact phrase Android's own developer documentation uses
  *    for this option, which should hold even if the resource id changes in a future Android
  *    version.
- *  - [selectPhotosInSystemPickerAndConfirm] tries both the Google-branded and AOSP package names
- *    for the MediaProvider photo picker module. It requires a selectable thumbnail rather than
- *    tolerating an empty grid: the test seeds one image via [E2EFixture.seedOnePhoto] before the
- *    picker opens, so the grid is deterministically non-empty and the resulting grant is a
- *    genuine partial grant over a real item (an empty selection would not produce
- *    `READ_MEDIA_VISUAL_USER_SELECTED`, so it could not exercise H2 at all).
+ *  - [selectPhotosInSystemPickerAndConfirm] matches either the Google-branded or the AOSP package
+ *    name for the MediaProvider photo picker module, in one selector rather than one blocking
+ *    wait apiece (issue #925: the absent name used to cost a full timeout on every run). It
+ *    requires a selectable thumbnail rather than tolerating an empty grid: the test seeds one
+ *    image via [E2EFixture.seedOnePhoto] before the picker opens, so the grid is deterministically
+ *    non-empty and the resulting grant is a genuine partial grant over a real item (an empty
+ *    selection would not produce `READ_MEDIA_VISUAL_USER_SELECTED`, so it could not exercise H2
+ *    at all).
  *
  * A future CI run may reveal these guesses need correcting, exactly as happened over several
  * rounds for [SetupActivityPermissionDialogE2ETest] (see PR #576) and the sibling permission
@@ -326,44 +331,145 @@ class PartialAccessPhotoPickerE2ETest {
      * thumbnail (guaranteed present because [E2EFixture.seedOnePhoto] seeded one image before the
      * picker opened), then confirms, producing a genuine `READ_MEDIA_VISUAL_USER_SELECTED` grant
      * over a real item.
+     *
+     * ### Why the picker gets its own budget, spent differently (issue #925)
+     *
+     * This is the slow step. The permission dialog above is proven to appear in about a second, but
+     * the picker is cold-started for the first time in the job, and its grid is served from
+     * MediaProvider's own synced picker database rather than from MediaStore directly, which
+     * [E2EFixture.seedOnePhoto] does not wait for (it confirms only MediaStore visibility). So every
+     * lookup here gets [PICKER_TIMEOUT_MS], several times the [DIALOG_TIMEOUT_MS] the dialog keeps,
+     * instead of sharing that one.
+     *
+     * The budget is also spent differently. The previous revision chained one *blocking*
+     * `device.wait` per candidate picker package, so the package name that does not exist on a given
+     * system image burned a whole [DIALOG_TIMEOUT_MS] before the one that does was even tried,
+     * leaving the picker itself ~5 s. Any run where the picker needed longer than that failed at
+     * the thumbnail lookup, which is the flake tracked by issue #813: the CI logs for it show the
+     * dialog tap landing and then 10.1 s of silence, two [DIALOG_TIMEOUT_MS] windows expiring back
+     * to back, with no evidence of anything else going wrong. Now both package names are a single
+     * [PICKER_PKG] [Pattern], and
+     * every lookup polls with the non-blocking [UiDevice.findObject] (the same treatment
+     * [SetupActivityPermissionDialogE2ETest.findAllowAllButtonNow] already gives its dialog), so a
+     * tick that finds nothing costs one tree read instead of a full timeout, and an added fallback
+     * selector costs no wall clock at all.
+     *
+     * The picker's *window* is awaited before its contents are hunted for, so the two failure modes
+     * this step used to have to hedge between -- the picker never opened, versus it opened onto a
+     * grid that was empty or still loading -- are reported as the two different problems they are.
      */
     private fun selectPhotosInSystemPickerAndConfirm() {
-        val thumbnail =
-            findDialogObject(By.res(PHOTO_PICKER_PKG_GOOGLE, "icon_thumbnail"))
-                ?: findDialogObject(By.res(PHOTO_PICKER_PKG_AOSP, "icon_thumbnail"))
-        requireNotNull(thumbnail) {
-            "The system photo picker showed no selectable thumbnail within $DIALOG_TIMEOUT_MS ms, " +
-                "even though seedOnePhoto() inserted one image before it opened. The picker may " +
-                "not have opened, or its thumbnail resource id differs on this emulator (see the " +
-                "class doc's H2 caveat)."
+        val windowStartMs = SystemClock.uptimeMillis()
+        val pickerOpened = device.wait(Until.hasObject(By.pkg(PICKER_PKG)), PICKER_TIMEOUT_MS) == true
+        require(pickerOpened) {
+            "The system photo picker never opened within $PICKER_TIMEOUT_MS ms of tapping " +
+                "\"Select photos and videos\": no window belonging to a MediaProvider photo picker " +
+                "module (${PICKER_PKG.pattern()}) ever appeared, and the foreground package is " +
+                "\"${device.currentPackageName}\"."
         }
-        thumbnail.click()
+        Log.i(
+            TAG,
+            "picker window appeared after ${SystemClock.uptimeMillis() - windowStartMs}ms " +
+                "of its ${PICKER_TIMEOUT_MS}ms budget",
+        )
 
-        val confirmButton =
-            findDialogObject(By.res(PHOTO_PICKER_PKG_GOOGLE, "button_add"))
-                ?: findDialogObject(By.res(PHOTO_PICKER_PKG_AOSP, "button_add"))
-                ?: findDialogObject(By.textContains("Add"))
-                ?: findDialogObject(By.text(Pattern.compile(".*(allow|done|add).*", Pattern.CASE_INSENSITIVE)))
-        requireNotNull(confirmButton) {
-            "The system photo picker's confirm/add button was not found within " +
-                "$DIALOG_TIMEOUT_MS ms after tapping \"Select photos and videos\". The picker " +
-                "may not have opened, or its resource ids/labels differ on this emulator " +
+        require(awaitAndTap("thumbnail", listOf(By.res(pickerRes("icon_thumbnail"))))) {
+            "The system photo picker opened but showed no selectable thumbnail within " +
+                "$PICKER_TIMEOUT_MS ms, even though seedOnePhoto() inserted one image before it " +
+                "opened. Either its grid was still empty (MediaProvider's picker database had not " +
+                "synced the seeded row yet) or the thumbnail resource id differs on this emulator " +
                 "(see the class doc's H2 caveat)."
         }
-        confirmButton.click()
+
+        val confirmTapped =
+            awaitAndTap(
+                "confirm button",
+                listOf(
+                    By.res(pickerRes("button_add")),
+                    By.textContains("Add"),
+                    By.text(Pattern.compile(".*(allow|done|add).*", Pattern.CASE_INSENSITIVE)),
+                ),
+            )
+        require(confirmTapped) {
+            "The system photo picker's confirm/add button was not found within " +
+                "$PICKER_TIMEOUT_MS ms of tapping a thumbnail, though the picker itself did open. " +
+                "Its resource ids/labels may differ on this emulator (see the class doc's H2 " +
+                "caveat); the foreground package is \"${device.currentPackageName}\"."
+        }
+    }
+
+    /**
+     * Polls up to [PICKER_TIMEOUT_MS] for the first of [selectors] to match, then taps it, and
+     * returns whether that happened.
+     *
+     * Each 100 ms tick costs one non-blocking [UiDevice.findObject] per selector rather than
+     * [UiDevice.wait]'s whole per-selector budget, which is what makes several fallback selectors
+     * free in wall-clock terms (see [selectPhotosInSystemPickerAndConfirm]'s doc).
+     *
+     * The outcome is logged under [TAG], which `scripts/ci/test-support/filter_logcat.sh` keeps, so
+     * each CI run states its own margin instead of leaving the next reader to reconstruct it from
+     * log timestamps (issue #925). A green run whose margin is thin is a flake about to happen, and
+     * that is worth seeing before it does.
+     */
+    private fun awaitAndTap(
+        what: String,
+        selectors: List<BySelector>,
+    ): Boolean {
+        val startMs = SystemClock.uptimeMillis()
+        val tapped =
+            fixture.waitForCondition(PICKER_TIMEOUT_MS) {
+                val target =
+                    selectors.firstNotNullOfOrNull { device.findObject(it) }
+                        ?: return@waitForCondition false
+                // Let an in-flight animation (the picker sliding up, the grid binding its first
+                // row) settle, so the tap is not delivered to a view that is still moving and
+                // silently swallowed.
+                device.waitForIdle()
+                try {
+                    target.click()
+                    true
+                } catch (e: StaleObjectException) {
+                    // The node was recycled between the find and the click, so nothing was tapped.
+                    // Let the next tick find it afresh rather than failing this test with an
+                    // exception in place of its intended assertion.
+                    Log.w(TAG, "picker $what went stale between find and tap; retrying", e)
+                    false
+                }
+            }
+        if (tapped) {
+            Log.i(
+                TAG,
+                "picker $what found and tapped after ${SystemClock.uptimeMillis() - startMs}ms " +
+                    "of its ${PICKER_TIMEOUT_MS}ms budget",
+            )
+        } else {
+            Log.w(TAG, "picker $what never appeared within its ${PICKER_TIMEOUT_MS}ms budget")
+        }
+        return tapped
     }
 
     private fun findDialogObject(selector: BySelector): UiObject2? = device.wait(Until.findObject(selector), DIALOG_TIMEOUT_MS)
 
     private companion object {
+        const val TAG = "GB4PC_E2E"
         const val PERMISSION_CONTROLLER_PKG = "com.android.permissioncontroller"
-        const val PHOTO_PICKER_PKG_GOOGLE = "com.google.android.providers.media.module"
-        const val PHOTO_PICKER_PKG_AOSP = "com.android.providers.media.module"
+
+        // The Google-branded and AOSP package names for the MediaProvider photo picker module, as
+        // one selector: only one of them exists on any given system image, and matching both at
+        // once is what stops the absent one from costing a timeout (issue #925).
+        val PICKER_PKG: Pattern = Pattern.compile("(com\\.google\\.android|com\\.android)\\.providers\\.media\\.module")
+
+        // The permission dialog is proven to resolve in ~1 s on this emulator, so it keeps the
+        // short budget; the picker behind it does not (see selectPhotosInSystemPickerAndConfirm).
         const val DIALOG_TIMEOUT_MS = 5_000L
+        const val PICKER_TIMEOUT_MS = 30_000L
         const val GRANT_TIMEOUT_MS = 10_000L
         const val BANNER_TIMEOUT_MS = 10_000L
 
         // Matches SetupActivityPermissionDialogE2ETest's budget for the same guard (issue #581).
         const val WINDOW_UPDATE_TIMEOUT_MS = 5_000L
+
+        /** The `pkg:id/name` selector pattern for [id] in whichever picker package is installed. */
+        fun pickerRes(id: String): Pattern = Pattern.compile("${PICKER_PKG.pattern()}:id/$id")
     }
 }

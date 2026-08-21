@@ -1174,6 +1174,14 @@ jobs:
             -PmediaPermissionGranted=false \
             | tee >(grep '^##GB4PC_TEST##' > results/e2e-partial-access-photo-picker.ndjson); then
             echo "outcome=success" >> "$GITHUB_OUTPUT"
+            # Issue #925: the system photo picker is this suite's slow step, and the run that
+            # only just fits its budget looks exactly like the run that fits comfortably unless
+            # the margin is printed. The test logs each picker wait under GB4PC_E2E, so surface
+            # those lines on green runs too, and let a shrinking margin be seen before it becomes
+            # the next flake rather than after.
+            echo "=== PartialAccessPhotoPickerE2ETest: system photo picker wait margins ==="
+            "$ADB" logcat -d -T "$LOGCAT_SINCE" | grep -E 'GB4PC_E2E.*picker ' \
+              || echo "(no picker timing lines found in the logcat buffer)"
           else
             # Gradle exited non-zero. Diagnose host-side, immune to com.gb4pc having died.
             #
