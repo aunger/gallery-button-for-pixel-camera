@@ -1155,8 +1155,10 @@ jobs:
         # (READ_MEDIA_VISUAL_USER_SELECTED-only) grant as not granted, and that MainActivity's
         # banner and OverlayService's tap-to-fix notification still appear for it.
         # -PmediaPermissionGranted=false makes connectedE2EAndroidTest's doLast block `pm revoke`
-        # READ_MEDIA_IMAGES before `am instrument` starts the com.gb4pc process, so the MEDIA
-        # step is actually reached (same precondition as the denied/dialog suites above).
+        # READ_MEDIA_IMAGES *and* READ_MEDIA_VISUAL_USER_SELECTED before `am instrument` starts the
+        # com.gb4pc process, so the MEDIA step is actually reached (same precondition as the
+        # denied/dialog suites above) and this suite starts from no media access of any kind, which
+        # is what makes its denied-to-granted assertion mean something (issue #925).
         id: run_partial_access_photo_picker_e2e
         if: needs.check-diff.outputs.needs_full_build == 'true'
         run: |
@@ -1164,16 +1166,6 @@ jobs:
           "$ADB" shell input keyevent KEYCODE_WAKEUP
           "$ADB" shell input swipe 300 1000 300 300
           sleep 2
-          # Issue #925: -PmediaPermissionGranted=false revokes READ_MEDIA_IMAGES only, so the
-          # partial-access permission this suite is about can still be granted on entry, left over
-          # from SetupActivityPermissionDialogE2ETest's "Allow all" several steps earlier (a real
-          # run was observed in that state). The test's core assertion is a denied-to-granted
-          # transition of READ_MEDIA_VISUAL_USER_SELECTED, which needs a denied baseline to mean
-          # anything, so establish one here. Like the Gradle task's own revoke, this runs before
-          # `am instrument` starts the com.gb4pc process, never against a running test process
-          # (see PermissionsDeniedE2ETest's class doc for why that distinction matters). `|| true`
-          # keeps an already-revoked permission from failing the step.
-          "$ADB" shell pm revoke com.gb4pc android.permission.READ_MEDIA_VISUAL_USER_SELECTED || true
           mkdir -p results
           set -o pipefail
           LOGCAT_SINCE=$("$ADB" shell "date '+%m-%d %H:%M:%S.000'" | tr -d '\r')

@@ -112,13 +112,17 @@ import java.util.regex.Pattern
  * That end state alone is not evidence, though. Runtime permissions are package-level state that
  * outlives the process, and a real CI run was observed entering this test with
  * `READ_MEDIA_VISUAL_USER_SELECTED` already granted (most plausibly residue from
- * [SetupActivityPermissionDialogE2ETest]'s "Allow all", which the CI step's
- * `-PmediaPermissionGranted=false` undoes for `READ_MEDIA_IMAGES` only), which would have satisfied
- * the poll with no partial grant of this test's own making involved. So the CI step revokes
- * `READ_MEDIA_VISUAL_USER_SELECTED` before instrumentation starts, this class asserts it is denied
- * on entry, and the poll's job is to observe the *transition* to granted (issue #925). If the
- * revoke ever stops working, the entry assertion fails loudly rather than letting the suite go
+ * [SetupActivityPermissionDialogE2ETest]'s "Allow all", which `-PmediaPermissionGranted=false` then
+ * undid for `READ_MEDIA_IMAGES` only), which would have satisfied the poll with no partial grant of
+ * this test's own making involved. So that flag now revokes `READ_MEDIA_VISUAL_USER_SELECTED` too
+ * (`app/build.gradle.kts`, before `am instrument` starts the process), this class asserts it is
+ * denied on entry, and the poll's job is to observe the *transition* to granted (issue #925). If
+ * the revoke ever stops working, the entry assertion fails loudly rather than letting the suite go
  * quietly vacuous.
+ *
+ * The revoke lives with the flag rather than in the CI step so that the run command at the bottom
+ * of this doc is true wherever it is run: this suite ends with the partial grant in place, so a dev
+ * machine that ran it once would otherwise fail the entry assertion on every later run.
  *
  * All of this happens in a single `@Test` method rather than split across several, because the
  * OS-level permission grant this test produces (`READ_MEDIA_VISUAL_USER_SELECTED`, granted) is
@@ -212,17 +216,17 @@ class PartialAccessPhotoPickerE2ETest {
         // Partial access must be denied on entry too, or assertion 1's denied-to-granted
         // transition is not a transition at all (issue #925). Runtime permissions are
         // package-level state that outlives the process, and this suite runs after
-        // SetupActivityPermissionDialogE2ETest's "Allow all", whose grant the CI step's
-        // -PmediaPermissionGranted=false undoes for READ_MEDIA_IMAGES alone; a failing run really
-        // did observe READ_MEDIA_VISUAL_USER_SELECTED already granted here, before this test
-        // touched the picker. The `Run PartialAccessPhotoPickerE2ETest` step therefore revokes it
-        // as well, and this assertion is what keeps that revoke honest: if it ever stops working,
-        // the suite fails loudly here instead of continuing to "pass" on state it did not create.
+        // SetupActivityPermissionDialogE2ETest's "Allow all", which -PmediaPermissionGranted=false
+        // used to undo for READ_MEDIA_IMAGES alone; a failing run really did observe
+        // READ_MEDIA_VISUAL_USER_SELECTED already granted here, before this test touched the
+        // picker. That flag now revokes both, and this assertion is what keeps the revoke honest:
+        // if it ever stops working, the suite fails loudly here instead of continuing to "pass" on
+        // state it did not create.
         assertFalse(
             "This class assumes READ_MEDIA_VISUAL_USER_SELECTED is NOT granted before the dialog " +
-                "is driven (the CI step revokes it alongside READ_MEDIA_IMAGES); it was already " +
-                "granted, so observing it granted afterwards would not prove this test's own " +
-                "picker selection produced it",
+                "is driven (-PmediaPermissionGranted=false revokes it alongside READ_MEDIA_IMAGES); " +
+                "it was already granted, so observing it granted afterwards would not prove this " +
+                "test's own picker selection produced it",
             hasPartialMediaAccess(),
         )
 
