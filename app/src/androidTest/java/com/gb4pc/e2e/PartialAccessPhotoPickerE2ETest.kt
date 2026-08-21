@@ -155,7 +155,11 @@ import java.util.regex.Pattern
  *
  * A future CI run may reveal these guesses need correcting, exactly as happened over several
  * rounds for [SetupActivityPermissionDialogE2ETest] (see PR #576) and the sibling permission
- * suites before it (see PR #564).
+ * suites before it (see PR #564). [FailureScreenshotRule] is in this class's [RuleChain] so such a
+ * run leaves behind what it saw: a screenshot and a window-hierarchy dump listing every window and
+ * resource id that was on screen at the moment of failure, pulled by the `Pull and upload E2E
+ * screenshots on failure` step in `build.yml`. Correcting a guess should not need a second run to
+ * find out what the first one was looking at (issue #925).
  *
  * Run via a dedicated CI step:
  * `connectedE2EAndroidTest -Pe2eClass=com.gb4pc.e2e.PartialAccessPhotoPickerE2ETest -PmediaPermissionGranted=false`.
@@ -180,8 +184,15 @@ class PartialAccessPhotoPickerE2ETest {
 
     private val composeRule = createAndroidComposeRule<SetupActivity>()
 
+    private val failureDiagnostics = FailureScreenshotRule()
+
     @get:Rule
-    val ruleChain: RuleChain = RuleChain.outerRule(keyguardDismiss).around(composeRule)
+    val ruleChain: RuleChain =
+        // failureDiagnostics is innermost so its screenshot and window-hierarchy dump are taken at
+        // the moment of failure, before composeRule's teardown replaces whatever was on screen
+        // (typically the system photo picker, whose contents are the thing worth seeing) with a
+        // destroyed SetupActivity. An outer rule would only ever capture the aftermath.
+        RuleChain.outerRule(keyguardDismiss).around(composeRule).around(failureDiagnostics)
 
     @Test
     fun partialPhotoAccess_isTreatedAsNotGranted_bannerAndNotificationStillAppear() {
