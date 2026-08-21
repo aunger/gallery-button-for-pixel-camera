@@ -1,0 +1,11 @@
+Verification marker for PR #926 (tracking issue #927).
+
+This file exists only to give this test branch a head commit distinct from
+PR #926's head (8b98156), so the two do not share one set of check runs
+(issue #833), and to trigger a fresh `pull_request` event for each E2E run
+that issue #927's acceptance criterion requires.
+
+It is inert: no workflow, script or test reads it. Every other file on this
+branch is byte-identical to PR #926's head.
+
+E2E run trigger: 1
