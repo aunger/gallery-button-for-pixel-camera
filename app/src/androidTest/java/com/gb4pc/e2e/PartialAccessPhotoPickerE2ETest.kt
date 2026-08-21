@@ -107,8 +107,18 @@ import java.util.regex.Pattern
  * process asynchronously, so this class polls for the state to *settle* -- the partial grant
  * visible (`READ_MEDIA_VISUAL_USER_SELECTED` granted) and full access not granted -- rather than
  * reading once, mirroring how [SetupActivityPermissionDialogE2ETest] polls for its (full) grant to
- * propagate. Requiring the partial grant to have landed keeps the poll from passing vacuously on
- * the pre-grant state.
+ * propagate.
+ *
+ * That end state alone is not evidence, though. Runtime permissions are package-level state that
+ * outlives the process, and a real CI run was observed entering this test with
+ * `READ_MEDIA_VISUAL_USER_SELECTED` already granted (most plausibly residue from
+ * [SetupActivityPermissionDialogE2ETest]'s "Allow all", which the CI step's
+ * `-PmediaPermissionGranted=false` undoes for `READ_MEDIA_IMAGES` only), which would have satisfied
+ * the poll with no partial grant of this test's own making involved. So the CI step revokes
+ * `READ_MEDIA_VISUAL_USER_SELECTED` before instrumentation starts, this class asserts it is denied
+ * on entry, and the poll's job is to observe the *transition* to granted (issue #925). If the
+ * revoke ever stops working, the entry assertion fails loudly rather than letting the suite go
+ * quietly vacuous.
  *
  * All of this happens in a single `@Test` method rather than split across several, because the
  * OS-level permission grant this test produces (`READ_MEDIA_VISUAL_USER_SELECTED`, granted) is
@@ -188,6 +198,22 @@ class PartialAccessPhotoPickerE2ETest {
                 "(via -PmediaPermissionGranted=false); it was already granted",
             PermissionHelper.hasMediaPermission(context),
         )
+        // Partial access must be denied on entry too, or assertion 1's denied-to-granted
+        // transition is not a transition at all (issue #925). Runtime permissions are
+        // package-level state that outlives the process, and this suite runs after
+        // SetupActivityPermissionDialogE2ETest's "Allow all", whose grant the CI step's
+        // -PmediaPermissionGranted=false undoes for READ_MEDIA_IMAGES alone; a failing run really
+        // did observe READ_MEDIA_VISUAL_USER_SELECTED already granted here, before this test
+        // touched the picker. The `Run PartialAccessPhotoPickerE2ETest` step therefore revokes it
+        // as well, and this assertion is what keeps that revoke honest: if it ever stops working,
+        // the suite fails loudly here instead of continuing to "pass" on state it did not create.
+        assertFalse(
+            "This class assumes READ_MEDIA_VISUAL_USER_SELECTED is NOT granted before the dialog " +
+                "is driven (the CI step revokes it alongside READ_MEDIA_IMAGES); it was already " +
+                "granted, so observing it granted afterwards would not prove this test's own " +
+                "picker selection produced it",
+            hasPartialMediaAccess(),
+        )
 
         // Seed one image so the system photo picker's grid is deterministically non-empty. This
         // lets the picker step select a real thumbnail and produce a genuine
@@ -224,13 +250,13 @@ class PartialAccessPhotoPickerE2ETest {
         // asynchronously, so poll for the state to settle, mirroring how
         // SetupActivityPermissionDialogE2ETest polls for its (full) grant to propagate. The
         // condition requires the partial grant to have genuinely landed (READ_MEDIA_VISUAL_USER_-
-        // SELECTED granted), so it cannot pass vacuously on the pre-grant state where
-        // hasMediaPermission() is already false.
+        // SELECTED granted); paired with the entry assertion above that it was *denied* before the
+        // dialog was driven, what this poll observes is a real denied-to-granted transition
+        // produced by this test's own picker selection, not an end state that leftover package
+        // state could have supplied on its own (issue #925).
         val partialGrantSettled =
             fixture.waitForCondition(GRANT_TIMEOUT_MS) {
-                context.checkSelfPermission(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED) ==
-                    PackageManager.PERMISSION_GRANTED &&
-                    !PermissionHelper.hasMediaPermission(context)
+                hasPartialMediaAccess() && !PermissionHelper.hasMediaPermission(context)
             }
         assertTrue(
             "After choosing \"Select photos and videos\", the partial grant should settle to " +
@@ -291,6 +317,17 @@ class PartialAccessPhotoPickerE2ETest {
             notified,
         )
     }
+
+    /**
+     * Whether the OS currently reports partial media access (`READ_MEDIA_VISUAL_USER_SELECTED`) as
+     * granted to `com.gb4pc`. Read both before the dialog is driven and after the picker selection,
+     * so the test asserts the transition between those two readings rather than the later one alone
+     * (issue #925).
+     */
+    private fun hasPartialMediaAccess(): Boolean =
+        instrumentation.targetContext.checkSelfPermission(
+            Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
+        ) == PackageManager.PERMISSION_GRANTED
 
     /**
      * Waits for the real system permission dialog and taps its "Select photos and videos"

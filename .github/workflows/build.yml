@@ -1164,6 +1164,16 @@ jobs:
           "$ADB" shell input keyevent KEYCODE_WAKEUP
           "$ADB" shell input swipe 300 1000 300 300
           sleep 2
+          # Issue #925: -PmediaPermissionGranted=false revokes READ_MEDIA_IMAGES only, so the
+          # partial-access permission this suite is about can still be granted on entry, left over
+          # from SetupActivityPermissionDialogE2ETest's "Allow all" several steps earlier (a real
+          # run was observed in that state). The test's core assertion is a denied-to-granted
+          # transition of READ_MEDIA_VISUAL_USER_SELECTED, which needs a denied baseline to mean
+          # anything, so establish one here. Like the Gradle task's own revoke, this runs before
+          # `am instrument` starts the com.gb4pc process, never against a running test process
+          # (see PermissionsDeniedE2ETest's class doc for why that distinction matters). `|| true`
+          # keeps an already-revoked permission from failing the step.
+          "$ADB" shell pm revoke com.gb4pc android.permission.READ_MEDIA_VISUAL_USER_SELECTED || true
           mkdir -p results
           set -o pipefail
           LOGCAT_SINCE=$("$ADB" shell "date '+%m-%d %H:%M:%S.000'" | tr -d '\r')
