@@ -297,6 +297,30 @@ class OverlayService : Service() {
     // H4: Register ContentObserver on session start (SF-03)
     private fun registerMediaObserver() {
         if (mediaObserver != null) return
+
+        // Issue #565: the same blindness registerThumbnailObserver guards against, on the secure
+        // filmstrip instead of the overlay thumbnail. Without full media read access every
+        // MediaStore query returns only this app's own rows (scoped storage, API 29+), never Pixel
+        // Camera's, so queryAllMedia can only ever hand SessionTracker an empty list however often
+        // the observer fires. Skip the futile registration rather than doing that work per shutter.
+        //
+        // Below API 29 it was worse than futile. minSdk is 26, and on API 26-28 a MediaStore
+        // external query without READ_EXTERNAL_STORAGE throws SecurityException rather than
+        // quietly filtering. queryAllFromMediaStore does not catch it and mediaChangeDispatcher
+        // runs the query on the main looper, so an ungated observer crashed the app on the first
+        // shutter press of a locked session. This gate is the only thing standing in front of that.
+        //
+        // Deliberately silent: registerThumbnailObserver fires the tap-to-fix notification on the
+        // same camera open, and a second one from here would double up behind a locked screen.
+        // What the filmstrip itself should say when it is blind is issue #906.
+        if (!PermissionHelper.hasMediaPermission(this)) {
+            DebugLog.log(
+                "Media read permission not granted; secure session media cannot be tracked (issue #565). " +
+                    "Grant it in setup.",
+            )
+            return
+        }
+
         val sessionStartMs = SessionTracker.instance.sessionStartTimestamp
         mediaObserver =
             object : ContentObserver(handler) {
