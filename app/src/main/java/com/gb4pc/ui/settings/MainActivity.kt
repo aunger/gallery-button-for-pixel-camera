@@ -1,11 +1,13 @@
 package com.gb4pc.ui.settings
 
+import android.Manifest
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -36,6 +38,7 @@ class MainActivity : ComponentActivity() {
     private var hasUsageStats = mutableStateOf(false)
     private var hasOverlay = mutableStateOf(false)
     private var hasMedia = mutableStateOf(false)
+    private var hasNotification = mutableStateOf(true)
     private var isBatteryExcluded = mutableStateOf(false)
     private var galleryPackage = mutableStateOf<String?>(null)
 
@@ -44,20 +47,27 @@ class MainActivity : ComponentActivity() {
             ActivityResultContracts.RequestPermission(),
         ) { /* onResume re-reads the real grant state */ }
 
+    private val notificationPermissionLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.RequestPermission(),
+        ) { /* onResume re-reads the real grant state */ }
+
     /**
-     * Ask for the media read permission by whichever route can still work: the system dialog
+     * Ask for a dangerous runtime permission by whichever route can still work: the system dialog
      * while Android will still show it, this app's Settings page once it will not (issue #572).
      *
-     * The banner used to open Settings unconditionally, which sent a user who had merely skipped
-     * the setup step, and so had never seen the dialog, on a detour for a grant that one in-app
-     * tap could have collected.
+     * The media banner used to open Settings unconditionally, which sent a user who had merely
+     * skipped the setup step, and so had never seen the dialog, on a detour for a grant that one
+     * in-app tap could have collected.
      */
-    private fun requestMediaPermission() =
-        PermissionHelper.requestRuntimePermission(
-            activity = this,
-            permission = PermissionHelper.mediaPermission,
-            prefsManager = prefsManager,
-        ) { mediaPermissionLauncher.launch(PermissionHelper.mediaPermission) }
+    private fun requestRuntimePermission(
+        permission: String,
+        launcher: ActivityResultLauncher<String>,
+    ) = PermissionHelper.requestRuntimePermission(
+        activity = this,
+        permission = permission,
+        prefsManager = prefsManager,
+    ) { launcher.launch(permission) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -83,9 +93,18 @@ class MainActivity : ComponentActivity() {
                     hasUsageStats = hasUsageStats.value,
                     hasOverlay = hasOverlay.value,
                     hasMedia = hasMedia.value,
+                    hasNotification = hasNotification.value,
                     isBatteryExcluded = isBatteryExcluded.value,
                     galleryPackage = galleryPackage.value,
-                    onMediaPermissionClick = ::requestMediaPermission,
+                    onMediaPermissionClick = {
+                        requestRuntimePermission(PermissionHelper.mediaPermission, mediaPermissionLauncher)
+                    },
+                    onNotificationPermissionClick = {
+                        requestRuntimePermission(
+                            Manifest.permission.POST_NOTIFICATIONS,
+                            notificationPermissionLauncher,
+                        )
+                    },
                 )
             }
         }
@@ -98,6 +117,7 @@ class MainActivity : ComponentActivity() {
         hasUsageStats.value = PermissionHelper.hasUsageStatsPermission(this)
         hasOverlay.value = PermissionHelper.hasOverlayPermission(this)
         hasMedia.value = PermissionHelper.hasMediaPermission(this)
+        hasNotification.value = PermissionHelper.hasNotificationPermission(this)
         isBatteryExcluded.value = PermissionHelper.isBatteryOptimizationExcluded(this)
         galleryPackage.value = prefsManager.galleryPackage
     }
@@ -110,9 +130,11 @@ fun MainSettingsScreen(
     hasUsageStats: Boolean,
     hasOverlay: Boolean,
     hasMedia: Boolean,
+    hasNotification: Boolean,
     isBatteryExcluded: Boolean,
     galleryPackage: String?,
     onMediaPermissionClick: () -> Unit,
+    onNotificationPermissionClick: () -> Unit,
 ) {
     val context = LocalContext.current
     var isServiceEnabled by remember { mutableStateOf(prefsManager.isServiceEnabled) }
@@ -149,7 +171,19 @@ fun MainSettingsScreen(
                 }
             }
 
-            // UI-02: Missing permission banners
+            // UI-02: Missing permission banners.
+            //
+            // POST_NOTIFICATIONS (API 33+) had no banner at all until #572: the setup step was the
+            // only place it could ever be granted, so a user who skipped or permanently denied it
+            // there had no way back inside the app, even though the foreground service the whole
+            // app depends on needs it (PM-05). Always true below API 33, where it is not a runtime
+            // permission and this banner never appears.
+            if (!hasNotification) {
+                PermissionBanner(
+                    message = stringResource(R.string.settings_notification_missing),
+                    onClick = onNotificationPermissionClick,
+                )
+            }
             if (!hasUsageStats) {
                 PermissionBanner(
                     message = stringResource(R.string.settings_permission_missing, "Usage Access"),

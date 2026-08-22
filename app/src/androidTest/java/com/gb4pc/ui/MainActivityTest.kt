@@ -136,6 +136,31 @@ class MainSettingsScreenTest {
     }
 
     /**
+     * Coverage for #572's third touchpoint: `POST_NOTIFICATIONS` had no main-screen banner at all,
+     * so the setup step was the only place it could ever be granted and a user who skipped or
+     * permanently denied it there had no way back inside the app. Its visibility must track the
+     * real permission state, matching the branching style of the media banner's test above (below
+     * API 33 the permission does not exist, [PermissionHelper.hasNotificationPermission] is always
+     * true, and the banner correctly never appears).
+     */
+    @Test
+    fun mainScreen_showsNotificationMissingBanner_matchingPermissionState() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val hasNotification = PermissionHelper.hasNotificationPermission(context)
+
+        val bannerNode =
+            composeRule.onNodeWithText(
+                context.getString(R.string.settings_notification_missing),
+                substring = true,
+            )
+        if (hasNotification) {
+            bannerNode.assertDoesNotExist()
+        } else {
+            bannerNode.assertIsDisplayed()
+        }
+    }
+
+    /**
      * Regression coverage for #572: when the permission is *permanently denied*, tapping the
      * media-missing banner must route to the app details screen
      * (`ACTION_APPLICATION_DETAILS_SETTINGS`), since a fresh `requestPermissions()` call would
