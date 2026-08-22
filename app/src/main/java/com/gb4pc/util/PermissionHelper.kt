@@ -118,9 +118,22 @@ object PermissionHelper {
      * good as what wrote it. It is empty for an install upgraded from a build before it existed,
      * which is why [seedPermissionRequestHistoryForUpgrade] backfills it once at startup; without
      * that, an already permanently denied permission would read as "never asked" here and route to
-     * a dialog Android refuses to show. The one case still not recoverable is app data being
-     * cleared, which resets the flag and the platform's own grant state together, leaving the
-     * route correct but the backfill's assumption stale until the next ask records the truth.
+     * a dialog Android refuses to show.
+     *
+     * The shadow can still drift from the platform, in either direction. Neither drift is a dead
+     * end, because whichever route it picks can still collect the grant:
+     *
+     * - No recorded ask while the platform holds a denial: the `!hasBeenRequestedBefore`
+     *   short-circuit routes to the dialog, Android shows nothing, and that tap records the ask,
+     *   so the next one reaches Settings. `E2EFixture.resetPermissionRequestHistory` puts a suite
+     *   into exactly this state on purpose, to force the dialog route for a suite that drives the
+     *   real dialog.
+     * - A recorded ask while the platform would still show a dialog: clearing app data does this.
+     *   It resets the flag and the platform's own grant state together, but leaves the install
+     *   timestamps alone, so on an already-updated install the backfill fires again and assumes an
+     *   ask that no longer happened. The route then degrades to Settings where the dialog would
+     *   have served: the safe direction rather than the ideal one, and it stays that way, since
+     *   only the dialog branch ever records anything.
      */
     fun permissionRequestRoute(
         activity: Activity,
