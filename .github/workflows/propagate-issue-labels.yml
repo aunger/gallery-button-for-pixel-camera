@@ -42,13 +42,9 @@ jobs:
     if: github.event.action != 'edited' || github.event.changes.body
     steps:
       - name: Check out repository
-        # Pinned to the base branch, never the pull request's own merge ref
-        # (issue #882). This job holds issues: write and pull-requests: write
-        # and then runs a script out of this checkout, so with the default ref
-        # that script is pull-request-controlled content. It acts only through
-        # the API, on the linked issue's labels, and never needs the pull
-        # request's file contents. Guarded by
-        # scripts/ci/test_privileged_workflow_checkouts.py.
+        # Pinned to a ref the pull request does not control: this job holds
+        # write scopes and runs a script out of this checkout (issue #882). Rule,
+        # rationale and limits: scripts/ci/test_privileged_workflow_checkouts.py.
         uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.base.sha }}

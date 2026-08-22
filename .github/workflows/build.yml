@@ -1371,16 +1371,10 @@ jobs:
       issues: write
     steps:
       - name: Check out repository
-        # Pinned to the base branch, never the pull request's own merge ref
-        # (issue #882). This job holds issues: write and then runs a script out
-        # of this checkout, so with the default ref that script is
-        # pull-request-controlled content. It reads the downloaded test-result
-        # artifacts and files issues through the API, so it never needs the
-        # pull request's file contents. github.sha covers the push and
-        # workflow_dispatch events, which carry no pull request context; on a
-        # pull_request event github.sha is the merge ref itself, so base.sha
-        # has to come first. Guarded by
-        # scripts/ci/test_privileged_workflow_checkouts.py.
+        # Pinned to a ref the pull request does not control: this job holds
+        # write scopes and runs a script out of this checkout (issue #882).
+        # The fallback covers this workflow's non-pull-request events. Rule,
+        # rationale and limits: scripts/ci/test_privileged_workflow_checkouts.py.
         uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.base.sha || github.sha }}
@@ -1492,12 +1486,9 @@ jobs:
       pull-requests: write
     steps:
       - name: Check out repository
-        # Pinned to the base branch, never the pull request's own merge ref
-        # (issue #882). This job holds pull-requests: write and then runs a
-        # script out of this checkout, so with the default ref that script is
-        # pull-request-controlled content. It posts a comment through the API
-        # and never needs the pull request's file contents. Guarded by
-        # scripts/ci/test_privileged_workflow_checkouts.py.
+        # Pinned to a ref the pull request does not control: this job holds
+        # write scopes and runs a script out of this checkout (issue #882). Rule,
+        # rationale and limits: scripts/ci/test_privileged_workflow_checkouts.py.
         uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.base.sha }}

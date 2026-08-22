@@ -55,7 +55,7 @@ An empty allowlist means no failure is tolerated, which is the steady state.
 
 ## A privileged pull-request job must not check out pull request code
 
-A job that a `pull_request` event can trigger, and that holds `issues: write` or `pull-requests: write`, must pin the `ref:` of every `actions/checkout` step:
+A job that a `pull_request` event can trigger, and that holds any write scope other than `security-events`, must pin the `ref:` of every `actions/checkout` step:
 
 ```yaml
 - uses: actions/checkout@v6
@@ -65,14 +65,38 @@ A job that a `pull_request` event can trigger, and that holds `issues: write` or
 
 The default checkout on a `pull_request` event is the pull request's own merge ref, so a job that then runs a script out of the checkout is executing pull-request-controlled code (issue #882).
 Today that is inert: GitHub hands a fork's `pull_request` run a read-only `GITHUB_TOKEN` whatever the `permissions:` block asks for.
-It stops being inert the moment "Send write tokens to workflows from fork pull requests" is enabled, and nothing in the tree would notice.
-The jobs holding those two scopes act only through the API, on titles, labels, comment bodies and downloaded artifacts, so none of them needs pull request file contents.
+It stops being inert if "Send write tokens to workflows from fork pull requests" is ever enabled.
+The jobs holding write scopes here act only through the API, on titles, labels, comment bodies and downloaded artifacts, so none of them needs pull request file contents.
+
+`security-events: write` is the one exemption, because codeql.yml and semgrep.yml exist to analyze the pull request's code and must check out the merge ref to do it.
+Every other write scope counts, including `contents: write`, which over pull-request-controlled code is a full compromise.
 
 The `|| github.sha` half covers the events that carry no pull request context (`issues`, `issue_comment`, `push`, `workflow_dispatch`).
 It has to come second: on a `pull_request` event `github.sha` is the merge ref itself.
-Where a workflow is triggered only by `pull_request`, use `${{ github.event.pull_request.base.sha }}` alone.
+Where the job only ever sees a pull request, whether because the workflow is triggered only by `pull_request` or because a job-level `if` gates it to that event, use `${{ github.event.pull_request.base.sha }}` alone rather than an unreachable fallback.
 
 Do not reach for `pull_request_target` instead.
 It grants a full write token and secrets in the base-repository context, so pairing it with a checkout of pull request code creates the vulnerability this rule exists to prevent.
 
-`scripts/ci/test_privileged_workflow_checkouts.py` enforces the rule over every workflow, and its docstring carries the full rationale, including why jobs holding only `security-events: write` (codeql.yml, semgrep.yml) and `contents: read` (`dependabot-verification-metadata-regen.yml`) are correctly exempt.
+### What the pinning does not achieve
+
+This rule narrows the exposure.
+It does not close it, and no one should enable that setting on the strength of it.
+
+On a `pull_request` event the workflow file itself is read from the merge ref, not from the base branch.
+A fork pull request would therefore never need to touch the script: it could edit the workflow YAML directly, adding a `run:` step or restoring the default `ref:`, and it could edit the guard so that it reports a clean tree.
+What the pinning buys is that such a change has to appear in a workflow diff, where it gets read, instead of in a script buried under `scripts/ci/`.
+
+The only real boundary available is the one `dependabot-verification-metadata-push.yml` relies on, stated in its own header: workflow files must live on the base branch to run at all, so a `workflow_run`-triggered job always executes the reviewed file on `main`.
+No `pull_request`-triggered job has that property.
+
+### The cost
+
+A pull request that edits one of these scripts no longer exercises its own edit.
+`label_by_files.py`, `strip_session_bylines.py`, `file_test_failure_issues.py` and `post_pr_ci_summary_link.py` now run from `main` during a pull request's CI, so a change to labeling rules, byline stripping, issue filing or the CI summary comment only takes effect after merge.
+Expect the new behavior not to show up on the pull request that introduces it, and do not read that as the change being broken.
+
+Relatedly, a pull request that renames or moves one of these scripts *and* updates its workflow in the same change will fail that job: the workflow comes from the merge ref and names the new path, while the checkout supplies the base branch, where that path does not exist yet.
+Land the rename separately, or accept one red job on it.
+
+`scripts/ci/test_privileged_workflow_checkouts.py` enforces the rule over every workflow, and its docstring carries the full rationale and the guard's own limits (among them that it only inspects `actions/checkout` steps, so `gh pr checkout` or a bare `git fetch` would slip past).

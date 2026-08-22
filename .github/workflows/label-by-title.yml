@@ -29,15 +29,10 @@ jobs:
     if: github.event.action == 'opened' || github.event.changes.title
     steps:
       - name: Check out repository
-        # Pinned to the base branch, never the pull request's own merge ref
-        # (issue #882). This job holds issues: write and pull-requests: write
-        # and then runs a script out of this checkout, so with the default ref
-        # that script is pull-request-controlled content. It acts only through
-        # the API, on titles and labels, and never needs pull request file
-        # contents. github.sha covers the issues event, which
-        # carries no pull request context; on a pull_request event github.sha
-        # is the merge ref itself, so base.sha has to come first. Guarded by
-        # scripts/ci/test_privileged_workflow_checkouts.py.
+        # Pinned to a ref the pull request does not control: this job holds
+        # write scopes and runs a script out of this checkout (issue #882).
+        # The fallback covers this workflow's non-pull-request events. Rule,
+        # rationale and limits: scripts/ci/test_privileged_workflow_checkouts.py.
         uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.base.sha || github.sha }}
