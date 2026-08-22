@@ -621,22 +621,38 @@ for index, entry, names, directories in gradle_entries:
         isinstance(limit, int) and not isinstance(limit, bool),
         "%s's open-pull-requests-limit is a number (found %r)" % (label, limit),
     ):
-        # Strictly above, not merely covering (issue #937): at parity the
-        # limit is already the binding constraint, covering exactly what
-        # today's manifest can want and starving the next coordinate added.
+        # Strictly above, not merely covering (issue #937): a limit equal to
+        # the count covers exactly what today's manifest can want and starves
+        # the next ungrouped coordinate added to it.
+        #
+        # Each failing side appends why it failed and the limit that fixes it,
+        # as the grouping checks above append the members they object to. The
+        # person who trips the parity failure is adding a dependency to
+        # app/build.gradle.kts against a configuration that works, and the
+        # claim alone would tell them nothing they can act on.
         composition = "%d ungrouped coordinate(s) plus %d non-empty group(s)" % (len(ungrouped), group_streams)
+        if limit < streams:
+            detail = "; %d of them cannot be proposed at all, which is the starvation #871 reported" % (
+                streams - limit,
+            )
+        elif limit == streams:
+            detail = "; it covers exactly what today's manifest can want, so the next ungrouped coordinate added is starved"
+        else:
+            detail = ""
+        if detail:
+            detail += ", and raising the limit to %d or more is what fixes it" % (streams + 1)
         if check(
             limit > streams,
-            "%s's open-pull-requests-limit of %d exceeds the %d pull requests its coordinates can want open at "
-            "once (%s), so the limit is not the binding constraint on what this entry can propose "
-            "(issues #873, #937)" % (label, limit, streams, composition),
+            "%s's open-pull-requests-limit of %d is above the %d pull requests its coordinates can want open at "
+            "once (%s), leaving a slot for the next coordinate added rather than starving it%s "
+            "(issues #873, #937)" % (label, limit, streams, composition, detail),
         ) and limit - streams == 1:
             # The one-slot case passes and is the last state that does, so it
             # is where the approach is worth saying out loud.
             warn(
-                "%s's open-pull-requests-limit of %d exceeds the %d pull requests its coordinates can want open "
-                "at once (%s) by a single slot: the next ungrouped coordinate added makes the limit the binding "
-                "constraint, and raising the limit is what clears this (issue #937)"
+                "%s's open-pull-requests-limit of %d is a single slot above the %d pull requests its coordinates "
+                "can want open at once (%s): the next ungrouped coordinate added consumes that slot and turns "
+                "this warning into a failure, and raising the limit is what clears it (issue #937)"
                 % (label, limit, streams, composition)
             )
 

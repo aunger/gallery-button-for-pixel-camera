@@ -7,9 +7,9 @@
 # coordinate) and reports on `open-pull-requests-limit` against that count. The
 # reporting has three bands, and this file drives all three:
 #
-#   limit <= count       FAIL. At parity the limit is the binding constraint:
-#                        it covers exactly what today's manifest can want and
-#                        starves the next ungrouped coordinate added to it.
+#   limit <= count       FAIL, naming the limit that fixes it. At parity the
+#                        limit covers exactly what today's manifest can want
+#                        and starves the next ungrouped coordinate added to it.
 #   limit == count + 1   PASS with a WARN. Nothing is wrong yet, and one more
 #                        ungrouped coordinate makes it parity.
 #   limit >= count + 2   PASS, silently.
@@ -125,6 +125,18 @@ expect_warn_count() {
     fi
 }
 
+# $2 is the limit a failure must name as its fix. A verdict alone is not a
+# usable failure: the person who trips it is adding a dependency to a
+# configuration that works and needs to be told what to change.
+expect_remedy() {
+    local label="$1" want="$2"
+    if grep -qE "^  FAIL: .*raising the limit to $want or more is what fixes it" <<< "$OUTPUT"; then
+        pass "$label names $want as the limit that fixes it"
+    else
+        fail "$label did not name $want as the limit that fixes it; output was: $(dump "$OUTPUT")"
+    fi
+}
+
 # $2 is the number of ::warning annotations wanted, and each must carry the text
 # of the warning it stands for rather than a bare title.
 expect_annotations() {
@@ -160,6 +172,7 @@ run_with_limit "$((COUNT - 1))"
 expect_limit_verdict "a limit of $((COUNT - 1)) against $COUNT" FAIL
 expect_status "a limit of $((COUNT - 1)) against $COUNT" non-zero
 expect_warn_count "a limit of $((COUNT - 1)) against $COUNT" 0
+expect_remedy "a limit of $((COUNT - 1)) against $COUNT" "$((COUNT + 1))"
 
 echo
 echo "=== a limit at parity with the count fails (issue #937) ==="
@@ -167,6 +180,7 @@ run_with_limit "$COUNT"
 expect_limit_verdict "a limit of $COUNT against $COUNT" FAIL
 expect_status "a limit of $COUNT against $COUNT" non-zero
 expect_warn_count "a limit of $COUNT against $COUNT" 0
+expect_remedy "a limit of $COUNT against $COUNT" "$((COUNT + 1))"
 
 echo
 echo "=== a limit one above the count passes with a warning (issue #937) ==="
