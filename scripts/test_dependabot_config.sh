@@ -59,24 +59,38 @@
 # only in a run log nobody reads: the default of 5 was fully consumed by
 # test-only bumps (#845 through #849), so no app-runtime bump, the coverage
 # .github/dependabot.yml exists for, could be proposed until one of those
-# closed. #872's two keys answer that -- the `test-dependencies` group
+# closed. #872's two keys answer that (the `test-dependencies` group
 # collapses every test-only bump into one pull request, and the limit rose to
-# 10 -- and neither key had a guard.
+# 10), and neither key had a guard.
 #
 # The check is that the limit cannot be the binding constraint: it counts the
 # pull requests this entry's own coordinates can want open at once (one per
 # group that takes anything, plus one per coordinate no group takes) and
 # requires the limit to cover them. Today that is 9 against a limit of 10;
-# against the old default of 5 it fails, which is the starvation. Grouping is
-# checked in both directions: every test-only coordinate belongs to some
-# group, so a run of test-only bumps stays one pull request and one
-# gradle/verification-metadata.xml regeneration, and no group mixes a
-# shipping dependency in with test-only ones, which would cost that
-# dependency its own review. androidx.compose:compose-bom is the coordinate
-# that makes the second check bite: it is declared under both
+# against the old default of 5 it fails, which is the starvation.
+#
+# Grouping is checked in both directions. Every test-only coordinate belongs
+# to some group, so a run of test-only bumps stays one pull request and one
+# gradle/verification-metadata.xml regeneration. And no group takes a
+# coordinate that ships in the APK, which is what keeps each app-runtime
+# dependency in a pull request and a review of its own, as
+# .github/dependabot.yml says it is. androidx.compose:compose-bom is the
+# coordinate that makes the second check bite: it is declared under both
 # `androidTestImplementation` and the shipping `implementation` block, so a
-# pattern that reached it would fold a shipping dependency into the test
-# group.
+# pattern reaching it would fold a shipping dependency into the test group.
+#
+# That second check is deliberately stronger than "no group mixes the two
+# kinds", because a group of nothing but shipping coordinates would weaken
+# the limit check rather than the review: grouping this entry's eight
+# app-runtime coordinates drops the count the limit must cover from 9 to 2,
+# so a limit that starves the file would pass.
+#
+# Membership is modelled from `patterns` and `exclude-patterns` alone.
+# Crediting a group with more than it takes is the unsafe direction for both
+# the test-only check and the limit check, so a group that narrows by
+# `dependency-type`, which nothing here can see, is reported as unmodellable
+# rather than approximated. A group scoped to `applies-to: security-updates`
+# takes no version update and is modelled as taking nothing.
 #
 # What this cannot check is whether GitHub's Dependabot service accepts the
 # file and whether a run actually opens pull requests, or honors the raised
@@ -293,9 +307,19 @@ DECLARATION_RE = re.compile(
     re.M,
 )
 
-# The Gradle configurations whose dependencies never ship in the APK. Matched
+# The Gradle configurations whose dependencies never ship in an APK. Matched
 # by prefix so testFixturesImplementation and the debug/release variants of
 # each (testDebugImplementation, androidTestDebugImplementation) count too.
+#
+# `debugImplementation` is deliberately not here: it ships in the debug APK,
+# and a coordinate declared there is scored as shipping, so it must keep its
+# own pull request. This manifest declares two test-support artifacts that
+# way (androidx.compose.ui:ui-tooling and ui-test-manifest), both versionless
+# and therefore invisible to every check here. A versioned debug-only tool
+# (leakcanary is the usual one) would be scored as shipping and would fail
+# the no-shipping-coordinate-in-a-group check if a pattern reached it. That
+# is the loud direction, and the fix then is a decision recorded here, not a
+# pattern quietly absorbing it.
 TEST_CONFIGURATION_PREFIXES = ("test", "androidTest")
 
 # The top-level `dependencies { ... }` block, up to the first line that is a
@@ -339,25 +363,57 @@ def ships_in_the_apk(configurations):
     return any(not c.startswith(TEST_CONFIGURATION_PREFIXES) for c in configurations)
 
 
-def group_matches(coordinate, definition):
-    """Whether a group definition's patterns select this coordinate.
+def group_model_error(definition):
+    """Why this group's membership cannot be modelled from patterns alone, or "".
 
-    Mirrors Dependabot's grouping: absent `patterns` selects everything, and
-    `exclude-patterns` subtracts from whatever `patterns` selected. A group
-    that also narrows by `dependency-type` is read here as if it did not, so
-    this over-counts rather than under-counts what a group takes.
+    Over-counting what a group takes is the unsafe direction for two of the
+    three checks that consume this model, so a definition that cannot be read
+    from `patterns` and `exclude-patterns` alone is rejected here rather than
+    approximated:
+
+    - the every-test-only-coordinate-is-grouped check passes when a coordinate
+      is scored as grouped, so over-counting hides a coordinate Dependabot
+      would leave in its own pull request;
+    - the limit check counts one stream per coordinate no group takes, so
+      over-counting lowers the stream count and lets a limit through that
+      cannot in fact cover what the entry wants open.
+
+    `dependency-type` is the key that does it: it narrows a group to a subset
+    of what its patterns select, which nothing here can see.
+
+    `applies-to` is not an error. It defaults to `version-updates`, and a
+    group scoped to `security-updates` groups no version update at all, so it
+    is modelled as taking nothing (see group_members). That is the safe
+    direction for all three checks.
     """
     if not isinstance(definition, dict):
-        return False
+        return "is not a mapping"
+    for key in ("patterns", "exclude-patterns"):
+        if key in definition and not isinstance(definition[key], list):
+            return "declares %s as %r rather than a list of patterns" % (key, definition[key])
+    if "dependency-type" in definition:
+        return "narrows by dependency-type, which selects a subset of its patterns that this check cannot see"
+    return ""
+
+
+def group_members(coordinates, definition):
+    """The coordinates a group definition takes, for version updates.
+
+    Mirrors Dependabot's grouping: absent `patterns` selects everything, and
+    `exclude-patterns` subtracts from whatever `patterns` selected. Call only
+    on a definition group_model_error accepts.
+    """
+    if str(definition.get("applies-to", "version-updates")) != "version-updates":
+        return set()
     patterns = definition.get("patterns")
     if not isinstance(patterns, list):
         patterns = ["*"]
-    excluded = definition.get("exclude-patterns")
-    if not isinstance(excluded, list):
-        excluded = []
-    if not any(fnmatch.fnmatchcase(coordinate, str(p)) for p in patterns):
-        return False
-    return not any(fnmatch.fnmatchcase(coordinate, str(p)) for p in excluded)
+    excluded = definition.get("exclude-patterns") or []
+
+    def selects(coordinate, pattern_list):
+        return any(fnmatch.fnmatchcase(coordinate, str(p)) for p in pattern_list)
+
+    return {c for c in coordinates if selects(c, patterns) and not selects(c, excluded)}
 
 
 def is_google_hosted(coordinate):
@@ -481,9 +537,18 @@ for index, entry, names, directories in gradle_entries:
     if not check(isinstance(groups, dict), "%s's groups key is a mapping of group name to definition" % label):
         continue
 
+    # A group this model cannot read is reported and then modelled as taking
+    # nothing, which is the direction that fails loudly: its coordinates count
+    # as ungrouped, so the two checks below tighten rather than relax.
     grouped = {}
     for name in sorted(groups):
-        grouped[name] = {c for c in declared if group_matches(c, groups[name])}
+        error = group_model_error(groups[name])
+        check(
+            not error,
+            "%s's %r group selects its members by patterns alone, which is what the checks below model%s "
+            "(issue #873)" % (label, name, ("; it " + error) if error else ""),
+        )
+        grouped[name] = set() if error else group_members(declared, groups[name])
 
     test_only = sorted(c for c in declared if not ships_in_the_apk(declared[c]))
     ungrouped_test_only = [c for c in test_only if not any(c in members for members in grouped.values())]
@@ -494,17 +559,21 @@ for index, entry, names, directories in gradle_entries:
         % (label, len(test_only), ("; ungrouped: " + ", ".join(ungrouped_test_only)) if ungrouped_test_only else ""),
     )
 
-    # A group that takes both kinds folds a shipping dependency into the test
-    # group's single pull request, losing it its own review. A group that
-    # takes only one kind, either kind, does not.
+    # No group may take a shipping coordinate at all, which is stronger than
+    # forbidding a mixture of the two kinds and is stronger for two reasons.
+    # A shipping dependency in any group loses the review of its own that
+    # .github/dependabot.yml promises it. And a group of shipping coordinates
+    # collapses them into one stream, which lowers the count the limit check
+    # below has to cover: grouping this entry's eight app-runtime coordinates
+    # takes it from 9 to 2, so the limit check would pass on a limit that
+    # starves the ungrouped file this guard is for.
     for name in sorted(grouped):
         shipping = sorted(c for c in grouped[name] if ships_in_the_apk(declared[c]))
-        mixed = shipping if len(shipping) < len(grouped[name]) else []
         check(
-            not mixed,
-            "%s's %r group does not mix shipping dependencies in with test-only ones, so each shipping "
-            "dependency keeps its own pull request and review%s (issue #873)"
-            % (label, name, ("; also taken: " + ", ".join(mixed)) if mixed else ""),
+            not shipping,
+            "%s's %r group takes only test-only coordinates, so every shipping dependency keeps its own pull "
+            "request and review%s (issue #873)"
+            % (label, name, ("; also taken: " + ", ".join(shipping)) if shipping else ""),
         )
 
     # What the entry can want open at once: one pull request per group that
