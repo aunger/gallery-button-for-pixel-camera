@@ -48,23 +48,16 @@ class SetupActivity : ComponentActivity() {
         }
     }
 
-    private val notificationPermissionLauncher =
+    /**
+     * One launcher serves every runtime permission this flow asks for: the permission is an
+     * argument to `launch()`, not a property of the launcher, and both steps handle their result
+     * the same way (in `onResume`). A launcher per permission only creates the chance of handing
+     * a step the wrong one.
+     */
+    private val permissionLauncher =
         registerForActivityResult(
             ActivityResultContracts.RequestPermission(),
         ) { /* Handled in onResume */ }
-
-    private val mediaPermissionLauncher =
-        registerForActivityResult(
-            ActivityResultContracts.RequestPermission(),
-        ) { /* Handled in onResume */ }
-
-    private val mediaPermission: String
-        get() =
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                Manifest.permission.READ_MEDIA_IMAGES
-            } else {
-                Manifest.permission.READ_EXTERNAL_STORAGE
-            }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -119,16 +112,31 @@ class SetupActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Ask for a dangerous runtime permission by whichever route can still work: the system dialog
+     * while Android will still show it, the app's Settings page once it will not (issue #572).
+     *
+     * These two steps used to call `launch()` unconditionally, which silently no-ops once the
+     * permission is permanently denied: no dialog, no error, and the step became a dead end the
+     * user could only leave by skipping it.
+     */
+    private fun requestRuntimePermission(permission: String) =
+        PermissionHelper.requestRuntimePermission(
+            activity = this,
+            permission = permission,
+            prefsManager = prefsManager,
+        ) { permissionLauncher.launch(permission) }
+
     private fun handleGrant(step: SetupStep) {
         when (step) {
             SetupStep.NOTIFICATION -> {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    requestRuntimePermission(Manifest.permission.POST_NOTIFICATIONS)
                 }
             }
 
             SetupStep.MEDIA -> {
-                mediaPermissionLauncher.launch(mediaPermission)
+                requestRuntimePermission(PermissionHelper.mediaPermission)
             }
 
             SetupStep.USAGE_ACCESS -> {

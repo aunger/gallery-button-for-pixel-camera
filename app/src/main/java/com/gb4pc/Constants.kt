@@ -47,6 +47,15 @@ object Constants {
     const val PREF_CAMERA_DEBOUNCE_MS = "camera_debounce_ms"
     const val PREF_FOCUSABLE_OVERLAY = "focusable_overlay"
 
+    // Prefix for the per-permission "we have fired the system dialog for this at least once"
+    // flags behind PrefsManager.hasRequestedRuntimePermission (issue #572). The full permission
+    // name is appended, e.g. "runtime_permission_requested_android.permission.READ_MEDIA_IMAGES".
+    const val PREF_PERMISSION_REQUESTED_PREFIX = "runtime_permission_requested_"
+
+    // Marks that the one-time backfill of the flags above has run, so it never runs twice
+    // (issue #572). See PermissionHelper.seedPermissionRequestHistoryForUpgrade.
+    const val PREF_PERMISSION_HISTORY_SEEDED = "permission_history_seeded"
+
     // Secure viewer
     const val SESSION_TIMESTAMP_TOLERANCE_MS = 2000L
     const val MEDIA_RELATIVE_PATH_PREFIX = "DCIM/Camera/"

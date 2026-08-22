@@ -237,6 +237,12 @@ class PartialAccessPhotoPickerE2ETest {
                 "test's own picker selection produced it",
             hasPartialMediaAccess(),
         )
+        // Since #572 the step routes to Settings instead of the dialog once it has asked before
+        // and Android has stopped showing dialogs. This suite runs after
+        // SetupActivityPermissionDialogE2ETest, which does tap the dialog, so without this reset
+        // the tap below would open Settings and never reach the picker. See
+        // E2EFixture.resetPermissionRequestHistory.
+        fixture.resetPermissionRequestHistory(PermissionHelper.mediaPermission)
 
         // Seed one image so the system photo picker's grid is deterministically non-empty. This
         // lets the picker step select a real thumbnail and produce a genuine

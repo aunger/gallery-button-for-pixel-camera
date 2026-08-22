@@ -37,6 +37,34 @@ class PrefsManager(
         set(value) = prefs.edit().putBoolean(Constants.PREF_FOCUSABLE_OVERLAY, value).apply()
 
     /**
+     * Whether the system permission dialog for [permission] has ever been fired by this app
+     * (issue #572).
+     *
+     * `Activity.shouldShowRequestPermissionRationale()` cannot answer this on its own: it returns
+     * `false` both before the first-ever ask *and* after a permanent denial, two states that need
+     * opposite handling (show the dialog vs. fall back to Settings). Recording the first ask here
+     * is what separates them. See `PermissionHelper.permissionRequestRoute`.
+     */
+    fun hasRequestedRuntimePermission(permission: String): Boolean =
+        prefs.getBoolean(Constants.PREF_PERMISSION_REQUESTED_PREFIX + permission, false)
+
+    /**
+     * Whether the one-time backfill of [hasRequestedRuntimePermission] has already run on this
+     * install (issue #572). See `PermissionHelper.seedPermissionRequestHistoryForUpgrade`.
+     */
+    var isPermissionHistorySeeded: Boolean
+        get() = prefs.getBoolean(Constants.PREF_PERMISSION_HISTORY_SEEDED, false)
+        set(value) = prefs.edit().putBoolean(Constants.PREF_PERMISSION_HISTORY_SEEDED, value).apply()
+
+    fun setRuntimePermissionRequested(
+        permission: String,
+        requested: Boolean,
+    ) = prefs
+        .edit()
+        .putBoolean(Constants.PREF_PERMISSION_REQUESTED_PREFIX + permission, requested)
+        .apply()
+
+    /**
      * Returns the overlay position for the given aspect ratio.
      * Falls back to the closest stored ratio (PS-04), then to defaults.
      */

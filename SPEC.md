@@ -61,10 +61,25 @@ This is a compile-time manifest declaration, not a runtime permission; the user 
 4. **Battery Optimization**: "GB4PC needs to stay running in the background to detect when you open the camera. Excluding it from battery optimization prevents Android from killing it." Button: "Exclude from Battery Optimization" → fires `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` intent.
 
 - **PM-02** Each step shows a checkmark and auto-advances when the permission is detected as granted (on `onResume`). The user can also tap a "Skip" link to defer, but a persistent banner on the main settings screen indicates any missing permission with a tap-to-fix action.
+
 - **PM-03** If Usage Access is revoked while the service is running, the service continues running (to maintain camera callbacks) but cannot confirm foreground app identity. It hides any visible overlay, posts a notification ("GB4PC cannot detect apps, tap to fix"), and the main settings screen shows the missing-permission banner.
+
 - **PM-04** If Overlay permission is revoked while the service is running, the service detects the failure when it next attempts to show the overlay, posts a notification prompting re-grant, and the main settings screen shows the missing-permission banner.
+
 - **PM-05** If the `POST_NOTIFICATIONS` runtime permission (API 33+) has not been granted, request it at the beginning of the setup flow before step 1, since the foreground service notification requires it.
+  A missing grant also raises a main-screen banner (UI-02), so this permission, like the others, has a reactive second chance outside the one-time setup flow.
+
 - **PM-06** The setup flow includes a **Photos & Media** step that requests read access to the shared image collection (`READ_MEDIA_IMAGES` on API 33+, `READ_EXTERNAL_STORAGE` below) at runtime. This is a dangerous runtime permission on every supported API level, so declaring it in the manifest is not enough; without the grant, a MediaStore query silently returns only rows owned by GB4PC itself (scoped storage, API 29+), never Pixel Camera's, and the overlay thumbnail can never update (issue #509). Full access is required: on API 34+ the "Select photos" (partial) option grants only `READ_MEDIA_VISUAL_USER_SELECTED`, which can never include a photo taken seconds ago, so `PermissionHelper.hasMediaPermission` treats partial access as not granted and the setup step and main-screen banner keep prompting until the user allows all photos. If the permission is missing while the service runs, the service does not attempt to prompt (see the permission-timing principle below); it keeps the gallery icon, skips the futile MediaStore polling, and posts a tap-to-fix notification.
+
+- **PM-07** Every touchpoint that asks for a *dangerous runtime* permission (the Notifications step, the Photos & Media step, and their main-screen banners) chooses between Android's two routes from that permission's denial history, rather than hardcoding one route per screen.
+  If a fresh `requestPermissions()` call would still show the system dialog, it is used; if not, the app's page in system Settings (`ACTION_APPLICATION_DETAILS_SETTINGS`) is opened instead, where the grant toggle lives.
+  Both halves matter.
+  Once Android considers a permission permanently denied (an explicit "Don't ask again", or enough prior denials), `requestPermissions()` returns DENIED synchronously without showing anything, so a dialog-only screen is a silent dead end; conversely a Settings-only screen sends a user who has never been asked on a detour for a grant one in-app tap could collect.
+  `shouldShowRequestPermissionRationale()` decides this, but cannot decide it alone: it returns false both before the first-ever ask and after a permanent denial.
+  GB4PC records the first ask per permission (`PrefsManager.hasRequestedRuntimePermission`), which is what separates those two states (issue #572).
+  That record is an app-side shadow of state the platform owns, so it is backfilled once at startup for an install upgraded from a build that predates it (`firstInstallTime != lastUpdateTime`): every ungranted runtime permission is assumed already asked.
+  Otherwise a user who had already denied a permission permanently would read as "never asked" on the first tap after upgrading and be sent to a dialog Android refuses to show, which is the very dead end this rule removes.
+  The backfill errs toward Settings for a permission the user in fact only skipped, costing one avoidable trip to Settings rather than a button that silently does nothing.
 
 > [!NOTE]
 > **Permission-timing principle.** If the camera is on screen, it is too late to request permissions. Make do with what you have.
@@ -168,6 +183,8 @@ ______________________________________________________________________
 3. A link/button to Advanced Settings (§6.3).
 
 - **UI-02** If any required permission is missing, a banner appears at the top of the screen indicating which permission is missing, with a tap action that navigates to the appropriate system settings screen.
+  A special permission (Usage Access, Draw Over Apps, battery optimization) has a dedicated settings screen to deep-link to.
+  A dangerous runtime permission (Notifications, Photos & Media) has none, so its banner instead follows PM-07: the system dialog while Android will still show it, the app's details page once it will not.
 - **UI-03** If Pixel Camera (`com.google.android.GoogleCamera`) is not installed, a notice replaces the service toggle: "Pixel Camera is not installed. GB4PC requires Pixel Camera to function."
 - **UI-04** If battery optimization exclusion has not been granted, a warning banner appears: "Not excluded from battery optimization; GB4PC may be killed in the background. Tap to fix."
 

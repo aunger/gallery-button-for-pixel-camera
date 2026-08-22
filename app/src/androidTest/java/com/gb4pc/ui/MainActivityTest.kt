@@ -1,5 +1,6 @@
 package com.gb4pc.ui
 
+import android.Manifest
 import android.app.Activity
 import android.app.Instrumentation
 import android.provider.Settings
@@ -18,7 +19,9 @@ import com.gb4pc.data.PrefsManager
 import com.gb4pc.ui.settings.MainActivity
 import com.gb4pc.ui.setup.SetupActivity
 import com.gb4pc.util.PermissionHelper
+import com.gb4pc.util.PermissionRequestRoute
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assume.assumeFalse
 import org.junit.Before
 import org.junit.Rule
@@ -65,15 +68,26 @@ class MainSettingsScreenTest {
     private val prefsSetup =
         object : ExternalResource() {
             override fun before() {
-                PrefsManager(InstrumentationRegistry.getInstrumentation().targetContext)
-                    .isSetupCompleted = true
+                prefs().isSetupCompleted = true
+                // The media banner's route now depends on whether the app has ever fired the
+                // system dialog for the permission (#572). Start every test from "never asked",
+                // the state a fresh install is in, so neither an earlier test here nor an earlier
+                // suite on the same emulator decides it.
+                resetPermissionHistory()
             }
 
             override fun after() {
-                PrefsManager(InstrumentationRegistry.getInstrumentation().targetContext)
-                    .isSetupCompleted = false
+                prefs().isSetupCompleted = false
+                resetPermissionHistory()
+            }
+
+            private fun resetPermissionHistory() {
+                prefs().setRuntimePermissionRequested(PermissionHelper.mediaPermission, false)
+                prefs().setRuntimePermissionRequested(Manifest.permission.POST_NOTIFICATIONS, false)
             }
         }
+
+    private fun prefs() = PrefsManager(InstrumentationRegistry.getInstrumentation().targetContext)
 
     @get:Rule
     val chain: RuleChain = RuleChain.outerRule(prefsSetup).around(composeRule)
@@ -128,12 +142,43 @@ class MainSettingsScreenTest {
     }
 
     /**
-     * Regression coverage for #568 (banner tap-through half): tapping the media-missing banner
-     * must route to the app details screen (`ACTION_APPLICATION_DETAILS_SETTINGS`), not a
-     * permission re-request, since ordinary dangerous runtime permissions have no dedicated
-     * settings sub-screen to deep-link to (unlike Usage Access / Overlay above). This locks in
-     * today's static routing; issue #572 will make it dynamic based on
-     * `shouldShowRequestPermissionRationale()` and this test will need revisiting then.
+     * Coverage for #572's third touchpoint: `POST_NOTIFICATIONS` had no main-screen banner at all,
+     * so the setup step was the only place it could ever be granted and a user who skipped or
+     * permanently denied it there had no way back inside the app. Its visibility must track the
+     * real permission state, matching the branching style of the media banner's test above (below
+     * API 33 the permission does not exist, [PermissionHelper.hasNotificationPermission] is always
+     * true, and the banner correctly never appears).
+     */
+    @Test
+    fun mainScreen_showsNotificationMissingBanner_matchingPermissionState() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val hasNotification = PermissionHelper.hasNotificationPermission(context)
+
+        val bannerNode =
+            composeRule.onNodeWithText(
+                context.getString(R.string.settings_notification_missing),
+                substring = true,
+            )
+        if (hasNotification) {
+            bannerNode.assertDoesNotExist()
+        } else {
+            bannerNode.assertIsDisplayed()
+        }
+    }
+
+    /**
+     * Regression coverage for #572: when the permission is *permanently denied*, tapping the
+     * media-missing banner must route to the app details screen
+     * (`ACTION_APPLICATION_DETAILS_SETTINGS`), since a fresh `requestPermissions()` call would
+     * return DENIED synchronously without showing anything, and an ordinary dangerous runtime
+     * permission has no dedicated settings sub-screen to deep-link to (unlike Usage Access /
+     * Overlay above).
+     *
+     * This test previously asserted the same intent unconditionally, locking in the static routing
+     * #568 shipped. #572 made the route depend on the permission's denial history, so the test now
+     * establishes that history (the app has asked before, and Android will no longer show a
+     * dialog) instead of assuming it. Its sibling
+     * [mainScreen_mediaMissingBanner_routesToTheDialogWhenNeverAsked] covers the other branch.
      *
      * Skips (does not fail) if the environment happens to already have the permission granted,
      * since then the banner, and its tap target, would not exist.
@@ -156,11 +201,21 @@ class MainSettingsScreenTest {
      * assertion only confirms the *intent* MainActivity attempted to fire.
      */
     @Test
-    fun mainScreen_tappingMediaMissingBanner_opensAppDetailsSettings() {
+    fun mainScreen_tappingMediaMissingBanner_whenPermanentlyDenied_opensAppDetailsSettings() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         assumeFalse(
             "Requires the media permission to be missing so the banner (and its tap target) exists",
             PermissionHelper.hasMediaPermission(context),
+        )
+        // Half of the permanently-denied state: the app has fired the dialog at least once.
+        prefs().setRuntimePermissionRequested(PermissionHelper.mediaPermission, true)
+        // The other half is the platform's, and cannot be forced from here: Android must be
+        // refusing to show a fresh dialog. It is, on a device where nothing has user-denied this
+        // permission, which is this suite's documented baseline.
+        assumeFalse(
+            "Requires Android to be refusing a fresh permission dialog, so the Settings route " +
+                "is the one under test",
+            composeRule.activity.shouldShowRequestPermissionRationale(PermissionHelper.mediaPermission),
         )
 
         Intents.init()
@@ -176,5 +231,82 @@ class MainSettingsScreenTest {
         } finally {
             Intents.release()
         }
+    }
+
+    /**
+     * Wiring coverage for the new notifications banner: it must hand
+     * `PermissionHelper.requestRuntimePermission` the notification permission, not some other one.
+     * The visibility test above proves the banner renders; the shared-helper tests prove the
+     * routing; neither would notice `MainActivity` passing the wrong permission string, and this
+     * is the touchpoint where such a slip would go unnoticed longest, since notifications had no
+     * reactive surface at all before this PR.
+     *
+     * The test works by putting *only* `POST_NOTIFICATIONS` into the permanently denied state.
+     * `prefsSetup` leaves the media permission in the never-asked state, so a banner miswired to
+     * the media permission would route to the dialog rather than Settings and fail here, instead
+     * of passing by coincidence because both routes happen to agree. (On such a broken build the
+     * real media dialog would also appear over `MainActivity`, which this suite cannot dismiss;
+     * that is the loud failure, and it cannot happen on a correctly wired build.)
+     */
+    @Test
+    fun mainScreen_tappingNotificationBanner_whenPermanentlyDenied_opensAppDetailsSettings() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        assumeFalse(
+            "Requires the notification permission to be missing so the banner (and its tap " +
+                "target) exists; below API 33 it is always reported granted",
+            PermissionHelper.hasNotificationPermission(context),
+        )
+        prefs().setRuntimePermissionRequested(Manifest.permission.POST_NOTIFICATIONS, true)
+        assumeFalse(
+            "Requires Android to be refusing a fresh permission dialog, so the Settings route " +
+                "is the one under test",
+            composeRule.activity.shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS),
+        )
+
+        Intents.init()
+        try {
+            Intents
+                .intending(hasAction(Settings.ACTION_APPLICATION_DETAILS_SETTINGS))
+                .respondWith(Instrumentation.ActivityResult(Activity.RESULT_OK, null))
+
+            composeRule
+                .onNodeWithText(context.getString(R.string.settings_notification_missing), substring = true)
+                .performClick()
+            Intents.intended(hasAction(Settings.ACTION_APPLICATION_DETAILS_SETTINGS))
+        } finally {
+            Intents.release()
+        }
+    }
+
+    /**
+     * The other half of #572, on real Android: a user who has never been asked (they skipped the
+     * setup step, or reached this screen first) must get the in-app dialog, not a detour through
+     * system Settings for a grant one tap could have collected.
+     *
+     * Asserts the routing decision rather than tapping the banner. Tapping would fire the real
+     * `com.android.permissioncontroller` dialog over `MainActivity`, and this suite
+     * (`connectedDebugAndroidTest`) has no UI Automator driving to dismiss it, which is exactly
+     * the "foreground window this suite cannot get back from" shape that hung it for 30+ minutes
+     * once already (see the sibling test's note above). The banner's own wiring to this decision
+     * is covered by that sibling: it only reaches Settings because the route says so.
+     */
+    @Test
+    fun mainScreen_mediaMissingBanner_routesToTheDialogWhenNeverAsked() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        assumeFalse(
+            "Requires the media permission to be missing, the only state the banner appears in",
+            PermissionHelper.hasMediaPermission(context),
+        )
+
+        val permission = PermissionHelper.mediaPermission
+        assertEquals(
+            "A permission that has never been asked for must route to the system dialog",
+            PermissionRequestRoute.DIALOG,
+            PermissionHelper.permissionRequestRoute(
+                activity = composeRule.activity,
+                permission = permission,
+                hasBeenRequestedBefore = prefs().hasRequestedRuntimePermission(permission),
+            ),
+        )
     }
 }

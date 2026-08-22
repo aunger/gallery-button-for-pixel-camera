@@ -39,6 +39,7 @@
     <string name="settings_battery_warning">Not excluded from battery optimization — GB4PC may be killed in the background. Tap to fix.</string>
     <string name="settings_permission_missing">Missing permission: %s. Tap to fix.</string>
     <string name="settings_media_missing">Photo access not granted (or limited) — the overlay button can\'t show your latest shot. Tap to allow all photos.</string>
+    <string name="settings_notification_missing">Notifications not allowed; GB4PC can\'t show its required background-service notification. Tap to fix.</string>
 
     <string name="settings_focusable_overlay_title">Experimental responsiveness boost</string>
     <string name="settings_focusable_overlay_subtitle">Improve reaction time to app switching, but possibly block hardware key (volume &amp; power button) control of the camera shutter and zoom</string>

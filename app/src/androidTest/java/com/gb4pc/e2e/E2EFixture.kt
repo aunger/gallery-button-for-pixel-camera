@@ -341,6 +341,23 @@ class E2EFixture(
         return condition()
     }
 
+    /**
+     * Forgets that this app has ever fired the system permission dialog for [permission], so the
+     * next request takes the dialog route rather than the Settings fallback (issue #572).
+     *
+     * Since #572, `PermissionHelper.requestRuntimePermission` picks its route from the permission's
+     * denial history: it opens the app's Settings page instead of firing a dialog that Android
+     * would refuse to show. That is right for a user, but it makes any suite that *drives the real
+     * dialog* depend on state earlier suites left behind. Runtime-permission state and this flag
+     * both outlive the process, and these suites share one emulator and one app install, so a
+     * suite that taps "Allow all" first would otherwise decide the route for a later one. Calling
+     * this makes the dialog route unconditional, matching each such suite's own precondition of
+     * "the permission has never been asked for".
+     */
+    fun resetPermissionRequestHistory(permission: String) {
+        PrefsManager(context).setRuntimePermissionRequested(permission, false)
+    }
+
     // ── Phase 4 extensions ────────────────────────────────────────────────────
 
     /**
