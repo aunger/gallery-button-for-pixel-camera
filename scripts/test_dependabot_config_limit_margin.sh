@@ -167,7 +167,7 @@ else
 fi
 
 echo
-echo "=== a limit below the count fails (the starvation of issue #873) ==="
+echo "=== a limit below the count fails (the starvation #871 reported) ==="
 run_with_limit "$((COUNT - 1))"
 expect_limit_verdict "a limit of $((COUNT - 1)) against $COUNT" FAIL
 expect_status "a limit of $((COUNT - 1)) against $COUNT" non-zero

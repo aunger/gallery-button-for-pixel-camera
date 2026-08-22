@@ -63,11 +63,11 @@
 # collapses every test-only bump into one pull request, and the limit rose to
 # 10), and neither key had a guard.
 #
-# The check is that the limit cannot be the binding constraint: it counts the
-# pull requests this entry's own coordinates can want open at once (one per
-# group that takes anything, plus one per coordinate no group takes) and
-# requires the limit to stay above that count. Against the old default of 5 it
-# fails, which is the starvation.
+# The check is that the limit cannot be what stops a bump from being proposed:
+# it counts the pull requests this entry's own coordinates can want open at
+# once (one per group that takes anything, plus one per coordinate no group
+# takes) and requires the limit to stay above that count. Against the old
+# default of 5 it fails, which is the starvation.
 #
 # It asks for a margin rather than for bare coverage (issue #937). A limit equal
 # to the count covers exactly what today's manifest can want and starves the
@@ -84,8 +84,9 @@
 # runs each scripts/**/test_*.sh and reads the exit status alone; nothing
 # collects stdout, so a warning inside a green job reaches only whoever opens
 # the raw log and scrolls, which is the delivery this file's own header
-# condemns two paragraphs above. So under GitHub Actions each warning is
-# re-emitted as a ::warning annotation, which puts it in the run summary.
+# condemns in the paragraph motivating the check. So under GitHub Actions each
+# warning is re-emitted as a ::warning annotation, which puts it in the run
+# summary.
 # scripts/ci/prs-and-issues/detect_launch_retry.sh raises a report-only signal
 # out of a passing job the same way and for the same reason; gating on
 # GITHUB_ACTIONS leaves a local run printing exactly what it printed before.
