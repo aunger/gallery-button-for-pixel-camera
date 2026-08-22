@@ -251,6 +251,10 @@ Whatever it relays, it relays **verbatim**: the Monitor's line, copied exactly.
 No paraphrase, no summary of several lines in the Orchestrator's own words, no rewriting into a tidier sentence.
 The verbatim constraint is about fidelity, not volume; it does not oblige the Orchestrator to forward every line the Monitor emits.
 
+A relayed line is also relayed **alone**, with no commentary attached to it.
+Where the Orchestrator has something of its own to say about a line, such as that a label-gate failure is expected, it says it in a separate message of its own.
+The user can then always tell the Monitor's words from the Orchestrator's.
+
 Always relay:
 
 - The terminal lines `Clear`, `Blocked` (including the attributed `Blocked by: <name>` form), and `Infra`. They are the loop's decision points, and the user needs to see what the routing acted on.
