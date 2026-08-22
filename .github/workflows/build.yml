@@ -1500,7 +1500,7 @@ jobs:
         # scripts/ci/test_privileged_workflow_checkouts.py.
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          ref: ${{ github.event.pull_request.base.sha }}
 
       - name: Post CI summary link on PR
         env:
