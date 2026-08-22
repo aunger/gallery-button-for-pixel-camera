@@ -1,5 +1,6 @@
 package com.gb4pc.ui
 
+import android.Manifest
 import android.app.Activity
 import android.app.Instrumentation
 import android.provider.Settings
@@ -72,12 +73,17 @@ class MainSettingsScreenTest {
                 // system dialog for the permission (#572). Start every test from "never asked",
                 // the state a fresh install is in, so neither an earlier test here nor an earlier
                 // suite on the same emulator decides it.
-                prefs().setRuntimePermissionRequested(PermissionHelper.mediaPermission, false)
+                resetPermissionHistory()
             }
 
             override fun after() {
                 prefs().isSetupCompleted = false
+                resetPermissionHistory()
+            }
+
+            private fun resetPermissionHistory() {
                 prefs().setRuntimePermissionRequested(PermissionHelper.mediaPermission, false)
+                prefs().setRuntimePermissionRequested(Manifest.permission.POST_NOTIFICATIONS, false)
             }
         }
 
@@ -220,6 +226,51 @@ class MainSettingsScreenTest {
 
             composeRule
                 .onNodeWithText(context.getString(R.string.settings_media_missing), substring = true)
+                .performClick()
+            Intents.intended(hasAction(Settings.ACTION_APPLICATION_DETAILS_SETTINGS))
+        } finally {
+            Intents.release()
+        }
+    }
+
+    /**
+     * Wiring coverage for the new notifications banner: it must hand
+     * `PermissionHelper.requestRuntimePermission` the notification permission, not some other one.
+     * The visibility test above proves the banner renders; the shared-helper tests prove the
+     * routing; neither would notice `MainActivity` passing the wrong permission string, and this
+     * is the touchpoint where such a slip would go unnoticed longest, since notifications had no
+     * reactive surface at all before this PR.
+     *
+     * The test works by putting *only* `POST_NOTIFICATIONS` into the permanently denied state.
+     * `prefsSetup` leaves the media permission in the never-asked state, so a banner miswired to
+     * the media permission would route to the dialog rather than Settings and fail here, instead
+     * of passing by coincidence because both routes happen to agree. (On such a broken build the
+     * real media dialog would also appear over `MainActivity`, which this suite cannot dismiss;
+     * that is the loud failure, and it cannot happen on a correctly wired build.)
+     */
+    @Test
+    fun mainScreen_tappingNotificationBanner_whenPermanentlyDenied_opensAppDetailsSettings() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        assumeFalse(
+            "Requires the notification permission to be missing so the banner (and its tap " +
+                "target) exists; below API 33 it is always reported granted",
+            PermissionHelper.hasNotificationPermission(context),
+        )
+        prefs().setRuntimePermissionRequested(Manifest.permission.POST_NOTIFICATIONS, true)
+        assumeFalse(
+            "Requires Android to be refusing a fresh permission dialog, so the Settings route " +
+                "is the one under test",
+            composeRule.activity.shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS),
+        )
+
+        Intents.init()
+        try {
+            Intents
+                .intending(hasAction(Settings.ACTION_APPLICATION_DETAILS_SETTINGS))
+                .respondWith(Instrumentation.ActivityResult(Activity.RESULT_OK, null))
+
+            composeRule
+                .onNodeWithText(context.getString(R.string.settings_notification_missing), substring = true)
                 .performClick()
             Intents.intended(hasAction(Settings.ACTION_APPLICATION_DETAILS_SETTINGS))
         } finally {
