@@ -66,8 +66,21 @@
 # The check is that the limit cannot be the binding constraint: it counts the
 # pull requests this entry's own coordinates can want open at once (one per
 # group that takes anything, plus one per coordinate no group takes) and
-# requires the limit to cover them. Today that is 9 against a limit of 10;
-# against the old default of 5 it fails, which is the starvation.
+# requires the limit to stay above that count. Against the old default of 5 it
+# fails, which is the starvation.
+#
+# It asks for a margin rather than for bare coverage (issue #937). A limit equal
+# to the count covers exactly what today's manifest can want and starves the
+# next ungrouped coordinate added to it, so a check that is pass/fail at
+# coverage goes red only once that coordinate is in the manifest, which is the
+# state #871 reported after the fact. Failing at parity moves the report one
+# step earlier, onto the file that still works and has nothing left over, and
+# warning one slot above parity moves the first notice one step earlier again.
+#
+# A warning is not a failure: it is printed, counted in the summary line, and
+# leaves the exit status alone, because nothing is wrong with the file yet.
+# Today's file sits exactly there, 9 streams against a limit of 10, so it passes
+# with that warning; raising the limit is what clears it.
 #
 # Grouping is checked in both directions. Every test-only coordinate belongs
 # to some group, so a run of test-only bumps stays one pull request and one
@@ -108,16 +121,21 @@ CONFIG="${1:-$REPO_ROOT/.github/dependabot.yml}"
 
 PASS=0
 FAIL=0
+WARN=0
 
 pass() { echo "  PASS: $1"; PASS=$((PASS + 1)); }
 fail() { echo "  FAIL: $1"; FAIL=$((FAIL + 1)); }
+
+# Warnings are reported and counted but never fatal; only FAIL decides the exit
+# status. See the margin note in the file header.
+summary() { echo "test_dependabot_config.sh: $PASS passed, $FAIL failed, $WARN warned"; }
 
 echo "Checking $CONFIG"
 
 if [ ! -f "$CONFIG" ]; then
     fail "$CONFIG exists"
     echo
-    echo "test_dependabot_config.sh: $PASS passed, $FAIL failed"
+    summary
     exit 1
 fi
 pass "$CONFIG exists"
@@ -146,6 +164,15 @@ def check(ok, msg):
     results.append(bool(ok))
     print(("  PASS: " if ok else "  FAIL: ") + msg)
     return ok
+
+
+def warn(msg):
+    """Report something that passes today and is one step from failing.
+
+    Deliberately not appended to `results`: a warning is counted in the summary
+    line and leaves the exit status alone (issue #937).
+    """
+    print("  WARN: " + msg)
 
 
 try:
@@ -586,12 +613,24 @@ for index, entry, names, directories in gradle_entries:
         isinstance(limit, int) and not isinstance(limit, bool),
         "%s's open-pull-requests-limit is a number (found %r)" % (label, limit),
     ):
-        check(
-            limit >= streams,
-            "%s's open-pull-requests-limit of %d covers the %d pull requests its coordinates can want open at "
-            "once (%d ungrouped coordinate(s) plus %d non-empty group(s)), so the limit cannot be what stops a "
-            "bump from being proposed (issue #873)" % (label, limit, streams, len(ungrouped), group_streams),
-        )
+        # Strictly above, not merely covering (issue #937): at parity the
+        # limit is already the binding constraint, covering exactly what
+        # today's manifest can want and starving the next coordinate added.
+        composition = "%d ungrouped coordinate(s) plus %d non-empty group(s)" % (len(ungrouped), group_streams)
+        if check(
+            limit > streams,
+            "%s's open-pull-requests-limit of %d exceeds the %d pull requests its coordinates can want open at "
+            "once (%s), so the limit is not the binding constraint on what this entry can propose "
+            "(issues #873, #937)" % (label, limit, streams, composition),
+        ) and limit - streams == 1:
+            # The one-slot case passes and is the last state that does, so it
+            # is where the approach is worth saying out loud.
+            warn(
+                "%s's open-pull-requests-limit of %d exceeds the %d pull requests its coordinates can want open "
+                "at once (%s) by a single slot: the next ungrouped coordinate added makes the limit the binding "
+                "constraint, and raising the limit is what clears this (issue #937)"
+                % (label, limit, streams, composition)
+            )
 
 for name in registries:
     check(name in referenced, "declared registry %r is referenced by an update entry" % name)
@@ -605,12 +644,14 @@ set -e
 echo "$OUTPUT"
 PY_PASS=$(grep -c '^  PASS:' <<<"$OUTPUT" || true)
 PY_FAIL=$(grep -c '^  FAIL:' <<<"$OUTPUT" || true)
+PY_WARN=$(grep -c '^  WARN:' <<<"$OUTPUT" || true)
 PASS=$((PASS + PY_PASS))
 FAIL=$((FAIL + PY_FAIL))
+WARN=$((WARN + PY_WARN))
 if [ "$PY_STATUS" -ne 0 ] && [ "$PY_FAIL" -eq 0 ]; then
     fail "dependabot.yml checks errored before reporting individual checks (exit $PY_STATUS)"
 fi
 
 echo
-echo "test_dependabot_config.sh: $PASS passed, $FAIL failed"
+summary
 [ "$FAIL" -eq 0 ]
