@@ -33,7 +33,7 @@
 # don't land in the same CI-minute window.
 #
 # open-pull-requests-limit and groups (issue #871): the default limit of 5 was fully consumed by test-only bumps (#845 through #849), so no app-runtime bump, the coverage this file exists for, could be proposed until one of those closed.
-# Raising the limit to 10 leaves room for both kinds of bump at once.
+# Raising the limit to 10 left room for both kinds of bump at once, and it has since risen again, to 15; see the margin note below (issue #937).
 # The test-dependencies group then collapses every test-only bump into a single pull request, so a run of test-only bumps costs one gradle/verification-metadata.xml regeneration instead of one per package; app-runtime dependencies stay ungrouped, so each keeps its own pull request and review.
 #
 # The group patterns cover every testImplementation and androidTestImplementation coordinate in app/build.gradle.kts.
@@ -47,7 +47,10 @@
 #
 # scripts/test_dependabot_config.sh guards the property the raise was for rather than that observation: it counts the pull requests this entry's coordinates can want open at once, one per non-empty group plus one per ungrouped coordinate, and requires the limit to exceed that count.
 # It fails at 9 against the default of 5 this file used to inherit, which is the starvation #871 reported, and it fails at 9 against 9 too: a limit equal to the count covers exactly what today's manifest can want and starves the next ungrouped coordinate added to it (issue #937).
-# Today's 9 against a limit of 10 clears that by a single slot, which the script reports as a warning rather than a failure; the next ungrouped coordinate added here makes the limit the binding constraint, and raising the limit is what clears the warning.
+# One slot above the count it passes with a warning instead, and a limit of 10 against today's 9 sat exactly there.
+# That warning is why the limit is 15 rather than 10: raising it is the fix the warning names, and the alternative was a notice that fires on every run forever with nothing that would ever clear it.
+# The count is what makes 15 a cap rather than a licence for fifteen pull requests: this entry can want 9 open at once, so it cannot reach 10, let alone 15, and Dependabot opens only what it has candidates for.
+# The six slots buy room for five more ungrouped shipping coordinates before the warning comes back, rather than the next dependency added putting it back.
 # It asserts both directions of the grouping claim above too: every test-only coordinate lands in a group, and no group takes a coordinate that ships in the APK, which is what keeps each app-runtime dependency in a pull request and a review of its own.
 # The second half is the load-bearing one for the first check as well as for review: a group of shipping coordinates would collapse them into one pull request, dropping the count that check requires the limit to exceed from 9 to 2.
 
@@ -110,7 +113,7 @@ updates:
       day: "monday"
       time: "10:00"
       timezone: "UTC"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 15
     cooldown:
       default-days: 3
       exclude:

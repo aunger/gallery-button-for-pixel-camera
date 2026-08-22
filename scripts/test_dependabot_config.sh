@@ -76,6 +76,8 @@
 # state #871 reported after the fact. Failing at parity moves the report one
 # step earlier, onto the file that still works and has nothing left over, and
 # warning one slot above parity moves the first notice one step earlier again.
+# Today's file is 9 streams against a limit of 15, clear of both bands; a limit
+# of 10 was the warning band, and raising it is what the warning asked for.
 #
 # A warning is not a failure: it is printed, counted in the summary line, and
 # leaves the exit status alone, because nothing is wrong with the file yet.
