@@ -398,25 +398,36 @@ def cooldown_holds(coordinate, cooldown):
     return not matches("exclude")
 
 
+# One walk of each entry's manifests, consumed by every per-entry check below.
+#
+# Only the manifests in the directories the entry itself names. Gradle
+# subprojects are not walked, so a "/"-scoped entry sees the root
+# build.gradle.kts, which declares no dependencies block, and nothing of app/;
+# it finds no Google-hosted coordinate and falls through the cooldown branch
+# below unchecked. Today's entry is scoped to /app, so that path is unreached,
+# but a "/" entry would hit issue #905 identically and would need this widened
+# rather than trusted.
+declarations = {}
 for index, entry, names, directories in gradle_entries:
     label = entry_label(index, directories)
-
-    # Only the manifests in the directories the entry itself names. Gradle
-    # subprojects are not walked, so a "/"-scoped entry sees the root
-    # build.gradle.kts, which declares no dependencies block, and nothing of
-    # app/; it finds no Google-hosted coordinate and falls through the branch
-    # below unchecked. Today's entry is scoped to /app, so that path is
-    # unreached, but a "/" entry would hit issue #905 identically and would
-    # need this widened rather than trusted.
-    google_hosted = set()
-    central_hosted = set()
+    declared = {}
     for directory in directories:
         paths = manifest_paths(directory)
         if not check(bool(paths), "%s covers a directory containing a Gradle manifest (%s)" % (label, directory)):
             continue
         for path in paths:
-            for coordinate in declared_coordinates(path):
-                (google_hosted if is_google_hosted(coordinate) else central_hosted).add(coordinate)
+            for coordinate, configurations in declared_coordinates(path).items():
+                declared.setdefault(coordinate, set()).update(configurations)
+    declarations[index] = declared
+
+
+for index, entry, names, directories in gradle_entries:
+    label = entry_label(index, directories)
+
+    google_hosted = set()
+    central_hosted = set()
+    for coordinate in declarations[index]:
+        (google_hosted if is_google_hosted(coordinate) else central_hosted).add(coordinate)
 
     # An entry declaring no Google-hosted coordinate cannot hit the bug, so it
     # is under no obligation to configure cooldown at all.
@@ -458,15 +469,11 @@ for index, entry, names, directories in gradle_entries:
 for index, entry, names, directories in gradle_entries:
     label = entry_label(index, directories)
 
-    declared = {}
-    for directory in directories:
-        for path in manifest_paths(directory):
-            for coordinate, configurations in declared_coordinates(path).items():
-                declared.setdefault(coordinate, set()).update(configurations)
+    declared = declarations[index]
 
     # An entry whose manifests declare no versioned coordinate has nothing to
-    # group and nothing to spend a pull request slot on. The cooldown loop
-    # above already reports a directory with no manifest at all.
+    # group and nothing to spend a pull request slot on. The walk above
+    # already reports a directory with no manifest at all.
     if not declared:
         continue
 
