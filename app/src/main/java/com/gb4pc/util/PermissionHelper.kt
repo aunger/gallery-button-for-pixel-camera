@@ -113,6 +113,14 @@ object PermissionHelper {
      * - never asked yet -> [PermissionRequestRoute.DIALOG] (the first ask always shows UI)
      * - asked before, rationale `true` -> [PermissionRequestRoute.DIALOG] (denied, but not fixed)
      * - asked before, rationale `false` -> [PermissionRequestRoute.SETTINGS] (permanently denied)
+     *
+     * [hasBeenRequestedBefore] is an app-side shadow of state the platform owns, so it is only as
+     * good as what wrote it. It is empty for an install upgraded from a build before it existed,
+     * which is why [seedPermissionRequestHistoryForUpgrade] backfills it once at startup; without
+     * that, an already permanently denied permission would read as "never asked" here and route to
+     * a dialog Android refuses to show. The one case still not recoverable is app data being
+     * cleared, which resets the flag and the platform's own grant state together, leaving the
+     * route correct but the backfill's assumption stale until the next ask records the truth.
      */
     fun permissionRequestRoute(
         activity: Activity,
@@ -156,6 +164,54 @@ object PermissionHelper {
             }
         }
     }
+
+    /**
+     * Backfills [PrefsManager.hasRequestedRuntimePermission] once, for an install that predates
+     * the flag existing at all (issue #572).
+     *
+     * The routing in [permissionRequestRoute] leans on an app-side record of the first ask, and
+     * that record is empty for every install upgraded from a build before this one. Without this
+     * backfill the very user the issue describes, someone who already denied a permission into the
+     * permanently denied state, would be read as "never asked" and sent to a dialog Android
+     * refuses to show: the identical silent no-op, on the first tap after upgrading.
+     *
+     * `firstInstallTime != lastUpdateTime` is the platform's own statement that this install
+     * predates the running build, which is exactly the population whose history was never
+     * recorded. A fresh install has equal times, is left alone, and records its own history
+     * accurately from its first ask onward.
+     *
+     * Only *ungranted* permissions are seeded. A granted one has no route to choose, and if the
+     * user later revokes it from Settings, Android will show a dialog again, which an unseeded
+     * flag correctly routes to.
+     *
+     * Seeding errs toward [PermissionRequestRoute.SETTINGS] for a permission the user in fact
+     * never denied (they skipped the step instead). That costs a trip to Settings for a grant the
+     * dialog could have taken in one tap, once, on the upgrade. The opposite error costs a button
+     * that silently does nothing, which is the bug being fixed, so the asymmetry is deliberate.
+     */
+    fun seedPermissionRequestHistoryForUpgrade(
+        context: Context,
+        prefsManager: PrefsManager,
+    ) {
+        if (prefsManager.isPermissionHistorySeeded) return
+        if (isUpgradedInstall(context)) {
+            if (!hasMediaPermission(context)) {
+                prefsManager.setRuntimePermissionRequested(mediaPermission, true)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotificationPermission(context)) {
+                prefsManager.setRuntimePermissionRequested(android.Manifest.permission.POST_NOTIFICATIONS, true)
+            }
+        }
+        prefsManager.isPermissionHistorySeeded = true
+    }
+
+    private fun isUpgradedInstall(context: Context): Boolean =
+        try {
+            val info = context.packageManager.getPackageInfo(context.packageName, 0)
+            info.firstInstallTime != info.lastUpdateTime
+        } catch (_: PackageManager.NameNotFoundException) {
+            false
+        }
 
     /**
      * The app's own page in system Settings, where a permanently denied runtime permission can

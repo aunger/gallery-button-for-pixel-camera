@@ -77,6 +77,9 @@ This is a compile-time manifest declaration, not a runtime permission; the user 
   Once Android considers a permission permanently denied (an explicit "Don't ask again", or enough prior denials), `requestPermissions()` returns DENIED synchronously without showing anything, so a dialog-only screen is a silent dead end; conversely a Settings-only screen sends a user who has never been asked on a detour for a grant one in-app tap could collect.
   `shouldShowRequestPermissionRationale()` decides this, but cannot decide it alone: it returns false both before the first-ever ask and after a permanent denial.
   GB4PC records the first ask per permission (`PrefsManager.hasRequestedRuntimePermission`), which is what separates those two states (issue #572).
+  That record is an app-side shadow of state the platform owns, so it is backfilled once at startup for an install upgraded from a build that predates it (`firstInstallTime != lastUpdateTime`): every ungranted runtime permission is assumed already asked.
+  Otherwise a user who had already denied a permission permanently would read as "never asked" on the first tap after upgrading and be sent to a dialog Android refuses to show, which is the very dead end this rule removes.
+  The backfill errs toward Settings for a permission the user in fact only skipped, costing one avoidable trip to Settings rather than a button that silently does nothing.
 
 > [!NOTE]
 > **Permission-timing principle.** If the camera is on screen, it is too late to request permissions. Make do with what you have.

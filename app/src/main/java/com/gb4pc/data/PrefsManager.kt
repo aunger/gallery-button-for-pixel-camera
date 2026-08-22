@@ -48,6 +48,14 @@ class PrefsManager(
     fun hasRequestedRuntimePermission(permission: String): Boolean =
         prefs.getBoolean(Constants.PREF_PERMISSION_REQUESTED_PREFIX + permission, false)
 
+    /**
+     * Whether the one-time backfill of [hasRequestedRuntimePermission] has already run on this
+     * install (issue #572). See `PermissionHelper.seedPermissionRequestHistoryForUpgrade`.
+     */
+    var isPermissionHistorySeeded: Boolean
+        get() = prefs.getBoolean(Constants.PREF_PERMISSION_HISTORY_SEEDED, false)
+        set(value) = prefs.edit().putBoolean(Constants.PREF_PERMISSION_HISTORY_SEEDED, value).apply()
+
     fun setRuntimePermissionRequested(
         permission: String,
         requested: Boolean,
