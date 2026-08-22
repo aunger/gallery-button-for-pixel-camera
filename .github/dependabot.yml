@@ -42,7 +42,7 @@
 #
 # What the runs since have shown (issue #873): grouping does what it was added for.
 # The 2026-08-11 run closed #845 through #849 as superseded by one grouped pull request, #874, and dependabot-verification-metadata-regen.yml then ran once for the whole group instead of once per package.
-# The raised limit is a different matter: no run has yet wanted a sixth pull request open at once, so nothing observed distinguishes a limit of 10 from the old 5.
+# The raised limit is a different matter: no run has yet wanted a sixth pull request open at once, so nothing observed distinguishes any of 10, today's 15, or the old 5.
 # The 2026-08-18 run opened five (#899 through #903) from an empty slate; the 2026-08-20 run opened two more (#915, #916) against three still open. Both landed exactly on five.
 #
 # scripts/test_dependabot_config.sh guards the property the raise was for rather than that observation: it counts the pull requests this entry's coordinates can want open at once, one per non-empty group plus one per ungrouped coordinate, and requires the limit to exceed that count.
