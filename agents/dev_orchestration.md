@@ -394,7 +394,7 @@ undiagnosedTerminal:
   // and the terminal suffix, so in that case the drain flag is suppressed
   // and this detour is never entered for that terminal shape.
   // Give it one out-of-process recheck before treating it as real.
-  Relay the flagged terminal line to the user, noting that a one-time recheck follows.
+  Relay the flagged terminal line to the user. Then, in a message of the Orchestrator's own, tell the user that a one-time recheck follows.
   Wait 5 minutes without a sleep loop: issue a Bash tool call running `sleep 300` (run_in_background: true), and treat its completion notification as the wake-up.
   Re-launch the Monitor tool call (same command as the original, fresh invocation).
   Relay its lines as usual, EXCEPT do not re-apply the "drain poll found no new diagnostic signals" -> goto undiagnosedTerminal check this one time; this recheck pass gets at most one undiagnosedTerminal detour.
