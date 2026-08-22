@@ -7,7 +7,6 @@ import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -42,12 +41,13 @@ class MainActivity : ComponentActivity() {
     private var isBatteryExcluded = mutableStateOf(false)
     private var galleryPackage = mutableStateOf<String?>(null)
 
-    private val mediaPermissionLauncher =
-        registerForActivityResult(
-            ActivityResultContracts.RequestPermission(),
-        ) { /* onResume re-reads the real grant state */ }
-
-    private val notificationPermissionLauncher =
+    /**
+     * One launcher serves every runtime permission this screen asks for: the permission is an
+     * argument to `launch()`, not a property of the launcher, and both banners handle their result
+     * the same way (in `onResume`). A launcher per permission only creates the chance of handing
+     * a banner the wrong one.
+     */
+    private val permissionLauncher =
         registerForActivityResult(
             ActivityResultContracts.RequestPermission(),
         ) { /* onResume re-reads the real grant state */ }
@@ -60,14 +60,12 @@ class MainActivity : ComponentActivity() {
      * skipped the setup step, and so had never seen the dialog, on a detour for a grant that one
      * in-app tap could have collected.
      */
-    private fun requestRuntimePermission(
-        permission: String,
-        launcher: ActivityResultLauncher<String>,
-    ) = PermissionHelper.requestRuntimePermission(
-        activity = this,
-        permission = permission,
-        prefsManager = prefsManager,
-    ) { launcher.launch(permission) }
+    private fun requestRuntimePermission(permission: String) =
+        PermissionHelper.requestRuntimePermission(
+            activity = this,
+            permission = permission,
+            prefsManager = prefsManager,
+        ) { permissionLauncher.launch(permission) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -96,14 +94,9 @@ class MainActivity : ComponentActivity() {
                     hasNotification = hasNotification.value,
                     isBatteryExcluded = isBatteryExcluded.value,
                     galleryPackage = galleryPackage.value,
-                    onMediaPermissionClick = {
-                        requestRuntimePermission(PermissionHelper.mediaPermission, mediaPermissionLauncher)
-                    },
+                    onMediaPermissionClick = { requestRuntimePermission(PermissionHelper.mediaPermission) },
                     onNotificationPermissionClick = {
-                        requestRuntimePermission(
-                            Manifest.permission.POST_NOTIFICATIONS,
-                            notificationPermissionLauncher,
-                        )
+                        requestRuntimePermission(Manifest.permission.POST_NOTIFICATIONS)
                     },
                 )
             }
