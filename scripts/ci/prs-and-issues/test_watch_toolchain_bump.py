@@ -687,6 +687,15 @@ class TestMain(unittest.TestCase):
                 self.assertEqual(wtb.main([]), 0)
         mock_collect.assert_not_called()
 
+    def test_collision_assertion_is_not_swallowed(self):
+        """#858: the coordinate collision assertion is the documented exception to the module
+        docstring's "exit code is always 0" contract, so main() must let it propagate."""
+        with patch.object(wtb, "collect_state", side_effect=AssertionError("collision")):
+            with patch.object(wtb, "find_tracking_issue") as mock_find:
+                with self.assertRaises(AssertionError):
+                    wtb.main([])
+        mock_find.assert_not_called()
+
     def test_transient_failure_reports_nothing(self):
         with patch.object(wtb, "collect_state", side_effect=wtb.TransientFetchError("down")):
             with patch.object(wtb, "find_tracking_issue") as mock_find:

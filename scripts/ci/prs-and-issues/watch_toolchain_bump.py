@@ -62,7 +62,9 @@ Usage:
 GitHub state.  It needs no token.
 
 Exit code is always 0; API and network failures are logged but do not fail the CI run, matching
-`archive_stale_test_failures.py`.
+`archive_stale_test_failures.py`.  The one deliberate exception is the coordinate collision
+assertion in ``collect_state``: it guards against this script's own bug rather than an upstream
+hiccup, so it is left to propagate and crash the run loudly instead of degrading quietly (#858).
 
 Required environment variables:
     GITHUB_TOKEN        Personal access token or Actions secret with issues: write
@@ -514,6 +516,9 @@ def collect_state(repo_root: Path) -> dict:
             # Nothing collides today: every coordinate in COORDINATES_BY_PIN is unique across all
             # pins (#838). This guards the assumption instead of letting a future pin silently
             # overwrite another pin's advisory record under the same coordinate@version key.
+            # Deliberately not caught in main(), so this is the one way the module docstring's
+            # "exit code is always 0" contract can be broken: a collision is a bug in this
+            # script, and a crashing scheduled Action is louder than a degraded comment (#858).
             assert key not in advisories, (
                 f"duplicate coordinate@version key {key!r} in toolchain_advisories: two entries "
                 "in COORDINATES_BY_PIN resolved to the same key, so one would silently overwrite "
