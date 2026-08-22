@@ -60,7 +60,7 @@ The Orchestrator is not a Reviewer or a Programmer.
   - Replace subagents, reluctantly and when necessary, to complete a workflow
   - Inform subagents of unfinished tasks or additional responsibilities
 - Relay the user's exact words to either sub verbatim, and either sub's words back to the user verbatim (never between the two subs)
-- Relay Monitor output lines to the user (the say-nothing rule governs sub-agent messages, not user-facing status)
+- Relay Monitor output lines to the user, verbatim and at its own discretion, per "Relaying Monitor output" below (the say-nothing rule governs sub-agent messages, not user-facing status)
 - Provide instructions about which process document(s) to read
 
 ## What Authors and Reviewers may and may not do
@@ -241,7 +241,29 @@ When the round is running on the no-PR path (the Author declined to open a PR), 
 ## CI checking after a Reviewer exits (Monitor loop)
 
 After the Reviewer exits and delivers its decision, the Orchestrator acts as follows.
-Monitor output lines are relayed to the user verbatim; this is user-facing status reporting and is not governed by the say-nothing rule (which covers sub-agent messages only).
+
+### Relaying Monitor output
+
+The Orchestrator **may** relay Monitor output lines to the user.
+Doing so is user-facing status reporting and is not governed by the say-nothing rule (which covers sub-agent messages only).
+
+Whatever it relays, it relays **verbatim**: the Monitor's line, copied exactly.
+No paraphrase, no summary of several lines in the Orchestrator's own words, no rewriting into a tidier sentence.
+The verbatim constraint is about fidelity, not volume; it does not oblige the Orchestrator to forward every line the Monitor emits.
+
+Always relay:
+
+- The terminal lines `Clear`, `Blocked` (including the attributed `Blocked by: <name>` form), and `Infra`. They are the loop's decision points, and the user needs to see what the routing acted on.
+- The `drain poll found no new diagnostic signals` flag, for the same reason: it too selects a branch below.
+- `FAIL [...]` lines, and any per-check summary row whose conclusion is not `success`.
+- `in_progress` heartbeats. The script emits one only after 120 seconds with no other output, so it is the sole sign of life across a long silence.
+
+Relay at the Orchestrator's discretion:
+
+- `step "..." -> ...` lines for steps that concluded successfully, `SKIP`/`PASS` markers, the `summary` header, and the summary rows whose conclusion is `success`.
+- The natural default is to withhold these while everything is green, and to relay the per-check summary block when it explains a terminal line the user would otherwise have to take on faith.
+
+### Routing after the Reviewer returns
 
 When the Reviewer returns, apply this transition.
 Apply it to the PR if one exists; apply it to the issue otherwise, since that is where the work's labels live when there is no PR:
@@ -279,9 +301,9 @@ PR routing (Monitor loop):
   if Reviewer gave `Cannot work` -> escalate to user; stop (do NOT route to a new Author round; leave the PR open for the user to close; the Reviewer's PR comment describes why)
   if Reviewer gave LGTM:
     Orchestrator launches a Monitor tool call running `python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER>` from the repo root (run_in_background: true, timeout_ms: 1800000). Record the task ID returned by the Monitor tool call for use in silentVanish recovery, and clear the silentVanish re-launch flag (this original launch is not a re-launch).
-    Each stdout line arrives as a task-notification event; relay each line to the user verbatim.
-    Act only on the terminal lines Clear, Blocked (including the attributed `Blocked by: <name>` form), or Infra. Relay in_progress lines to the user as brief status updates (the script suppresses these unless no other output has been emitted for over 120 seconds).
-    Relay `step "..." -> ...`, `FAIL [...] ...`, `summary`, and per-check summary rows to the user as informational test-result deltas; they do NOT end the loop or start a new Author round.
+    Each stdout line arrives as a task-notification event; relay lines per "Relaying Monitor output" above.
+    Act only on the terminal lines Clear, Blocked (including the attributed `Blocked by: <name>` form), or Infra. in_progress lines are brief status updates (the script suppresses these unless no other output has been emitted for over 120 seconds).
+    `step "..." -> ...`, `FAIL [...] ...`, `summary`, and per-check summary rows are informational test-result deltas; they do NOT end the loop or start a new Author round.
     if Monitor emits `drain poll found no new diagnostic signals` immediately followed by a Blocked or Infra line -> goto undiagnosedTerminal
     (Note: the attributed `Blocked by: <name>` form already names the blocking check in the per-check summary block and the terminal suffix, so the Monitor suppresses the drain flag in that case. The `goto undiagnosedTerminal` branch therefore applies only to a bare `Blocked`/`Infra` line that the Monitor itself flagged as undiagnosed.)
     if Monitor emits a Blocked line where the terminal ends with `[label gate]` (the ` by: ...` suffix names only label-gate checks) -> clear the silentVanish re-launch flag; goto labelGateBlock
@@ -418,7 +440,7 @@ The poll loop lives in [`scripts/ci_monitor/ci_monitor.py`](../scripts/ci_monito
 Orchestrator-specific notes:
 
 - The 30-minute escalation threshold is enforced by `timeout_ms: 1800000` on the Monitor call--no elapsed-time tracking needed.
-- `step`/`FAIL`/`SKIP`/`PASS` lines, `summary` header lines, and per-check summary rows are informational test-result deltas, not terminal outcomes: relay them to the user but do not start a new Author round. Only a `Blocked` (or `Blocked by: ...`) line does that.
+- `step`/`FAIL`/`SKIP`/`PASS` lines, `summary` header lines, and per-check summary rows are informational test-result deltas, not terminal outcomes: they do not start a new Author round. Only a `Blocked` (or `Blocked by: ...`) line does that. Which of them reach the user is a separate question, answered by "Relaying Monitor output" above.
 - The `Blocked by: <name>` attributed form (issue #516) names which check-run blocked CI. A terminal ending with `[label gate]` means only a process-label gate (not a code/test failure) is blocking; the Orchestrator usually removes the blocking label and re-launches the Monitor rather than routing a new Author round. Not always: since issue #833 the gate answers about the head commit rather than about this PR, so it can be red with no blocking label to remove, and then the Orchestrator escalates instead (see the `labelGateBlock` branch in the Monitor loop above).
 - Do not subscribe to PR events or delay dispatching the Reviewer while waiting for CI; the Monitor loop replaces that pattern.
 
