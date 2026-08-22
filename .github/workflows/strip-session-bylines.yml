@@ -30,7 +30,13 @@ jobs:
     if: github.actor != 'github-actions[bot]'
 
     steps:
+      # Pinned to a ref the pull request does not control: this job holds
+      # write scopes and runs a script out of this checkout (issue #882).
+      # The fallback covers this workflow's non-pull-request events. Rule,
+      # rationale and limits: scripts/ci/test_privileged_workflow_checkouts.py.
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
 
       - name: Strip session-URL bylines
         env:

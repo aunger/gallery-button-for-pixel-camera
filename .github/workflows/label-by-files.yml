@@ -24,7 +24,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
+        # Pinned to a ref the pull request does not control: this job holds
+        # write scopes and runs a script out of this checkout (issue #882). Rule,
+        # rationale and limits: scripts/ci/test_privileged_workflow_checkouts.py.
         uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
 
       - name: Apply labels matching the changed files
         env:

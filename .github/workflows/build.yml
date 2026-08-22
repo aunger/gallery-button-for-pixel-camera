@@ -1371,7 +1371,13 @@ jobs:
       issues: write
     steps:
       - name: Check out repository
+        # Pinned to a ref the pull request does not control: this job holds
+        # write scopes and runs a script out of this checkout (issue #882).
+        # The fallback covers this workflow's non-pull-request events. Rule,
+        # rationale and limits: scripts/ci/test_privileged_workflow_checkouts.py.
         uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
 
       - name: Download unit test results
         uses: actions/download-artifact@v7
@@ -1480,7 +1486,12 @@ jobs:
       pull-requests: write
     steps:
       - name: Check out repository
+        # Pinned to a ref the pull request does not control: this job holds
+        # write scopes and runs a script out of this checkout (issue #882). Rule,
+        # rationale and limits: scripts/ci/test_privileged_workflow_checkouts.py.
         uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
 
       - name: Post CI summary link on PR
         env:
