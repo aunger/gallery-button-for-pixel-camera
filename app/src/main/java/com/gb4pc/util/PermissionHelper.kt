@@ -75,13 +75,18 @@ object PermissionHelper {
      * `PERMISSION_DENIED` for a partial grant, so no flag inspection is needed here (a normal app
      * cannot read `FLAG_PERMISSION_REVOKED_COMPAT` anyway; `getPermissionFlags()` is privileged).
      */
-    fun hasMediaPermission(context: Context): Boolean {
-        val permission =
+    fun hasMediaPermission(context: Context): Boolean = context.checkSelfPermission(mediaPermission) == PackageManager.PERMISSION_GRANTED
+
+    /**
+     * The dangerous runtime permission that backs [hasMediaPermission]: `READ_MEDIA_IMAGES` on
+     * API 33+, `READ_EXTERNAL_STORAGE` below. Exposed so the screens that *request* it name the
+     * same permission the check reads, rather than each re-deriving the API-level split.
+     */
+    val mediaPermission: String
+        get() =
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 android.Manifest.permission.READ_MEDIA_IMAGES
             } else {
                 android.Manifest.permission.READ_EXTERNAL_STORAGE
             }
-        return context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
-    }
 }

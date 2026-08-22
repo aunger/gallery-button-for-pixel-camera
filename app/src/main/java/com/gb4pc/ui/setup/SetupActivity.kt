@@ -58,14 +58,6 @@ class SetupActivity : ComponentActivity() {
             ActivityResultContracts.RequestPermission(),
         ) { /* Handled in onResume */ }
 
-    private val mediaPermission: String
-        get() =
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                Manifest.permission.READ_MEDIA_IMAGES
-            } else {
-                Manifest.permission.READ_EXTERNAL_STORAGE
-            }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefsManager = PrefsManager(this)
@@ -128,7 +120,7 @@ class SetupActivity : ComponentActivity() {
             }
 
             SetupStep.MEDIA -> {
-                mediaPermissionLauncher.launch(mediaPermission)
+                mediaPermissionLauncher.launch(PermissionHelper.mediaPermission)
             }
 
             SetupStep.USAGE_ACCESS -> {
