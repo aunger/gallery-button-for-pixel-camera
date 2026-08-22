@@ -39,6 +39,16 @@
 # The group patterns cover every testImplementation and androidTestImplementation coordinate in app/build.gradle.kts.
 # The one exception is androidx.compose:compose-bom, declared identically under both androidTestImplementation and the shipping implementation block; it stays ungrouped and travels with the app-runtime Compose bump instead, since grouping it would fold a shipping dependency into the test group.
 # androidx.test* is scoped to the "androidx.test" package prefix, so it does not capture the shipping androidx.core, androidx.lifecycle, androidx.activity, androidx.compose, or androidx.viewpager2 artifacts.
+#
+# What the runs since have shown (issue #873): grouping does what it was added for.
+# The 2026-08-11 run closed #845 through #849 as superseded by one grouped pull request, #874, and dependabot-verification-metadata-regen.yml then ran once for the whole group instead of once per package.
+# The raised limit is a different matter: no run has yet wanted a sixth pull request open at once, so nothing observed distinguishes a limit of 10 from the old 5.
+# The 2026-08-18 run opened five (#899 through #903) from an empty slate; the 2026-08-20 run opened two more (#915, #916) against three still open. Both landed exactly on five.
+#
+# scripts/test_dependabot_config.sh guards the property the raise was for rather than that observation: it counts the pull requests this entry's coordinates can want open at once, one per non-empty group plus one per ungrouped coordinate, and requires the limit to cover them.
+# That is 9 against today's limit of 10, and 9 against the default of 5 this file used to inherit, which is the starvation #871 reported.
+# It asserts both directions of the grouping claim above too: every test-only coordinate lands in a group, and no group takes a coordinate that ships in the APK, which is what keeps each app-runtime dependency in a pull request and a review of its own.
+# The second half is the load-bearing one for the first check as well as for review: a group of shipping coordinates would collapse them into one pull request, dropping the count that check requires the limit to cover from 9 to 2.
 
 # maven-google (issue #897): without it, this file has never proposed an app-runtime bump and cannot.
 # Dependabot resolves versions against the repositories it finds in the files it fetched, and its Gradle file fetcher never walks up out of `directory`, so with "/app" that set is app/build.gradle.kts alone.
