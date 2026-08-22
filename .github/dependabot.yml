@@ -113,7 +113,7 @@ updates:
       day: "monday"
       time: "10:00"
       timezone: "UTC"
-    open-pull-requests-limit: 15
+    open-pull-requests-limit: 10
     cooldown:
       default-days: 3
       exclude:
