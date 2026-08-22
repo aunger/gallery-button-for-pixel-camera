@@ -311,7 +311,7 @@ PR routing (Monitor loop):
   if Reviewer gave LGTM:
     Orchestrator launches a Monitor tool call running `python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER>` from the repo root (run_in_background: true, timeout_ms: 1800000). Record the task ID returned by the Monitor tool call for use in silentVanish recovery, and clear the silentVanish re-launch flag (this original launch is not a re-launch).
     Each stdout line arrives as a task-notification event; relay lines per "Relaying Monitor output" above.
-    Act only on the terminal lines Clear, Blocked (including the attributed `Blocked by: <name>` form), or Infra. in_progress lines are brief status updates (the script suppresses these unless no other output has been emitted for over 120 seconds).
+    Act only on the terminal lines Clear, Blocked (including the attributed `Blocked by: <name>` form), or Infra. in_progress lines are not terminal (the script suppresses these unless no other output has been emitted for over 120 seconds).
     `step "..." -> ...`, `FAIL [...] ...`, `summary`, and per-check summary rows are informational test-result deltas; they do NOT end the loop or start a new Author round.
     if Monitor emits `drain poll found no new diagnostic signals` immediately followed by a Blocked or Infra line -> goto undiagnosedTerminal
     (Note: the attributed `Blocked by: <name>` form already names the blocking check in the per-check summary block and the terminal suffix, so the Monitor suppresses the drain flag in that case. The `goto undiagnosedTerminal` branch therefore applies only to a bare `Blocked`/`Infra` line that the Monitor itself flagged as undiagnosed.)
