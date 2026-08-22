@@ -152,15 +152,18 @@ expect_annotations() {
 
 # The count the real manifest produces, read back from the script itself. Run
 # against the config as committed, whose own limit does not matter here: every
-# band prints the count line, so any of them answers this question.
+# band prints the count line, so any of them answers this question. It clears
+# GITHUB_ACTIONS like every other run that is not testing annotations, so this
+# one cannot become the exception the moment a second warn() is added to the
+# guard.
 echo
 echo "=== reading the pull request count from $TARGET ==="
-OUTPUT="$(bash "$TARGET" "$CONFIG" 2>&1)"
+OUTPUT="$(env -u GITHUB_ACTIONS bash "$TARGET" "$CONFIG" 2>&1)"
 COUNT="$(grep -oE "$COUNT_RE" <<< "$OUTPUT" | head -1 | grep -oE '[0-9]+')"
 if [ -n "$COUNT" ]; then
     pass "the limit check reports a pull request count ($COUNT)"
 else
-    fail "no pull request count found in the output: $OUTPUT"
+    fail "no pull request count found in the output: $(dump "$OUTPUT")"
     echo
     echo "test_dependabot_config_limit_margin.sh: $PASS passed, $FAIL failed"
     exit 1
