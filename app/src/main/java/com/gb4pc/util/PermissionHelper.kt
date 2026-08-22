@@ -1,12 +1,16 @@
 package com.gb4pc.util
 
+import android.app.Activity
 import android.app.AppOpsManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
 import com.gb4pc.Constants
+import com.gb4pc.data.PrefsManager
 
 /**
  * Centralized permission and installation checks (§2).
@@ -89,4 +93,90 @@ object PermissionHelper {
             } else {
                 android.Manifest.permission.READ_EXTERNAL_STORAGE
             }
+
+    /**
+     * Which of Android's two re-request routes can still move [permission] forward (issue #572).
+     *
+     * Once Android considers a permission permanently denied (an explicit "Don't ask again", or
+     * simply enough prior denials), `requestPermissions()` returns DENIED synchronously without
+     * showing any dialog at all. There is no user-visible failure; the button just does nothing.
+     * A screen that hardcodes the dialog route is therefore a dead end for any user in that state,
+     * and a screen that hardcodes the Settings route sends a first-time user on a detour through
+     * system Settings for a grant the in-app dialog could have collected in one tap. Deciding at
+     * the point of use keeps every touchpoint correct regardless of how the user got there.
+     *
+     * `shouldShowRequestPermissionRationale()` is the platform's own signal for "a fresh request
+     * will still show UI", but it cannot carry the decision alone: it returns `false` *both*
+     * before the first-ever ask and after a permanent denial. [hasBeenRequestedBefore] (persisted
+     * by [PrefsManager.hasRequestedRuntimePermission]) is what separates those two states, so:
+     *
+     * - never asked yet -> [PermissionRequestRoute.DIALOG] (the first ask always shows UI)
+     * - asked before, rationale `true` -> [PermissionRequestRoute.DIALOG] (denied, but not fixed)
+     * - asked before, rationale `false` -> [PermissionRequestRoute.SETTINGS] (permanently denied)
+     */
+    fun permissionRequestRoute(
+        activity: Activity,
+        permission: String,
+        hasBeenRequestedBefore: Boolean,
+    ): PermissionRequestRoute =
+        if (!hasBeenRequestedBefore || activity.shouldShowRequestPermissionRationale(permission)) {
+            PermissionRequestRoute.DIALOG
+        } else {
+            PermissionRequestRoute.SETTINGS
+        }
+
+    /**
+     * Ask for [permission] by whichever route [permissionRequestRoute] says can still work, and
+     * record the ask so a later call can tell "never asked" from "permanently denied".
+     *
+     * [launchDialog] fires the caller's own `ActivityResultContracts.RequestPermission` launcher;
+     * it is a lambda rather than the launcher itself so this helper stays independent of the
+     * activity-result plumbing (and testable without it).
+     */
+    fun requestRuntimePermission(
+        activity: Activity,
+        permission: String,
+        prefsManager: PrefsManager,
+        launchDialog: () -> Unit,
+    ) {
+        val route =
+            permissionRequestRoute(
+                activity = activity,
+                permission = permission,
+                hasBeenRequestedBefore = prefsManager.hasRequestedRuntimePermission(permission),
+            )
+        when (route) {
+            PermissionRequestRoute.DIALOG -> {
+                prefsManager.setRuntimePermissionRequested(permission, true)
+                launchDialog()
+            }
+
+            PermissionRequestRoute.SETTINGS -> {
+                activity.startActivity(appDetailsSettingsIntent(activity))
+            }
+        }
+    }
+
+    /**
+     * The app's own page in system Settings, where a permanently denied runtime permission can
+     * still be toggled back on. Unlike Usage Access or Draw Over Apps, an ordinary dangerous
+     * permission has no dedicated settings sub-screen to deep-link to.
+     */
+    fun appDetailsSettingsIntent(context: Context): Intent =
+        Intent(
+            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.parse("package:${context.packageName}"),
+        )
+}
+
+/**
+ * The two ways Android lets an app move a *dangerous runtime* permission forward, and which one
+ * is actually usable right now (issue #572).
+ */
+enum class PermissionRequestRoute {
+    /** Fire the system permission dialog. Only works while Android will still show it. */
+    DIALOG,
+
+    /** Send the user to the app's page in system Settings, where the grant toggle lives. */
+    SETTINGS,
 }

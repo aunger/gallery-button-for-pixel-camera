@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -38,6 +39,26 @@ class MainActivity : ComponentActivity() {
     private var isBatteryExcluded = mutableStateOf(false)
     private var galleryPackage = mutableStateOf<String?>(null)
 
+    private val mediaPermissionLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.RequestPermission(),
+        ) { /* onResume re-reads the real grant state */ }
+
+    /**
+     * Ask for the media read permission by whichever route can still work: the system dialog
+     * while Android will still show it, this app's Settings page once it will not (issue #572).
+     *
+     * The banner used to open Settings unconditionally, which sent a user who had merely skipped
+     * the setup step, and so had never seen the dialog, on a detour for a grant that one in-app
+     * tap could have collected.
+     */
+    private fun requestMediaPermission() =
+        PermissionHelper.requestRuntimePermission(
+            activity = this,
+            permission = PermissionHelper.mediaPermission,
+            prefsManager = prefsManager,
+        ) { mediaPermissionLauncher.launch(PermissionHelper.mediaPermission) }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefsManager = PrefsManager(this)
@@ -64,6 +85,7 @@ class MainActivity : ComponentActivity() {
                     hasMedia = hasMedia.value,
                     isBatteryExcluded = isBatteryExcluded.value,
                     galleryPackage = galleryPackage.value,
+                    onMediaPermissionClick = ::requestMediaPermission,
                 )
             }
         }
@@ -90,6 +112,7 @@ fun MainSettingsScreen(
     hasMedia: Boolean,
     isBatteryExcluded: Boolean,
     galleryPackage: String?,
+    onMediaPermissionClick: () -> Unit,
 ) {
     val context = LocalContext.current
     var isServiceEnabled by remember { mutableStateOf(prefsManager.isServiceEnabled) }
@@ -149,20 +172,14 @@ fun MainSettingsScreen(
                 )
             }
 
-            // Issue #509: photo read access missing (or limited). Runtime permissions can't be
-            // toggled from a settings sub-screen like the special permissions above, so route to
-            // the app's details page where the "Photos and videos" grant (Allow all) lives.
+            // Issue #509: photo read access missing (or limited). Unlike the special permissions
+            // above, this is an ordinary dangerous runtime permission, so the tap fires the system
+            // dialog while Android will still show it and falls back to the app's details page
+            // (where the "Photos and videos" Allow-all grant lives) once it will not (issue #572).
             if (!hasMedia) {
                 PermissionBanner(
                     message = stringResource(R.string.settings_media_missing),
-                    onClick = {
-                        context.startActivity(
-                            Intent(
-                                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                                Uri.parse("package:${context.packageName}"),
-                            ),
-                        )
-                    },
+                    onClick = onMediaPermissionClick,
                 )
             }
 

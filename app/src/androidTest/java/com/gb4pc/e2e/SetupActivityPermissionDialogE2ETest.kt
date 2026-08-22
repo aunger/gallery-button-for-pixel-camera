@@ -121,6 +121,11 @@ class SetupActivityPermissionDialogE2ETest {
                 "(via -PmediaPermissionGranted=false); it was already granted",
             PermissionHelper.hasMediaPermission(context),
         )
+        // Since #572 the step routes to Settings instead of the dialog once it has asked before
+        // and Android has stopped showing dialogs; this class exists to drive the dialog, so it
+        // asserts its own "never asked" precondition rather than inheriting whatever an earlier
+        // suite on this shared emulator left behind. See E2EFixture.resetPermissionRequestHistory.
+        fixture.resetPermissionRequestHistory(PermissionHelper.mediaPermission)
 
         // Tap the MEDIA step's own button, which calls requestPermissions() and shows the real
         // system permission dialog over SetupActivity.

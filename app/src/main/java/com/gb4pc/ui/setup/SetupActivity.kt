@@ -111,16 +111,38 @@ class SetupActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Ask for a dangerous runtime permission by whichever route can still work: the system dialog
+     * while Android will still show it, the app's Settings page once it will not (issue #572).
+     *
+     * These two steps used to call `launch()` unconditionally, which silently no-ops once the
+     * permission is permanently denied: no dialog, no error, and the step became a dead end the
+     * user could only leave by skipping it.
+     */
+    private fun requestRuntimePermission(
+        permission: String,
+        launchDialog: () -> Unit,
+    ) = PermissionHelper.requestRuntimePermission(
+        activity = this,
+        permission = permission,
+        prefsManager = prefsManager,
+        launchDialog = launchDialog,
+    )
+
     private fun handleGrant(step: SetupStep) {
         when (step) {
             SetupStep.NOTIFICATION -> {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    requestRuntimePermission(Manifest.permission.POST_NOTIFICATIONS) {
+                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
                 }
             }
 
             SetupStep.MEDIA -> {
-                mediaPermissionLauncher.launch(PermissionHelper.mediaPermission)
+                requestRuntimePermission(PermissionHelper.mediaPermission) {
+                    mediaPermissionLauncher.launch(PermissionHelper.mediaPermission)
+                }
             }
 
             SetupStep.USAGE_ACCESS -> {
