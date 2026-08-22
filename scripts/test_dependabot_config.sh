@@ -79,8 +79,16 @@
 #
 # A warning is not a failure: it is printed, counted in the summary line, and
 # leaves the exit status alone, because nothing is wrong with the file yet.
-# Today's file sits exactly there, 9 streams against a limit of 10, so it passes
-# with that warning; raising the limit is what clears it.
+#
+# Printing it is not enough to make it a signal. build.yml's shell-tests job
+# runs each scripts/**/test_*.sh and reads the exit status alone; nothing
+# collects stdout, so a warning inside a green job reaches only whoever opens
+# the raw log and scrolls, which is the delivery this file's own header
+# condemns two paragraphs above. So under GitHub Actions each warning is
+# re-emitted as a ::warning annotation, which puts it in the run summary.
+# scripts/ci/prs-and-issues/detect_launch_retry.sh raises a report-only signal
+# out of a passing job the same way and for the same reason; gating on
+# GITHUB_ACTIONS leaves a local run printing exactly what it printed before.
 #
 # Grouping is checked in both directions. Every test-only coordinate belongs
 # to some group, so a run of test-only bumps stays one pull request and one
@@ -642,6 +650,16 @@ PY_STATUS=$?
 set -e
 
 echo "$OUTPUT"
+
+# Re-emit each warning where a person will see it. Warnings only: a failure
+# already fails the job and needs no annotation to be noticed.
+if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        echo "::warning title=Dependabot open-pull-requests-limit margin::${line#  WARN: }"
+    done < <(grep '^  WARN: ' <<<"$OUTPUT" || true)
+fi
+
 PY_PASS=$(grep -c '^  PASS:' <<<"$OUTPUT" || true)
 PY_FAIL=$(grep -c '^  FAIL:' <<<"$OUTPUT" || true)
 PY_WARN=$(grep -c '^  WARN:' <<<"$OUTPUT" || true)
