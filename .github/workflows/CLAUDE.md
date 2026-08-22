@@ -92,9 +92,14 @@ No `pull_request`-triggered job has that property.
 
 ### The cost
 
-A pull request that edits one of these scripts no longer exercises its own edit.
-`label_by_files.py`, `strip_session_bylines.py`, `file_test_failure_issues.py` and `post_pr_ci_summary_link.py` now run from `main` during a pull request's CI, so a change to labeling rules, byline stripping, issue filing or the CI summary comment only takes effect after merge.
+A pull request that edits a script one of these pinned jobs runs no longer exercises its own edit.
+The job checks out the base branch, so `main`'s copy of that script is what runs during the pull request's own CI, and the change only takes effect once it is merged.
 Expect the new behavior not to show up on the pull request that introduces it, and do not read that as the change being broken.
+
+This applies to every script a pinned job invokes, not to a fixed list: whatever the jobs named by `scripts/ci/test_privileged_workflow_checkouts.py` execute is subject to it.
+Today that is the entry point of each of the five label and byline workflows plus `build.yml`'s issue-filing and CI-summary scripts.
+It also reaches past the entry points, because they import each other.
+`label_by_files.py` and `propagate_issue_labels.py` both `import enforce_mutually_exclusive_labels` and `import label_by_title`, so an edit to either of those changes the behavior of two more jobs and is equally invisible until merge.
 
 Relatedly, a pull request that renames or moves one of these scripts *and* updates its workflow in the same change will fail that job: the workflow comes from the merge ref and names the new path, while the checkout supplies the base branch, where that path does not exist yet.
 Land the rename separately, or accept one red job on it.
