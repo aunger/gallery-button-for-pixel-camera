@@ -194,15 +194,20 @@ class TestLocate(unittest.TestCase):
         )
         self.assertEqual(target.api_url, "https://api.github.com/repos/o/r/pulls/comments/222")
 
-    def test_submitted_review_is_locatable(self):
+    def test_a_submitted_review_is_located_through_the_reviews_listing(self):
+        # The result the GitHub MCP server actually returned when the first
+        # review of this checker's own pull request was submitted: a plain
+        # string, with no id, url, or number anywhere in it.
         target = vgw.locate(
             "mcp__github__pull_request_review_write",
             {"method": "submit_pending", "owner": "o", "repo": "r", "pullNumber": 8, "body": "b"},
-            {"id": 77},
+            "pull request review submitted successfully",
         )
-        self.assertEqual(target.api_url, "https://api.github.com/repos/o/r/pulls/8/reviews/77")
+        self.assertEqual(
+            target.api_url, "https://api.github.com/repos/o/r/pulls/8/reviews?per_page=100"
+        )
 
-    def test_review_created_with_an_event_is_locatable(self):
+    def test_review_created_with_an_event_is_located_the_same_way(self):
         target = vgw.locate(
             "mcp__github__pull_request_review_write",
             {
@@ -213,9 +218,71 @@ class TestLocate(unittest.TestCase):
                 "body": "b",
                 "event": "COMMENT",
             },
-            {"id": 78},
+            "pull request review submitted successfully",
         )
-        self.assertEqual(target.api_url, "https://api.github.com/repos/o/r/pulls/8/reviews/78")
+        self.assertEqual(
+            target.api_url, "https://api.github.com/repos/o/r/pulls/8/reviews?per_page=100"
+        )
+
+    def test_the_newest_submitted_review_is_the_one_compared(self):
+        target = vgw.locate(
+            "mcp__github__pull_request_review_write",
+            {"method": "submit_pending", "owner": "o", "repo": "r", "pullNumber": 8, "body": "b"},
+            "pull request review submitted successfully",
+        )
+        listing = [
+            {"id": 1, "state": "COMMENTED", "submitted_at": "2026-08-01T00:00:00Z", "body": "old"},
+            {"id": 3, "state": "COMMENTED", "submitted_at": "2026-08-03T00:00:00Z", "body": "new"},
+            {"id": 2, "state": "COMMENTED", "submitted_at": "2026-08-02T00:00:00Z", "body": "mid"},
+        ]
+        self.assertEqual(target.stored_object(listing)["body"], "new")
+
+    def test_a_pending_review_is_never_the_one_compared(self):
+        target = vgw.locate(
+            "mcp__github__pull_request_review_write",
+            {"method": "submit_pending", "owner": "o", "repo": "r", "pullNumber": 8, "body": "b"},
+            "pull request review submitted successfully",
+        )
+        listing = [
+            {"id": 1, "state": "COMMENTED", "submitted_at": "2026-08-01T00:00:00Z", "body": "sent"},
+            {"id": 9, "state": "PENDING", "body": "draft"},
+        ]
+        self.assertEqual(target.stored_object(listing)["body"], "sent")
+
+    def test_a_reviews_listing_that_may_be_paginated_is_unverifiable(self):
+        # The listing comes back oldest first, so a full page means the newest
+        # review may be on a page this checker did not fetch.  Guessing would
+        # diff the wrong review and report a difference that is not one.
+        target = vgw.locate(
+            "mcp__github__pull_request_review_write",
+            {"method": "submit_pending", "owner": "o", "repo": "r", "pullNumber": 8, "body": "b"},
+            "pull request review submitted successfully",
+        )
+        full_page = [
+            {"id": index, "state": "COMMENTED", "submitted_at": "2026-08-01T00:00:00Z"}
+            for index in range(vgw.REVIEWS_PAGE_SIZE)
+        ]
+        with self.assertRaises(vgw.Unverifiable):
+            target.stored_object(full_page)
+
+    def test_a_listing_with_no_submitted_review_is_unverifiable(self):
+        target = vgw.locate(
+            "mcp__github__pull_request_review_write",
+            {"method": "submit_pending", "owner": "o", "repo": "r", "pullNumber": 8, "body": "b"},
+            "pull request review submitted successfully",
+        )
+        with self.assertRaises(vgw.Unverifiable):
+            target.stored_object([{"id": 9, "state": "PENDING", "body": "draft"}])
+
+    def test_an_ordinary_target_treats_the_response_as_the_object(self):
+        target = vgw.locate(
+            "mcp__github__update_pull_request",
+            {"owner": "o", "repo": "r", "pullNumber": 8, "body": "b"},
+            None,
+        )
+        self.assertEqual(target.stored_object({"body": "x"}), {"body": "x"})
+        with self.assertRaises(vgw.Unverifiable):
+            target.stored_object(["not", "an", "object"])
 
     def test_pending_review_is_unverifiable(self):
         with self.assertRaises(vgw.Unverifiable):

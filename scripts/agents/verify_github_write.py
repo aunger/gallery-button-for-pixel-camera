@@ -110,6 +110,23 @@ class Target:
 
     api_url: str
     description: str
+    # Some objects are not addressable on their own.  A submitted review is
+    # fetched out of the pull request's reviews listing, so the target carries
+    # the function that picks it out of what came back.  None means the
+    # response is the object.
+    select: object = None
+
+    def stored_object(self, fetched: object) -> dict:
+        """Return the written object out of what the read-back endpoint returned.
+
+        Raises:
+            Unverifiable: when the object is not in the response after all.
+        """
+        if self.select is not None:
+            return self.select(fetched)
+        if isinstance(fetched, dict):
+            return fetched
+        raise Unverifiable(f"GET {self.api_url} did not return an object")
 
 
 class Unverifiable(Exception):
@@ -214,6 +231,44 @@ def _locate_update_pull_request(tool_input: dict, response: dict) -> Target:
     return Target(f"{API_ROOT}/repos/{repo}/pulls/{number}", f"pull request {repo}#{number}")
 
 
+# The reviews listing is returned oldest first, so the review a call just
+# submitted is on the last page.  A pull request with more than this many
+# reviews is reported as unverified rather than guessed at.
+REVIEWS_PAGE_SIZE = 100
+
+
+def _newest_submitted_review(fetched: object) -> dict:
+    """Return the most recently submitted review in a reviews listing.
+
+    The GitHub MCP server answers a submitted review with the plain string
+    "pull request review submitted successfully": no id, no url, nothing to
+    address the review by.  Observed, not assumed: that is what came back when
+    the first review of this checker's own pull request was submitted.  So the
+    review is found by listing the pull request's reviews and taking the newest
+    submitted one, which is the one the call just created.
+
+    Raises:
+        Unverifiable: when the listing cannot be trusted to contain it.
+    """
+    if not isinstance(fetched, list):
+        raise Unverifiable("the reviews listing did not come back as a list")
+    if len(fetched) >= REVIEWS_PAGE_SIZE:
+        raise Unverifiable(
+            f"this pull request has at least {REVIEWS_PAGE_SIZE} reviews, so the newest one "
+            "may be on a page this checker did not fetch"
+        )
+    submitted = [
+        review
+        for review in fetched
+        if isinstance(review, dict) and review.get("state") != "PENDING"
+    ]
+    if not submitted:
+        raise Unverifiable("the pull request has no submitted review to compare against")
+    return max(
+        submitted, key=lambda review: (review.get("submitted_at") or "", review.get("id") or 0)
+    )
+
+
 def _locate_review_write(tool_input: dict, response: dict) -> Target:
     """Locate a review body, which is fetchable only once the review is submitted.
 
@@ -222,6 +277,7 @@ def _locate_review_write(tool_input: dict, response: dict) -> Target:
     `event`, the same method submits immediately.  Either way the body is
     verified on the call that submits it, and not before.
     """
+    del response  # A submitted review's result carries no identifier at all.
     method = tool_input.get("method")
     pending = method == "create" and not tool_input.get("event")
     if pending or method not in ("create", "submit_pending"):
@@ -231,10 +287,10 @@ def _locate_review_write(tool_input: dict, response: dict) -> Target:
         )
     repo = _repo(tool_input)
     number = _require(tool_input.get("pullNumber"), "pull request number")
-    review_id = _require(response.get("id"), "review id")
     return Target(
-        f"{API_ROOT}/repos/{repo}/pulls/{number}/reviews/{review_id}",
-        f"review {review_id} on pull request {repo}#{number}",
+        f"{API_ROOT}/repos/{repo}/pulls/{number}/reviews?per_page={REVIEWS_PAGE_SIZE}",
+        f"the review just submitted on pull request {repo}#{number}",
+        _newest_submitted_review,
     )
 
 
@@ -615,7 +671,7 @@ def check(payload: dict) -> tuple[int, str]:
 
     try:
         target = locate(tool_name, tool_input, payload.get("tool_response"))
-        stored = fetch_stored(target.api_url)
+        stored = target.stored_object(fetch_stored(target.api_url))
     except Unverifiable as exc:
         # Once per session per tool: the point is that the gap is visible, not
         # that it is repeated on every call.
