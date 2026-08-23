@@ -480,10 +480,14 @@ def render_field(field: str, regions: list, omitted: int) -> str:
 ADVICE = {
     "mention dotting": (
         "A dotted mention notifies nobody and reaches no bot command surface, so a "
-        "@dependabot command sent this way does nothing and reports no error. Every "
-        "attempt is altered the same way, so re-posting the text verbatim gets the same "
-        "result. Use a mechanism that needs no mention, such as re-running the workflow "
-        "or a tool call, or ask a human to post the command and say why you cannot."
+        "dependabot rebase command sent this way did nothing and reported no error. "
+        "The behavior is external to this repository and it is not constant: writes have "
+        "been observed storing a mention intact, so neither outcome can be assumed. What "
+        "you cannot do is assume this one worked, because it did not. Prefer a mechanism "
+        "that needs no mention, such as re-running the workflow or a tool call. If the "
+        "mention is genuinely required, one retry is reasonable, and this checker will "
+        "tell you whether it arrived; if it is dotted again, ask a human to post it and "
+        "say why you cannot."
     ),
     "removal": (
         "Text you sent is absent from the stored object. Angle-bracket constructs are "

@@ -368,6 +368,22 @@ class TestRenderField(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
+class TestAdvice(unittest.TestCase):
+    """The advice is the sentence an agent acts on, so it must not overclaim."""
+
+    def test_the_mention_advice_does_not_claim_every_attempt_is_altered(self):
+        # A probe on 2026-08-23 stored a mention intact, so an agent told that
+        # every attempt is altered would decline to retry on false grounds.
+        advice = vgw.ADVICE["mention dotting"].lower()
+        self.assertNotIn("every attempt", advice)
+        self.assertIn("not constant", advice)
+
+    def test_no_advice_carries_a_live_mention_token(self):
+        # The whole report is meant to be safe to quote into a GitHub comment.
+        for name, advice in vgw.ADVICE.items():
+            self.assertNotRegex(advice, r"@\w", f"{name} advice carries a live mention")
+
+
 class TestLog(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
