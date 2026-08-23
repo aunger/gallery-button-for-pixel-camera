@@ -721,15 +721,29 @@ def check(payload: dict) -> tuple[int, str]:
         )
 
     deltas = {}
+    compared = []
     missing = []
     for field, sent in texts.items():
         value = stored.get(field)
         if not isinstance(value, str):
             missing.append(field)
             continue
+        compared.append(field)
         regions, omitted = diff_regions(normalize(sent), normalize(value))
         if regions:
             deltas[field] = (regions, omitted)
+
+    # A field the stored object does not carry was not compared, whether or not
+    # the other fields were.  Reporting the call clean because the fields that
+    # could be compared matched is the false-assurance shape this checker
+    # exists to prevent, and it would put the uncompared field in the log as
+    # one that was checked.
+    uncompared = ""
+    if missing:
+        uncompared = (
+            f"  NOT compared: {tool_name} sent {', '.join(sorted(missing))}, and the object "
+            f"at {target.api_url} carries no such field."
+        )
 
     if deltas:
         classes = sorted(
@@ -745,24 +759,44 @@ def check(payload: dict) -> tuple[int, str]:
                 "key": key,
                 "url": target.api_url,
                 "classes": classes,
+                "compared": sorted(compared),
+                "uncompared": sorted(missing),
             },
         )
         html_url = stored.get("html_url") if isinstance(stored.get("html_url"), str) else ""
-        return EXIT_FINDING, build_report(tool_name, target, deltas, repeated, html_url)
+        report = build_report(tool_name, target, deltas, repeated, html_url)
+        return EXIT_FINDING, report + ("\n" + uncompared if uncompared else "")
 
-    if missing and len(missing) == len(texts):
-        key = f"{tool_name}:fields"
-        if already_reported(entries, "unverified", key):
+    if missing:
+        key = f"{tool_name}:fields:{','.join(sorted(missing))}"
+        already = already_reported(entries, "unverified", key)
+        append_log(
+            session_id,
+            {
+                "tool": tool_name,
+                "status": "unverified-repeat" if already else "unverified",
+                "key": key,
+                "compared": sorted(compared),
+                "uncompared": sorted(missing),
+            },
+        )
+        if already:
             return EXIT_CLEAN, ""
-        append_log(session_id, {"tool": tool_name, "status": "unverified", "key": key})
+        matched = (
+            f" The field(s) that could be compared ({', '.join(sorted(compared))}) matched, "
+            "which says nothing about the one(s) that could not."
+            if compared
+            else ""
+        )
         return EXIT_FINDING, (
-            f"GitHub write NOT verified: {tool_name} sent {', '.join(sorted(missing))}, and "
-            f"the object at {target.api_url} carries no such field, so nothing was compared."
+            f"GitHub write NOT verified:\n{uncompared}\n"
+            f" So that text was not compared with anything.{matched}\n"
+            f"  Reported once per session for {tool_name} and these field(s)."
         )
 
     append_log(
         session_id,
-        {"tool": tool_name, "status": "clean", "key": target.api_url, "fields": sorted(texts)},
+        {"tool": tool_name, "status": "clean", "key": target.api_url, "fields": sorted(compared)},
     )
     return EXIT_CLEAN, ""
 

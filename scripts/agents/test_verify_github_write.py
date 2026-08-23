@@ -680,17 +680,52 @@ class TestCheck(unittest.TestCase):
         self.assertIn("NOT verified", message)
         self.assertIn("GET failed: nope", message)
 
-    def test_a_field_the_stored_object_does_not_carry_is_reported(self):
-        write = payload(
+    @staticmethod
+    def issue_update(session_id="s", **fields):
+        return payload(
             "mcp__github__issue_write",
-            {"method": "update", "owner": "o", "repo": "r", "issue_number": 1, "title": "t"},
+            dict({"method": "update", "owner": "o", "repo": "r", "issue_number": 1}, **fields),
             None,
-            "s",
+            session_id,
         )
+
+    def test_a_field_the_stored_object_does_not_carry_is_reported(self):
         with patch.object(vgw, "fetch_stored", return_value={"body": "unrelated"}):
-            status, message = vgw.check(write)
+            status, message = vgw.check(self.issue_update(title="t"))
         self.assertEqual(status, vgw.EXIT_FINDING)
         self.assertIn("carries no such field", message)
+
+    def test_a_field_that_could_not_be_compared_is_not_reported_as_clean(self):
+        # The stored object carries title but not body, and the title matches.
+        # Reporting that clean would be the false-assurance shape, and it would
+        # put body in the log as a field that was checked.
+        with patch.object(vgw, "fetch_stored", return_value={"title": "T"}):
+            status, message = vgw.check(self.issue_update(title="T", body="B"))
+        self.assertEqual(status, vgw.EXIT_FINDING)
+        self.assertIn("NOT verified", message)
+        self.assertIn("body", message)
+
+    def test_the_log_records_only_the_fields_actually_compared(self):
+        with patch.object(vgw, "fetch_stored", return_value={"title": "T"}):
+            vgw.check(self.issue_update(title="T", body="B"))
+        entry = vgw.read_log("s")[-1]
+        self.assertEqual(entry["compared"], ["title"])
+        self.assertEqual(entry["uncompared"], ["body"])
+        self.assertNotEqual(entry["status"], "clean")
+
+    def test_an_uncomparable_field_is_reported_once_per_session(self):
+        with patch.object(vgw, "fetch_stored", return_value={"title": "T"}):
+            first = vgw.check(self.issue_update(title="T", body="B"))
+            second = vgw.check(self.issue_update(title="T", body="B"))
+        self.assertEqual(first[0], vgw.EXIT_FINDING)
+        self.assertEqual(second, (vgw.EXIT_CLEAN, ""))
+
+    def test_a_finding_also_names_the_field_it_could_not_compare(self):
+        with patch.object(vgw, "fetch_stored", return_value={"title": "changed"}):
+            status, message = vgw.check(self.issue_update(title="T", body="B"))
+        self.assertEqual(status, vgw.EXIT_FINDING)
+        self.assertIn("altered in storage", message)
+        self.assertIn("NOT compared", message)
 
     def test_both_fields_are_compared(self):
         write = payload(
