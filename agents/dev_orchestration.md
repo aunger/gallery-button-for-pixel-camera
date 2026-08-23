@@ -238,41 +238,9 @@ Apply it to the PR if one exists; apply it to the issue otherwise, since that is
 If the Author disagrees with a review point, they should make their case in PR comments rather than acquiescing.
 When the round is running on the no-PR path (the Author declined to open a PR), the Author makes its case in **issue** comments instead, since that is where the review lives.
 
-## CI checking after a Reviewer exits (Monitor loop)
+## After a Reviewer exits
 
 After the Reviewer exits and delivers its decision, the Orchestrator acts as follows.
-
-### Relaying Monitor output
-
-The Orchestrator **may** relay Monitor output lines to the user.
-Doing so is user-facing status reporting and is not governed by the say-nothing rule (which covers sub-agent messages only).
-
-Whatever it relays, it relays **verbatim**: the Monitor's line, copied exactly.
-No paraphrase, no summary of several lines in the Orchestrator's own words, no rewriting into a tidier sentence.
-The verbatim constraint is about fidelity, not volume: it says how a line is relayed, and settles nothing about which lines are.
-
-A relayed line is also relayed **alone**, with no commentary attached to it.
-Where the Orchestrator has something of its own to say about a line, such as that a label-gate failure is expected, it says it in a separate message of its own.
-The user can then always tell the Monitor's words from the Orchestrator's.
-
-**Relay every line except the ones named as discretionary below.**
-The discretionary list below is closed; the mandatory list after it only illustrates what falls outside it.
-So a line neither list names is relayed, which keeps a line nobody thought of, or one a later version of the script adds, from silently going unreported.
-
-Relay at the Orchestrator's discretion:
-
-- `step "..." -> ...` lines for steps that concluded successfully, `PASS` markers, the `summary` header, and the summary rows whose conclusion is `success`.
-- The natural default is to withhold these while everything is green, and to relay the per-check summary block when it explains a terminal line the user would otherwise have to take on faith.
-- Relay the `summary` header whenever any row beneath it is being relayed, so a mandatory row never arrives with no block around it.
-
-The mandatory side is therefore everything else, which notably includes:
-
-- Every terminal line: `Clear`, `Blocked` (including the attributed `Blocked by: <name>` form), `Infra`, and the `--pr`-mode `Merged` and `Closed`. They are the loop's decision points, and the user needs to see what the routing acted on.
-- The `drain poll found no new diagnostic signals` flag, for the same reason: it too selects a branch below.
-- `FAIL [...]` and `SKIP [...]` markers, and any per-check summary row whose conclusion is not `success`. A skip is not a success: it means a test that was expected to run did not, which is at its most dangerous on exactly the all-green run the discretionary default would otherwise quieten.
-- `in_progress` heartbeats, and every other line the script throttles to 120 seconds of silence (`could not fetch SHA`, `could not fetch run`, and the `... (still computing)` lines). They are the only sign of life across a long silence, and all but the heartbeat say the Monitor is alive yet not seeing anything, which is more urgent than a plain heartbeat, not less.
-
-### Routing after the Reviewer returns
 
 When the Reviewer returns, apply this transition.
 Apply it to the PR if one exists; apply it to the issue otherwise, since that is where the work's labels live when there is no PR:
