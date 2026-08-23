@@ -419,7 +419,7 @@ The poll loop lives in [`scripts/ci_monitor/ci_monitor.py`](../scripts/ci_monito
 Orchestrator-specific notes:
 
 - The 30-minute escalation threshold is enforced by `timeout_ms: 1800000` on the Monitor call--no elapsed-time tracking needed.
-- `step`/`FAIL`/`SKIP`/`PASS` lines, `summary` header lines, and per-check summary rows are informational test-result deltas, not terminal outcomes: they do not start a new Author round. Only a `Blocked` (or `Blocked by: ...`) line does that. Which of them reach the user is a separate question, answered by "Relaying Monitor output" above.
+- `step`/`FAIL`/`SKIP`/`PASS` lines, `summary` header lines, and per-check summary rows are progress reports, not terminal outcomes: they do not start a new Author round.
 - The `Blocked by: <name>` attributed form (issue #516) names which check-run blocked CI. A terminal ending with `[label gate]` means only a process-label gate (not a code/test failure) is blocking; the Orchestrator usually removes the blocking label and re-launches the Monitor rather than routing a new Author round. Not always: since issue #833 the gate answers about the head commit rather than about this PR, so it can be red with no blocking label to remove, and then the Orchestrator escalates instead (see the `labelGateBlock` branch in the Monitor loop above).
 - Do not subscribe to PR events or delay dispatching the Reviewer while waiting for CI; the Monitor loop replaces that pattern.
 
