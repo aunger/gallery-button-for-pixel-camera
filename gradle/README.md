@@ -156,13 +156,15 @@ Adding `workflow_dispatch` (#878) is the intended fix for that dead end.
 > The stored text looks right at a glance, because a middle dot is easy to miss, and nothing reports an error at either end.
 > A dotted mention reaches no bot command surface and notifies nobody, so `@dependabot` receives nothing and does nothing.
 > This has been observed on issue bodies, issue comments, and pull request bodies, authored both as `claude[bot]` and as the repository owner, so it is not specific to one identity or one posting path.
-> Every attempt is sanitized the same way, so re-posting a failed mention verbatim gets the same result.
 > Content committed through git is unaffected; only text posted through the API is altered.
 > #874's [comment 5260994286](https://github.com/aunger/gallery-button-for-pixel-camera/pull/874#issuecomment-5260994286) is the worked example, and it cost about eight hours before anyone noticed it had not worked.
 > Re-run the regen workflow run instead, or ask a human to post the command and say plainly why you cannot.
 >
-> The `PostToolUse` hook `.claude/hooks/post-tool-use-github-readback.sh` reads every GitHub write back and reports the difference, so an attempt made anyway is reported rather than assumed to have worked (issue #909).
-> That is also how to check whether this behavior still holds: post the mention, and read what the hook says.
+> The behavior is external to this repository and it is not constant.
+> A probe posted through `add_issue_comment` on 2026-08-23 stored its mention intact, so it is not safe to assume either that a mention will arrive or that it will not.
+> Do not decide by memory in either direction.
+> The `PostToolUse` hook `.claude/hooks/post-tool-use-github-readback.sh` reads every GitHub write back and reports any difference (issue #909), so an attempt made anyway is measured rather than assumed: post it, then believe the hook's verdict rather than the stored text, which looks right either way.
+> If the hook reports a dotted mention, the command did not arrive, and re-posting the same text will not change that.
 
 ## `wrapper/gradle-wrapper.properties` -- distribution pin
 
