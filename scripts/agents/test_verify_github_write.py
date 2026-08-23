@@ -18,6 +18,7 @@ import os
 import re
 import stat
 import sys
+import urllib.error
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -306,6 +307,118 @@ class TestLocate(unittest.TestCase):
                 "mcp__github__some_future_tool", {"owner": "o", "repo": "r", "body": "b"}, None
             )
         self.assertIn("not in this checker's table", str(caught.exception))
+
+
+# ---------------------------------------------------------------------------
+# Fetching
+# ---------------------------------------------------------------------------
+
+
+class FakeResponse:
+    """The context manager urlopen returns, over a fixed body."""
+
+    def __init__(self, body):
+        self._body = body.encode("utf-8")
+
+    def read(self):
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        return False
+
+
+def http_error(code):
+    return urllib.error.HTTPError("https://api.github.com/x", code, "boom", {}, None)
+
+
+class FakeOpener:
+    """A urlopen stand-in that replays a script of responses and records requests."""
+
+    def __init__(self, *outcomes):
+        self.outcomes = list(outcomes)
+        self.requests = []
+
+    def __call__(self, request, timeout=None):
+        self.requests.append(request)
+        outcome = self.outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return FakeResponse(outcome)
+
+
+class TestFetchStored(unittest.TestCase):
+    """The failure paths here are the ones the issue's acceptance criteria name."""
+
+    def setUp(self):
+        patcher = patch.object(vgw.time, "sleep")
+        self.sleep = patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_a_successful_read_returns_the_decoded_object(self):
+        opener = FakeOpener('{"body": "stored"}')
+        self.assertEqual(vgw.fetch_stored("https://api.github.com/x", opener), {"body": "stored"})
+
+    def test_a_404_is_retried_once_to_absorb_read_after_create_lag(self):
+        opener = FakeOpener(http_error(404), '{"body": "stored"}')
+        self.assertEqual(vgw.fetch_stored("https://api.github.com/x", opener), {"body": "stored"})
+        self.assertEqual(len(opener.requests), 2)
+        self.sleep.assert_called_once_with(vgw.RETRY_DELAY_SECONDS)
+
+    def test_a_second_404_is_unverifiable_rather_than_clean(self):
+        opener = FakeOpener(http_error(404), http_error(404))
+        with self.assertRaises(vgw.Unverifiable) as caught:
+            vgw.fetch_stored("https://api.github.com/x", opener)
+        self.assertIn("HTTP 404", str(caught.exception))
+
+    def test_a_non_404_http_error_is_not_retried(self):
+        opener = FakeOpener(http_error(500))
+        with self.assertRaises(vgw.Unverifiable):
+            vgw.fetch_stored("https://api.github.com/x", opener)
+        self.assertEqual(len(opener.requests), 1)
+        self.sleep.assert_not_called()
+
+    def test_a_rate_limit_says_the_read_was_unauthenticated_when_it_was(self):
+        opener = FakeOpener(http_error(403))
+        with patch.dict(os.environ, {"GITHUB_TOKEN": ""}, clear=False):
+            with self.assertRaises(vgw.Unverifiable) as caught:
+                vgw.fetch_stored("https://api.github.com/x", opener)
+        self.assertIn("HTTP 403", str(caught.exception))
+        self.assertIn("no GITHUB_TOKEN", str(caught.exception))
+
+    def test_an_authenticated_read_does_not_blame_a_missing_token(self):
+        opener = FakeOpener(http_error(403))
+        with patch.dict(os.environ, {"GITHUB_TOKEN": "t"}, clear=False):
+            with self.assertRaises(vgw.Unverifiable) as caught:
+                vgw.fetch_stored("https://api.github.com/x", opener)
+        self.assertNotIn("no GITHUB_TOKEN", str(caught.exception))
+
+    def test_a_network_failure_is_unverifiable_not_unaltered(self):
+        opener = FakeOpener(urllib.error.URLError("no route to host"))
+        with self.assertRaises(vgw.Unverifiable) as caught:
+            vgw.fetch_stored("https://api.github.com/x", opener)
+        self.assertIn("URLError", str(caught.exception))
+
+    def test_unparseable_json_is_unverifiable(self):
+        opener = FakeOpener("not json")
+        with self.assertRaises(vgw.Unverifiable):
+            vgw.fetch_stored("https://api.github.com/x", opener)
+
+    def test_a_token_is_sent_as_a_bearer_credential(self):
+        opener = FakeOpener("{}")
+        with patch.dict(os.environ, {"GITHUB_TOKEN": "secret"}, clear=False):
+            vgw.fetch_stored("https://api.github.com/x", opener)
+        headers = opener.requests[0].headers
+        self.assertEqual(headers["Authorization"], "Bearer secret")
+        self.assertIn("User-agent", headers)
+
+    def test_without_a_token_no_authorization_header_is_sent(self):
+        opener = FakeOpener("{}")
+        with patch.dict(os.environ, {"GITHUB_TOKEN": ""}, clear=False):
+            vgw.fetch_stored("https://api.github.com/x", opener)
+        self.assertNotIn("Authorization", opener.requests[0].headers)
 
 
 # ---------------------------------------------------------------------------

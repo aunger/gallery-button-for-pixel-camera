@@ -364,35 +364,64 @@ def locate(tool_name: str, tool_input: dict, tool_response: object) -> Target:
 # ---------------------------------------------------------------------------
 
 
-def fetch_stored(api_url: str, opener=urllib.request.urlopen) -> dict:
-    """GET *api_url* and return the decoded object.
+def _fetch_headers() -> dict:
+    """Return the request headers, authenticated when a token is available."""
+    token = os.environ.get("GITHUB_TOKEN", "")
+    if token:
+        headers = github_headers(token)
+    else:
+        headers = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
+    headers["User-Agent"] = "gb4pc-verify-github-write"
+    return headers
 
-    One retry on 404 absorbs read-after-create lag.
+
+def _get_json(api_url: str, headers: dict, opener) -> object:
+    """GET *api_url* and return the decoded body.  Exceptions propagate."""
+    request = urllib.request.Request(api_url, headers=headers)
+    with opener(request, timeout=FETCH_TIMEOUT_SECONDS) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def _unverifiable(api_url: str, exc: Exception) -> Unverifiable:
+    """Return the Unverifiable to raise for a failed read-back."""
+    if isinstance(exc, urllib.error.HTTPError):
+        suffix = ""
+        if not os.environ.get("GITHUB_TOKEN", ""):
+            suffix = " (no GITHUB_TOKEN, so the read was unauthenticated)"
+        return Unverifiable(f"GET {api_url} returned HTTP {exc.code}{suffix}")
+    return Unverifiable(f"GET {api_url} failed: {type(exc).__name__}: {exc}")
+
+
+def fetch_stored(api_url: str, opener=urllib.request.urlopen) -> object:
+    """GET *api_url* and return the decoded response.
+
+    A 404 is retried once, which absorbs read-after-create lag, where the
+    object exists but is not yet served by the replica that answers the GET.
+
+    Args:
+        api_url: The REST endpoint that returns the stored object.
+        opener: The urlopen to call.  Injected by the tests, which is the only
+            way the retry, the header choice, and the failure wording are
+            asserted rather than read.
 
     Raises:
         Unverifiable: on any failure, so the caller reports "could not verify"
             rather than treating an unreachable object as unaltered.
     """
-    token = os.environ.get("GITHUB_TOKEN", "")
-    headers = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
-    if token:
-        headers = github_headers(token)
-    headers["User-Agent"] = "gb4pc-verify-github-write"
+    headers = _fetch_headers()
+    try:
+        return _get_json(api_url, headers, opener)
+    except urllib.error.HTTPError as exc:
+        if exc.code != 404:
+            raise _unverifiable(api_url, exc) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise _unverifiable(api_url, exc) from exc
 
-    for attempt in (0, 1):
-        request = urllib.request.Request(api_url, headers=headers)
-        try:
-            with opener(request, timeout=FETCH_TIMEOUT_SECONDS) as response:
-                return json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            if exc.code == 404 and attempt == 0:
-                time.sleep(RETRY_DELAY_SECONDS)
-                continue
-            unauthenticated = "" if token else " (no GITHUB_TOKEN, so the read was unauthenticated)"
-            raise Unverifiable(f"GET {api_url} returned HTTP {exc.code}{unauthenticated}") from exc
-        except Exception as exc:  # noqa: BLE001
-            raise Unverifiable(f"GET {api_url} failed: {type(exc).__name__}: {exc}") from exc
-    raise Unverifiable(f"GET {api_url} returned HTTP 404 twice")
+    time.sleep(RETRY_DELAY_SECONDS)
+    try:
+        return _get_json(api_url, headers, opener)
+    except Exception as exc:  # noqa: BLE001
+        raise _unverifiable(api_url, exc) from exc
 
 
 def normalize(text: str) -> str:
