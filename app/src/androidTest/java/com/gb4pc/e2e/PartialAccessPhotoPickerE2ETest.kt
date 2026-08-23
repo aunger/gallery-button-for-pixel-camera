@@ -445,13 +445,15 @@ class PartialAccessPhotoPickerE2ETest {
      * unconditionally and on type alone. That script's step 7 carries the argument in full.
      *
      * A second, much weaker observation is recorded there too, because it is the only signal so
-     * far about what *does* vary. Over the 25 E2E runs of 22-23 Aug 2026, the 6 that logged a
-     * re-tap had tapped the option sooner after the request than the 19 that did not, a mean
-     * 1430ms against 1735ms (p = 0.012). That is a lead, not a finding: n is 6, the two ranges
-     * almost entirely overlap, the comparison is observational, and because this loop taps as
-     * soon as the option is findable, a shorter elapsed may mean a younger dialog window at tap
-     * time (issue #581's condition) or merely a dialog that appeared sooner. Either way, a re-tap
-     * in the log is evidence about this suite's own timing rather than a reason to turn a
+     * far about what *does* vary. The quantity is [awaitAndTap]'s elapsed for the dialog option,
+     * logged by [tapPartialAccessOptionInSystemDialog] before this function is called at all, not
+     * anything this loop measures. Over the 25 E2E runs of 22-23 Aug 2026, the 6 that went on to
+     * need a re-tap had had that option tapped sooner after the request than the 19 that did not,
+     * a mean 1430ms against 1735ms (p = 0.012). That is a lead, not a finding: n is 6, the two
+     * ranges almost entirely overlap, the comparison is observational, and because [awaitAndTap]
+     * taps as soon as the option is findable, a shorter elapsed may mean a younger dialog window
+     * at tap time (issue #581's condition) or merely a dialog that appeared sooner. Either way, a
+     * re-tap in the log is evidence about this suite's own timing rather than a reason to turn a
      * debugging aid off.
      *
      * The old objection to retrying was real, and it is answered by bounding the retries rather
