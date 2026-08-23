@@ -80,6 +80,7 @@ TEXT_FIELDS = ("title", "body")
 # Bounds on what a single finding may print.  A full-body diff would be the
 # context-hungry version of this and is not acceptable.
 MAX_REGIONS_PER_FIELD = 5
+# Counted across both sides of the delta together, not per side.
 MAX_CHARS_PER_FIELD = 800
 
 # Above this much differing text, the diff is reported as one coarse region
@@ -549,9 +550,10 @@ def _clip(text: str, budget: int) -> str:
 def render_field(field: str, regions: list, omitted: int) -> str:
     """Return the human-readable delta for one field, within the output bounds."""
     lines = [f'  field "{field}": {len(regions) + omitted} changed region(s)']
-    budget = MAX_CHARS_PER_FIELD
+    # The budget covers the field, and every region spends it twice, once for
+    # the sent side and once for the stored side.
+    share = max(60, MAX_CHARS_PER_FIELD // max(1, 2 * len(regions)))
     for region in regions:
-        share = max(60, budget // max(1, len(regions)))
         lines.append(
             f"    at character {region.position} [{region.classification}]"
             f"\n      sent:   {_clip(region.sent, share)}"
@@ -635,6 +637,8 @@ def build_report(
 
 MAX_LOG_LINE_CHARS = 2000
 MAX_LOG_BYTES = 256 * 1024
+MAX_LOG_VALUE_CHARS = 500
+LOG_FULL_MARKER = "log full"
 
 
 def log_path(session_id: str) -> str:
@@ -659,21 +663,44 @@ def read_log(session_id: str) -> list:
 
 
 def append_log(session_id: str, entry: dict) -> None:
-    """Append one capped line to the session log.
+    """Append one line to the session log, capping the entry rather than the line.
 
     This is what makes "did the check actually run" answerable, which matters
     more here than usual: a checker that silently never runs converts absence
-    of warnings into false assurance.
+    of warnings into false assurance.  So the two caps here are written to
+    lose detail rather than to lose entries.  Truncating the JSON text would
+    produce a line that cannot be parsed, and an unparseable line is an entry
+    that vanishes; long values are shortened instead.  A log that has reached
+    its size limit says so once, rather than going quiet.
     """
     path = log_path(session_id)
+    capped = {
+        key: (value[:MAX_LOG_VALUE_CHARS] if isinstance(value, str) else value)
+        for key, value in entry.items()
+    }
     try:
         if os.path.exists(path) and os.path.getsize(path) > MAX_LOG_BYTES:
-            return
-        line = json.dumps(entry, ensure_ascii=True)[:MAX_LOG_LINE_CHARS]
+            if _log_is_marked_full(path):
+                return
+            capped = {"status": LOG_FULL_MARKER, "key": LOG_FULL_MARKER}
+        line = json.dumps(capped, ensure_ascii=True)[:MAX_LOG_LINE_CHARS]
         with open(path, "a", encoding="utf-8") as handle:
             handle.write(line + "\n")
     except OSError:
         return
+
+
+def _log_is_marked_full(path: str) -> bool:
+    """Return True when the log already carries its "log full" marker."""
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return any(
+                json.loads(line or "{}").get("status") == LOG_FULL_MARKER
+                for line in handle
+                if line.strip().startswith("{")
+            )
+    except (OSError, ValueError):
+        return False
 
 
 def already_reported(entries: list, status: str, key: str) -> bool:

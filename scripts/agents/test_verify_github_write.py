@@ -531,11 +531,13 @@ class TestEscape(unittest.TestCase):
 
 
 class TestRenderField(unittest.TestCase):
-    def test_output_is_bounded(self):
-        regions = [vgw.Region(0, "a" * 5000, "b" * 5000)]
-        rendered = vgw.render_field("body", regions, 0)
-        self.assertLess(len(rendered), vgw.MAX_CHARS_PER_FIELD * 3)
-        self.assertIn("more characters", rendered)
+    def test_output_is_bounded_across_both_sides_together(self):
+        for count in (1, vgw.MAX_REGIONS_PER_FIELD):
+            regions = [vgw.Region(index, "a" * 5000, "b" * 5000) for index in range(count)]
+            rendered = vgw.render_field("body", regions, 0)
+            delta_characters = sum(len(part) for part in re.findall(r"(?<=: )[ab]+", rendered))
+            self.assertLessEqual(delta_characters, vgw.MAX_CHARS_PER_FIELD)
+            self.assertIn("more characters", rendered)
 
     def test_omitted_regions_are_counted_in_the_output(self):
         rendered = vgw.render_field("body", [vgw.Region(0, "x", "y")], 4)
@@ -590,10 +592,26 @@ class TestLog(unittest.TestCase):
     def test_missing_log_reads_as_empty(self):
         self.assertEqual(vgw.read_log("never-written"), [])
 
-    def test_lines_are_capped(self):
+    def test_a_long_value_is_shortened_and_the_entry_survives(self):
+        # Truncating the JSON text instead would produce a line that cannot be
+        # parsed, and an unparseable line is an entry that vanishes from the
+        # one artifact that answers "did the check actually run".
         vgw.append_log("s1", {"status": "clean", "key": "k" * 10000})
         with open(vgw.log_path("s1"), encoding="utf-8") as handle:
             self.assertLessEqual(len(handle.readline()), vgw.MAX_LOG_LINE_CHARS + 1)
+        entries = vgw.read_log("s1")
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["status"], "clean")
+        self.assertEqual(len(entries[0]["key"]), vgw.MAX_LOG_VALUE_CHARS)
+
+    def test_a_full_log_says_so_once_instead_of_going_quiet(self):
+        path = vgw.log_path("s1")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("x" * (vgw.MAX_LOG_BYTES + 1) + "\n")
+        vgw.append_log("s1", {"status": "clean", "key": "a"})
+        vgw.append_log("s1", {"status": "clean", "key": "b"})
+        entries = vgw.read_log("s1")
+        self.assertEqual([entry["status"] for entry in entries], [vgw.LOG_FULL_MARKER])
 
     def test_already_reported_matches_on_status_and_key(self):
         entries = [{"status": "finding", "key": "url|removal"}]
