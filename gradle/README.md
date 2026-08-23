@@ -152,10 +152,17 @@ Adding `workflow_dispatch` (#878) is the intended fix for that dead end.
 
 > [!WARNING]
 > An agent cannot post the `@dependabot` rebase command, or any other `@` mention.
-> Agent-posted GitHub text is sanitized so that mentions are broken, silently and with no error reported anywhere.
-> See `.claude/rules/github-mention-sanitization.md` for the rule, the evidence behind it, and how to check whether it still holds.
+> Text an agent posts to GitHub is passed through mention sanitization before it is stored, which injects `U+00B7` (middle dot) characters into anything shaped like a mention.
+> The stored text looks right at a glance, because a middle dot is easy to miss, and nothing reports an error at either end.
+> A dotted mention reaches no bot command surface and notifies nobody, so `@dependabot` receives nothing and does nothing.
+> This has been observed on issue bodies, issue comments, and pull request bodies, authored both as `claude[bot]` and as the repository owner, so it is not specific to one identity or one posting path.
+> Every attempt is sanitized the same way, so re-posting a failed mention verbatim gets the same result.
+> Content committed through git is unaffected; only text posted through the API is altered.
 > #874's [comment 5260994286](https://github.com/aunger/gallery-button-for-pixel-camera/pull/874#issuecomment-5260994286) is the worked example, and it cost about eight hours before anyone noticed it had not worked.
-> Re-run the regen workflow run instead, or ask a human to post the command.
+> Re-run the regen workflow run instead, or ask a human to post the command and say plainly why you cannot.
+>
+> The `PostToolUse` hook `.claude/hooks/post-tool-use-github-readback.sh` reads every GitHub write back and reports the difference, so an attempt made anyway is reported rather than assumed to have worked (issue #909).
+> That is also how to check whether this behavior still holds: post the mention, and read what the hook says.
 
 ## `wrapper/gradle-wrapper.properties` -- distribution pin
 
