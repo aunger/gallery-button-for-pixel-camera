@@ -18,6 +18,8 @@
 #   - At most one top-level `permissions:` key, at column 0. Its position
 #     relative to `jobs:` does not matter.
 #   - Job names that are plain scalars, matched literally, not as patterns.
+#     A job header may carry a trailing `# comment`; anything else after the
+#     colon makes the line a key with a value rather than a job header.
 #
 # A file that breaks an assumption fails loudly (a block comes back empty, and
 # the caller reports its own check as failed) rather than passing vacuously.
@@ -44,6 +46,20 @@
 # program's own `$0` alone.
 _WORKFLOW_YAML_AWK='
     function indent_of(s,   n) { n = match(s, /[^ ]/); return n == 0 ? -1 : n - 1 }
+
+    # The job that a line of the `jobs:` mapping declares, or "" if the line
+    # declares none. A job header is a key with no value of its own; a
+    # trailing comment is not a value, so `detect:  # reads the other run`
+    # names `detect` rather than naming nothing. Getting that wrong is the one
+    # way this library could go quiet instead of loud: a job nobody asks for
+    # by name that no reader can see is simply not audited (issue #920).
+    function job_name_of(line,   name) {
+        if (line !~ /^[ \t]*[^ \t#:]+:[ \t]*(#.*)?$/) return ""
+        name = line
+        sub(/^[ \t]+/, "", name)
+        sub(/:[ \t]*(#.*)?$/, "", name)
+        return name
+    }
 '
 
 # Print the block nested under the first `<key>:` line on stdin, plus that
@@ -81,11 +97,9 @@ workflow_job_names() {
     workflow_jobs_section "$1" | awk "$_WORKFLOW_YAML_AWK"'
         /^[ \t]*$/ || /^[ \t]*#/ { next }
         !base_set { base = indent_of($0); base_set = 1 }
-        indent_of($0) == base && /:[ \t]*$/ {
-            name = $0
-            sub(/^ +/, "", name)
-            sub(/:[ \t]*$/, "", name)
-            print name
+        indent_of($0) == base {
+            name = job_name_of($0)
+            if (name != "") print name
         }
     '
 }
@@ -98,10 +112,8 @@ workflow_job_block() {
         /^[ \t]*$/ || /^[ \t]*#/ { if (in_job) print; next }
         !base_set { base = indent_of($0); base_set = 1 }
         indent_of($0) == base {
-            name = $0
-            sub(/^ +/, "", name)
-            sub(/:[ \t]*$/, "", name)
-            in_job = (name == job)
+            name = job_name_of($0)
+            in_job = (name != "" && name == job)
             next
         }
         in_job
