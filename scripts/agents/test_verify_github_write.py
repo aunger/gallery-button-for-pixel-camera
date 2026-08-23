@@ -144,6 +144,40 @@ class TestLocate(unittest.TestCase):
         )
         self.assertEqual(target.api_url, "https://api.github.com/repos/o/r/pulls/8")
 
+    def test_create_pull_request_falls_back_to_the_number_in_the_result_url(self):
+        # The shape the GitHub MCP server actually returned when this checker's
+        # own pull request was opened: an id, a url, and no number.  The id is
+        # the pull request's database id, not the number REST addresses it by.
+        target = vgw.locate(
+            "mcp__github__create_pull_request",
+            {
+                "owner": "aunger",
+                "repo": "gb",
+                "title": "t",
+                "body": "b",
+                "head": "h",
+                "base": "main",
+            },
+            {"id": "4340393530", "url": "https://github.com/aunger/gb/pull/951"},
+        )
+        self.assertEqual(target.api_url, "https://api.github.com/repos/aunger/gb/pulls/951")
+
+    def test_issue_create_falls_back_to_the_number_in_the_result_url(self):
+        target = vgw.locate(
+            "mcp__github__issue_write",
+            {"method": "create", "owner": "o", "repo": "r", "title": "t", "body": "b"},
+            {"id": "1", "url": "https://github.com/o/r/issues/77"},
+        )
+        self.assertEqual(target.api_url, "https://api.github.com/repos/o/r/issues/77")
+
+    def test_a_result_url_without_a_number_is_still_unverifiable(self):
+        with self.assertRaises(vgw.Unverifiable):
+            vgw.locate(
+                "mcp__github__create_pull_request",
+                {"owner": "o", "repo": "r", "title": "t", "body": "b"},
+                {"id": "1", "url": "https://github.com/o/r"},
+            )
+
     def test_update_pull_request(self):
         target = vgw.locate(
             "mcp__github__update_pull_request",

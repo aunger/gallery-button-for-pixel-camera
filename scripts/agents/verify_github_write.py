@@ -149,6 +149,29 @@ def _response_object(tool_response: object) -> dict:
     return {}
 
 
+# A created object's number is not always a field of the result.  The GitHub
+# MCP server answers `create_pull_request` with an `id` and a `url` and no
+# `number` at all, where the `id` is the pull request's database id rather than
+# the number the REST API addresses it by, so the number has to come out of the
+# URL.  Observed, not assumed: this is what the tool returned when this
+# checker's own pull request was opened.
+_URL_NUMBER_RE = re.compile(r"/(?:pull|pulls|issues)/(\d+)")
+
+
+def _number_from_response(response: dict) -> object:
+    """Return the issue or pull request number carried by an MCP result, if any."""
+    number = response.get("number")
+    if number:
+        return number
+    for key in ("html_url", "url"):
+        value = response.get(key)
+        if isinstance(value, str):
+            match = _URL_NUMBER_RE.search(value)
+            if match:
+                return match.group(1)
+    return None
+
+
 def _require(value: object, what: str) -> str:
     """Return *value* as a string, or raise Unverifiable naming what is missing."""
     if value in (None, ""):
@@ -164,7 +187,7 @@ def _repo(tool_input: dict) -> str:
 
 def _locate_issue_write(tool_input: dict, response: dict) -> Target:
     repo = _repo(tool_input)
-    number = tool_input.get("issue_number") or response.get("number")
+    number = tool_input.get("issue_number") or _number_from_response(response)
     number = _require(number, "issue number")
     return Target(f"{API_ROOT}/repos/{repo}/issues/{number}", f"issue {repo}#{number}")
 
@@ -180,13 +203,13 @@ def _locate_issue_comment(tool_input: dict, response: dict) -> Target:
 
 def _locate_create_pull_request(tool_input: dict, response: dict) -> Target:
     repo = _repo(tool_input)
-    number = _require(response.get("number"), "pull request number")
+    number = _require(_number_from_response(response), "pull request number")
     return Target(f"{API_ROOT}/repos/{repo}/pulls/{number}", f"pull request {repo}#{number}")
 
 
 def _locate_update_pull_request(tool_input: dict, response: dict) -> Target:
     repo = _repo(tool_input)
-    number = tool_input.get("pullNumber") or response.get("number")
+    number = tool_input.get("pullNumber") or _number_from_response(response)
     number = _require(number, "pull request number")
     return Target(f"{API_ROOT}/repos/{repo}/pulls/{number}", f"pull request {repo}#{number}")
 
