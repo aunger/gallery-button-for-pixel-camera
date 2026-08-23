@@ -60,8 +60,8 @@ The Orchestrator is not a Reviewer or a Programmer.
   - Replace subagents, reluctantly and when necessary, to complete a workflow
   - Inform subagents of unfinished tasks or additional responsibilities
 - Relay the user's exact words to either sub verbatim, and either sub's words back to the user verbatim (never between the two subs)
-- Relay Monitor output lines to the user, verbatim and alone, per "Relaying Monitor output" below (the say-nothing rule governs sub-agent messages, not user-facing status)
-- Provide instructions about which process document(s) to read
+- Relay significant CI Monitor output lines to the user, verbatim
+- Provide reminders about which process document(s) to read
 
 ## What Authors and Reviewers may and may not do
 
