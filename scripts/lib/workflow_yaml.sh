@@ -32,6 +32,20 @@
 # that size and CI run 31978297339 reported "statuses: write" missing from a
 # job that declares it.
 
+# awk helper functions shared by the readers below, prepended to their program
+# text rather than copied into each of them:
+#
+#     awk "$_WORKFLOW_YAML_AWK"'
+#         { ... }
+#     '
+#
+# The variable is expanded in double quotes and the program body stays in its
+# own single-quoted string, so the shell substitutes the helpers and leaves the
+# program's own `$0` alone.
+_WORKFLOW_YAML_AWK='
+    function indent_of(s,   n) { n = match(s, /[^ ]/); return n == 0 ? -1 : n - 1 }
+'
+
 # Print the block nested under the first `<key>:` line on stdin, plus that
 # line's own inline value if it has one, so both
 #
@@ -41,8 +55,7 @@
 # come back as the key's content. The block ends at the first non-blank,
 # non-comment line indented no deeper than the key itself.
 yaml_sub_block() {
-    awk -v key="$1" '
-        function indent_of(s,   n) { n = match(s, /[^ ]/); return n == 0 ? -1 : n - 1 }
+    awk -v key="$1" "$_WORKFLOW_YAML_AWK"'
         !found && $0 ~ "^ *" key ":" {
             found = 1
             key_indent = indent_of($0)
@@ -65,8 +78,7 @@ workflow_jobs_section() { yaml_sub_block jobs < "$1"; }
 
 # Print the names of a workflow file's top-level jobs, one per line.
 workflow_job_names() {
-    workflow_jobs_section "$1" | awk '
-        function indent_of(s,   n) { n = match(s, /[^ ]/); return n == 0 ? -1 : n - 1 }
+    workflow_jobs_section "$1" | awk "$_WORKFLOW_YAML_AWK"'
         /^[ \t]*$/ || /^[ \t]*#/ { next }
         !base_set { base = indent_of($0); base_set = 1 }
         indent_of($0) == base && /:[ \t]*$/ {
@@ -82,8 +94,7 @@ workflow_job_names() {
 # The name is compared literally, so a job called `push` cannot be confused
 # with some deeper key that happens to be spelled the same way.
 workflow_job_block() {
-    workflow_jobs_section "$1" | awk -v job="$2" '
-        function indent_of(s,   n) { n = match(s, /[^ ]/); return n == 0 ? -1 : n - 1 }
+    workflow_jobs_section "$1" | awk -v job="$2" "$_WORKFLOW_YAML_AWK"'
         /^[ \t]*$/ || /^[ \t]*#/ { if (in_job) print; next }
         !base_set { base = indent_of($0); base_set = 1 }
         indent_of($0) == base {
