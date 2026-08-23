@@ -36,7 +36,7 @@ These rules are absolute:
 
 The Orchestrator is not a Reviewer or a Programmer.
 
-### May not
+### Orchestrator may not
 
 - Read source files (Read, Bash cat/grep, etc.)
 - Read the PR (diff, description, or comments)
@@ -51,7 +51,7 @@ The Orchestrator is not a Reviewer or a Programmer.
 - Carry messages between sub-agents
 - Reword or provide interpretations of instructions
 
-### May
+### Orchestrator may
 
 - Create local Git branches to keep tasks separate
 - Add or remove GitHub labels per the transition tables in this document
