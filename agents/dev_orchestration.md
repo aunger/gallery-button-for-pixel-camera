@@ -278,9 +278,11 @@ PR routing (Monitor loop):
   if Reviewer gave `Cannot work` -> escalate to user; stop (do NOT route to a new Author round; leave the PR open for the user to close; the Reviewer's PR comment describes why)
   if Reviewer gave LGTM:
     Orchestrator launches a Monitor tool call running `python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER>` from the repo root (run_in_background: true, timeout_ms: 1800000). Record the task ID returned by the Monitor tool call for use in silentVanish recovery, and clear the silentVanish re-launch flag (this original launch is not a re-launch).
-    Each stdout line arrives as a task-notification event; relay lines per "Relaying Monitor output" above.
-    Act only on the terminal lines Clear, Blocked (including the attributed `Blocked by: <name>` form), or Infra. in_progress lines are not terminal (the script suppresses these unless no other output has been emitted for over 120 seconds).
-    `step "..." -> ...`, `FAIL [...] ...`, `summary`, and per-check summary rows are informational test-result deltas; they do NOT end the loop or start a new Author round.
+    Each stdout line arrives as a task-notification event.
+    Terminal and failure Monitor output lines are always significant and should be relayed to the user (always verbatim).
+    Other Monitor output may be significant depending on context, such as success and status messages from relevant test cases.
+    Aside from relaying significant output, Orchestrator should **act only on the terminal lines** `Clear`, `Blocked` (including the `Blocked by: <name>` form), or `Infra`.
+    Other output, including `step`, `FAIL`, `summary`, `in_progress` keepalives, and per-check information are progress reports; they do NOT end the loop or start a new Author round.
     if Monitor emits `drain poll found no new diagnostic signals` immediately followed by a Blocked or Infra line -> goto undiagnosedTerminal
     (Note: the attributed `Blocked by: <name>` form already names the blocking check in the per-check summary block and the terminal suffix, so the Monitor suppresses the drain flag in that case. The `goto undiagnosedTerminal` branch therefore applies only to a bare `Blocked`/`Infra` line that the Monitor itself flagged as undiagnosed.)
     if Monitor emits a Blocked line where the terminal ends with `[label gate]` (the ` by: ...` suffix names only label-gate checks) -> clear the silentVanish re-launch flag; goto labelGateBlock
