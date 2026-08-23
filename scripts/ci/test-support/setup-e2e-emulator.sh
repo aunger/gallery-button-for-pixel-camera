@@ -147,6 +147,32 @@ echo "==> Disabling animations..."
 # position/pressure (pointer_location), so screen recordings and the live screen make
 # it obvious where and when the tests are tapping (issue #604). Configured here, once
 # for the whole job, rather than per-suite, so every emulator-based E2E run gets it.
+#
+# Neither setting is the source of the window-obscured touch drops the permission-dialog
+# suites re-tap around (issues #581, #925). Issue #930 investigated exactly that and cleared
+# them, so do not disable a deliberate debugging aid chasing that flake. Three independent
+# reasons, any one of which is sufficient:
+#
+#   1. Mechanism. AOSP's DisplayPolicy.enablePointerLocation() adds the readout as a
+#      TYPE_SECURE_SYSTEM_OVERLAY window, and InputMonitor.isTrustedOverlay() lists that type,
+#      so WindowState.isWindowTrustedOverlay() holds for it on its type alone. InputDispatcher's
+#      canBeObscuredBy() returns false for every TRUSTED_OVERLAY window, which drops it out of
+#      both isWindowObscuredAtPointLocked() and isWindowObscuredLocked()--the only two producers
+#      of the FLAG_WINDOW_IS_OBSCURED/FLAG_WINDOW_IS_PARTIALLY_OBSCURED pair that AOSP's
+#      SecureButton filters on. show_touches is not a window at all: inputflinger's
+#      PointerChoreographer draws its spots through a PointerController's sprites, which never
+#      enter the dispatcher's window list. (Sources read at android15-release, this AVD's API 35.)
+#   2. A constant cannot explain an intermittent result. Both settings are written once, here,
+#      and stay on for the rest of the job, so every tap of every suite sees the same overlay.
+#      The drop does not behave that way: over the 25 E2E runs of 22-23 Aug 2026,
+#      PartialAccessPhotoPickerE2ETest logged a re-tap on 6 of them and none on the other 19.
+#      Run 32587090727 makes the point inside a single run: the tap that was dropped and the
+#      identical re-tap 5s later that landed were separated by nothing but time.
+#   3. What does separate the two populations is when the tap went in. Across those same 25 runs
+#      the dropped taps landed sooner after the request than the ones that stuck, a mean 1430ms
+#      against 1735ms (one-sided exact permutation test on the 25 values, p = 0.013). That is
+#      the freshly-created-window condition issue #581 described, and it is a property of the
+#      test's own timing rather than of anything on screen.
 echo "==> Enabling touch visualization (show_touches, pointer_location)..."
 "$ADB" shell settings put system show_touches 1
 "$ADB" shell settings put system pointer_location 1

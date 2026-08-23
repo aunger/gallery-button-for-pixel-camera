@@ -434,6 +434,20 @@ class PartialAccessPhotoPickerE2ETest {
      * the thing you asked for not happening. That is transient by nature, so retrying is the fix
      * that does not depend on identifying which window did the obscuring.
      *
+     * ### One window it was not, and what the drop tracks instead (issue #930)
+     *
+     * The named suspect was the full-screen `pointer_location` readout that
+     * `scripts/ci/test-support/setup-e2e-emulator.sh` turns on for every E2E job, visible across
+     * the top of run 32466889251's failure screenshot. It is not the cause. That script's step 7
+     * carries the full argument; in short, the readout is a trusted overlay that AOSP's
+     * `InputDispatcher` excludes from the obscured-touch computation by type, it is on for every
+     * tap of every run, and the drop is not: 6 of the 25 E2E runs of 22-23 Aug 2026 needed a re-tap
+     * and 19 did not. What did separate those two groups is this loop's own timing. The taps that
+     * were dropped went in sooner after the request than the ones that stuck, a mean 1430ms
+     * against 1735ms (p = 0.013), which is the freshly-created-window condition issue #581
+     * described rather than anything drawn on top of the dialog. So a re-tap in the log is
+     * evidence about when this suite taps, not a reason to turn a debugging aid off.
+     *
      * The old objection to retrying was real, and it is answered by bounding the retries rather
      * than by abandoning them. A re-tap must not land while the picker is launching, because the
      * option's centre on this emulator is (540, 1233) -- inside the grid the picker puts there,
