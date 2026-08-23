@@ -518,9 +518,16 @@ def escape(text: str) -> str:
 
     A middle dot reported literally is a difference the reader cannot see, and
     the whole failure this checker exists for is one that survives review by
-    looking right.  Escaping also makes the delta safe for the agent to quote
-    into a GitHub comment, since nothing in it is left in a form the write path
-    would alter again.
+    looking right.  What escaping buys is that: an invisible or non-ASCII
+    character becomes something a reader can see and a later write cannot alter
+    again without the difference showing.
+
+    It does not make the delta safe to quote into a GitHub comment.  Printable
+    ASCII passes through untouched, deliberately, because the delta has to be
+    readable as the text it came from, so an at-sign token the agent sent is
+    still an at-sign token in the report.  Quoting a delta into a comment can
+    therefore have the evidence altered in the same way the artifact was.
+    Whether that matters depends on what was sent, which only the agent knows.
     """
     out = []
     for char in text:

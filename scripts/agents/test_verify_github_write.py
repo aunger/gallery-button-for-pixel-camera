@@ -561,9 +561,18 @@ class TestAdvice(unittest.TestCase):
         self.assertIn("not constant", advice)
 
     def test_no_advice_carries_a_live_mention_token(self):
-        # The whole report is meant to be safe to quote into a GitHub comment.
+        # The advice strings are this checker's own words, so they can be kept
+        # free of anything a write path would alter.  The delta cannot: it is
+        # the agent's text, quoted back.
         for name, advice in vgw.ADVICE.items():
             self.assertNotRegex(advice, r"@\w", f"{name} advice carries a live mention")
+
+    def test_escaping_does_not_neutralize_a_mention_in_the_delta(self):
+        # Printable ASCII passes through by design, so an at-sign token the
+        # agent sent survives into the report.  Asserted here so the escape()
+        # docstring cannot drift back into promising that the delta is safe to
+        # quote into a GitHub comment.
+        self.assertEqual(vgw.escape("please @dependabot rebase"), "please @dependabot rebase")
 
 
 class TestLog(unittest.TestCase):
