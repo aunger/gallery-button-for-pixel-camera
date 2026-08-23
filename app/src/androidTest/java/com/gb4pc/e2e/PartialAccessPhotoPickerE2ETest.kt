@@ -438,15 +438,21 @@ class PartialAccessPhotoPickerE2ETest {
      *
      * The named suspect was the full-screen `pointer_location` readout that
      * `scripts/ci/test-support/setup-e2e-emulator.sh` turns on for every E2E job, visible across
-     * the top of run 32466889251's failure screenshot. It is not the cause. That script's step 7
-     * carries the full argument; in short, the readout is a trusted overlay that AOSP's
-     * `InputDispatcher` excludes from the obscured-touch computation by type, it is on for every
-     * tap of every run, and the drop is not: 6 of the 25 E2E runs of 22-23 Aug 2026 needed a re-tap
-     * and 19 did not. What did separate those two groups is this loop's own timing. The taps that
-     * were dropped went in sooner after the request than the ones that stuck, a mean 1430ms
-     * against 1735ms (p = 0.013), which is the freshly-created-window condition issue #581
-     * described rather than anything drawn on top of the dialog. So a re-tap in the log is
-     * evidence about when this suite taps, not a reason to turn a debugging aid off.
+     * the top of run 32466889251's failure screenshot. It is not the cause, and what settles that
+     * is the mechanism rather than any statistic: AOSP adds the readout as a
+     * `TYPE_SECURE_SYSTEM_OVERLAY` window, and `InputDispatcher::canBeObscuredBy()` excludes every
+     * trusted overlay from the computation that raises the two flags `SecureButton` filters on,
+     * unconditionally and on type alone. That script's step 7 carries the argument in full.
+     *
+     * A second, much weaker observation is recorded there too, because it is the only signal so
+     * far about what *does* vary. Over the 25 E2E runs of 22-23 Aug 2026, the 6 that logged a
+     * re-tap had tapped the option sooner after the request than the 19 that did not, a mean
+     * 1430ms against 1735ms (p = 0.012). That is a lead, not a finding: n is 6, the two ranges
+     * almost entirely overlap, the comparison is observational, and because this loop taps as
+     * soon as the option is findable, a shorter elapsed may mean a younger dialog window at tap
+     * time (issue #581's condition) or merely a dialog that appeared sooner. Either way, a re-tap
+     * in the log is evidence about this suite's own timing rather than a reason to turn a
+     * debugging aid off.
      *
      * The old objection to retrying was real, and it is answered by bounding the retries rather
      * than by abandoning them. A re-tap must not land while the picker is launching, because the
