@@ -428,7 +428,7 @@ Orchestrator-specific notes:
 
 - The 30-minute escalation threshold is enforced by `timeout_ms: 1800000` on the Monitor call--no elapsed-time tracking needed.
 - `step`/`FAIL`/`SKIP`/`PASS` lines, `summary` header lines, and per-check summary rows are progress reports, not terminal outcomes.
-- The `Blocked by: <name>` attributed form (issue #516) names which check-run held CI. A terminal ending with `[label gate]` means the blocking-label gate is holding the merge and nothing else is: no code failed and no test failed. That gate exists to hold while process state is outstanding, so red here reports the cycle still running rather than anything broken. It does still mean the PR cannot merge yet, and `labelGateBlock` is where the Orchestrator answers it.
+- The `Blocked by: <name>` attributed form (issue #516) names which check-run held CI. A terminal ending with `[label gate]` means the blocking-label gate is holding the merge and nothing else is: no code failed and no test failed. For the cycle that is a good outcome rather than a setback, since every real check passed. Do not read the held merge as a problem to solve: merging is not the Orchestrator's goal, and holding the merge while the Orchestrator works is exactly what the blocking labels are for.
 - The Monitor loop replaces the patterns of subscribing to PR events and sleep+poll, which are often unreliable.
 
 ## Delegation rules
