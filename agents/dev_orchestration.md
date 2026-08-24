@@ -303,6 +303,12 @@ monitorLoop:
   if Monitor emits a Clear line -> goto surfaceBeforeMergingRequirements (entered on the Clear path)
 
 labelGateBlock:
+  // Reached on a `[label gate]` terminal, which is the gate working, not CI breaking. The
+  // blocking labels are process state, and holding the merge while that state is
+  // outstanding is the whole point of the gate; red here says the cycle has not finished
+  // yet. So this branch retires the state the cycle no longer needs and re-runs, rather
+  // than treating the PR as broken.
+  //
   // Step 8a's original design (issue #516). `orchestrating` is the only blocking label
   // expected here: `changes requested`/`changes done` clear when the Reviewer returns, and
   // `verification needed` isn't applied until `surfaceBeforeMergingRequirements`, downstream
@@ -310,7 +316,7 @@ labelGateBlock:
   // state, not bookkeeping. Removing `orchestrating` early is fine; nothing in this document
   // treats it as a concurrency guard.
   //
-  // The gate can also fail while this PR carries no blocking label at all (issue #833), for
+  // The gate can also be red while this PR carries no blocking label at all (issue #833), for
   // more than one reason. A check run is stored against a head commit rather than against a
   // pull request, so the check asks whether *any* open PR at this commit is blocked; the
   // check fails closed when it cannot be evaluated at all; and its two readings of the labels
@@ -328,7 +334,7 @@ labelGateBlock:
     | --------------- |
     | `orchestrating` |
 
-    Inform the user that a process-label gate blocked the merge (code is review-approved) and that the Orchestrator removed the blocking label automatically.
+    Inform the user that the blocking-label gate held the merge as it is meant to, that no code or test failed and the code is review-approved, and that the Orchestrator removed the label the cycle no longer needs.
     Launch the Monitor; goto monitorLoop
   If no blocking label is applied to this PR at all: the gate is not reporting this PR's labels as they stand now, and the job log for the "No blocking labels" check says what it is reporting instead (see `scripts/ci/labels/check_blocking_labels.py`). Read the log before relaying, because the causes have different remedies. In every case, including a log that matches none of the shapes below: do not remove any label; escalate to the user; stop.
 
@@ -422,7 +428,7 @@ Orchestrator-specific notes:
 
 - The 30-minute escalation threshold is enforced by `timeout_ms: 1800000` on the Monitor call--no elapsed-time tracking needed.
 - `step`/`FAIL`/`SKIP`/`PASS` lines, `summary` header lines, and per-check summary rows are progress reports, not terminal outcomes.
-- The `Blocked by: <name>` attributed form (issue #516) names which check-run blocked CI. A terminal ending with `[label gate]` means only a process-label gate (not a code/test failure) is blocking, and can be considered a success.
+- The `Blocked by: <name>` attributed form (issue #516) names which check-run held CI. A terminal ending with `[label gate]` means the blocking-label gate is holding the merge and nothing else is: no code failed and no test failed. That gate exists to hold while process state is outstanding, so red here reports the cycle still running rather than anything broken. It does still mean the PR cannot merge yet, and `labelGateBlock` is where the Orchestrator answers it.
 - The Monitor loop replaces the patterns of subscribing to PR events and sleep+poll, which are often unreliable.
 
 ## Delegation rules
