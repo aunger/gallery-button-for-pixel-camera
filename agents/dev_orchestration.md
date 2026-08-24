@@ -374,11 +374,8 @@ undiagnosedTerminal:
   Relay the flagged terminal line to the user. Then, in a message of the Orchestrator's own, tell the user that a one-time recheck follows.
   Wait 5 minutes without a sleep loop: issue a Bash tool call running `sleep 300` (run_in_background: true), and treat its completion notification as the wake-up.
   Launch the Monitor.
-  // With that one check suppressed, the re-run needs no routing of its own: its lines
-  // reach monitorLoop like any other pass's. A Clear, an attributed Blocked, or any
-  // terminal of a different shape is therefore taken as authoritative, and a re-run that
-  // merely repeats the flagged Blocked/Infra falls through to the ordinary
-  // Blocked -> newAuthor and Infra -> escalate routing, without a further re-run.
+  // With that check suppressed the re-run needs no routing of its own: a repeat of the
+  // flagged terminal routes as an ordinary Blocked or Infra, and anything else as itself.
   goto monitorLoop (do not re-apply the `drain poll found no new diagnostic signals` -> goto undiagnosedTerminal check on this pass, so the recheck gets at most one detour)
 
 silentVanish:
