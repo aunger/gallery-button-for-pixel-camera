@@ -276,23 +276,27 @@ PR routing (Monitor loop):
 ```text
   if Reviewer requested changes -> goto newAuthor
   if Reviewer gave `Cannot work` -> escalate to user; stop (do NOT route to a new Author round; leave the PR open for the user to close; the Reviewer's PR comment describes why)
-  if Reviewer gave LGTM:
-    Orchestrator launches a Monitor tool call running `python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER>` from the repo root (run_in_background: true, timeout_ms: 1800000). Record the task ID returned by the Monitor tool call for use in silentVanish recovery, and clear the silentVanish re-launch flag (this original launch is not a re-launch).
-    Each stdout line arrives as a task-notification event.
-    Terminal and failure Monitor output lines are always significant and should be relayed to the user (always verbatim).
-    Other Monitor output may be significant depending on context, such as success and status messages from relevant test cases.
-    Aside from relaying significant output, Orchestrator should **act only on the terminal lines** `Clear`, `Blocked` (including the `Blocked by: <name>` form), or `Infra`.
-    Other output, including `step`, `FAIL`, `summary`, `in_progress` keepalives, and per-check information are progress reports; they do NOT end the loop or start a new Author round.
-    if Monitor emits `drain poll found no new diagnostic signals` immediately followed by a Blocked or Infra line -> goto undiagnosedTerminal
-    (Note: the attributed `Blocked by: <name>` form already names the blocking check in the per-check summary block and the terminal suffix, so the Monitor suppresses the drain flag in that case. The `goto undiagnosedTerminal` branch therefore applies only to a bare `Blocked`/`Infra` line that the Monitor itself flagged as undiagnosed.)
-    if Monitor emits a Blocked line where the terminal ends with `[label gate]` (the ` by: ...` suffix names only label-gate checks) -> clear the silentVanish re-launch flag; goto labelGateBlock
-    if Monitor emits a Blocked line  -> clear the silentVanish re-launch flag; goto newAuthor
-    if Monitor emits an Infra line   -> clear the silentVanish re-launch flag; escalate to user; stop
-    if Monitor times out (30 min)    -> escalate to user; stop
-    if a user message wakes the session before Monitor delivers any terminal line -> goto silentVanish
-    if Monitor emits a Clear line:
-      clear the silentVanish re-launch flag
-      goto surfaceBeforeMergingRequirements (entered on the Clear path)
+  if Reviewer gave LGTM -> goto monitorLoop (launch a fresh invocation; clear the silentVanish re-launch flag, since this original launch is not a re-launch)
+
+monitorLoop:
+  // Reached only by `goto monitorLoop (...)`. The arriving goto states which Monitor
+  // invocation this pass runs on, and what it does to the silentVanish re-launch flag.
+  Unless the arriving goto names an invocation that is already running, launch a Monitor tool call running `python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER>` from the repo root (run_in_background: true, timeout_ms: 1800000). Record the task ID returned by the Monitor tool call for use in silentVanish recovery.
+  Each stdout line arrives as a task-notification event.
+  Terminal and failure Monitor output lines are always significant and should be relayed to the user (always verbatim).
+  Other Monitor output may be significant depending on context, such as success and status messages from relevant test cases.
+  Aside from relaying significant output, Orchestrator should **act only on the terminal lines** `Clear`, `Blocked` (including the `Blocked by: <name>` form), or `Infra`.
+  Other output, including `step`, `FAIL`, `summary`, `in_progress` keepalives, and per-check information are progress reports; they do NOT end the loop or start a new Author round.
+  if Monitor emits `drain poll found no new diagnostic signals` immediately followed by a Blocked or Infra line -> goto undiagnosedTerminal
+  (Note: the attributed `Blocked by: <name>` form already names the blocking check in the per-check summary block and the terminal suffix, so the Monitor suppresses the drain flag in that case. The `goto undiagnosedTerminal` branch therefore applies only to a bare `Blocked`/`Infra` line that the Monitor itself flagged as undiagnosed.)
+  if Monitor emits a Blocked line where the terminal ends with `[label gate]` (the ` by: ...` suffix names only label-gate checks) -> clear the silentVanish re-launch flag; goto labelGateBlock
+  if Monitor emits a Blocked line  -> clear the silentVanish re-launch flag; goto newAuthor
+  if Monitor emits an Infra line   -> clear the silentVanish re-launch flag; escalate to user; stop
+  if Monitor times out (30 min)    -> escalate to user; stop
+  if a user message wakes the session before Monitor delivers any terminal line -> goto silentVanish
+  if Monitor emits a Clear line:
+    clear the silentVanish re-launch flag
+    goto surfaceBeforeMergingRequirements (entered on the Clear path)
 
 labelGateBlock:
   // Step 8a's original design (issue #516). `orchestrating` is the only blocking label
@@ -321,8 +325,7 @@ labelGateBlock:
     | `orchestrating` |
 
     Inform the user that a process-label gate blocked the merge (code is review-approved) and that the Orchestrator removed the blocking label automatically.
-    Re-launch the Monitor tool call (same command as the original, fresh invocation).
-    Resume the routing above from "Act only on the terminal lines..." with the fresh invocation.
+    goto monitorLoop (launch a fresh invocation, same command as the original; leave the silentVanish re-launch flag clear)
   If no blocking label is applied to this PR at all: the gate is not reporting this PR's labels as they stand now, and the job log for the "No blocking labels" check says what it is reporting instead (see `scripts/ci/labels/check_blocking_labels.py`). Read the log before relaying, because the causes have different remedies. In every case, including a log that matches none of the shapes below: do not remove any label; escalate to the user; stop.
 
     - The log names another PR and its label (`ERROR: PR #<n>, which shares this head commit, has a blocking label: <label>`). A check run is stored against the head commit, so an open PR sharing this PR's head commit blocks it too. Do not touch that PR; relay its number and label, since clearing it is the user's call.
@@ -369,7 +372,7 @@ undiagnosedTerminal:
   Re-launch the Monitor tool call (same command as the original, fresh invocation).
   Relay its lines as usual, EXCEPT do not re-apply the "drain poll found no new diagnostic signals" -> goto undiagnosedTerminal check this one time; this recheck pass gets at most one undiagnosedTerminal detour.
   if the re-run emits any `step "..." -> ...` or `FAIL/SKIP/PASS [...] ...` line, a Clear line, or a terminal that is not the same flagged-undiagnosed shape:
-    -> treat the re-run's outcome as authoritative; resume the routing above from "Act only on the terminal lines..." using the re-run's lines (still without re-applying the undiagnosedTerminal check)
+    -> treat the re-run's outcome as authoritative; goto monitorLoop (the re-launch above is this pass's invocation, already running; still without re-applying the undiagnosedTerminal check)
   else (the re-run repeats `drain poll found no new diagnostic signals` followed by the same Blocked/Infra terminal):
     -> proceed with the original terminal's routing (Blocked -> newAuthor; Infra -> escalate to user, stop) without a further re-run
 
@@ -381,10 +384,9 @@ silentVanish:
   // a Monitor invocation is still nominally pending, check whether the task
   // is still alive using TaskOutput (passing the Monitor's task ID).
   // If TaskOutput returns "No task found with ID: <id>", the task record has
-  // been dropped--a silent vanish. Re-launch the Monitor once immediately
-  // and resume the routing above from "Act only on the terminal lines..."
-  // with this fresh invocation (applying all normal checks, including
-  // undiagnosedTerminal if warranted).
+  // been dropped--a silent vanish. Go to monitorLoop once immediately with a
+  // fresh invocation, applying all normal checks, including undiagnosedTerminal
+  // if warranted.
   // If that re-launched invocation also vanishes silently (a second user
   // message arrives before any terminal line), escalate to the user; stop.
   // To make that double-vanish escalation reachable: the routing loop sends
@@ -406,8 +408,7 @@ silentVanish:
       // A re-launched Monitor vanished too; one recovery attempt has already been spent.
       -> escalate to user; stop
     Inform the user that the Monitor task vanished without a terminal notification and is being re-launched.
-    Re-launch the Monitor tool call (same command as the original, fresh invocation); set the silentVanish re-launch flag for this fresh invocation.
-    Resume the routing above from "Act only on the terminal lines..." with the fresh invocation.
+    goto monitorLoop (launch a fresh invocation, same command as the original; set the silentVanish re-launch flag for it)
   else (the Monitor task is still registered--a user message is not proof of a vanish):
     Relay to the user that CI is still running and the Monitor is alive; then continue waiting for the Monitor's terminal line; do not re-launch.
 ```
