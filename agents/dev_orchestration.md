@@ -370,11 +370,12 @@ undiagnosedTerminal:
   Relay the flagged terminal line to the user. Then, in a message of the Orchestrator's own, tell the user that a one-time recheck follows.
   Wait 5 minutes without a sleep loop: issue a Bash tool call running `sleep 300` (run_in_background: true), and treat its completion notification as the wake-up.
   Re-launch the Monitor tool call (same command as the original, fresh invocation).
-  Relay its lines as usual, EXCEPT do not re-apply the "drain poll found no new diagnostic signals" -> goto undiagnosedTerminal check this one time; this recheck pass gets at most one undiagnosedTerminal detour.
-  if the re-run emits any `step "..." -> ...` or `FAIL/SKIP/PASS [...] ...` line, a Clear line, or a terminal that is not the same flagged-undiagnosed shape:
-    -> treat the re-run's outcome as authoritative; goto monitorLoop (the re-launch above is this pass's invocation, already running; still without re-applying the undiagnosedTerminal check)
-  else (the re-run repeats `drain poll found no new diagnostic signals` followed by the same Blocked/Infra terminal):
-    -> proceed with the original terminal's routing (Blocked -> newAuthor; Infra -> escalate to user, stop) without a further re-run
+  // With that one check suppressed, the re-run needs no routing of its own: its lines
+  // reach monitorLoop like any other pass's. A Clear, an attributed Blocked, or any
+  // terminal of a different shape is therefore taken as authoritative, and a re-run that
+  // merely repeats the flagged Blocked/Infra falls through to the ordinary
+  // Blocked -> newAuthor and Infra -> escalate routing, without a further re-run.
+  goto monitorLoop (the re-launch above is this pass's invocation, already running; do not re-apply the `drain poll found no new diagnostic signals` -> goto undiagnosedTerminal check on this pass, so the recheck gets at most one detour)
 
 silentVanish:
   // Issue #411: the Monitor task can silently vanish--the process exits
