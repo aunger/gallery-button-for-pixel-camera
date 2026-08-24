@@ -276,7 +276,7 @@ PR routing (Monitor loop):
 ```text
   if Reviewer requested changes -> goto newAuthor
   if Reviewer gave `Cannot work` -> escalate to user; stop (do NOT route to a new Author round; leave the PR open for the user to close; the Reviewer's PR comment describes why)
-  if Reviewer gave LGTM -> launch the Monitor; goto monitorLoop (clear the silentVanish re-launch flag, since this original launch is not a re-launch)
+  if Reviewer gave LGTM -> launch the Monitor; goto monitorLoop
 
 monitorLoop:
   // Reached only by `goto monitorLoop (...)`, from a site that has just launched the
@@ -284,8 +284,10 @@ monitorLoop:
   // `python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER>` from the repo root
   // (run_in_background: true, timeout_ms: 1800000), and to record the task ID it returns
   // for use in silentVanish recovery. Every site that enters this block launches first.
-  // The arriving goto states what this pass does to the silentVanish re-launch flag, and
-  // names any check it suppresses for this pass.
+  // Launching also clears the silentVanish re-launch flag, since the invocation a launch
+  // creates is not a recovery re-launch; silentVanish is the one site that sets it, and
+  // says so where it launches. The arriving goto names any check it suppresses for this
+  // pass.
   Each stdout line arrives as a task-notification event.
   Terminal and failure Monitor output lines are always significant and should be relayed to the user (always verbatim).
   Other Monitor output may be significant depending on context, such as success and status messages from relevant test cases.
@@ -293,14 +295,12 @@ monitorLoop:
   Other output, including `step`, `FAIL`, `summary`, `in_progress` keepalives, and per-check information are progress reports; they do NOT end the loop or start a new Author round.
   if Monitor emits `drain poll found no new diagnostic signals` immediately followed by a Blocked or Infra line -> goto undiagnosedTerminal
   (Note: the attributed `Blocked by: <name>` form already names the blocking check in the per-check summary block and the terminal suffix, so the Monitor suppresses the drain flag in that case. The `goto undiagnosedTerminal` branch therefore applies only to a bare `Blocked`/`Infra` line that the Monitor itself flagged as undiagnosed.)
-  if Monitor emits a Blocked line where the terminal ends with `[label gate]` (the ` by: ...` suffix names only label-gate checks) -> clear the silentVanish re-launch flag; goto labelGateBlock
-  if Monitor emits a Blocked line  -> clear the silentVanish re-launch flag; goto newAuthor
-  if Monitor emits an Infra line   -> clear the silentVanish re-launch flag; escalate to user; stop
+  if Monitor emits a Blocked line where the terminal ends with `[label gate]` (the ` by: ...` suffix names only label-gate checks) -> goto labelGateBlock
+  if Monitor emits a Blocked line  -> goto newAuthor
+  if Monitor emits an Infra line   -> escalate to user; stop
   if Monitor times out (30 min)    -> escalate to user; stop
   if a user message wakes the session before Monitor delivers any terminal line -> goto silentVanish
-  if Monitor emits a Clear line:
-    clear the silentVanish re-launch flag
-    goto surfaceBeforeMergingRequirements (entered on the Clear path)
+  if Monitor emits a Clear line -> goto surfaceBeforeMergingRequirements (entered on the Clear path)
 
 labelGateBlock:
   // Step 8a's original design (issue #516). `orchestrating` is the only blocking label
@@ -329,7 +329,7 @@ labelGateBlock:
     | `orchestrating` |
 
     Inform the user that a process-label gate blocked the merge (code is review-approved) and that the Orchestrator removed the blocking label automatically.
-    Launch the Monitor; goto monitorLoop (leave the silentVanish re-launch flag clear)
+    Launch the Monitor; goto monitorLoop
   If no blocking label is applied to this PR at all: the gate is not reporting this PR's labels as they stand now, and the job log for the "No blocking labels" check says what it is reporting instead (see `scripts/ci/labels/check_blocking_labels.py`). Read the log before relaying, because the causes have different remedies. In every case, including a log that matches none of the shapes below: do not remove any label; escalate to the user; stop.
 
     - The log names another PR and its label (`ERROR: PR #<n>, which shares this head commit, has a blocking label: <label>`). A check run is stored against the head commit, so an open PR sharing this PR's head commit blocks it too. Do not touch that PR; relay its number and label, since clearing it is the user's call.
@@ -394,9 +394,8 @@ silentVanish:
   // every user-message wake-up here via "goto silentVanish", so the second
   // vanish re-enters this block from the top rather than reaching a nested
   // instruction after the re-launch. Track whether the current Monitor
-  // invocation is itself a silentVanish re-launch (set the flag when
-  // re-launching below; clear it on the original launch and whenever a Monitor
-  // invocation delivers any terminal line). On a confirmed vanish, the
+  // invocation is itself a silentVanish re-launch (every launch clears the flag;
+  // the re-launch below is the one that sets it). On a confirmed vanish, the
   // re-launch flag decides whether to re-launch (first vanish) or escalate
   // (second vanish); a still-alive task never escalates.
   // Note: the user message that triggered this branch is treated as a wake-up event only.
@@ -409,7 +408,8 @@ silentVanish:
       // A re-launched Monitor vanished too; one recovery attempt has already been spent.
       -> escalate to user; stop
     Inform the user that the Monitor task vanished without a terminal notification and is being re-launched.
-    Launch the Monitor; goto monitorLoop (set the silentVanish re-launch flag for it)
+    Launch the Monitor. Set the silentVanish re-launch flag for the invocation it creates, overriding the clear a launch otherwise performs.
+    goto monitorLoop
   else (the Monitor task is still registered--a user message is not proof of a vanish):
     Relay to the user that CI is still running and the Monitor is alive; then continue waiting for the Monitor's terminal line; do not re-launch.
 ```
