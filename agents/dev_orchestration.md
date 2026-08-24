@@ -303,18 +303,17 @@ monitorLoop:
   if Monitor emits a Clear line -> goto surfaceBeforeMergingRequirements (entered on the Clear path)
 
 labelGateBlock:
-  // Reached on a `[label gate]` terminal, which is the gate working, not CI breaking. The
-  // blocking labels are process state, and holding the merge while that state is
-  // outstanding is the whole point of the gate; red here says the cycle has not finished
-  // yet. So this branch retires the state the cycle no longer needs and re-runs, rather
-  // than treating the PR as broken.
+  // Reached on a `[label gate]` terminal, which is the gate working, not CI breaking. Every
+  // real check passed, and the only thing holding the merge is a blocking label. So this
+  // branch removes no label and re-launches nothing: merging is not the Orchestrator's goal,
+  // and clearing a label to turn the gate green would circumvent the one mechanism that keeps
+  // an agent from taking the merge onus on. Issue #516's Step 8a did remove `orchestrating`
+  // here and re-launch to watch CI go green; that is the part retired. The labels come off at
+  // the end of the cycle, in "Concluding PR orchestration".
   //
-  // Step 8a's original design (issue #516). `orchestrating` is the only blocking label
-  // expected here: `changes requested`/`changes done` clear when the Reviewer returns, and
-  // `verification needed` isn't applied until `surfaceBeforeMergingRequirements`, downstream
-  // of this branch. Never auto-remove `verification needed`--it is real outstanding process
-  // state, not bookkeeping. Removing `orchestrating` early is fine; nothing in this document
-  // treats it as a concurrency guard.
+  // `orchestrating` is the only blocking label expected here: `changes requested`/`changes
+  // done` clear when the Reviewer returns, and `verification needed` isn't applied until
+  // `surfaceBeforeMergingRequirements`, downstream of this branch.
   //
   // The gate can also be red while this PR carries no blocking label at all (issue #833), for
   // more than one reason. A check run is stored against a head commit rather than against a
@@ -322,20 +321,11 @@ labelGateBlock:
   // check fails closed when it cannot be evaluated at all; and its two readings of the labels
   // are snapshots, so a verdict can name a label that has since been removed. The job log
   // distinguishes them, and their remedies differ, so the no-blocking-label branch reads the
-  // log rather than assuming a cause. Expect the sibling case to cost a wasted cycle before it
-  // surfaces:
-  // `orchestrating` really is the only blocking label on this PR, so the first pass takes the
-  // expected-case branch, removes it, re-launches the Monitor, and is blocked again by the
-  // sibling. Only the second pass, with no blocking label left here, reaches the branch that
-  // names the real cause.
-  If `orchestrating` is the only blocking label currently applied to the PR (the expected case): apply this transition to the PR:
+  // log rather than assuming a cause.
+  If `orchestrating` is the only blocking label currently applied to the PR (the expected case): the gate is reporting this PR's own live process state, which is the state the cycle is still in.
 
-    | Remove label    |
-    | --------------- |
-    | `orchestrating` |
-
-    Inform the user that the blocking-label gate held the merge as it is meant to, that no code or test failed and the code is review-approved, and that the Orchestrator removed the label the cycle no longer needs.
-    Launch the Monitor; goto monitorLoop
+    Inform the user that CI is green apart from the blocking-label gate, that no code or test failed and the code is review-approved, and that the gate is holding the merge as it is meant to.
+    goto surfaceBeforeMergingRequirements (entered on the label-gate path)
   If no blocking label is applied to this PR at all: the gate is not reporting this PR's labels as they stand now, and the job log for the "No blocking labels" check says what it is reporting instead (see `scripts/ci/labels/check_blocking_labels.py`). Read the log before relaying, because the causes have different remedies. In every case, including a log that matches none of the shapes below: do not remove any label; escalate to the user; stop.
 
     - The log names another PR and its label (`ERROR: PR #<n>, which shares this head commit, has a blocking label: <label>`). A check run is stored against the head commit, so an open PR sharing this PR's head commit blocks it too. Do not touch that PR; relay its number and label, since clearing it is the user's call.
@@ -346,7 +336,8 @@ labelGateBlock:
 
 surfaceBeforeMergingRequirements:
   // Surfaces outstanding before-merging requirements (unautomated verification steps,
-  // changes outside the repo). Entered on the Clear path. The Orchestrator does not scan
+  // changes outside the repo). Entered on the Clear path and on the label-gate path, which
+  // are the two ways CI says every real check passed. The Orchestrator does not scan
   // the issue or PR itself.
   Dispatch a Verification Planner sub-agent using the dispatch template.
   The planner assembles the before-merging list and files a tracking issue per item (see verification_planning.md). It does not consult the user.
