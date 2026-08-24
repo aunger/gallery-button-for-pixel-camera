@@ -18,6 +18,8 @@
 #   - At most one top-level `permissions:` key, at column 0. Its position
 #     relative to `jobs:` does not matter.
 #   - Job names that are plain scalars, matched literally, not as patterns.
+#     A job header may carry a trailing `# comment`; anything else after the
+#     colon makes the line a key with a value rather than a job header.
 #
 # A file that breaks an assumption fails loudly (a block comes back empty, and
 # the caller reports its own check as failed) rather than passing vacuously.
@@ -32,6 +34,34 @@
 # that size and CI run 31978297339 reported "statuses: write" missing from a
 # job that declares it.
 
+# awk helper functions shared by the readers below, prepended to their program
+# text rather than copied into each of them:
+#
+#     awk "$_WORKFLOW_YAML_AWK"'
+#         { ... }
+#     '
+#
+# The variable is expanded in double quotes and the program body stays in its
+# own single-quoted string, so the shell substitutes the helpers and leaves the
+# program's own `$0` alone.
+_WORKFLOW_YAML_AWK='
+    function indent_of(s,   n) { n = match(s, /[^ ]/); return n == 0 ? -1 : n - 1 }
+
+    # The job that a line of the `jobs:` mapping declares, or "" if the line
+    # declares none. A job header is a key with no value of its own; a
+    # trailing comment is not a value, so `detect:  # reads the other run`
+    # names `detect` rather than naming nothing. Getting that wrong is the one
+    # way this library could go quiet instead of loud: a job nobody asks for
+    # by name that no reader can see is simply not audited (issue #920).
+    function job_name_of(line,   name) {
+        if (line !~ /^[ \t]*[^ \t#:]+:[ \t]*(#.*)?$/) return ""
+        name = line
+        sub(/^[ \t]+/, "", name)
+        sub(/:[ \t]*(#.*)?$/, "", name)
+        return name
+    }
+'
+
 # Print the block nested under the first `<key>:` line on stdin, plus that
 # line's own inline value if it has one, so both
 #
@@ -41,8 +71,7 @@
 # come back as the key's content. The block ends at the first non-blank,
 # non-comment line indented no deeper than the key itself.
 yaml_sub_block() {
-    awk -v key="$1" '
-        function indent_of(s,   n) { n = match(s, /[^ ]/); return n == 0 ? -1 : n - 1 }
+    awk -v key="$1" "$_WORKFLOW_YAML_AWK"'
         !found && $0 ~ "^ *" key ":" {
             found = 1
             key_indent = indent_of($0)
@@ -65,15 +94,12 @@ workflow_jobs_section() { yaml_sub_block jobs < "$1"; }
 
 # Print the names of a workflow file's top-level jobs, one per line.
 workflow_job_names() {
-    workflow_jobs_section "$1" | awk '
-        function indent_of(s,   n) { n = match(s, /[^ ]/); return n == 0 ? -1 : n - 1 }
+    workflow_jobs_section "$1" | awk "$_WORKFLOW_YAML_AWK"'
         /^[ \t]*$/ || /^[ \t]*#/ { next }
         !base_set { base = indent_of($0); base_set = 1 }
-        indent_of($0) == base && /:[ \t]*$/ {
-            name = $0
-            sub(/^ +/, "", name)
-            sub(/:[ \t]*$/, "", name)
-            print name
+        indent_of($0) == base {
+            name = job_name_of($0)
+            if (name != "") print name
         }
     '
 }
@@ -82,15 +108,12 @@ workflow_job_names() {
 # The name is compared literally, so a job called `push` cannot be confused
 # with some deeper key that happens to be spelled the same way.
 workflow_job_block() {
-    workflow_jobs_section "$1" | awk -v job="$2" '
-        function indent_of(s,   n) { n = match(s, /[^ ]/); return n == 0 ? -1 : n - 1 }
+    workflow_jobs_section "$1" | awk -v job="$2" "$_WORKFLOW_YAML_AWK"'
         /^[ \t]*$/ || /^[ \t]*#/ { if (in_job) print; next }
         !base_set { base = indent_of($0); base_set = 1 }
         indent_of($0) == base {
-            name = $0
-            sub(/^ +/, "", name)
-            sub(/:[ \t]*$/, "", name)
-            in_job = (name == job)
+            name = job_name_of($0)
+            in_job = (name != "" && name == job)
             next
         }
         in_job

@@ -225,6 +225,24 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
 YAML
 
+# A job header that carries a trailing comment is still a job header. The name
+# reader used to require the line to end at the colon, so this job was never
+# named, never audited, and check (a) reported PASS over whatever jobs were
+# left -- the one shape that made this guard go quiet rather than loud (issue
+# #920).
+cat > "$TMP/bad-inline-comment.yml" <<'YAML'
+permissions:
+  contents: read
+
+jobs:
+  detect:  # scans the triggering run's logcat
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          run-id: ${{ github.event.workflow_run.id }}
+YAML
+
 # Grant present at the job level, absent at the workflow level: allowed.
 cat > "$TMP/good-job.yml" <<'YAML'
 permissions:
@@ -301,6 +319,7 @@ expect_verdict() {
 expect_verdict bad bad-download.yml
 expect_verdict bad bad-api.yml
 expect_verdict bad bad-job-override.yml
+expect_verdict bad bad-inline-comment.yml
 expect_verdict ok good-job.yml
 expect_verdict ok good-flow-mapping.yml
 expect_verdict ok good-permissions-after-jobs.yml
