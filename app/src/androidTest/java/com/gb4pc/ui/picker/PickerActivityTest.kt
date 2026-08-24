@@ -27,7 +27,7 @@ class PickerActivityTest {
 
     @Test
     fun pickerScreen_showsSearchBar() {
-        composeRule.onNodeWithText("Search apps\u2026").assertIsDisplayed()
+        composeRule.onNodeWithText("Search apps...").assertIsDisplayed()
     }
 
     @Test

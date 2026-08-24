@@ -55,14 +55,14 @@ This is a compile-time manifest declaration, not a runtime permission; the user 
 
 - **PM-01** On first launch, display a guided setup flow. Each step explains one permission, why it is needed, and provides a single button to grant it. Steps (a leading Notifications step is inserted on API 33+ per PM-05):
 
-1. **Photos & Media**: "GB4PC needs to read your photos so the overlay button can show your newest shot as a thumbnail. Please choose Allow all, since limited access cannot include a photo you just took." Button: "Allow Photo Access" → requests the `READ_MEDIA_IMAGES` / `READ_EXTERNAL_STORAGE` runtime permission (PM-06).
+1. **Photos & Media**: "GB4PC needs to read your photos so the overlay button can show your newest shot as a thumbnail. Please choose Allow all; limited access cannot include a photo you just took." Button: "Allow Photo Access" → requests the `READ_MEDIA_IMAGES` / `READ_EXTERNAL_STORAGE` runtime permission (PM-06).
 2. **Usage Access**: "GB4PC needs to confirm which app is using the camera. This permission lets GB4PC see which app is in the foreground. It cannot read your personal data." Button: "Grant Usage Access" → opens the system Usage Access settings screen.
 3. **Draw Over Apps**: "Allows GB4PC to show the gallery button on top of Pixel Camera." Button: "Grant Overlay Permission" → opens the system overlay settings screen.
 4. **Battery Optimization**: "GB4PC needs to stay running in the background to detect when you open the camera. Excluding it from battery optimization prevents Android from killing it." Button: "Exclude from Battery Optimization" → fires `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` intent.
 
 - **PM-02** Each step shows a checkmark and auto-advances when the permission is detected as granted (on `onResume`). The user can also tap a "Skip" link to defer, but a persistent banner on the main settings screen indicates any missing permission with a tap-to-fix action.
 
-- **PM-03** If Usage Access is revoked while the service is running, the service continues running (to maintain camera callbacks) but cannot confirm foreground app identity. It hides any visible overlay, posts a notification ("GB4PC cannot detect apps, tap to fix"), and the main settings screen shows the missing-permission banner.
+- **PM-03** If Usage Access is revoked while the service is running, the service continues running (to maintain camera callbacks) but cannot confirm foreground app identity. It hides any visible overlay, posts a notification ("GB4PC cannot detect apps; tap to fix"), and the main settings screen shows the missing-permission banner.
 
 - **PM-04** If Overlay permission is revoked while the service is running, the service detects the failure when it next attempts to show the overlay, posts a notification prompting re-grant, and the main settings screen shows the missing-permission banner.
 
@@ -130,7 +130,7 @@ ______________________________________________________________________
 - **AC-01** **Device unlocked:** Tapping the overlay launches the user's selected gallery app via `PackageManager.getLaunchIntentForPackage()`.
 - **AC-02** **Device locked:** Tapping the overlay opens the built-in secure filmstrip viewer (see §5). It does not launch the external gallery app.
 - **AC-03** **No gallery app configured:** If no gallery app has been selected (including on very first use), tapping the overlay while the device is unlocked presents the gallery app picker (see §6.2). While locked, it shows a toast: "Unlock to set up your gallery app."
-- **AC-04** **Gallery app uninstalled:** If the selected gallery app is no longer installed, the overlay displays a generic placeholder icon with a small warning badge. Tapping while unlocked presents the gallery app picker. Tapping while locked shows a toast: "Gallery app not found, unlock to choose a new one."
+- **AC-04** **Gallery app uninstalled:** If the selected gallery app is no longer installed, the overlay displays a generic placeholder icon with a small warning badge. Tapping while unlocked presents the gallery app picker. Tapping while locked shows a toast: "Gallery app not found; unlock to choose a new one."
 
 ### 4.4 Lock State Detection
 
@@ -161,7 +161,7 @@ This mirrors the behavior of AOSP's secure camera implementation.
 - **SF-09** **Videos** are displayed as a still frame (first frame or a representative thumbnail via `MediaMetadataRetriever.getFrameAtTime()`). A play button icon is overlaid on the thumbnail. Tapping a video item shows a toast: "Unlock to play video" (since launching a full video player from the lock screen would bypass security).
 - **SF-10** **Swipe-to-delete:** Swiping a photo vertically (up or down) initiates a delete gesture. The photo animates away and a confirmation snackbar appears with an "Undo" action (5-second timeout). If not undone, the photo is deleted from `MediaStore`. Deleted items are removed from the session list.
 - **SF-11** **Share button:** A share icon is displayed in the viewer toolbar. Tapping it triggers `KeyguardManager.requestDismissKeyguard()`, which prompts the user to authenticate (PIN/pattern/fingerprint). On successful unlock, a standard `ACTION_SEND` share sheet is launched with the current photo's URI. On authentication failure or cancellation, nothing happens.
-- **SF-12** If the session has no photos yet, the viewer shows a centered message: "No photos yet, take a picture!"
+- **SF-12** If the session has no photos yet, the viewer shows a centered message: "No photos yet; take a picture!"
 - **SF-13** Pressing the back button or swiping the viewer away returns to Pixel Camera (the viewer activity finishes). The overlay remains visible.
 
 ### 5.3 Edge Cases
@@ -179,7 +179,7 @@ ______________________________________________________________________
 - **UI-01** The main screen contains:
 
 1. A master on/off toggle for the service, with a status line beneath it that displays error descriptions when applicable (otherwise no status text).
-2. A gallery app row showing the currently selected app's icon and name (or "Not set, tap to choose" if none is selected). Tapping this row opens the gallery app picker (§6.2).
+2. A gallery app row showing the currently selected app's icon and name (or "Not set; tap to choose" if none is selected). Tapping this row opens the gallery app picker (§6.2).
 3. A link/button to Advanced Settings (§6.3).
 
 - **UI-02** If any required permission is missing, a banner appears at the top of the screen indicating which permission is missing, with a tap action that navigates to the appropriate system settings screen.

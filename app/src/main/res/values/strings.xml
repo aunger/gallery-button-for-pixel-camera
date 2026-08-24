@@ -7,9 +7,9 @@
     <string name="notification_channel_description">Persistent notification while GB4PC is monitoring camera</string>
     <string name="notification_running">GB4PC is running</string>
     <string name="notification_stop">Stop</string>
-    <string name="notification_usage_access_lost">GB4PC cannot detect apps — tap to fix</string>
-    <string name="notification_overlay_lost">GB4PC cannot show overlay — tap to grant permission</string>
-    <string name="notification_media_permission_missing">GB4PC can\'t read your photos — tap to allow all photos so the thumbnail can update</string>
+    <string name="notification_usage_access_lost">GB4PC cannot detect apps; tap to fix</string>
+    <string name="notification_overlay_lost">GB4PC cannot show overlay; tap to grant permission</string>
+    <string name="notification_media_permission_missing">GB4PC can\'t read your photos; tap to allow all photos so the thumbnail can update</string>
 
     <!-- Setup Flow -->
     <string name="setup_title">GB4PC Setup</string>
@@ -27,18 +27,18 @@
     <string name="setup_notification_desc">GB4PC needs notification permission to show its required foreground service notification.</string>
     <string name="setup_notification_button">Allow Notifications</string>
     <string name="setup_media_title">Photos &amp; Media</string>
-    <string name="setup_media_desc">GB4PC needs to read your photos so the overlay button can show your newest shot as a thumbnail. Please choose \"Allow all\" — limited access cannot include a photo you just took.</string>
+    <string name="setup_media_desc">GB4PC needs to read your photos so the overlay button can show your newest shot as a thumbnail. Please choose \"Allow all\"; limited access cannot include a photo you just took.</string>
     <string name="setup_media_button">Allow Photo Access</string>
 
     <!-- Main Settings -->
     <string name="settings_service_toggle">Enable GB4PC</string>
     <string name="settings_gallery_app">Gallery App</string>
-    <string name="settings_gallery_not_set">Not set — tap to choose</string>
+    <string name="settings_gallery_not_set">Not set; tap to choose</string>
     <string name="settings_advanced">Advanced Settings</string>
     <string name="settings_pixel_camera_missing">Pixel Camera is not installed. GB4PC requires Pixel Camera to function.</string>
-    <string name="settings_battery_warning">Not excluded from battery optimization — GB4PC may be killed in the background. Tap to fix.</string>
+    <string name="settings_battery_warning">Not excluded from battery optimization; GB4PC may be killed in the background. Tap to fix.</string>
     <string name="settings_permission_missing">Missing permission: %s. Tap to fix.</string>
-    <string name="settings_media_missing">Photo access not granted (or limited) — the overlay button can\'t show your latest shot. Tap to allow all photos.</string>
+    <string name="settings_media_missing">Photo access not granted (or limited); the overlay button can\'t show your latest shot. Tap to allow all photos.</string>
     <string name="settings_notification_missing">Notifications not allowed; GB4PC can\'t show its required background-service notification. Tap to fix.</string>
 
     <string name="settings_focusable_overlay_title">Experimental responsiveness boost</string>
@@ -46,7 +46,7 @@
 
     <!-- App Picker -->
     <string name="picker_title">Choose Gallery App</string>
-    <string name="picker_search_hint">Search apps…</string>
+    <string name="picker_search_hint">Search apps...</string>
     <string name="picker_show_all">Show all apps</string>
     <string name="picker_filtered_hint">Showing photo-related apps</string>
 
@@ -55,7 +55,7 @@
     <string name="advanced_x_position">X position</string>
     <string name="advanced_y_position">Y position</string>
     <string name="advanced_size">Size</string>
-    <string name="advanced_camera_debounce_ms">Camera close detection interval (ms, 10–1000)</string>
+    <string name="advanced_camera_debounce_ms">Camera close detection interval (ms, 10-1000)</string>
     <string name="advanced_camera_debounce_restart">Takes effect when the service is restarted.</string>
     <string name="advanced_reset">Reset to Defaults</string>
     <string name="advanced_reset_confirm_title">Reset Position?</string>
@@ -70,7 +70,7 @@
     <string name="log_viewer_empty">No log entries</string>
 
     <!-- Secure Viewer -->
-    <string name="viewer_no_photos">No photos yet — take a picture!</string>
+    <string name="viewer_no_photos">No photos yet; take a picture!</string>
     <string name="viewer_unlock_to_play">Unlock to play video</string>
     <string name="viewer_photo_deleted">Photo deleted</string>
     <string name="viewer_undo">Undo</string>
@@ -78,5 +78,5 @@
 
     <!-- Toasts -->
     <string name="toast_unlock_to_setup">Unlock to set up your gallery app.</string>
-    <string name="toast_gallery_not_found">Gallery app not found — unlock to choose a new one.</string>
+    <string name="toast_gallery_not_found">Gallery app not found; unlock to choose a new one.</string>
 </resources>
