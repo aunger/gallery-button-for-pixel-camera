@@ -232,8 +232,8 @@ class TestMain(unittest.TestCase):
         Without the listing's copy of the triggering PR, a run whose event has
         been superseded would report a clean commit. The same path is what can
         blame this PR for a label a lagging listing still shows after removal,
-        which is the third log shape agents/dev_orchestration.md's
-        `labelGateBlock` branch teaches the Orchestrator to recognize.
+        which is why a human reading this log should not take it as evidence
+        that the PR still carries the label it names.
         """
         code, output = _run_main(_env(pr_labels=[]), [[_pr(808, ["orchestrating"])]])
         self.assertEqual(code, 1)
