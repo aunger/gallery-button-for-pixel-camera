@@ -1304,22 +1304,14 @@ def main(argv):
                 )
                 mergeable = mpr_json.get("mergeable_state", "unknown") if mpr_json else "unknown"
                 if pr_is_draft(mpr_json or pr_json) or mergeable == "draft":
-                    # Issue #968--a draft PR is held: every check has reported,
-                    # and the PR cannot merge until someone marks it ready for
-                    # review. That is a settled fact, not a value GitHub is still
-                    # computing, so it terminates here instead of falling to the
-                    # still-computing else below and spinning until the
-                    # Orchestrator's 30-minute timeout. It is neither Clear (the
-                    # PR cannot merge) nor Blocked (nothing failed), so it gets
-                    # its own terminal.
-                    #
-                    # Draftness is read first, and from the `draft` boolean, so
-                    # no other mergeable_state can crowd it out (see pr_is_draft);
-                    # it comes from the fresher of the poll's two /pulls payloads,
-                    # falling back to the first when that fetch failed, and the
-                    # mergeable_state that came back is still reported in the
-                    # suffix as a diagnostic. The `draft` mergeable_state remains
-                    # a fallback for a payload with no `draft` field at all.
+                    # Issue #968--draftness is tested BEFORE every mergeable
+                    # state, so no other value can crowd it out (see pr_is_draft);
+                    # reordering this ladder would silently break that. It is read
+                    # from the fresher /pulls payload, falling back to the poll's
+                    # first fetch when that request failed, and the `draft`
+                    # mergeable_state backs both up for a payload carrying no
+                    # `draft` field. The state that did come back is reported in
+                    # the suffix as a diagnostic.
                     print_summary(summary_rows)
                     print("%s: Draft (mergeable_state=%s)" % (tag, mergeable))
                     sys.stdout.flush()
@@ -1387,19 +1379,13 @@ def main(argv):
                 )
                 mergeable = mpr_json.get("mergeable_state", "unknown") if mpr_json else "unknown"
                 if pr_is_draft(mpr_json or pr_json) or mergeable == "draft":
-                    # Issue #968--as in the all_passed ladder above, draftness is
-                    # read first and from the fresher /pulls payload, so it
-                    # terminates instead of polling forever and no other
-                    # mergeable_state can crowd it out. The raw scan's
-                    # Blocked/Infra verdict is deliberately not reported here: a
-                    # draft PR's mergeable_state says nothing about whether the
-                    # non-passing check is required, so reporting a merge block
-                    # would risk the same false positive issue #748 removed. The
-                    # terminal names the draft state and attributes the
-                    # non-passing check(s) through the shared " by: ..." suffix--
-                    # including its [label gate] annotation, which is the everyday
-                    # shape while a process label holds the PR--after the usual
-                    # drain for lagging step/FAIL diagnostics.
+                    # Issue #968--as in the all_passed ladder above. The raw
+                    # scan's Blocked/Infra verdict is deliberately NOT reported
+                    # here: a draft PR's mergeable_state says nothing about
+                    # whether the non-passing check is required, so reporting a
+                    # merge block would risk the same false positive issue #748
+                    # removed. The check(s) are named instead, through the shared
+                    # " by: ..." suffix.
                     drain_then_print(
                         sha,
                         "%s: Draft" % tag,
