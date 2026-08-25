@@ -79,11 +79,22 @@
 # 10, one slot clear.
 #
 # The margin is one slot and the report is a failure, with nothing between
-# them. A warning band above the failure was tried and dropped: this script
-# reports through stdout, build.yml's shell-tests job reads the exit status
-# alone, and nothing collects the rest, so a report that does not fail the job
-# arrives in a log nobody reads, which is the delivery this file's own header
-# condemns in the paragraph motivating the check.
+# them. A warning band above the failure was built and then removed, and the
+# reason is not that a non-fatal report cannot be delivered from here.
+#
+# Printing one is certainly not enough: this script reports through stdout,
+# build.yml's shell-tests job reads the exit status alone, and nothing collects
+# the rest, so a report that does not fail the job arrives in a log nobody
+# reads, which is the delivery this file's own header condemns in the paragraph
+# motivating the check. The band answered that rather than accepting it, by
+# re-emitting each warning as a ::warning annotation under GitHub Actions, and
+# issue #948 confirmed on three live runs that GitHub renders one in the run
+# summary at annotation_level warning, carrying the line's own text, on a job
+# that still concluded success.
+#
+# It was removed anyway, to keep this script to a single report channel. So a
+# non-fatal report from here is deliverable and #948 records how; what it costs
+# is a second channel to maintain and to read.
 #
 # Grouping is checked in both directions. Every test-only coordinate belongs
 # to some group, so a run of test-only bumps stays one pull request and one
