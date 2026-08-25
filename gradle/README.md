@@ -151,11 +151,21 @@ If none of these is open to you, say so and stop.
 Adding `workflow_dispatch` (#878) is the intended fix for that dead end.
 
 > [!WARNING]
-> An agent cannot post the `@dependabot` rebase command, or any other `@` mention.
-> Agent-posted GitHub text is sanitized so that mentions are broken, silently and with no error reported anywhere.
-> See `.claude/rules/github-mention-sanitization.md` for the rule, the evidence behind it, and how to check whether it still holds.
+> Do not assume a `@dependabot` rebase command posted by an agent arrived, and do not assume it did not.
+> Text an agent posts to GitHub is sometimes passed through mention sanitization before it is stored, which injects `U+00B7` (middle dot) characters into anything shaped like a mention.
+> A dotted mention reaches no bot command surface and notifies nobody, so the command is received by nothing, and nothing reports an error at either end.
+> The stored text still looks right at a glance, because a middle dot is easy to miss.
+> That has been observed on issue bodies, issue comments, and pull request bodies, authored both as `claude[bot]` and as the repository owner, so it is not specific to one identity or one posting path.
 > #874's [comment 5260994286](https://github.com/aunger/gallery-button-for-pixel-camera/pull/874#issuecomment-5260994286) is the worked example, and it cost about eight hours before anyone noticed it had not worked.
-> Re-run the regen workflow run instead, or ask a human to post the command.
+>
+> It does not happen every time.
+> A probe posted through `add_issue_comment` on 2026-08-23 stored its mention intact.
+> The behavior is external to this repository and it is not constant, so neither outcome can be predicted, and deciding by memory in either direction is the error.
+> The `PostToolUse` hook `.claude/hooks/post-tool-use-github-readback.sh` reads every GitHub write back and reports any difference (issue #909), which turns the question from a prediction into a measurement: post it, then believe the hook's verdict rather than the stored text, which looks right either way.
+> If the hook reports the mention was dotted, that command did not arrive and the attempt failed silently.
+>
+> Prefer the routes that do not depend on a mention at all: re-run the regen workflow run, or ask a human to post the command and say plainly why you cannot.
+> Content committed through git is never affected; only text posted through the API is.
 
 ## `wrapper/gradle-wrapper.properties` -- distribution pin
 
