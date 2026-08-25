@@ -299,16 +299,32 @@ monitorLoop:
   Each stdout line arrives as a task-notification event.
   Terminal lines and failure markers (`FAIL`/`SKIP`) are relayed to the user, verbatim.
   Every other line is relayed or withheld at the Orchestrator's discretion; nothing obliges it to forward routine progress output.
-  The Orchestrator **acts only on the terminal lines** `Clear`, `Blocked` (including the `Blocked by: <name>` form), or `Infra`.
+  The Orchestrator **acts only on the terminal lines** `Clear`, `Blocked` (including the `Blocked by: <name>` form), `Infra`, `Draft` (including the `Draft by: <name>` form), `Merged`, or `Closed`.
   Other output, including `step`, `FAIL`, `summary`, `in_progress` keepalives, and per-check information are progress reports; they do NOT end the loop or start a new Author round.
   if Monitor emits `drain poll found no new diagnostic signals` immediately followed by a Blocked or Infra line -> goto undiagnosedTerminal
   (Note: the attributed `Blocked by: <name>` form already names the blocking check in the per-check summary block and the terminal suffix, so the Monitor suppresses the drain flag in that case. The `goto undiagnosedTerminal` branch therefore applies only to a bare `Blocked`/`Infra` line that the Monitor itself flagged as undiagnosed.)
   if Monitor emits a Blocked line where the terminal ends with `[label gate]` (the ` by: ...` suffix names only label-gate checks) -> goto labelGateBlock
   if Monitor emits a Blocked line  -> goto newAuthor
   if Monitor emits an Infra line   -> escalate to user; stop
+  if Monitor emits a Draft line    -> goto draftHeld
+  if Monitor emits a Merged line   -> the PR is already merged, so there is no CI outcome left to act on; tell the user the PR merged; stop
+  if Monitor emits a Closed line   -> the PR was closed without merging; tell the user, and do NOT reopen it or start a new Author round; stop
   if Monitor times out (30 min)    -> escalate to user; stop
   if a user message wakes the session before Monitor delivers any terminal line -> goto silentVanish
   if Monitor emits a Clear line -> goto surfaceBeforeMergingRequirements (entered on the Clear path)
+
+draftHeld:
+  // Reached when the PR is a draft (`mergeable_state=draft`). CI has settled, but a draft PR
+  // cannot merge and GitHub reports no mergeability for it, so this is neither a Clear nor a
+  // Blocked: nothing is necessarily wrong with the PR, and nothing about it is provisional
+  // either. Marking a PR ready for review is the user's call, not the Orchestrator's, so this
+  // branch ends the loop rather than re-launching the Monitor or starting another round.
+  // Without this branch the Monitor's Draft line would match no branch and the loop would sit
+  // until the 30-minute timeout (issue #968).
+  Relay the Draft line and tell the user the PR is in draft, so it cannot merge until someone marks it ready for review.
+  When the line carries a ` by: <name>` portion, it names the check(s) that are not passing; relay those too, and say that a draft PR's `mergeable_state` cannot confirm whether they would block the merge.
+  Do NOT treat a Draft line as a Clear: do not dispatch a Verification Planner off it.
+  stop
 
 labelGateBlock:
   // Reached on a `[label gate]` terminal, which is the gate working, not CI breaking. The
