@@ -17,9 +17,28 @@ Each PR must originate from its own dedicated branch. If your branch is not clea
 
 The title must name the PR's *solution*. Only name the issue's *problem* if you have space for both.
 
+The title is permanent: it becomes the commit subject, for the reason under "The description is the commit message" below.
+
 ## The PR's Description
 
 Include the #XYZ issue number of the issue that this PR addresses. If the PR completes the issue, write "Fixes #XYZ". Explain how the changes fix the issue.
+
+### The description is the commit message
+
+Merging builds the commit out of the pull request itself: the title becomes the commit subject, with `" (#N)"` appended, and the description becomes the commit body, changed only by the wrapping of long lines.
+Your own line breaks survive that wrapping, so sentence-per-line prose reaches `git log` as written.
+Both merge methods this repository allows do this: `squash_merge_commit_title` and `merge_commit_title` are `PR_TITLE`, both `*_commit_message` settings are `PR_BODY`, and `allow_rebase_merge` is false.
+These are repository settings an admin can change, so re-read them from the repository object in the GitHub API before relying on the detail.
+The description is therefore permanent while the review thread is not, and editing the description after the merge does not change the commit.
+
+Write it for the reader who arrives at that commit during a bisect a year from now, with no thread in view:
+
+- **It must stand alone**, without leaning on the thread or on the round it happened to be written in.
+- **Do not address the reviewer.** "Fixed the nit from round 2" and "see my comment" say nothing to that reader.
+  Describe the change as it now stands, not the path taken to reach it.
+- **Send round-to-round chatter to PR comments instead**, which do not enter history.
+- **Re-read the description at the end of every round**, with the thread hidden.
+  You cannot tell from inside a round whether it is the last one.
 
 ## Test plan checkboxes
 

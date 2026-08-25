@@ -30,3 +30,8 @@
 
 - If you are a sub-agent and were given a branch or branch name, commit your changes before you return.
 - Build locally and execute the unit tests. Don't make someone else do it for you or wait for CI.
+- **Re-verify the prose against the code.** After your last code change of a round, re-read every prose claim it touches (docstrings, code comments, the PR title and description, issue text you wrote) and confirm each is still true of the code *as it now stands*.
+  No test checks prose, so a claim the code has outgrown reaches review unless you look for it.
+  - Line numbers, counts and quantities, names of files, paths and symbols, and absolutes ("always", "never") rot first.
+  - Do this on rounds that add no new prose too: moving code in a later round is what falsifies prose written in an earlier one.
+  - Where a claim and the code disagree, decide which is wrong before you fix either; sometimes the code is the side that should change.
