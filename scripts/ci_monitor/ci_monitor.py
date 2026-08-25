@@ -338,7 +338,7 @@ def parse_pr_terminal(pr_json):
     return ""
 
 
-def parse_pr_draft(pr_json):
+def pr_is_draft(pr_json):
     """Return True when a /pulls/{n} response describes a draft pull request.
 
     Reads the `draft` boolean GitHub states outright rather than inferring
@@ -1303,7 +1303,7 @@ def main(argv):
                     "%s/repos/%s/%s/pulls/%s" % (API_BASE, OWNER, REPO, args.pr), token
                 )
                 mergeable = mpr_json.get("mergeable_state", "unknown") if mpr_json else "unknown"
-                if parse_pr_draft(pr_json) or mergeable == "draft":
+                if pr_is_draft(pr_json) or mergeable == "draft":
                     # Issue #968--a draft PR is held: every check has reported,
                     # and the PR cannot merge until someone marks it ready for
                     # review. That is a settled fact, not a value GitHub is still
@@ -1315,7 +1315,7 @@ def main(argv):
                     #
                     # Draftness is read first, and from the `draft` boolean, so
                     # no other mergeable_state can crowd it out (see
-                    # parse_pr_draft); the mergeable_state that came back is
+                    # pr_is_draft); the mergeable_state that came back is
                     # still reported in the suffix as a diagnostic. The `draft`
                     # mergeable_state remains a fallback for a payload with no
                     # `draft` field at all.
@@ -1385,7 +1385,7 @@ def main(argv):
                     "%s/repos/%s/%s/pulls/%s" % (API_BASE, OWNER, REPO, args.pr), token
                 )
                 mergeable = mpr_json.get("mergeable_state", "unknown") if mpr_json else "unknown"
-                if parse_pr_draft(pr_json) or mergeable == "draft":
+                if pr_is_draft(pr_json) or mergeable == "draft":
                     # Issue #968--as in the all_passed ladder above, draftness is
                     # read first and from the `draft` boolean, so it terminates
                     # instead of polling forever and no other mergeable_state can

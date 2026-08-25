@@ -98,7 +98,7 @@ Covers:
        non-blocking, e.g. has_hooks) mergeable_state keeps polling rather than
        terminating prematurely, and the still-computing heartbeat does not begin
        with a Blocked/Infra terminal keyword
-  (bg) #968 parse_pr_draft: reads the /pulls/{n} `draft` boolean, absent or
+  (bg) #968 pr_is_draft: reads the /pulls/{n} `draft` boolean, absent or
        false reads as not-draft
   (bh) #968 main(): --pr terminates on a draft PR instead of spinning in the
        still-computing arm. Draftness is keyed on the `draft` boolean, so it
@@ -5550,23 +5550,23 @@ def main() -> int:
     )
     check(rc_bf3 == 0, "main() returned 0", "main() returned %r" % rc_bf3)
 
-    # ── (bg) #968 parse_pr_draft: the /pulls/{n} `draft` boolean ──────────────────
-    print("\n=== (bg) #968 parse_pr_draft: reads the `draft` boolean ===")
+    # ── (bg) #968 pr_is_draft: the /pulls/{n} `draft` boolean ──────────────────
+    print("\n=== (bg) #968 pr_is_draft: reads the `draft` boolean ===")
 
     check(
-        ci_monitor.parse_pr_draft({"draft": True}) is True,
+        ci_monitor.pr_is_draft({"draft": True}) is True,
         "a draft PR payload reads as draft",
-        "parse_pr_draft({'draft': True}) was not True",
+        "pr_is_draft({'draft': True}) was not True",
     )
     check(
-        ci_monitor.parse_pr_draft({"draft": False}) is False,
+        ci_monitor.pr_is_draft({"draft": False}) is False,
         "a ready-for-review PR payload reads as not-draft",
-        "parse_pr_draft({'draft': False}) was not False",
+        "pr_is_draft({'draft': False}) was not False",
     )
     check(
-        ci_monitor.parse_pr_draft({"mergeable_state": "clean"}) is False,
+        ci_monitor.pr_is_draft({"mergeable_state": "clean"}) is False,
         "a payload with no `draft` field reads as not-draft (the caller's fallback covers it)",
-        "parse_pr_draft() on a field-less payload was not False",
+        "pr_is_draft() on a field-less payload was not False",
     )
 
     # ── (bh) #968 main(): a draft PR is a settled state, not "still computing" ─────
@@ -5579,7 +5579,7 @@ def main() -> int:
     # Orchestrator's Monitor loop to wait out its full 30-minute timeout. Both
     # mergeable_state ladders (all_passed and the non-passing raw scan) must terminate.
     # The loop's top-of-poll /pulls payload is where the `draft` boolean is read
-    # (parse_pr_draft), so the draft and ready fixtures differ in that one field.
+    # (pr_is_draft), so the draft and ready fixtures differ in that one field.
     PR_DRAFT_BG = {"head": {"sha": "968c0de1"}, "draft": True}
     PR_READY_BG = {"head": {"sha": "968c0de1"}, "draft": False}
     MPR_DRAFT_BG = {"merged": False, "state": "open", "mergeable_state": "draft"}
