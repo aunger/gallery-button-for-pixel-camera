@@ -63,11 +63,38 @@
 # collapses every test-only bump into one pull request, and the limit rose to
 # 10), and neither key had a guard.
 #
-# The check is that the limit cannot be the binding constraint: it counts the
-# pull requests this entry's own coordinates can want open at once (one per
-# group that takes anything, plus one per coordinate no group takes) and
-# requires the limit to cover them. Today that is 9 against a limit of 10;
-# against the old default of 5 it fails, which is the starvation.
+# The check is that the limit cannot be what stops a bump from being proposed:
+# it counts the pull requests this entry's own coordinates can want open at
+# once (one per group that takes anything, plus one per coordinate no group
+# takes) and requires the limit to stay above that count. Against the old
+# default of 5 it fails, which is the starvation.
+#
+# It asks for a margin rather than for bare coverage (issue #937). A limit equal
+# to the count covers exactly what today's manifest can want and starves the
+# next ungrouped coordinate added to it, so a check that is pass/fail at
+# coverage goes red only once that coordinate is in the manifest, which is the
+# state #871 reported after the fact. Failing at parity moves the report onto
+# the file that still works and has nothing left over, one step before the
+# coordinate that would starve it. Today that is 9 streams against a limit of
+# 10, one slot clear.
+#
+# The margin is one slot and the report is a failure, with nothing between
+# them. A warning band above the failure was built and then removed, and the
+# reason is not that a non-fatal report cannot be delivered from here.
+#
+# Printing one is certainly not enough: this script reports through stdout,
+# build.yml's shell-tests job reads the exit status alone, and nothing collects
+# the rest, so a report that does not fail the job arrives in a log nobody
+# reads, which is the delivery this file's own header condemns in the paragraph
+# motivating the check. The band answered that rather than accepting it, by
+# re-emitting each warning as a ::warning annotation under GitHub Actions, and
+# issue #948 confirmed on three live runs that GitHub renders one in the run
+# summary at annotation_level warning, carrying the line's own text, on a job
+# that still concluded success.
+#
+# It was removed anyway, to keep this script to a single report channel. So a
+# non-fatal report from here is deliverable and #948 records how; what it costs
+# is a second channel to maintain and to read.
 #
 # Grouping is checked in both directions. Every test-only coordinate belongs
 # to some group, so a run of test-only bumps stays one pull request and one
@@ -586,11 +613,31 @@ for index, entry, names, directories in gradle_entries:
         isinstance(limit, int) and not isinstance(limit, bool),
         "%s's open-pull-requests-limit is a number (found %r)" % (label, limit),
     ):
+        # Strictly above, not merely covering (issue #937): a limit equal to
+        # the count covers exactly what today's manifest can want and starves
+        # the next ungrouped coordinate added to it.
+        #
+        # Each failing side appends why it failed and the limit that fixes it,
+        # as the grouping checks above append the members they object to. The
+        # person who trips the parity failure is adding a dependency to
+        # app/build.gradle.kts against a configuration that works, and the
+        # claim alone would tell them nothing they can act on.
+        composition = "%d ungrouped coordinate(s) plus %d non-empty group(s)" % (len(ungrouped), group_streams)
+        if limit < streams:
+            detail = "; %d of them cannot be proposed at all, which is the starvation #871 reported" % (
+                streams - limit,
+            )
+        elif limit == streams:
+            detail = "; it covers exactly what today's manifest can want, so the next ungrouped coordinate added is starved"
+        else:
+            detail = ""
+        if detail:
+            detail += ", and raising the limit to %d or more is what fixes it" % (streams + 1)
         check(
-            limit >= streams,
-            "%s's open-pull-requests-limit of %d covers the %d pull requests its coordinates can want open at "
-            "once (%d ungrouped coordinate(s) plus %d non-empty group(s)), so the limit cannot be what stops a "
-            "bump from being proposed (issue #873)" % (label, limit, streams, len(ungrouped), group_streams),
+            limit > streams,
+            "%s's open-pull-requests-limit of %d is above the %d pull requests its coordinates can want open at "
+            "once (%s), leaving a slot for the next coordinate added rather than starving it%s "
+            "(issues #873, #937)" % (label, limit, streams, composition, detail),
         )
 
 for name in registries:
