@@ -104,7 +104,10 @@ Covers:
        still-computing arm. Draftness is keyed on the `draft` boolean, so it
        outranks every mergeable_state (a draft reporting blocked/unstable is
        still Draft, not a false Infra or a false Clear), with the `draft`
-       mergeable_state as the fallback for a payload lacking the field. A green
+       mergeable_state as the fallback for a payload lacking the field, read
+       from the fresher of the poll's two /pulls fetches (so a PR marked ready
+       mid-poll is not reported Draft) while a failed fresh fetch falls back to
+       the poll's first payload rather than losing draftness. A green
        draft emits Draft; a draft whose checks are not passing emits the
        attributed "Draft by: ..." form (including the everyday
        "[label gate]" shape) rather than a Blocked/Infra merge-block claim; and
@@ -5582,7 +5585,7 @@ def main() -> int:
     # (pr_is_draft), so the draft and ready fixtures differ in that one field.
     PR_DRAFT_BG = {"head": {"sha": "968c0de1"}, "draft": True}
     PR_READY_BG = {"head": {"sha": "968c0de1"}, "draft": False}
-    MPR_DRAFT_BG = {"merged": False, "state": "open", "mergeable_state": "draft"}
+    MPR_DRAFT_BG = {"merged": False, "state": "open", "draft": True, "mergeable_state": "draft"}
     CHECK_ALL_PASS_BG = {
         "total_count": 2,
         "check_runs": [
@@ -5813,7 +5816,7 @@ def main() -> int:
         [
             PR_DRAFT_BG,  # pulls -> sha, draft
             CHECK_ALL_PASS_BG,  # verdict -> all_passed
-            {"merged": False, "state": "open", "mergeable_state": "blocked"},  # mpr
+            {"merged": False, "state": "open", "draft": True, "mergeable_state": "blocked"},  # mpr
         ]
     )
 
@@ -5858,7 +5861,7 @@ def main() -> int:
         [
             PR_DRAFT_BG,  # pulls -> sha, draft
             CHECK_NONREQ_FAIL_BG,  # verdict -> Blocked (raw scan)
-            {"merged": False, "state": "open", "mergeable_state": "unstable"},  # mpr
+            {"merged": False, "state": "open", "draft": True, "mergeable_state": "unstable"},  # mpr
         ]
     )
     for _ in range(3):  # DRAIN_MAX_ATTEMPTS drain attempts
@@ -5984,6 +5987,83 @@ def main() -> int:
         "request deque not drained; %d entries left" % len(side_effects_bg8),
     )
     check(rc_bg8 == 0, "main() returned 0", "main() returned %r" % rc_bg8)
+
+    # Case 9--draftness is read from the fresher of the poll's two /pulls fetches.
+    # The loop reads the head SHA from one fetch and the mergeable state from another,
+    # seconds later; someone can mark the PR ready for review in between. The stale
+    # payload would emit a Draft terminal for a PR that is ready, and because the
+    # branch ends the loop there is no later poll to correct it.
+    side_effects_bg9 = collections.deque(
+        [
+            PR_DRAFT_BG,  # pulls -> sha, still says draft
+            CHECK_ALL_PASS_BG,  # verdict -> all_passed
+            {"merged": False, "state": "open", "draft": False, "mergeable_state": "clean"},
+        ]
+    )
+
+    def fake_request_bg9(url, token, raw=False):
+        return side_effects_bg9.popleft()
+
+    buf_bg9 = io.StringIO()
+    with (
+        unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_bg9),
+        unittest.mock.patch.object(ci_monitor.time, "time", return_value=9800.0),
+        unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None),
+        unittest.mock.patch("sys.stdout", new=buf_bg9),
+    ):
+        rc_bg9 = ci_monitor.main(["ci_monitor.py", "--pr", "968"])
+
+    out_bg9 = buf_bg9.getvalue()
+    lines_bg9 = out_bg9.splitlines()
+    check(
+        lines_bg9[-1] == "PR#968: Clear (mergeable_state=clean)"
+        and not any(ln.startswith("PR#968: Draft") for ln in lines_bg9),
+        "a PR marked ready between the poll's two fetches is Clear, not a stale Draft",
+        "expected Clear from the fresher payload; output: %r" % out_bg9,
+    )
+    check(
+        len(side_effects_bg9) == 0,
+        "all 3 mocked requests consumed",
+        "request deque not drained; %d entries left" % len(side_effects_bg9),
+    )
+    check(rc_bg9 == 0, "main() returned 0", "main() returned %r" % rc_bg9)
+
+    # Case 10--the other half of that trade: when the fresher fetch fails outright,
+    # draftness falls back to the payload the poll already holds rather than being
+    # lost, and the terminal reports the mergeable state as unknown.
+    side_effects_bg10 = collections.deque(
+        [
+            PR_DRAFT_BG,  # pulls -> sha, draft
+            CHECK_ALL_PASS_BG,  # verdict -> all_passed
+            None,  # mergeable_state fetch fails
+        ]
+    )
+
+    def fake_request_bg10(url, token, raw=False):
+        return side_effects_bg10.popleft()
+
+    buf_bg10 = io.StringIO()
+    with (
+        unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_bg10),
+        unittest.mock.patch.object(ci_monitor.time, "time", return_value=9850.0),
+        unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None),
+        unittest.mock.patch("sys.stdout", new=buf_bg10),
+    ):
+        rc_bg10 = ci_monitor.main(["ci_monitor.py", "--pr", "968"])
+
+    out_bg10 = buf_bg10.getvalue()
+    lines_bg10 = out_bg10.splitlines()
+    check(
+        lines_bg10[-1] == "PR#968: Draft (mergeable_state=unknown)",
+        "a failed mergeable_state fetch falls back to the poll's payload, keeping draftness",
+        "expected Draft (mergeable_state=unknown); output: %r" % out_bg10,
+    )
+    check(
+        len(side_effects_bg10) == 0,
+        "all 3 mocked requests consumed",
+        "request deque not drained; %d entries left" % len(side_effects_bg10),
+    )
+    check(rc_bg10 == 0, "main() returned 0", "main() returned %r" % rc_bg10)
 
     # ── Summary ────────────────────────────────────────────────────────────────────
     print("\nResults: %d passed, %d failed." % (PASS, FAIL))
