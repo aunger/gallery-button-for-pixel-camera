@@ -338,6 +338,24 @@ def parse_pr_terminal(pr_json):
     return ""
 
 
+def parse_pr_draft(pr_json):
+    """Return True when a /pulls/{n} response describes a draft pull request.
+
+    Reads the `draft` boolean GitHub states outright rather than inferring
+    draftness from `mergeable_state == "draft"` (issue #968). `mergeable_state`
+    is one value drawn from a ladder whose precedence order GitHub does not
+    document, so a draft PR that is also conflicted, behind, or waiting on a
+    required check can report `dirty`/`behind`/`blocked` instead, and its
+    draftness would go unseen--turning a held PR into a false `Blocked` or a
+    false `Infra` escalation. The boolean cannot be crowded out that way.
+
+    A response missing the field (e.g. a minimal mock, or a payload GitHub
+    truncated) reads as not-draft; callers pair this with the `draft`
+    mergeable_state as a corroborating fallback.
+    """
+    return bool(pr_json.get("draft"))
+
+
 def _check_run_recency_key(run):
     """Return a sort key ordering check runs oldest-to-newest by check-run id.
 
@@ -886,9 +904,9 @@ def _select_mode(args):
     """Return (mode, tag) for whichever identifier flag was supplied (issue #603).
 
     `mode` is one of 'pr'/'sha'/'run'/'branch'; `tag` is the output-line
-    prefix. Only --pr has a PR to gate mergeable_state on or a merged/closed
-    short-circuit; the other three modes are simpler variants that fire
-    `Clear` directly off an all-passed check verdict.
+    prefix. Only --pr has a PR to gate mergeable_state on, a `draft` flag to
+    read, or a merged/closed short-circuit; the other three modes are simpler
+    variants that fire `Clear` directly off an all-passed check verdict.
 
     Branches on "was this flag supplied" (argparse leaves an un-supplied dest
     at its None default), not on truthiness: the mutually exclusive group
@@ -1285,7 +1303,27 @@ def main(argv):
                     "%s/repos/%s/%s/pulls/%s" % (API_BASE, OWNER, REPO, args.pr), token
                 )
                 mergeable = mpr_json.get("mergeable_state", "unknown") if mpr_json else "unknown"
-                if mergeable in ("clean", "unstable"):
+                if parse_pr_draft(pr_json) or mergeable == "draft":
+                    # Issue #968--a draft PR is held: every check has reported,
+                    # and the PR cannot merge until someone marks it ready for
+                    # review. That is a settled fact, not a value GitHub is still
+                    # computing, so it terminates here instead of falling to the
+                    # still-computing else below and spinning until the
+                    # Orchestrator's 30-minute timeout. It is neither Clear (the
+                    # PR cannot merge) nor Blocked (nothing failed), so it gets
+                    # its own terminal.
+                    #
+                    # Draftness is read first, and from the `draft` boolean, so
+                    # no other mergeable_state can crowd it out (see
+                    # parse_pr_draft); the mergeable_state that came back is
+                    # still reported in the suffix as a diagnostic. The `draft`
+                    # mergeable_state remains a fallback for a payload with no
+                    # `draft` field at all.
+                    print_summary(summary_rows)
+                    print("%s: Draft (mergeable_state=%s)" % (tag, mergeable))
+                    sys.stdout.flush()
+                    break
+                elif mergeable in ("clean", "unstable"):
                     print_summary(summary_rows)
                     print("%s: Clear (mergeable_state=%s)" % (tag, mergeable))
                     sys.stdout.flush()
@@ -1304,19 +1342,6 @@ def main(argv):
                     drain_then_print(
                         sha, "%s: Infra" % tag, " (mergeable_state=blocked)", summary_rows
                     )
-                    break
-                elif mergeable == "draft":
-                    # Issue #968--GitHub reports mergeable_state="draft" for a
-                    # draft PR and keeps reporting it until someone marks the PR
-                    # ready for review. That is a settled fact, not a value still
-                    # being computed, so it gets its own terminal instead of
-                    # sharing the still-computing else below and spinning until
-                    # the Orchestrator's 30-minute timeout. Every check has
-                    # reported and the PR is deliberately not mergeable, which is
-                    # neither Clear (it cannot merge) nor Blocked (nothing failed).
-                    print_summary(summary_rows)
-                    print("%s: Draft (mergeable_state=draft)" % tag)
-                    sys.stdout.flush()
                     break
                 else:
                     # Gap B--throttle "still computing" to >120s of silence, just
@@ -1349,35 +1374,42 @@ def main(argv):
                 # (behind/dirty/blocked) is a real block that falls through to the
                 # raw scan's Blocked/Infra terminal, which still names the blocking
                 # check (including the label gate). A mergeable state (clean/
-                # unstable) reports Clear; a draft PR reports Draft (issue #968);
-                # anything else (mergeable_state not yet computed, or another
-                # non-blocking state such as has_hooks) keeps polling rather than
-                # terminating, staying symmetric with the all_passed path's
-                # still-computing else. The raw scan keeps driving
-                # the per-check summary and step/FAIL diagnostics regardless.
+                # unstable) reports Clear; anything else (mergeable_state not yet
+                # computed, or another non-blocking state such as has_hooks) keeps
+                # polling rather than terminating, staying symmetric with the
+                # all_passed path's still-computing else. The raw scan keeps
+                # driving the per-check summary and step/FAIL diagnostics
+                # regardless. A draft PR is settled before any of that is asked
+                # (issue #968), exactly as in the all_passed ladder.
                 mpr_json = _request(
                     "%s/repos/%s/%s/pulls/%s" % (API_BASE, OWNER, REPO, args.pr), token
                 )
                 mergeable = mpr_json.get("mergeable_state", "unknown") if mpr_json else "unknown"
+                if parse_pr_draft(pr_json) or mergeable == "draft":
+                    # Issue #968--as in the all_passed ladder above, draftness is
+                    # read first and from the `draft` boolean, so it terminates
+                    # instead of polling forever and no other mergeable_state can
+                    # crowd it out. The raw scan's Blocked/Infra verdict is
+                    # deliberately not reported here: a draft PR's mergeable_state
+                    # says nothing about whether the non-passing check is
+                    # required, so reporting a merge block would risk the same
+                    # false positive issue #748 removed. The terminal names the
+                    # draft state and attributes the non-passing check(s) through
+                    # the shared " by: ..." suffix--including its [label gate]
+                    # annotation, which is the everyday shape while a process
+                    # label holds the PR--after the usual drain for lagging
+                    # step/FAIL diagnostics.
+                    drain_then_print(
+                        sha,
+                        "%s: Draft" % tag,
+                        " (mergeable_state=%s)" % mergeable,
+                        summary_rows,
+                    )
+                    break
                 if mergeable in ("clean", "unstable"):
                     print_summary(summary_rows)
                     print("%s: Clear (mergeable_state=%s)" % (tag, mergeable))
                     sys.stdout.flush()
-                    break
-                if mergeable == "draft":
-                    # Issue #968--as in the all_passed path above, "draft" is a
-                    # settled state rather than one GitHub is still computing, so
-                    # it terminates instead of polling forever. The raw scan's
-                    # Blocked/Infra verdict is deliberately not reported here: a
-                    # draft PR's mergeable_state says nothing about whether the
-                    # non-passing check is required, so reporting a merge block
-                    # would risk the same false positive issue #748 removed. The
-                    # terminal names the draft state and attributes the
-                    # non-passing check(s) through the shared " by: ..." suffix,
-                    # after the usual drain for lagging step/FAIL diagnostics.
-                    drain_then_print(
-                        sha, "%s: Draft" % tag, " (mergeable_state=draft)", summary_rows
-                    )
                     break
                 if mergeable not in ("behind", "dirty", "blocked"):
                     # Not an un-mergeable state: don't emit a possibly-false
