@@ -22,10 +22,10 @@ An issue's own orchestration-cycle state labels (PROCESS_STATE_LABELS, e.g.
 `orchestrating`, `verification needed`, `changes done`) are never propagated
 at all, even onto a PR that carries none of their conflicting siblings.
 agents/dev_orchestration.md deliberately lets an issue and its PR diverge on
-these mid-cycle (for example, `orchestrating` is removed from the PR alone,
-not the issue, to clear the "No blocking labels" merge gate while
-orchestration is still active), so blindly copying them from issue to PR
-fights that state machine instead of just adding a convenience label.
+these mid-cycle (for example, `changes requested`/`changes done` live on the
+PR once one exists, and the issue's copy goes stale by design), so blindly
+copying them from issue to PR fights that state machine instead of just
+adding a convenience label.
 
 Labels a pull request's own changed files determine under an if-and-only-if
 rule (FILE_DETERMINED_LABELS, e.g. `agents`) are likewise never propagated:
@@ -165,21 +165,22 @@ def fetch_closing_issue_labels(
 # allowed, or required, to carry these differently while a PR is under
 # active orchestration:
 #   - `orchestrate`/`orchestrating` is applied to both when orchestration
-#     starts, but `orchestrating` is removed from the PR alone (not the
-#     issue) to clear the "No blocking labels" merge gate mid-cycle
-#     (dev_orchestration.md's labelGateBlock), while the issue keeps it for
-#     the rest of the active cycle.
+#     starts, and the PR carries `orchestrating` for the whole cycle. Holding
+#     the "No blocking labels" gate red while it does is the label's purpose,
+#     so nothing removes it mid-cycle to open that gate
+#     (dev_orchestration.md's labelGateBlock); "Concluding PR orchestration"
+#     clears it from both at the end.
 #   - `changes requested`/`changes done` transitions apply "to the PR if one
 #     exists; apply it to the issue otherwise"--once a PR exists, these live
 #     on the PR only, and the issue's copy (if any) goes stale by design.
 #   - `verification needed`/`verified` are likewise driven by the PR's own
 #     CI/verification state, not the issue's.
 # Blindly copying any of these from issue to PR does not add a harmless
-# convenience label: it fights this state machine and can re-obstruct a
-# merge gate an Orchestrator just cleared (observed live on PR #713, where a
-# routine push re-applied "orchestrating" moments after it had been removed
-# from the PR alone). So these are never eligible for propagation, even onto
-# a PR that carries none of their conflicting siblings.
+# convenience label: it fights this state machine, re-applying process state
+# whose lifetime the PR's own cycle owns (observed live on PR #713, where a
+# routine push re-applied "orchestrating" to a PR moments after it had been
+# removed). So these are never eligible for propagation, even onto a PR that
+# carries none of their conflicting siblings.
 PROCESS_STATE_LABELS: frozenset[str] = frozenset(
     {
         "orchestrate",
