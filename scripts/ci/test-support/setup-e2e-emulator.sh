@@ -162,11 +162,13 @@ echo "==> Disabling animations..."
 #      as PointerController sprites, which never reach that window list. (Read at
 #      android15-release, this AVD's API 35.)
 #   2. Both settings are written once, here, so every tap of every suite sees the same overlay,
-#      while the drop comes and goes: 6 of the 25 E2E runs of 22-23 Aug 2026 needed a re-tap and
-#      19 did not, and run 32587090727 holds a dropped tap and an identical re-tap 5s later that
-#      landed. That rules the overlay out as a sufficient cause only. A constant can be one half
-#      of a conjunction, so this would read the same even if the overlay were a necessary
-#      co-factor, which is why reason 1 and not this one closes the question.
+#      while the drop comes and goes: PartialAccessPhotoPickerE2ETest, whose awaitPickerWindow
+#      doc points back here, needed a re-tap on 6 of the 25 E2E runs of 22-23 Aug 2026 and none
+#      on the other 19 (that count is its own; the sibling dialog suites are not measured), and
+#      run 32587090727 holds a dropped tap and an identical re-tap 5s later that landed. That
+#      rules the overlay out as a sufficient cause only. A constant can be one half of a
+#      conjunction, so this would read the same even if the overlay were a necessary co-factor,
+#      which is why reason 1 and not this one closes the question.
 #   3. What does vary is a timing of the test's own: over those same 25 runs the dropped taps
 #      were logged sooner after the requestPermissions() click than the ones that stuck, a mean
 #      1430ms against 1735ms (one-sided exact permutation test over all 177,100 splits,
