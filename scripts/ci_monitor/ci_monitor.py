@@ -1305,6 +1305,19 @@ def main(argv):
                         sha, "%s: Infra" % tag, " (mergeable_state=blocked)", summary_rows
                     )
                     break
+                elif mergeable == "draft":
+                    # Issue #968--GitHub reports mergeable_state="draft" for a
+                    # draft PR and keeps reporting it until someone marks the PR
+                    # ready for review. That is a settled fact, not a value still
+                    # being computed, so it gets its own terminal instead of
+                    # sharing the still-computing else below and spinning until
+                    # the Orchestrator's 30-minute timeout. Every check has
+                    # reported and the PR is deliberately not mergeable, which is
+                    # neither Clear (it cannot merge) nor Blocked (nothing failed).
+                    print_summary(summary_rows)
+                    print("%s: Draft (mergeable_state=draft)" % tag)
+                    sys.stdout.flush()
+                    break
                 else:
                     # Gap B--throttle "still computing" to >120s of silence, just
                     # like the in_progress heartbeat, so it does not print every poll.
@@ -1336,10 +1349,11 @@ def main(argv):
                 # (behind/dirty/blocked) is a real block that falls through to the
                 # raw scan's Blocked/Infra terminal, which still names the blocking
                 # check (including the label gate). A mergeable state (clean/
-                # unstable) reports Clear; anything else (mergeable_state not yet
-                # computed, or another non-blocking state such as has_hooks) keeps
-                # polling rather than terminating, staying symmetric with the
-                # all_passed path's still-computing else. The raw scan keeps driving
+                # unstable) reports Clear; a draft PR reports Draft (issue #968);
+                # anything else (mergeable_state not yet computed, or another
+                # non-blocking state such as has_hooks) keeps polling rather than
+                # terminating, staying symmetric with the all_passed path's
+                # still-computing else. The raw scan keeps driving
                 # the per-check summary and step/FAIL diagnostics regardless.
                 mpr_json = _request(
                     "%s/repos/%s/%s/pulls/%s" % (API_BASE, OWNER, REPO, args.pr), token
@@ -1349,6 +1363,21 @@ def main(argv):
                     print_summary(summary_rows)
                     print("%s: Clear (mergeable_state=%s)" % (tag, mergeable))
                     sys.stdout.flush()
+                    break
+                if mergeable == "draft":
+                    # Issue #968--as in the all_passed path above, "draft" is a
+                    # settled state rather than one GitHub is still computing, so
+                    # it terminates instead of polling forever. The raw scan's
+                    # Blocked/Infra verdict is deliberately not reported here: a
+                    # draft PR's mergeable_state says nothing about whether the
+                    # non-passing check is required, so reporting a merge block
+                    # would risk the same false positive issue #748 removed. The
+                    # terminal names the draft state and attributes the
+                    # non-passing check(s) through the shared " by: ..." suffix,
+                    # after the usual drain for lagging step/FAIL diagnostics.
+                    drain_then_print(
+                        sha, "%s: Draft" % tag, " (mergeable_state=draft)", summary_rows
+                    )
                     break
                 if mergeable not in ("behind", "dirty", "blocked"):
                     # Not an un-mergeable state: don't emit a possibly-false
