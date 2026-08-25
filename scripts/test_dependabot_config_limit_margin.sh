@@ -4,27 +4,19 @@
 #
 # That script counts the pull requests a Dependabot update entry's coordinates
 # can want open at once (one per non-empty group, plus one per ungrouped
-# coordinate) and reports on `open-pull-requests-limit` against that count. The
-# reporting has three bands, and this file drives all three:
+# coordinate) and checks `open-pull-requests-limit` against that count. The
+# check requires a margin rather than bare coverage, so it has two bands and
+# this file drives both, from either side of the boundary:
 #
-#   limit <= count       FAIL, naming the limit that fixes it. At parity the
-#                        limit covers exactly what today's manifest can want
-#                        and starves the next ungrouped coordinate added to it.
-#   limit == count + 1   PASS with a WARN. Nothing is wrong yet, and one more
-#                        ungrouped coordinate makes it parity.
-#   limit >= count + 2   PASS, silently.
+#   limit <= count   FAIL, naming the limit that fixes it. At parity the limit
+#                    covers exactly what today's manifest can want and starves
+#                    the next ungrouped coordinate added to it; below parity it
+#                    is already starving one, which is what #871 reported.
+#   limit >  count   PASS.
 #
-# A warning is not fatal, which is the other property asserted here: the band
-# that warns still exits 0. Nor is printing it the whole of delivering it: under
-# GitHub Actions the guard re-emits each warning as a ::warning annotation, so
-# the warning band is driven both ways and the silent band is driven under
-# Actions too, which is what shows the annotation follows the warning rather
-# than the environment.
-#
-# Every fixture run captures the guard's stdout, so an annotation a fixture
-# provokes is swallowed here rather than landing on the run that is only testing
-# for it, and the runs that are not testing annotations clear GITHUB_ACTIONS
-# outright.
+# Naming the fix is asserted, not just the verdict: the person who trips the
+# parity failure is adding a dependency to a configuration that works and has
+# no context on margins, so a bare verdict would leave them nothing to act on.
 #
 # The fixtures are the real .github/dependabot.yml with nothing but the limit
 # rewritten, so every other check in the script stays green and the exit status
@@ -47,10 +39,6 @@ FAIL=0
 pass() { echo "  PASS: $1"; PASS=$((PASS + 1)); }
 fail() { echo "  FAIL: $1"; FAIL=$((FAIL + 1)); }
 
-# Captured guard output, defanged for quoting in a failure message: a workflow
-# command echoed verbatim would be obeyed by the runner reporting the failure.
-dump() { sed 's/^::/[::]/' <<< "$1"; }
-
 # The script under test needs PyYAML (scripts/requirements.txt) to read the
 # config at all; without it every band would look alike. Skip rather than fail,
 # matching how the lint tests skip a tool they cannot provision.
@@ -67,10 +55,8 @@ STATUS=0
 
 # Run the script under test against a copy of the real config whose
 # open-pull-requests-limit is $1, leaving the result in $OUTPUT and $STATUS.
-# Pass "actions" as $2 to run it as GitHub Actions would; the default clears
-# GITHUB_ACTIONS so an inherited one cannot change what the other bands print.
 run_with_limit() {
-    local limit="$1" environment="${2:-local}"
+    local limit="$1"
     local fixture="$TMP_DIR/dependabot-limit-$limit.yml"
     sed -E "s/^([[:space:]]*open-pull-requests-limit:).*/\1 $limit/" "$CONFIG" > "$fixture"
     # A renamed or reformatted key would leave the real limit in place and make
@@ -78,15 +64,11 @@ run_with_limit() {
     if ! grep -qE "^[[:space:]]*open-pull-requests-limit: $limit\$" "$fixture"; then
         fail "the fixture for a limit of $limit does not set that limit"
     fi
-    if [ "$environment" = "actions" ]; then
-        OUTPUT="$(GITHUB_ACTIONS=true bash "$TARGET" "$fixture" 2>&1)"
-    else
-        OUTPUT="$(env -u GITHUB_ACTIONS bash "$TARGET" "$fixture" 2>&1)"
-    fi
+    OUTPUT="$(bash "$TARGET" "$fixture" 2>&1)"
     STATUS=$?
 }
 
-# The line every band prints, whatever its verdict, is the one carrying the count.
+# The line both bands print, whatever the verdict, is the one carrying the count.
 COUNT_RE='the ([0-9]+) pull requests its coordinates can want open at once'
 
 expect_limit_verdict() {
@@ -94,12 +76,12 @@ expect_limit_verdict() {
     if grep -qE "^  $want: .*open-pull-requests-limit of .*$COUNT_RE" <<< "$OUTPUT"; then
         pass "$label reports the limit check as $want"
     else
-        fail "$label did not report the limit check as $want; output was: $(dump "$OUTPUT")"
+        fail "$label did not report the limit check as $want; output was: $OUTPUT"
     fi
 }
 
 # $2 is "zero" or "non-zero": the script reports its verdict in the exit status
-# as well as in its output, and a warning must not move it.
+# as well as in its output, and the two have to agree.
 expect_status() {
     local label="$1" want="$2"
     if { [ "$want" = "zero" ] && [ "$STATUS" -eq 0 ]; } || { [ "$want" = "non-zero" ] && [ "$STATUS" -ne 0 ]; }; then
@@ -109,61 +91,27 @@ expect_status() {
     fi
 }
 
-expect_warn_count() {
-    local label="$1" want="$2"
-    local got
-    got="$(grep -c '^  WARN: ' <<< "$OUTPUT")"
-    if [ "$got" -eq "$want" ]; then
-        pass "$label emits $want warning(s)"
-    else
-        fail "$label emitted $got warning(s), wanted $want; output was: $(dump "$OUTPUT")"
-    fi
-    if grep -qE "^test_dependabot_config\.sh: [0-9]+ passed, [0-9]+ failed, $want warned$" <<< "$OUTPUT"; then
-        pass "$label counts $want warning(s) in its summary line"
-    else
-        fail "$label did not count $want warning(s) in its summary line; output was: $(dump "$OUTPUT")"
-    fi
-}
-
-# $2 is the limit a failure must name as its fix. A verdict alone is not a
-# usable failure: the person who trips it is adding a dependency to a
-# configuration that works and needs to be told what to change.
+# $2 is the limit a failure must name as its fix.
 expect_remedy() {
     local label="$1" want="$2"
     if grep -qE "^  FAIL: .*raising the limit to $want or more is what fixes it" <<< "$OUTPUT"; then
         pass "$label names $want as the limit that fixes it"
     else
-        fail "$label did not name $want as the limit that fixes it; output was: $(dump "$OUTPUT")"
-    fi
-}
-
-# $2 is the number of ::warning annotations wanted, and each must carry the text
-# of the warning it stands for rather than a bare title.
-expect_annotations() {
-    local label="$1" want="$2"
-    local got
-    got="$(grep -c '^::warning title=.*::.*open-pull-requests-limit of ' <<< "$OUTPUT")"
-    if [ "$got" -eq "$want" ]; then
-        pass "$label emits $want annotation(s)"
-    else
-        fail "$label emitted $got annotation(s), wanted $want; output was: $(dump "$OUTPUT")"
+        fail "$label did not name $want as the limit that fixes it; output was: $OUTPUT"
     fi
 }
 
 # The count the real manifest produces, read back from the script itself. Run
-# against the config as committed, whose own limit does not matter here: every
-# band prints the count line, so any of them answers this question. It clears
-# GITHUB_ACTIONS like every other run that is not testing annotations, so this
-# one cannot become the exception the moment a second warn() is added to the
-# guard.
+# against the config as committed, whose own limit does not matter here: both
+# bands print the count line, so either of them answers this question.
 echo
 echo "=== reading the pull request count from $TARGET ==="
-OUTPUT="$(env -u GITHUB_ACTIONS bash "$TARGET" "$CONFIG" 2>&1)"
+OUTPUT="$(bash "$TARGET" "$CONFIG" 2>&1)"
 COUNT="$(grep -oE "$COUNT_RE" <<< "$OUTPUT" | head -1 | grep -oE '[0-9]+')"
 if [ -n "$COUNT" ]; then
     pass "the limit check reports a pull request count ($COUNT)"
 else
-    fail "no pull request count found in the output: $(dump "$OUTPUT")"
+    fail "no pull request count found in the output: $OUTPUT"
     echo
     echo "test_dependabot_config_limit_margin.sh: $PASS passed, $FAIL failed"
     exit 1
@@ -174,7 +122,6 @@ echo "=== a limit below the count fails (the starvation #871 reported) ==="
 run_with_limit "$((COUNT - 1))"
 expect_limit_verdict "a limit of $((COUNT - 1)) against $COUNT" FAIL
 expect_status "a limit of $((COUNT - 1)) against $COUNT" non-zero
-expect_warn_count "a limit of $((COUNT - 1)) against $COUNT" 0
 expect_remedy "a limit of $((COUNT - 1)) against $COUNT" "$((COUNT + 1))"
 
 echo
@@ -182,36 +129,19 @@ echo "=== a limit at parity with the count fails (issue #937) ==="
 run_with_limit "$COUNT"
 expect_limit_verdict "a limit of $COUNT against $COUNT" FAIL
 expect_status "a limit of $COUNT against $COUNT" non-zero
-expect_warn_count "a limit of $COUNT against $COUNT" 0
 expect_remedy "a limit of $COUNT against $COUNT" "$((COUNT + 1))"
 
 echo
-echo "=== a limit one above the count passes with a warning (issue #937) ==="
+echo "=== one above the count is the first limit that passes (issue #937) ==="
 run_with_limit "$((COUNT + 1))"
 expect_limit_verdict "a limit of $((COUNT + 1)) against $COUNT" PASS
 expect_status "a limit of $((COUNT + 1)) against $COUNT" zero
-expect_warn_count "a limit of $((COUNT + 1)) against $COUNT" 1
-expect_annotations "a limit of $((COUNT + 1)) against $COUNT outside Actions" 0
 
 echo
-echo "=== a limit two above the count passes silently ==="
+echo "=== a limit further above the count passes too ==="
 run_with_limit "$((COUNT + 2))"
 expect_limit_verdict "a limit of $((COUNT + 2)) against $COUNT" PASS
 expect_status "a limit of $((COUNT + 2)) against $COUNT" zero
-expect_warn_count "a limit of $((COUNT + 2)) against $COUNT" 0
-
-echo
-echo "=== under GitHub Actions a warning is also an annotation (issue #937) ==="
-run_with_limit "$((COUNT + 1))" actions
-expect_status "a limit of $((COUNT + 1)) against $COUNT under Actions" zero
-expect_warn_count "a limit of $((COUNT + 1)) against $COUNT under Actions" 1
-expect_annotations "a limit of $((COUNT + 1)) against $COUNT under Actions" 1
-
-# The annotation has to follow the warning, not the environment: the band that
-# warns about nothing must stay silent in the same environment.
-run_with_limit "$((COUNT + 2))" actions
-expect_warn_count "a limit of $((COUNT + 2)) against $COUNT under Actions" 0
-expect_annotations "a limit of $((COUNT + 2)) against $COUNT under Actions" 0
 
 echo
 echo "test_dependabot_config_limit_margin.sh: $PASS passed, $FAIL failed"

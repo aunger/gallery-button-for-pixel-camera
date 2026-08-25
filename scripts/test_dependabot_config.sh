@@ -73,25 +73,17 @@
 # to the count covers exactly what today's manifest can want and starves the
 # next ungrouped coordinate added to it, so a check that is pass/fail at
 # coverage goes red only once that coordinate is in the manifest, which is the
-# state #871 reported after the fact. Failing at parity moves the report one
-# step earlier, onto the file that still works and has nothing left over, and
-# warning one slot above parity moves the first notice one step earlier again.
-# Today's file is 9 streams against a limit of 15, clear of both bands; a limit
-# of 10 was the warning band, and raising it is what the warning asked for.
+# state #871 reported after the fact. Failing at parity moves the report onto
+# the file that still works and has nothing left over, one step before the
+# coordinate that would starve it. Today that is 9 streams against a limit of
+# 10, one slot clear.
 #
-# A warning is not a failure: it is printed, counted in the summary line, and
-# leaves the exit status alone, because nothing is wrong with the file yet.
-#
-# Printing it is not enough to make it a signal. build.yml's shell-tests job
-# runs each scripts/**/test_*.sh and reads the exit status alone; nothing
-# collects stdout, so a warning inside a green job reaches only whoever opens
-# the raw log and scrolls, which is the delivery this file's own header
-# condemns in the paragraph motivating the check. So under GitHub Actions each
-# warning is re-emitted as a ::warning annotation, which puts it in the run
-# summary.
-# scripts/ci/prs-and-issues/detect_launch_retry.sh raises a report-only signal
-# out of a passing job the same way and for the same reason; gating on
-# GITHUB_ACTIONS leaves a local run printing exactly what it printed before.
+# The margin is one slot and the report is a failure, with nothing between
+# them. A warning band above the failure was tried and dropped: this script
+# reports through stdout, build.yml's shell-tests job reads the exit status
+# alone, and nothing collects the rest, so a report that does not fail the job
+# arrives in a log nobody reads, which is the delivery this file's own header
+# condemns in the paragraph motivating the check.
 #
 # Grouping is checked in both directions. Every test-only coordinate belongs
 # to some group, so a run of test-only bumps stays one pull request and one
@@ -132,21 +124,16 @@ CONFIG="${1:-$REPO_ROOT/.github/dependabot.yml}"
 
 PASS=0
 FAIL=0
-WARN=0
 
 pass() { echo "  PASS: $1"; PASS=$((PASS + 1)); }
 fail() { echo "  FAIL: $1"; FAIL=$((FAIL + 1)); }
-
-# Warnings are reported and counted but never fatal; only FAIL decides the exit
-# status. See the margin note in the file header.
-summary() { echo "test_dependabot_config.sh: $PASS passed, $FAIL failed, $WARN warned"; }
 
 echo "Checking $CONFIG"
 
 if [ ! -f "$CONFIG" ]; then
     fail "$CONFIG exists"
     echo
-    summary
+    echo "test_dependabot_config.sh: $PASS passed, $FAIL failed"
     exit 1
 fi
 pass "$CONFIG exists"
@@ -175,15 +162,6 @@ def check(ok, msg):
     results.append(bool(ok))
     print(("  PASS: " if ok else "  FAIL: ") + msg)
     return ok
-
-
-def warn(msg):
-    """Report something that passes today and is one step from failing.
-
-    Deliberately not appended to `results`: a warning is counted in the summary
-    line and leaves the exit status alone (issue #937).
-    """
-    print("  WARN: " + msg)
 
 
 try:
@@ -644,20 +622,12 @@ for index, entry, names, directories in gradle_entries:
             detail = ""
         if detail:
             detail += ", and raising the limit to %d or more is what fixes it" % (streams + 1)
-        if check(
+        check(
             limit > streams,
             "%s's open-pull-requests-limit of %d is above the %d pull requests its coordinates can want open at "
             "once (%s), leaving a slot for the next coordinate added rather than starving it%s "
             "(issues #873, #937)" % (label, limit, streams, composition, detail),
-        ) and limit - streams == 1:
-            # The one-slot case passes and is the last state that does, so it
-            # is where the approach is worth saying out loud.
-            warn(
-                "%s's open-pull-requests-limit of %d is a single slot above the %d pull requests its coordinates "
-                "can want open at once (%s): the next ungrouped coordinate added consumes that slot and turns "
-                "this warning into a failure, and raising the limit is what clears it (issue #937)"
-                % (label, limit, streams, composition)
-            )
+        )
 
 for name in registries:
     check(name in referenced, "declared registry %r is referenced by an update entry" % name)
@@ -669,26 +639,14 @@ PY_STATUS=$?
 set -e
 
 echo "$OUTPUT"
-
-# Re-emit each warning where a person will see it. Warnings only: a failure
-# already fails the job and needs no annotation to be noticed.
-if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
-    while IFS= read -r line; do
-        [ -n "$line" ] || continue
-        echo "::warning title=Dependabot open-pull-requests-limit margin::${line#  WARN: }"
-    done < <(grep '^  WARN: ' <<<"$OUTPUT" || true)
-fi
-
 PY_PASS=$(grep -c '^  PASS:' <<<"$OUTPUT" || true)
 PY_FAIL=$(grep -c '^  FAIL:' <<<"$OUTPUT" || true)
-PY_WARN=$(grep -c '^  WARN:' <<<"$OUTPUT" || true)
 PASS=$((PASS + PY_PASS))
 FAIL=$((FAIL + PY_FAIL))
-WARN=$((WARN + PY_WARN))
 if [ "$PY_STATUS" -ne 0 ] && [ "$PY_FAIL" -eq 0 ]; then
     fail "dependabot.yml checks errored before reporting individual checks (exit $PY_STATUS)"
 fi
 
 echo
-summary
+echo "test_dependabot_config.sh: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
