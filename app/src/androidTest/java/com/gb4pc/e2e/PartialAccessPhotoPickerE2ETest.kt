@@ -434,6 +434,16 @@ class PartialAccessPhotoPickerE2ETest {
      * the thing you asked for not happening. That is transient by nature, so retrying is the fix
      * that does not depend on identifying which window did the obscuring.
      *
+     * ### One window it was not (issue #930)
+     *
+     * The named suspect for these drops was the full-screen `pointer_location` readout that
+     * `scripts/ci/test-support/setup-e2e-emulator.sh` turns on for every E2E job. It is not the
+     * cause: AOSP adds it as a `TYPE_SECURE_SYSTEM_OVERLAY`, and `InputDispatcher` excludes every
+     * trusted overlay by type from the computation that raises the two flags `SecureButton`
+     * filters on. That script's step 7 has the argument in full, the 25-run re-tap data behind
+     * it, and the one weak timing lead it turned up; none of that is repeated here. A re-tap in
+     * this log is not a reason to turn that debugging aid off.
+     *
      * The old objection to retrying was real, and it is answered by bounding the retries rather
      * than by abandoning them. A re-tap must not land while the picker is launching, because the
      * option's centre on this emulator is (540, 1233) -- inside the grid the picker puts there,

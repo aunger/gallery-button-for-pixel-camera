@@ -147,6 +147,36 @@ echo "==> Disabling animations..."
 # position/pressure (pointer_location), so screen recordings and the live screen make
 # it obvious where and when the tests are tapping (issue #604). Configured here, once
 # for the whole job, rather than per-suite, so every emulator-based E2E run gets it.
+#
+# Neither setting is the source of the window-obscured touch drops the permission-dialog suites
+# re-tap around (issues #581, #925). Issue #930 investigated and cleared them, so do not disable a
+# deliberate debugging aid chasing that flake. Reason 1 settles it; 2 and 3 only corroborate.
+#
+#   1. AOSP's DisplayPolicy.enablePointerLocation() adds the readout as a
+#      TYPE_SECURE_SYSTEM_OVERLAY, InputMonitor.isTrustedOverlay() lists that type, and so
+#      WindowState.isWindowTrustedOverlay() holds on type alone. InputDispatcher's
+#      canBeObscuredBy() returns false for every TRUSTED_OVERLAY window, dropping it out of
+#      isWindowObscuredAtPointLocked() and isWindowObscuredLocked(), the only producers of the
+#      FLAG_WINDOW_IS_OBSCURED/FLAG_WINDOW_IS_PARTIALLY_OBSCURED pair SecureButton filters on.
+#      show_touches is not a window at all: inputflinger's PointerChoreographer draws its spots
+#      as PointerController sprites, which never reach that window list. (Read at
+#      android15-release, this AVD's API 35.)
+#   2. Both settings are written once, here, so every tap of every suite sees the same overlay,
+#      while the drop comes and goes: PartialAccessPhotoPickerE2ETest, whose awaitPickerWindow
+#      doc points back here, needed a re-tap on 6 of the 25 E2E runs of 22-23 Aug 2026 and none
+#      on the other 19 (that count is its own; the sibling dialog suites are not measured), and
+#      run 32587090727 holds a dropped tap and an identical re-tap 5s later that landed. That
+#      rules the overlay out as a sufficient cause only. A constant can be one half of a
+#      conjunction, so this would read the same even if the overlay were a necessary co-factor,
+#      which is why reason 1 and not this one closes the question.
+#   3. What does vary is a timing of the test's own: over those same 25 runs the dropped taps
+#      were logged sooner after the requestPermissions() click than the ones that stuck, a mean
+#      1430ms against 1735ms (one-sided exact permutation test over all 177,100 splits,
+#      p = 0.012). A lead, not a finding: n is 6 on the dropped side, the ranges (1200-1572ms,
+#      1136-2150ms) almost entirely overlap, and the split was chosen after seeing the data. It
+#      also admits two readings, since awaitAndTap taps as soon as the option is findable: a
+#      younger dialog window at tap time (issue #581's condition), or merely a dialog that
+#      appeared sooner. Issue #930 did not separate them.
 echo "==> Enabling touch visualization (show_touches, pointer_location)..."
 "$ADB" shell settings put system show_touches 1
 "$ADB" shell settings put system pointer_location 1
