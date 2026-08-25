@@ -434,27 +434,15 @@ class PartialAccessPhotoPickerE2ETest {
      * the thing you asked for not happening. That is transient by nature, so retrying is the fix
      * that does not depend on identifying which window did the obscuring.
      *
-     * ### One window it was not, and what the drop tracks instead (issue #930)
+     * ### One window it was not (issue #930)
      *
-     * The named suspect was the full-screen `pointer_location` readout that
-     * `scripts/ci/test-support/setup-e2e-emulator.sh` turns on for every E2E job, visible across
-     * the top of run 32466889251's failure screenshot. It is not the cause, and what settles that
-     * is the mechanism rather than any statistic: AOSP adds the readout as a
-     * `TYPE_SECURE_SYSTEM_OVERLAY` window, and `InputDispatcher::canBeObscuredBy()` excludes every
-     * trusted overlay from the computation that raises the two flags `SecureButton` filters on,
-     * unconditionally and on type alone. That script's step 7 carries the argument in full.
-     *
-     * A second, much weaker observation is recorded there too, because it is the only signal so
-     * far about what *does* vary. The quantity is [awaitAndTap]'s elapsed for the dialog option,
-     * logged by [tapPartialAccessOptionInSystemDialog] before this function is called at all, not
-     * anything this loop measures. Over the 25 E2E runs of 22-23 Aug 2026, the 6 that went on to
-     * need a re-tap had had that option tapped sooner after the request than the 19 that did not,
-     * a mean 1430ms against 1735ms (p = 0.012). That is a lead, not a finding: n is 6, the two
-     * ranges almost entirely overlap, the comparison is observational, and because [awaitAndTap]
-     * taps as soon as the option is findable, a shorter elapsed may mean a younger dialog window
-     * at tap time (issue #581's condition) or merely a dialog that appeared sooner. Either way, a
-     * re-tap in the log is evidence about this suite's own timing rather than a reason to turn a
-     * debugging aid off.
+     * The named suspect for these drops was the full-screen `pointer_location` readout that
+     * `scripts/ci/test-support/setup-e2e-emulator.sh` turns on for every E2E job. It is not the
+     * cause: AOSP adds it as a `TYPE_SECURE_SYSTEM_OVERLAY`, and `InputDispatcher` excludes every
+     * trusted overlay by type from the computation that raises the two flags `SecureButton`
+     * filters on. That script's step 7 has the argument in full, the 25-run re-tap data behind
+     * it, and the one weak timing lead it turned up; none of that is repeated here. A re-tap in
+     * this log is not a reason to turn that debugging aid off.
      *
      * The old objection to retrying was real, and it is answered by bounding the retries rather
      * than by abandoning them. A re-tap must not land while the picker is launching, because the
