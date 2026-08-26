@@ -338,6 +338,24 @@ def parse_pr_terminal(pr_json):
     return ""
 
 
+def pr_is_draft(pr_json):
+    """Return True when a /pulls/{n} response describes a draft pull request.
+
+    Reads the `draft` boolean GitHub states outright rather than inferring
+    draftness from `mergeable_state == "draft"` (issue #968). `mergeable_state`
+    is one value drawn from a ladder whose precedence order GitHub does not
+    document, so a draft PR that is also conflicted, behind, or waiting on a
+    required check can report `dirty`/`behind`/`blocked` instead, and its
+    draftness would go unseen--turning a held PR into a false `Blocked` or a
+    false `Infra` escalation. The boolean cannot be crowded out that way.
+
+    A response missing the field (e.g. a minimal mock, or a payload GitHub
+    truncated) reads as not-draft; callers pair this with the `draft`
+    mergeable_state as a corroborating fallback.
+    """
+    return bool(pr_json.get("draft"))
+
+
 def _check_run_recency_key(run):
     """Return a sort key ordering check runs oldest-to-newest by check-run id.
 
@@ -886,9 +904,9 @@ def _select_mode(args):
     """Return (mode, tag) for whichever identifier flag was supplied (issue #603).
 
     `mode` is one of 'pr'/'sha'/'run'/'branch'; `tag` is the output-line
-    prefix. Only --pr has a PR to gate mergeable_state on or a merged/closed
-    short-circuit; the other three modes are simpler variants that fire
-    `Clear` directly off an all-passed check verdict.
+    prefix. Only --pr has a PR to gate mergeable_state on, a `draft` flag to
+    read, or a merged/closed short-circuit; the other three modes are simpler
+    variants that fire `Clear` directly off an all-passed check verdict.
 
     Branches on "was this flag supplied" (argparse leaves an un-supplied dest
     at its None default), not on truthiness: the mutually exclusive group
@@ -1285,7 +1303,20 @@ def main(argv):
                     "%s/repos/%s/%s/pulls/%s" % (API_BASE, OWNER, REPO, args.pr), token
                 )
                 mergeable = mpr_json.get("mergeable_state", "unknown") if mpr_json else "unknown"
-                if mergeable in ("clean", "unstable"):
+                if pr_is_draft(mpr_json or pr_json) or mergeable == "draft":
+                    # Issue #968--draftness is tested BEFORE every mergeable
+                    # state, so no other value can crowd it out (see pr_is_draft);
+                    # reordering this ladder would silently break that. It is read
+                    # from the fresher /pulls payload, falling back to the poll's
+                    # first fetch when that request failed, and the `draft`
+                    # mergeable_state backs both up for a payload carrying no
+                    # `draft` field. The state that did come back is reported in
+                    # the suffix as a diagnostic.
+                    print_summary(summary_rows)
+                    print("%s: Draft (mergeable_state=%s)" % (tag, mergeable))
+                    sys.stdout.flush()
+                    break
+                elif mergeable in ("clean", "unstable"):
                     print_summary(summary_rows)
                     print("%s: Clear (mergeable_state=%s)" % (tag, mergeable))
                     sys.stdout.flush()
@@ -1339,12 +1370,29 @@ def main(argv):
                 # unstable) reports Clear; anything else (mergeable_state not yet
                 # computed, or another non-blocking state such as has_hooks) keeps
                 # polling rather than terminating, staying symmetric with the
-                # all_passed path's still-computing else. The raw scan keeps driving
-                # the per-check summary and step/FAIL diagnostics regardless.
+                # all_passed path's still-computing else. The raw scan keeps
+                # driving the per-check summary and step/FAIL diagnostics
+                # regardless. A draft PR is settled before any of that is asked
+                # (issue #968), exactly as in the all_passed ladder.
                 mpr_json = _request(
                     "%s/repos/%s/%s/pulls/%s" % (API_BASE, OWNER, REPO, args.pr), token
                 )
                 mergeable = mpr_json.get("mergeable_state", "unknown") if mpr_json else "unknown"
+                if pr_is_draft(mpr_json or pr_json) or mergeable == "draft":
+                    # Issue #968--as in the all_passed ladder above. The raw
+                    # scan's Blocked/Infra verdict is deliberately NOT reported
+                    # here: a draft PR's mergeable_state says nothing about
+                    # whether the non-passing check is required, so reporting a
+                    # merge block would risk the same false positive issue #748
+                    # removed. The check(s) are named instead, through the shared
+                    # " by: ..." suffix.
+                    drain_then_print(
+                        sha,
+                        "%s: Draft" % tag,
+                        " (mergeable_state=%s)" % mergeable,
+                        summary_rows,
+                    )
+                    break
                 if mergeable in ("clean", "unstable"):
                     print_summary(summary_rows)
                     print("%s: Clear (mergeable_state=%s)" % (tag, mergeable))

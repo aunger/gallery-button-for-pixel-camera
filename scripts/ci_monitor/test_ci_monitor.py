@@ -98,6 +98,20 @@ Covers:
        non-blocking, e.g. has_hooks) mergeable_state keeps polling rather than
        terminating prematurely, and the still-computing heartbeat does not begin
        with a Blocked/Infra terminal keyword
+  (bg) #968 pr_is_draft: reads the /pulls/{n} `draft` boolean, absent or
+       false reads as not-draft
+  (bh) #968 main(): --pr terminates on a draft PR instead of spinning in the
+       still-computing arm. Draftness is keyed on the `draft` boolean, so it
+       outranks every mergeable_state (a draft reporting blocked/unstable is
+       still Draft, not a false Infra or a false Clear), with the `draft`
+       mergeable_state as the fallback for a payload lacking the field, read
+       from the fresher of the poll's two /pulls fetches (so a PR marked ready
+       mid-poll is not reported Draft) while a failed fresh fetch falls back to
+       the poll's first payload rather than losing draftness. A green
+       draft emits Draft; a draft whose checks are not passing emits the
+       attributed "Draft by: ..." form (including the everyday
+       "[label gate]" shape) rather than a Blocked/Infra merge-block claim; and
+       an 'unknown' mergeable_state on a non-draft PR still keeps polling
 
 No network calls required; no GITHUB_TOKEN needed.
 Run this file directly to execute the suite: exits 0 on success, non-zero on failure.
@@ -5538,6 +5552,518 @@ def main() -> int:
         "request deque not drained; %d entries left" % len(side_effects_bf3),
     )
     check(rc_bf3 == 0, "main() returned 0", "main() returned %r" % rc_bf3)
+
+    # ── (bg) #968 pr_is_draft: the /pulls/{n} `draft` boolean ──────────────────
+    print("\n=== (bg) #968 pr_is_draft: reads the `draft` boolean ===")
+
+    check(
+        ci_monitor.pr_is_draft({"draft": True}) is True,
+        "a draft PR payload reads as draft",
+        "pr_is_draft({'draft': True}) was not True",
+    )
+    check(
+        ci_monitor.pr_is_draft({"draft": False}) is False,
+        "a ready-for-review PR payload reads as not-draft",
+        "pr_is_draft({'draft': False}) was not False",
+    )
+    check(
+        ci_monitor.pr_is_draft({"mergeable_state": "clean"}) is False,
+        "a payload with no `draft` field reads as not-draft (the caller's fallback covers it)",
+        "pr_is_draft() on a field-less payload was not False",
+    )
+
+    # ── (bh) #968 main(): a draft PR is a settled state, not "still computing" ─────
+    print("\n=== (bh) #968 main(): --pr terminates Draft on a draft PR ===")
+
+    # GitHub reports mergeable_state="draft" for a draft pull request and keeps
+    # reporting it until someone marks the PR ready for review. Before issue #968 that
+    # value fell into the "still computing" arm meant for 'unknown', so the monitor
+    # printed a heartbeat every poll and never emitted a terminal line, leaving the
+    # Orchestrator's Monitor loop to wait out its full 30-minute timeout. Both
+    # mergeable_state ladders (all_passed and the non-passing raw scan) must terminate.
+    # The loop's top-of-poll /pulls payload is where the `draft` boolean is read
+    # (pr_is_draft), so the draft and ready fixtures differ in that one field.
+    PR_DRAFT_BG = {"head": {"sha": "968c0de1"}, "draft": True}
+    PR_READY_BG = {"head": {"sha": "968c0de1"}, "draft": False}
+    MPR_DRAFT_BG = {"merged": False, "state": "open", "draft": True, "mergeable_state": "draft"}
+    CHECK_ALL_PASS_BG = {
+        "total_count": 2,
+        "check_runs": [
+            {"name": "build-and-test", "status": "completed", "conclusion": "success"},
+            {"name": "No blocking labels", "status": "completed", "conclusion": "success"},
+        ],
+    }
+    # Diagnostic check-runs for the drain re-polls: no Actions targets -> fast exit.
+    DIAG_EMPTY_BG = {"total_count": 0, "check_runs": []}
+
+    # Case 1--every check passed and the PR is a draft. Single poll: pulls (sha),
+    # verdict check-runs (reused by poll_signals; no Actions targets -> fast exit),
+    # then the mergeable_state fetch -> draft -> Draft. No drain (nothing failed, as
+    # on the Clear path). 3 requests.
+    side_effects_bg = collections.deque([PR_DRAFT_BG, CHECK_ALL_PASS_BG, MPR_DRAFT_BG])
+
+    def fake_request_bg(url, token, raw=False):
+        return side_effects_bg.popleft()
+
+    buf_bg = io.StringIO()
+    with (
+        unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_bg),
+        unittest.mock.patch.object(ci_monitor.time, "time", return_value=9400.0),
+        unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None),
+        unittest.mock.patch("sys.stdout", new=buf_bg),
+    ):
+        rc_bg = ci_monitor.main(["ci_monitor.py", "--pr", "968"])
+
+    out_bg = buf_bg.getvalue()
+    lines_bg = out_bg.splitlines()
+    draft_line_bg = "PR#968: Draft (mergeable_state=draft)"
+    check(
+        lines_bg[-1] == draft_line_bg,
+        "a green draft PR terminates on 'Draft (mergeable_state=draft)'",
+        "expected a trailing Draft terminal; output: %r" % out_bg,
+    )
+    check(
+        not any("still computing" in ln for ln in lines_bg),
+        "no 'still computing' heartbeat: draft is settled, not being recomputed",
+        "unexpected still-computing line; output: %r" % out_bg,
+    )
+    check(
+        not any(
+            ln.startswith("PR#968: Clear")
+            or ln.startswith("PR#968: Blocked")
+            or ln.startswith("PR#968: Infra")
+            for ln in lines_bg
+        ),
+        "Draft is its own terminal, neither Clear nor Blocked/Infra",
+        "unexpected Clear/Blocked/Infra terminal; output: %r" % out_bg,
+    )
+    check(
+        "PR#968: summary" in lines_bg
+        and lines_bg.index("PR#968: summary") < lines_bg.index(draft_line_bg),
+        "the per-check summary block precedes the Draft terminal",
+        "summary header missing or after the terminal; output: %r" % out_bg,
+    )
+    check(
+        len(side_effects_bg) == 0,
+        "all 3 mocked requests consumed (no drain on the all-passed Draft path)",
+        "request deque not drained; %d entries left" % len(side_effects_bg),
+    )
+    check(rc_bg == 0, "main() returned 0", "main() returned %r" % rc_bg)
+
+    # Case 2--the same draft PR with a failing check. The raw per-check scan reads
+    # Blocked, but a draft PR's mergeable_state never reveals whether that check is
+    # required, so reporting a merge block would risk the false positive issue #748
+    # removed. The terminal names the draft state and attributes the non-passing
+    # check through the shared " by: ..." suffix. Requests: pulls, verdict check-runs,
+    # mergeable_state fetch, then DRAIN_MAX_ATTEMPTS drain self-fetches. 3 + 3 = 6.
+    CHECK_FAIL_BG = {
+        "total_count": 2,
+        "check_runs": [
+            {"name": "build-and-test", "status": "completed", "conclusion": "failure"},
+            {"name": "No blocking labels", "status": "completed", "conclusion": "success"},
+        ],
+    }
+    side_effects_bg2 = collections.deque([PR_DRAFT_BG, CHECK_FAIL_BG, MPR_DRAFT_BG])
+    for _ in range(3):  # DRAIN_MAX_ATTEMPTS drain attempts
+        side_effects_bg2.append(DIAG_EMPTY_BG)
+
+    def fake_request_bg2(url, token, raw=False):
+        return side_effects_bg2.popleft()
+
+    buf_bg2 = io.StringIO()
+    with (
+        unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_bg2),
+        unittest.mock.patch.object(ci_monitor.time, "time", return_value=9450.0),
+        unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None),
+        unittest.mock.patch("sys.stdout", new=buf_bg2),
+    ):
+        rc_bg2 = ci_monitor.main(["ci_monitor.py", "--pr", "968"])
+
+    out_bg2 = buf_bg2.getvalue()
+    lines_bg2 = out_bg2.splitlines()
+    draft_attr_bg2 = "PR#968: Draft by: build-and-test (mergeable_state=draft)"
+    check(
+        lines_bg2[-1] == draft_attr_bg2,
+        "a draft PR with a non-passing check terminates on the attributed Draft form",
+        "expected 'Draft by: build-and-test (mergeable_state=draft)'; output: %r" % out_bg2,
+    )
+    check(
+        not any(
+            ln.startswith("PR#968: Blocked") or ln.startswith("PR#968: Infra") for ln in lines_bg2
+        ),
+        "no Blocked/Infra merge-block claim off a draft PR's masked mergeable_state",
+        "unexpected Blocked/Infra terminal; output: %r" % out_bg2,
+    )
+    check(
+        not any("still computing" in ln for ln in lines_bg2),
+        "the non-passing ladder does not spin on draft either",
+        "unexpected still-computing line; output: %r" % out_bg2,
+    )
+    check(
+        any("build-and-test" in ln and "[BLOCKING]" in ln for ln in lines_bg2),
+        "the per-check summary still lists the non-passing check as [BLOCKING]",
+        "diagnostic summary row missing; output: %r" % out_bg2,
+    )
+    check(
+        len(side_effects_bg2) == 0,
+        "all 6 mocked requests consumed (one poll plus 3 drain attempts)",
+        "request deque not drained; %d entries left" % len(side_effects_bg2),
+    )
+    check(rc_bg2 == 0, "main() returned 0", "main() returned %r" % rc_bg2)
+
+    # Case 3--an infra-shaped conclusion on a draft PR reports Draft as well, not the
+    # Infra escalation: the draft state is what the terminal can honestly assert.
+    CHECK_INFRA_BG = {
+        "total_count": 2,
+        "check_runs": [
+            {"name": "build-and-test", "status": "completed", "conclusion": "cancelled"},
+            {"name": "No blocking labels", "status": "completed", "conclusion": "success"},
+        ],
+    }
+    side_effects_bg3 = collections.deque([PR_DRAFT_BG, CHECK_INFRA_BG, MPR_DRAFT_BG])
+    for _ in range(3):  # DRAIN_MAX_ATTEMPTS drain attempts
+        side_effects_bg3.append(DIAG_EMPTY_BG)
+
+    def fake_request_bg3(url, token, raw=False):
+        return side_effects_bg3.popleft()
+
+    buf_bg3 = io.StringIO()
+    with (
+        unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_bg3),
+        unittest.mock.patch.object(ci_monitor.time, "time", return_value=9500.0),
+        unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None),
+        unittest.mock.patch("sys.stdout", new=buf_bg3),
+    ):
+        rc_bg3 = ci_monitor.main(["ci_monitor.py", "--pr", "968"])
+
+    out_bg3 = buf_bg3.getvalue()
+    lines_bg3 = out_bg3.splitlines()
+    check(
+        lines_bg3[-1] == "PR#968: Draft by: build-and-test (mergeable_state=draft)"
+        and not any(ln.startswith("PR#968: Infra") for ln in lines_bg3),
+        "a cancelled check on a draft PR terminates Draft, not Infra",
+        "expected the attributed Draft terminal and no Infra; output: %r" % out_bg3,
+    )
+    check(
+        len(side_effects_bg3) == 0,
+        "all 6 mocked requests consumed",
+        "request deque not drained; %d entries left" % len(side_effects_bg3),
+    )
+    check(rc_bg3 == 0, "main() returned 0", "main() returned %r" % rc_bg3)
+
+    # Case 4--'unknown' keeps its place in the still-computing arm: it is the state
+    # GitHub reports while it recomputes mergeability, so the monitor must still poll
+    # through it. Only draft stopped sharing that arm. Three unknown polls (enough for
+    # the mocked clock to cross the shrunken silence window, so the heartbeat is
+    # actually emitted) then a draft poll that terminates.
+    SILENCE_BG = 50  # shrink the silence window so a couple of 30s polls cross it
+    side_effects_bg4 = collections.deque()
+    for _ in range(3):
+        side_effects_bg4.append(PR_READY_BG)  # pulls -> sha, not a draft
+        side_effects_bg4.append(CHECK_ALL_PASS_BG)  # verdict -> all_passed
+        side_effects_bg4.append({"mergeable_state": "unknown"})  # mpr -> keep polling
+    side_effects_bg4.append(PR_DRAFT_BG)  # final poll: pulls -> sha, now a draft
+    side_effects_bg4.append(CHECK_ALL_PASS_BG)  # final poll: verdict -> all_passed
+    side_effects_bg4.append(MPR_DRAFT_BG)  # final poll: mpr -> draft -> Draft
+
+    def fake_request_bg4(url, token, raw=False):
+        return side_effects_bg4.popleft()
+
+    clock_bg4 = {"t": 0.0}
+
+    def fake_time_bg4():
+        return clock_bg4["t"]
+
+    def fake_sleep_bg4(secs):
+        clock_bg4["t"] += secs
+
+    buf_bg4 = io.StringIO()
+    with (
+        unittest.mock.patch.object(ci_monitor, "SILENCE_SECONDS", SILENCE_BG),
+        unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_bg4),
+        unittest.mock.patch.object(ci_monitor.time, "time", side_effect=fake_time_bg4),
+        unittest.mock.patch.object(ci_monitor.time, "sleep", side_effect=fake_sleep_bg4),
+        unittest.mock.patch("sys.stdout", new=buf_bg4),
+    ):
+        rc_bg4 = ci_monitor.main(["ci_monitor.py", "--pr", "968"])
+
+    out_bg4 = buf_bg4.getvalue()
+    lines_bg4 = out_bg4.splitlines()
+    check(
+        "PR#968: all_passed mergeable_state=unknown (still computing)" in lines_bg4,
+        "'unknown' still feeds the still-computing heartbeat and keeps polling",
+        "expected the unknown still-computing heartbeat; output: %r" % out_bg4,
+    )
+    check(
+        lines_bg4[-1] == draft_line_bg,
+        "the monitor polls through unknown and terminates Draft once draft is reported",
+        "expected a trailing Draft terminal; output: %r" % out_bg4,
+    )
+    check(
+        len(side_effects_bg4) == 0,
+        "all 12 mocked requests consumed (three unknown polls then one draft poll)",
+        "request deque not drained; %d entries left" % len(side_effects_bg4),
+    )
+    check(rc_bg4 == 0, "main() returned 0", "main() returned %r" % rc_bg4)
+
+    # Case 5--the mergeable_state ladder cannot crowd draftness out. GitHub does not
+    # document that ladder's precedence, so a draft PR waiting on a required check can
+    # come back as 'blocked' rather than 'draft'. Keyed on mergeable_state alone that
+    # would be an Infra terminal, which the routing fence escalates to the user as
+    # broken CI infrastructure, never mentioning the draft. Keyed on the `draft`
+    # boolean it is a Draft terminal that reports the observed state in its suffix.
+    side_effects_bg5 = collections.deque(
+        [
+            PR_DRAFT_BG,  # pulls -> sha, draft
+            CHECK_ALL_PASS_BG,  # verdict -> all_passed
+            {"merged": False, "state": "open", "draft": True, "mergeable_state": "blocked"},  # mpr
+        ]
+    )
+
+    def fake_request_bg5(url, token, raw=False):
+        return side_effects_bg5.popleft()
+
+    buf_bg5 = io.StringIO()
+    with (
+        unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_bg5),
+        unittest.mock.patch.object(ci_monitor.time, "time", return_value=9600.0),
+        unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None),
+        unittest.mock.patch("sys.stdout", new=buf_bg5),
+    ):
+        rc_bg5 = ci_monitor.main(["ci_monitor.py", "--pr", "968"])
+
+    out_bg5 = buf_bg5.getvalue()
+    lines_bg5 = out_bg5.splitlines()
+    check(
+        lines_bg5[-1] == "PR#968: Draft (mergeable_state=blocked)"
+        and not any(ln.startswith("PR#968: Infra") for ln in lines_bg5),
+        "a draft PR reporting mergeable_state=blocked is Draft, not a false Infra escalation",
+        "expected Draft (mergeable_state=blocked) and no Infra; output: %r" % out_bg5,
+    )
+    check(
+        len(side_effects_bg5) == 0,
+        "all 3 mocked requests consumed",
+        "request deque not drained; %d entries left" % len(side_effects_bg5),
+    )
+    check(rc_bg5 == 0, "main() returned 0", "main() returned %r" % rc_bg5)
+
+    # Case 6--the same precedence in the other direction, on the non-passing ladder: a
+    # red NON-required check leaves mergeable_state at 'unstable', which issue #748
+    # maps to Clear. A draft PR cannot merge, so Clear would be a false all-good.
+    CHECK_NONREQ_FAIL_BG = {
+        "total_count": 2,
+        "check_runs": [
+            {"name": "build-and-test", "status": "completed", "conclusion": "success"},
+            {"name": "enforce-exclusive-labels", "status": "completed", "conclusion": "failure"},
+        ],
+    }
+    side_effects_bg6 = collections.deque(
+        [
+            PR_DRAFT_BG,  # pulls -> sha, draft
+            CHECK_NONREQ_FAIL_BG,  # verdict -> Blocked (raw scan)
+            {"merged": False, "state": "open", "draft": True, "mergeable_state": "unstable"},  # mpr
+        ]
+    )
+    for _ in range(3):  # DRAIN_MAX_ATTEMPTS drain attempts
+        side_effects_bg6.append(DIAG_EMPTY_BG)
+
+    def fake_request_bg6(url, token, raw=False):
+        return side_effects_bg6.popleft()
+
+    buf_bg6 = io.StringIO()
+    with (
+        unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_bg6),
+        unittest.mock.patch.object(ci_monitor.time, "time", return_value=9650.0),
+        unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None),
+        unittest.mock.patch("sys.stdout", new=buf_bg6),
+    ):
+        rc_bg6 = ci_monitor.main(["ci_monitor.py", "--pr", "968"])
+
+    out_bg6 = buf_bg6.getvalue()
+    lines_bg6 = out_bg6.splitlines()
+    check(
+        lines_bg6[-1] == "PR#968: Draft by: enforce-exclusive-labels (mergeable_state=unstable)"
+        and not any(ln.startswith("PR#968: Clear") for ln in lines_bg6),
+        "a draft PR reporting mergeable_state=unstable is Draft, not a false Clear",
+        "expected the attributed Draft terminal and no Clear; output: %r" % out_bg6,
+    )
+    check(
+        len(side_effects_bg6) == 0,
+        "all 6 mocked requests consumed",
+        "request deque not drained; %d entries left" % len(side_effects_bg6),
+    )
+    check(rc_bg6 == 0, "main() returned 0", "main() returned %r" % rc_bg6)
+
+    # Case 7--the fallback: a /pulls payload carrying no `draft` field at all (a
+    # truncated response, or a hand-built mock) still terminates when GitHub reports
+    # the draft mergeable_state, so the fix does not depend on the boolean being there.
+    side_effects_bg7 = collections.deque(
+        [
+            {"head": {"sha": "968c0de1"}},  # pulls -> sha, no `draft` field
+            CHECK_ALL_PASS_BG,  # verdict -> all_passed
+            {"mergeable_state": "draft"},  # mpr -> draft (the fallback signal)
+        ]
+    )
+
+    def fake_request_bg7(url, token, raw=False):
+        return side_effects_bg7.popleft()
+
+    buf_bg7 = io.StringIO()
+    with (
+        unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_bg7),
+        unittest.mock.patch.object(ci_monitor.time, "time", return_value=9700.0),
+        unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None),
+        unittest.mock.patch("sys.stdout", new=buf_bg7),
+    ):
+        rc_bg7 = ci_monitor.main(["ci_monitor.py", "--pr", "968"])
+
+    out_bg7 = buf_bg7.getvalue()
+    lines_bg7 = out_bg7.splitlines()
+    check(
+        lines_bg7[-1] == draft_line_bg,
+        "mergeable_state=draft still terminates when the payload carries no `draft` field",
+        "expected the Draft terminal from the fallback; output: %r" % out_bg7,
+    )
+    check(
+        len(side_effects_bg7) == 0,
+        "all 3 mocked requests consumed",
+        "request deque not drained; %d entries left" % len(side_effects_bg7),
+    )
+    check(rc_bg7 == 0, "main() returned 0", "main() returned %r" % rc_bg7)
+
+    # Case 8--the shape this repo actually produces. `orchestrating` is a blocking
+    # label, so the required "No blocking labels" gate fails for the whole duration of
+    # a development cycle: a draft PR under orchestration has exactly one non-passing
+    # check, and it is the label gate. The terminal must carry the [label gate]
+    # annotation, so a consumer can tell "a process label is holding this" from "a test
+    # failed" -- the same distinction the Blocked terminal draws.
+    CHECK_GATE_FAIL_BG = {
+        "total_count": 2,
+        "check_runs": [
+            {"name": "build-and-test", "status": "completed", "conclusion": "success"},
+            {"name": "No blocking labels", "status": "completed", "conclusion": "failure"},
+        ],
+    }
+    side_effects_bg8 = collections.deque([PR_DRAFT_BG, CHECK_GATE_FAIL_BG, MPR_DRAFT_BG])
+    for _ in range(3):  # DRAIN_MAX_ATTEMPTS drain attempts
+        side_effects_bg8.append(DIAG_EMPTY_BG)
+
+    def fake_request_bg8(url, token, raw=False):
+        return side_effects_bg8.popleft()
+
+    buf_bg8 = io.StringIO()
+    with (
+        unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_bg8),
+        unittest.mock.patch.object(ci_monitor.time, "time", return_value=9750.0),
+        unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None),
+        unittest.mock.patch("sys.stdout", new=buf_bg8),
+    ):
+        rc_bg8 = ci_monitor.main(["ci_monitor.py", "--pr", "968"])
+
+    out_bg8 = buf_bg8.getvalue()
+    lines_bg8 = out_bg8.splitlines()
+    check(
+        lines_bg8[-1]
+        == "PR#968: Draft by: No blocking labels [label gate] (mergeable_state=draft)",
+        "a label-gate-only draft carries the [label gate] annotation in its terminal",
+        "expected the label-gate Draft terminal; output: %r" % out_bg8,
+    )
+    check(
+        any(
+            "No blocking labels" in ln and "[label gate]" in ln and "[BLOCKING]" in ln
+            for ln in lines_bg8
+        ),
+        "the per-check summary marks the gate as both [BLOCKING] and [label gate]",
+        "summary row missing an annotation; output: %r" % out_bg8,
+    )
+    check(
+        "PR#968: drain poll found no new diagnostic signals" not in lines_bg8,
+        "the drain flag stays suppressed: the gate is named, so the terminal is diagnosed",
+        "unexpected undiagnosed-drain flag; output: %r" % out_bg8,
+    )
+    check(
+        len(side_effects_bg8) == 0,
+        "all 6 mocked requests consumed",
+        "request deque not drained; %d entries left" % len(side_effects_bg8),
+    )
+    check(rc_bg8 == 0, "main() returned 0", "main() returned %r" % rc_bg8)
+
+    # Case 9--draftness is read from the fresher of the poll's two /pulls fetches.
+    # The loop reads the head SHA from one fetch and the mergeable state from another,
+    # seconds later; someone can mark the PR ready for review in between. The stale
+    # payload would emit a Draft terminal for a PR that is ready, and because the
+    # branch ends the loop there is no later poll to correct it.
+    side_effects_bg9 = collections.deque(
+        [
+            PR_DRAFT_BG,  # pulls -> sha, still says draft
+            CHECK_ALL_PASS_BG,  # verdict -> all_passed
+            {"merged": False, "state": "open", "draft": False, "mergeable_state": "clean"},
+        ]
+    )
+
+    def fake_request_bg9(url, token, raw=False):
+        return side_effects_bg9.popleft()
+
+    buf_bg9 = io.StringIO()
+    with (
+        unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_bg9),
+        unittest.mock.patch.object(ci_monitor.time, "time", return_value=9800.0),
+        unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None),
+        unittest.mock.patch("sys.stdout", new=buf_bg9),
+    ):
+        rc_bg9 = ci_monitor.main(["ci_monitor.py", "--pr", "968"])
+
+    out_bg9 = buf_bg9.getvalue()
+    lines_bg9 = out_bg9.splitlines()
+    check(
+        lines_bg9[-1] == "PR#968: Clear (mergeable_state=clean)"
+        and not any(ln.startswith("PR#968: Draft") for ln in lines_bg9),
+        "a PR marked ready between the poll's two fetches is Clear, not a stale Draft",
+        "expected Clear from the fresher payload; output: %r" % out_bg9,
+    )
+    check(
+        len(side_effects_bg9) == 0,
+        "all 3 mocked requests consumed",
+        "request deque not drained; %d entries left" % len(side_effects_bg9),
+    )
+    check(rc_bg9 == 0, "main() returned 0", "main() returned %r" % rc_bg9)
+
+    # Case 10--the other half of that trade: when the fresher fetch fails outright,
+    # draftness falls back to the payload the poll already holds rather than being
+    # lost, and the terminal reports the mergeable state as unknown.
+    side_effects_bg10 = collections.deque(
+        [
+            PR_DRAFT_BG,  # pulls -> sha, draft
+            CHECK_ALL_PASS_BG,  # verdict -> all_passed
+            None,  # mergeable_state fetch fails
+        ]
+    )
+
+    def fake_request_bg10(url, token, raw=False):
+        return side_effects_bg10.popleft()
+
+    buf_bg10 = io.StringIO()
+    with (
+        unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_bg10),
+        unittest.mock.patch.object(ci_monitor.time, "time", return_value=9850.0),
+        unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None),
+        unittest.mock.patch("sys.stdout", new=buf_bg10),
+    ):
+        rc_bg10 = ci_monitor.main(["ci_monitor.py", "--pr", "968"])
+
+    out_bg10 = buf_bg10.getvalue()
+    lines_bg10 = out_bg10.splitlines()
+    check(
+        lines_bg10[-1] == "PR#968: Draft (mergeable_state=unknown)",
+        "a failed mergeable_state fetch falls back to the poll's payload, keeping draftness",
+        "expected Draft (mergeable_state=unknown); output: %r" % out_bg10,
+    )
+    check(
+        len(side_effects_bg10) == 0,
+        "all 3 mocked requests consumed",
+        "request deque not drained; %d entries left" % len(side_effects_bg10),
+    )
+    check(rc_bg10 == 0, "main() returned 0", "main() returned %r" % rc_bg10)
 
     # ── Summary ────────────────────────────────────────────────────────────────────
     print("\nResults: %d passed, %d failed." % (PASS, FAIL))

@@ -194,6 +194,7 @@ Routing on the Verification Agent's signal:
 
 - `Verification passed`: every before-merging item was confirmed automatically.
   This *before-merging requirements* process is complete. The PR is not mergeable yet: the process-label gate stays red until "Concluding PR orchestration" removes `orchestrating`.
+  If the PR is a draft, removing that label is not sufficient either: a draft PR cannot merge until someone marks it ready for review, and that is the user's call.
   Apply this transition to the PR:
 
   | Remove label          | Add label  |
@@ -211,6 +212,7 @@ Routing on the Verification Agent's signal:
 - `Verification incomplete`: no item failed, but one or more before-merging items could not be automated and remain open for a human to verify.
   Do not treat the PR as cleared and do not start a new Author round.
   Inform the user that manual verification is still required, and that the PR may be merged once every open before-merging tracking issue is resolved.
+  If the PR is a draft, that last part is not true of it: resolving every tracking issue still leaves a draft PR unmergeable, so say that marking it ready for review is also needed and is the user's call.
   Apply this transition to the PR only if needed. The `verification needed` label is probably already applied:
 
   | Add label             |
@@ -299,16 +301,47 @@ monitorLoop:
   Each stdout line arrives as a task-notification event.
   Terminal lines and failure markers (`FAIL`/`SKIP`) are relayed to the user, verbatim.
   Every other line is relayed or withheld at the Orchestrator's discretion; nothing obliges it to forward routine progress output.
-  The Orchestrator **acts only on the terminal lines** `Clear`, `Blocked` (including the `Blocked by: <name>` form), or `Infra`.
+  The Orchestrator **acts only on the terminal lines** `Clear`, `Blocked` (including the `Blocked by: <name>` form), `Infra`, `Draft` (including the `Draft by: <name>` form), `Merged`, or `Closed`.
   Other output, including `step`, `FAIL`, `summary`, `in_progress` keepalives, and per-check information are progress reports; they do NOT end the loop or start a new Author round.
   if Monitor emits `drain poll found no new diagnostic signals` immediately followed by a Blocked or Infra line -> goto undiagnosedTerminal
   (Note: the attributed `Blocked by: <name>` form already names the blocking check in the per-check summary block and the terminal suffix, so the Monitor suppresses the drain flag in that case. The `goto undiagnosedTerminal` branch therefore applies only to a bare `Blocked`/`Infra` line that the Monitor itself flagged as undiagnosed.)
   if Monitor emits a Blocked line where the terminal ends with `[label gate]` (the ` by: ...` suffix names only label-gate checks) -> goto labelGateBlock
   if Monitor emits a Blocked line  -> goto newAuthor
   if Monitor emits an Infra line   -> escalate to user; stop
+  if Monitor emits a Draft line    -> goto draftHeld
+  if Monitor emits a Merged line   -> the PR is already merged, so there is no CI outcome left to act on; tell the user the PR merged; stop
+  if Monitor emits a Closed line   -> the PR was closed without merging; tell the user, and do NOT reopen it or start a new Author round; stop
   if Monitor times out (30 min)    -> escalate to user; stop
   if a user message wakes the session before Monitor delivers any terminal line -> goto silentVanish
   if Monitor emits a Clear line -> goto surfaceBeforeMergingRequirements (entered on the Clear path)
+
+draftHeld:
+  // Reached when the PR is a draft and its checks have reported. Draftness is not a
+  // destination: it is an orthogonal fact about the PR, so it changes what the Orchestrator
+  // says, not where it goes. A draft PR cannot be merged however green it is, and marking one
+  // ready for review is the user's call and not the Orchestrator's, so every shape below says
+  // that; but the evidence to act on is the same as ever, namely whether any non-label-gate
+  // check is failing. The three shapes therefore route exactly as their non-draft counterparts
+  // do, and a failed test is a failed test whether or not the PR can merge. What GitHub's
+  // `mergeable_state` does not reveal for a draft PR is whether a non-passing check is
+  // required, which is why the Monitor never reports a merge block off one.
+  //
+  // Verification runs on a draft PR, and that is intended: `verified` is a claim about
+  // before-merging requirements, not about mergeability, so the PR being a draft falsifies
+  // nothing it asserts.
+  //
+  // Without this branch the Monitor's Draft line would match no branch and the loop would sit
+  // until the 30-minute timeout (issue #968).
+  Relay the Draft line and tell the user the PR is in draft, so it cannot merge until someone marks it ready for review.
+  if the line carries no ` by: ...` portion (every check passed) -> goto surfaceBeforeMergingRequirements (entered on the draft path)
+  if the ` by: ...` portion ends in `[label gate]` before the `(mergeable_state=...)` suffix (so every non-passing check is a process-label gate):
+    Report what that positively asserts: no code failed and no test failed, and a process label is what the gate is reporting.
+    This is the expected shape during a cycle, since `orchestrating` is a blocking label in order to guard against merge before verification.
+    Do NOT describe it as inconclusive, and do NOT remove the label to turn the gate green (see labelGateBlock for why that would circumvent the merge onus).
+    goto surfaceBeforeMergingRequirements (entered on the draft path)
+  otherwise (the ` by: ...` portion names a substantive non-passing check):
+    Relay which check(s) are not passing, and say that a draft PR's `mergeable_state` cannot confirm whether they would block the merge.
+    goto newAuthor
 
 labelGateBlock:
   // Reached on a `[label gate]` terminal, which is the gate working, not CI breaking. The
@@ -340,9 +373,12 @@ labelGateBlock:
 
 surfaceBeforeMergingRequirements:
   // Surfaces outstanding before-merging requirements (unautomated verification steps,
-  // changes outside the repo). Entered on the Clear path and on the label-gate path. Neither
-  // proves the PR is mergeable, and the label-gate path says only that no code or test
-  // failed. The Orchestrator does not scan the issue or PR itself.
+  // changes outside the repo). Entered on the Clear path, on the label-gate path, and on the
+  // draft path. None of them proves the PR is mergeable: the label-gate path says only that no
+  // code or test failed, and the draft path says the PR cannot merge at all until someone
+  // marks it ready. Neither bears on the requirements surfaced here, which are about what must
+  // be true before a merge, not about whether one is possible today. The Orchestrator does not
+  // scan the issue or PR itself.
   Dispatch a Verification Planner sub-agent using the dispatch template.
   The planner assembles the before-merging list and files a tracking issue per item (see verification_planning.md). It does not consult the user.
   If the Planner reports its before-merging list is empty: this step is complete; apply this transition to **both the issue and the PR**:
