@@ -467,18 +467,26 @@ Orchestrator-specific notes:
 ```text
 newAuthor:
   // Reached by `goto newAuthor` from five sites: the no-PR routing fence and the PR routing
-  // fence, both when the Reviewer requested changes; `monitorLoop`, on a Blocked line;
-  // `draftHeld`, on a Draft line whose ` by: ...` portion names a substantive non-passing
-  // check; and the `Verification revealed an error` routing, above. This block is written
-  // here rather than inside the PR routing fence because two of those five sites are outside
-  // that fence.
+  // fence, both when the Reviewer requested changes; `monitorLoop`, on a Blocked line that
+  // fell past its two earlier Blocked branches, so one the Monitor did not flag with `drain
+  // poll found no new diagnostic signals` (or did, and this is the recheck pass
+  // `undiagnosedTerminal` sent back with that check suppressed) and one not ending in
+  // `[label gate]`, which `labelGateBlock` takes instead; `draftHeld`, on a Draft line whose
+  // ` by: ...` portion names a substantive non-passing check; and the `Verification revealed
+  // an error` routing, above. This block is written here rather than inside the PR routing
+  // fence because two of those five sites are outside that fence.
   //
   // All five mean one thing: the work is not finished, and the Author takes another turn at
   // it. They differ only in who noticed, and whoever noticed has already left its evidence
   // where the Author reads it from GitHub directly--a Reviewer's review, a Verification
   // Agent's diagnosis comment, or CI's own check results on the PR. The Orchestrator carries
-  // none of that to the Author, which receives the dispatch template's tokens and nothing
-  // else (see "Orchestrator communication discipline" and "Dispatch template" above).
+  // none of that to the Author. What it may send is the same on all five paths, and the same
+  // under either of the two dispatch mechanisms this block names: the dispatch template's
+  // tokens, the user's exact words where it has any to relay, and nothing that is neither of
+  // those (see "Orchestrator communication discipline" and "Dispatch template" above).
+  // Resuming an Author spares it the reconstruction of its own prior context, not the
+  // template: re-sending the template filled in is how a resumed Author learns of a PR
+  // number that was `None` when it was first dispatched.
   //
   // Which label transitions apply is settled at the call site rather than here. The two
   // Reviewer fences arrive through "After a Reviewer exits", which has already added
