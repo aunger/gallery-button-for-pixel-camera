@@ -201,7 +201,7 @@ Routing on the Verification Agent's signal:
   | --------------------- | ---------- |
   | `verification needed` | `verified` |
 
-- `Verification revealed an error`: route the PR back to a new Author round (goto newAuthor).
+- `Verification revealed an error`: route the PR back to a new Author round (goto newAuthor, the section below).
   The Verification Agent leaves its diagnosis as a PR comment, which the Author reads from GitHub; the Orchestrator does not relay it.
   Apply this transition to the PR:
 
@@ -270,7 +270,7 @@ If no PR exists, there is no diff or CI to run, so follow the no-PR routing fenc
 No-PR routing:
 
 ```text
-  if Reviewer requested changes -> goto newAuthor
+  if Reviewer requested changes -> goto newAuthor (the section below)
   if Reviewer gave `Cannot work` -> escalate to user; stop
   if Reviewer gave LGTM:
     The issue is resolved without a code change, and the Reviewer agreed.
@@ -283,7 +283,7 @@ No-PR routing:
 PR routing (Monitor loop):
 
 ```text
-  if Reviewer requested changes -> goto newAuthor
+  if Reviewer requested changes -> goto newAuthor (the section below)
   if Reviewer gave `Cannot work` -> escalate to user; stop (do NOT route to a new Author round; leave the PR open for the user to close; the Reviewer's PR comment describes why)
   if Reviewer gave LGTM -> launch the Monitor; goto monitorLoop
 
@@ -306,7 +306,7 @@ monitorLoop:
   if Monitor emits `drain poll found no new diagnostic signals` immediately followed by a Blocked or Infra line -> goto undiagnosedTerminal
   (Note: the attributed `Blocked by: <name>` form already names the blocking check in the per-check summary block and the terminal suffix, so the Monitor suppresses the drain flag in that case. The `goto undiagnosedTerminal` branch therefore applies only to a bare `Blocked`/`Infra` line that the Monitor itself flagged as undiagnosed.)
   if Monitor emits a Blocked line where the terminal ends with `[label gate]` (the ` by: ...` suffix names only label-gate checks) -> goto labelGateBlock
-  if Monitor emits a Blocked line  -> goto newAuthor
+  if Monitor emits a Blocked line  -> goto newAuthor (the section below)
   if Monitor emits an Infra line   -> escalate to user; stop
   if Monitor emits a Draft line    -> goto draftHeld
   if Monitor emits a Merged line   -> the PR is already merged, so there is no CI outcome left to act on; tell the user the PR merged; stop
@@ -341,7 +341,7 @@ draftHeld:
     goto surfaceBeforeMergingRequirements (entered on the draft path)
   otherwise (the ` by: ...` portion names a substantive non-passing check):
     Relay which check(s) are not passing, and say that a draft PR's `mergeable_state` cannot confirm whether they would block the merge.
-    goto newAuthor
+    goto newAuthor (the section below)
 
 labelGateBlock:
   // Reached on a `[label gate]` terminal, which is the gate working, not CI breaking. The
