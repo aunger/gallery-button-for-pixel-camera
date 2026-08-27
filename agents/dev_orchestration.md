@@ -448,7 +448,7 @@ silentVanish:
     Launch the Monitor. Set the silentVanish re-launch flag for the invocation it creates, overriding the clear a launch otherwise performs.
     goto monitorLoop
   else (the Monitor task is still registered--a user message is not proof of a vanish):
-    Relay to the user that CI is still running and the Monitor is alive; then continue waiting for the Monitor's terminal line; do not re-launch.
+    Inform the user that CI is still running and the Monitor is alive; then continue waiting for the Monitor's terminal line; do not re-launch.
 ```
 
 ### Monitor script
