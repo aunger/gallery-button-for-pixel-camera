@@ -201,7 +201,7 @@ Routing on the Verification Agent's signal:
   | --------------------- | ---------- |
   | `verification needed` | `verified` |
 
-- `Verification revealed an error`: route the PR back to a new Author round (goto newAuthor, the section below).
+- `Verification revealed an error`: route the PR back to a new Author round (goto newAuthor, "Assigning a Programmer" below).
   The Verification Agent leaves its diagnosis as a PR comment, which the Author reads from GitHub; the Orchestrator does not relay it.
   Apply this transition to the PR:
 
@@ -235,6 +235,21 @@ Apply it to the PR if one exists; apply it to the issue otherwise, since that is
 | ------------------- | -------------- |
 | `changes requested` | `changes done` |
 
+### Subsequent rounds: newAuthor
+
+`goto newAuthor`, from the five routing sites that use it, lands here: the work is not finished, and the Author takes another turn at it.
+The dispatch is the one above, with these differences.
+
+The branch already exists, so reuse the one this issue was given rather than creating a second ("One branch per ticket" in "Delegation rules" below).
+
+Resume the existing Author rather than spawning a replacement wherever that is still possible (also "Delegation rules").
+Resuming spares an Author the reconstruction of its own prior context, not the "Dispatch template" above: re-sending that filled in is how a resumed Author learns of a PR number that was `None` when it was first dispatched.
+
+Which label transitions have already been applied depends on the call site.
+The two Reviewer fences arrive through "After a Reviewer exits" below, which has already added `changes requested`; the `Verification revealed an error` routing carries its own `verification needed` -> `changes requested` table; the `monitorLoop` and `draftHeld` branches apply none, so a round entered from a CI terminal begins with the labels that terminal found.
+
+Whoever noticed that the work was unfinished has left its evidence where the Author reads it from GitHub, so the Orchestrator carries none of it to the Author; rule 1 of "Orchestrator communication discipline" above governs what it may send instead.
+
 ## Assigning a Reviewer
 
 - Create a sub-agent of the Reviewer model (see Model selection above)
@@ -266,11 +281,12 @@ If the Reviewer requested changes, additionally apply this transition to the sam
 
 Whether a PR exists decides which routing fence applies.
 If no PR exists, there is no diff or CI to run, so follow the no-PR routing fence; if a PR exists, follow the Monitor loop fence.
+Decide it afresh each round rather than carrying the last round's answer over: an Author may have opened a PR this time, or closed the one it opened and switched to declining (see "Changing position" in `pr_participation.md`).
 
 No-PR routing:
 
 ```text
-  if Reviewer requested changes -> goto newAuthor (the section below)
+  if Reviewer requested changes -> goto newAuthor ("Assigning a Programmer" above)
   if Reviewer gave `Cannot work` -> escalate to user; stop
   if Reviewer gave LGTM:
     The issue is resolved without a code change, and the Reviewer agreed.
@@ -283,7 +299,7 @@ No-PR routing:
 PR routing (Monitor loop):
 
 ```text
-  if Reviewer requested changes -> goto newAuthor (the section below)
+  if Reviewer requested changes -> goto newAuthor ("Assigning a Programmer" above)
   if Reviewer gave `Cannot work` -> escalate to user; stop (do NOT route to a new Author round; leave the PR open for the user to close; the Reviewer's PR comment describes why)
   if Reviewer gave LGTM -> launch the Monitor; goto monitorLoop
 
@@ -306,7 +322,7 @@ monitorLoop:
   if Monitor emits `drain poll found no new diagnostic signals` immediately followed by a Blocked or Infra line -> goto undiagnosedTerminal
   (Note: the attributed `Blocked by: <name>` form already names the blocking check in the per-check summary block and the terminal suffix, so the Monitor suppresses the drain flag in that case. The `goto undiagnosedTerminal` branch therefore applies only to a bare `Blocked`/`Infra` line that the Monitor itself flagged as undiagnosed.)
   if Monitor emits a Blocked line where the terminal ends with `[label gate]` (the ` by: ...` suffix names only label-gate checks) -> goto labelGateBlock
-  if Monitor emits a Blocked line  -> goto newAuthor (the section below)
+  if Monitor emits a Blocked line  -> goto newAuthor ("Assigning a Programmer" above)
   if Monitor emits an Infra line   -> escalate to user; stop
   if Monitor emits a Draft line    -> goto draftHeld
   if Monitor emits a Merged line   -> the PR is already merged, so there is no CI outcome left to act on; tell the user the PR merged; stop
@@ -341,7 +357,7 @@ draftHeld:
     goto surfaceBeforeMergingRequirements (entered on the draft path)
   otherwise (the ` by: ...` portion names a substantive non-passing check):
     Relay which check(s) are not passing, and say that a draft PR's `mergeable_state` cannot confirm whether they would block the merge.
-    goto newAuthor (the section below)
+    goto newAuthor ("Assigning a Programmer" above)
 
 labelGateBlock:
   // Reached on a `[label gate]` terminal, which is the gate working, not CI breaking. The
@@ -461,44 +477,6 @@ Orchestrator-specific notes:
 - `step`/`FAIL`/`SKIP`/`PASS` lines, `summary` header lines, and per-check summary rows are progress reports, not terminal outcomes.
 - The `Blocked by: <name>` attributed form (issue #516) names which check-run held CI. A terminal ending with `[label gate]` means every blocking check-run is a process-label gate: no code failed and no test failed. It does not mean the PR is otherwise mergeable, since the Monitor reaches that terminal only when `mergeable_state` is `behind`, `dirty` or `blocked`. Do not read the held merge as a problem to solve: merging is not the Orchestrator's goal, and holding the merge while the Orchestrator works is exactly what the blocking labels are for.
 - The Monitor loop replaces the patterns of subscribing to PR events and sleep+poll, which are often unreliable. Do not delay dispatching the Reviewer while waiting for CI.
-
-## Starting another Author round (newAuthor)
-
-```text
-newAuthor:
-  // Reached by `goto newAuthor` from five sites, each of which states its own entry
-  // condition: the no-PR routing fence, the PR routing fence, `monitorLoop`, `draftHeld`,
-  // and the `Verification revealed an error` routing, all above. The block sits outside the
-  // PR routing fence because two of those five sites are outside it.
-  //
-  // All five mean one thing: the work is not finished, and the Author takes another turn at
-  // it. Whoever noticed has left its evidence where the Author reads it from GitHub, so the
-  // Orchestrator carries none of it, and rule 1 of "Orchestrator communication discipline"
-  // above governs what it may send instead.
-  //
-  // Which label transitions apply is settled at the call site rather than here. The two
-  // Reviewer fences arrive through "After a Reviewer exits", which has already added
-  // `changes requested`; the `Verification revealed an error` routing carries its own
-  // `verification needed` -> `changes requested` table; the `monitorLoop` and `draftHeld`
-  // branches apply none, so a round entered from a CI terminal begins with the labels that
-  // terminal found.
-  Dispatch the Author per "Assigning a Programmer" above, on the branch already created for
-  this issue rather than a new one ("One branch per ticket" in "Delegation rules" below), and
-  by resuming the existing Author rather than spawning a replacement wherever that is still
-  possible (also "Delegation rules").
-  // Resuming spares an Author the reconstruction of its own prior context, not the
-  // "Dispatch template" above: re-sending that filled in is how a resumed Author learns of
-  // a PR number that was `None` when it was first dispatched.
-  When the Author returns, apply the `changes requested` -> `changes done` transition from
-  "Assigning a Programmer", then assign a Reviewer per "Assigning a Reviewer" above.
-  Control reaches "After a Reviewer exits" again once that Reviewer delivers its decision.
-  // That re-entry re-decides which routing fence applies rather than reusing this round's:
-  // an Author dispatched from the no-PR fence may have opened a PR this time, and one that
-  // opened a PR may have closed it (see "Changing position" in pr_participation.md).
-  //
-  // Each pass through this block starts another round of the Programmer / Reviewer loop; the
-  // four-round cap in "When to abort" below is what bounds them.
-```
 
 ## Delegation rules
 
