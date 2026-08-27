@@ -480,13 +480,16 @@ newAuthor:
   // it. They differ only in who noticed, and whoever noticed has already left its evidence
   // where the Author reads it from GitHub directly--a Reviewer's review, a Verification
   // Agent's diagnosis comment, or CI's own check results on the PR. The Orchestrator carries
-  // none of that to the Author. What it may send is the same on all five paths, and the same
-  // under either of the two dispatch mechanisms this block names: the dispatch template's
-  // tokens, the user's exact words where it has any to relay, and nothing that is neither of
-  // those (see "Orchestrator communication discipline" and "Dispatch template" above).
-  // Resuming an Author spares it the reconstruction of its own prior context, not the
-  // template: re-sending the template filled in is how a resumed Author learns of a PR
-  // number that was `None` when it was first dispatched.
+  // none of that to the Author. What it may send instead is the same on all five paths, and
+  // the same under either of the two dispatch mechanisms this block names, because rule 1 of
+  // "Orchestrator communication discipline" above governs it and nothing here narrows that:
+  // the user's exact words quoted verbatim, or exact words copied from a file in `agents/`.
+  // The "Dispatch template" above is that second clause's most visible instance on this
+  // path, not its extent: "Orchestrator may" above grants others that bear on a new round,
+  // among them informing a sub-agent of unfinished tasks, which is what resuming an Author
+  // that quit mid-round calls for. Resuming spares an Author the reconstruction of its own
+  // prior context, not the template: re-sending the template filled in is how a resumed
+  // Author learns of a PR number that was `None` when it was first dispatched.
   //
   // Which label transitions apply is settled at the call site rather than here. The two
   // Reviewer fences arrive through "After a Reviewer exits", which has already added
