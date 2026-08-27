@@ -462,6 +462,46 @@ Orchestrator-specific notes:
 - The `Blocked by: <name>` attributed form (issue #516) names which check-run held CI. A terminal ending with `[label gate]` means every blocking check-run is a process-label gate: no code failed and no test failed. It does not mean the PR is otherwise mergeable, since the Monitor reaches that terminal only when `mergeable_state` is `behind`, `dirty` or `blocked`. Do not read the held merge as a problem to solve: merging is not the Orchestrator's goal, and holding the merge while the Orchestrator works is exactly what the blocking labels are for.
 - The Monitor loop replaces the patterns of subscribing to PR events and sleep+poll, which are often unreliable. Do not delay dispatching the Reviewer while waiting for CI.
 
+## Starting another Author round (newAuthor)
+
+```text
+newAuthor:
+  // Reached by `goto newAuthor` from five sites: the no-PR routing fence and the PR routing
+  // fence, both when the Reviewer requested changes; `monitorLoop`, on a Blocked line;
+  // `draftHeld`, on a Draft line whose ` by: ...` portion names a substantive non-passing
+  // check; and the `Verification revealed an error` routing, above. This block is written
+  // here rather than inside the PR routing fence because two of those five sites are outside
+  // that fence.
+  //
+  // All five mean one thing: the work is not finished, and the Author takes another turn at
+  // it. They differ only in who noticed, and whoever noticed has already left its evidence
+  // where the Author reads it from GitHub directly--a Reviewer's review, a Verification
+  // Agent's diagnosis comment, or CI's own check results on the PR. The Orchestrator carries
+  // none of that to the Author, which receives the dispatch template's tokens and nothing
+  // else (see "Orchestrator communication discipline" and "Dispatch template" above).
+  //
+  // Which label transitions apply is settled at the call site rather than here. The two
+  // Reviewer fences arrive through "After a Reviewer exits", which has already added
+  // `changes requested`, and the `Verification revealed an error` routing carries its own
+  // `verification needed` -> `changes requested` table. The `monitorLoop` and `draftHeld`
+  // branches apply no transition, so a round entered from a CI terminal begins with whatever
+  // labels that terminal found.
+  Dispatch the Author per "Assigning a Programmer" above, on the branch already created for
+  this issue rather than a new one ("One branch per ticket" in "Delegation rules" below), and
+  by resuming the existing Author rather than spawning a replacement wherever that is still
+  possible (also "Delegation rules").
+  When the Author returns, apply the `changes requested` -> `changes done` transition from
+  "Assigning a Programmer", then assign a Reviewer per "Assigning a Reviewer" above.
+  Control reaches "After a Reviewer exits" again once that Reviewer delivers its decision.
+  // That re-entry re-decides which routing fence applies rather than reusing this round's:
+  // an Author dispatched from the no-PR fence may have opened a PR this time, and one that
+  // opened a PR may have closed it and switched to declining (see "Changing position" in
+  // pr_participation.md), so the fence is chosen from whether a PR exists now.
+  //
+  // Each pass through this block starts another round of the Programmer / Reviewer loop; the
+  // four-round cap in "When to abort" below is what bounds them.
+```
+
 ## Delegation rules
 
 - If requested by the user, **dispatch in parallel** for independent issues. Parallel issues must each have their own branch.
