@@ -466,48 +466,35 @@ Orchestrator-specific notes:
 
 ```text
 newAuthor:
-  // Reached by `goto newAuthor` from five sites: the no-PR routing fence and the PR routing
-  // fence, both when the Reviewer requested changes; `monitorLoop`, on a Blocked line that
-  // fell past its two earlier Blocked branches, so one the Monitor did not flag with `drain
-  // poll found no new diagnostic signals` (or did, and this is the recheck pass
-  // `undiagnosedTerminal` sent back with that check suppressed) and one not ending in
-  // `[label gate]`, which `labelGateBlock` takes instead; `draftHeld`, on a Draft line whose
-  // ` by: ...` portion names a substantive non-passing check; and the `Verification revealed
-  // an error` routing, above. This block is written here rather than inside the PR routing
-  // fence because two of those five sites are outside that fence.
+  // Reached by `goto newAuthor` from five sites, each of which states its own entry
+  // condition: the no-PR routing fence, the PR routing fence, `monitorLoop`, `draftHeld`,
+  // and the `Verification revealed an error` routing, all above. The block sits outside the
+  // PR routing fence because two of those five sites are outside it.
   //
   // All five mean one thing: the work is not finished, and the Author takes another turn at
-  // it. They differ only in who noticed, and whoever noticed has already left its evidence
-  // where the Author reads it from GitHub directly--a Reviewer's review, a Verification
-  // Agent's diagnosis comment, or CI's own check results on the PR. The Orchestrator carries
-  // none of that to the Author. What it may send instead is the same on all five paths, and
-  // the same under either of the two dispatch mechanisms this block names, because rule 1 of
-  // "Orchestrator communication discipline" above governs it and nothing here narrows that:
-  // the user's exact words quoted verbatim, or exact words copied from a file in `agents/`.
-  // The "Dispatch template" above is that second clause's most visible instance on this
-  // path, not its extent: "Orchestrator may" above grants others that bear on a new round,
-  // among them informing a sub-agent of unfinished tasks, which is what resuming an Author
-  // that quit mid-round calls for. Resuming spares an Author the reconstruction of its own
-  // prior context, not the template: re-sending the template filled in is how a resumed
-  // Author learns of a PR number that was `None` when it was first dispatched.
+  // it. Whoever noticed has left its evidence where the Author reads it from GitHub, so the
+  // Orchestrator carries none of it, and rule 1 of "Orchestrator communication discipline"
+  // above governs what it may send instead.
   //
   // Which label transitions apply is settled at the call site rather than here. The two
   // Reviewer fences arrive through "After a Reviewer exits", which has already added
-  // `changes requested`, and the `Verification revealed an error` routing carries its own
-  // `verification needed` -> `changes requested` table. The `monitorLoop` and `draftHeld`
-  // branches apply no transition, so a round entered from a CI terminal begins with whatever
-  // labels that terminal found.
+  // `changes requested`; the `Verification revealed an error` routing carries its own
+  // `verification needed` -> `changes requested` table; the `monitorLoop` and `draftHeld`
+  // branches apply none, so a round entered from a CI terminal begins with the labels that
+  // terminal found.
   Dispatch the Author per "Assigning a Programmer" above, on the branch already created for
   this issue rather than a new one ("One branch per ticket" in "Delegation rules" below), and
   by resuming the existing Author rather than spawning a replacement wherever that is still
   possible (also "Delegation rules").
+  // Resuming spares an Author the reconstruction of its own prior context, not the
+  // "Dispatch template" above: re-sending that filled in is how a resumed Author learns of
+  // a PR number that was `None` when it was first dispatched.
   When the Author returns, apply the `changes requested` -> `changes done` transition from
   "Assigning a Programmer", then assign a Reviewer per "Assigning a Reviewer" above.
   Control reaches "After a Reviewer exits" again once that Reviewer delivers its decision.
   // That re-entry re-decides which routing fence applies rather than reusing this round's:
   // an Author dispatched from the no-PR fence may have opened a PR this time, and one that
-  // opened a PR may have closed it and switched to declining (see "Changing position" in
-  // pr_participation.md), so the fence is chosen from whether a PR exists now.
+  // opened a PR may have closed it (see "Changing position" in pr_participation.md).
   //
   // Each pass through this block starts another round of the Programmer / Reviewer loop; the
   // four-round cap in "When to abort" below is what bounds them.
