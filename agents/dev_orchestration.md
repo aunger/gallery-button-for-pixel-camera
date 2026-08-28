@@ -221,12 +221,15 @@ Routing on the Verification Agent's signal:
 
 ## Assigning a Programmer
 
-- Create a sub-agent of the Author model (see Model selection above), *unless* an Author that has **worked on this issue or PR in a previous round** is available, resume the existing Author rather than spawning a replacement (also "Delegation rules").
-- **Whether new or resuming, dispatch using the dispatch template** above, with tokens for the Programmer role assignment statement, the branch name, and the issue and/or PR numbers.
+- If an Author that has **worked on this issue or PR in a previous round** is available...
+  - ...THEN resume that existing Author rather than spawning a replacement (see "Delegation rules" below).
+  - ...OTHERWISE, create a sub-agent of the Author model (see Model selection above).
+  - **Whether resuming or creating, dispatch using the dispatch template** above, with tokens for the Programmer role assignment statement, the branch name, and the issue and/or PR numbers.
 - Use a dedicated per-issue branch for the Programmer to use.
-  Branch names should follow the pattern `fix/issue-N-short-description` for bug fixes or `feature/issue-N-short-description` for new features.
-  If the branch already exists because this is a resumption of earlier work, reuse the one this issue was given rather than creating a second ("One branch per ticket" in "Delegation rules" below).
-- Never direct two Programmers for unrelated issues to the same branch.
+  - Branch names should follow the pattern `issue-N-short-description`.
+  - IF the branch already exists because this is a resumption of earlier work, reuse the one this issue was given rather than creating a second ("One branch per ticket" in "Delegation rules" below).
+  - OTHERWISE, create a branch for new development.
+  - Never direct two Programmers for unrelated issues to the same branch.
 - Always dispatch the Programmer in its own git worktree (Agent tool `isolation: "worktree"`), whether or not this dispatch is parallel.
 
 When the Author returns, apply this transition.
@@ -309,13 +312,13 @@ monitorLoop:
   (Note: the attributed `Blocked by: <name>` form already names the blocking check in the per-check summary block and the terminal suffix, so the Monitor suppresses the drain flag in that case. The `goto undiagnosedTerminal` branch therefore applies only to a bare `Blocked`/`Infra` line that the Monitor itself flagged as undiagnosed.)
   if Monitor emits a Blocked line where the terminal ends with `[label gate]` (the ` by: ...` suffix names only label-gate checks) -> goto labelGateBlock
   if Monitor emits a Blocked line -> goto "Assigning a Programmer" above
-  if Monitor emits an Infra line   -> escalate to user; stop
-  if Monitor emits a Draft line    -> goto draftHeld
-  if Monitor emits a Merged line   -> the PR is already merged, so there is no CI outcome left to act on; tell the user the PR merged; stop
-  if Monitor emits a Closed line   -> the PR was closed without merging; tell the user, and do NOT reopen it or start a new Author round; stop
-  if Monitor times out (30 min)    -> escalate to user; stop
+  if Monitor emits an Infra line  -> escalate to user; stop
+  if Monitor emits a Draft line   -> goto draftHeld
+  if Monitor emits a Merged line  -> the PR is already merged, so there is no CI outcome left to act on; tell the user the PR merged; stop
+  if Monitor emits a Closed line  -> the PR was closed without merging; tell the user, and do NOT reopen it or start a new Author round; stop
+  if Monitor times out (30 min)   -> escalate to user; stop
   if a user message wakes the session before Monitor delivers any terminal line -> goto silentVanish
-  if Monitor emits a Clear line -> goto surfaceBeforeMergingRequirements (entered on the Clear path)
+  if Monitor emits a Clear line   -> goto surfaceBeforeMergingRequirements (entered on the Clear path)
 
 draftHeld:
   // Reached when the PR is a draft and its checks have reported. Draftness is not a
