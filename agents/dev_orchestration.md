@@ -201,7 +201,7 @@ Routing on the Verification Agent's signal:
   | --------------------- | ---------- |
   | `verification needed` | `verified` |
 
-- `Verification revealed an error`: route the PR back to a new Author round (goto newAuthor, "Assigning a Programmer" below).
+- `Verification revealed an error`: route the PR back to a new Author round (goto "Assigning a Programmer" below).
   The Verification Agent leaves its diagnosis as a PR comment, which the Author reads from GitHub; the Orchestrator does not relay it.
   Apply this transition to the PR:
 
@@ -219,14 +219,15 @@ Routing on the Verification Agent's signal:
   | --------------------- |
   | `verification needed` |
 
-## Assigning a Programmer
+## Assigning a Programmer `newAuthor`
 
-- Create a sub-agent of the Author model (see Model selection above)
-- Create a dedicated per-issue branch for the Programmer to use.
+- Create a sub-agent of the Author model (see Model selection above), *unless* an Author that has **worked on this issue or PR in a previous round** is available, resume the existing Author rather than spawning a replacement (also "Delegation rules").
+- **Whether new or resuming, dispatch using the dispatch template** above, with tokens for the Programmer role assignment statement, the branch name, and the issue and/or PR numbers.
+- Use a dedicated per-issue branch for the Programmer to use.
   Branch names should follow the pattern `fix/issue-N-short-description` for bug fixes or `feature/issue-N-short-description` for new features.
-  Never direct two Programmers for unrelated issues to the same branch.
+  If the branch already exists because this is a resumption of earlier work, reuse the one this issue was given rather than creating a second ("One branch per ticket" in "Delegation rules" below).
+- Never direct two Programmers for unrelated issues to the same branch.
 - Always dispatch the Programmer in its own git worktree (Agent tool `isolation: "worktree"`), whether or not this dispatch is parallel.
-- Dispatch using the dispatch template above, with the Programmer role assignment statement and the literal issue number and branch name tokens.
 
 When the Author returns, apply this transition.
 Apply it to the PR if one exists; apply it to the issue otherwise, since that is where the work's labels live when there is no PR:
@@ -235,20 +236,6 @@ Apply it to the PR if one exists; apply it to the issue otherwise, since that is
 | ------------------- | -------------- |
 | `changes requested` | `changes done` |
 
-### Subsequent rounds: newAuthor
-
-`goto newAuthor`, from the five routing sites that use it, lands here: the work is not finished, and the Author takes another turn at it.
-The dispatch is the one above, with these differences.
-
-The branch already exists, so reuse the one this issue was given rather than creating a second ("One branch per ticket" in "Delegation rules" below).
-
-Resume the existing Author rather than spawning a replacement wherever that is still possible (also "Delegation rules").
-Resuming spares an Author the reconstruction of its own prior context, not the "Dispatch template" above: re-sending that filled in is how a resumed Author learns of a PR number that was `None` when it was first dispatched.
-
-Which label transitions have already been applied depends on the call site.
-The two Reviewer fences arrive through "After a Reviewer exits" below, which has already added `changes requested`; the `Verification revealed an error` routing carries its own `verification needed` -> `changes requested` table; the `monitorLoop` and `draftHeld` branches apply none, so a round entered from a CI terminal begins with the labels that terminal found.
-
-Whoever noticed that the work was unfinished has left its evidence where the Author reads it from GitHub, so the Orchestrator carries none of it to the Author; rule 1 of "Orchestrator communication discipline" above governs what it may send instead.
 
 ## Assigning a Reviewer
 
@@ -286,7 +273,7 @@ Decide it afresh each round rather than carrying the last round's answer over: a
 No-PR routing:
 
 ```text
-  if Reviewer requested changes -> goto newAuthor ("Assigning a Programmer" above)
+  if Reviewer requested changes -> goto "Assigning a Programmer" above
   if Reviewer gave `Cannot work` -> escalate to user; stop
   if Reviewer gave LGTM:
     The issue is resolved without a code change, and the Reviewer agreed.
@@ -299,7 +286,7 @@ No-PR routing:
 PR routing (Monitor loop):
 
 ```text
-  if Reviewer requested changes -> goto newAuthor ("Assigning a Programmer" above)
+  if Reviewer requested changes -> goto "Assigning a Programmer" above
   if Reviewer gave `Cannot work` -> escalate to user; stop (do NOT route to a new Author round; leave the PR open for the user to close; the Reviewer's PR comment describes why)
   if Reviewer gave LGTM -> launch the Monitor; goto monitorLoop
 
@@ -322,7 +309,7 @@ monitorLoop:
   if Monitor emits `drain poll found no new diagnostic signals` immediately followed by a Blocked or Infra line -> goto undiagnosedTerminal
   (Note: the attributed `Blocked by: <name>` form already names the blocking check in the per-check summary block and the terminal suffix, so the Monitor suppresses the drain flag in that case. The `goto undiagnosedTerminal` branch therefore applies only to a bare `Blocked`/`Infra` line that the Monitor itself flagged as undiagnosed.)
   if Monitor emits a Blocked line where the terminal ends with `[label gate]` (the ` by: ...` suffix names only label-gate checks) -> goto labelGateBlock
-  if Monitor emits a Blocked line  -> goto newAuthor ("Assigning a Programmer" above)
+  if Monitor emits a Blocked line -> goto "Assigning a Programmer" above
   if Monitor emits an Infra line   -> escalate to user; stop
   if Monitor emits a Draft line    -> goto draftHeld
   if Monitor emits a Merged line   -> the PR is already merged, so there is no CI outcome left to act on; tell the user the PR merged; stop
@@ -357,7 +344,7 @@ draftHeld:
     goto surfaceBeforeMergingRequirements (entered on the draft path)
   otherwise (the ` by: ...` portion names a substantive non-passing check):
     Relay which check(s) are not passing, and say that a draft PR's `mergeable_state` cannot confirm whether they would block the merge.
-    goto newAuthor ("Assigning a Programmer" above)
+    goto "Assigning a Programmer" above
 
 labelGateBlock:
   // Reached on a `[label gate]` terminal, which is the gate working, not CI breaking. The
