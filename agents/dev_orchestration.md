@@ -219,7 +219,7 @@ Routing on the Verification Agent's signal:
   | --------------------- |
   | `verification needed` |
 
-## Assigning a Programmer `newAuthor`
+## Assigning a Programmer
 
 - Create a sub-agent of the Author model (see Model selection above), *unless* an Author that has **worked on this issue or PR in a previous round** is available, resume the existing Author rather than spawning a replacement (also "Delegation rules").
 - **Whether new or resuming, dispatch using the dispatch template** above, with tokens for the Programmer role assignment statement, the branch name, and the issue and/or PR numbers.
@@ -235,7 +235,6 @@ Apply it to the PR if one exists; apply it to the issue otherwise, since that is
 | Remove label        | Add label      |
 | ------------------- | -------------- |
 | `changes requested` | `changes done` |
-
 
 ## Assigning a Reviewer
 
