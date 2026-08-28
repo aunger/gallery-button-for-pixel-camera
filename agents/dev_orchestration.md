@@ -226,7 +226,7 @@ Routing on the Verification Agent's signal:
   - ...OTHERWISE, create a sub-agent of the Author model (see Model selection above).
   - **Whether resuming or creating, dispatch using the dispatch template** above, with tokens for the Programmer role assignment statement, the branch name, and the issue and/or PR numbers.
 - Use a dedicated per-issue branch for the Programmer to use.
-  - Branch names should follow the pattern `issue-N-short-description`.
+  - Branch names should follow the pattern `fix/issue-N-short-description` for bug fixes or `feature/issue-N-short-description` for new features.
   - IF the branch already exists because this is a resumption of earlier work, reuse the one this issue was given rather than creating a second ("One branch per ticket" in "Delegation rules" below).
   - OTHERWISE, create a branch for new development.
   - Never direct two Programmers for unrelated issues to the same branch.
