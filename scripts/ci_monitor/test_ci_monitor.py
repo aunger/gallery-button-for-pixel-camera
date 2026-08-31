@@ -97,21 +97,24 @@ Covers:
        Clear instead of a false On hold/Infra; an 'unknown' (or other
        non-blocking, e.g. has_hooks) mergeable_state keeps polling rather than
        terminating prematurely, and the still-computing heartbeat does not begin
-       with a On hold/Infra terminal keyword
+       with an On hold/Infra terminal keyword
   (bg) #968 pr_is_draft: reads the /pulls/{n} `draft` boolean, absent or
        false reads as not-draft
   (bh) #968 main(): --pr terminates on a draft PR instead of spinning in the
        still-computing arm. Draftness is keyed on the `draft` boolean, so it
        outranks every mergeable_state (a draft reporting blocked/unstable is
-       still Draft, not a false Infra or a false Clear), with the `draft`
-       mergeable_state as the fallback for a payload lacking the field, read
-       from the fresher of the poll's two /pulls fetches (so a PR marked ready
-       mid-poll is not reported Draft) while a failed fresh fetch falls back to
-       the poll's first payload rather than losing draftness. A green
-       draft emits Draft; a draft whose checks are not passing emits the
-       attributed "Draft by: ..." form (including the everyday
-       "[label gate]" shape) rather than a On hold/Infra merge-block claim; and
+       still Draft on hold, not a false Infra or a false Clear), with the
+       `draft` mergeable_state as the fallback for a payload lacking the field,
+       read from the fresher of the poll's two /pulls fetches (so a PR marked
+       ready mid-poll is not reported Draft on hold) while a failed fresh fetch
+       falls back to the poll's first payload rather than losing draftness. A
+       green draft emits Draft on hold; a draft whose checks are not passing
+       emits the attributed "Draft on hold by: ..." form (including the everyday
+       "[label gate]" shape) rather than an On hold/Infra merge-block claim; and
        an 'unknown' mergeable_state on a non-draft PR still keeps polling
+  (bi) #983 terminal_word: maps the Blocked verdict to the printed `On hold`,
+       passes every other verdict token through unrenamed (Infra included), and
+       keeps `Draft on hold` distinguishable from `On hold` as a whole token
 
 No network calls required; no GITHUB_TOKEN needed.
 Run this file directly to execute the suite: exits 0 on success, non-zero on failure.
@@ -4365,7 +4368,7 @@ def main() -> int:
     check(
         ("%s: On hold" % tag_ar) in lines_ar2,
         "run-id mode emits a bare On hold terminal (no check-run summary to attribute)",
-        "expected a On hold line; output: %r" % lines_ar2,
+        "expected an On hold line; output: %r" % lines_ar2,
     )
     check(
         len(side_effects_ar2) == 0,
@@ -5447,7 +5450,7 @@ def main() -> int:
         not any(
             ln.startswith("PR#748: On hold") or ln.startswith("PR#748: Infra") for ln in lines_bf2
         ),
-        "the still-computing heartbeat does NOT begin with a On hold/Infra terminal keyword",
+        "the still-computing heartbeat does NOT begin with an On hold/Infra terminal keyword",
         "a still-computing line looks like a terminal; output: %r" % out_bf2,
     )
     check(
@@ -5573,7 +5576,7 @@ def main() -> int:
     )
 
     # ── (bh) #968 main(): a draft PR is a settled state, not "still computing" ─────
-    print("\n=== (bh) #968 main(): --pr terminates Draft on a draft PR ===")
+    print("\n=== (bh) #968 main(): --pr terminates Draft on hold on a draft PR ===")
 
     # GitHub reports mergeable_state="draft" for a draft pull request and keeps
     # reporting it until someone marks the PR ready for review. Before issue #968 that
@@ -5598,7 +5601,7 @@ def main() -> int:
 
     # Case 1--every check passed and the PR is a draft. Single poll: pulls (sha),
     # verdict check-runs (reused by poll_signals; no Actions targets -> fast exit),
-    # then the mergeable_state fetch -> draft -> Draft. No drain (nothing failed, as
+    # then the mergeable_state fetch -> draft -> Draft on hold. No drain (nothing failed, as
     # on the Clear path). 3 requests.
     side_effects_bg = collections.deque([PR_DRAFT_BG, CHECK_ALL_PASS_BG, MPR_DRAFT_BG])
 
@@ -5620,7 +5623,7 @@ def main() -> int:
     check(
         lines_bg[-1] == draft_line_bg,
         "a green draft PR terminates on 'Draft on hold (mergeable_state=draft)'",
-        "expected a trailing Draft terminal; output: %r" % out_bg,
+        "expected a trailing Draft on hold terminal; output: %r" % out_bg,
     )
     check(
         not any("still computing" in ln for ln in lines_bg),
@@ -5634,18 +5637,18 @@ def main() -> int:
             or ln.startswith("PR#968: Infra")
             for ln in lines_bg
         ),
-        "Draft is its own terminal, neither Clear nor On hold/Infra",
+        "Draft on hold is its own terminal, neither Clear nor On hold/Infra",
         "unexpected Clear/On hold/Infra terminal; output: %r" % out_bg,
     )
     check(
         "PR#968: summary" in lines_bg
         and lines_bg.index("PR#968: summary") < lines_bg.index(draft_line_bg),
-        "the per-check summary block precedes the Draft terminal",
+        "the per-check summary block precedes the Draft on hold terminal",
         "summary header missing or after the terminal; output: %r" % out_bg,
     )
     check(
         len(side_effects_bg) == 0,
-        "all 3 mocked requests consumed (no drain on the all-passed Draft path)",
+        "all 3 mocked requests consumed (no drain on the all-passed Draft on hold path)",
         "request deque not drained; %d entries left" % len(side_effects_bg),
     )
     check(rc_bg == 0, "main() returned 0", "main() returned %r" % rc_bg)
@@ -5684,7 +5687,7 @@ def main() -> int:
     draft_attr_bg2 = "PR#968: Draft on hold by: build-and-test (mergeable_state=draft)"
     check(
         lines_bg2[-1] == draft_attr_bg2,
-        "a draft PR with a non-passing check terminates on the attributed Draft form",
+        "a draft PR with a non-passing check terminates on the attributed Draft on hold form",
         "expected 'Draft on hold by: build-and-test (mergeable_state=draft)'; output: %r" % out_bg2,
     )
     check(
@@ -5711,7 +5714,7 @@ def main() -> int:
     )
     check(rc_bg2 == 0, "main() returned 0", "main() returned %r" % rc_bg2)
 
-    # Case 3--an infra-shaped conclusion on a draft PR reports Draft as well, not the
+    # Case 3--an infra-shaped conclusion on a draft PR reports Draft on hold as well, not the
     # Infra escalation: the draft state is what the terminal can honestly assert.
     CHECK_INFRA_BG = {
         "total_count": 2,
@@ -5741,8 +5744,8 @@ def main() -> int:
     check(
         lines_bg3[-1] == "PR#968: Draft on hold by: build-and-test (mergeable_state=draft)"
         and not any(ln.startswith("PR#968: Infra") for ln in lines_bg3),
-        "a cancelled check on a draft PR terminates Draft, not Infra",
-        "expected the attributed Draft terminal and no Infra; output: %r" % out_bg3,
+        "a cancelled check on a draft PR terminates Draft on hold, not Infra",
+        "expected the attributed Draft on hold terminal and no Infra; output: %r" % out_bg3,
     )
     check(
         len(side_effects_bg3) == 0,
@@ -5764,7 +5767,7 @@ def main() -> int:
         side_effects_bg4.append({"mergeable_state": "unknown"})  # mpr -> keep polling
     side_effects_bg4.append(PR_DRAFT_BG)  # final poll: pulls -> sha, now a draft
     side_effects_bg4.append(CHECK_ALL_PASS_BG)  # final poll: verdict -> all_passed
-    side_effects_bg4.append(MPR_DRAFT_BG)  # final poll: mpr -> draft -> Draft
+    side_effects_bg4.append(MPR_DRAFT_BG)  # final poll: mpr -> draft -> Draft on hold
 
     def fake_request_bg4(url, token, raw=False):
         return side_effects_bg4.popleft()
@@ -5796,8 +5799,8 @@ def main() -> int:
     )
     check(
         lines_bg4[-1] == draft_line_bg,
-        "the monitor polls through unknown and terminates Draft once draft is reported",
-        "expected a trailing Draft terminal; output: %r" % out_bg4,
+        "the monitor polls through unknown and terminates Draft on hold once draft is reported",
+        "expected a trailing Draft on hold terminal; output: %r" % out_bg4,
     )
     check(
         len(side_effects_bg4) == 0,
@@ -5811,7 +5814,7 @@ def main() -> int:
     # come back as 'blocked' rather than 'draft'. Keyed on mergeable_state alone that
     # would be an Infra terminal, which the routing fence escalates to the user as
     # broken CI infrastructure, never mentioning the draft. Keyed on the `draft`
-    # boolean it is a Draft terminal that reports the observed state in its suffix.
+    # boolean it is a Draft on hold terminal that reports the observed state in its suffix.
     side_effects_bg5 = collections.deque(
         [
             PR_DRAFT_BG,  # pulls -> sha, draft
@@ -5837,7 +5840,7 @@ def main() -> int:
     check(
         lines_bg5[-1] == "PR#968: Draft on hold (mergeable_state=blocked)"
         and not any(ln.startswith("PR#968: Infra") for ln in lines_bg5),
-        "a draft PR reporting mergeable_state=blocked is Draft, not a false Infra escalation",
+        "a draft PR reporting mergeable_state=blocked is Draft on hold, not a false Infra",
         "expected Draft on hold (mergeable_state=blocked) and no Infra; output: %r" % out_bg5,
     )
     check(
@@ -5885,8 +5888,8 @@ def main() -> int:
         lines_bg6[-1]
         == "PR#968: Draft on hold by: enforce-exclusive-labels (mergeable_state=unstable)"
         and not any(ln.startswith("PR#968: Clear") for ln in lines_bg6),
-        "a draft PR reporting mergeable_state=unstable is Draft, not a false Clear",
-        "expected the attributed Draft terminal and no Clear; output: %r" % out_bg6,
+        "a draft PR reporting mergeable_state=unstable is Draft on hold, not a false Clear",
+        "expected the attributed Draft on hold terminal and no Clear; output: %r" % out_bg6,
     )
     check(
         len(side_effects_bg6) == 0,
@@ -5923,7 +5926,7 @@ def main() -> int:
     check(
         lines_bg7[-1] == draft_line_bg,
         "mergeable_state=draft still terminates when the payload carries no `draft` field",
-        "expected the Draft terminal from the fallback; output: %r" % out_bg7,
+        "expected the Draft on hold terminal from the fallback; output: %r" % out_bg7,
     )
     check(
         len(side_effects_bg7) == 0,
@@ -5967,7 +5970,7 @@ def main() -> int:
         lines_bg8[-1]
         == "PR#968: Draft on hold by: No blocking labels [label gate] (mergeable_state=draft)",
         "a label-gate-only draft carries the [label gate] annotation in its terminal",
-        "expected the label-gate Draft terminal; output: %r" % out_bg8,
+        "expected the label-gate Draft on hold terminal; output: %r" % out_bg8,
     )
     check(
         any(
@@ -5992,7 +5995,7 @@ def main() -> int:
     # Case 9--draftness is read from the fresher of the poll's two /pulls fetches.
     # The loop reads the head SHA from one fetch and the mergeable state from another,
     # seconds later; someone can mark the PR ready for review in between. The stale
-    # payload would emit a Draft terminal for a PR that is ready, and because the
+    # payload would emit a Draft on hold terminal for a PR that is ready, and because the
     # branch ends the loop there is no later poll to correct it.
     side_effects_bg9 = collections.deque(
         [
@@ -6019,7 +6022,7 @@ def main() -> int:
     check(
         lines_bg9[-1] == "PR#968: Clear (mergeable_state=clean)"
         and not any(ln.startswith("PR#968: Draft on hold") for ln in lines_bg9),
-        "a PR marked ready between the poll's two fetches is Clear, not a stale Draft",
+        "a PR marked ready between the poll's two fetches is Clear, not a stale Draft on hold",
         "expected Clear from the fresher payload; output: %r" % out_bg9,
     )
     check(
@@ -6065,6 +6068,43 @@ def main() -> int:
         "request deque not drained; %d entries left" % len(side_effects_bg10),
     )
     check(rc_bg10 == 0, "main() returned 0", "main() returned %r" % rc_bg10)
+
+    # ── (bi) #983 terminal_word: renames the hold verdict for display only ────────
+    print("\n=== (bi) #983 terminal_word: Blocked prints as On hold, Infra untouched ===")
+
+    check(
+        ci_monitor.terminal_word("Blocked") == "On hold",
+        "the Blocked verdict prints as On hold",
+        "expected 'On hold'; got %r" % ci_monitor.terminal_word("Blocked"),
+    )
+    # Infra is deliberately NOT softened: an infrastructure failure is a real
+    # problem. It now passes through a mapping rather than a bare interpolation,
+    # so assert it positively rather than only via the not-any checks elsewhere.
+    check(
+        ci_monitor.terminal_word("Infra") == "Infra",
+        "Infra passes through unrenamed, so the escalating terminal stays alarming",
+        "expected 'Infra' unchanged; got %r" % ci_monitor.terminal_word("Infra"),
+    )
+    for token_bi in ("Clear", "in_progress", "all_passed"):
+        check(
+            ci_monitor.terminal_word(token_bi) == token_bi,
+            "%s passes through unrenamed" % token_bi,
+            "expected %r unchanged; got %r" % (token_bi, ci_monitor.terminal_word(token_bi)),
+        )
+    check(
+        (ci_monitor.ON_HOLD, ci_monitor.DRAFT_ON_HOLD) == ("On hold", "Draft on hold"),
+        "the two hold terminals print as On hold and Draft on hold",
+        "unexpected hold terminal words: %r" % ((ci_monitor.ON_HOLD, ci_monitor.DRAFT_ON_HOLD),),
+    )
+    # A terminal line is "PR#N: <terminal word>...", so a consumer matching the
+    # word as a whole token (the Orchestrator's routing fence, and this suite's
+    # own startswith assertions) must not see a Draft on hold line as an On hold
+    # one. That holds exactly while Draft on hold does not begin with On hold.
+    check(
+        not ci_monitor.DRAFT_ON_HOLD.startswith(ci_monitor.ON_HOLD),
+        "Draft on hold is its own terminal word, not an On hold line with a prefix",
+        "Draft on hold begins with On hold, so the two terminals are not separable",
+    )
 
     # ── Summary ────────────────────────────────────────────────────────────────────
     print("\nResults: %d passed, %d failed." % (PASS, FAIL))
