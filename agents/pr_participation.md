@@ -134,7 +134,8 @@ The Author should not flip-flop merely to appease the Reviewer: change position 
 
 > [!NOTE]
 > Reviewers: Do not enforce the attribution rules.
-> Claude Code's inbuilt tools make this a hassle, and it's not worth an extra PR round.
+> The rule prohibits writing a byline; nobody is obliged to remove one that landed.
+> A GitHub workflow removes them presently, so a byline that gets through is best to disregard.
 
 ## Scope
 
