@@ -1437,3 +1437,5 @@ def main(argv):
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv))
+
+# Test-only no-op line for PR #990 verification (issue #992). Do not merge.
