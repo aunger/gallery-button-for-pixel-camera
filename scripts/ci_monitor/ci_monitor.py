@@ -1437,3 +1437,5 @@ def main(argv):
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv))
+
+# Conflicting counterpart line, so PR #995 becomes un-mergeable (issue #992). Do not merge.
