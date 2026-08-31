@@ -29,3 +29,8 @@ Since this rule refers only to prose, characters chosen for their specific meani
 ## Do not surround dashes or double-hyphens with spaces
 
 Omit the spaces--like this.
+
+## Cite code with a path and line
+
+Cite code as `path/to/File.kt:59`.
+Where the surface renders links, link the citation to the file at that line.

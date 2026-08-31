@@ -1,25 +1,27 @@
-# Writing issues, PR descriptions, and comments
+# Writing Prose for issue descriptions and comments
 
-This document governs how prose written into GitHub reads.
-For a PR's title, description, and test plan, `pr_creation.md` governs what it must contain.
+Issues and comments are read by whoever picks the work up.
+Write them for that reader.
+
+A PR description is a different artifact and is not covered here.
+After merge it is this repository's record of the change, so the narrative these rules cut is part of its value.
+`pr_creation.md` governs PR descriptions.
 
 ## Lead with evidence
 
-State the finding, then the evidence for it: the command, its output, the `file:line`, the commit the check ran against.
+State the finding, then the evidence for it: the command, its output, the code citation, the commit the check ran against.
 A claim the reader cannot check is worth less than one they can.
 
 Say which claims were verified and which were not.
 An implementer needs to know where the ground stops.
 
-## Write for the implementer, not about the author
+## Write for the audience
 
 Cut anything that does not change what the reader does.
 No account of how the finding was made, no narration of the search, no remarks on the writing itself.
 
 Never carry a correction's history into the text.
 When a statement was wrong, replace it with the correct one and stop there.
-Phrases like "rather than merely discouraged", "easy to misread", or "it turns out" are residue from an earlier draft.
-Delete them.
 
 ## Record decisions so they read as decisions
 
@@ -39,7 +41,4 @@ Do not resolve them by guess.
 
 ## Mechanics
 
-One sentence per line.
-No em dashes.
-Cite code as `path/to/File.kt:59`.
-Anchor a verification claim to the commit it ran against.
+See `.claude/rules/prose-style.md`.
