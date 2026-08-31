@@ -28,8 +28,8 @@ import org.robolectric.Shadows.shadowOf
  *
  * This is the JVM-level coverage issue #565 asked for. The one instrumented test touching this
  * surface, `GalleryButtonVisualE2ETest#test5a_secureCameraLockedPopulatedGalleryShowsGreen`, is
- * quarantined in `.github/allowed-test-failures.txt` under issue #243, so an E2E test here would
- * land next to a red neighbour.
+ * red on main and tracked by issue #972, so an E2E test here would land next to a red
+ * neighbour.
  */
 @RunWith(RobolectricTestRunner::class)
 class OverlayServiceMediaObserverGateTest {

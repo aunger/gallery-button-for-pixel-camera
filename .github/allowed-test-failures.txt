@@ -15,10 +15,3 @@
 #
 # Blank lines and lines starting with `#` are ignored; trailing inline `#`
 # comments are stripped.
-#
-# These tests are red on main today; `continue-on-error` hid them before
-# issue #309 removed it.  Each already has a tracking issue and must be
-# removed from this list as it is fixed.
-
-# Tracking issue: #243
-com.gb4pc.e2e.GalleryButtonVisualE2ETest#test5a_secureCameraLockedPopulatedGalleryShowsGreen
