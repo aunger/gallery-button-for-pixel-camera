@@ -319,18 +319,21 @@ monitorLoop:
   Terminal lines and failure markers (`FAIL`/`SKIP`) are relayed to the user, verbatim.
   Every other line is relayed or withheld at the Orchestrator's discretion; nothing obliges it to forward routine progress output.
   The Orchestrator **acts only on the terminal lines** `Clear`, `On hold` (including the `On hold by: <name>` form), `Infra`, `Draft on hold` (including the `Draft on hold by: <name>` form), `Merged`, or `Closed`.
+  A terminal line is the `PR#N: ` prefix, then its **terminal word**, then any ` by: ...` attribution and any ` (mergeable_state=...)` diagnostic.
+  Match the terminal word as a whole token. The six are mutually exclusive: `Draft on hold` is a terminal word in its own right, not an `On hold` line wearing an extra adjective, so a `Draft on hold` line never satisfies an `On hold` branch below, and an `On hold` line never satisfies the `Draft on hold` branch.
+  The branches settle draftness first regardless of that, mirroring the Monitor, which tests draftness ahead of every mergeable state (issue #968).
   Other output, including `step`, `FAIL`, `summary`, `in_progress` keepalives, and per-check information are progress reports; they do NOT end the loop or start a new Author round.
-  if Monitor emits `drain poll found no new diagnostic signals` immediately followed by an On hold or Infra line -> goto undiagnosedTerminal
-  (Note: the attributed `On hold by: <name>` form already names the blocking check in the per-check summary block and the terminal suffix, so the Monitor suppresses the drain flag in that case. The `goto undiagnosedTerminal` branch therefore applies only to a bare `On hold`/`Infra` line that the Monitor itself flagged as undiagnosed.)
-  if Monitor emits an On hold line where the terminal ends with `[label gate]` (the ` by: ...` suffix names only label-gate checks) -> goto labelGateBlock
-  if Monitor emits an On hold line -> goto "Assigning a Programmer" above
-  if Monitor emits an Infra line  -> escalate to user; stop
-  if Monitor emits a Draft on hold line -> goto draftHeld
-  if Monitor emits a Merged line  -> send the user the `PR #{N} merged; ...` line from "Decision-signal templates" above; stop
-  if Monitor emits a Closed line  -> do NOT reopen it or start a new Author round; send the user the `PR #{N} was closed without merging; ...` line from "Decision-signal templates" above; stop
-  if Monitor times out (30 min)   -> escalate to user; stop
+  if Monitor emits a `Draft on hold` line -> goto draftHeld
+  if Monitor emits `drain poll found no new diagnostic signals` immediately followed by an `On hold` or `Infra` line -> goto undiagnosedTerminal
+  (Note: the attributed `On hold by: <name>` form already names the blocking check in the per-check summary block and the terminal suffix, so the Monitor suppresses the drain flag in that case. The `goto undiagnosedTerminal` branch therefore applies only to a bare `On hold`/`Infra` line that the Monitor itself flagged as undiagnosed. The flag never precedes a `Draft on hold` line at all, since that arm is reached only with a blocking check already named.)
+  if Monitor emits an `On hold` line where the terminal ends with `[label gate]` (the ` by: ...` suffix names only label-gate checks) -> goto labelGateBlock
+  if Monitor emits an `On hold` line -> goto "Assigning a Programmer" above
+  if Monitor emits an `Infra` line -> escalate to user; stop
+  if Monitor emits a `Merged` line -> send the user the `PR #{N} merged; ...` line from "Decision-signal templates" above; stop
+  if Monitor emits a `Closed` line -> do NOT reopen it or start a new Author round; send the user the `PR #{N} was closed without merging; ...` line from "Decision-signal templates" above; stop
+  if Monitor times out (30 min) -> escalate to user; stop
   if a user message wakes the session before Monitor delivers any terminal line -> goto silentVanish
-  if Monitor emits a Clear line   -> goto surfaceBeforeMergingRequirements (entered on the Clear path)
+  if Monitor emits a `Clear` line -> goto surfaceBeforeMergingRequirements (entered on the Clear path)
 
 draftHeld:
   // Reached when the PR is a draft and its checks have reported. Draftness is not a
@@ -348,9 +351,9 @@ draftHeld:
   // before-merging requirements, not about mergeability, so the PR being a draft falsifies
   // nothing it asserts.
   //
-  // Without this branch the Monitor's Draft on hold line would match no branch and the loop
+  // Without this branch the Monitor's `Draft on hold` line would match no branch and the loop
   // would sit until the 30-minute timeout (issue #968).
-  Relay the Draft on hold line. Then send the user the `PR #{N} is a draft, ...` preamble from "Decision-signal templates" above.
+  Relay the `Draft on hold` line. Then send the user the `PR #{N} is a draft, ...` preamble from "Decision-signal templates" above.
   if the line carries no ` by: ...` portion (every check passed) -> goto surfaceBeforeMergingRequirements (entered on the draft path)
   if the ` by: ...` portion ends in `[label gate]` before the `(mergeable_state=...)` suffix (so every non-passing check is a process-label gate):
     Send the user the `No code or test failed; ...` line from "Decision-signal templates" above, which is what the terminal positively asserts.
@@ -362,7 +365,8 @@ draftHeld:
     goto "Assigning a Programmer" above
 
 labelGateBlock:
-  // Reached on a `[label gate]` terminal, which is the gate working, not CI breaking. The
+  // Reached on an `On hold` terminal ending in `[label gate]` (never a `Draft on hold` one,
+  // which draftHeld takes), which is the gate working, not CI breaking. The
   // suffix means every blocking check-run is a label gate, so no code failed and no test
   // failed. It does NOT mean the PR is otherwise mergeable: the Monitor reaches this terminal
   // only when `mergeable_state` is `behind`, `dirty` or `blocked`, so a PR carrying a merge
