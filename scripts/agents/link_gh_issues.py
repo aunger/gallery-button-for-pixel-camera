@@ -470,18 +470,40 @@ def members_path(family: str, holder: Issue) -> str:
 def parent_of(issue: Issue, token: str) -> tuple[int, str] | None:
     """The issue's one parent as (id, slug), or None if it has none.
 
-    GitHub answers 404 "No parent issue found" for a parentless issue, which is
-    an answer rather than a fault, so `api` handing 404 back is what this wants.
-    The slug is carried along because the only caller has to name the parent it
-    is about to displace, and re-fetching the issue to learn its number would
-    be a second call for something this payload already holds.
+    This gates a write, so the two ways of reading nothing are held apart.
+
+    **A 404 is read as "no parent", deliberately.** This runs only after
+    `get_issue` has fetched the operand, so by here the issue is known to exist
+    and to be visible, and the remaining cause of a 404 is the one GitHub names
+    in the body: `No parent issue found` (checked 2026-09-01 against a
+    parentless issue, where a generic absence would have answered `Not Found`).
+    The two causes are not confusable in this position, which is why this reads
+    404 leniently where `paged` does not.
+
+    **Anything else unreadable raises.** A payload that is not an issue object,
+    or one missing the `id` or `number` this returns, is not evidence of
+    anything and must not be reported as "no parent": the caller would then
+    write without `replace_parent`, silently discarding a `--replace-parent` it
+    was given, and get GitHub's bare 422 back instead of the line this guard
+    exists to provide. That is the line `paged` draws for the membership
+    pre-read, for the same reason.
+
+    The slug is carried along because the caller has to name the parent it is
+    about to displace, and re-fetching the issue to learn its number would be a
+    second call for something this payload already holds.
     """
     path = f"/repos/{issue.owner}/{issue.repo}/issues/{issue.number}/parent"
     status, payload = api("GET", path, token)
-    if status == 404 or not isinstance(payload, dict) or "id" not in payload:
+    if status == 404:
         return None
+    if not isinstance(payload, dict) or "id" not in payload or "number" not in payload:
+        raise ApiError(
+            status,
+            f"HTTP {status}: {path} did not answer with an issue, so whether {issue.slug} "
+            "already has a parent is unknown",
+        )
     where = (payload.get("repository") or {}).get("full_name") or f"{issue.owner}/{issue.repo}"
-    return int(payload["id"]), f"{where}#{payload.get('number')}"
+    return int(payload["id"]), f"{where}#{payload['number']}"
 
 
 def add_link(
@@ -549,7 +571,10 @@ def run_show(args, token: str) -> int:
     blocked_by = paged(f"{base}/dependencies/blocked_by", token)
     blocking = paged(f"{base}/dependencies/blocking", token)
     sub_issues = paged(f"{base}/sub_issues", token)
-    # A parentless issue answers 404 "No parent issue found"; that is an answer.
+    # Read here rather than through `parent_of`: that one returns the id and
+    # slug its caller needs to gate a write, while `--json` has to print the
+    # payload GitHub sent. A parentless issue answers 404 "No parent issue
+    # found", which is an answer, and nothing here gates a write on it.
     status, parent = api("GET", f"{base}/parent", token)
     parent = parent if status != 404 and isinstance(parent, dict) else None
 

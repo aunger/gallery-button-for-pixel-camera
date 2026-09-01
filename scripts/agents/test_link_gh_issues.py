@@ -797,6 +797,67 @@ class TestOneParent(unittest.TestCase):
         self.assertEqual(code, 0, err)
         self.assertEqual([c for c in fake.calls if c[1].endswith("/parent")], [])
 
+    def unreadable_parent(self, payload):
+        """A fake whose `/parent` answers 200 with something that is not an issue."""
+
+        class Fake(FakeApi):
+            def __call__(self, method, path, token, body=None):
+                if method == "GET" and path.split("?")[0].endswith("/issues/42/parent"):
+                    self.calls.append((method, path, body))
+                    return 200, payload
+                return super().__call__(method, path, token, body)
+
+        return Fake(three_issues(), links={("sub-issue", OWNER, REPO, 17): {4200}})
+
+    def test_an_unreadable_parent_is_not_read_as_no_parent(self):
+        """The pre-read gates a write, so it must not invent an answer.
+
+        Reporting "no parent" here writes without `replace_parent`, which
+        discards the caller's `--replace-parent` and hands back GitHub's bare
+        422 -- the wording this guard exists to replace.
+        """
+        for payload in (["not", "a", "dict"], {"number": 17}, {"id": 1700}, None):
+            with self.subTest(payload=payload):
+                fake = self.unreadable_parent(payload)
+                code, out, err = run(
+                    ["add", OWNER, REPO, "42", "--child-of", "19", "--replace-parent"], fake
+                )
+                self.assertEqual(code, 1)
+                self.assertIn("already has a parent is unknown", err)
+                self.assertNotIn("Linked:", out)
+                self.assertEqual(self.posts(fake), [])
+
+    def test_a_404_parent_is_still_read_as_no_parent(self):
+        """`get_issue` has already proved the operand exists and is visible, so
+        the only cause left for a 404 is GitHub's own "No parent issue found"."""
+        fake = FakeApi(
+            three_issues(),
+            not_found=[("GET", f"/repos/{OWNER}/{REPO}/issues/42/parent")],
+        )
+        code, out, err = run(
+            ["add", OWNER, REPO, "42", "--child-of", "19", "--replace-parent"], fake
+        )
+        self.assertEqual(code, 0, err)
+        self.assertIn("Linked:", out)
+        self.assertNotIn("replacing", out)
+
+    def test_the_flag_is_sent_exactly_when_a_parent_was_displaced(self):
+        """Sending it whenever the flag is present would turn a pre-read that
+        missed a parent into a silent move; the 422 is the safer failure."""
+        moved = self.child_of_17()
+        code, _, err = run(
+            ["add", OWNER, REPO, "42", "--child-of", "19", "--replace-parent"], moved
+        )
+        self.assertEqual(code, 0, err)
+        self.assertTrue(self.posts(moved)[0][2].get("replace_parent"))
+
+        fresh = FakeApi(three_issues())
+        code, _, err = run(
+            ["add", OWNER, REPO, "42", "--child-of", "19", "--replace-parent"], fresh
+        )
+        self.assertEqual(code, 0, err)
+        self.assertNotIn("replace_parent", self.posts(fresh)[0][2])
+
     def test_the_parent_is_read_once_and_then_followed(self):
         """Two moves of one issue in a call: the second must see the first."""
         fake = self.child_of_17()
