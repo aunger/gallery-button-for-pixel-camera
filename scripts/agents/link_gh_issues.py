@@ -89,18 +89,27 @@ Exit codes:
 
 Required environment variables:
     GITHUB_TOKEN   Token with `issues: write` on every repository written to
-                   (read alone is enough for `show`). Verified 2026-09-01
-                   against this repository: both families are writable, so all
-                   four flags work with the session's fine-grained PAT.
+                   (read alone is enough for `show`). All four relations were
+                   verified writable against this repository on 2026-09-01.
 
-                   Beware one wording when reading failures here. GitHub
-                   answers `403 Resource not accessible by integration` when
-                   the relationship a request names does not exist -- removing
-                   a sub-issue from an issue that is not its parent, say --
-                   which says nothing about the token's permissions. The same
-                   call with a real operand returns 200. GitHub also says
-                   "integration" for a fine-grained PAT, so the wording is not
-                   evidence about the credential either.
+                   In a Claude Code session this variable is required but
+                   inert: `HTTPS_PROXY` routes `api.github.com` through a local
+                   proxy that supplies its own credential, and a garbage value
+                   behaves identically to the real one. Writes from this script
+                   therefore land as `claude[bot]` rather than as the token's
+                   nominal owner. Outside a session -- a developer machine, or
+                   CI -- the value is what authenticates, which is why it is
+                   still required. See `.claude/environment.md`,
+                   "`GITHUB_TOKEN` is inert in a session".
+
+                   Beware one wording when reading failures. GitHub answers
+                   `403 Resource not accessible by integration` when the
+                   relationship a request names does not exist -- removing a
+                   sub-issue from an issue that is not its parent, say -- which
+                   says nothing about permissions; the same call with a real
+                   operand returns 200. GitHub uses "integration" for
+                   fine-grained PATs too, so it is not evidence about the
+                   credential either.
 """
 
 import argparse

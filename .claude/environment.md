@@ -250,6 +250,10 @@ sub-resource endpoints this script uses. Treat the write-permission boundary as 
 labels sub-resource only; do not assume other Issues/PR API writes succeed with
 `GITHUB_TOKEN` without testing them individually.
 
+(See "`GITHUB_TOKEN` is inert in a session" below, which reframes this section: in
+a session the token's value is not what authenticates, and the unexplained
+disagreement above is most likely a change in the credential the proxy injects.)
+
 ### `GITHUB_TOKEN` can write issue dependencies and sub-issues
 
 **Verified 2026-09-01 (issue links / `scripts/agents/link_gh_issues.py`):** both
@@ -291,6 +295,61 @@ addresses the wrong issue, or none. `link_gh_issues.py` resolves references
 (`123`, `#123`, `owner/repo#123`, a URL) through a `GET` before writing, and reads
 the current link set first, so it never issues a removal for a link that is absent
 -- which is what keeps callers clear of the 403 above.
+
+### `GITHUB_TOKEN` is inert in a session: the proxy supplies the credential
+
+**Verified 2026-09-01.** This reframes every "`GITHUB_TOKEN` can/cannot do X"
+claim above. In a session, `api.github.com` is not reached directly: `HTTPS_PROXY`
+points at a local proxy (`127.0.0.1:45501`) that terminates the connection
+(`curl` reports `remote_ip 127.0.0.1`) and supplies its own credential.
+
+The value of `GITHUB_TOKEN` does not participate. Real token, a garbage token, and
+no `Authorization` header at all are indistinguishable, on reads and on writes:
+
+```text
+GET  /user                                    real -> aunger   garbage -> aunger   none -> aunger
+POST /issues/998/dependencies/blocked_by      real -> 404      garbage -> 404      none -> 404
+```
+
+A missing or invalid credential would be `401` on both. It never is.
+
+Three consequences, in descending order of how much time they will save:
+
+- **`GET /user` proves nothing about the credential here.** It answers `aunger`
+  with no credential presented. Do not use it to identify what is authenticating.
+- **Write identity depends on the path taken, and is not `GITHUB_TOKEN` either
+  way.** Writes through `curl`/`urllib` land as `claude[bot]`: issues #998 and
+  #999 were created that way and carry that author. Writes through the
+  `mcp__github__*` tools land as `aunger`: PR #1000 was created that way and
+  carries that author. So `scripts/agents/*` (all of which use `curl` or `urllib`)
+  post as the bot, while the MCP tools post as the repository owner.
+- **The proxy also blocks whole API paths on its own**, answering with an
+  Anthropic-branded message and a `docs.anthropic.com` link rather than a GitHub
+  one. `/installation/repositories`, `/user/repos`, `/notifications` and
+  `/repos/{o}/{r}/collaborators` are all refused this way. A 403 whose
+  `documentation_url` points at Anthropic is the proxy; one pointing at
+  `docs.github.com` is GitHub.
+
+**This likely settles the open question in the labels section above.** That section
+records that the 2026-05 finding (403 on `PATCH`/`DELETE`) and the 2026-07 finding
+(labels writable) disagree, and calls the reason unconfirmed, guessing at a change
+in "the fine-grained PAT's permissions". The likelier explanation is that no PAT
+was ever involved: both tests measured whatever credential the proxy injected on
+the day they ran, and that changed between them. It can change again without
+anyone touching a token or a repository setting, which is the real reason those
+sections keep needing re-verification.
+
+**Scope, and what is not established.** All of the above is about a *session*.
+`scripts/agents/*` are session-only -- no workflow invokes them -- so this is the
+environment that governs them, but the same reasoning does not carry to
+`.github/workflows/`, where `GITHUB_TOKEN` is a genuine Actions token. What
+`GITHUB_TOKEN` actually is remains unidentified: it has the 93-character
+`github_...` shape of a fine-grained PAT, but its shape is not evidence about what
+authenticates, and settling it would mean bypassing the proxy, which this
+environment says not to do. Also untested: `PATCH /issues/{n}` on an issue authored
+by someone other than the write identity. `PATCH` itself works (#998 and #999 were
+closed with it), and relationship writes on another author's issues work (the
+#986 dependency link), but those are different endpoints and the gap is real.
 
 ### Always verify writes with a follow-up read
 
