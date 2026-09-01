@@ -1,96 +1,52 @@
 #!/usr/bin/env python3
 r"""link_gh_issues.py: set semantic links between GitHub issues via the REST API.
 
-**Issue dependencies are the gap this fills.** GitHub models "blocked by" and
-"blocking" natively, but no tool an agent has can write them: the GitHub MCP
-server ships `sub_issue_write` for hierarchy and `issue_write` for an issue's
-own fields, and nothing at all for `/dependencies/blocked_by`. So an agent that
-wants to record "issue A cannot start until issue B lands" is left writing it
-in prose in the issue body, where nothing can query it and nothing keeps it
-true. This script writes the native link instead, which shows in the issue
-sidebar, gates the `-is:blocked` search filters and Projects views, and
-survives any later edit to the issue text.
+GitHub models "blocked by" and "blocking" natively, but no tool an agent has can
+write them: the GitHub MCP server has `sub_issue_write` for hierarchy and nothing
+for `/dependencies/blocked_by`. This script writes the native link, so it shows in
+the issue sidebar and answers the `-is:blocked` search filters.
 
-The parent/child flags are here for symmetry, and are the lesser half: hierarchy
-already has `mcp__github__sub_issue_write`. The first thing they add over it is
-what `--blocked-by` needs anyway--both GitHub endpoints take a *database id*
-and the MCP tool passes that requirement straight through to the caller, while
-this script accepts the issue number a human actually has and resolves it. The
-second is the next section.
-
-An issue gets exactly one parent
---------------------------------
-
-So `--parent-of` and `--child-of` are the one place where an add can *remove*
-something: giving an issue a second parent moves it, and the previous parent
-silently loses the child. GitHub refuses the plain call for this with a 422
-(`Sub issue may only have one parent`, verified 2026-09-01) and takes it only
-with `replace_parent` in the request body.
-
-That makes the move the caller's decision rather than this script's, so the
-script reads the operand's current parent first and refuses, naming it, unless
-`--replace-parent` is given. `mcp__github__sub_issue_write` exposes the same
-capability as a bare `replace_parent` parameter; the difference here is that
-the destructive reading is not the default, and that a refusal says which issue
-is about to lose a child.
-
-Follows the pattern of `scripts/agents/update_gh_labels.sh` (issue #710) and
+Follows `scripts/agents/update_gh_labels.sh` (issue #710) and
 `scripts/agents/delete_gh_comment.sh` (issue #658): a plain REST call for
-environments with no `gh` CLI. Standard library only, so the script cannot
-fail on a missing dependency.
+environments with no `gh` CLI, standard library only.
 
 Relations
 ---------
 
-Every relation is named from the point of view of the *subject* issue--the
-one named in the positional arguments:
+Every relation is named from the point of view of the *subject* issue, the one
+named in the positional arguments:
 
     --blocked-by REF    the subject cannot proceed until REF is done
     --blocks REF        REF cannot proceed until the subject is done
     --parent-of REF     REF becomes a sub-issue of the subject
     --child-of REF      the subject becomes a sub-issue of REF
 
-`--blocks` and `--child-of` are the inverses of the other two. GitHub serves
-only one write direction for each pair (`POST .../dependencies/blocked_by` and
-`POST .../sub_issues`; there is no POST to `.../dependencies/blocking`), so
-those two flags are applied by writing to REF's endpoint with the subject as
-the operand. That inversion is the only reason both directions exist here: it
-saves the caller from having to restate a dependency backwards to record it.
+GitHub serves one write direction per pair (`POST .../dependencies/blocked_by`
+and `POST .../sub_issues`; there is no POST to `.../dependencies/blocking`), so
+`--blocks` and `--child-of` are applied by writing to REF's endpoint with the
+subject as the operand.
+
+Both endpoint families take a database id rather than an issue number, so a REF
+is resolved through a GET before the write.
+
+An issue gets exactly one parent
+--------------------------------
+
+`--parent-of` and `--child-of` are the one place where an add can remove
+something: giving an issue a second parent moves it, and the previous parent
+loses the child. GitHub refuses the plain call with `422 Sub issue may only have
+one parent` and accepts it only with `replace_parent`.
+
+So the script reads the operand's current parent first, and refuses the move,
+naming the issue about to lose the child, unless `--replace-parent` is given.
 
 Pull requests are not linkable
 ------------------------------
 
-GitHub takes issues only, on both sides of both link types. All four positions
-answer 422 (verified 2026-09-01 against this repository): `Source issue may
-only be an issue`, `Target issue may only be an issue`, `Parent may only be an
-issue`, `Sub issue may only be an issue`. So a pull request in any position is
-refused here before the call, with one line naming the fallback rather than a
-GitHub validation error.
-
-That fallback is the one `agents/verification_planning.md` already prescribes:
-when a pull request number is not accepted, link the issue the pull request
-resolves instead. Note that the document reaches it only as a fallback, having
-first tried the PR number itself, which by the above can never work; routing
-that document here is issue #1008.
-
-What this script deliberately does not do
------------------------------------------
-
-Two relations that sound like they belong here do not, for opposite reasons.
-
-**"Fixes" (PR to issue) has no write API at all.** GitHub derives that link
-from a closing keyword in the pull request description (`Fixes #123`) or from
-the Development sidebar in the web UI; there is no REST endpoint and no GraphQL
-mutation to create it, only the read-only `closed_by_pull_requests` summary on
-the issue. Since a PR's description is already the agent's to write (see
-`agents/pr_creation.md`), the supported way to record it is to put `Fixes #123`
-in the description. Nothing here could make that more reliable, so nothing here
-tries.
-
-**"Duplicate of" is already covered.** It is a first-class field, not a link:
-`mcp__github__issue_write` takes `duplicate_of` alongside
-`state_reason: "duplicate"`. Duplicating that here would give the same relation
-two spellings, so this script leaves it alone.
+GitHub takes issues only, on both sides of both link types; all four positions
+answer 422. A pull request in any position is refused before the call. Link the
+issue the pull request resolves instead. To record that a pull request closes an
+issue, put `Fixes #N` in its description; that link has no API.
 
 Usage
 -----
@@ -108,44 +64,24 @@ Usage
 REF may be given as `123`, `#123`, `owner/repo#123`, or a github.com issue URL.
 A bare number means an issue in the same repository as the subject. Neither the
 owner nor the repository may contain a `/`, and a URL on any other host is
-refused rather than looked up on github.com as if it were the same issue.
+refused rather than looked up on github.com.
 
-Example--record that issue #42 is waiting on #17 and #19, in one call:
+Example, recording that issue #42 is waiting on #17 and #19 in one call:
 
     scripts/agents/link_gh_issues.py add aunger gallery-button-for-pixel-camera 42 \
         --blocked-by 17 --blocked-by 19
 
-Adding a link that is already present, or removing one that is already absent,
-is reported and treated as success: the goal state is what matters, matching
-the idempotent behavior of `scripts/agents/update_gh_labels.sh`.
+Adding a link that is already present, or removing one that is already absent, is
+reported and treated as success: the goal state is what matters, matching
+`scripts/agents/update_gh_labels.sh`.
 
 Exit codes:
     0   every requested link reached its goal state
     1   at least one did not (the failure is reported on stderr)
 
 Required environment variables:
-    GITHUB_TOKEN   Token with `issues: write` on every repository written to
-                   (read alone is enough for `show`). All four relations were
-                   verified writable against this repository on 2026-09-01.
-
-                   In a Claude Code session this variable is required but
-                   inert: `HTTPS_PROXY` routes `api.github.com` through a local
-                   proxy that supplies its own credential, and a garbage value
-                   behaves identically to the real one. Writes from this script
-                   therefore land as `claude[bot]` rather than as the token's
-                   nominal owner. Outside a session--a developer machine, or
-                   CI--the value is what authenticates, which is why it is
-                   still required. See `.claude/environment.md`,
-                   "`GITHUB_TOKEN` is inert in a session".
-
-                   Beware one wording when reading failures. GitHub answers
-                   `403 Resource not accessible by integration` when the
-                   relationship a request names does not exist--removing a
-                   sub-issue from an issue that is not its parent, say--which
-                   says nothing about permissions; the same call with a real
-                   operand returns 200. GitHub uses "integration" for
-                   fine-grained PATs too, so it is not evidence about the
-                   credential either.
+    GITHUB_TOKEN   Token with `issues: write` on every repository written to.
+                   Read access alone is enough for `show`.
 """
 
 import argparse
@@ -168,18 +104,14 @@ API_ROOT = "https://api.github.com"
 
 REQUEST_TIMEOUT_SECONDS = 15
 
-# A call that lost to a 5xx or a secondary rate limit is worth one retry; one
-# that lost to a 4xx is a decision, not a hiccup, and is reported as-is.
-#
-# Only for a method that is safe to send twice, though. A POST that reached
-# GitHub and lost its response would, on retry, be refused as a
-# duplicate--turning a link that was in fact created into a reported failure.
-# GET and DELETE are idempotent here, so they retry; POST gets one attempt.
+# A 5xx or a secondary rate limit is worth one retry; a 4xx is a decision and
+# is reported as-is. Only idempotent methods retry: a POST that reached GitHub
+# and lost its response would be refused as a duplicate on the second attempt,
+# reporting a link that was in fact created as a failure.
 RETRY_DELAY_SECONDS = 2.0
-# A `Retry-After` longer than this is truncated rather than slept through, so a
-# header asking for minutes cannot hang the script with nothing on stdout. The
-# shortened retry will usually be refused again, and that refusal is reported
-# normally, which is the outcome a caller can act on.
+# `Retry-After` is capped rather than slept through, so a header asking for
+# minutes cannot hang the script. The shortened retry is usually refused again,
+# and that refusal is reported normally.
 MAX_RETRY_DELAY_SECONDS = 60.0
 RETRYABLE_STATUSES = (429, 500, 502, 503, 504)
 IDEMPOTENT_METHODS = ("GET", "DELETE")
@@ -443,10 +375,9 @@ RELATIONS = (
 
 RELATION_BY_FLAG = {relation.flag: relation for relation in RELATIONS}
 
-# All four flags share one argparse destination, so that the report comes out
-# in the order the flags were typed. `action="append"` would keep a list per
-# flag, and the only order recoverable from four separate lists is the order of
-# RELATIONS, which is not the order of the call.
+# All four flags share one argparse destination so the report comes out in the
+# order the flags were typed; `action="append"` would give one list per flag,
+# recoverable only in RELATIONS order.
 LINKS_DEST = "links"
 
 
@@ -571,10 +502,9 @@ def run_show(args, token: str) -> int:
     blocked_by = paged(f"{base}/dependencies/blocked_by", token)
     blocking = paged(f"{base}/dependencies/blocking", token)
     sub_issues = paged(f"{base}/sub_issues", token)
-    # Read here rather than through `parent_of`: that one returns the id and
-    # slug its caller needs to gate a write, while `--json` has to print the
-    # payload GitHub sent. A parentless issue answers 404 "No parent issue
-    # found", which is an answer, and nothing here gates a write on it.
+    # Read here rather than through `parent_of`, which returns the id and slug
+    # a write needs while `--json` needs GitHub's payload. A parentless issue
+    # answers 404, which is an answer; no write is gated on it.
     status, parent = api("GET", f"{base}/parent", token)
     parent = parent if status != 404 and isinstance(parent, dict) else None
 
@@ -623,11 +553,9 @@ def run_change(args, token: str, adding: bool) -> int:
 
     subject = get_issue(args.owner, args.repo, args.issue, token)
     exit_code = EXIT_OK
-    # Resolving the same reference twice in one call is pure waste, and the
-    # membership read is per (family, holder), not per link. The subject is
-    # seeded because a reference back to it is exactly what the self-link guard
-    # below is there to catch, and re-fetching it to find that out is a wasted
-    # call.
+    # The membership read is per (family, holder), not per link. The subject is
+    # seeded so that a reference back to it costs no fetch before the self-link
+    # guard below rejects it.
     resolved: dict[tuple[str, str, int], Issue] = {
         (subject.owner.lower(), subject.repo.lower(), subject.number): subject
     }
@@ -662,13 +590,9 @@ def run_change(args, token: str, adding: bool) -> int:
                 print(f"Error: cannot link {subject.slug} to itself.", file=sys.stderr)
                 exit_code = EXIT_FAILED
                 continue
-            # Neither family takes a pull request, in either position. GitHub
-            # refuses all four with a 422 (verified 2026-09-01): "Source issue
-            # may only be an issue", "Target issue may only be an issue",
-            # "Parent may only be an issue", "Sub issue may only be an issue".
-            # Refusing here turns that into one legible line naming the
-            # fallback, which is what `agents/verification_planning.md` already
-            # tells an agent to do when a PR number is not accepted.
+            # Neither family takes a pull request in either position; GitHub
+            # answers all four with a 422. Refusing here turns that into one
+            # line naming the fallback.
             if holder.is_pull_request or operand.is_pull_request:
                 pull = holder if holder.is_pull_request else operand
                 print(
@@ -703,12 +627,9 @@ def run_change(args, token: str, adding: bool) -> int:
                 continue
 
             # An issue gets exactly one parent, so an add that would give it a
-            # second is a *move*, not the additive write every other relation
-            # here performs: the previous parent silently loses the child.
-            # GitHub refuses it outright (422 "Sub issue may only have one
-            # parent", verified 2026-09-01) unless the request carries
-            # `replace_parent`, so the choice has to be the caller's. Naming
-            # the current parent is the part GitHub's own message leaves out.
+            # second is a move: the previous parent loses the child. GitHub
+            # refuses without `replace_parent`, so the choice is the caller's.
+            # Naming the current parent is what GitHub's message omits.
             displaced = None
             if adding and relation.family == "sub-issue":
                 if operand.id not in parents:
@@ -728,13 +649,10 @@ def run_change(args, token: str, adding: bool) -> int:
                     displaced = current
 
             moved = f" (replacing {displaced[1]} as its parent)" if displaced else ""
-            # The caches have to follow the write, or a reference repeated in
-            # one call would be re-sent against a link that is now there (or
-            # gone): a 422 on add, and on remove the very 403 this script
-            # exists to keep callers away from--both reported as failures after
-            # the goal state had in fact been reached. A dry run updates them
-            # too, so that its preview is of the real run and not of a first
-            # step repeated.
+            # The caches follow the write, or a reference repeated in one call
+            # is re-sent against a link that is now present (or gone) and the
+            # refusal is reported as a failure after the goal state was reached.
+            # A dry run updates them too, so its preview matches the real run.
             if args.dry_run:
                 verb = "Would link" if adding else "Would unlink"
                 print(f"{verb}: {described}{moved}.")

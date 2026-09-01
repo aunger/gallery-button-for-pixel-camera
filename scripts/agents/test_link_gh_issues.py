@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """Unit tests for link_gh_issues.py.
 
-Every test here runs with no network: `api` is replaced by a fake that records
-each call and answers from a small in-memory model of the two link families.
-What is under test is therefore the reference parsing, the id resolution, the
-inversion of `--blocks` and `--child-of` onto the other issue's endpoint, the
-idempotence rules, the guards, and the reporting.
+No test here touches the network: `api` is replaced by a fake that records each
+call and answers from an in-memory model of the two link families. Under test
+are reference parsing, id resolution, the inversion of `--blocks` and
+`--child-of` onto the other issue's endpoint, idempotence, the guards, and the
+reporting.
 
-The inversion tests are the ones that matter most. GitHub serves no write for
-the `blocking` direction, so a bug there would silently record a dependency
-backwards--a link that looks right in the report and is wrong in the sidebar.
+GitHub serves no write for the `blocking` direction, so an inversion bug would
+record a dependency backwards: right in the report, wrong in the sidebar.
 """
 
 import contextlib
@@ -406,11 +405,7 @@ class TestGuards(unittest.TestCase):
     def test_a_pull_request_is_refused_in_every_position_of_both_families(self):
         """GitHub takes issues only, on both sides of both link types.
 
-        It refuses all four with a 422 ("Source issue may only be an issue",
-        "Target issue may only be an issue", "Parent may only be an issue",
-        "Sub issue may only be an issue"), so the guard cannot be per-family.
-        The sub-issue half went unguarded until this was checked against the
-        live API.
+        All four positions answer 422, so the guard cannot be per-family.
         """
         cases = [
             ("--blocked-by", "17"),
@@ -592,8 +587,8 @@ class TestShow(unittest.TestCase):
 class TestWritesAreNotAssumed(unittest.TestCase):
     """`api` returns 404 rather than raising, so each caller has to read it.
 
-    Getting this wrong is the quiet failure: the script prints `Linked:` and
-    exits 0 for a write that never happened, and the caller has no way to know.
+    Getting this wrong prints `Linked:` and exits 0 for a write that never
+    happened.
     """
 
     def test_a_post_that_404s_is_a_failure_not_a_link(self):
@@ -629,10 +624,9 @@ class TestWritesAreNotAssumed(unittest.TestCase):
         self.assertIn("links are unknown", err)
 
     def test_a_membership_read_that_is_not_a_list_is_not_read_as_no_links(self):
-        """A 200 carrying an object reads as "no links" just as blindly as a 404.
+        """A 200 carrying an object reads as "no links" as blindly as a 404.
 
-        `missing_ok` exists to stop that, so it has to cover both ways of
-        failing to read the list, not only the status code.
+        `missing_ok` has to cover both, not only the status code.
         """
 
         def api(method, path, token, body=None):
@@ -673,9 +667,8 @@ class TestWritesAreNotAssumed(unittest.TestCase):
 class TestRepeatedReference(unittest.TestCase):
     """The membership pre-read is cached, so it has to follow the writes.
 
-    A stale cache re-sends the write for a reference named twice in one call:
-    a 422 on add, and on remove the very 403 this script exists to keep callers
-    away from, both after the goal state had already been reached.
+    A stale cache re-sends the write for a reference named twice in one call,
+    reporting the refusal as a failure after the goal state was reached.
     """
 
     def test_the_same_reference_added_twice_is_written_once(self):
@@ -705,12 +698,10 @@ class TestRepeatedReference(unittest.TestCase):
 
 
 class TestOneParent(unittest.TestCase):
-    """An issue gets one parent, so a sub-issue add can silently remove.
+    """An issue gets one parent, so a sub-issue add can remove one.
 
-    GitHub refuses the second parent with 422 "Sub issue may only have one
-    parent" unless the body carries `replace_parent` (verified 2026-09-01
-    against the live API). The move is therefore the caller's to ask for, and
-    the refusal names the flag rather than passing GitHub's wording through.
+    GitHub refuses the second parent with 422 unless the body carries
+    `replace_parent`, so the move is the caller's to ask for.
     """
 
     def child_of_17(self):
@@ -812,9 +803,8 @@ class TestOneParent(unittest.TestCase):
     def test_an_unreadable_parent_is_not_read_as_no_parent(self):
         """The pre-read gates a write, so it must not invent an answer.
 
-        Reporting "no parent" here writes without `replace_parent`, which
-        discards the caller's `--replace-parent` and hands back GitHub's bare
-        422 -- the wording this guard exists to replace.
+        Reporting "no parent" here writes without `replace_parent`, discarding
+        the caller's `--replace-parent`.
         """
         for payload in (["not", "a", "dict"], {"number": 17}, {"id": 1700}, None):
             with self.subTest(payload=payload):
@@ -997,10 +987,8 @@ class TestRelations(unittest.TestCase):
 
     def test_docstring_records_why_the_fixes_link_is_absent(self):
         """The 'why not' is the part a future reader is most likely to undo."""
-        self.assertIn("What this script deliberately does not do", lgi.__doc__)
-        # The claim, and the remedy that replaces it.
-        self.assertIn("no write API", lgi.__doc__)
-        self.assertIn("Fixes #123", lgi.__doc__)
+        self.assertIn("Fixes #N", lgi.__doc__)
+        self.assertIn("has no API", lgi.__doc__)
 
     def test_docstring_records_the_one_parent_rule(self):
         """Refusing the move is a deliberate difference from sub_issue_write,
