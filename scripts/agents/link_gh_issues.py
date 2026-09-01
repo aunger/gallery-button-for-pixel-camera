@@ -156,6 +156,11 @@ REQUEST_TIMEOUT_SECONDS = 15
 # duplicate--turning a link that was in fact created into a reported failure.
 # GET and DELETE are idempotent here, so they retry; POST gets one attempt.
 RETRY_DELAY_SECONDS = 2.0
+# A `Retry-After` longer than this is truncated rather than slept through, so a
+# header asking for minutes cannot hang the script with nothing on stdout. The
+# shortened retry will usually be refused again, and that refusal is reported
+# normally, which is the outcome a caller can act on.
+MAX_RETRY_DELAY_SECONDS = 60.0
 RETRYABLE_STATUSES = (429, 500, 502, 503, 504)
 IDEMPOTENT_METHODS = ("GET", "DELETE")
 
@@ -235,8 +240,29 @@ class ApiError(Exception):
         self.message = message
 
 
-def _describe_failure(status: int, payload: object, raw: str) -> str:
-    """Turn an error response into one line that says what to do about it."""
+def _retry_delay(headers: object) -> float:
+    """How long to wait before the one retry, honoring GitHub's own instruction.
+
+    GitHub sends `Retry-After` (in seconds) with a 429 and with a secondary
+    rate limit. Retrying on a flat delay while it is asking for longer is how
+    the next refusal is earned, so the header wins when it is present and
+    longer than the default.
+    """
+    value = headers.get("Retry-After") if hasattr(headers, "get") else None
+    try:
+        seconds = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return RETRY_DELAY_SECONDS
+    return max(RETRY_DELAY_SECONDS, min(seconds, MAX_RETRY_DELAY_SECONDS))
+
+
+def _describe_failure(status: int, payload: object, raw: str, fallback: str = "") -> str:
+    """Turn an error response into one line that says what to do about it.
+
+    `fallback` names the failure when the response carried no body to quote;
+    without one the line would render the bare `HTTP {status}` default and read
+    as "HTTP 404: HTTP 404".
+    """
     message = ""
     if isinstance(payload, dict):
         message = str(payload.get("message") or "")
@@ -249,7 +275,7 @@ def _describe_failure(status: int, payload: object, raw: str) -> str:
             if details:
                 message = f"{message} ({'; '.join(details)})" if message else "; ".join(details)
     if not message:
-        message = raw.strip()[:200] or f"HTTP {status}"
+        message = raw.strip()[:200] or fallback or f"HTTP {status}"
 
     # GitHub returns this one wording for two unrelated causes and distinguishes
     # neither. Naming the likelier one first matters: reading it as a permission
@@ -297,7 +323,7 @@ def api(method: str, path: str, token: str, body: dict | None = None) -> tuple[i
                 payload = None
             secondary_limit = error.code == 403 and "secondary rate limit" in raw.lower()
             if (error.code in RETRYABLE_STATUSES or secondary_limit) and attempt < attempts - 1:
-                time.sleep(RETRY_DELAY_SECONDS)
+                time.sleep(_retry_delay(error.headers))
                 continue
             if error.code == 404:
                 return 404, payload
@@ -337,15 +363,27 @@ def paged(path: str, token: str, missing_ok: bool = True) -> list:
     that decides whether a link is already there, it is not: reading "no links"
     off an endpoint that was never reached would report `Already unlinked` for
     a link that may well exist, and call that success.
+
+    A 404 is not the only way to read nothing, so a payload that is not a list
+    is refused on the same terms. Otherwise a 200 carrying an error object
+    would land in the same silent empty list `missing_ok` exists to prevent.
     """
     items: list = []
     page = 1
     while True:
         joiner = "&" if "?" in path else "?"
         status, payload = api("GET", f"{path}{joiner}per_page=100&page={page}", token)
-        if status == 404 and not missing_ok:
-            raise ApiError(404, f"HTTP 404: {path} could not be read, so the links are unknown")
-        if status == 404 or not isinstance(payload, list):
+        if status == 404:
+            if not missing_ok:
+                raise ApiError(404, f"HTTP 404: {path} could not be read, so the links are unknown")
+            break
+        if not isinstance(payload, list):
+            if not missing_ok:
+                raise ApiError(
+                    status,
+                    f"HTTP {status}: {path} answered with no list of links, "
+                    "so the links are unknown",
+                )
             break
         items.extend(payload)
         if len(payload) < 100:
@@ -375,10 +413,6 @@ class Relation:
     # Rendered as "<subject> <phrase> <other>" in reports.
     phrase: str
 
-    @property
-    def dest(self) -> str:
-        return self.flag.lstrip("-").replace("-", "_")
-
 
 RELATIONS = (
     Relation("--blocked-by", "dependency", False, "is blocked by"),
@@ -386,6 +420,25 @@ RELATIONS = (
     Relation("--parent-of", "sub-issue", False, "is the parent of"),
     Relation("--child-of", "sub-issue", True, "is a sub-issue of"),
 )
+
+RELATION_BY_FLAG = {relation.flag: relation for relation in RELATIONS}
+
+# All four flags share one argparse destination, so that the report comes out
+# in the order the flags were typed. `action="append"` would keep a list per
+# flag, and the only order recoverable from four separate lists is the order of
+# RELATIONS, which is not the order of the call.
+LINKS_DEST = "links"
+
+
+class RelationAction(argparse.Action):
+    """Record `(relation, ref)` in call order, across all four relation flags."""
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        links = getattr(namespace, LINKS_DEST, None)
+        if links is None:
+            links = []
+            setattr(namespace, LINKS_DEST, links)
+        links.append((RELATION_BY_FLAG[option_string], values))
 
 
 def members_path(family: str, holder: Issue) -> str:
@@ -407,7 +460,7 @@ def add_link(family: str, holder: Issue, other: Issue, token: str) -> None:
     if status == 404:
         raise ApiError(
             404,
-            _describe_failure(404, payload, "")
+            _describe_failure(404, payload, "", fallback="the endpoint answered 404")
             + f"--nothing was written; check that {holder.slug} exists and is visible.",
         )
 
@@ -472,16 +525,18 @@ def run_show(args, token: str) -> int:
         return EXIT_OK
 
     print(f"{subject.slug}: {subject.title}")
-    for label, items in (
-        ("Blocked by", blocked_by),
-        ("Blocking", blocking),
-        ("Parent", [parent] if parent else []),
-        ("Sub-issues", sub_issues),
+    # An issue has at most one parent, so counting that row would print
+    # "Parent (1)" and invite the reader to wonder when it says 2.
+    for label, items, counted in (
+        ("Blocked by", blocked_by, True),
+        ("Blocking", blocking, True),
+        ("Parent", [parent] if parent else [], False),
+        ("Sub-issues", sub_issues, True),
     ):
         if not items:
             print(f"  {label}: none")
             continue
-        print(f"  {label} ({len(items)}):")
+        print(f"  {label} ({len(items)}):" if counted else f"  {label}:")
         for item in items:
             if isinstance(item, dict):
                 print(issue_line(item))
@@ -490,7 +545,7 @@ def run_show(args, token: str) -> int:
 
 def run_change(args, token: str, adding: bool) -> int:
     """Apply every requested link (or unlink), reporting one line each."""
-    requested = [(rel, ref) for rel in RELATIONS for ref in getattr(args, rel.dest) or []]
+    requested = getattr(args, LINKS_DEST, None) or []
     if not requested:
         flags = ", ".join(rel.flag for rel in RELATIONS)
         print(f"Error: at least one of {flags} is required.", file=sys.stderr)
@@ -571,24 +626,27 @@ def run_change(args, token: str, adding: bool) -> int:
             if not adding and not present:
                 print(f"Already unlinked: {described}.")
                 continue
+            # The cache has to follow the write, or a reference repeated in
+            # one call would be re-sent against a link that is now there (or
+            # gone): a 422 on add, and on remove the very 403 this script
+            # exists to keep callers away from--both reported as failures after
+            # the goal state had in fact been reached. A dry run updates it
+            # too, so that its preview is of the real run and not of a first
+            # step repeated.
             if args.dry_run:
                 verb = "Would link" if adding else "Would unlink"
                 print(f"{verb}: {described}.")
-                continue
-
-            # The cache has to follow the write, or a reference repeated in one
-            # call would be re-sent against a link that is now there (or gone):
-            # a 422 on add, and on remove the very 403 this script exists to
-            # keep callers away from--both reported as failures after the goal
-            # state had in fact been reached.
-            if adding:
+            elif adding:
                 add_link(relation.family, holder, operand, token)
-                members[member_key].add(operand.id)
                 print(f"Linked: {described}.")
             else:
                 remove_link(relation.family, holder, operand, token)
-                members[member_key].discard(operand.id)
                 print(f"Unlinked: {described}.")
+
+            if adding:
+                members[member_key].add(operand.id)
+            else:
+                members[member_key].discard(operand.id)
         except ApiError as error:
             print(f"Error: {ref}: {error.message}", file=sys.stderr)
             exit_code = EXIT_FAILED
@@ -632,8 +690,9 @@ def build_parser() -> argparse.ArgumentParser:
         for relation in RELATIONS:
             subparser.add_argument(
                 relation.flag,
-                dest=relation.dest,
-                action="append",
+                dest=LINKS_DEST,
+                action=RelationAction,
+                default=None,
                 metavar="REF",
                 help=f"the subject {relation.phrase} REF",
             )

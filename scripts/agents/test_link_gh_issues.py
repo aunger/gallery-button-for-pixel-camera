@@ -12,8 +12,8 @@ the `blocking` direction, so a bug there would silently record a dependency
 backwards--a link that looks right in the report and is wrong in the sidebar.
 """
 
-import io
 import contextlib
+import io
 import json
 import os
 import stat
@@ -164,6 +164,13 @@ def two_issues():
         (OWNER, REPO, 42): issue_payload(42, id_=4200, title="Subject"),
         (OWNER, REPO, 17): issue_payload(17, id_=1700, title="Prerequisite"),
     }
+
+
+def three_issues():
+    """A subject and two others, for cases that need more than one operand."""
+    issues = two_issues()
+    issues[(OWNER, REPO, 19)] = issue_payload(19, id_=1900, title="Other parent")
+    return issues
 
 
 # ---------------------------------------------------------------------------
@@ -524,7 +531,8 @@ class TestShow(unittest.TestCase):
         fake = FakeApi(two_issues(), links={("sub-issue", OWNER, REPO, 17): {4200}})
         code, out, err = run(["show", OWNER, REPO, "42"], fake)
         self.assertEqual(code, 0, err)
-        self.assertIn("Parent (1):", out)
+        self.assertIn("Parent:", out)
+        self.assertNotIn("Parent (1):", out)
         self.assertIn("Prerequisite", out)
 
     def test_show_lists_sub_issues_of_a_parent(self):
@@ -594,6 +602,25 @@ class TestWritesAreNotAssumed(unittest.TestCase):
         self.assertNotIn("Already unlinked", out)
         self.assertIn("links are unknown", err)
 
+    def test_a_membership_read_that_is_not_a_list_is_not_read_as_no_links(self):
+        """A 200 carrying an object reads as "no links" just as blindly as a 404.
+
+        `missing_ok` exists to stop that, so it has to cover both ways of
+        failing to read the list, not only the status code.
+        """
+
+        def api(method, path, token, body=None):
+            head = path.split("?")[0]
+            for number, id_ in ((42, 4200), (17, 1700)):
+                if head.endswith(f"/issues/{number}"):
+                    return 200, issue_payload(number, id_=id_)
+            return 200, {"message": "unexpected object where a list belongs"}
+
+        code, out, err = run(["remove", OWNER, REPO, "42", "--blocked-by", "17"], api)
+        self.assertEqual(code, 1)
+        self.assertNotIn("Already unlinked", out)
+        self.assertIn("links are unknown", err)
+
     def test_show_still_reads_a_404_membership_endpoint_as_none(self):
         """`show` keeps the lenient reading: there, none is a real answer."""
         fake = FakeApi(
@@ -651,12 +678,88 @@ class TestRepeatedReference(unittest.TestCase):
         self.assertEqual(len(lookups), 1)
 
 
+class TestDryRunPreviewsTheRealRun(unittest.TestCase):
+    """A preview that does not match the run it previews is worse than none."""
+
+    def test_a_reference_named_twice_previews_as_it_would_run(self):
+        fake = FakeApi(two_issues())
+        code, out, err = run(
+            ["add", OWNER, REPO, "42", "--blocked-by", "17", "--blocked-by", "#17", "--dry-run"],
+            fake,
+        )
+        self.assertEqual(code, 0, err)
+        self.assertEqual(out.count("Would link:"), 1)
+        self.assertIn("Already linked:", out)
+        self.assertFalse([c for c in fake.calls if c[0] in ("POST", "DELETE")])
+
+    def test_a_reference_removed_twice_previews_as_it_would_run(self):
+        fake = FakeApi(two_issues(), links={("dependency", OWNER, REPO, 42): {1700}})
+        code, out, err = run(
+            ["remove", OWNER, REPO, "42", "--blocked-by", "17", "--blocked-by", "17", "--dry-run"],
+            fake,
+        )
+        self.assertEqual(code, 0, err)
+        self.assertEqual(out.count("Would unlink:"), 1)
+        self.assertIn("Already unlinked:", out)
+
+
+class TestReportOrder(unittest.TestCase):
+    def test_the_report_follows_the_order_the_flags_were_typed(self):
+        """One list per flag would order the report by RELATIONS instead."""
+        fake = FakeApi(three_issues())
+        code, out, err = run(
+            ["add", OWNER, REPO, "42", "--parent-of", "19", "--blocked-by", "17"], fake
+        )
+        self.assertEqual(code, 0, err)
+        self.assertLess(out.index("#19"), out.index("#17"))
+
+    def test_the_reverse_order_reports_in_reverse(self):
+        fake = FakeApi(three_issues())
+        code, out, err = run(
+            ["add", OWNER, REPO, "42", "--blocked-by", "17", "--parent-of", "19"], fake
+        )
+        self.assertEqual(code, 0, err)
+        self.assertLess(out.index("#17"), out.index("#19"))
+
+
+class TestRetryDelay(unittest.TestCase):
+    """Retrying on a flat delay while GitHub asks for longer earns the next 429."""
+
+    def test_retry_after_is_honored(self):
+        self.assertEqual(lgi._retry_delay({"Retry-After": "30"}), 30.0)
+
+    def test_a_missing_or_unparseable_header_falls_back_to_the_default(self):
+        for headers in ({}, None, {"Retry-After": "in a bit"}):
+            with self.subTest(headers=headers):
+                self.assertEqual(lgi._retry_delay(headers), lgi.RETRY_DELAY_SECONDS)
+
+    def test_a_shorter_retry_after_does_not_shorten_the_default(self):
+        self.assertEqual(lgi._retry_delay({"Retry-After": "0"}), lgi.RETRY_DELAY_SECONDS)
+
+    def test_a_long_retry_after_is_capped_rather_than_slept_through(self):
+        self.assertEqual(lgi._retry_delay({"Retry-After": "3600"}), lgi.MAX_RETRY_DELAY_SECONDS)
+
+
+class TestFailureLines(unittest.TestCase):
+    def test_a_response_with_no_body_does_not_render_the_status_twice(self):
+        line = lgi._describe_failure(404, None, "", fallback="the endpoint answered 404")
+        self.assertEqual(line, "HTTP 404: the endpoint answered 404")
+
+    def test_the_status_is_still_the_last_resort_when_no_fallback_is_given(self):
+        self.assertEqual(lgi._describe_failure(500, None, ""), "HTTP 500: HTTP 500")
+
+    def test_a_body_still_wins_over_the_fallback(self):
+        line = lgi._describe_failure(404, {"message": "Not Found"}, "", fallback="unused")
+        self.assertEqual(line, "HTTP 404: Not Found")
+
+
 class TestRelations(unittest.TestCase):
-    def test_every_relation_maps_a_flag_to_an_argparse_destination(self):
+    def test_every_relation_is_reachable_by_its_own_flag(self):
+        self.assertEqual(len(lgi.RELATION_BY_FLAG), len(lgi.RELATIONS))
         for relation in lgi.RELATIONS:
             with self.subTest(flag=relation.flag):
                 self.assertTrue(relation.flag.startswith("--"))
-                self.assertEqual(relation.dest, relation.flag[2:].replace("-", "_"))
+                self.assertIs(lgi.RELATION_BY_FLAG[relation.flag], relation)
 
     def test_each_family_has_one_plain_and_one_inverted_direction(self):
         for family in ("dependency", "sub-issue"):
