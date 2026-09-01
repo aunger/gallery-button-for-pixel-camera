@@ -257,7 +257,10 @@ def api(method: str, path: str, token: str, body: dict | None = None) -> tuple[i
     for attempt in range(attempts):
         request = urllib.request.Request(url, data=data, headers=headers, method=method)
         try:
-            with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
+            # URL is built from the API_ROOT constant; the file:// risk does not apply.
+            with urllib.request.urlopen(  # nosemgrep
+                request, timeout=REQUEST_TIMEOUT_SECONDS
+            ) as response:
                 raw = response.read().decode("utf-8", "replace")
                 return response.status, (json.loads(raw) if raw.strip() else None)
         except urllib.error.HTTPError as error:
