@@ -89,17 +89,18 @@ Exit codes:
 
 Required environment variables:
     GITHUB_TOKEN   Token with `issues: write` on every repository written to
-                   (read alone is enough for `show`). GitHub answers an
-                   unpermitted call with `Resource not accessible by
-                   integration`, which this script reports as a failure rather
-                   than passing it off as a missing link.
+                   (read alone is enough for `show`). Verified 2026-09-01
+                   against this repository: both families are writable, so all
+                   four flags work with the session's fine-grained PAT.
 
-                   The two families are not gated alike. Probed against this
-                   repository on 2026-09-01, the GitHub App installation token
-                   that agent sessions carry could write dependencies but was
-                   refused (403) on the sub-issue endpoints. So `--blocked-by`
-                   and `--blocks` work with the ambient token, while
-                   `--parent-of` and `--child-of` may need a PAT.
+                   Beware one wording when reading failures here. GitHub
+                   answers `403 Resource not accessible by integration` when
+                   the relationship a request names does not exist -- removing
+                   a sub-issue from an issue that is not its parent, say --
+                   which says nothing about the token's permissions. The same
+                   call with a real operand returns 200. GitHub also says
+                   "integration" for a fine-grained PAT, so the wording is not
+                   evidence about the credential either.
 """
 
 import argparse
@@ -215,15 +216,15 @@ def _describe_failure(status: int, payload: object, raw: str) -> str:
     if not message:
         message = raw.strip()[:200] or f"HTTP {status}"
 
-    # GitHub returns this one wording for two unrelated causes, and says
-    # neither: the token may lack the permission, or the *referenced* issue may
-    # be invisible to it. Both are worth naming, because the fix differs.
+    # GitHub returns this one wording for two unrelated causes and distinguishes
+    # neither. Naming the likelier one first matters: reading it as a permission
+    # verdict sends the reader off to mint a token they already have.
     if status in (401, 403) and "not accessible by integration" in message.lower():
         message += (
-            " -- either GITHUB_TOKEN lacks 'issues: write' here, or the issue it names is "
-            "not visible to the token. Note that sub-issue writes need a broader permission "
-            "than dependency writes: a GitHub App installation token that can set "
-            "dependencies may still be refused for --parent-of and --child-of."
+            " -- this usually means the link or issue the request names does not exist, "
+            "not that the token lacks permission: GitHub answers 403 (not 404) when asked "
+            "to remove a link that is not there. Check the link exists, then check that "
+            "GITHUB_TOKEN has 'issues: write' here."
         )
     elif status == 401:
         message += " -- check that GITHUB_TOKEN is set and valid."

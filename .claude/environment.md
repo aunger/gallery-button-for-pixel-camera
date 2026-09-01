@@ -250,13 +250,13 @@ sub-resource endpoints this script uses. Treat the write-permission boundary as 
 labels sub-resource only; do not assume other Issues/PR API writes succeed with
 `GITHUB_TOKEN` without testing them individually.
 
-### `GITHUB_TOKEN` can write issue dependencies, but not sub-issues
+### `GITHUB_TOKEN` can write issue dependencies and sub-issues
 
-**Verified 2026-09-01 (issue links / `scripts/agents/link_gh_issues.py`):** the
-per-issue *relationship* endpoints do not share one permission boundary, so the
-"test them individually" rule above earns its keep here.
+**Verified 2026-09-01 (issue links / `scripts/agents/link_gh_issues.py`):** both
+per-issue *relationship* families are writable with `GITHUB_TOKEN`, extending the
+labels finding above.
 
-- **Dependencies: writable.** `POST /issues/{n}/dependencies/blocked_by` and
+- **Dependencies.** `POST /issues/{n}/dependencies/blocked_by` and
   `DELETE /issues/{n}/dependencies/blocked_by/{issue_id}` both succeed. Confirmed
   by creating a real link with
   `scripts/agents/link_gh_issues.py add aunger gallery-button-for-pixel-camera 986 --blocked-by 985`,
@@ -264,21 +264,33 @@ per-issue *relationship* endpoints do not share one permission boundary, so the
   and the `issue_dependencies_summary` counters on each. #986 already stated that
   dependency in prose under a "Blocked by #985" heading, so the link records
   something the issue text had no way to make queryable. It was left in place.
-- **Sub-issues: not writable.** `DELETE /issues/{n}/sub_issue` returns 403
-  `Resource not accessible by integration` with the same token, so `--parent-of`
-  and `--child-of` may need a PAT. Hierarchy has `mcp__github__sub_issue_write`
-  anyway; dependencies have no MCP tool at all, which is why the script exists.
+- **Sub-issues.** `POST /issues/{n}/sub_issues` and `DELETE /issues/{n}/sub_issue`
+  both succeed. Confirmed on two throwaway issues (#998, #999) through a full
+  add / read-back / remove / re-add cycle in both directions, checked against
+  `sub_issues_summary` on the parent and `GET /issues/{n}/parent` on the child.
 
-Two traps worth carrying forward:
+**The 403 trap, which cost this investigation a wrong conclusion.** These endpoints
+answer `403 Resource not accessible by integration` when the *relationship the
+request names does not exist* -- for example removing a sub-issue from an issue
+that is not its parent, or a dependency that was never added. That is a statement
+about the operand, not about the token. Back to back, with one token:
 
-- **These endpoints take a database id, never an issue number.** A number silently
-  addresses the wrong issue, or none. `link_gh_issues.py` resolves references
-  (`123`, `#123`, `owner/repo#123`, a URL) through a `GET` before writing.
-- **403 `Resource not accessible by integration` has two causes here**, and GitHub
-  words them identically: the token may lack the permission, *or* the issue the
-  request references may not be visible to it. `DELETE .../blocked_by/999999999`
-  returns 403 for the second reason while the same call with a real id returns 200.
-  Do not read this wording as a permission verdict on its own.
+```text
+DELETE /issues/998/sub_issue  {"sub_issue_id": <#986, not a sub-issue>}  -> 403
+DELETE /issues/998/sub_issue  {"sub_issue_id": <#999, really a sub-issue>} -> 200
+```
+
+An earlier draft of this section read the 403 as proof that sub-issue writes were
+unpermitted and told readers to go find a PAT. Both halves were wrong. Do not treat
+this wording as a permission verdict without a control like the pair above. Note
+also that GitHub uses the word "integration" here even for a fine-grained PAT, so
+it is not evidence about what kind of credential is in play either.
+
+**These endpoints take a database id, never an issue number.** A number silently
+addresses the wrong issue, or none. `link_gh_issues.py` resolves references
+(`123`, `#123`, `owner/repo#123`, a URL) through a `GET` before writing, and reads
+the current link set first, so it never issues a removal for a link that is absent
+-- which is what keeps callers clear of the 403 above.
 
 ### Always verify writes with a follow-up read
 

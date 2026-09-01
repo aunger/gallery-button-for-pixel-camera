@@ -394,7 +394,10 @@ class TestGuards(unittest.TestCase):
         self.assertIn("Would link:", out)
         self.assertFalse([c for c in fake.calls if c[0] in ("POST", "DELETE")])
 
-    def test_a_forbidden_write_explains_the_token_permission(self):
+    def test_a_403_leads_with_the_missing_link_not_the_token(self):
+        """GitHub answers 403 for a link that is not there, which reads as a
+        permission problem and is not one. Getting this backwards sends the
+        reader off to mint a token they already have, so the order is tested."""
         fake = FakeApi(
             two_issues(),
             errors={
@@ -408,7 +411,11 @@ class TestGuards(unittest.TestCase):
         )
         code, _, err = run(["add", OWNER, REPO, "42", "--blocked-by", "17"], fake)
         self.assertEqual(code, 1)
+        self.assertIn("does not exist", err)
+        self.assertIn("403 (not 404)", err)
+        # The permission cause is still offered, but second.
         self.assertIn("issues: write", err)
+        self.assertLess(err.index("does not exist"), err.index("issues: write"))
 
 
 # ---------------------------------------------------------------------------
