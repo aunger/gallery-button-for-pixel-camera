@@ -93,7 +93,7 @@ ______________________________________________________________________
 | `JAVA_HOME`         | `/opt/java/temurin-17`     | hook (§0b)         | Only when the Setup script provisioned it; else image default |
 | `JAVA_TOOL_OPTIONS` | *(modified, not replaced)* | hook + `~/.bashrc` | Strips `*.google.com` from `nonProxyHosts` (see script §0)    |
 | `PATH`              | `+$ANDROID_HOME/...`       | hook + `~/.bashrc` | Adds `sdkmanager`, `adb` to path                              |
-| `GITHUB_TOKEN`      | *(opaque; see below)*      | container          | Inert in a session: the proxy authenticates. See below        |
+| `GITHUB_TOKEN`      | *(opaque)*                 | container          | Inert in a session; see "GITHUB_TOKEN is inert in a session"  |
 
 `~/.bashrc` carries the same fixes for interactive terminal sessions.
 The proxy credentials in `JAVA_TOOL_OPTIONS` are a session-scoped JWT injected
