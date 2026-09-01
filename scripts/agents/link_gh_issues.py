@@ -12,10 +12,11 @@ sidebar, gates the `-is:blocked` search filters and Projects views, and
 survives any later edit to the issue text.
 
 The parent/child flags are here for symmetry, and are the lesser half: hierarchy
-already has `mcp__github__sub_issue_write`. What they add over it is the same
-thing `--blocked-by` needs anyway--both GitHub endpoints take a *database id*
+already has `mcp__github__sub_issue_write`. The first thing they add over it is
+what `--blocked-by` needs anyway--both GitHub endpoints take a *database id*
 and the MCP tool passes that requirement straight through to the caller, while
-this script accepts the issue number a human actually has and resolves it.
+this script accepts the issue number a human actually has and resolves it. The
+second is the next section.
 
 An issue gets exactly one parent
 --------------------------------
