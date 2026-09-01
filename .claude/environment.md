@@ -250,6 +250,36 @@ sub-resource endpoints this script uses. Treat the write-permission boundary as 
 labels sub-resource only; do not assume other Issues/PR API writes succeed with
 `GITHUB_TOKEN` without testing them individually.
 
+### `GITHUB_TOKEN` can write issue dependencies, but not sub-issues
+
+**Verified 2026-09-01 (issue links / `scripts/agents/link_gh_issues.py`):** the
+per-issue *relationship* endpoints do not share one permission boundary, so the
+"test them individually" rule above earns its keep here.
+
+- **Dependencies: writable.** `POST /issues/{n}/dependencies/blocked_by` and
+  `DELETE /issues/{n}/dependencies/blocked_by/{issue_id}` both succeed. Confirmed
+  by creating a real link with
+  `scripts/agents/link_gh_issues.py add aunger gallery-button-for-pixel-camera 986 --blocked-by 985`,
+  then reading it back from both sides: `blocked_by` on #986, `blocking` on #985,
+  and the `issue_dependencies_summary` counters on each. #986 already stated that
+  dependency in prose under a "Blocked by #985" heading, so the link records
+  something the issue text had no way to make queryable. It was left in place.
+- **Sub-issues: not writable.** `DELETE /issues/{n}/sub_issue` returns 403
+  `Resource not accessible by integration` with the same token, so `--parent-of`
+  and `--child-of` may need a PAT. Hierarchy has `mcp__github__sub_issue_write`
+  anyway; dependencies have no MCP tool at all, which is why the script exists.
+
+Two traps worth carrying forward:
+
+- **These endpoints take a database id, never an issue number.** A number silently
+  addresses the wrong issue, or none. `link_gh_issues.py` resolves references
+  (`123`, `#123`, `owner/repo#123`, a URL) through a `GET` before writing.
+- **403 `Resource not accessible by integration` has two causes here**, and GitHub
+  words them identically: the token may lack the permission, *or* the issue the
+  request references may not be visible to it. `DELETE .../blocked_by/999999999`
+  returns 403 for the second reason while the same call with a real id returns 200.
+  Do not read this wording as a permission verdict on its own.
+
 ### Always verify writes with a follow-up read
 
 `mcp__github__issue_write` (and similar write tools) return `{"id":"...","url":"..."}`
