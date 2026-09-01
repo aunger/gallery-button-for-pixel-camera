@@ -9,7 +9,7 @@ idempotence rules, the guards, and the reporting.
 
 The inversion tests are the ones that matter most. GitHub serves no write for
 the `blocking` direction, so a bug there would silently record a dependency
-backwards -- a link that looks right in the report and is wrong in the sidebar.
+backwards--a link that looks right in the report and is wrong in the sidebar.
 """
 
 import io
@@ -45,15 +45,19 @@ def issue_payload(number, id_=None, title=None, state="open", pull_request=False
 class FakeApi:
     """A stand-in for `link_gh_issues.api` backed by an in-memory link model.
 
-    `links` is keyed by (family, owner, repo, number) -- the holder of the link
-    -- and holds the set of linked issue ids, which is exactly the shape the
+    `links` is keyed by (family, owner, repo, number)--the holder of the
+    link--and holds the set of linked issue ids, which is exactly the shape the
     real membership endpoints return.
     """
 
-    def __init__(self, issues=None, links=None, errors=None):
+    def __init__(self, issues=None, links=None, errors=None, not_found=()):
         self.issues = issues or {}
         self.links = links or {}
         self.errors = errors or {}
+        # (method, path) pairs the real API answers 404 for. `api` hands 404
+        # back to its caller rather than raising, so every caller has to decide
+        # what it means; these let the tests pin each of those decisions.
+        self.not_found = set(not_found)
         self.calls = []
 
     def __call__(self, method, path, token, body=None):
@@ -62,6 +66,9 @@ class FakeApi:
         for (err_method, err_path), error in self.errors.items():
             if err_method == method and err_path == path:
                 raise error
+
+        if (method, path.split("?")[0]) in self.not_found:
+            return 404, {"message": "Not Found"}
 
         # GET /repos/{o}/{r}/issues/{n}
         parts = path.strip("/").split("/")
@@ -72,7 +79,7 @@ class FakeApi:
             return 200, self.issues[key]
 
         # The two read-only views are derived from the same model, by looking
-        # up the inverse of a stored link -- which is exactly how GitHub
+        # up the inverse of a stored link--which is exactly how GitHub
         # presents them, and keeps the `show` tests honest.
         inverse = self._inverse_view(method, path)
         if inverse is not None:
@@ -191,6 +198,21 @@ class TestParseRef(unittest.TestCase):
 
     def test_unparseable_reference_is_rejected(self):
         for ref in ("", "abc", "owner/repo", "#", "12a"):
+            with self.subTest(ref=ref):
+                with self.assertRaises(ValueError):
+                    lgi.parse_ref(ref, OWNER, REPO)
+
+    def test_a_repository_name_may_not_swallow_a_slash(self):
+        """`a/b/c#1` is not owner `a` and repo `b/c`; it addresses nothing."""
+        with self.assertRaises(ValueError):
+            lgi.parse_ref("a/b/c#1", OWNER, REPO)
+
+    def test_a_url_on_another_host_is_rejected(self):
+        """API_ROOT is github.com, so another host's #7 is a different issue."""
+        for ref in (
+            "https://gitlab.example.com/octo/other/issues/7",
+            "https://github.example.com/octo/other/issues/7",
+        ):
             with self.subTest(ref=ref):
                 with self.assertRaises(ValueError):
                     lgi.parse_ref(ref, OWNER, REPO)
@@ -348,14 +370,50 @@ class TestGuards(unittest.TestCase):
         self.assertIn("itself", err)
         self.assertFalse([c for c in fake.calls if c[0] == "POST"])
 
-    def test_a_dependency_on_a_pull_request_is_refused_with_the_fixes_hint(self):
+    def test_a_pull_request_is_refused_in_every_position_of_both_families(self):
+        """GitHub takes issues only, on both sides of both link types.
+
+        It refuses all four with a 422 ("Source issue may only be an issue",
+        "Target issue may only be an issue", "Parent may only be an issue",
+        "Sub issue may only be an issue"), so the guard cannot be per-family.
+        The sub-issue half went unguarded until this was checked against the
+        live API.
+        """
+        cases = [
+            ("--blocked-by", "17"),
+            ("--blocks", "17"),
+            ("--parent-of", "17"),
+            ("--child-of", "17"),
+        ]
+        for flag, ref in cases:
+            with self.subTest(flag=flag):
+                issues = two_issues()
+                issues[(OWNER, REPO, 17)] = issue_payload(17, id_=1700, pull_request=True)
+                fake = FakeApi(issues)
+                code, _, err = run(["add", OWNER, REPO, "42", flag, ref], fake)
+                self.assertEqual(code, 1)
+                self.assertIn("pull request", err)
+                self.assertFalse([c for c in fake.calls if c[0] == "POST"])
+
+    def test_a_pull_request_as_the_subject_is_refused_too(self):
+        """The subject side matters: a PR cannot be blocked by anything."""
         issues = two_issues()
-        issues[(OWNER, REPO, 17)] = issue_payload(17, id_=1700, pull_request=True)
+        issues[(OWNER, REPO, 42)] = issue_payload(42, id_=4200, pull_request=True)
         fake = FakeApi(issues)
         code, _, err = run(["add", OWNER, REPO, "42", "--blocked-by", "17"], fake)
         self.assertEqual(code, 1)
-        self.assertIn("Fixes #N", err)
+        self.assertIn("pull request", err)
         self.assertFalse([c for c in fake.calls if c[0] == "POST"])
+
+    def test_the_pull_request_refusal_names_the_documented_fallback(self):
+        """verification_planning.md tells an agent to fall back to the issue the
+        PR resolves, so the error points there rather than only at `Fixes #N`."""
+        issues = two_issues()
+        issues[(OWNER, REPO, 17)] = issue_payload(17, id_=1700, pull_request=True)
+        code, _, err = run(["add", OWNER, REPO, "42", "--blocked-by", "17"], FakeApi(issues))
+        self.assertEqual(code, 1)
+        self.assertIn("Link the issue the pull request resolves", err)
+        self.assertIn("Fixes #N", err)
 
     def test_no_relation_flag_is_an_error(self):
         fake = FakeApi(two_issues())
@@ -424,13 +482,14 @@ class TestGuards(unittest.TestCase):
 
 
 class TestShow(unittest.TestCase):
-    def _fake_with_parent(self):
+    def _fake_with_a_dependency(self):
+        """#42 blocked by #17, and deliberately no parent and no sub-issues."""
         issues = two_issues()
         fake = FakeApi(issues, links={("dependency", OWNER, REPO, 42): {1700}})
         return fake
 
     def test_show_lists_each_relation(self):
-        code, out, err = run(["show", OWNER, REPO, "42"], self._fake_with_parent())
+        code, out, err = run(["show", OWNER, REPO, "42"], self._fake_with_a_dependency())
         self.assertEqual(code, 0, err)
         self.assertIn("Blocked by (1):", out)
         self.assertIn(f"{OWNER}/{REPO}#42: Subject", out)
@@ -439,12 +498,12 @@ class TestShow(unittest.TestCase):
 
     def test_show_reports_a_parentless_issue_as_none(self):
         """GitHub answers `GET .../parent` with 404 when there is no parent."""
-        code, out, err = run(["show", OWNER, REPO, "42"], self._fake_with_parent())
+        code, out, err = run(["show", OWNER, REPO, "42"], self._fake_with_a_dependency())
         self.assertEqual(code, 0, err)
         self.assertIn("Parent: none", out)
 
     def test_show_json_is_parseable_and_carries_every_relation(self):
-        code, out, err = run(["show", OWNER, REPO, "42", "--json"], self._fake_with_parent())
+        code, out, err = run(["show", OWNER, REPO, "42", "--json"], self._fake_with_a_dependency())
         self.assertEqual(code, 0, err)
         payload = json.loads(out)
         self.assertEqual(payload["issue"], f"{OWNER}/{REPO}#42")
@@ -475,7 +534,7 @@ class TestShow(unittest.TestCase):
         self.assertIn("Sub-issues (1):", out)
 
     def test_show_makes_no_write_call(self):
-        fake = self._fake_with_parent()
+        fake = self._fake_with_a_dependency()
         run(["show", OWNER, REPO, "42"], fake)
         self.assertFalse([c for c in fake.calls if c[0] in ("POST", "DELETE", "PATCH")])
 
@@ -494,6 +553,102 @@ class TestShow(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # The relation table, and the file itself
 # ---------------------------------------------------------------------------
+
+
+class TestWritesAreNotAssumed(unittest.TestCase):
+    """`api` returns 404 rather than raising, so each caller has to read it.
+
+    Getting this wrong is the quiet failure: the script prints `Linked:` and
+    exits 0 for a write that never happened, and the caller has no way to know.
+    """
+
+    def test_a_post_that_404s_is_a_failure_not_a_link(self):
+        fake = FakeApi(
+            two_issues(),
+            not_found=[("POST", f"/repos/{OWNER}/{REPO}/issues/42/dependencies/blocked_by")],
+        )
+        code, out, err = run(["add", OWNER, REPO, "42", "--blocked-by", "17"], fake)
+        self.assertEqual(code, 1)
+        self.assertNotIn("Linked:", out)
+        self.assertIn("nothing was written", err)
+
+    def test_a_delete_that_404s_still_reaches_the_goal_state(self):
+        """The goal is the link being gone, and a 404 means it is."""
+        fake = FakeApi(
+            two_issues(),
+            links={("dependency", OWNER, REPO, 42): {1700}},
+            not_found=[("DELETE", f"/repos/{OWNER}/{REPO}/issues/42/dependencies/blocked_by/1700")],
+        )
+        code, out, err = run(["remove", OWNER, REPO, "42", "--blocked-by", "17"], fake)
+        self.assertEqual(code, 0, err)
+        self.assertIn("Unlinked:", out)
+
+    def test_an_unreadable_membership_endpoint_is_not_read_as_no_links(self):
+        """Otherwise `remove` reports `Already unlinked` having checked nothing."""
+        fake = FakeApi(
+            two_issues(),
+            not_found=[("GET", f"/repos/{OWNER}/{REPO}/issues/42/dependencies/blocked_by")],
+        )
+        code, out, err = run(["remove", OWNER, REPO, "42", "--blocked-by", "17"], fake)
+        self.assertEqual(code, 1)
+        self.assertNotIn("Already unlinked", out)
+        self.assertIn("links are unknown", err)
+
+    def test_show_still_reads_a_404_membership_endpoint_as_none(self):
+        """`show` keeps the lenient reading: there, none is a real answer."""
+        fake = FakeApi(
+            two_issues(),
+            not_found=[("GET", f"/repos/{OWNER}/{REPO}/issues/42/sub_issues")],
+        )
+        code, out, err = run(["show", OWNER, REPO, "42"], fake)
+        self.assertEqual(code, 0, err)
+        self.assertIn("Sub-issues: none", out)
+
+    def test_an_issue_payload_without_an_id_is_reported_not_raised(self):
+        fake = FakeApi({(OWNER, REPO, 42): {"number": 42, "title": "No id"}})
+        code, _, err = run(["show", OWNER, REPO, "42"], fake)
+        self.assertEqual(code, 1)
+        self.assertIn("no issue id", err)
+
+    def test_a_post_is_never_retried(self):
+        """A POST that reached GitHub and lost its response would come back a
+        duplicate, turning a link that was created into a reported failure."""
+        self.assertNotIn("POST", lgi.IDEMPOTENT_METHODS)
+        self.assertEqual(sorted(lgi.IDEMPOTENT_METHODS), ["DELETE", "GET"])
+
+
+class TestRepeatedReference(unittest.TestCase):
+    """The membership pre-read is cached, so it has to follow the writes.
+
+    A stale cache re-sends the write for a reference named twice in one call:
+    a 422 on add, and on remove the very 403 this script exists to keep callers
+    away from, both after the goal state had already been reached.
+    """
+
+    def test_the_same_reference_added_twice_is_written_once(self):
+        fake = FakeApi(two_issues())
+        code, out, err = run(
+            ["add", OWNER, REPO, "42", "--blocked-by", "17", "--blocked-by", "#17"], fake
+        )
+        self.assertEqual(code, 0, err)
+        self.assertEqual(len([c for c in fake.calls if c[0] == "POST"]), 1)
+        self.assertIn("Already linked:", out)
+
+    def test_the_same_reference_removed_twice_is_deleted_once(self):
+        fake = FakeApi(two_issues(), links={("dependency", OWNER, REPO, 42): {1700}})
+        code, out, err = run(
+            ["remove", OWNER, REPO, "42", "--blocked-by", "17", "--blocked-by", "#17"], fake
+        )
+        self.assertEqual(code, 0, err)
+        self.assertEqual(len([c for c in fake.calls if c[0] == "DELETE"]), 1)
+        self.assertIn("Already unlinked:", out)
+
+    def test_a_reference_to_the_subject_does_not_refetch_it(self):
+        fake = FakeApi(two_issues())
+        code, _, _ = run(["add", OWNER, REPO, "42", "--blocked-by", "42"], fake)
+        self.assertEqual(code, 1)
+        lookups = [c for c in fake.calls if c == ("GET", f"/repos/{OWNER}/{REPO}/issues/42", None)]
+        self.assertEqual(len(lookups), 1)
 
 
 class TestRelations(unittest.TestCase):

@@ -13,7 +13,7 @@ survives any later edit to the issue text.
 
 The parent/child flags are here for symmetry, and are the lesser half: hierarchy
 already has `mcp__github__sub_issue_write`. What they add over it is the same
-thing `--blocked-by` needs anyway -- both GitHub endpoints take a *database id*
+thing `--blocked-by` needs anyway--both GitHub endpoints take a *database id*
 and the MCP tool passes that requirement straight through to the caller, while
 this script accepts the issue number a human actually has and resolves it.
 
@@ -25,7 +25,7 @@ fail on a missing dependency.
 Relations
 ---------
 
-Every relation is named from the point of view of the *subject* issue -- the
+Every relation is named from the point of view of the *subject* issue--the
 one named in the positional arguments:
 
     --blocked-by REF    the subject cannot proceed until REF is done
@@ -39,6 +39,20 @@ only one write direction for each pair (`POST .../dependencies/blocked_by` and
 those two flags are applied by writing to REF's endpoint with the subject as
 the operand. That inversion is the only reason both directions exist here: it
 saves the caller from having to restate a dependency backwards to record it.
+
+Pull requests are not linkable
+------------------------------
+
+GitHub takes issues only, on both sides of both link types. All four positions
+answer 422 (verified 2026-09-01 against this repository): `Source issue may
+only be an issue`, `Target issue may only be an issue`, `Parent may only be an
+issue`, `Sub issue may only be an issue`. So a pull request in any position is
+refused here before the call, with one line naming the fallback rather than a
+GitHub validation error.
+
+That fallback is the one `agents/verification_planning.md` already prescribes:
+when a pull request number is not accepted, link the issue the pull request
+resolves instead.
 
 What this script deliberately does not do
 -----------------------------------------
@@ -71,10 +85,12 @@ Usage
     scripts/agents/link_gh_issues.py remove <owner> <repo> <issue> \
         [--blocked-by REF]... ... [--dry-run]
 
-REF may be given as `123`, `#123`, `owner/repo#123`, or an issue URL. A bare
-number means an issue in the same repository as the subject.
+REF may be given as `123`, `#123`, `owner/repo#123`, or a github.com issue URL.
+A bare number means an issue in the same repository as the subject. Neither the
+owner nor the repository may contain a `/`, and a URL on any other host is
+refused rather than looked up on github.com as if it were the same issue.
 
-Example -- record that issue #42 is waiting on #17 and #19, in one call:
+Example--record that issue #42 is waiting on #17 and #19, in one call:
 
     scripts/agents/link_gh_issues.py add aunger gallery-button-for-pixel-camera 42 \
         --blocked-by 17 --blocked-by 19
@@ -97,15 +113,15 @@ Required environment variables:
                    proxy that supplies its own credential, and a garbage value
                    behaves identically to the real one. Writes from this script
                    therefore land as `claude[bot]` rather than as the token's
-                   nominal owner. Outside a session -- a developer machine, or
-                   CI -- the value is what authenticates, which is why it is
+                   nominal owner. Outside a session--a developer machine, or
+                   CI--the value is what authenticates, which is why it is
                    still required. See `.claude/environment.md`,
                    "`GITHUB_TOKEN` is inert in a session".
 
                    Beware one wording when reading failures. GitHub answers
                    `403 Resource not accessible by integration` when the
-                   relationship a request names does not exist -- removing a
-                   sub-issue from an issue that is not its parent, say -- which
+                   relationship a request names does not exist--removing a
+                   sub-issue from an issue that is not its parent, say--which
                    says nothing about permissions; the same call with a real
                    operand returns 200. GitHub uses "integration" for
                    fine-grained PATs too, so it is not evidence about the
@@ -132,10 +148,16 @@ API_ROOT = "https://api.github.com"
 
 REQUEST_TIMEOUT_SECONDS = 15
 
-# A write that lost to a 5xx or a secondary rate limit is worth one retry; one
+# A call that lost to a 5xx or a secondary rate limit is worth one retry; one
 # that lost to a 4xx is a decision, not a hiccup, and is reported as-is.
+#
+# Only for a method that is safe to send twice, though. A POST that reached
+# GitHub and lost its response would, on retry, be refused as a
+# duplicate--turning a link that was in fact created into a reported failure.
+# GET and DELETE are idempotent here, so they retry; POST gets one attempt.
 RETRY_DELAY_SECONDS = 2.0
 RETRYABLE_STATUSES = (429, 500, 502, 503, 504)
+IDEMPOTENT_METHODS = ("GET", "DELETE")
 
 EXIT_OK = 0
 EXIT_FAILED = 1
@@ -168,11 +190,15 @@ class Issue:
         return f"{self.owner}/{self.repo}#{self.number}"
 
 
-# `owner/repo#123`, `#123`, `123`, or a github.com issue/PR URL.
+# `owner/repo#123`, `#123`, `123`, or a github.com issue/PR URL. The host is
+# pinned because API_ROOT is: a GitLab or Enterprise URL parsed as a bare
+# owner/repo would be looked up on github.com, against a different issue.
 _REF_URL = re.compile(
-    r"^https?://[^/]+/(?P<owner>[^/]+)/(?P<repo>[^/]+)/(?:issues|pull)/(?P<number>\d+)"
+    r"^https?://(?:www\.)?github\.com/(?P<owner>[^/\s]+)/(?P<repo>[^/\s]+)"
+    r"/(?:issues|pull)/(?P<number>\d+)"
 )
-_REF_QUALIFIED = re.compile(r"^(?P<owner>[^/\s]+)/(?P<repo>[^#\s]+)#(?P<number>\d+)$")
+# Neither group may hold a `/`: `a/b/c#1` is not `a` + `b/c`, it is unparseable.
+_REF_QUALIFIED = re.compile(r"^(?P<owner>[^/#\s]+)/(?P<repo>[^/#\s]+)#(?P<number>\d+)$")
 _REF_BARE = re.compile(r"^#?(?P<number>\d+)$")
 
 
@@ -230,13 +256,13 @@ def _describe_failure(status: int, payload: object, raw: str) -> str:
     # verdict sends the reader off to mint a token they already have.
     if status in (401, 403) and "not accessible by integration" in message.lower():
         message += (
-            " -- this usually means the link or issue the request names does not exist, "
+            "--this usually means the link or issue the request names does not exist, "
             "not that the token lacks permission: GitHub answers 403 (not 404) when asked "
             "to remove a link that is not there. Check the link exists, then check that "
             "GITHUB_TOKEN has 'issues: write' here."
         )
     elif status == 401:
-        message += " -- check that GITHUB_TOKEN is set and valid."
+        message += "--check that GITHUB_TOKEN is set and valid."
     return f"HTTP {status}: {message}"
 
 
@@ -253,7 +279,7 @@ def api(method: str, path: str, token: str, body: dict | None = None) -> tuple[i
     if data is not None:
         headers["Content-Type"] = "application/json"
 
-    attempts = 2
+    attempts = 2 if method in IDEMPOTENT_METHODS else 1
     for attempt in range(attempts):
         request = urllib.request.Request(url, data=data, headers=headers, method=method)
         try:
@@ -289,6 +315,10 @@ def get_issue(owner: str, repo: str, number: int, token: str) -> Issue:
     status, payload = api("GET", f"/repos/{owner}/{repo}/issues/{number}", token)
     if status == 404 or not isinstance(payload, dict):
         raise ApiError(404, f"{owner}/{repo}#{number} not found (or the token cannot see it)")
+    if "number" not in payload or "id" not in payload:
+        # Without the database id there is nothing to write, so say that rather
+        # than raising KeyError past main()'s ApiError handler as a traceback.
+        raise ApiError(0, f"{owner}/{repo}#{number}: response carried no issue id; cannot link it")
     return Issue(
         owner=owner,
         repo=repo,
@@ -299,13 +329,22 @@ def get_issue(owner: str, repo: str, number: int, token: str) -> Issue:
     )
 
 
-def paged(path: str, token: str) -> list:
-    """Read every page of a list endpoint. 404 is an empty list, not a fault."""
+def paged(path: str, token: str, missing_ok: bool = True) -> list:
+    """Read every page of a list endpoint.
+
+    `missing_ok` is what separates the two readers. For `show`, a 404 is an
+    answer ("nothing is linked") and an empty list is right. For the pre-read
+    that decides whether a link is already there, it is not: reading "no links"
+    off an endpoint that was never reached would report `Already unlinked` for
+    a link that may well exist, and call that success.
+    """
     items: list = []
     page = 1
     while True:
         joiner = "&" if "?" in path else "?"
         status, payload = api("GET", f"{path}{joiner}per_page=100&page={page}", token)
+        if status == 404 and not missing_ok:
+            raise ApiError(404, f"HTTP 404: {path} could not be read, so the links are unknown")
         if status == 404 or not isinstance(payload, list):
             break
         items.extend(payload)
@@ -356,15 +395,30 @@ def members_path(family: str, holder: Issue) -> str:
 
 
 def add_link(family: str, holder: Issue, other: Issue, token: str) -> None:
-    """Create the link, writing to `holder`'s endpoint with `other` as operand."""
-    if family == "dependency":
-        api("POST", members_path(family, holder), token, {"issue_id": other.id})
-    else:
-        api("POST", members_path(family, holder), token, {"sub_issue_id": other.id})
+    """Create the link, writing to `holder`'s endpoint with `other` as operand.
+
+    `api` hands 404 back rather than raising, because for the reads here it is
+    an answer. For a write it never is: nothing was created, so reporting
+    `Linked` off a 404 would be a plain false success. `update_gh_labels.sh`
+    draws the same line, treating 404 on its add as an error.
+    """
+    key = "issue_id" if family == "dependency" else "sub_issue_id"
+    status, payload = api("POST", members_path(family, holder), token, {key: other.id})
+    if status == 404:
+        raise ApiError(
+            404,
+            _describe_failure(404, payload, "")
+            + f"--nothing was written; check that {holder.slug} exists and is visible.",
+        )
 
 
 def remove_link(family: str, holder: Issue, other: Issue, token: str) -> None:
-    """Delete the link. The two families disagree on where the operand goes."""
+    """Delete the link. The two families disagree on where the operand goes.
+
+    A 404 is left alone here, unlike in `add_link`: the goal state is the link
+    being absent, and a delete that 404s has reached it. That is how
+    `update_gh_labels.sh` reads 404 on its own remove.
+    """
     base = f"/repos/{holder.owner}/{holder.repo}/issues/{holder.number}"
     if family == "dependency":
         api("DELETE", f"{base}/dependencies/blocked_by/{other.id}", token)
@@ -445,8 +499,13 @@ def run_change(args, token: str, adding: bool) -> int:
     subject = get_issue(args.owner, args.repo, args.issue, token)
     exit_code = EXIT_OK
     # Resolving the same reference twice in one call is pure waste, and the
-    # membership read is per (family, holder), not per link.
-    resolved: dict[tuple[str, str, int], Issue] = {}
+    # membership read is per (family, holder), not per link. The subject is
+    # seeded because a reference back to it is exactly what the self-link guard
+    # below is there to catch, and re-fetching it to find that out is a wasted
+    # call.
+    resolved: dict[tuple[str, str, int], Issue] = {
+        (subject.owner.lower(), subject.repo.lower(), subject.number): subject
+    }
     members: dict[tuple[str, str, str, int], set[int]] = {}
 
     for relation, ref in requested:
@@ -473,12 +532,20 @@ def run_change(args, token: str, adding: bool) -> int:
                 print(f"Error: cannot link {subject.slug} to itself.", file=sys.stderr)
                 exit_code = EXIT_FAILED
                 continue
-            if relation.family == "dependency" and (
-                holder.is_pull_request or operand.is_pull_request
-            ):
+            # Neither family takes a pull request, in either position. GitHub
+            # refuses all four with a 422 (verified 2026-09-01): "Source issue
+            # may only be an issue", "Target issue may only be an issue",
+            # "Parent may only be an issue", "Sub issue may only be an issue".
+            # Refusing here turns that into one legible line naming the
+            # fallback, which is what `agents/verification_planning.md` already
+            # tells an agent to do when a PR number is not accepted.
+            if holder.is_pull_request or operand.is_pull_request:
+                pull = holder if holder.is_pull_request else operand
                 print(
-                    f"Error: {described}: dependencies link issues, not pull requests. "
-                    "To tie a PR to an issue, put `Fixes #N` in the PR description.",
+                    f"Error: {described}: {pull.slug} is a pull request, and GitHub links "
+                    "of this kind join issues only. Link the issue the pull request "
+                    "resolves instead; to record that a pull request closes an issue, put "
+                    "`Fixes #N` in its description.",
                     file=sys.stderr,
                 )
                 exit_code = EXIT_FAILED
@@ -488,12 +555,14 @@ def run_change(args, token: str, adding: bool) -> int:
             if member_key not in members:
                 members[member_key] = {
                     item.get("id")
-                    for item in paged(members_path(relation.family, holder), token)
+                    for item in paged(
+                        members_path(relation.family, holder), token, missing_ok=False
+                    )
                     if isinstance(item, dict)
                 }
             present = operand.id in members[member_key]
 
-            # The goal state, not the call, is what counts as success -- so a
+            # The goal state, not the call, is what counts as success--so a
             # link already in place and one already gone are both reported and
             # left alone, exactly as update_gh_labels.sh treats a label.
             if adding and present:
@@ -507,11 +576,18 @@ def run_change(args, token: str, adding: bool) -> int:
                 print(f"{verb}: {described}.")
                 continue
 
+            # The cache has to follow the write, or a reference repeated in one
+            # call would be re-sent against a link that is now there (or gone):
+            # a 422 on add, and on remove the very 403 this script exists to
+            # keep callers away from--both reported as failures after the goal
+            # state had in fact been reached.
             if adding:
                 add_link(relation.family, holder, operand, token)
+                members[member_key].add(operand.id)
                 print(f"Linked: {described}.")
             else:
                 remove_link(relation.family, holder, operand, token)
+                members[member_key].discard(operand.id)
                 print(f"Unlinked: {described}.")
         except ApiError as error:
             print(f"Error: {ref}: {error.message}", file=sys.stderr)
@@ -530,8 +606,9 @@ def build_parser() -> argparse.ArgumentParser:
         prog="link_gh_issues.py",
         description="Set semantic links (dependencies, sub-issues) between GitHub issues.",
         epilog=(
-            "A REF is 123, #123, owner/repo#123, or an issue URL; a bare number means the "
-            "subject's own repository. The PR-to-issue 'fixes' link has no API -- write "
+            "A REF is 123, #123, owner/repo#123, or a github.com issue URL; a bare number "
+            "means the "
+            "subject's own repository. The PR-to-issue 'fixes' link has no API--write "
             "`Fixes #123` in the pull request description instead."
         ),
     )

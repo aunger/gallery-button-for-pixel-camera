@@ -275,7 +275,7 @@ labels finding above.
 
 **The 403 trap, which cost this investigation a wrong conclusion.** These endpoints
 answer `403 Resource not accessible by integration` when the *relationship the
-request names does not exist* -- for example removing a sub-issue from an issue
+request names does not exist*--for example removing a sub-issue from an issue
 that is not its parent, or a dependency that was never added. That is a statement
 about the operand, not about the token. Back to back, with one token:
 
@@ -293,8 +293,8 @@ it is not evidence about what kind of credential is in play either.
 **These endpoints take a database id, never an issue number.** A number silently
 addresses the wrong issue, or none. `link_gh_issues.py` resolves references
 (`123`, `#123`, `owner/repo#123`, a URL) through a `GET` before writing, and reads
-the current link set first, so it never issues a removal for a link that is absent
--- which is what keeps callers clear of the 403 above.
+the current link set first, so it never issues a removal for a link that is
+absent--which is what keeps callers clear of the 403 above.
 
 ### `GITHUB_TOKEN` is inert in a session: the proxy supplies the credential
 
@@ -340,7 +340,7 @@ anyone touching a token or a repository setting, which is the real reason those
 sections keep needing re-verification.
 
 **Scope, and what is not established.** All of the above is about a *session*.
-`scripts/agents/*` are session-only -- no workflow invokes them -- so this is the
+`scripts/agents/*` are session-only--no workflow invokes them--so this is the
 environment that governs them, but the same reasoning does not carry to
 `.github/workflows/`, where `GITHUB_TOKEN` is a genuine Actions token. What
 `GITHUB_TOKEN` actually is remains unidentified: it has the 93-character
