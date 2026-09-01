@@ -1,0 +1,577 @@
+#!/usr/bin/env python3
+r"""link_gh_issues.py: set semantic links between GitHub issues via the REST API.
+
+**Issue dependencies are the gap this fills.** GitHub models "blocked by" and
+"blocking" natively, but no tool an agent has can write them: the GitHub MCP
+server ships `sub_issue_write` for hierarchy and `issue_write` for an issue's
+own fields, and nothing at all for `/dependencies/blocked_by`. So an agent that
+wants to record "issue A cannot start until issue B lands" is left writing it
+in prose in the issue body, where nothing can query it and nothing keeps it
+true. This script writes the native link instead, which shows in the issue
+sidebar, gates the `-is:blocked` search filters and Projects views, and
+survives any later edit to the issue text.
+
+The parent/child flags are here for symmetry, and are the lesser half: hierarchy
+already has `mcp__github__sub_issue_write`. What they add over it is the same
+thing `--blocked-by` needs anyway -- both GitHub endpoints take a *database id*
+and the MCP tool passes that requirement straight through to the caller, while
+this script accepts the issue number a human actually has and resolves it.
+
+Follows the pattern of `scripts/agents/update_gh_labels.sh` (issue #710) and
+`scripts/agents/delete_gh_comment.sh` (issue #658): a plain REST call for
+environments with no `gh` CLI. Standard library only, so the script cannot
+fail on a missing dependency.
+
+Relations
+---------
+
+Every relation is named from the point of view of the *subject* issue -- the
+one named in the positional arguments:
+
+    --blocked-by REF    the subject cannot proceed until REF is done
+    --blocks REF        REF cannot proceed until the subject is done
+    --parent-of REF     REF becomes a sub-issue of the subject
+    --child-of REF      the subject becomes a sub-issue of REF
+
+`--blocks` and `--child-of` are the inverses of the other two. GitHub serves
+only one write direction for each pair (`POST .../dependencies/blocked_by` and
+`POST .../sub_issues`; there is no POST to `.../dependencies/blocking`), so
+those two flags are applied by writing to REF's endpoint with the subject as
+the operand. That inversion is the only reason both directions exist here: it
+saves the caller from having to restate a dependency backwards to record it.
+
+What this script deliberately does not do
+-----------------------------------------
+
+Two relations that sound like they belong here do not, for opposite reasons.
+
+**"Fixes" (PR to issue) has no write API at all.** GitHub derives that link
+from a closing keyword in the pull request description (`Fixes #123`) or from
+the Development sidebar in the web UI; there is no REST endpoint and no GraphQL
+mutation to create it, only the read-only `closed_by_pull_requests` summary on
+the issue. Since a PR's description is already the agent's to write (see
+`agents/pr_creation.md`), the supported way to record it is to put `Fixes #123`
+in the description. Nothing here could make that more reliable, so nothing here
+tries.
+
+**"Duplicate of" is already covered.** It is a first-class field, not a link:
+`mcp__github__issue_write` takes `duplicate_of` alongside
+`state_reason: "duplicate"`. Duplicating that here would give the same relation
+two spellings, so this script leaves it alone.
+
+Usage
+-----
+
+    scripts/agents/link_gh_issues.py show <owner> <repo> <issue> [--json]
+
+    scripts/agents/link_gh_issues.py add <owner> <repo> <issue> \
+        [--blocked-by REF]... [--blocks REF]... \
+        [--parent-of REF]... [--child-of REF]... [--dry-run]
+
+    scripts/agents/link_gh_issues.py remove <owner> <repo> <issue> \
+        [--blocked-by REF]... ... [--dry-run]
+
+REF may be given as `123`, `#123`, `owner/repo#123`, or an issue URL. A bare
+number means an issue in the same repository as the subject.
+
+Example -- record that issue #42 is waiting on #17 and #19, in one call:
+
+    scripts/agents/link_gh_issues.py add aunger gallery-button-for-pixel-camera 42 \
+        --blocked-by 17 --blocked-by 19
+
+Adding a link that is already present, or removing one that is already absent,
+is reported and treated as success: the goal state is what matters, matching
+the idempotent behavior of `scripts/agents/update_gh_labels.sh`.
+
+Exit codes:
+    0   every requested link reached its goal state
+    1   at least one did not (the failure is reported on stderr)
+
+Required environment variables:
+    GITHUB_TOKEN   Token with `issues: write` on every repository written to
+                   (read alone is enough for `show`). GitHub answers an
+                   unpermitted call with `Resource not accessible by
+                   integration`, which this script reports as a failure rather
+                   than passing it off as a missing link.
+
+                   The two families are not gated alike. Probed against this
+                   repository on 2026-09-01, the GitHub App installation token
+                   that agent sessions carry could write dependencies but was
+                   refused (403) on the sub-issue endpoints. So `--blocked-by`
+                   and `--blocks` work with the ambient token, while
+                   `--parent-of` and `--child-of` may need a PAT.
+"""
+
+import argparse
+import dataclasses
+import json
+import os
+import re
+import sys
+import time
+import urllib.error
+import urllib.request
+
+sys.path.insert(
+    0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "ci", "prs-and-issues")
+)
+
+from github_headers import github_headers  # noqa: E402
+
+API_ROOT = "https://api.github.com"
+
+REQUEST_TIMEOUT_SECONDS = 15
+
+# A write that lost to a 5xx or a secondary rate limit is worth one retry; one
+# that lost to a 4xx is a decision, not a hiccup, and is reported as-is.
+RETRY_DELAY_SECONDS = 2.0
+RETRYABLE_STATUSES = (429, 500, 502, 503, 504)
+
+EXIT_OK = 0
+EXIT_FAILED = 1
+
+
+# ---------------------------------------------------------------------------
+# Issue references
+# ---------------------------------------------------------------------------
+
+
+@dataclasses.dataclass(frozen=True)
+class Issue:
+    """An issue located on GitHub, carrying the id the link endpoints want.
+
+    The write endpoints take a *database id*, never an issue number, so every
+    reference has to be resolved through a GET before it can be linked. The
+    number is kept alongside it purely so reports can name the issue the way a
+    human wrote it.
+    """
+
+    owner: str
+    repo: str
+    number: int
+    id: int
+    title: str
+    is_pull_request: bool
+
+    @property
+    def slug(self) -> str:
+        return f"{self.owner}/{self.repo}#{self.number}"
+
+
+# `owner/repo#123`, `#123`, `123`, or a github.com issue/PR URL.
+_REF_URL = re.compile(
+    r"^https?://[^/]+/(?P<owner>[^/]+)/(?P<repo>[^/]+)/(?:issues|pull)/(?P<number>\d+)"
+)
+_REF_QUALIFIED = re.compile(r"^(?P<owner>[^/\s]+)/(?P<repo>[^#\s]+)#(?P<number>\d+)$")
+_REF_BARE = re.compile(r"^#?(?P<number>\d+)$")
+
+
+def parse_ref(ref: str, default_owner: str, default_repo: str) -> tuple[str, str, int]:
+    """Resolve a user-written issue reference to (owner, repo, number).
+
+    A bare number inherits the subject's repository, which is what makes the
+    common same-repo call short.
+    """
+    ref = ref.strip()
+    for pattern in (_REF_URL, _REF_QUALIFIED):
+        match = pattern.match(ref)
+        if match:
+            return match["owner"], match["repo"], int(match["number"])
+    match = _REF_BARE.match(ref)
+    if match:
+        return default_owner, default_repo, int(match["number"])
+    raise ValueError(
+        f"cannot parse issue reference {ref!r}; expected 123, #123, owner/repo#123, or an issue URL"
+    )
+
+
+# ---------------------------------------------------------------------------
+# REST plumbing
+# ---------------------------------------------------------------------------
+
+
+class ApiError(Exception):
+    """A GitHub response that the caller has to report rather than absorb."""
+
+    def __init__(self, status: int, message: str):
+        super().__init__(message)
+        self.status = status
+        self.message = message
+
+
+def _describe_failure(status: int, payload: object, raw: str) -> str:
+    """Turn an error response into one line that says what to do about it."""
+    message = ""
+    if isinstance(payload, dict):
+        message = str(payload.get("message") or "")
+        errors = payload.get("errors")
+        if isinstance(errors, list):
+            details = [
+                str(e.get("message") or e.get("code")) for e in errors if isinstance(e, dict)
+            ]
+            details = [d for d in details if d]
+            if details:
+                message = f"{message} ({'; '.join(details)})" if message else "; ".join(details)
+    if not message:
+        message = raw.strip()[:200] or f"HTTP {status}"
+
+    # GitHub returns this one wording for two unrelated causes, and says
+    # neither: the token may lack the permission, or the *referenced* issue may
+    # be invisible to it. Both are worth naming, because the fix differs.
+    if status in (401, 403) and "not accessible by integration" in message.lower():
+        message += (
+            " -- either GITHUB_TOKEN lacks 'issues: write' here, or the issue it names is "
+            "not visible to the token. Note that sub-issue writes need a broader permission "
+            "than dependency writes: a GitHub App installation token that can set "
+            "dependencies may still be refused for --parent-of and --child-of."
+        )
+    elif status == 401:
+        message += " -- check that GITHUB_TOKEN is set and valid."
+    return f"HTTP {status}: {message}"
+
+
+def api(method: str, path: str, token: str, body: dict | None = None) -> tuple[int, object]:
+    """Call the GitHub REST API and return (status, parsed body).
+
+    Raises ApiError on any status the caller did not ask to see. 404 is
+    returned rather than raised, because for these endpoints it is a legitimate
+    answer ("no parent", "that link is already gone") as often as it is a fault.
+    """
+    url = f"{API_ROOT}{path}"
+    data = json.dumps(body).encode() if body is not None else None
+    headers = github_headers(token)
+    if data is not None:
+        headers["Content-Type"] = "application/json"
+
+    attempts = 2
+    for attempt in range(attempts):
+        request = urllib.request.Request(url, data=data, headers=headers, method=method)
+        try:
+            with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
+                raw = response.read().decode("utf-8", "replace")
+                return response.status, (json.loads(raw) if raw.strip() else None)
+        except urllib.error.HTTPError as error:
+            raw = error.read().decode("utf-8", "replace")
+            try:
+                payload = json.loads(raw) if raw.strip() else None
+            except json.JSONDecodeError:
+                payload = None
+            secondary_limit = error.code == 403 and "secondary rate limit" in raw.lower()
+            if (error.code in RETRYABLE_STATUSES or secondary_limit) and attempt < attempts - 1:
+                time.sleep(RETRY_DELAY_SECONDS)
+                continue
+            if error.code == 404:
+                return 404, payload
+            raise ApiError(error.code, _describe_failure(error.code, payload, raw)) from error
+        except urllib.error.URLError as error:
+            if attempt < attempts - 1:
+                time.sleep(RETRY_DELAY_SECONDS)
+                continue
+            raise ApiError(0, f"could not reach {API_ROOT}: {error.reason}") from error
+    raise AssertionError("unreachable")
+
+
+def get_issue(owner: str, repo: str, number: int, token: str) -> Issue:
+    """Look up one issue, mainly to learn the database id the writes need."""
+    status, payload = api("GET", f"/repos/{owner}/{repo}/issues/{number}", token)
+    if status == 404 or not isinstance(payload, dict):
+        raise ApiError(404, f"{owner}/{repo}#{number} not found (or the token cannot see it)")
+    return Issue(
+        owner=owner,
+        repo=repo,
+        number=int(payload["number"]),
+        id=int(payload["id"]),
+        title=str(payload.get("title") or ""),
+        is_pull_request="pull_request" in payload,
+    )
+
+
+def paged(path: str, token: str) -> list:
+    """Read every page of a list endpoint. 404 is an empty list, not a fault."""
+    items: list = []
+    page = 1
+    while True:
+        joiner = "&" if "?" in path else "?"
+        status, payload = api("GET", f"{path}{joiner}per_page=100&page={page}", token)
+        if status == 404 or not isinstance(payload, list):
+            break
+        items.extend(payload)
+        if len(payload) < 100:
+            break
+        page += 1
+    return items
+
+
+# ---------------------------------------------------------------------------
+# The relations
+# ---------------------------------------------------------------------------
+
+
+@dataclasses.dataclass(frozen=True)
+class Relation:
+    """One user-facing relation, and how it maps onto an endpoint.
+
+    GitHub writes each pair of relations from one side only, so `inverted`
+    records whether the endpoint is called on the subject or on the other
+    issue. Everything else about a relation follows from `family`, which keeps
+    the four flags from needing four hand-written code paths.
+    """
+
+    flag: str
+    family: str  # "dependency" or "sub-issue"
+    inverted: bool
+    # Rendered as "<subject> <phrase> <other>" in reports.
+    phrase: str
+
+    @property
+    def dest(self) -> str:
+        return self.flag.lstrip("-").replace("-", "_")
+
+
+RELATIONS = (
+    Relation("--blocked-by", "dependency", False, "is blocked by"),
+    Relation("--blocks", "dependency", True, "blocks"),
+    Relation("--parent-of", "sub-issue", False, "is the parent of"),
+    Relation("--child-of", "sub-issue", True, "is a sub-issue of"),
+)
+
+
+def members_path(family: str, holder: Issue) -> str:
+    """The endpoint listing what is already linked to `holder` in `family`."""
+    base = f"/repos/{holder.owner}/{holder.repo}/issues/{holder.number}"
+    return f"{base}/dependencies/blocked_by" if family == "dependency" else f"{base}/sub_issues"
+
+
+def add_link(family: str, holder: Issue, other: Issue, token: str) -> None:
+    """Create the link, writing to `holder`'s endpoint with `other` as operand."""
+    if family == "dependency":
+        api("POST", members_path(family, holder), token, {"issue_id": other.id})
+    else:
+        api("POST", members_path(family, holder), token, {"sub_issue_id": other.id})
+
+
+def remove_link(family: str, holder: Issue, other: Issue, token: str) -> None:
+    """Delete the link. The two families disagree on where the operand goes."""
+    base = f"/repos/{holder.owner}/{holder.repo}/issues/{holder.number}"
+    if family == "dependency":
+        api("DELETE", f"{base}/dependencies/blocked_by/{other.id}", token)
+    else:
+        api("DELETE", f"{base}/sub_issue", token, {"sub_issue_id": other.id})
+
+
+# ---------------------------------------------------------------------------
+# Commands
+# ---------------------------------------------------------------------------
+
+
+def issue_line(item: dict) -> str:
+    """One line describing a linked issue, as `show` prints it."""
+    number = item.get("number")
+    title = (item.get("title") or "").strip()
+    state = item.get("state") or "?"
+    repo = item.get("repository") or {}
+    where = repo.get("full_name")
+    ref = f"{where}#{number}" if where else f"#{number}"
+    if len(title) > 72:
+        title = title[:69] + "..."
+    return f"    {ref}  [{state}]  {title}"
+
+
+def run_show(args, token: str) -> int:
+    subject = get_issue(args.owner, args.repo, args.issue, token)
+    base = f"/repos/{subject.owner}/{subject.repo}/issues/{subject.number}"
+
+    blocked_by = paged(f"{base}/dependencies/blocked_by", token)
+    blocking = paged(f"{base}/dependencies/blocking", token)
+    sub_issues = paged(f"{base}/sub_issues", token)
+    # A parentless issue answers 404 "No parent issue found"; that is an answer.
+    status, parent = api("GET", f"{base}/parent", token)
+    parent = parent if status != 404 and isinstance(parent, dict) else None
+
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "issue": subject.slug,
+                    "title": subject.title,
+                    "blocked_by": blocked_by,
+                    "blocking": blocking,
+                    "parent": parent,
+                    "sub_issues": sub_issues,
+                },
+                indent=2,
+            )
+        )
+        return EXIT_OK
+
+    print(f"{subject.slug}: {subject.title}")
+    for label, items in (
+        ("Blocked by", blocked_by),
+        ("Blocking", blocking),
+        ("Parent", [parent] if parent else []),
+        ("Sub-issues", sub_issues),
+    ):
+        if not items:
+            print(f"  {label}: none")
+            continue
+        print(f"  {label} ({len(items)}):")
+        for item in items:
+            if isinstance(item, dict):
+                print(issue_line(item))
+    return EXIT_OK
+
+
+def run_change(args, token: str, adding: bool) -> int:
+    """Apply every requested link (or unlink), reporting one line each."""
+    requested = [(rel, ref) for rel in RELATIONS for ref in getattr(args, rel.dest) or []]
+    if not requested:
+        flags = ", ".join(rel.flag for rel in RELATIONS)
+        print(f"Error: at least one of {flags} is required.", file=sys.stderr)
+        return EXIT_FAILED
+
+    subject = get_issue(args.owner, args.repo, args.issue, token)
+    exit_code = EXIT_OK
+    # Resolving the same reference twice in one call is pure waste, and the
+    # membership read is per (family, holder), not per link.
+    resolved: dict[tuple[str, str, int], Issue] = {}
+    members: dict[tuple[str, str, str, int], set[int]] = {}
+
+    for relation, ref in requested:
+        try:
+            owner, repo, number = parse_ref(ref, subject.owner, subject.repo)
+        except ValueError as error:
+            print(f"Error: {error}", file=sys.stderr)
+            exit_code = EXIT_FAILED
+            continue
+
+        try:
+            key = (owner.lower(), repo.lower(), number)
+            if key not in resolved:
+                resolved[key] = get_issue(owner, repo, number, token)
+            other = resolved[key]
+
+            # Which issue the endpoint is called on, and which is the operand.
+            holder, operand = (other, subject) if relation.inverted else (subject, other)
+            # Every phrase is written from the subject's side, so the report
+            # reads the same way the caller's flag did, inverted or not.
+            described = f"{subject.slug} {relation.phrase} {other.slug}"
+
+            if holder.id == operand.id:
+                print(f"Error: cannot link {subject.slug} to itself.", file=sys.stderr)
+                exit_code = EXIT_FAILED
+                continue
+            if relation.family == "dependency" and (
+                holder.is_pull_request or operand.is_pull_request
+            ):
+                print(
+                    f"Error: {described}: dependencies link issues, not pull requests. "
+                    "To tie a PR to an issue, put `Fixes #N` in the PR description.",
+                    file=sys.stderr,
+                )
+                exit_code = EXIT_FAILED
+                continue
+
+            member_key = (relation.family, holder.owner.lower(), holder.repo.lower(), holder.number)
+            if member_key not in members:
+                members[member_key] = {
+                    item.get("id")
+                    for item in paged(members_path(relation.family, holder), token)
+                    if isinstance(item, dict)
+                }
+            present = operand.id in members[member_key]
+
+            # The goal state, not the call, is what counts as success -- so a
+            # link already in place and one already gone are both reported and
+            # left alone, exactly as update_gh_labels.sh treats a label.
+            if adding and present:
+                print(f"Already linked: {described}.")
+                continue
+            if not adding and not present:
+                print(f"Already unlinked: {described}.")
+                continue
+            if args.dry_run:
+                verb = "Would link" if adding else "Would unlink"
+                print(f"{verb}: {described}.")
+                continue
+
+            if adding:
+                add_link(relation.family, holder, operand, token)
+                print(f"Linked: {described}.")
+            else:
+                remove_link(relation.family, holder, operand, token)
+                print(f"Unlinked: {described}.")
+        except ApiError as error:
+            print(f"Error: {ref}: {error.message}", file=sys.stderr)
+            exit_code = EXIT_FAILED
+
+    return exit_code
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="link_gh_issues.py",
+        description="Set semantic links (dependencies, sub-issues) between GitHub issues.",
+        epilog=(
+            "A REF is 123, #123, owner/repo#123, or an issue URL; a bare number means the "
+            "subject's own repository. The PR-to-issue 'fixes' link has no API -- write "
+            "`Fixes #123` in the pull request description instead."
+        ),
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    def add_subject(subparser):
+        subparser.add_argument("owner")
+        subparser.add_argument("repo")
+        subparser.add_argument("issue", type=int, help="the subject issue number")
+
+    show = subparsers.add_parser("show", help="print every link on an issue")
+    add_subject(show)
+    show.add_argument("--json", action="store_true", help="print the raw API payloads")
+
+    for name, help_text in (
+        ("add", "create links"),
+        ("remove", "delete links"),
+    ):
+        subparser = subparsers.add_parser(name, help=help_text)
+        add_subject(subparser)
+        for relation in RELATIONS:
+            subparser.add_argument(
+                relation.flag,
+                dest=relation.dest,
+                action="append",
+                metavar="REF",
+                help=f"the subject {relation.phrase} REF",
+            )
+        subparser.add_argument(
+            "--dry-run",
+            action="store_true",
+            help="report what would change without writing anything",
+        )
+
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+
+    token = os.environ.get("GITHUB_TOKEN", "")
+    if not token:
+        print("Error: GITHUB_TOKEN env var is not set.", file=sys.stderr)
+        return EXIT_FAILED
+
+    try:
+        if args.command == "show":
+            return run_show(args, token)
+        return run_change(args, token, adding=args.command == "add")
+    except ApiError as error:
+        print(f"Error: {error.message}", file=sys.stderr)
+        return EXIT_FAILED
+
+
+if __name__ == "__main__":
+    sys.exit(main())
