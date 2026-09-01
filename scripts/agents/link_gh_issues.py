@@ -68,7 +68,9 @@ GitHub validation error.
 
 That fallback is the one `agents/verification_planning.md` already prescribes:
 when a pull request number is not accepted, link the issue the pull request
-resolves instead.
+resolves instead. Note that the document reaches it only as a fallback, having
+first tried the PR number itself, which by the above can never work; routing
+that document here is issue #1008.
 
 What this script deliberately does not do
 -----------------------------------------

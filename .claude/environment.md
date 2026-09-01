@@ -93,7 +93,7 @@ ______________________________________________________________________
 | `JAVA_HOME`         | `/opt/java/temurin-17`     | hook (§0b)         | Only when the Setup script provisioned it; else image default |
 | `JAVA_TOOL_OPTIONS` | *(modified, not replaced)* | hook + `~/.bashrc` | Strips `*.google.com` from `nonProxyHosts` (see script §0)    |
 | `PATH`              | `+$ANDROID_HOME/...`       | hook + `~/.bashrc` | Adds `sdkmanager`, `adb` to path                              |
-| `GITHUB_TOKEN`      | *(fine-grained PAT)*       | container          | Use with `curl` to query the GitHub REST API                  |
+| `GITHUB_TOKEN`      | *(opaque; see below)*      | container          | Inert in a session: the proxy authenticates. See below        |
 
 `~/.bashrc` carries the same fixes for interactive terminal sessions.
 The proxy credentials in `JAVA_TOOL_OPTIONS` are a session-scoped JWT injected
@@ -254,11 +254,17 @@ labels sub-resource only; do not assume other Issues/PR API writes succeed with
 a session the token's value is not what authenticates, and the unexplained
 disagreement above is most likely a change in the credential the proxy injects.)
 
-### `GITHUB_TOKEN` can write issue dependencies and sub-issues
+### Issue dependencies and sub-issues are writable from a session
 
 **Verified 2026-09-01 (issue links / `scripts/agents/link_gh_issues.py`):** both
-per-issue *relationship* families are writable with `GITHUB_TOKEN`, extending the
+per-issue *relationship* families can be written from a session, extending the
 labels finding above.
+
+Every result below is a fact about the *session*, not about `GITHUB_TOKEN`.
+"`GITHUB_TOKEN` can write X" is the shape of claim the next section shows cannot
+be made: in a session the value of that variable does not participate, so what
+these probes demonstrate is that the credential the proxy injects can write
+these endpoints. Read the two sections above the same way.
 
 - **Dependencies.** `POST /issues/{n}/dependencies/blocked_by` and
   `DELETE /issues/{n}/dependencies/blocked_by/{issue_id}` both succeed. Confirmed
@@ -289,6 +295,33 @@ unpermitted and told readers to go find a PAT. Both halves were wrong. Do not tr
 this wording as a permission verdict without a control like the pair above. Note
 also that GitHub uses the word "integration" here even for a fine-grained PAT, so
 it is not evidence about what kind of credential is in play either.
+
+**Neither family takes a pull request, in any position.** Both link types join
+issues only, on both sides. All four positions answer 422:
+
+```text
+POST /issues/{PR}/dependencies/blocked_by  -> Source issue may only be an issue
+POST /issues/{n}/dependencies/blocked_by   -> Target issue may only be an issue   (operand a PR)
+POST /issues/{PR}/sub_issues               -> Parent may only be an issue
+POST /issues/{n}/sub_issues                -> Sub issue may only be an issue      (operand a PR)
+```
+
+This matters beyond the script. `agents/verification_planning.md` sends an agent
+at `POST .../issues/{PR number}/dependencies/blocked_by` and
+`POST .../issues/{PR number}/sub_issues` as its *primary* path, reaching the
+issue-side fallback only "if the PR number is not accepted". That primary path
+never succeeds, so every run of that document spends two refused calls per
+before-merging item before doing the thing that works. Routing the document to
+`link_gh_issues.py`, which refuses a pull request before the call, is issue
+#1008. Until then, link the issue the pull request resolves.
+
+**An issue gets exactly one parent.** `POST /issues/{n}/sub_issues` for an
+operand that already has a *different* parent answers
+`422 ... Sub issue may only have one parent`; the same call with
+`"replace_parent": true` returns 201, and the previous parent silently loses the
+child. So a sub-issue add is the one write here that can also remove.
+`link_gh_issues.py` reads the operand's parent first and refuses the move unless
+`--replace-parent` is passed.
 
 **These endpoints take a database id, never an issue number.** A number silently
 addresses the wrong issue, or none. `link_gh_issues.py` resolves references
@@ -344,7 +377,7 @@ sections keep needing re-verification.
 environment that governs them, but the same reasoning does not carry to
 `.github/workflows/`, where `GITHUB_TOKEN` is a genuine Actions token. What
 `GITHUB_TOKEN` actually is remains unidentified: it has the 93-character
-`github_...` shape of a fine-grained PAT, but its shape is not evidence about what
+`github_pat_...` shape of a fine-grained PAT, but its shape is not evidence about what
 authenticates, and settling it would mean bypassing the proxy, which this
 environment says not to do. Also untested: `PATCH /issues/{n}` on an issue authored
 by someone other than the write identity. `PATCH` itself works (#998 and #999 were
@@ -373,7 +406,9 @@ Do not interpret this as "no blind writes" enforcement.
 
 #### Observations
 
-`$GITHUB_TOKEN` is a fine-grained PAT (`github_pat_...` format), not a JWT.
+`$GITHUB_TOKEN` is not a JWT: it has the `github_pat_...` shape of a fine-grained PAT.
+That shape is not evidence about what authenticates a session, and the variable is
+inert in one; see "`GITHUB_TOKEN` is inert in a session" above.
 It is stable across sessions and does not change mid-session or after MCP reads/writes.
 The "token expired" error therefore **does not refer to `GITHUB_TOKEN` expiring**.
 The MCP server manages its own internal credentials separately from this environment variable.
