@@ -93,13 +93,39 @@ class FakeApi:
         if method == "GET":
             return 200, [self.issues[k] for k in self.issues if self.issues[k]["id"] in members]
         if method == "POST":
-            members.add(body["issue_id"] if family == "dependency" else body["sub_issue_id"])
-            return 201, {}
+            if family == "dependency":
+                members.add(body["issue_id"])
+                return 201, {}
+            return self._adopt(holder, members, body)
         if method == "DELETE":
             target = tail if tail is not None else body["sub_issue_id"]
             members.discard(target)
             return 204, None
         raise AssertionError(f"unexpected method {method}")
+
+    def _adopt(self, holder, members, body):
+        """POST .../sub_issues, enforcing GitHub's one-parent-per-issue rule.
+
+        Without this the fake would accept a second parent that the real API
+        refuses with 422, and the guard against silently moving a sub-issue
+        would have nothing to fail against.
+        """
+        operand = body["sub_issue_id"]
+        others = [
+            key
+            for key, ids in self.links.items()
+            if key[0] == "sub-issue" and key[1:] != holder and operand in ids
+        ]
+        if others and not body.get("replace_parent"):
+            raise lgi.ApiError(
+                422,
+                "HTTP 422: An error occurred while adding the sub-issue to the parent issue. "
+                "Sub issue may only have one parent",
+            )
+        for key in others:
+            self.links[key].discard(operand)
+        members.add(operand)
+        return 201, {}
 
     def _issue_by_id(self, id_):
         for payload in self.issues.values():
@@ -167,7 +193,7 @@ def two_issues():
 
 
 def three_issues():
-    """A subject and two others, for cases that need more than one operand."""
+    """A subject and two candidate parents, for the one-parent-per-issue rule."""
     issues = two_issues()
     issues[(OWNER, REPO, 19)] = issue_payload(19, id_=1900, title="Other parent")
     return issues
@@ -678,6 +704,139 @@ class TestRepeatedReference(unittest.TestCase):
         self.assertEqual(len(lookups), 1)
 
 
+class TestOneParent(unittest.TestCase):
+    """An issue gets one parent, so a sub-issue add can silently remove.
+
+    GitHub refuses the second parent with 422 "Sub issue may only have one
+    parent" unless the body carries `replace_parent` (verified 2026-09-01
+    against the live API). The move is therefore the caller's to ask for, and
+    the refusal names the flag rather than passing GitHub's wording through.
+    """
+
+    def child_of_17(self):
+        """#42 is already a sub-issue of #17."""
+        return FakeApi(three_issues(), links={("sub-issue", OWNER, REPO, 17): {4200}})
+
+    def posts(self, fake):
+        return [c for c in fake.calls if c[0] == "POST"]
+
+    def test_moving_a_sub_issue_is_refused_without_the_flag(self):
+        fake = self.child_of_17()
+        code, out, err = run(["add", OWNER, REPO, "42", "--child-of", "19"], fake)
+        self.assertEqual(code, 1)
+        self.assertNotIn("Linked:", out)
+        self.assertIn("--replace-parent", err)
+        self.assertIn("one parent", err)
+
+    def test_the_refusal_names_the_issue_about_to_lose_the_child(self):
+        """GitHub's own 422 does not say which parent, which is the whole point
+        of reading it first."""
+        fake = self.child_of_17()
+        code, _, err = run(["add", OWNER, REPO, "42", "--child-of", "19"], fake)
+        self.assertEqual(code, 1)
+        self.assertIn(f"{OWNER}/{REPO}#17", err)
+
+    def test_the_parent_slug_uses_the_repository_the_payload_names(self):
+        """A parent in another repository must not be reported as a local one."""
+        fake = self.child_of_17()
+        fake.issues[(OWNER, REPO, 17)] = dict(
+            fake.issues[(OWNER, REPO, 17)], repository={"full_name": "octo/other"}
+        )
+        code, _, err = run(["add", OWNER, REPO, "42", "--child-of", "19"], fake)
+        self.assertEqual(code, 1)
+        self.assertIn("octo/other#17", err)
+
+    def test_a_refused_move_writes_nothing(self):
+        """The point of the pre-read is that the 422 never has to happen."""
+        fake = self.child_of_17()
+        run(["add", OWNER, REPO, "42", "--child-of", "19"], fake)
+        self.assertEqual(self.posts(fake), [])
+        self.assertEqual(fake.links[("sub-issue", OWNER, REPO, 17)], {4200})
+
+    def test_parent_of_is_guarded_from_the_uninverted_side_too(self):
+        """`--parent-of` puts the operand in the other position; same rule."""
+        fake = self.child_of_17()
+        code, _, err = run(["add", OWNER, REPO, "19", "--parent-of", "42"], fake)
+        self.assertEqual(code, 1)
+        self.assertIn("--replace-parent", err)
+        self.assertEqual(self.posts(fake), [])
+
+    def test_replace_parent_moves_it_and_says_so(self):
+        fake = self.child_of_17()
+        code, out, err = run(
+            ["add", OWNER, REPO, "42", "--child-of", "19", "--replace-parent"], fake
+        )
+        self.assertEqual(code, 0, err)
+        self.assertIn("Linked:", out)
+        self.assertIn(f"replacing {OWNER}/{REPO}#17 as its parent", out)
+        self.assertEqual(self.posts(fake)[0][2], {"sub_issue_id": 4200, "replace_parent": True})
+        self.assertEqual(fake.links[("sub-issue", OWNER, REPO, 19)], {4200})
+        self.assertEqual(fake.links[("sub-issue", OWNER, REPO, 17)], set())
+
+    def test_a_parentless_operand_is_linked_without_asking_to_replace(self):
+        """`replace_parent` is for the move; a plain adoption must not send it."""
+        fake = FakeApi(three_issues())
+        code, out, err = run(["add", OWNER, REPO, "42", "--child-of", "19"], fake)
+        self.assertEqual(code, 0, err)
+        self.assertIn("Linked:", out)
+        self.assertNotIn("replacing", out)
+        self.assertEqual(self.posts(fake)[0][2], {"sub_issue_id": 4200})
+
+    def test_re_adding_the_parent_it_already_has_is_not_a_move(self):
+        fake = self.child_of_17()
+        code, out, err = run(["add", OWNER, REPO, "42", "--child-of", "17"], fake)
+        self.assertEqual(code, 0, err)
+        self.assertIn("Already linked:", out)
+        self.assertNotIn("replacing", out)
+        self.assertEqual(self.posts(fake), [])
+
+    def test_a_dependency_add_never_reads_the_parent(self):
+        """Only the sub-issue family has the rule, so only it pays for the read."""
+        fake = FakeApi(two_issues())
+        code, _, err = run(["add", OWNER, REPO, "42", "--blocked-by", "17"], fake)
+        self.assertEqual(code, 0, err)
+        self.assertEqual([c for c in fake.calls if c[1].endswith("/parent")], [])
+
+    def test_the_parent_is_read_once_and_then_followed(self):
+        """Two moves of one issue in a call: the second must see the first."""
+        fake = self.child_of_17()
+        code, out, err = run(
+            ["add", OWNER, REPO, "42", "--child-of", "19", "--child-of", "17", "--replace-parent"],
+            fake,
+        )
+        self.assertEqual(code, 0, err)
+        self.assertEqual(len([c for c in fake.calls if c[1].endswith("/parent")]), 1)
+        self.assertEqual(len(self.posts(fake)), 2)
+        # The second write moves it back, so it must ask to replace as well.
+        self.assertTrue(all(c[2].get("replace_parent") for c in self.posts(fake)))
+        self.assertEqual(fake.links[("sub-issue", OWNER, REPO, 17)], {4200})
+        self.assertEqual(fake.links[("sub-issue", OWNER, REPO, 19)], set())
+
+    def test_removing_a_parent_lets_the_next_add_proceed_without_the_flag(self):
+        fake = self.child_of_17()
+        code, out, err = run(["remove", OWNER, REPO, "42", "--child-of", "17"], fake)
+        self.assertEqual(code, 0, err)
+        code, out, err = run(["add", OWNER, REPO, "42", "--child-of", "19"], fake)
+        self.assertEqual(code, 0, err)
+        self.assertIn("Linked:", out)
+
+    def test_dry_run_previews_the_move_without_writing(self):
+        fake = self.child_of_17()
+        code, out, err = run(
+            ["add", OWNER, REPO, "42", "--child-of", "19", "--replace-parent", "--dry-run"], fake
+        )
+        self.assertEqual(code, 0, err)
+        self.assertIn("Would link:", out)
+        self.assertIn(f"replacing {OWNER}/{REPO}#17 as its parent", out)
+        self.assertEqual(self.posts(fake), [])
+
+    def test_dry_run_refuses_the_move_it_would_refuse_for_real(self):
+        fake = self.child_of_17()
+        code, _, err = run(["add", OWNER, REPO, "42", "--child-of", "19", "--dry-run"], fake)
+        self.assertEqual(code, 1)
+        self.assertIn("--replace-parent", err)
+
+
 class TestDryRunPreviewsTheRealRun(unittest.TestCase):
     """A preview that does not match the run it previews is worse than none."""
 
@@ -781,6 +940,12 @@ class TestRelations(unittest.TestCase):
         # The claim, and the remedy that replaces it.
         self.assertIn("no write API", lgi.__doc__)
         self.assertIn("Fixes #123", lgi.__doc__)
+
+    def test_docstring_records_the_one_parent_rule(self):
+        """Refusing the move is a deliberate difference from sub_issue_write,
+        so the reason has to be where a reader will look for it."""
+        self.assertIn("An issue gets exactly one parent", lgi.__doc__)
+        self.assertIn("--replace-parent", lgi.__doc__)
 
     def test_usage_examples_keep_their_line_continuations(self):
         """A non-raw docstring would eat the trailing backslashes, and the

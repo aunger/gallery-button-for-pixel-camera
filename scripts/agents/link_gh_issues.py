@@ -17,6 +17,22 @@ thing `--blocked-by` needs anyway--both GitHub endpoints take a *database id*
 and the MCP tool passes that requirement straight through to the caller, while
 this script accepts the issue number a human actually has and resolves it.
 
+An issue gets exactly one parent
+--------------------------------
+
+So `--parent-of` and `--child-of` are the one place where an add can *remove*
+something: giving an issue a second parent moves it, and the previous parent
+silently loses the child. GitHub refuses the plain call for this with a 422
+(`Sub issue may only have one parent`, verified 2026-09-01) and takes it only
+with `replace_parent` in the request body.
+
+That makes the move the caller's decision rather than this script's, so the
+script reads the operand's current parent first and refuses, naming it, unless
+`--replace-parent` is given. `mcp__github__sub_issue_write` exposes the same
+capability as a bare `replace_parent` parameter; the difference here is that
+the destructive reading is not the default, and that a refusal says which issue
+is about to lose a child.
+
 Follows the pattern of `scripts/agents/update_gh_labels.sh` (issue #710) and
 `scripts/agents/delete_gh_comment.sh` (issue #658): a plain REST call for
 environments with no `gh` CLI. Standard library only, so the script cannot
@@ -80,7 +96,8 @@ Usage
 
     scripts/agents/link_gh_issues.py add <owner> <repo> <issue> \
         [--blocked-by REF]... [--blocks REF]... \
-        [--parent-of REF]... [--child-of REF]... [--dry-run]
+        [--parent-of REF]... [--child-of REF]... \
+        [--replace-parent] [--dry-run]
 
     scripts/agents/link_gh_issues.py remove <owner> <repo> <issue> \
         [--blocked-by REF]... ... [--dry-run]
@@ -447,16 +464,41 @@ def members_path(family: str, holder: Issue) -> str:
     return f"{base}/dependencies/blocked_by" if family == "dependency" else f"{base}/sub_issues"
 
 
-def add_link(family: str, holder: Issue, other: Issue, token: str) -> None:
+def parent_of(issue: Issue, token: str) -> tuple[int, str] | None:
+    """The issue's one parent as (id, slug), or None if it has none.
+
+    GitHub answers 404 "No parent issue found" for a parentless issue, which is
+    an answer rather than a fault, so `api` handing 404 back is what this wants.
+    The slug is carried along because the only caller has to name the parent it
+    is about to displace, and re-fetching the issue to learn its number would
+    be a second call for something this payload already holds.
+    """
+    path = f"/repos/{issue.owner}/{issue.repo}/issues/{issue.number}/parent"
+    status, payload = api("GET", path, token)
+    if status == 404 or not isinstance(payload, dict) or "id" not in payload:
+        return None
+    where = (payload.get("repository") or {}).get("full_name") or f"{issue.owner}/{issue.repo}"
+    return int(payload["id"]), f"{where}#{payload.get('number')}"
+
+
+def add_link(
+    family: str, holder: Issue, other: Issue, token: str, replace_parent: bool = False
+) -> None:
     """Create the link, writing to `holder`'s endpoint with `other` as operand.
 
     `api` hands 404 back rather than raising, because for the reads here it is
     an answer. For a write it never is: nothing was created, so reporting
     `Linked` off a 404 would be a plain false success. `update_gh_labels.sh`
     draws the same line, treating 404 on its add as an error.
+
+    `replace_parent` is meaningful only for the sub-issue family, which is the
+    only one with a one-per-issue rule to break; see `run_change`.
     """
     key = "issue_id" if family == "dependency" else "sub_issue_id"
-    status, payload = api("POST", members_path(family, holder), token, {key: other.id})
+    body: dict[str, object] = {key: other.id}
+    if replace_parent and family == "sub-issue":
+        body["replace_parent"] = True
+    status, payload = api("POST", members_path(family, holder), token, body)
     if status == 404:
         raise ApiError(
             404,
@@ -562,6 +604,11 @@ def run_change(args, token: str, adding: bool) -> int:
         (subject.owner.lower(), subject.repo.lower(), subject.number): subject
     }
     members: dict[tuple[str, str, str, int], set[int]] = {}
+    # Each issue's current parent as (id, slug), read lazily and only for
+    # sub-issue adds. `None` is a real answer here ("no parent"), so membership
+    # in the dict is what says whether it has been read.
+    parents: dict[int, tuple[int, str] | None] = {}
+    replace_parent = bool(getattr(args, "replace_parent", False))
 
     for relation, ref in requested:
         try:
@@ -626,27 +673,65 @@ def run_change(args, token: str, adding: bool) -> int:
             if not adding and not present:
                 print(f"Already unlinked: {described}.")
                 continue
-            # The cache has to follow the write, or a reference repeated in
+
+            # An issue gets exactly one parent, so an add that would give it a
+            # second is a *move*, not the additive write every other relation
+            # here performs: the previous parent silently loses the child.
+            # GitHub refuses it outright (422 "Sub issue may only have one
+            # parent", verified 2026-09-01) unless the request carries
+            # `replace_parent`, so the choice has to be the caller's. Naming
+            # the current parent is the part GitHub's own message leaves out.
+            displaced = None
+            if adding and relation.family == "sub-issue":
+                if operand.id not in parents:
+                    parents[operand.id] = parent_of(operand, token)
+                current = parents[operand.id]
+                if current is not None and current[0] != holder.id:
+                    if not replace_parent:
+                        print(
+                            f"Error: {described}: {operand.slug} is already a sub-issue of "
+                            f"{current[1]}, and GitHub gives an issue one parent, so this "
+                            f"would move it out of {current[1]}. Pass --replace-parent to "
+                            f"move it, or remove the existing parent link first.",
+                            file=sys.stderr,
+                        )
+                        exit_code = EXIT_FAILED
+                        continue
+                    displaced = current
+
+            moved = f" (replacing {displaced[1]} as its parent)" if displaced else ""
+            # The caches have to follow the write, or a reference repeated in
             # one call would be re-sent against a link that is now there (or
             # gone): a 422 on add, and on remove the very 403 this script
             # exists to keep callers away from--both reported as failures after
-            # the goal state had in fact been reached. A dry run updates it
+            # the goal state had in fact been reached. A dry run updates them
             # too, so that its preview is of the real run and not of a first
             # step repeated.
             if args.dry_run:
                 verb = "Would link" if adding else "Would unlink"
-                print(f"{verb}: {described}.")
+                print(f"{verb}: {described}{moved}.")
             elif adding:
-                add_link(relation.family, holder, operand, token)
-                print(f"Linked: {described}.")
+                add_link(
+                    relation.family, holder, operand, token, replace_parent=displaced is not None
+                )
+                print(f"Linked: {described}{moved}.")
             else:
                 remove_link(relation.family, holder, operand, token)
                 print(f"Unlinked: {described}.")
 
             if adding:
+                if relation.family == "sub-issue":
+                    # The operand has exactly one parent now, so any other
+                    # cached sub-issue set that still lists it is stale.
+                    for cached_key, ids in members.items():
+                        if cached_key[0] == "sub-issue":
+                            ids.discard(operand.id)
+                    parents[operand.id] = (holder.id, holder.slug)
                 members[member_key].add(operand.id)
             else:
                 members[member_key].discard(operand.id)
+                if relation.family == "sub-issue":
+                    parents[operand.id] = None
         except ApiError as error:
             print(f"Error: {ref}: {error.message}", file=sys.stderr)
             exit_code = EXIT_FAILED
@@ -701,6 +786,15 @@ def build_parser() -> argparse.ArgumentParser:
             action="store_true",
             help="report what would change without writing anything",
         )
+        if name == "add":
+            subparser.add_argument(
+                "--replace-parent",
+                action="store_true",
+                help=(
+                    "allow --parent-of / --child-of to move a sub-issue that already has a "
+                    "different parent; without this such a move is refused"
+                ),
+            )
 
     return parser
 
