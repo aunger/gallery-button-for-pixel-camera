@@ -47,11 +47,15 @@ GitHub takes issues only, on both sides of both link types; all four positions
 answer 422. A pull request in any position is refused before the call. Link the
 issue the pull request resolves instead.
 
-The separate "closes" relation is not handled here. It has a GraphQL API
-(`addCloseIssueReferences` / `removeCloseIssueReferences`, taking an issue id and
-up to ten pull request ids), but no REST endpoint, and this script is REST and
-standard library only. A closing keyword in the pull request description remains
-the usual way to set it.
+Relations this script does not handle
+------------------------------------
+
+"Closes" (a pull request closing an issue) and "duplicate of" both exist, and
+both have an API. Neither has the shape the four relations above share, so
+neither is offered here.
+
+Set "closes" with a closing keyword in the pull request description. Set
+"duplicate of" by closing the issue with the duplicate state reason.
 
 Usage
 -----

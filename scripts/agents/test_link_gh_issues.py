@@ -985,13 +985,10 @@ class TestRelations(unittest.TestCase):
         path = os.path.join(REPO_ROOT, "scripts", "agents", "link_gh_issues.py")
         self.assertTrue(os.stat(path).st_mode & stat.S_IXUSR)
 
-    def test_docstring_records_why_the_closes_relation_is_absent(self):
-        """The 'why not' is the part a future reader is most likely to undo.
-
-        It is absent because it is GraphQL-only, not because it has no API.
-        """
-        self.assertIn("addCloseIssueReferences", lgi.__doc__)
-        self.assertIn("no REST endpoint", lgi.__doc__)
+    def test_docstring_records_which_relations_are_not_handled(self):
+        """The 'why not' is the part a future reader is most likely to undo."""
+        self.assertIn("Relations this script does not handle", lgi.__doc__)
+        self.assertIn("duplicate of", lgi.__doc__)
 
     def test_docstring_records_the_one_parent_rule(self):
         """Refusing the move is a deliberate difference from sub_issue_write,
