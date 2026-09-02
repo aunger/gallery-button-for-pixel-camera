@@ -20,6 +20,8 @@ import stat
 import sys
 import time
 import unittest
+import urllib.error
+import urllib.request
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -198,6 +200,53 @@ def three_issues():
     issues = two_issues()
     issues[(OWNER, REPO, 19)] = issue_payload(19, id_=1900, title="Other parent")
     return issues
+
+
+class FakeResponse:
+    """The context manager `_OPENER.open` returns, over a fixed body."""
+
+    def __init__(self, status, body=""):
+        self.status = status
+        self._body = body.encode()
+
+    def read(self):
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+class FakeOpener:
+    """A `_OPENER` stand-in that replays a script of answers and records the calls.
+
+    Patching this rather than `urllib.request.urlopen` is the point: a change
+    that went back to `urlopen` would follow the redirect these tests refuse.
+    """
+
+    def __init__(self, *answers):
+        self.answers = list(answers)
+        self.calls = []
+
+    def open(self, request, timeout=None):
+        self.calls.append((request.get_method(), request.full_url))
+        answer = self.answers.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+
+def http_error(code, body="", headers=None):
+    """The HTTPError urllib raises for a non-2xx, built for the tests."""
+    return urllib.error.HTTPError(
+        f"{lgi.API_ROOT}/x",
+        code,
+        "",
+        headers if headers is not None else {},
+        io.BytesIO(body.encode()),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -955,24 +1004,40 @@ class TestRetryDelay(unittest.TestCase):
     def test_a_primary_limit_reset_is_read_as_a_timestamp(self):
         """A reset is absolute, so the wait is its distance from now."""
         soon = str(int(time.time()) + 10)
-        delay = lgi._retry_delay({"X-RateLimit-Reset": soon})
+        delay = lgi._retry_delay({"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": soon})
         self.assertIsNotNone(delay)
         self.assertGreater(delay, lgi.RETRY_DELAY_SECONDS)
         self.assertLessEqual(delay, 10.0)
 
     def test_a_distant_reset_declines_the_retry(self):
         far = str(int(time.time()) + 3600)
-        self.assertIsNone(lgi._retry_delay({"X-RateLimit-Reset": far}))
+        self.assertIsNone(
+            lgi._retry_delay({"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": far})
+        )
+
+    def test_a_reset_with_quota_left_is_not_a_wait(self):
+        """The reset rides on every response; only a spent quota makes it one."""
+        headers = {
+            "X-RateLimit-Remaining": "4999",
+            "X-RateLimit-Reset": str(int(time.time()) + 3600),
+        }
+        self.assertEqual(lgi._retry_delay(headers), lgi.RETRY_DELAY_SECONDS)
 
 
 class TestRedirect(unittest.TestCase):
     """urllib turns a redirected POST into a GET, so a write must refuse one."""
 
     def test_a_redirected_write_is_a_failure_not_a_link(self):
+        """The refusal lands on the POST, which is the call a rename rewrites."""
+
         def api(method, path, token, body=None):
-            if path.endswith(f"/issues/{42}") or path.endswith(f"/issues/{17}"):
-                return 200, issue_payload(42 if path.endswith("42") else 17)
-            raise lgi.ApiError(301, lgi._describe_failure(301, {"message": "Moved"}, ""))
+            if method == "POST":
+                raise lgi.ApiError(301, lgi._describe_failure(301, {"message": "Moved"}, ""))
+            if path.endswith("/issues/42"):
+                return 200, issue_payload(42, id_=4200)
+            if path.endswith("/issues/17"):
+                return 200, issue_payload(17, id_=1700)
+            return 200, []
 
         out, err = io.StringIO(), io.StringIO()
         with patch.object(lgi, "api", api), patch.dict(os.environ, {"GITHUB_TOKEN": "t"}):
@@ -985,6 +1050,65 @@ class TestRedirect(unittest.TestCase):
     def test_the_opener_refuses_to_follow(self):
         handler = lgi._NoRedirect()
         self.assertIsNone(handler.redirect_request(None, None, 301, "", {}, "http://x/"))
+
+    def test_the_installed_handler_raises_rather_than_returning_the_redirect(self):
+        """Returning None from `redirect_request` has to end as an error.
+
+        The refusal is only worth anything if urllib turns it into an
+        HTTPError; were the 301 handed back instead, `api` would read it as a
+        response and a write would report success having written nothing.
+        """
+        self.assertTrue(any(isinstance(h, lgi._NoRedirect) for h in lgi._OPENER.handlers))
+        request = urllib.request.Request(f"{lgi.API_ROOT}/repos/o/r/issues/1")
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            lgi._OPENER.error(
+                "http",
+                request,
+                io.BytesIO(b""),
+                301,
+                "Moved Permanently",
+                {"location": f"{lgi.API_ROOT}/repos/new/name/issues/1"},
+            )
+        self.assertEqual(caught.exception.code, 301)
+
+    def test_api_calls_through_the_opener_and_reports_the_rename(self):
+        """`urlopen` would follow the redirect; only `_OPENER` refuses it."""
+        opener = FakeOpener(http_error(301, '{"message": "Moved Permanently"}'))
+        with patch.object(lgi, "_OPENER", opener):
+            with self.assertRaises(lgi.ApiError) as caught:
+                lgi.api("POST", "/repos/o/r/issues/1/dependencies/blocked_by", "t", {"issue_id": 2})
+        self.assertEqual([method for method, _ in opener.calls], ["POST"])
+        self.assertEqual(caught.exception.status, 301)
+        self.assertIn("renamed", caught.exception.message)
+
+
+class TestRetryLoop(unittest.TestCase):
+    """What `api` does with the one retry a 5xx and a rate limit are worth."""
+
+    def test_a_500_carrying_a_distant_reset_is_still_retried(self):
+        """`X-RateLimit-Reset` is on every response, so it must not cancel this."""
+        headers = {
+            "X-RateLimit-Remaining": "4999",
+            "X-RateLimit-Reset": str(int(time.time()) + 3600),
+        }
+        opener = FakeOpener(http_error(500, "", headers), FakeResponse(200, '{"id": 1}'))
+        with patch.object(lgi, "_OPENER", opener), patch("time.sleep") as slept:
+            self.assertEqual(lgi.api("GET", "/repos/o/r/issues/1", "t"), (200, {"id": 1}))
+        self.assertEqual(len(opener.calls), 2)
+        self.assertEqual(slept.call_args[0][0], lgi.RETRY_DELAY_SECONDS)
+
+    def test_a_spent_quota_resetting_in_an_hour_is_not_slept_through(self):
+        headers = {
+            "X-RateLimit-Remaining": "0",
+            "X-RateLimit-Reset": str(int(time.time()) + 3600),
+        }
+        opener = FakeOpener(http_error(403, '{"message": "rate limit exceeded"}', headers))
+        with patch.object(lgi, "_OPENER", opener), patch("time.sleep") as slept:
+            with self.assertRaises(lgi.ApiError) as caught:
+                lgi.api("GET", "/repos/o/r/issues/1", "t")
+        self.assertEqual(caught.exception.status, 403)
+        self.assertEqual(len(opener.calls), 1)
+        slept.assert_not_called()
 
 
 class TestPagination(unittest.TestCase):
@@ -1015,6 +1139,29 @@ class TestPagination(unittest.TestCase):
             with self.assertRaises(lgi.ApiError) as caught:
                 lgi.paged("/p", "t")
         self.assertIn("page 2", caught.exception.message)
+
+
+class TestShowCounts(unittest.TestCase):
+    """A count above the rows beneath it names links `show` never printed."""
+
+    def test_an_entry_that_is_not_an_issue_is_not_counted(self):
+        blocked_by = f"/repos/{OWNER}/{REPO}/issues/42/dependencies/blocked_by"
+
+        def api(method, path, token, body=None):
+            if path.endswith("/issues/42"):
+                return 200, issue_payload(42, id_=4200)
+            if path.startswith(blocked_by):
+                return 200, [issue_payload(17, id_=1700), "not an issue"]
+            if path.endswith("/parent"):
+                return 404, {"message": "No parent issue found"}
+            return 200, []
+
+        out, err = io.StringIO(), io.StringIO()
+        with patch.object(lgi, "api", api), patch.dict(os.environ, {"GITHUB_TOKEN": "t"}):
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = lgi.main(["show", OWNER, REPO, "42"])
+        self.assertEqual(code, 0, err.getvalue())
+        self.assertIn("Blocked by (1):", out.getvalue())
 
 
 class TestFailureLines(unittest.TestCase):

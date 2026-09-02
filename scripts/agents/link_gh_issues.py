@@ -133,9 +133,9 @@ REQUEST_TIMEOUT_SECONDS = 15
 # and lost its response would be refused as a duplicate on the second attempt,
 # reporting a link that was in fact created as a failure.
 RETRY_DELAY_SECONDS = 2.0
-# `Retry-After` is capped rather than slept through, so a header asking for
-# minutes cannot hang the script. The shortened retry is usually refused again,
-# and that refusal is reported normally.
+# The one retry is worth taking only if it is soon. A wait longer than this is
+# declined rather than slept through: sleeping minutes would hang the script,
+# and waking early would land inside the same refusal.
 MAX_RETRY_DELAY_SECONDS = 60.0
 RETRYABLE_STATUSES = (429, 500, 502, 503, 504)
 IDEMPOTENT_METHODS = ("GET", "DELETE")
@@ -216,6 +216,16 @@ class ApiError(Exception):
         self.message = message
 
 
+def _header(headers: object, name: str) -> str | None:
+    """One response header, or None. A hand-built error may carry no mapping at all."""
+    return headers.get(name) if hasattr(headers, "get") else None
+
+
+def _quota_spent(headers: object) -> bool:
+    """Whether GitHub says the quota is gone, which is what makes its reset a wait."""
+    return _header(headers, "X-RateLimit-Remaining") == "0"
+
+
 def _retry_delay(headers: object) -> float | None:
     """How long to wait before the one retry, or None to report instead.
 
@@ -223,9 +233,15 @@ def _retry_delay(headers: object) -> float | None:
     secondary limit, and with `X-RateLimit-Reset` (a Unix timestamp) on a
     primary one. A wait past the cap is not worth taking, since the retry would
     be refused again; the caller is told instead.
+
+    `X-RateLimit-Reset` rides on every response, not only a refused one, and it
+    sits as much as an hour out. Reading it on a 500 would decline the one
+    retry a 5xx exists to get, so it counts only once the quota is spent.
     """
-    get = headers.get if hasattr(headers, "get") else (lambda _name: None)
-    for value, is_timestamp in ((get("Retry-After"), False), (get("X-RateLimit-Reset"), True)):
+    candidates = [(_header(headers, "Retry-After"), False)]
+    if _quota_spent(headers):
+        candidates.append((_header(headers, "X-RateLimit-Reset"), True))
+    for value, is_timestamp in candidates:
         try:
             seconds = float(value) - (time.time() if is_timestamp else 0.0)  # type: ignore[arg-type]
         except (TypeError, ValueError):
@@ -270,7 +286,7 @@ def _describe_failure(status: int, payload: object, raw: str, fallback: str = ""
             "to remove a link that is not there. Check the link exists, then check that "
             "GITHUB_TOKEN has 'issues: write' here."
         )
-    elif status in (301, 302, 307, 308):
+    elif status in (301, 302, 303, 307, 308):
         message += (
             "--the owner or repository was redirected, which usually means it was renamed. "
             "Nothing was written; re-run with the current owner and repository."
@@ -281,7 +297,7 @@ def _describe_failure(status: int, payload: object, raw: str, fallback: str = ""
 
 
 def _parse(raw: str, status: int) -> object:
-    """Parse a success body, reporting a non-JSON one rather than raising."""
+    """Parse a success body, reporting a non-JSON one rather than raising past main."""
     if not raw.strip():
         return None
     try:
@@ -322,13 +338,7 @@ def api(method: str, path: str, token: str, body: dict | None = None) -> tuple[i
             except json.JSONDecodeError:
                 payload = None
             rate_limited = error.code == 403 and (
-                "secondary rate limit" in raw.lower()
-                or (
-                    error.headers.get("X-RateLimit-Remaining")
-                    if hasattr(error.headers, "get")
-                    else None
-                )
-                == "0"
+                "secondary rate limit" in raw.lower() or _quota_spent(error.headers)
             )
             if (error.code in RETRYABLE_STATUSES or rate_limited) and attempt < attempts - 1:
                 delay = _retry_delay(error.headers)
@@ -590,13 +600,16 @@ def run_show(args, token: str) -> int:
         ("Parent", [parent] if parent else [], False),
         ("Sub-issues", sub_issues, True),
     ):
-        if not items:
+        # Count what is about to be printed. An entry that is not an issue
+        # object has no line to print, and counting it names more links than
+        # the rows beneath the count.
+        rows = [item for item in items if isinstance(item, dict)]
+        if not rows:
             print(f"  {label}: none")
             continue
-        print(f"  {label} ({len(items)}):" if counted else f"  {label}:")
-        for item in items:
-            if isinstance(item, dict):
-                print(issue_line(item))
+        print(f"  {label} ({len(rows)}):" if counted else f"  {label}:")
+        for row in rows:
+            print(issue_line(row))
     return EXIT_OK
 
 
