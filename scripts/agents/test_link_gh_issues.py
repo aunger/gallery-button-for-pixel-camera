@@ -11,12 +11,14 @@ GitHub serves no write for the `blocking` direction, so an inversion bug would
 record a dependency backwards: right in the report, wrong in the sidebar.
 """
 
+import ast
 import contextlib
 import io
 import json
 import os
 import stat
 import sys
+import time
 import unittest
 from unittest.mock import patch
 
@@ -946,8 +948,73 @@ class TestRetryDelay(unittest.TestCase):
     def test_a_shorter_retry_after_does_not_shorten_the_default(self):
         self.assertEqual(lgi._retry_delay({"Retry-After": "0"}), lgi.RETRY_DELAY_SECONDS)
 
-    def test_a_long_retry_after_is_capped_rather_than_slept_through(self):
-        self.assertEqual(lgi._retry_delay({"Retry-After": "3600"}), lgi.MAX_RETRY_DELAY_SECONDS)
+    def test_a_wait_past_the_cap_declines_the_retry(self):
+        """Sleeping the cap and retrying anyway just earns the same refusal."""
+        self.assertIsNone(lgi._retry_delay({"Retry-After": "3600"}))
+
+    def test_a_primary_limit_reset_is_read_as_a_timestamp(self):
+        """A reset is absolute, so the wait is its distance from now."""
+        soon = str(int(time.time()) + 10)
+        delay = lgi._retry_delay({"X-RateLimit-Reset": soon})
+        self.assertIsNotNone(delay)
+        self.assertGreater(delay, lgi.RETRY_DELAY_SECONDS)
+        self.assertLessEqual(delay, 10.0)
+
+    def test_a_distant_reset_declines_the_retry(self):
+        far = str(int(time.time()) + 3600)
+        self.assertIsNone(lgi._retry_delay({"X-RateLimit-Reset": far}))
+
+
+class TestRedirect(unittest.TestCase):
+    """urllib turns a redirected POST into a GET, so a write must refuse one."""
+
+    def test_a_redirected_write_is_a_failure_not_a_link(self):
+        def api(method, path, token, body=None):
+            if path.endswith(f"/issues/{42}") or path.endswith(f"/issues/{17}"):
+                return 200, issue_payload(42 if path.endswith("42") else 17)
+            raise lgi.ApiError(301, lgi._describe_failure(301, {"message": "Moved"}, ""))
+
+        out, err = io.StringIO(), io.StringIO()
+        with patch.object(lgi, "api", api), patch.dict(os.environ, {"GITHUB_TOKEN": "t"}):
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = lgi.main(["add", OWNER, REPO, "42", "--blocked-by", "17"])
+        self.assertEqual(code, 1)
+        self.assertNotIn("Linked:", out.getvalue())
+        self.assertIn("renamed", err.getvalue())
+
+    def test_the_opener_refuses_to_follow(self):
+        handler = lgi._NoRedirect()
+        self.assertIsNone(handler.redirect_request(None, None, 301, "", {}, "http://x/"))
+
+
+class TestPagination(unittest.TestCase):
+    """`paged` walks pages, and a later page it cannot read is truncation."""
+
+    def _api(self, pages):
+        seen = []
+
+        def api(method, path, token, body=None):
+            page = int(path.split("&page=")[1])
+            seen.append(page)
+            return pages[page - 1] if page <= len(pages) else (200, [])
+
+        return api, seen
+
+    def test_every_page_is_walked_until_a_short_one(self):
+        full = [{"id": n} for n in range(100)]
+        api, seen = self._api([(200, full), (200, [{"id": 999}])])
+        with patch.object(lgi, "api", api):
+            items = lgi.paged("/p", "t")
+        self.assertEqual(len(items), 101)
+        self.assertEqual(seen, [1, 2])
+
+    def test_an_unreadable_later_page_raises_rather_than_truncating(self):
+        full = [{"id": n} for n in range(100)]
+        api, _ = self._api([(200, full), (404, None)])
+        with patch.object(lgi, "api", api):
+            with self.assertRaises(lgi.ApiError) as caught:
+                lgi.paged("/p", "t")
+        self.assertIn("page 2", caught.exception.message)
 
 
 class TestFailureLines(unittest.TestCase):
@@ -1006,6 +1073,27 @@ class TestRelations(unittest.TestCase):
         """A non-raw docstring would eat the trailing backslashes, and the
         multi-line examples would then be uncopyable."""
         self.assertIn("<issue> \\\n", lgi.__doc__)
+
+
+class TestStandardLibraryOnly(unittest.TestCase):
+    """The docstring promises standard library only; nothing enforced it."""
+
+    ALLOWED_NON_STDLIB = {"github_headers"}
+
+    def test_no_third_party_imports(self):
+        module_path = os.path.join(os.path.dirname(__file__), "link_gh_issues.py")
+        with open(module_path, encoding="utf-8") as handle:
+            source = handle.read()
+        names = set()
+        for node in ast.walk(ast.parse(source)):
+            if isinstance(node, ast.Import):
+                names.update(alias.name.split(".")[0] for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+                names.add(node.module.split(".")[0])
+        third_party = {
+            name for name in names - self.ALLOWED_NON_STDLIB if name not in sys.stdlib_module_names
+        }
+        self.assertEqual(third_party, set())
 
 
 if __name__ == "__main__":

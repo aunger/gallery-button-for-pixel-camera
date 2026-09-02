@@ -111,6 +111,21 @@ from github_headers import github_headers  # noqa: E402
 
 API_ROOT = "https://api.github.com"
 
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuse redirects rather than follow them.
+
+    GitHub redirects a renamed owner or repository. urllib follows that by
+    rewriting a redirected POST into a GET, which would return the membership
+    list and let a write report success having written nothing.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
+
 REQUEST_TIMEOUT_SECONDS = 15
 
 # A 5xx or a secondary rate limit is worth one retry; a 4xx is a decision and
@@ -201,20 +216,24 @@ class ApiError(Exception):
         self.message = message
 
 
-def _retry_delay(headers: object) -> float:
-    """How long to wait before the one retry, honoring GitHub's own instruction.
+def _retry_delay(headers: object) -> float | None:
+    """How long to wait before the one retry, or None to report instead.
 
-    GitHub sends `Retry-After` (in seconds) with a 429 and with a secondary
-    rate limit. Retrying on a flat delay while it is asking for longer is how
-    the next refusal is earned, so the header wins when it is present and
-    longer than the default.
+    GitHub says when to retry with `Retry-After` (delta seconds) on a 429 or a
+    secondary limit, and with `X-RateLimit-Reset` (a Unix timestamp) on a
+    primary one. A wait past the cap is not worth taking, since the retry would
+    be refused again; the caller is told instead.
     """
-    value = headers.get("Retry-After") if hasattr(headers, "get") else None
-    try:
-        seconds = float(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return RETRY_DELAY_SECONDS
-    return max(RETRY_DELAY_SECONDS, min(seconds, MAX_RETRY_DELAY_SECONDS))
+    get = headers.get if hasattr(headers, "get") else (lambda _name: None)
+    for value, is_timestamp in ((get("Retry-After"), False), (get("X-RateLimit-Reset"), True)):
+        try:
+            seconds = float(value) - (time.time() if is_timestamp else 0.0)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            continue
+        if seconds > MAX_RETRY_DELAY_SECONDS:
+            return None
+        return max(RETRY_DELAY_SECONDS, seconds)
+    return RETRY_DELAY_SECONDS
 
 
 def _describe_failure(status: int, payload: object, raw: str, fallback: str = "") -> str:
@@ -230,9 +249,12 @@ def _describe_failure(status: int, payload: object, raw: str, fallback: str = ""
         errors = payload.get("errors")
         if isinstance(errors, list):
             details = [
-                str(e.get("message") or e.get("code")) for e in errors if isinstance(e, dict)
+                str(detail)
+                for detail in (
+                    e.get("message") or e.get("code") for e in errors if isinstance(e, dict)
+                )
+                if detail
             ]
-            details = [d for d in details if d]
             if details:
                 message = f"{message} ({'; '.join(details)})" if message else "; ".join(details)
     if not message:
@@ -248,9 +270,26 @@ def _describe_failure(status: int, payload: object, raw: str, fallback: str = ""
             "to remove a link that is not there. Check the link exists, then check that "
             "GITHUB_TOKEN has 'issues: write' here."
         )
+    elif status in (301, 302, 307, 308):
+        message += (
+            "--the owner or repository was redirected, which usually means it was renamed. "
+            "Nothing was written; re-run with the current owner and repository."
+        )
     elif status == 401:
         message += "--check that GITHUB_TOKEN is set and valid."
     return f"HTTP {status}: {message}"
+
+
+def _parse(raw: str, status: int) -> object:
+    """Parse a success body, reporting a non-JSON one rather than raising."""
+    if not raw.strip():
+        return None
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        raise ApiError(
+            status, f"HTTP {status}: response was not JSON: {raw.strip()[:120]}"
+        ) from None
 
 
 def api(method: str, path: str, token: str, body: dict | None = None) -> tuple[int, object]:
@@ -271,21 +310,31 @@ def api(method: str, path: str, token: str, body: dict | None = None) -> tuple[i
         request = urllib.request.Request(url, data=data, headers=headers, method=method)
         try:
             # URL is built from the API_ROOT constant; the file:// risk does not apply.
-            with urllib.request.urlopen(  # nosemgrep
+            with _OPENER.open(  # nosemgrep
                 request, timeout=REQUEST_TIMEOUT_SECONDS
             ) as response:
                 raw = response.read().decode("utf-8", "replace")
-                return response.status, (json.loads(raw) if raw.strip() else None)
+                return response.status, _parse(raw, response.status)
         except urllib.error.HTTPError as error:
             raw = error.read().decode("utf-8", "replace")
             try:
                 payload = json.loads(raw) if raw.strip() else None
             except json.JSONDecodeError:
                 payload = None
-            secondary_limit = error.code == 403 and "secondary rate limit" in raw.lower()
-            if (error.code in RETRYABLE_STATUSES or secondary_limit) and attempt < attempts - 1:
-                time.sleep(_retry_delay(error.headers))
-                continue
+            rate_limited = error.code == 403 and (
+                "secondary rate limit" in raw.lower()
+                or (
+                    error.headers.get("X-RateLimit-Remaining")
+                    if hasattr(error.headers, "get")
+                    else None
+                )
+                == "0"
+            )
+            if (error.code in RETRYABLE_STATUSES or rate_limited) and attempt < attempts - 1:
+                delay = _retry_delay(error.headers)
+                if delay is not None:
+                    time.sleep(delay)
+                    continue
             if error.code == 404:
                 return 404, payload
             raise ApiError(error.code, _describe_failure(error.code, payload, raw)) from error
@@ -328,21 +377,20 @@ def paged(path: str, token: str, missing_ok: bool = True) -> list:
     A 404 is not the only way to read nothing, so a payload that is not a list
     is refused on the same terms. Otherwise a 200 carrying an error object
     would land in the same silent empty list `missing_ok` exists to prevent.
+
+    `missing_ok` covers the first page only. A later page that cannot be read
+    is not "nothing is linked": the earlier pages proved otherwise, so
+    returning what was collected would truncate the list without saying so.
     """
     items: list = []
     page = 1
     while True:
-        joiner = "&" if "?" in path else "?"
-        status, payload = api("GET", f"{path}{joiner}per_page=100&page={page}", token)
-        if status == 404:
-            if not missing_ok:
-                raise ApiError(404, f"HTTP 404: {path} could not be read, so the links are unknown")
-            break
-        if not isinstance(payload, list):
-            if not missing_ok:
+        status, payload = api("GET", f"{path}?per_page=100&page={page}", token)
+        if status == 404 or not isinstance(payload, list):
+            if page > 1 or not missing_ok:
                 raise ApiError(
                     status,
-                    f"HTTP {status}: {path} answered with no list of links, "
+                    f"HTTP {status}: {path} page {page} could not be read, "
                     "so the links are unknown",
                 )
             break
@@ -601,8 +649,10 @@ def run_change(args, token: str, adding: bool) -> int:
                 continue
             # Neither family takes a pull request in either position; GitHub
             # answers all four with a 422. Refusing here turns that into one
-            # line naming the fallback.
-            if holder.is_pull_request or operand.is_pull_request:
+            # line naming the fallback. Only on an add: an issue converted to a
+            # pull request after being linked leaves a link to delete, and the
+            # advice below would make no sense for a removal.
+            if adding and (holder.is_pull_request or operand.is_pull_request):
                 pull = holder if holder.is_pull_request else operand
                 print(
                     f"Error: {described}: {pull.slug} is a pull request, and GitHub links "
