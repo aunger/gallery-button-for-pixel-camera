@@ -705,9 +705,8 @@ def build_parser() -> argparse.ArgumentParser:
         description="Set semantic links (dependencies, sub-issues) between GitHub issues.",
         epilog=(
             "A REF is 123, #123, owner/repo#123, or a github.com issue URL; a bare number "
-            "means the "
-            "subject's own repository. The PR-to-issue 'fixes' link has no API--write "
-            "`Fixes #123` in the pull request description instead."
+            "means the subject's own repository. The 'closes' and 'duplicate of' relations "
+            "are not handled here; see the module docstring."
         ),
     )
     subparsers = parser.add_subparsers(dest="command", required=True)

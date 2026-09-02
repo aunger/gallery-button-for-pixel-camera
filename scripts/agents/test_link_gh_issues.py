@@ -990,6 +990,12 @@ class TestRelations(unittest.TestCase):
         self.assertIn("Relations this script does not handle", lgi.__doc__)
         self.assertIn("duplicate of", lgi.__doc__)
 
+    def test_the_help_epilog_agrees_with_the_docstring(self):
+        """`--help` is prose too, and it drifted from the docstring once."""
+        epilog = lgi.build_parser().epilog
+        self.assertIn("not handled here", epilog)
+        self.assertNotIn("no API", epilog)
+
     def test_docstring_records_the_one_parent_rule(self):
         """Refusing the move is a deliberate difference from sub_issue_write,
         so the reason has to be where a reader will look for it."""
