@@ -45,8 +45,13 @@ Pull requests are not linkable
 
 GitHub takes issues only, on both sides of both link types; all four positions
 answer 422. A pull request in any position is refused before the call. Link the
-issue the pull request resolves instead. To record that a pull request closes an
-issue, put `Fixes #N` in its description; that link has no API.
+issue the pull request resolves instead.
+
+The separate "closes" relation is not handled here. It has a GraphQL API
+(`addCloseIssueReferences` / `removeCloseIssueReferences`, taking an issue id and
+up to ten pull request ids), but no REST endpoint, and this script is REST and
+standard library only. A closing keyword in the pull request description remains
+the usual way to set it.
 
 Usage
 -----
