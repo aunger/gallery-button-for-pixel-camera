@@ -605,7 +605,12 @@ def run_show(args, token: str) -> int:
         # the rows beneath the count.
         rows = [item for item in items if isinstance(item, dict)]
         if not rows:
-            print(f"  {label}: none")
+            # `none` is a claim about the link state, so it is reserved for an
+            # endpoint that really returned nothing. Entries carrying no issue
+            # object are links that could not be read, not links that are
+            # absent, and reporting them as nothing would deny a link that the
+            # endpoint just reported.
+            print(f"  {label}: none" if not items else f"  {label}: {len(items)} unreadable")
             continue
         print(f"  {label} ({len(rows)}):" if counted else f"  {label}:")
         for row in rows:

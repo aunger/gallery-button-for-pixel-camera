@@ -1163,6 +1163,29 @@ class TestShowCounts(unittest.TestCase):
         self.assertEqual(code, 0, err.getvalue())
         self.assertIn("Blocked by (1):", out.getvalue())
 
+    def test_a_list_of_only_unreadable_entries_is_not_reported_as_none(self):
+        """`none` denies the link; entries that carried no issue do not."""
+        blocked_by = f"/repos/{OWNER}/{REPO}/issues/42/dependencies/blocked_by"
+
+        def api(method, path, token, body=None):
+            if path.endswith("/issues/42"):
+                return 200, issue_payload(42, id_=4200)
+            if path.startswith(blocked_by):
+                return 200, ["not an issue"]
+            if path.endswith("/parent"):
+                return 404, {"message": "No parent issue found"}
+            return 200, []
+
+        out, err = io.StringIO(), io.StringIO()
+        with patch.object(lgi, "api", api), patch.dict(os.environ, {"GITHUB_TOKEN": "t"}):
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = lgi.main(["show", OWNER, REPO, "42"])
+        self.assertEqual(code, 0, err.getvalue())
+        self.assertIn("Blocked by: 1 unreadable", out.getvalue())
+        self.assertNotIn("Blocked by: none", out.getvalue())
+        # The endpoints that really answered with nothing still say so.
+        self.assertIn("Blocking: none", out.getvalue())
+
 
 class TestFailureLines(unittest.TestCase):
     def test_a_response_with_no_body_does_not_render_the_status_twice(self):
