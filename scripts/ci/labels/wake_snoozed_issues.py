@@ -6,20 +6,21 @@ snooze_issues.py closes an issue when a snooze label (SNOOZE_LABEL_DAYS in
 enforce_mutually_exclusive_labels.py) is added to it. This script runs daily
 and, for every issue still carrying a snooze label, checks whether that many
 days have passed since the label was applied. Once they have, the issue is
-reopened, the snooze label is removed, and so is every
-label in propagate_issue_labels.PROCESS_STATE_LABELS (orchestrate,
-orchestrating, verification needed, verified, changes requested, changes
-done)--a woken issue should land in plain triage, not resume mid-cycle in
-whatever orchestration state it was closed in, and not silently look
-dispatchable via a leftover `orchestrate`.
+reopened, the snooze label is removed, and so is every label in
+propagate_issue_labels.PROCESS_STATE_LABELS (orchestrate, orchestrating,
+verification needed, verified, changes requested, changes done)--a woken
+issue should land in plain triage, not resume mid-cycle in whatever
+orchestration state it was closed in, and not silently look dispatchable via
+a leftover `orchestrate`.
 
-The elapsed time is measured from the most recent "labeled" event for the
-issue's current snooze label (the GitHub issue events API), not from the
-issue's `updated_at`, which any comment or other label change would also
-bump and so would silently extend or reset the snooze. If that event cannot be
-found (should not happen in practice; every label application produces one),
-the issue is left alone rather than guessed at--acting on evidence the script
-does not have would be worse than staying snoozed for one more run.
+The elapsed time is measured from the most recent "labeled" event naming the
+issue's snooze rung, in either of its spellings (the GitHub issue events API;
+see find_label_applied_at), not from the issue's `updated_at`, which any
+comment or other label change would also bump and so would silently extend or
+reset the snooze. If that event cannot be found (should not happen in
+practice; every label application produces one), the issue is left alone
+rather than guessed at--acting on evidence the script does not have would be
+worse than staying snoozed for one more run.
 
 Before acting on an issue, wake_issue() re-fetches it and confirms the snooze
 label is still present, and removes labels one at a time by name rather than
