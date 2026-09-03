@@ -39,7 +39,7 @@ The Orchestrator is not a Reviewer or a Programmer.
 ### Orchestrator may not
 
 - Read source files (Read, Bash cat/grep, etc.)
-- Read the PR (diff, description, comments, mergeability, or check-run results)
+- Read the PR (diff, description, comments, mergeability, or check-run results; labels excepted, see "One window into CI" below)
 - Read the issue or its comments
 - Subscribe to a PR's GitHub activity, or leave a subscription started earlier in the session running
 - Edit or write files
@@ -71,12 +71,16 @@ Rule 4 above makes the CI Monitor the Orchestrator's only source of CI state.
 A second source adds no information: it repeats what the Monitor already reports, at a context cost that changes no routing decision.
 Measured over one cycle on PR #1000: twelve `check_run.completed` wakes for the single `No blocking labels` check, each Reviewer round delivered twice over (once as a `pull_request_review.submitted` webhook carrying the whole review body, once as the sub-agent's own result), and around fifteen re-fetches of the PR object and its check-runs (issue #1010).
 
-Two such sources are available to an Orchestrator, and neither is permitted.
+No second source is permitted, whichever one it is.
+The two the measured cycle paid for are named below.
+A third, the CI job log, is ruled out where an Orchestrator would reach for it: `labelGateBlock` says that reading the log to tell two label-gate causes apart would itself be a second window into CI.
 
 ### A subscription to the PR's GitHub activity
 
-End any such subscription when you enter the Orchestrator role, including one started earlier in the same session by another role, using the `unsubscribe_pr_activity` tool of whichever MCP server offers it.
-It carries nothing the Monitor does not:
+End any such subscription when you enter the Orchestrator role, including one started earlier in the same session by another role.
+PR-activity subscriptions live in a per-server registry, so one created through a given MCP server can only be ended through that same server, and a subscription predating your role may belong to any of them.
+Call `unsubscribe_pr_activity` on every MCP server exposing a `subscribe_pr_activity` tool, not on the first one that surfaces: this session offers `mcp__github__unsubscribe_pr_activity` and `mcp__Claude_Code_Remote__unsubscribe_pr_activity`, and ending one leaves the other delivering.
+The subscription carries nothing the Monitor does not:
 
 - Check-run and check-suite events: the Monitor polls the same check-runs and reports them as per-check summary rows and terminal lines.
 - `pull_request_review.submitted`: the Reviewer hands you its decision directly, in the vocabulary under "Decision-signal templates" below. The webhook carries the review prose instead, which rule 4 forbids you to read and no routing fence consults.
@@ -84,7 +88,7 @@ It carries nothing the Monitor does not:
 - Merge and close: the Monitor's `Merged` and `Closed` terminals.
 
 If an event arrives anyway, because the unsubscribe failed or the subscription belongs to another session, disregard it.
-Do not route on it and do not fetch anything in response to it; only Monitor terminal lines end the Monitor loop.
+Do not route on it and do not fetch anything in response to it: a PR-activity event is never a Monitor terminal line, and never an exit from the Monitor loop.
 
 ### A direct fetch of PR state
 
@@ -93,6 +97,9 @@ A scheduled self check-in has nothing to add: the Monitor's own output keeps the
 A hand-rolled fetch is also the harder read to get right.
 A label transition fires the `No blocking labels` gate once per label event, so a single `--remove X --add Y` call leaves two runs behind, and the head commit accumulates the failing runs of every transition the cycle applied.
 That state means nothing until it is collapsed to the latest run per check name, which the Monitor does (`latest_check_runs` in `scripts/ci_monitor/ci_monitor.py`, issues #707 and #719) and a hand-rolled fetch does not.
+
+Labels are the exception, because reading a label is not reading CI state, and this document orders it: `labelGateBlock` cannot decide whether a blocking label other than `orchestrating` is applied without such a read, the fallback under "Applying label transitions" reads the current labels before writing them back, and `.claude/environment.md`'s "Always verify writes with a follow-up read" puts a confirming read after every transition ordered here.
+Read labels with `issue_read` (`method: "get_labels"`), which returns the labels by themselves; do not reach them by fetching the PR object, which carries the CI state this section forbids.
 
 ## What Authors and Reviewers may and may not do
 
