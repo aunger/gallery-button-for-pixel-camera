@@ -22,7 +22,7 @@ class TestSnoozeIssue(unittest.TestCase):
             "gh_api",
             side_effect=[{"number": 5, "state": "open"}, None],
         ) as mock_api:
-            result = shi.snooze_issue(5, "hold 30 days", "owner/repo", "tok")
+            result = shi.snooze_issue(5, "snooze 30 days", "owner/repo", "tok")
 
         self.assertTrue(result)
         self.assertEqual(mock_api.call_count, 2)
@@ -37,7 +37,7 @@ class TestSnoozeIssue(unittest.TestCase):
             "gh_api",
             side_effect=[{"number": 5, "state": "closed"}],
         ) as mock_api:
-            result = shi.snooze_issue(5, "hold 30 days", "owner/repo", "tok")
+            result = shi.snooze_issue(5, "snooze 30 days", "owner/repo", "tok")
 
         self.assertTrue(result)
         # Only the GET was made; no PATCH followed for an already-closed issue.
@@ -46,12 +46,12 @@ class TestSnoozeIssue(unittest.TestCase):
     def test_raises_on_non_dict_response(self):
         with patch.object(shi.emxl, "gh_api", return_value=None):
             with self.assertRaises(RuntimeError):
-                shi.snooze_issue(5, "hold 30 days", "owner/repo", "tok")
+                shi.snooze_issue(5, "snooze 30 days", "owner/repo", "tok")
 
     def test_raises_when_fetch_fails(self):
         with patch.object(shi.emxl, "gh_api", side_effect=Exception("network error")):
             with self.assertRaises(Exception):
-                shi.snooze_issue(5, "hold 30 days", "owner/repo", "tok")
+                shi.snooze_issue(5, "snooze 30 days", "owner/repo", "tok")
 
     def test_raises_when_patch_fails(self):
         with patch.object(
@@ -60,7 +60,7 @@ class TestSnoozeIssue(unittest.TestCase):
             side_effect=[{"number": 5, "state": "open"}, Exception("boom")],
         ):
             with self.assertRaises(Exception):
-                shi.snooze_issue(5, "hold 30 days", "owner/repo", "tok")
+                shi.snooze_issue(5, "snooze 30 days", "owner/repo", "tok")
 
 
 # ---------------------------------------------------------------------------
@@ -76,7 +76,7 @@ class TestMain(unittest.TestCase):
                 "GITHUB_TOKEN": "test-token",
                 "GITHUB_REPOSITORY": "owner/repo",
                 "ISSUE_NUMBER": "42",
-                "ADDED_LABEL": "hold 30 days",
+                "ADDED_LABEL": "snooze 30 days",
             },
         )
         self._env_patch.start()
@@ -117,7 +117,8 @@ class TestMain(unittest.TestCase):
         self.assertEqual(result, 1)
 
     def test_snoozes_for_each_snooze_label(self):
-        for label in ("hold 30 days", "hold 90 days", "hold 180 days", "HOLD 30 DAYS"):
+        """Every rung snoozes, in the current spelling and the legacy one."""
+        for label in (*sorted(shi.emxl.SNOOZE_LABELS), "SNOOZE 30 DAYS", "HOLD 30 DAYS"):
             with self.subTest(label=label):
                 with patch.dict(os.environ, {"ADDED_LABEL": label}):
                     with patch.object(shi, "snooze_issue", return_value=True) as mock_snooze:

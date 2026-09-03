@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Close an issue when a "hold N days" snooze label is added to it.
+"""Close an issue when a snooze label is added to it.
 
 Part of the issue #821 snooze mechanism, for issues whose revisit condition is
 elapsed time with no observable upstream signal. Applying one of the fixed

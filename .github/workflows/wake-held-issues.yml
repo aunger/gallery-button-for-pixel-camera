@@ -1,6 +1,6 @@
 name: Wake held issues
 
-# Daily check for issues whose "hold N days" snooze (see snooze-held-issues.yml
+# Daily check for issues whose snooze (see snooze-held-issues.yml
 # and SNOOZE_LABEL_DAYS in scripts/ci/labels/enforce_mutually_exclusive_labels.py)
 # has elapsed. Reopens each one, strips its snooze label, and strips
 # propagate_issue_labels.PROCESS_STATE_LABELS so it lands back in plain

@@ -18,7 +18,8 @@ Mutually exclusive sets (fixed):
     [verification needed, verified]
     [changes requested, changes done]
     [orchestrate, orchestrating]
-    [hold 30 days, hold 90 days, hold 180 days]  (see SNOOZE_LABEL_DAYS)
+    [snooze 30 days, snooze 90 days, snooze 180 days, plus the legacy
+     "hold N days" spelling of each]  (see SNOOZE_LABEL_DAYS)
 
 Mutually exclusive prefix groups (any label sharing a prefix is exclusive):
     c-a-*          (author model, e.g. c-a-haiku, c-a-sonnet, c-a-opus)
@@ -63,17 +64,34 @@ import urllib.request
 
 # The snooze ladder (issue #821): the elapsed-time revisit label
 # floated as a complementary, explicitly out-of-scope idea in issue #803. A
-# fixed ladder rather than an open-ended "hold <N> days" prefix family, per
+# fixed ladder rather than an open-ended "snooze <N> days" prefix family, per
 # #803's own note: MUTUALLY_EXCLUSIVE_SETS already models exclusive sets as
-# fixed frozensets, and a three-rung ladder fits that shape far more cheaply
-# than parsing an arbitrary N out of free-form label text. The int value is
-# the snooze duration in days; scripts/ci/labels/snooze_held_issues.py and
+# fixed frozensets, and a fixed ladder fits that shape far more cheaply than
+# parsing an arbitrary N out of free-form label text. Each rung is a snooze
+# duration in days.
+SNOOZE_LADDER_DAYS: tuple[int, ...] = (30, 90, 180)
+
+# A rung is spelled "snooze N days". "hold N days" is the ladder's original
+# spelling (issue #821), still recognized as the same rung so that this code
+# can merge before the labels themselves are renamed on GitHub, which is
+# issue #1019's post-merge follow-up. Both spellings of a rung belong to the
+# same mutually exclusive set, so applying either one clears the other, and a
+# renamed label lands on an issue already carrying the old spelling without
+# leaving it snoozed twice over.
+SNOOZE_LABEL_TERMS: tuple[str, ...] = ("snooze", "hold")
+
+
+def snooze_labels_for_days(days: int) -> list[str]:
+    """Return every recognized spelling of the *days* rung's snooze label."""
+    return [f"{term} {days} days" for term in SNOOZE_LABEL_TERMS]
+
+
+# Every recognized snooze label, mapped to its duration in days.
+# scripts/ci/labels/snooze_held_issues.py and
 # scripts/ci/labels/wake_held_issues.py both key off this single dict so the
 # ladder is defined in exactly one place.
 SNOOZE_LABEL_DAYS: dict[str, int] = {
-    "hold 30 days": 30,
-    "hold 90 days": 90,
-    "hold 180 days": 180,
+    label: days for days in SNOOZE_LADDER_DAYS for label in snooze_labels_for_days(days)
 }
 SNOOZE_LABELS: frozenset[str] = frozenset(SNOOZE_LABEL_DAYS)
 

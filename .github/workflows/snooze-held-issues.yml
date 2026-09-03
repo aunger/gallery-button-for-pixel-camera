@@ -1,6 +1,6 @@
 name: Snooze held issues
 
-# When a "hold N days" label (see SNOOZE_LABEL_DAYS in
+# When a snooze label (see SNOOZE_LABEL_DAYS in
 # scripts/ci/labels/enforce_mutually_exclusive_labels.py) is added to an
 # issue, closes it. This is the snooze half of issue #821: the issue stops
 # reading as open, dispatchable work while it waits out its snooze.
