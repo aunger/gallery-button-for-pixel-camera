@@ -361,6 +361,25 @@ class TestMain(unittest.TestCase):
         self.assertEqual(result, 0)
         mock_wake.assert_called_once_with(1, "hold 30 days", "owner/repo", "test-token")
 
+    def test_each_rung_waits_out_its_own_day_count(self):
+        """Four days in, a 3-day snooze has elapsed and a 7-day one has not."""
+        applied_at = datetime.now(timezone.utc) - timedelta(days=4)
+
+        def fetch_side_effect(repo, token, label):
+            if label == "snooze 3 days":
+                return [_make_issue(1, [label])]
+            if label == "snooze 7 days":
+                return [_make_issue(2, [label])]
+            return []
+
+        with patch.object(whi, "fetch_issues_with_label", side_effect=fetch_side_effect):
+            with patch.object(whi, "find_label_applied_at", return_value=applied_at):
+                with patch.object(whi, "wake_issue") as mock_wake:
+                    result = whi.main()
+
+        self.assertEqual(result, 0)
+        mock_wake.assert_called_once_with(1, "snooze 3 days", "owner/repo", "test-token")
+
     def test_queries_every_rung_in_both_spellings(self):
         queried = []
 

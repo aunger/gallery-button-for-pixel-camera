@@ -18,8 +18,9 @@ Mutually exclusive sets (fixed):
     [verification needed, verified]
     [changes requested, changes done]
     [orchestrate, orchestrating]
-    [snooze 30 days, snooze 90 days, snooze 180 days, plus the legacy
-     "hold N days" spelling of each]  (see SNOOZE_LABEL_DAYS)
+    [snooze 3 days, snooze 7 days, snooze 14 days, snooze 30 days,
+     snooze 90 days, snooze 180 days, plus the legacy "hold N days"
+     spelling of each]  (see SNOOZE_LABEL_DAYS)
 
 Mutually exclusive prefix groups (any label sharing a prefix is exclusive):
     c-a-*          (author model, e.g. c-a-haiku, c-a-sonnet, c-a-opus)
@@ -68,8 +69,10 @@ import urllib.request
 # #803's own note: MUTUALLY_EXCLUSIVE_SETS already models exclusive sets as
 # fixed frozensets, and a fixed ladder fits that shape far more cheaply than
 # parsing an arbitrary N out of free-form label text. Each rung is a snooze
-# duration in days.
-SNOOZE_LADDER_DAYS: tuple[int, ...] = (30, 90, 180)
+# duration in days. The short rungs (issue #1019) cover the revisit that is
+# days rather than months away, such as waiting out a release or someone
+# else's in-flight PR; the long ones were the whole ladder in #821.
+SNOOZE_LADDER_DAYS: tuple[int, ...] = (3, 7, 14, 30, 90, 180)
 
 # A rung is spelled "snooze N days". "hold N days" is the ladder's original
 # spelling (issue #821), still recognized as the same rung so that this code
@@ -77,7 +80,11 @@ SNOOZE_LADDER_DAYS: tuple[int, ...] = (30, 90, 180)
 # issue #1019's post-merge follow-up. Both spellings of a rung belong to the
 # same mutually exclusive set, so applying either one clears the other, and a
 # renamed label lands on an issue already carrying the old spelling without
-# leaving it snoozed twice over.
+# leaving it snoozed twice over. Every rung accepts both spellings, including
+# the short ones that never had a "hold" label to be renamed: one rule for
+# the whole ladder is cheaper to state, to implement and to reason about than
+# a per-rung exception, and costs only the recognition of labels nobody has a
+# reason to create.
 SNOOZE_LABEL_TERMS: tuple[str, ...] = ("snooze", "hold")
 
 

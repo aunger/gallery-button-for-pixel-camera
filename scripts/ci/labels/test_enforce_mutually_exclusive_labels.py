@@ -251,6 +251,10 @@ class TestFetchOpenPullRequests(unittest.TestCase):
 
 
 class TestSnoozeLadder(unittest.TestCase):
+    def test_ladder_rungs(self):
+        """Short rungs for a revisit days away, long ones for months."""
+        self.assertEqual(emxl.SNOOZE_LADDER_DAYS, (3, 7, 14, 30, 90, 180))
+
     def test_every_rung_has_both_spellings(self):
         for days in emxl.SNOOZE_LADDER_DAYS:
             with self.subTest(days=days):
