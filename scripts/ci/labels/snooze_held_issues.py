@@ -3,25 +3,25 @@
 
 Part of the issue #821 snooze mechanism, for issues whose revisit condition is
 elapsed time with no observable upstream signal. Applying one of the fixed
-`HOLD_LABEL_DAYS` labels (see enforce_mutually_exclusive_labels.py) is how a
+`SNOOZE_LABEL_DAYS` labels (see enforce_mutually_exclusive_labels.py) is how a
 human snoozes such an issue: this script closes it so it stops reading as
 open, dispatchable work, and scripts/ci/labels/wake_held_issues.py reopens it
 once the label's day count has elapsed.
 
-enforce_mutually_exclusive_labels.py already keeps at most one hold label on
-an issue at a time (HOLD_LABELS is one of its MUTUALLY_EXCLUSIVE_SETS), so
+enforce_mutually_exclusive_labels.py already keeps at most one snooze label on
+an issue at a time (SNOOZE_LABELS is one of its MUTUALLY_EXCLUSIVE_SETS), so
 this script only has to react to the label that was just added; it does not
 need to reconcile the full label set itself.
 
 Already-closed issues are left alone (idempotent no-op), which also covers
-the case where a hold label is swapped for a longer one on an issue that is
+the case where a snooze label is swapped for a longer one on an issue that is
 already snoozed.
 
 Usage:
     python3 scripts/ci/labels/snooze_held_issues.py
 
 Exit code:
-    0  ADDED_LABEL is not a hold label, the issue was already closed, or the
+    0  ADDED_LABEL is not a snooze label, the issue was already closed, or the
        issue was closed successfully.
     1  required configuration is missing/invalid, or fetching or closing the
        issue failed.
@@ -44,8 +44,8 @@ import enforce_mutually_exclusive_labels as emxl
 # ---------------------------------------------------------------------------
 
 
-def snooze_issue(issue_number: int, hold_label: str, repo: str, token: str) -> bool:
-    """Close *issue_number* for its *hold_label* snooze.
+def snooze_issue(issue_number: int, snooze_label: str, repo: str, token: str) -> bool:
+    """Close *issue_number* for its *snooze_label* snooze.
 
     Returns True on success. Raises on a fetch or PATCH failure so main()
     can report a nonzero exit; there is nothing benign about either failing
@@ -66,7 +66,7 @@ def snooze_issue(issue_number: int, hold_label: str, repo: str, token: str) -> b
         method="PATCH",
         body={"state": "closed"},
     )
-    print(f"Closed #{issue_number} for its '{hold_label}' hold.")
+    print(f"Closed #{issue_number} for its '{snooze_label}' snooze.")
     return True
 
 
@@ -94,8 +94,8 @@ def main() -> int:
         print("Warning: ADDED_LABEL not set--skipping snooze.", file=sys.stderr)
         return 0
 
-    if added_label.lower() not in emxl.HOLD_LABEL_DAYS:
-        print(f"Label '{added_label}' is not a hold label--nothing to do.")
+    if added_label.lower() not in emxl.SNOOZE_LABEL_DAYS:
+        print(f"Label '{added_label}' is not a snooze label--nothing to do.")
         return 0
 
     try:

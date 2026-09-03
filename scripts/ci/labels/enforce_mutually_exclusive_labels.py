@@ -18,7 +18,7 @@ Mutually exclusive sets (fixed):
     [verification needed, verified]
     [changes requested, changes done]
     [orchestrate, orchestrating]
-    [hold 30 days, hold 90 days, hold 180 days]  (see HOLD_LABEL_DAYS)
+    [hold 30 days, hold 90 days, hold 180 days]  (see SNOOZE_LABEL_DAYS)
 
 Mutually exclusive prefix groups (any label sharing a prefix is exclusive):
     c-a-*          (author model, e.g. c-a-haiku, c-a-sonnet, c-a-opus)
@@ -61,7 +61,7 @@ import urllib.request
 # Mutually exclusive label sets
 # ---------------------------------------------------------------------------
 
-# The "hold N days" snooze ladder (issue #821): the elapsed-time revisit label
+# The snooze ladder (issue #821): the elapsed-time revisit label
 # floated as a complementary, explicitly out-of-scope idea in issue #803. A
 # fixed ladder rather than an open-ended "hold <N> days" prefix family, per
 # #803's own note: MUTUALLY_EXCLUSIVE_SETS already models exclusive sets as
@@ -70,19 +70,19 @@ import urllib.request
 # the snooze duration in days; scripts/ci/labels/snooze_held_issues.py and
 # scripts/ci/labels/wake_held_issues.py both key off this single dict so the
 # ladder is defined in exactly one place.
-HOLD_LABEL_DAYS: dict[str, int] = {
+SNOOZE_LABEL_DAYS: dict[str, int] = {
     "hold 30 days": 30,
     "hold 90 days": 90,
     "hold 180 days": 180,
 }
-HOLD_LABELS: frozenset[str] = frozenset(HOLD_LABEL_DAYS)
+SNOOZE_LABELS: frozenset[str] = frozenset(SNOOZE_LABEL_DAYS)
 
 MUTUALLY_EXCLUSIVE_SETS: list[frozenset[str]] = [
     frozenset({"p1", "p2", "p3"}),
     frozenset({"verification needed", "verified"}),
     frozenset({"changes requested", "changes done"}),
     frozenset({"orchestrate", "orchestrating"}),
-    HOLD_LABELS,
+    SNOOZE_LABELS,
 ]
 
 # Prefix-based exclusive groups: any two labels sharing a prefix are exclusive.

@@ -176,17 +176,17 @@ class TestWakeIssue(unittest.TestCase):
         self.assertEqual(patch_call[1]["method"], "PATCH")
         self.assertEqual(patch_call[1]["body"], {"state": "open"})
 
-    def test_targets_only_the_hold_label_when_nothing_else_conflicts(self):
+    def test_targets_only_the_snooze_label_when_nothing_else_conflicts(self):
         issue = _make_issue(7, ["hold 30 days", "p1", "ci"])
         with patch.object(whi.emxl, "gh_api", side_effect=[issue, None, None]):
             with patch.object(whi.emxl, "remove_labels", return_value=True) as mock_remove:
                 whi.wake_issue(7, "hold 30 days", "owner/repo", "tok")
 
         mock_remove.assert_called_once_with(
-            7, ["hold 30 days"], "owner/repo", "tok", reason="expired-hold"
+            7, ["hold 30 days"], "owner/repo", "tok", reason="expired-snooze"
         )
 
-    def test_targets_process_state_labels_alongside_the_hold_label(self):
+    def test_targets_process_state_labels_alongside_the_snooze_label(self):
         issue = _make_issue(7, ["hold 90 days", "orchestrate", "changes requested", "ci"])
         with patch.object(whi.emxl, "gh_api", side_effect=[issue, None, None]):
             with patch.object(whi.emxl, "remove_labels", return_value=True) as mock_remove:
@@ -216,7 +216,7 @@ class TestWakeIssue(unittest.TestCase):
         comment_body = mock_api.call_args_list[2][1]["body"]["body"]
         self.assertIn("orchestrating", comment_body)
 
-    def test_case_insensitive_hold_label_still_matches(self):
+    def test_case_insensitive_snooze_label_still_matches(self):
         issue = _make_issue(7, ["Hold 30 Days"])
         with patch.object(whi.emxl, "gh_api", side_effect=[issue, None, None]):
             with patch.object(whi.emxl, "remove_labels", return_value=True) as mock_remove:
@@ -234,8 +234,8 @@ class TestWakeIssue(unittest.TestCase):
     # Concurrency guards (PR #837 review)
     # ------------------------------------------------------------------
 
-    def test_returns_false_and_touches_nothing_when_hold_label_already_gone(self):
-        """A live re-fetch showing the hold label already replaced (e.g. an
+    def test_returns_false_and_touches_nothing_when_snooze_label_already_gone(self):
+        """A live re-fetch showing the snooze label already replaced (e.g. an
         escalation from hold 30 days to hold 90 days that landed between
         main()'s list call and this call) is left alone entirely: no reopen,
         no label removal, no comment."""
@@ -292,8 +292,8 @@ class TestMain(unittest.TestCase):
             result = whi.main()
         self.assertEqual(result, 0)
 
-    def test_wakes_issue_past_its_hold(self):
-        """applied_at 31 days before real "now" clears the 30-day hold."""
+    def test_wakes_issue_past_its_snooze(self):
+        """applied_at 31 days before real "now" clears the 30-day snooze."""
         issue = _make_issue(1, ["hold 30 days"])
         applied_at = datetime.now(timezone.utc) - timedelta(days=31)
 
@@ -308,8 +308,8 @@ class TestMain(unittest.TestCase):
         self.assertEqual(result, 0)
         mock_wake.assert_called_once_with(1, "hold 30 days", "owner/repo", "test-token")
 
-    def test_leaves_issue_within_hold_period(self):
-        """applied_at 5 days before real "now" has not yet cleared the 30-day hold."""
+    def test_leaves_issue_within_snooze_period(self):
+        """applied_at 5 days before real "now" has not yet cleared the 30-day snooze."""
         issue = _make_issue(1, ["hold 30 days"])
         applied_at = datetime.now(timezone.utc) - timedelta(days=5)
 
@@ -372,7 +372,7 @@ class TestMain(unittest.TestCase):
         mock_wake.assert_not_called()
 
     def test_does_not_count_a_no_op_wake_as_woken(self):
-        """wake_issue() returning False (hold label already gone by the time it
+        """wake_issue() returning False (snooze label already gone by the time it
         re-fetched, e.g. an escalation) must not inflate the woken count."""
         issue = _make_issue(1, ["hold 30 days"])
         applied_at = datetime.now(timezone.utc) - timedelta(days=31)

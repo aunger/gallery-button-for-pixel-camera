@@ -295,7 +295,7 @@ class TestFindConflictingSet(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertIn("orchestrate", result)
 
-    def test_hold_labels_found(self):
+    def test_snooze_labels_found(self):
         for label in ("hold 30 days", "hold 90 days", "hold 180 days"):
             with self.subTest(label=label):
                 result = emxl.find_conflicting_set(label)
@@ -304,7 +304,7 @@ class TestFindConflictingSet(unittest.TestCase):
                 self.assertIn("hold 90 days", result)
                 self.assertIn("hold 180 days", result)
 
-    def test_hold_label_case_insensitive(self):
+    def test_snooze_label_case_insensitive(self):
         self.assertIsNotNone(emxl.find_conflicting_set("Hold 30 Days"))
 
     def test_unknown_label_returns_none(self):
@@ -733,7 +733,7 @@ class TestMain(unittest.TestCase):
         delete_call = mock_api.call_args_list[1]
         self.assertIn("orchestrate", delete_call[0][0])
 
-    def test_escalating_hold_label_removes_shorter_one(self):
+    def test_escalating_snooze_label_removes_shorter_one(self):
         """Adding hold 90 days when hold 30 days is present removes hold 30 days."""
         with patch.dict(os.environ, {"ADDED_LABEL": "hold 90 days", "ISSUE_NUMBER": "9"}):
             with patch.object(

@@ -104,7 +104,7 @@ class TestMain(unittest.TestCase):
             result = shi.main()
         self.assertEqual(result, 0)
 
-    def test_exit_0_when_label_not_a_hold_label(self):
+    def test_exit_0_when_label_not_a_snooze_label(self):
         with patch.dict(os.environ, {"ADDED_LABEL": "bug"}):
             with patch.object(shi.emxl, "gh_api") as mock_api:
                 result = shi.main()
@@ -116,7 +116,7 @@ class TestMain(unittest.TestCase):
             result = shi.main()
         self.assertEqual(result, 1)
 
-    def test_snoozes_for_each_hold_label(self):
+    def test_snoozes_for_each_snooze_label(self):
         for label in ("hold 30 days", "hold 90 days", "hold 180 days", "HOLD 30 DAYS"):
             with self.subTest(label=label):
                 with patch.dict(os.environ, {"ADDED_LABEL": label}):
