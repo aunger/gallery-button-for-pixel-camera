@@ -79,9 +79,10 @@ REQUIRED_LABELS: frozenset[str] = (
     # The ladder is the one set whose members are not all meant to exist at
     # once. It recognizes two spellings of each rung while issue #1019's
     # rename rolls out ("snooze 30 days" and the legacy "hold 30 days"), and
-    # exactly one of them is real at any moment: today the repository has only
-    # the legacy spelling, and renaming a label moves it rather than copying
-    # it, so afterwards it will have only the current one. Requiring every
+    # only one of them is ever a real label: the long rungs exist under the
+    # legacy spelling until #1019's follow-up renames them, the short rungs
+    # were created under the current one, and a rename moves a label rather
+    # than copying it, so a rung never gains its twin. Requiring every
     # recognized spelling to exist could therefore never pass, in either
     # direction. What has to hold, and what the per-rung check asserts, is
     # that every rung the ladder offers is reachable by some real label.
