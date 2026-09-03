@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for wake_held_issues.py."""
+"""Unit tests for wake_snoozed_issues.py."""
 
 import io
 import os
@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(__file__))
-import wake_held_issues as whi  # noqa: E402
+import wake_snoozed_issues as wsi  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -61,23 +61,23 @@ class TestFetchIssuesWithLabel(unittest.TestCase):
 
     def test_returns_matching_issues(self):
         issue = _make_issue(1, ["snooze 30 days"])
-        with patch.object(whi.emxl, "gh_api", side_effect=self._paged([[issue], []])):
-            result = whi.fetch_issues_with_label("owner/repo", "tok", "snooze 30 days")
+        with patch.object(wsi.emxl, "gh_api", side_effect=self._paged([[issue], []])):
+            result = wsi.fetch_issues_with_label("owner/repo", "tok", "snooze 30 days")
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["number"], 1)
 
     def test_excludes_pull_requests(self):
         issue = _make_issue(1, ["snooze 30 days"])
         pr = _make_issue(2, ["snooze 30 days"], is_pr=True)
-        with patch.object(whi.emxl, "gh_api", side_effect=self._paged([[issue, pr], []])):
-            result = whi.fetch_issues_with_label("owner/repo", "tok", "snooze 30 days")
+        with patch.object(wsi.emxl, "gh_api", side_effect=self._paged([[issue, pr], []])):
+            result = wsi.fetch_issues_with_label("owner/repo", "tok", "snooze 30 days")
         self.assertEqual([i["number"] for i in result], [1])
 
     def test_paginates(self):
         page1 = [_make_issue(i, ["snooze 30 days"]) for i in range(1, 4)]
         page2 = [_make_issue(i, ["snooze 30 days"]) for i in range(4, 6)]
-        with patch.object(whi.emxl, "gh_api", side_effect=self._paged([page1, page2, []])):
-            result = whi.fetch_issues_with_label("owner/repo", "tok", "snooze 30 days")
+        with patch.object(wsi.emxl, "gh_api", side_effect=self._paged([page1, page2, []])):
+            result = wsi.fetch_issues_with_label("owner/repo", "tok", "snooze 30 days")
         self.assertEqual(len(result), 5)
 
     def test_includes_state_all_and_encoded_label(self):
@@ -87,8 +87,8 @@ class TestFetchIssuesWithLabel(unittest.TestCase):
             calls.append(path)
             return []
 
-        with patch.object(whi.emxl, "gh_api", side_effect=side_effect):
-            whi.fetch_issues_with_label("owner/repo", "tok", "snooze 30 days")
+        with patch.object(wsi.emxl, "gh_api", side_effect=side_effect):
+            wsi.fetch_issues_with_label("owner/repo", "tok", "snooze 30 days")
 
         self.assertIn("state=all", calls[0])
         self.assertIn("snooze%2030%20days", calls[0])
@@ -111,8 +111,8 @@ class TestFindLabelAppliedAt(unittest.TestCase):
         return side_effect
 
     def test_returns_none_when_no_matching_event(self):
-        with patch.object(whi.emxl, "gh_api", side_effect=self._paged([[], []])):
-            result = whi.find_label_applied_at(1, _RUNG_30, "owner/repo", "tok")
+        with patch.object(wsi.emxl, "gh_api", side_effect=self._paged([[], []])):
+            result = wsi.find_label_applied_at(1, _RUNG_30, "owner/repo", "tok")
         self.assertIsNone(result)
 
     def test_returns_timestamp_of_matching_event(self):
@@ -121,22 +121,22 @@ class TestFindLabelAppliedAt(unittest.TestCase):
             {"event": "commented", "created_at": when.strftime("%Y-%m-%dT%H:%M:%SZ")},
             _labeled_event("snooze 30 days", when),
         ]
-        with patch.object(whi.emxl, "gh_api", side_effect=self._paged([events, []])):
-            result = whi.find_label_applied_at(1, _RUNG_30, "owner/repo", "tok")
+        with patch.object(wsi.emxl, "gh_api", side_effect=self._paged([events, []])):
+            result = wsi.find_label_applied_at(1, _RUNG_30, "owner/repo", "tok")
         self.assertEqual(result, when)
 
     def test_ignores_events_for_other_labels(self):
         when = _NOW - timedelta(days=31)
         events = [_labeled_event("orchestrate", when)]
-        with patch.object(whi.emxl, "gh_api", side_effect=self._paged([events, []])):
-            result = whi.find_label_applied_at(1, _RUNG_30, "owner/repo", "tok")
+        with patch.object(wsi.emxl, "gh_api", side_effect=self._paged([events, []])):
+            result = wsi.find_label_applied_at(1, _RUNG_30, "owner/repo", "tok")
         self.assertIsNone(result)
 
     def test_case_insensitive_label_match(self):
         when = _NOW - timedelta(days=31)
         events = [_labeled_event("Snooze 30 Days", when)]
-        with patch.object(whi.emxl, "gh_api", side_effect=self._paged([events, []])):
-            result = whi.find_label_applied_at(1, _RUNG_30, "owner/repo", "tok")
+        with patch.object(wsi.emxl, "gh_api", side_effect=self._paged([events, []])):
+            result = wsi.find_label_applied_at(1, _RUNG_30, "owner/repo", "tok")
         self.assertEqual(result, when)
 
     def test_matches_the_legacy_spelling_of_the_rung(self):
@@ -145,8 +145,8 @@ class TestFindLabelAppliedAt(unittest.TestCase):
         issue now carries "snooze 30 days"."""
         when = _NOW - timedelta(days=31)
         events = [_labeled_event("hold 30 days", when)]
-        with patch.object(whi.emxl, "gh_api", side_effect=self._paged([events, []])):
-            result = whi.find_label_applied_at(1, _RUNG_30, "owner/repo", "tok")
+        with patch.object(wsi.emxl, "gh_api", side_effect=self._paged([events, []])):
+            result = wsi.find_label_applied_at(1, _RUNG_30, "owner/repo", "tok")
         self.assertEqual(result, when)
 
     def test_ignores_events_for_another_rung(self):
@@ -154,8 +154,8 @@ class TestFindLabelAppliedAt(unittest.TestCase):
         irrelevant as any other label."""
         when = _NOW - timedelta(days=31)
         events = [_labeled_event("snooze 90 days", when), _labeled_event("hold 90 days", when)]
-        with patch.object(whi.emxl, "gh_api", side_effect=self._paged([events, []])):
-            result = whi.find_label_applied_at(1, _RUNG_30, "owner/repo", "tok")
+        with patch.object(wsi.emxl, "gh_api", side_effect=self._paged([events, []])):
+            result = wsi.find_label_applied_at(1, _RUNG_30, "owner/repo", "tok")
         self.assertIsNone(result)
 
     def test_returns_most_recent_across_both_spellings(self):
@@ -167,8 +167,8 @@ class TestFindLabelAppliedAt(unittest.TestCase):
             _labeled_event("hold 30 days", older),
             _labeled_event("snooze 30 days", newer),
         ]
-        with patch.object(whi.emxl, "gh_api", side_effect=self._paged([events, []])):
-            result = whi.find_label_applied_at(1, _RUNG_30, "owner/repo", "tok")
+        with patch.object(wsi.emxl, "gh_api", side_effect=self._paged([events, []])):
+            result = wsi.find_label_applied_at(1, _RUNG_30, "owner/repo", "tok")
         self.assertEqual(result, newer)
 
     def test_returns_most_recent_of_several_matching_events(self):
@@ -178,16 +178,16 @@ class TestFindLabelAppliedAt(unittest.TestCase):
             _labeled_event("snooze 30 days", older),
             _labeled_event("snooze 30 days", newer),
         ]
-        with patch.object(whi.emxl, "gh_api", side_effect=self._paged([events, []])):
-            result = whi.find_label_applied_at(1, _RUNG_30, "owner/repo", "tok")
+        with patch.object(wsi.emxl, "gh_api", side_effect=self._paged([events, []])):
+            result = wsi.find_label_applied_at(1, _RUNG_30, "owner/repo", "tok")
         self.assertEqual(result, newer)
 
     def test_paginates_across_events(self):
         when = _NOW - timedelta(days=31)
         page1 = [{"event": "commented", "created_at": when.strftime("%Y-%m-%dT%H:%M:%SZ")}] * 100
         page2 = [_labeled_event("snooze 30 days", when)]
-        with patch.object(whi.emxl, "gh_api", side_effect=self._paged([page1, page2, []])):
-            result = whi.find_label_applied_at(1, _RUNG_30, "owner/repo", "tok")
+        with patch.object(wsi.emxl, "gh_api", side_effect=self._paged([page1, page2, []])):
+            result = wsi.find_label_applied_at(1, _RUNG_30, "owner/repo", "tok")
         self.assertEqual(result, when)
 
 
@@ -203,9 +203,9 @@ class TestWakeIssue(unittest.TestCase):
 
     def test_reopens_via_a_labels_free_patch(self):
         issue = _make_issue(7, ["snooze 30 days", "bug"])
-        with patch.object(whi.emxl, "gh_api", side_effect=[issue, None, None]) as mock_api:
-            with patch.object(whi.emxl, "remove_labels", return_value=True):
-                result = whi.wake_issue(7, "snooze 30 days", "owner/repo", "tok")
+        with patch.object(wsi.emxl, "gh_api", side_effect=[issue, None, None]) as mock_api:
+            with patch.object(wsi.emxl, "remove_labels", return_value=True):
+                result = wsi.wake_issue(7, "snooze 30 days", "owner/repo", "tok")
 
         self.assertTrue(result)
         patch_call = mock_api.call_args_list[1]
@@ -214,9 +214,9 @@ class TestWakeIssue(unittest.TestCase):
 
     def test_targets_only_the_snooze_label_when_nothing_else_conflicts(self):
         issue = _make_issue(7, ["snooze 30 days", "p1", "ci"])
-        with patch.object(whi.emxl, "gh_api", side_effect=[issue, None, None]):
-            with patch.object(whi.emxl, "remove_labels", return_value=True) as mock_remove:
-                whi.wake_issue(7, "snooze 30 days", "owner/repo", "tok")
+        with patch.object(wsi.emxl, "gh_api", side_effect=[issue, None, None]):
+            with patch.object(wsi.emxl, "remove_labels", return_value=True) as mock_remove:
+                wsi.wake_issue(7, "snooze 30 days", "owner/repo", "tok")
 
         mock_remove.assert_called_once_with(
             7, ["snooze 30 days"], "owner/repo", "tok", reason="expired-snooze"
@@ -224,9 +224,9 @@ class TestWakeIssue(unittest.TestCase):
 
     def test_targets_process_state_labels_alongside_the_snooze_label(self):
         issue = _make_issue(7, ["snooze 90 days", "orchestrate", "changes requested", "ci"])
-        with patch.object(whi.emxl, "gh_api", side_effect=[issue, None, None]):
-            with patch.object(whi.emxl, "remove_labels", return_value=True) as mock_remove:
-                whi.wake_issue(7, "snooze 90 days", "owner/repo", "tok")
+        with patch.object(wsi.emxl, "gh_api", side_effect=[issue, None, None]):
+            with patch.object(wsi.emxl, "remove_labels", return_value=True) as mock_remove:
+                wsi.wake_issue(7, "snooze 90 days", "owner/repo", "tok")
 
         targeted = mock_remove.call_args[0][1]
         self.assertCountEqual(targeted, ["snooze 90 days", "orchestrate", "changes requested"])
@@ -234,9 +234,9 @@ class TestWakeIssue(unittest.TestCase):
 
     def test_posts_a_comment(self):
         issue = _make_issue(7, ["snooze 30 days"])
-        with patch.object(whi.emxl, "gh_api", side_effect=[issue, None, None]) as mock_api:
-            with patch.object(whi.emxl, "remove_labels", return_value=True):
-                whi.wake_issue(7, "snooze 30 days", "owner/repo", "tok")
+        with patch.object(wsi.emxl, "gh_api", side_effect=[issue, None, None]) as mock_api:
+            with patch.object(wsi.emxl, "remove_labels", return_value=True):
+                wsi.wake_issue(7, "snooze 30 days", "owner/repo", "tok")
 
         comment_call = mock_api.call_args_list[2]
         self.assertIn("comments", comment_call[0][0])
@@ -245,26 +245,26 @@ class TestWakeIssue(unittest.TestCase):
 
     def test_comment_notes_other_stripped_labels(self):
         issue = _make_issue(7, ["snooze 30 days", "orchestrating"])
-        with patch.object(whi.emxl, "gh_api", side_effect=[issue, None, None]) as mock_api:
-            with patch.object(whi.emxl, "remove_labels", return_value=True):
-                whi.wake_issue(7, "snooze 30 days", "owner/repo", "tok")
+        with patch.object(wsi.emxl, "gh_api", side_effect=[issue, None, None]) as mock_api:
+            with patch.object(wsi.emxl, "remove_labels", return_value=True):
+                wsi.wake_issue(7, "snooze 30 days", "owner/repo", "tok")
 
         comment_body = mock_api.call_args_list[2][1]["body"]["body"]
         self.assertIn("orchestrating", comment_body)
 
     def test_case_insensitive_snooze_label_still_matches(self):
         issue = _make_issue(7, ["Snooze 30 Days"])
-        with patch.object(whi.emxl, "gh_api", side_effect=[issue, None, None]):
-            with patch.object(whi.emxl, "remove_labels", return_value=True) as mock_remove:
-                result = whi.wake_issue(7, "snooze 30 days", "owner/repo", "tok")
+        with patch.object(wsi.emxl, "gh_api", side_effect=[issue, None, None]):
+            with patch.object(wsi.emxl, "remove_labels", return_value=True) as mock_remove:
+                result = wsi.wake_issue(7, "snooze 30 days", "owner/repo", "tok")
 
         self.assertTrue(result)
         mock_remove.assert_called_once()
 
     def test_raises_on_non_dict_get_response(self):
-        with patch.object(whi.emxl, "gh_api", return_value=None):
+        with patch.object(wsi.emxl, "gh_api", return_value=None):
             with self.assertRaises(RuntimeError):
-                whi.wake_issue(7, "snooze 30 days", "owner/repo", "tok")
+                wsi.wake_issue(7, "snooze 30 days", "owner/repo", "tok")
 
     # ------------------------------------------------------------------
     # Concurrency guards (PR #837 review)
@@ -276,9 +276,9 @@ class TestWakeIssue(unittest.TestCase):
         main()'s list call and this call) is left alone entirely: no reopen,
         no label removal, no comment."""
         issue = _make_issue(7, ["snooze 90 days", "ci"])
-        with patch.object(whi.emxl, "gh_api", side_effect=[issue]) as mock_api:
-            with patch.object(whi.emxl, "remove_labels") as mock_remove:
-                result = whi.wake_issue(7, "snooze 30 days", "owner/repo", "tok")
+        with patch.object(wsi.emxl, "gh_api", side_effect=[issue]) as mock_api:
+            with patch.object(wsi.emxl, "remove_labels") as mock_remove:
+                result = wsi.wake_issue(7, "snooze 30 days", "owner/repo", "tok")
 
         self.assertFalse(result)
         self.assertEqual(mock_api.call_count, 1)  # only the re-fetch GET
@@ -292,9 +292,9 @@ class TestWakeIssue(unittest.TestCase):
                 raise Exception("comment API down")
             return issue if method == "GET" else None
 
-        with patch.object(whi.emxl, "gh_api", side_effect=gh_api_side_effect):
-            with patch.object(whi.emxl, "remove_labels", return_value=True) as mock_remove:
-                result = whi.wake_issue(7, "snooze 30 days", "owner/repo", "tok")
+        with patch.object(wsi.emxl, "gh_api", side_effect=gh_api_side_effect):
+            with patch.object(wsi.emxl, "remove_labels", return_value=True) as mock_remove:
+                result = wsi.wake_issue(7, "snooze 30 days", "owner/repo", "tok")
 
         # The reopen and label removal both already happened; a failed
         # notification comment does not retroactively fail the wake.
@@ -320,12 +320,12 @@ class TestMain(unittest.TestCase):
 
     def test_exit_0_when_token_missing(self):
         with patch.dict(os.environ, {"GITHUB_TOKEN": ""}):
-            result = whi.main()
+            result = wsi.main()
         self.assertEqual(result, 0)
 
     def test_exit_0_when_repository_missing(self):
         with patch.dict(os.environ, {"GITHUB_REPOSITORY": ""}):
-            result = whi.main()
+            result = wsi.main()
         self.assertEqual(result, 0)
 
     def test_wakes_issue_past_its_snooze(self):
@@ -336,10 +336,10 @@ class TestMain(unittest.TestCase):
         def fetch_side_effect(repo, token, label):
             return [issue] if label == "snooze 30 days" else []
 
-        with patch.object(whi, "fetch_issues_with_label", side_effect=fetch_side_effect):
-            with patch.object(whi, "find_label_applied_at", return_value=applied_at):
-                with patch.object(whi, "wake_issue") as mock_wake:
-                    result = whi.main()
+        with patch.object(wsi, "fetch_issues_with_label", side_effect=fetch_side_effect):
+            with patch.object(wsi, "find_label_applied_at", return_value=applied_at):
+                with patch.object(wsi, "wake_issue") as mock_wake:
+                    result = wsi.main()
 
         self.assertEqual(result, 0)
         mock_wake.assert_called_once_with(1, "snooze 30 days", "owner/repo", "test-token")
@@ -353,10 +353,10 @@ class TestMain(unittest.TestCase):
         def fetch_side_effect(repo, token, label):
             return [issue] if label == "hold 30 days" else []
 
-        with patch.object(whi, "fetch_issues_with_label", side_effect=fetch_side_effect):
-            with patch.object(whi, "find_label_applied_at", return_value=applied_at):
-                with patch.object(whi, "wake_issue") as mock_wake:
-                    result = whi.main()
+        with patch.object(wsi, "fetch_issues_with_label", side_effect=fetch_side_effect):
+            with patch.object(wsi, "find_label_applied_at", return_value=applied_at):
+                with patch.object(wsi, "wake_issue") as mock_wake:
+                    result = wsi.main()
 
         self.assertEqual(result, 0)
         mock_wake.assert_called_once_with(1, "hold 30 days", "owner/repo", "test-token")
@@ -372,10 +372,10 @@ class TestMain(unittest.TestCase):
                 return [_make_issue(2, [label])]
             return []
 
-        with patch.object(whi, "fetch_issues_with_label", side_effect=fetch_side_effect):
-            with patch.object(whi, "find_label_applied_at", return_value=applied_at):
-                with patch.object(whi, "wake_issue") as mock_wake:
-                    result = whi.main()
+        with patch.object(wsi, "fetch_issues_with_label", side_effect=fetch_side_effect):
+            with patch.object(wsi, "find_label_applied_at", return_value=applied_at):
+                with patch.object(wsi, "wake_issue") as mock_wake:
+                    result = wsi.main()
 
         self.assertEqual(result, 0)
         mock_wake.assert_called_once_with(1, "snooze 3 days", "owner/repo", "test-token")
@@ -387,16 +387,16 @@ class TestMain(unittest.TestCase):
             queried.append(label)
             return []
 
-        with patch.object(whi, "fetch_issues_with_label", side_effect=fetch_side_effect):
-            result = whi.main()
+        with patch.object(wsi, "fetch_issues_with_label", side_effect=fetch_side_effect):
+            result = wsi.main()
 
         self.assertEqual(result, 0)
         self.assertEqual(
             queried,
             [
                 label
-                for days in whi.emxl.SNOOZE_LADDER_DAYS
-                for label in whi.emxl.snooze_labels_for_days(days)
+                for days in wsi.emxl.SNOOZE_LADDER_DAYS
+                for label in wsi.emxl.snooze_labels_for_days(days)
             ],
         )
 
@@ -406,9 +406,9 @@ class TestMain(unittest.TestCase):
         def fetch_side_effect(repo, token, label):
             return [issue] if label == "snooze 30 days" else []
 
-        with patch.object(whi, "fetch_issues_with_label", side_effect=fetch_side_effect):
-            with patch.object(whi, "find_label_applied_at", return_value=None) as mock_find:
-                result = whi.main()
+        with patch.object(wsi, "fetch_issues_with_label", side_effect=fetch_side_effect):
+            with patch.object(wsi, "find_label_applied_at", return_value=None) as mock_find:
+                result = wsi.main()
 
         self.assertEqual(result, 0)
         mock_find.assert_called_once_with(1, _RUNG_30, "owner/repo", "test-token")
@@ -422,10 +422,10 @@ class TestMain(unittest.TestCase):
         def fetch_side_effect(repo, token, label):
             return [issue] if label in _RUNG_30 else []
 
-        with patch.object(whi, "fetch_issues_with_label", side_effect=fetch_side_effect):
-            with patch.object(whi, "find_label_applied_at", return_value=applied_at):
-                with patch.object(whi, "wake_issue") as mock_wake:
-                    result = whi.main()
+        with patch.object(wsi, "fetch_issues_with_label", side_effect=fetch_side_effect):
+            with patch.object(wsi, "find_label_applied_at", return_value=applied_at):
+                with patch.object(wsi, "wake_issue") as mock_wake:
+                    result = wsi.main()
 
         self.assertEqual(result, 0)
         mock_wake.assert_called_once_with(1, "snooze 30 days", "owner/repo", "test-token")
@@ -439,10 +439,10 @@ class TestMain(unittest.TestCase):
                 raise Exception("network error")
             return [issue] if label == "hold 30 days" else []
 
-        with patch.object(whi, "fetch_issues_with_label", side_effect=fetch_side_effect):
-            with patch.object(whi, "find_label_applied_at", return_value=applied_at):
-                with patch.object(whi, "wake_issue") as mock_wake:
-                    result = whi.main()
+        with patch.object(wsi, "fetch_issues_with_label", side_effect=fetch_side_effect):
+            with patch.object(wsi, "find_label_applied_at", return_value=applied_at):
+                with patch.object(wsi, "wake_issue") as mock_wake:
+                    result = wsi.main()
 
         self.assertEqual(result, 0)
         mock_wake.assert_called_once_with(1, "hold 30 days", "owner/repo", "test-token")
@@ -455,10 +455,10 @@ class TestMain(unittest.TestCase):
         def fetch_side_effect(repo, token, label):
             return [issue] if label == "snooze 30 days" else []
 
-        with patch.object(whi, "fetch_issues_with_label", side_effect=fetch_side_effect):
-            with patch.object(whi, "find_label_applied_at", return_value=applied_at):
-                with patch.object(whi, "wake_issue") as mock_wake:
-                    result = whi.main()
+        with patch.object(wsi, "fetch_issues_with_label", side_effect=fetch_side_effect):
+            with patch.object(wsi, "find_label_applied_at", return_value=applied_at):
+                with patch.object(wsi, "wake_issue") as mock_wake:
+                    result = wsi.main()
 
         self.assertEqual(result, 0)
         mock_wake.assert_not_called()
@@ -469,10 +469,10 @@ class TestMain(unittest.TestCase):
         def fetch_side_effect(repo, token, label):
             return [issue] if label == "snooze 30 days" else []
 
-        with patch.object(whi, "fetch_issues_with_label", side_effect=fetch_side_effect):
-            with patch.object(whi, "find_label_applied_at", return_value=None):
-                with patch.object(whi, "wake_issue") as mock_wake:
-                    result = whi.main()
+        with patch.object(wsi, "fetch_issues_with_label", side_effect=fetch_side_effect):
+            with patch.object(wsi, "find_label_applied_at", return_value=None):
+                with patch.object(wsi, "wake_issue") as mock_wake:
+                    result = wsi.main()
 
         self.assertEqual(result, 0)
         mock_wake.assert_not_called()
@@ -483,8 +483,8 @@ class TestMain(unittest.TestCase):
                 raise Exception("network error")
             return []
 
-        with patch.object(whi, "fetch_issues_with_label", side_effect=fetch_side_effect):
-            result = whi.main()
+        with patch.object(wsi, "fetch_issues_with_label", side_effect=fetch_side_effect):
+            result = wsi.main()
 
         self.assertEqual(result, 0)
 
@@ -495,17 +495,17 @@ class TestMain(unittest.TestCase):
         def fetch_side_effect(repo, token, label):
             return [issue] if label == "snooze 30 days" else []
 
-        with patch.object(whi, "fetch_issues_with_label", side_effect=fetch_side_effect):
-            with patch.object(whi, "find_label_applied_at", return_value=applied_at):
-                with patch.object(whi, "wake_issue", side_effect=Exception("boom")):
-                    result = whi.main()
+        with patch.object(wsi, "fetch_issues_with_label", side_effect=fetch_side_effect):
+            with patch.object(wsi, "find_label_applied_at", return_value=applied_at):
+                with patch.object(wsi, "wake_issue", side_effect=Exception("boom")):
+                    result = wsi.main()
 
         self.assertEqual(result, 0)
 
     def test_no_issues_found_wakes_nothing(self):
-        with patch.object(whi, "fetch_issues_with_label", return_value=[]):
-            with patch.object(whi, "wake_issue") as mock_wake:
-                result = whi.main()
+        with patch.object(wsi, "fetch_issues_with_label", return_value=[]):
+            with patch.object(wsi, "wake_issue") as mock_wake:
+                result = wsi.main()
 
         self.assertEqual(result, 0)
         mock_wake.assert_not_called()
@@ -520,11 +520,11 @@ class TestMain(unittest.TestCase):
             return [issue] if label == "snooze 30 days" else []
 
         out = io.StringIO()
-        with patch.object(whi, "fetch_issues_with_label", side_effect=fetch_side_effect):
-            with patch.object(whi, "find_label_applied_at", return_value=applied_at):
-                with patch.object(whi, "wake_issue", return_value=False):
+        with patch.object(wsi, "fetch_issues_with_label", side_effect=fetch_side_effect):
+            with patch.object(wsi, "find_label_applied_at", return_value=applied_at):
+                with patch.object(wsi, "wake_issue", return_value=False):
                     with redirect_stdout(out):
-                        result = whi.main()
+                        result = wsi.main()
 
         self.assertEqual(result, 0)
         self.assertIn("Woke 0 issue(s)", out.getvalue())

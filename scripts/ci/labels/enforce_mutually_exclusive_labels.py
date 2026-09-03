@@ -94,9 +94,8 @@ def snooze_labels_for_days(days: int) -> list[str]:
 
 
 # Every recognized snooze label, mapped to its duration in days.
-# scripts/ci/labels/snooze_held_issues.py and
-# scripts/ci/labels/wake_held_issues.py both key off this single dict so the
-# ladder is defined in exactly one place.
+# scripts/ci/labels/snooze_issues.py and scripts/ci/labels/wake_snoozed_issues.py
+# both key off this single dict so the ladder is defined in exactly one place.
 SNOOZE_LABEL_DAYS: dict[str, int] = {
     label: days for days in SNOOZE_LADDER_DAYS for label in snooze_labels_for_days(days)
 }

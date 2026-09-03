@@ -2,11 +2,11 @@
 """Reopen issues whose snooze period has elapsed.
 
 The other half of the issue #821 snooze mechanism: scripts/ci/labels/
-snooze_held_issues.py closes an issue when a snooze label
-(SNOOZE_LABEL_DAYS in enforce_mutually_exclusive_labels.py) is added to it.
-This script runs daily and, for every issue still carrying a snooze label,
-checks whether that many days have passed since the label was applied. Once
-they have, the issue is reopened, the snooze label is removed, and so is every
+snooze_issues.py closes an issue when a snooze label (SNOOZE_LABEL_DAYS in
+enforce_mutually_exclusive_labels.py) is added to it. This script runs daily
+and, for every issue still carrying a snooze label, checks whether that many
+days have passed since the label was applied. Once they have, the issue is
+reopened, the snooze label is removed, and so is every
 label in propagate_issue_labels.PROCESS_STATE_LABELS (orchestrate,
 orchestrating, verification needed, verified, changes requested, changes
 done)--a woken issue should land in plain triage, not resume mid-cycle in
@@ -30,7 +30,7 @@ which replaces the shorter one via mutual-exclusion enforcement and must not
 be silently undone by a wake decided before the escalation happened.
 
 Usage:
-    python3 scripts/ci/labels/wake_held_issues.py
+    python3 scripts/ci/labels/wake_snoozed_issues.py
 
 Exit code is always 0; API failures are logged but do not fail the CI run,
 matching scripts/ci/prs-and-issues/archive_stale_test_failures.py.
@@ -60,7 +60,7 @@ def fetch_issues_with_label(repo: str, token: str, label: str) -> list[dict]:
     Paginates through all pages automatically. Pull requests are excluded:
     GitHub's issues-list endpoint returns them alongside real issues for any
     matching label, identifiable by the presence of a "pull_request" key, and
-    snooze labels are scoped to issues (see snooze_held_issues.py).
+    snooze labels are scoped to issues (see snooze_issues.py).
     """
     encoded = urllib.parse.quote(label, safe="")
     issues: list[dict] = []

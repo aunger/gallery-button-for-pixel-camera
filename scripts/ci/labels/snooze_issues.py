@@ -5,8 +5,8 @@ Part of the issue #821 snooze mechanism, for issues whose revisit condition is
 elapsed time with no observable upstream signal. Applying one of the fixed
 `SNOOZE_LABEL_DAYS` labels (see enforce_mutually_exclusive_labels.py) is how a
 human snoozes such an issue: this script closes it so it stops reading as
-open, dispatchable work, and scripts/ci/labels/wake_held_issues.py reopens it
-once the label's day count has elapsed.
+open, dispatchable work, and scripts/ci/labels/wake_snoozed_issues.py
+reopens it once the label's day count has elapsed.
 
 enforce_mutually_exclusive_labels.py already keeps at most one snooze label on
 an issue at a time (SNOOZE_LABELS is one of its MUTUALLY_EXCLUSIVE_SETS), so
@@ -18,7 +18,7 @@ the case where a snooze label is swapped for a longer one on an issue that is
 already snoozed.
 
 Usage:
-    python3 scripts/ci/labels/snooze_held_issues.py
+    python3 scripts/ci/labels/snooze_issues.py
 
 Exit code:
     0  ADDED_LABEL is not a snooze label, the issue was already closed, or the
