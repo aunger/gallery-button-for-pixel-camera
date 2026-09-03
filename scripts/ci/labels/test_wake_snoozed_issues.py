@@ -222,6 +222,48 @@ class TestWakeIssue(unittest.TestCase):
             7, ["snooze 30 days"], "owner/repo", "tok", reason="expired-snooze"
         )
 
+    def test_targets_both_spellings_of_the_rung(self):
+        """An issue wearing both spellings must come out of the wake wearing
+        neither: leaving one behind would leave it open and still snoozed, and
+        the next run would find it and wake it a second time."""
+        issue = _make_issue(7, ["snooze 30 days", "hold 30 days", "ci"])
+        with patch.object(wsi.emxl, "gh_api", side_effect=[issue, None, None]):
+            with patch.object(wsi.emxl, "remove_labels", return_value=True) as mock_remove:
+                result = wsi.wake_issue(7, "snooze 30 days", "owner/repo", "tok")
+
+        self.assertTrue(result)
+        targeted = mock_remove.call_args[0][1]
+        self.assertCountEqual(targeted, ["snooze 30 days", "hold 30 days"])
+        self.assertNotIn("ci", targeted)
+
+    def test_targets_the_current_spelling_when_found_under_the_legacy_one(self):
+        """The same holds whichever spelling main() found the issue under."""
+        issue = _make_issue(7, ["hold 30 days", "snooze 30 days"])
+        with patch.object(wsi.emxl, "gh_api", side_effect=[issue, None, None]):
+            with patch.object(wsi.emxl, "remove_labels", return_value=True) as mock_remove:
+                wsi.wake_issue(7, "hold 30 days", "owner/repo", "tok")
+
+        self.assertCountEqual(mock_remove.call_args[0][1], ["hold 30 days", "snooze 30 days"])
+
+    def test_leaves_another_rung_alone(self):
+        """Only the woken rung is stripped. A different rung is somebody's
+        live snooze, not this wake's business."""
+        issue = _make_issue(7, ["snooze 30 days", "snooze 180 days"])
+        with patch.object(wsi.emxl, "gh_api", side_effect=[issue, None, None]):
+            with patch.object(wsi.emxl, "remove_labels", return_value=True) as mock_remove:
+                wsi.wake_issue(7, "snooze 30 days", "owner/repo", "tok")
+
+        self.assertEqual(mock_remove.call_args[0][1], ["snooze 30 days"])
+
+    def test_comment_does_not_call_the_other_spelling_a_process_state_label(self):
+        issue = _make_issue(7, ["snooze 30 days", "hold 30 days"])
+        with patch.object(wsi.emxl, "gh_api", side_effect=[issue, None, None]) as mock_api:
+            with patch.object(wsi.emxl, "remove_labels", return_value=True):
+                wsi.wake_issue(7, "snooze 30 days", "owner/repo", "tok")
+
+        comment_body = mock_api.call_args_list[2][1]["body"]["body"]
+        self.assertNotIn("process-state", comment_body)
+
     def test_targets_process_state_labels_alongside_the_snooze_label(self):
         issue = _make_issue(7, ["snooze 90 days", "orchestrate", "changes requested", "ci"])
         with patch.object(wsi.emxl, "gh_api", side_effect=[issue, None, None]):

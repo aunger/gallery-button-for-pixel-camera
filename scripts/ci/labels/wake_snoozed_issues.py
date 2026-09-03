@@ -132,6 +132,10 @@ def find_label_applied_at(
 def wake_issue(issue_number: int, snooze_label: str, repo: str, token: str) -> bool:
     """Reopen *issue_number* if it is still snoozed under *snooze_label*.
 
+    *snooze_label* is a ladder label, and both of its spellings are stripped:
+    the issue must come out of this carrying none of its rung, or it would be
+    open and snoozed at once.
+
     Re-fetches the issue's current labels immediately before acting, rather
     than reusing the list-call snapshot main() saw when it decided this
     issue's snooze had elapsed, and removes only the specific labels this
@@ -162,10 +166,18 @@ def wake_issue(issue_number: int, snooze_label: str, repo: str, token: str) -> b
         )
         return False
 
+    # Every spelling of this rung, not just the one main() found the issue
+    # under. Stripping only that one would leave a woken issue open and still
+    # wearing the other spelling, which tomorrow's run would find, date from
+    # the same elapsed event, and wake all over again.
+    rung_lower = {
+        lbl.lower() for lbl in emxl.snooze_labels_for_days(emxl.SNOOZE_LABEL_DAYS[snooze_lower])
+    }
+
     to_remove = [
         lbl
         for lbl in current_labels
-        if lbl.lower() == snooze_lower or lbl.lower() in pil.PROCESS_STATE_LABELS
+        if lbl.lower() in rung_lower or lbl.lower() in pil.PROCESS_STATE_LABELS
     ]
 
     # Reopening the issue's state never touches its labels at all--no PATCH
@@ -179,7 +191,7 @@ def wake_issue(issue_number: int, snooze_label: str, repo: str, token: str) -> b
     )
     emxl.remove_labels(issue_number, to_remove, repo, token, reason="expired-snooze")
 
-    other_stripped = sorted(lbl for lbl in to_remove if lbl.lower() != snooze_lower)
+    other_stripped = sorted(lbl for lbl in to_remove if lbl.lower() not in rung_lower)
     stripped_note = ""
     if other_stripped:
         stripped_note = f" Also removed stale process-state label(s): {', '.join(other_stripped)}."
