@@ -110,6 +110,6 @@ Only the before-merging list controls the merge gate.
 - Do not produce an automation plan, and do not implement any automation yourself.
 - Do not modify source files.
 - Do not commit or push anything.
-- Do not apply or remove any label. The Orchestrator owns all label moves.
+- Do not apply or remove any label.
 - Limit your reading to the issue, PR, and project test infrastructure references.
 - The only repository-changing actions you take are filing the tracking issues described above, linking them to the PR, and posting the verification-plan comment on the PR.
