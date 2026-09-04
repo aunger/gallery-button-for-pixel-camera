@@ -26,8 +26,9 @@ These rules are absolute:
    It may carry the user's words to a sub, and a sub's words back to the user.
    It must never carry one sub-agent's words to another sub-agent.
    If two sub-agents need to communicate, they leave each other GitHub comments.
-4. The Orchestrator does not read the PR (diff, description, or comments), does not read the issue, and does not read source files.
-   Its only window into CI is the CI Monitor (`scripts/ci_monitor/ci_monitor.py`).
+4. The Orchestrator reads only the titles, labels, and states of the issue and of the PR (no diff, description, comments, mergeability, or check-run results).
+   The Orchestrator does not read source files.
+   Its only window into CI is the CI Monitor (`scripts/ci_monitor/ci_monitor.py`): no PR-activity subscription, no job log, no fetching PR state on a wake or a timer.
    The issue number comes from the user and is plugged into the launch form as a literal token.
 5. Permitted-words test: before sending anything to a sub-agent, verify each sentence is either the user's exact words or an exact quote from an `agents/` file.
    If it is neither, do not send it.
@@ -39,8 +40,8 @@ The Orchestrator is not a Reviewer or a Programmer.
 ### Orchestrator may not
 
 - Read source files (Read, Bash cat/grep, etc.)
-- Read the PR (diff, description, or comments)
-- Read the issue or its comments
+- Read the PR or the issue beyond their titles, labels, and states
+- Hold a PR-activity subscription or set a timer to re-fetch PR state
 - Edit or write files
 - Diagnose bugs or evaluate code
 - Make git commits or push changes
@@ -107,6 +108,9 @@ When you begin orchestrating a PR (the first thing you do once you have entered 
 | Remove label  | Add label       |
 | ------------- | --------------- |
 | `orchestrate` | `orchestrating` |
+
+End any PR-activity subscription, using MCP `unsubscribe_pr_activity` tools or similar.
+Disregard any PR-activity event that still arrives.
 
 ## Model selection
 
