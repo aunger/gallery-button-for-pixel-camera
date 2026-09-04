@@ -11,6 +11,8 @@ automation (as happened with the stale spellings in issue #477).
 
 Sources:
   scripts/ci/labels/enforce_mutually_exclusive_labels.py: MUTUALLY_EXCLUSIVE_SETS
+                                                (its snooze ladder is checked a
+                                                 rung at a time; see below)
   scripts/ci/labels/check_blocking_labels.py:            BLOCKING_LABELS constant
   scripts/ci/prs-and-issues/file_test_failure_issues.py:          LABELS constant
   scripts/ci/prs-and-issues/archive_stale_test_failures.py:       LABEL_TEST_FAILURE_ARCHIVE constant
@@ -35,7 +37,12 @@ sys.path.insert(0, os.path.join(_CI_DIR, "prs-and-issues"))
 
 from archive_stale_test_failures import LABEL_TEST_FAILURE_ARCHIVE  # noqa: E402
 from check_blocking_labels import BLOCKING_LABELS  # noqa: E402
-from enforce_mutually_exclusive_labels import MUTUALLY_EXCLUSIVE_SETS  # noqa: E402
+from enforce_mutually_exclusive_labels import (  # noqa: E402
+    MUTUALLY_EXCLUSIVE_SETS,
+    SNOOZE_LABELS,
+    SNOOZE_LADDER_DAYS,
+    snooze_labels_for_days,
+)
 from file_test_failure_issues import LABELS as _TEST_FAILURE_LABELS  # noqa: E402
 from watch_toolchain_bump import TRACKING_ISSUE_LABEL  # noqa: E402
 
@@ -66,8 +73,20 @@ def _release_notes_excluded_labels() -> frozenset[str]:
 
 REQUIRED_LABELS: frozenset[str] = (
     # All labels in every mutually-exclusive set defined in
-    # enforce_mutually_exclusive_labels.py.
-    frozenset().union(*MUTUALLY_EXCLUSIVE_SETS)
+    # enforce_mutually_exclusive_labels.py, except the snooze ladder, which is
+    # checked per rung by test_every_snooze_rung_has_a_label below.
+    #
+    # The ladder is the one set whose members are not all meant to exist at
+    # once. It recognizes two spellings of each rung while issue #1019's
+    # rename rolls out ("snooze 30 days" and the legacy "hold 30 days"), and
+    # only one of them is ever a real label: the long rungs exist under the
+    # legacy spelling until #1019's follow-up renames them, the short rungs
+    # were created under the current one, and a rename moves a label rather
+    # than copying it, so a rung never gains its twin. Requiring every
+    # recognized spelling to exist could therefore never pass, in either
+    # direction. What has to hold, and what the per-rung check asserts, is
+    # that every rung the ladder offers is reachable by some real label.
+    (frozenset().union(*MUTUALLY_EXCLUSIVE_SETS) - SNOOZE_LABELS)
     # Label(s) applied to new test-failure issues.
     | frozenset(_TEST_FAILURE_LABELS)
     # Label swapped in when a test-failure issue goes stale.
@@ -156,6 +175,28 @@ class TestRequiredLabelsExist(unittest.TestCase):
                     label,
                     self.repo_labels,
                     msg=(f"Required label {label!r} does not exist in {self.repo}."),
+                )
+
+    def test_every_snooze_rung_has_a_label(self) -> None:
+        """Every rung of the snooze ladder must be reachable by a real label.
+
+        Checked per rung rather than per label because a rung is recognized
+        under either spelling while issue #1019's rename rolls out, and only
+        one of the two is ever real (see REQUIRED_LABELS above). A rung with
+        neither spelling is a rung the code offers and nobody can apply, which
+        is the silent mismatch between code and labels this file exists to
+        catch.
+        """
+        for days in SNOOZE_LADDER_DAYS:
+            spellings = snooze_labels_for_days(days)
+            with self.subTest(days=days):
+                self.assertTrue(
+                    any(spelling in self.repo_labels for spelling in spellings),
+                    msg=(
+                        f"The {days}-day snooze rung has no label in {self.repo}: none of"
+                        f" {spellings!r} exists. Create one of them in the repository's"
+                        " Labels settings page."
+                    ),
                 )
 
 
