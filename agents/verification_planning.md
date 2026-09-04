@@ -27,9 +27,6 @@ Only the before-merging list controls the merge gate.
 
 ## What to do
 
-Run every step below on every PR, including one whose lists both come out empty.
-There is no early exit: a run that finds nothing still posts the verification-plan comment, reading "None." under both headings.
-
 1. Read the issue description, PR description, and all comments on both.
    Look for both kinds of outstanding requirement described under **Role**: unautomated verification steps, and changes outside the repo (such as an issue that needs to be filed).
    Assemble two lists:
