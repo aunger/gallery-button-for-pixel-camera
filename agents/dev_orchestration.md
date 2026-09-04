@@ -26,8 +26,8 @@ These rules are absolute:
    It may carry the user's words to a sub, and a sub's words back to the user.
    It must never carry one sub-agent's words to another sub-agent.
    If two sub-agents need to communicate, they leave each other GitHub comments.
-4. The Orchestrator does not read the PR (diff, description, comments, mergeability, or check-run results), does not read the issue, and does not read source files.
-   Its only window into CI is the CI Monitor (`scripts/ci_monitor/ci_monitor.py`); "One window into CI" below says what that rules out.
+4. The Orchestrator does not read the PR (diff, description, comments, mergeability, or check-run results), does not read the issue, and does not read source files; labels on either are excepted.
+   Its only window into CI is the CI Monitor (`scripts/ci_monitor/ci_monitor.py`): no PR-activity subscription, no job log, no fetching PR state on a wake or a timer (issue #1010).
    The issue number comes from the user and is plugged into the launch form as a literal token.
 5. Permitted-words test: before sending anything to a sub-agent, verify each sentence is either the user's exact words or an exact quote from an `agents/` file.
    If it is neither, do not send it.
@@ -39,9 +39,9 @@ The Orchestrator is not a Reviewer or a Programmer.
 ### Orchestrator may not
 
 - Read source files (Read, Bash cat/grep, etc.)
-- Read the PR (diff, description, comments, mergeability, or check-run results; labels excepted, see "One window into CI" below)
+- Read the PR (diff, description, comments, mergeability, or check-run results; labels excepted)
 - Read the issue or its comments
-- Subscribe to a PR's GitHub activity, or leave a subscription started earlier in the session running
+- Hold a PR-activity subscription, or wake itself on a timer to re-fetch PR state
 - Edit or write files
 - Diagnose bugs or evaluate code
 - Make git commits or push changes
@@ -64,42 +64,6 @@ The Orchestrator is not a Reviewer or a Programmer.
 - Relay CI Monitor output lines to the user, verbatim
 - Send the user the fixed Orchestrator-to-user lines from "Decision-signal templates" below, quoted exactly; those are the Orchestrator's own words rather than a relay
 - Provide reminders about which process document(s) to read
-
-## One window into CI
-
-Rule 4 above makes the CI Monitor the Orchestrator's only source of CI state.
-A second source adds no information: it repeats what the Monitor already reports, at a context cost that changes no routing decision.
-Measured over one cycle on PR #1000: twelve `check_run.completed` wakes for the single `No blocking labels` check, each Reviewer round delivered twice over (once as a `pull_request_review.submitted` webhook carrying the whole review body, once as the sub-agent's own result), and around fifteen re-fetches of the PR object and its check-runs (issue #1010).
-
-No second source is permitted, whichever one it is.
-The two the measured cycle paid for are named below.
-A third, the CI job log, is ruled out where an Orchestrator would reach for it: `labelGateBlock` says that reading the log to tell two label-gate causes apart would itself be a second window into CI.
-
-### A subscription to the PR's GitHub activity
-
-End any such subscription when you enter the Orchestrator role, including one started earlier in the same session by another role.
-PR-activity subscriptions live in a per-server registry, so one created through a given MCP server can only be ended through that same server, and a subscription predating your role may belong to any of them.
-Call `unsubscribe_pr_activity` on every MCP server exposing a `subscribe_pr_activity` tool, not on the first one that surfaces: this session offers `mcp__github__unsubscribe_pr_activity` and `mcp__Claude_Code_Remote__unsubscribe_pr_activity`, and ending one leaves the other delivering.
-The subscription carries nothing the Monitor does not:
-
-- Check-run and check-suite events: the Monitor polls the same check-runs and reports them as per-check summary rows and terminal lines.
-- `pull_request_review.submitted`: the Reviewer hands you its decision directly, in the vocabulary under "Decision-signal templates" below. The webhook carries the review prose instead, which rule 4 forbids you to read and no routing fence consults.
-- Merge conflicts and base drift: the Monitor reports these in the `(mergeable_state=dirty)` and `(mergeable_state=behind)` diagnostics on its hold terminals.
-- Merge and close: the Monitor's `Merged` and `Closed` terminals.
-
-If an event arrives anyway, because the unsubscribe failed or the subscription belongs to another session, disregard it.
-Do not route on it and do not fetch anything in response to it: a PR-activity event is never a Monitor terminal line, and never an exit from the Monitor loop.
-
-### A direct fetch of PR state
-
-Do not fetch the PR object, its mergeability, or its check-runs, whether on a wake or on a schedule.
-A scheduled self check-in has nothing to add: the Monitor's own output keeps the session alive (see "No sleep loops needed" below), and between two terminal lines there is no decision waiting to be made.
-A hand-rolled fetch is also the harder read to get right.
-A label transition fires the `No blocking labels` gate once per label event, so a single `--remove X --add Y` call leaves two runs behind, and the head commit accumulates the failing runs of every transition the cycle applied.
-That state means nothing until it is collapsed to the latest run per check name, which the Monitor does (`latest_check_runs` in `scripts/ci_monitor/ci_monitor.py`, issues #707 and #719) and a hand-rolled fetch does not.
-
-Labels are the exception, because reading a label is not reading CI state, and this document orders it: `labelGateBlock` cannot decide whether a blocking label other than `orchestrating` is applied without such a read, the fallback under "Applying label transitions" reads the current labels before writing them back, and `.claude/environment.md`'s "Always verify writes with a follow-up read" puts a confirming read after every transition ordered here.
-Read labels with `issue_read` (`method: "get_labels"`), which returns the labels by themselves; do not reach them by fetching the PR object, which carries the CI state this section forbids.
 
 ## What Authors and Reviewers may and may not do
 
@@ -145,7 +109,8 @@ When you begin orchestrating a PR (the first thing you do once you have entered 
 | ------------- | --------------- |
 | `orchestrate` | `orchestrating` |
 
-End any subscription to the PR's GitHub activity at the same time; see "One window into CI" above.
+End any PR-activity subscription now, on every MCP server exposing an `unsubscribe_pr_activity` tool, since one server cannot end another's subscription.
+Disregard any PR-activity event that still arrives; it is never a Monitor terminal line.
 
 ## Model selection
 
@@ -521,7 +486,7 @@ Orchestrator-specific notes:
 - The 30-minute escalation threshold is enforced by `timeout_ms: 1800000` on the Monitor call--no elapsed-time tracking needed.
 - `step`/`FAIL`/`SKIP`/`PASS` lines, `summary` header lines, and per-check summary rows are progress reports, not terminal outcomes.
 - The `On hold by: <name>` attributed form (issue #516) names which check-run held CI. A terminal ending with `[label gate]` means every blocking check-run is a process-label gate: no code failed and no test failed. It does not mean the PR is otherwise mergeable, since the Monitor reaches that terminal only when `mergeable_state` is `behind`, `dirty` or `blocked`. Do not read the held merge as a problem to solve: merging is not the Orchestrator's goal, and holding the merge while the Orchestrator works is exactly what the blocking labels are for.
-- The Monitor loop replaces the patterns of subscribing to PR events and sleep+poll, which are often unreliable. A subscription that predates the cycle is ended rather than read; see "One window into CI" above. Do not delay dispatching the Reviewer while waiting for CI.
+- The Monitor loop replaces the patterns of subscribing to PR events and sleep+poll, which are often unreliable. Do not delay dispatching the Reviewer while waiting for CI.
 
 ## Delegation rules
 
@@ -544,8 +509,6 @@ Orchestrator-specific notes:
 Orchestrators do not need `sleep`-based keep-alive loops while waiting on sub-agents or CI.
 Task-notification events (sub-agent completion) and Monitor events (CI status) keep the session alive on their own.
 Dispatch and wait; do not add artificial delays.
-The same goes for a scheduled self check-in: there is nothing to fetch between two terminal lines, and fetching the PR's state yourself is the second window that "One window into CI" above forbids.
-The five-minute wait in `undiagnosedTerminal` is not one of these; it re-launches the Monitor rather than reading anything itself.
 
 If the session stalls (no Monitor or sub-agent event arrives) and a user message later wakes it, apply the `silentVanish` recovery path (see the Monitor loop above) if the Monitor was pending.
 If the stall cannot be explained by a known recoverable cause (e.g., a Monitor task vanish), file a bug describing the gap.
