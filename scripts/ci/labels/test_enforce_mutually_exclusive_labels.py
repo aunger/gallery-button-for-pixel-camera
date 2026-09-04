@@ -246,6 +246,44 @@ class TestFetchOpenPullRequests(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# Snooze ladder tests
+# ---------------------------------------------------------------------------
+
+
+class TestSnoozeLadder(unittest.TestCase):
+    def test_ladder_rungs(self):
+        """Short rungs for a revisit days away, long ones for months."""
+        self.assertEqual(emxl.SNOOZE_LADDER_DAYS, (3, 7, 14, 30, 90, 180))
+
+    def test_every_rung_has_both_spellings(self):
+        for days in emxl.SNOOZE_LADDER_DAYS:
+            with self.subTest(days=days):
+                self.assertEqual(
+                    emxl.snooze_labels_for_days(days),
+                    [f"snooze {days} days", f"hold {days} days"],
+                )
+
+    def test_both_spellings_of_a_rung_mean_the_same_duration(self):
+        for days in emxl.SNOOZE_LADDER_DAYS:
+            for label in emxl.snooze_labels_for_days(days):
+                with self.subTest(label=label):
+                    self.assertEqual(emxl.SNOOZE_LABEL_DAYS[label], days)
+
+    def test_label_days_covers_exactly_the_ladder(self):
+        expected = {
+            label for days in emxl.SNOOZE_LADDER_DAYS for label in emxl.snooze_labels_for_days(days)
+        }
+        self.assertEqual(set(emxl.SNOOZE_LABEL_DAYS), expected)
+        self.assertEqual(emxl.SNOOZE_LABELS, frozenset(expected))
+
+    def test_ladder_is_one_mutually_exclusive_set(self):
+        """Both spellings of every rung sit in a single set, so applying any
+        one of them clears any other--including the legacy spelling of the
+        same rung, which is what makes the label rename safe to roll out."""
+        self.assertIn(emxl.SNOOZE_LABELS, emxl.MUTUALLY_EXCLUSIVE_SETS)
+
+
+# ---------------------------------------------------------------------------
 # find_conflicting_set tests
 # ---------------------------------------------------------------------------
 
@@ -295,16 +333,16 @@ class TestFindConflictingSet(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertIn("orchestrate", result)
 
-    def test_hold_labels_found(self):
-        for label in ("hold 30 days", "hold 90 days", "hold 180 days"):
+    def test_snooze_labels_found(self):
+        """Every rung, in either spelling, conflicts with every other one."""
+        for label in emxl.SNOOZE_LABELS:
             with self.subTest(label=label):
                 result = emxl.find_conflicting_set(label)
                 self.assertIsNotNone(result)
-                self.assertIn("hold 30 days", result)
-                self.assertIn("hold 90 days", result)
-                self.assertIn("hold 180 days", result)
+                self.assertEqual(result, emxl.SNOOZE_LABELS)
 
-    def test_hold_label_case_insensitive(self):
+    def test_snooze_label_case_insensitive(self):
+        self.assertIsNotNone(emxl.find_conflicting_set("Snooze 30 Days"))
         self.assertIsNotNone(emxl.find_conflicting_set("Hold 30 Days"))
 
     def test_unknown_label_returns_none(self):
@@ -733,9 +771,27 @@ class TestMain(unittest.TestCase):
         delete_call = mock_api.call_args_list[1]
         self.assertIn("orchestrate", delete_call[0][0])
 
-    def test_escalating_hold_label_removes_shorter_one(self):
-        """Adding hold 90 days when hold 30 days is present removes hold 30 days."""
-        with patch.dict(os.environ, {"ADDED_LABEL": "hold 90 days", "ISSUE_NUMBER": "9"}):
+    def test_escalating_snooze_label_removes_shorter_one(self):
+        """Adding snooze 90 days when snooze 30 days is present removes the 30."""
+        with patch.dict(os.environ, {"ADDED_LABEL": "snooze 90 days", "ISSUE_NUMBER": "9"}):
+            with patch.object(
+                emxl,
+                "gh_api",
+                side_effect=[
+                    self._make_issue_response(["snooze 30 days", "ci"]),
+                    None,  # DELETE snooze 30 days
+                ],
+            ) as mock_api:
+                result = emxl.main()
+
+        self.assertEqual(result, 0)
+        delete_call = mock_api.call_args_list[1]
+        self.assertIn("snooze%2030%20days", delete_call[0][0])
+
+    def test_renamed_snooze_label_removes_the_legacy_spelling(self):
+        """The rollout case: snooze 30 days lands on an issue already held by
+        hold 30 days, and clears it rather than leaving both in place."""
+        with patch.dict(os.environ, {"ADDED_LABEL": "snooze 30 days", "ISSUE_NUMBER": "9"}):
             with patch.object(
                 emxl,
                 "gh_api",
