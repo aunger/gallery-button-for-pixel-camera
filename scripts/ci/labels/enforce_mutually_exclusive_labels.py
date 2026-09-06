@@ -79,6 +79,10 @@ SNOOZE_LADDER_DAYS: tuple[int, ...] = (3, 7, 14, 30, 90, 180)
 # recognized both spellings for as long as renaming those labels on GitHub
 # took (#1028), and #1029 retired the legacy one once no snooze in flight was
 # still dated from a "hold"-spelled event.
+#
+# Renaming a rung again is not free: wake_snoozed_issues.find_label_applied_at
+# dates a snooze from the rung's "labeled" events, which a rename orphans. Read
+# its docstring first; it says what to do for the issues snoozed at the time.
 def snooze_label_for_days(days: int) -> str:
     """Return the *days* rung's snooze label."""
     return f"snooze {days} days"

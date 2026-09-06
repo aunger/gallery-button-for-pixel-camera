@@ -17,10 +17,11 @@ The elapsed time is measured from the most recent "labeled" event naming the
 issue's snooze label (the GitHub issue events API; see find_label_applied_at),
 not from the issue's `updated_at`, which any comment or other label change
 would also bump and so would silently extend or reset the snooze. If that
-event cannot be found (should not happen in practice; every label application
-produces one), the issue is left alone rather than guessed at--acting on
-evidence the script does not have would be worse than staying snoozed for one
-more run.
+event cannot be found, the issue is left alone rather than guessed at--acting
+on evidence the script does not have would be worse than staying snoozed for
+one more run. Renaming a ladder label is what makes an event go missing, and
+it strands every snooze running under that label; see find_label_applied_at
+before renaming one.
 
 Before acting on an issue, wake_issue() re-fetches it and confirms the snooze
 label is still present, and removes labels one at a time by name rather than
@@ -88,8 +89,21 @@ def find_label_applied_at(
 
     Reads the issue events API for "labeled" events naming *label*
     (case-insensitively) and returns the latest one's timestamp. Returns None
-    if no such event is found--for example if the label predates the
-    repository's event history, though GitHub does not appear to prune it.
+    if no such event is found.
+
+    Applying a label always records an event, but under whatever name the
+    label carried at the time, and GitHub does not rewrite those events when
+    the label is later renamed. Renaming a ladder label therefore orphans
+    every snooze running under it: the issue comes out of the rename wearing
+    the new name while its event still names the old one, so nothing here can
+    date it, and main() leaves an issue it cannot date snoozed--closed
+    indefinitely, announced only by one stderr line per daily run.
+
+    So do not rename a ladder label while any issue is snoozed under it. If
+    one must be renamed, then afterwards re-apply the new label to every issue
+    still snoozed under it (remove it, then add it back), which records a
+    fresh event under the current name and re-dates that snooze from the day
+    of the re-application.
     """
     wanted = label.lower()
     latest: datetime.datetime | None = None

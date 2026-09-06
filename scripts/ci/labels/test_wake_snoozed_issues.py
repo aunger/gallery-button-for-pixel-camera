@@ -354,18 +354,30 @@ class TestMain(unittest.TestCase):
 
     def test_ignores_an_issue_labeled_with_the_legacy_spelling(self):
         """A hold 30 days label is not a rung any more, so it is not listed, not
-        dated, and never wakes anything."""
+        dated, and never wakes anything.
+
+        find_label_applied_at is patched so that "not dated" is asserted rather
+        than inferred from the wake that did not happen. Leaving it real would
+        also let a regression to the legacy spelling reach the network: main()
+        swallows anything the history read raises, so the live request's error
+        would be logged and the test would pass regardless.
+        """
         issue = _make_issue(1, ["hold 30 days"])
+        queried = []
 
         def fetch_side_effect(repo, token, label):
+            queried.append(label)
             return [issue] if label == "hold 30 days" else []
 
         with patch.object(wsi, "fetch_issues_with_label", side_effect=fetch_side_effect):
-            with patch.object(wsi, "wake_issue") as mock_wake:
-                result = wsi.main()
+            with patch.object(wsi, "find_label_applied_at", return_value=None) as mock_find:
+                with patch.object(wsi, "wake_issue") as mock_wake:
+                    result = wsi.main()
 
         self.assertEqual(result, 0)
-        mock_wake.assert_not_called()
+        self.assertNotIn("hold 30 days", queried)  # not listed
+        mock_find.assert_not_called()  # not dated
+        mock_wake.assert_not_called()  # never woken
 
     def test_each_rung_waits_out_its_own_day_count(self):
         """Four days in, a 3-day snooze has elapsed and a 7-day one has not."""
