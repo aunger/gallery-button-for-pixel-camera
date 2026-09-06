@@ -875,12 +875,19 @@ class TestOneParent(unittest.TestCase):
     def test_a_404_parent_is_still_read_as_no_parent(self):
         """`get_issue` has already proved the operand exists and is visible, so
         the only cause left for a 404 is GitHub's own "No parent issue found",
-        which is what the fake answers for #42, a fixture issue with no parent."""
+        which is what the fake answers for #42, a fixture issue with no parent.
+
+        The read is pinned along with what it is read as: the reporting
+        assertions below hold just as well for a `parent_of` that never asks
+        `/parent`, so on their own they would cover nothing."""
         fake = FakeApi(three_issues())
         code, out, err = run(
             ["add", OWNER, REPO, "42", "--child-of", "19", "--replace-parent"], fake
         )
         self.assertEqual(code, 0, err)
+        self.assertEqual(
+            self.parent_calls(fake), [("GET", f"/repos/{OWNER}/{REPO}/issues/42/parent")]
+        )
         self.assertIn("Linked:", out)
         self.assertNotIn("replacing", out)
 
