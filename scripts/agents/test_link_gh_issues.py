@@ -762,6 +762,10 @@ class TestOneParent(unittest.TestCase):
     def posts(self, fake):
         return [c for c in fake.calls if c[0] == "POST"]
 
+    def parent_calls(self, fake):
+        """Every call the run made to an issue's `/parent`, as (method, path)."""
+        return [c[:2] for c in fake.calls if c[1].endswith("/parent")]
+
     def test_moving_a_sub_issue_is_refused_without_the_flag(self):
         fake = self.child_of_17()
         code, out, err = run(["add", OWNER, REPO, "42", "--child-of", "19"], fake)
@@ -837,7 +841,7 @@ class TestOneParent(unittest.TestCase):
         fake = FakeApi(two_issues())
         code, _, err = run(["add", OWNER, REPO, "42", "--blocked-by", "17"], fake)
         self.assertEqual(code, 0, err)
-        self.assertEqual([c for c in fake.calls if c[1].endswith("/parent")], [])
+        self.assertEqual(self.parent_calls(fake), [])
 
     def unreadable_parent(self, payload):
         """A fake whose `/parent` answers 200 with something that is not an issue."""
@@ -871,12 +875,19 @@ class TestOneParent(unittest.TestCase):
     def test_a_404_parent_is_still_read_as_no_parent(self):
         """`get_issue` has already proved the operand exists and is visible, so
         the only cause left for a 404 is GitHub's own "No parent issue found",
-        which is what the fake answers for #42, a fixture issue with no parent."""
+        which is what the fake answers for #42, a fixture issue with no parent.
+
+        The read is pinned along with what it is read as: the reporting
+        assertions below hold just as well for a `parent_of` that never asks
+        `/parent`, so on their own they would cover nothing."""
         fake = FakeApi(three_issues())
         code, out, err = run(
             ["add", OWNER, REPO, "42", "--child-of", "19", "--replace-parent"], fake
         )
         self.assertEqual(code, 0, err)
+        self.assertEqual(
+            self.parent_calls(fake), [("GET", f"/repos/{OWNER}/{REPO}/issues/42/parent")]
+        )
         self.assertIn("Linked:", out)
         self.assertNotIn("replacing", out)
 
@@ -905,7 +916,7 @@ class TestOneParent(unittest.TestCase):
             fake,
         )
         self.assertEqual(code, 0, err)
-        self.assertEqual(len([c for c in fake.calls if c[1].endswith("/parent")]), 1)
+        self.assertEqual(len(self.parent_calls(fake)), 1)
         self.assertEqual(len(self.posts(fake)), 2)
         # The second write moves it back, so it must ask to replace as well.
         self.assertTrue(all(c[2].get("replace_parent") for c in self.posts(fake)))
