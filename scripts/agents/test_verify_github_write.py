@@ -475,6 +475,26 @@ class TestDiff(unittest.TestCase):
         regions, _ = vgw.diff_regions("body", "body\nfooter")
         self.assertEqual(regions[0].classification, "addition")
 
+    def test_backticks_wrapped_around_a_link_are_classified_as_their_own_behavior(self):
+        # PR #958 (issue #962): links whose label is shaped like an owner/repo
+        # pair came back wrapped in inserted back-tick runs, while the links in
+        # the same body whose labels held no slash stored intact.  The run
+        # length was never characterized, so any run has to count.
+        link = "[frameworks/base](https://android.googlesource.com/platform/frameworks/base)"
+        for run in (vgw.BACK_TICK, vgw.BACK_TICK * 2):
+            sent = f"read {link} at head"
+            regions, _ = vgw.diff_regions(sent, f"read {run}{link}{run} at head")
+            self.assertEqual(len(regions), 2)
+            for region in regions:
+                self.assertEqual((region.sent, region.stored), ("", run))
+                self.assertEqual(region.classification, "back-tick wrapping")
+
+    def test_an_insertion_carrying_more_than_backticks_is_still_an_addition(self):
+        # The narrow test keeps an appended footer that happens to contain a
+        # back-tick out of the wrapping class, whose advice would misdirect it.
+        regions, _ = vgw.diff_regions("body", "body\n`generated` by a bot")
+        self.assertEqual(regions[0].classification, "addition")
+
     def test_replacement_is_classified_as_other(self):
         regions, _ = vgw.diff_regions("alpha", "omega")
         self.assertEqual(regions[0].classification, "other")
@@ -559,6 +579,21 @@ class TestAdvice(unittest.TestCase):
         advice = vgw.ADVICE["mention dotting"].lower()
         self.assertNotIn("every attempt", advice)
         self.assertIn("not constant", advice)
+
+    def test_every_classification_has_advice(self):
+        # build_report indexes ADVICE by classification name, so a behavior
+        # added without advice would raise while reporting a real finding,
+        # which is the one moment this checker exists for.
+        with open(vgw.__file__, encoding="utf-8") as handle:
+            tree = ast.parse(handle.read())
+        names = [
+            node.value.value
+            for function in ast.walk(tree)
+            if isinstance(function, ast.FunctionDef) and function.name == "classification"
+            for node in ast.walk(function)
+            if isinstance(node, ast.Return) and isinstance(node.value, ast.Constant)
+        ]
+        self.assertEqual(sorted(names), sorted(vgw.ADVICE))
 
     def test_no_advice_carries_a_live_mention_token(self):
         # The advice strings are this checker's own words, so they can be kept

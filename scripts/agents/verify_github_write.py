@@ -2,15 +2,21 @@
 """verify_github_write.py: Read back a GitHub write and diff it against what was sent.
 
 Text an agent posts to GitHub is sometimes different once it is stored, and
-nothing reports the difference (issue #909).  Three alteration behaviors are
+nothing reports the difference (issue #909).  Four alteration behaviors are
 known and no two share a profile: middle dots injected into at-sign mentions,
-angle-bracket constructs removed, and an attribution footer appended that was
-never sent.  They disagree on direction, on write path, and on which construct
-they touch, so no pattern rule generalizes across them.
+angle-bracket constructs removed, an attribution footer appended that was never
+sent, and back-ticks wrapped around a Markdown link whose label is shaped like
+an owner/repo pair (issue #962).  They disagree on direction, on write path, and
+on which construct they touch, so no pattern rule generalizes across them.
 
-A comparison of sent text against stored text is indifferent to all three.  It
-needs no prediction about which path alters what, and it catches a fourth
+A comparison of sent text against stored text is indifferent to all four.  It
+needs no prediction about which path alters what, and it catches a fifth
 behavior nobody has characterized yet.  That is the whole of the design.
+
+The fourth behavior is what that claim looks like when it comes true.  It was
+found on PR #958 by reading a stored body back by hand and comparing it, which
+is exactly the comparison this module automates, and no rule written for the
+first three would have predicted it.
 
 This module is the checker behind the `PostToolUse` hook
 `.claude/hooks/post-tool-use-github-readback.sh`, which is wired in
@@ -94,6 +100,7 @@ FETCH_TIMEOUT_SECONDS = 10
 RETRY_DELAY_SECONDS = 1.5
 
 MIDDLE_DOT = "·"
+BACK_TICK = "`"
 
 EXIT_CLEAN = 0
 EXIT_INTERNAL_ERROR = 1
@@ -466,6 +473,8 @@ class Region:
         """Name the alteration behavior this region looks like."""
         if MIDDLE_DOT in self.stored and MIDDLE_DOT not in self.sent:
             return "mention dotting"
+        if not self.sent and set(self.stored) == {BACK_TICK}:
+            return "back-tick wrapping"
         if self.sent and not self.stored:
             return "removal"
         if self.stored and not self.sent:
@@ -594,6 +603,16 @@ ADVICE = {
         "Text you did not send is in the stored object. Read it before deciding what to "
         "do: an appended attribution footer is prohibited by AGENTS.md and must be "
         "removed by editing the object."
+    ),
+    "back-tick wrapping": (
+        "Storage put back-ticks around text you sent, and nothing reported it. A Markdown "
+        "link wrapped that way is no longer a link: it renders as its own source and "
+        "navigates nowhere. The only trigger characterized so far is a link label shaped "
+        "like an owner/repo pair. On PR #958 two of the six links in one body were wrapped "
+        "and the four whose labels held no slash stored intact. It reproduced on the REST "
+        "path and on the MCP path alike, so changing write path will not avoid it, and "
+        "re-posting the same construct gets the same result. Write the path or name as "
+        "plain text instead, which stores byte for byte."
     ),
     "other": (
         "The stored text differs from what was sent in a way this checker has not seen "
