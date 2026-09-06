@@ -44,6 +44,7 @@ Only the before-merging list controls the merge gate.
    For each parsed issue ID n, fetch the issue (`GET https://api.github.com/repos/{owner}/{repo}/issues/{n}`) and record its title and internal id (the `id` field, not the issue number).
    In steps 3 and 4, an item is "already covered" if the title that would be assigned to it by step 3a (for before-merging items) or step 4a (for follow-on items) matches the title of a prior issue.
    If the comment does not exist, proceed with filing all items normally.
+   If more than one comment matches, or a match is corrupt in some other way, treat the PR as having none: prefer duplicate comments and duplicate issues over the risk of compounding existing corruption.
 
 3. For each item on the *before merging* list, do the following.
    Skip sub-steps 3a and 3b for items already covered by a prior-run comment (step 2), but still execute sub-steps 3c and 3d for those items using the internal id recorded in step 2.

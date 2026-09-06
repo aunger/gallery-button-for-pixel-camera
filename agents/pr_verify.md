@@ -24,6 +24,7 @@ Start by fetching:
    A comment that quotes the marker without opening with it, as a review discussing this document does, is not a plan comment.
    In this comment, each markdown checkbox line carries a tracking-issue number.
    Parse the issue numbers from the comment's *before-merging list*, but **ignore the follow-up issue list**, which should not be addressed now.
+   If more than one comment matches, parse the before-merging list of each: prefer verifying an item twice over skipping one.
 2. Each tracking issue, including its title, body, and all of its comments, to understand what must be verified.
 
 ## Classify each item
