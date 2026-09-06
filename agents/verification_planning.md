@@ -28,6 +28,7 @@ Only the before-merging list controls the merge gate.
 ## What to do
 
 1. Read the issue description, PR description, and all comments on both.
+   The issue's comments are retrieved in one call, but you must check all three comment surfaces of the PR, each its own call: the issue-comment stream, the review bodies, and the inline review threads.
    Look for both kinds of outstanding requirement described under **Role**: unautomated verification steps, and changes outside the repo (such as an issue that needs to be filed).
    Assemble two lists:
 
@@ -35,7 +36,7 @@ Only the before-merging list controls the merge gate.
    - the *follow-on* list, noting for each item the URL of the source comment or description and a brief reason it is not a merge blocker (e.g., "explicitly deferred in PR comment," "out of scope for this PR").
 
 2. **Before filing any issues**, check whether the PR already has a verification-plan comment from a prior run.
-   Search the PR's comments for one that contains the exact HTML marker `<!-- gb4pc-verification-plan -->`.
+   Search for a comment containing the exact HTML marker `<!-- gb4pc-verification-plan -->` in the PR's issue-comment stream, where step 5 posts it.
    If such a comment exists, parse it to extract the list of already-filed issues (each line with a `- [ ]` or `- [x]` checkbox carries an issue number of the form `#{issue number}`).
    Treat those issues as already filed and do not create duplicates for the corresponding items.
    Record the comment's id (the numeric id returned by the comments API, not its URL) for use in step 5.
@@ -75,7 +76,7 @@ Only the before-merging list controls the merge gate.
    c. Do **not** call the `blocked_by` dependency endpoint for follow-on issues.
    Do **not** add any "Blocks PR #..." line to the issue body.
 
-5. Post (or replace) the verification-plan comment on the PR.
+5. Post (or replace) the verification-plan comment in the PR's issue-comment stream.
    The comment must contain the exact HTML marker `<!-- gb4pc-verification-plan -->` on its own line so future runs can find it.
    The rebuilt comment must list all issues--those parsed from the prior-run comment in step 2 and any newly filed in steps 3-4--so that future runs can find the complete record and will not re-file already-existing issues.
    When rebuilding the comment, preserve the checked (`- [x]`) or unchecked (`- [ ]`) state of each item from the prior-run comment for issues that already existed; newly filed issues start as unchecked.

@@ -4,6 +4,21 @@
 
 - This slightly competitive interaction between at least two parties is important to the SDLC, because it reduces the presence of untested ideas in our code.
 
+## A PR carries comments on three surfaces
+
+Reading a PR means reading all three.
+Each is a separate call, and none of them reports what the others hold:
+
+| Surface               | What it holds                                              | `mcp__github__pull_request_read` method |
+| --------------------- | ---------------------------------------------------------- | --------------------------------------- |
+| Issue-comment stream  | Ordinary comments on the PR                                | `get_comments`                          |
+| Review bodies         | The top-level text of each submitted review                | `get_reviews`                           |
+| Inline review threads | Comments anchored to a line of the diff, and their replies | `get_review_comments`                   |
+
+An issue has no diff, so it carries only the first surface: "all comments on the issue" is one call.
+
+Answer an inline comment in a thread (`mcp__github__add_reply_to_pull_request_comment`), rather than as a new PR comment, which leaves the thread shown as unanswered.
+
 ## Reviewer
 
 - A *Reviewer* must not make code changes itself, but should communicate discoveries clearly enough to convince an Author of the need to change the PR.
@@ -111,7 +126,6 @@ An Author may change its position between rounds, in either direction:
 - An Author that declined to open a PR may later become convinced and switch to authoring a PR.
   It opens the PR as usual (see `pr_creation.md`), and the review then proceeds against the PR.
 
-Because each round begins by re-reading the issue, the PR (if any), and all comments, an Author is free to adopt whichever position the evidence supports; it is not bound by a position it took in an earlier round.
 The Author should not flip-flop merely to appease the Reviewer: change position only when genuinely convinced (see the skepticism guidance above).
 
 ## Code review cycles should be overseen by an Orchestrator.
