@@ -94,6 +94,26 @@ Figures taken from a running session move as it runs. The snapshot time is
 printed, and a session whose last record is within `--live-window` seconds of it
 is marked `*`: its row is a lower bound, not a total.
 
+Reading fails one transcript at a time
+--------------------------------------
+
+An unrecognised shape is named against the file and line that carries it, and
+never absorbed into a zero. But it sets aside only its own transcript: the other
+sessions are still reported, with the skip named in the report and on stderr.
+
+That matters because the measurement cannot be retaken tomorrow. Aborting the
+run would let the least interesting session on the machine veto the measurement
+at the one moment it is possible, and a `{session}.jsonl` whose first assistant
+turn has not landed yet is an ordinary few seconds in a session's life rather
+than a corrupt file.
+
+A final line that does not parse is treated the same way, one step smaller. A
+transcript being appended to by a live session can be read mid-write, so the
+last line is dropped with a note and the rest of that transcript is kept.
+
+`--json` carries the skips under `unreadable`, for a caller that needs to know
+the report is partial without reading stderr.
+
 Usage
 -----
 
@@ -103,9 +123,9 @@ Usage
     scripts/agents/dispatch_cost.py --json
 
 Exit codes:
-    0   the breakdown was printed
-    1   no transcripts were found, or one did not have a shape this script reads
-        (the reason is reported on stderr; it never reports zeros instead)
+    0   a breakdown was printed, and any transcript set aside is named in it
+    1   nothing could be read: no project, no transcript, or every transcript
+        set aside (the reason is reported on stderr)
 """
 
 import argparse
@@ -131,7 +151,7 @@ class TranscriptError(Exception):
     """A transcript did not have a shape this script knows how to read."""
 
 
-def fail(path, lineno, message):
+def fail(path: str, lineno: int | None, message: str) -> None:
     """Raise with the file and line that could not be read.
 
     Every unrecognised shape comes through here, so that a harness change is
@@ -165,18 +185,18 @@ class Call:
     read: int
     output: int
     final_output: bool
-    gap_before: float = None
+    gap_before: float | None = None
 
     @property
-    def writes(self):
+    def writes(self) -> int:
         return self.write_5m + self.write_1h
 
     @property
-    def context(self):
+    def context(self) -> int:
         """The prompt this call sat on: everything charged on the input side."""
         return self.input_tokens + self.writes + self.read
 
-    def units(self, multipliers):
+    def units(self, multipliers: Multipliers) -> float:
         return (
             self.input_tokens
             + self.read * multipliers.read
@@ -185,7 +205,7 @@ class Call:
             + self.output * multipliers.output
         )
 
-    def is_rewrite(self, fraction):
+    def is_rewrite(self, fraction: float) -> bool:
         """True when this call re-wrote at least `fraction` of its own context.
 
         A warm call appends: it writes the few thousand tokens added since the
@@ -203,30 +223,31 @@ class Session:
     role: str
     path: str
     calls: list
+    notes: list = dataclasses.field(default_factory=list)
 
     @property
-    def last_activity(self):
+    def last_activity(self) -> datetime:
         return self.calls[-1].ended
 
     @property
-    def context(self):
+    def context(self) -> int:
         """Context the last call sat on."""
         return self.calls[-1].context
 
-    def total(self, attribute):
+    def total(self, attribute: str) -> int:
         return sum(getattr(call, attribute) for call in self.calls)
 
-    def units(self, multipliers):
+    def units(self, multipliers: Multipliers) -> float:
         return sum(call.units(multipliers) for call in self.calls)
 
-    def rewrites(self, fraction):
+    def rewrites(self, fraction: float) -> list:
         return [call for call in self.calls if call.is_rewrite(fraction)]
 
-    def is_live(self, snapshot, window):
+    def is_live(self, snapshot: datetime, window: float) -> bool:
         return (snapshot - self.last_activity).total_seconds() <= window
 
 
-def parse_timestamp(value, path, lineno):
+def parse_timestamp(value, path: str, lineno: int) -> datetime:
     if not isinstance(value, str) or not value:
         fail(path, lineno, "record has no `timestamp` string")
     text = value[:-1] + "+00:00" if value.endswith("Z") else value
@@ -237,14 +258,14 @@ def parse_timestamp(value, path, lineno):
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
-def read_int(mapping, key, path, lineno, owner):
+def read_int(mapping: dict, key: str, path: str, lineno: int, owner: str) -> int:
     value = mapping.get(key)
     if isinstance(value, bool) or not isinstance(value, int):
         fail(path, lineno, "%s has no integer `%s` (found %r)" % (owner, key, value))
     return value
 
 
-def read_usage(usage, path, lineno, assume_5m_writes):
+def read_usage(usage: dict, path: str, lineno: int, assume_5m_writes: bool) -> tuple:
     """Pull the five token counts out of one `message.usage` block."""
     input_tokens = read_int(usage, "input_tokens", path, lineno, "usage")
     writes = read_int(usage, "cache_creation_input_tokens", path, lineno, "usage")
@@ -262,39 +283,75 @@ def read_usage(usage, path, lineno, assume_5m_writes):
                 "`cache_creation` sums to %d but `cache_creation_input_tokens` is %d"
                 % (write_5m + write_1h, writes),
             )
-    elif breakdown is None and assume_5m_writes:
+    elif breakdown is not None:
+        # `--assume-5m-writes` is not the remedy here: it covers an absent
+        # breakdown, so naming it would send the reader in a circle.
+        fail(path, lineno, "`cache_creation` is not an object (found %r)" % (breakdown,))
+    elif writes == 0 or assume_5m_writes:
+        # Nothing to split when nothing was written: zero tokens cost zero at
+        # either TTL, so no assumption is being made and none can be wrong.
         write_5m, write_1h = writes, 0
     else:
         fail(
             path,
             lineno,
-            "usage has no `cache_creation` breakdown by TTL (found %r); a 1-hour write "
-            "costs 1.6x a 5-minute one, so pass --assume-5m-writes to price every write "
-            "at the 5-minute rate" % (breakdown,),
+            "usage has no `cache_creation` breakdown by TTL for its %d written tokens; a "
+            "1-hour write costs 1.6x a 5-minute one, so pass --assume-5m-writes to price "
+            "every write at the 5-minute rate" % writes,
         )
     return input_tokens, write_5m, write_1h, read, output
 
 
-def iter_records(path):
+def parse_line(path: str, lineno: int, line: str) -> dict:
+    try:
+        record = json.loads(line)
+    except ValueError as error:
+        fail(path, lineno, "line is not JSON: %s" % error)
+    if not isinstance(record, dict):
+        fail(path, lineno, "line is not a JSON object")
+    return record
+
+
+def iter_records(path: str, notes: list | None = None):
+    """Yield `(lineno, record)` for each line of a transcript.
+
+    The last line is held back and parsed only once the file has ended, because
+    a transcript being appended to by a live session can be read mid-write. An
+    unparsable final line is that incomplete append, so it is noted and dropped
+    rather than failing the whole transcript; a malformed line anywhere else is
+    a real corruption and fails.
+    """
+    held = None
     with open(path, encoding="utf-8") as handle:
         for lineno, line in enumerate(handle, 1):
             line = line.strip()
             if not line:
                 continue
-            try:
-                record = json.loads(line)
-            except ValueError as error:
-                fail(path, lineno, "line is not JSON: %s" % error)
-            if not isinstance(record, dict):
-                fail(path, lineno, "line is not a JSON object")
-            yield lineno, record
+            if held is not None:
+                yield held[0], parse_line(path, held[0], held[1])
+            held = (lineno, line)
+    if held is None:
+        return
+    try:
+        record = parse_line(path, held[0], held[1])
+    except TranscriptError:
+        if notes is None:
+            raise
+        notes.append("line %d was still being written and was skipped" % held[0])
+        return
+    yield held[0], record
 
 
-def load_calls(path, assume_5m_writes=False):
-    """Collapse a transcript's records into one `Call` per `message.id`."""
+def load_calls(path: str, assume_5m_writes: bool = False) -> tuple:
+    """Collapse a transcript's records into one `Call` per `message.id`.
+
+    Returns the calls and any notes about what could not be read but did not
+    invalidate the rest.
+    """
     groups = {}
     order = []
-    for lineno, record in iter_records(path):
+    notes = []
+    for lineno, record in iter_records(path, notes):
         message = record.get("message")
         if not isinstance(message, dict):
             continue
@@ -367,10 +424,10 @@ def load_calls(path, assume_5m_writes=False):
         if calls:
             call.gap_before = (call.started - calls[-1].ended).total_seconds()
         calls.append(call)
-    return calls
+    return calls, notes
 
 
-def find_project(projects_root, project):
+def find_project(projects_root: str, project: str | None) -> str:
     root = os.path.expanduser(projects_root)
     if not os.path.isdir(root):
         raise TranscriptError("no projects directory at %s" % root)
@@ -392,7 +449,7 @@ def find_project(projects_root, project):
     return candidates[0]
 
 
-def _has_transcript(directory):
+def _has_transcript(directory: str) -> bool:
     """True if the project holds an orchestrator transcript or any dispatch."""
     return bool(
         glob.glob(os.path.join(directory, "*.jsonl"))
@@ -400,11 +457,11 @@ def _has_transcript(directory):
     )
 
 
-def _dispatch_paths(project_dir, session):
+def _dispatch_paths(project_dir: str, session: str) -> list:
     return sorted(glob.glob(os.path.join(project_dir, session, "subagents", "agent-*.jsonl")))
 
 
-def find_sessions(project_dir, session_id=None):
+def find_sessions(project_dir: str, session_id: str | None = None) -> tuple:
     """List each session's orchestrator transcript, then its dispatches.
 
     A session directory can outlive or precede its orchestrator transcript, and
@@ -442,16 +499,35 @@ def find_sessions(project_dir, session_id=None):
     return sessions, missing
 
 
-def load_sessions(project_dir, session_id, assume_5m_writes):
+def load_sessions(project_dir: str, session_id: str | None, assume_5m_writes: bool) -> tuple:
+    """Load every transcript, degrading one at a time rather than all at once.
+
+    A transcript that cannot be read is named and set aside, and the rest are
+    still reported. The measurement this script exists for cannot be retaken
+    later, so the least interesting session on the machine must not be able to
+    veto it: a `{session}.jsonl` whose first assistant turn has not landed yet
+    is an ordinary few seconds in a session's life, not a corrupt file.
+    """
     found, missing = find_sessions(project_dir, session_id)
-    loaded = [
-        Session(label, role, path, load_calls(path, assume_5m_writes))
-        for role, label, path in found
-    ]
-    return loaded, missing
+    loaded = []
+    unreadable = []
+    for role, label, path in found:
+        try:
+            calls, notes = load_calls(path, assume_5m_writes)
+        except TranscriptError as error:
+            unreadable.append({"label": label, "role": role, "path": path, "reason": str(error)})
+            continue
+        loaded.append(Session(label, role, path, calls, notes))
+    return loaded, missing, unreadable
 
 
-def session_summary(session, multipliers, fraction, snapshot, window):
+def session_summary(
+    session: Session,
+    multipliers: Multipliers,
+    fraction: float,
+    snapshot: datetime,
+    window: float,
+) -> dict:
     tokens = {
         "input": session.total("input_tokens"),
         "cache_read": session.total("read"),
@@ -477,6 +553,7 @@ def session_summary(session, multipliers, fraction, snapshot, window):
         "last_activity": session.last_activity.isoformat().replace("+00:00", "Z"),
         "calls": len(session.calls),
         "calls_with_final_output": sum(1 for call in session.calls if call.final_output),
+        "notes": list(session.notes),
         "context": session.context,
         "tokens": tokens,
         "units": units,
@@ -498,7 +575,7 @@ def session_summary(session, multipliers, fraction, snapshot, window):
     }
 
 
-def call_rows(session, multipliers, fraction):
+def call_rows(session: Session, multipliers: Multipliers, fraction: float) -> list:
     return [
         {
             "call": call.index,
@@ -517,15 +594,15 @@ def call_rows(session, multipliers, fraction):
     ]
 
 
-def thousands(value):
+def thousands(value: float) -> str:
     return "{:,}".format(int(round(value)))
 
 
-def percent(value):
+def percent(value: float) -> str:
     return "%d%%" % round(value * 100)
 
 
-def render_table(headers, rows, aligns):
+def render_table(headers: list, rows: list, aligns: str) -> list:
     """Render one text table, sizing each column to its widest cell."""
     widths = [len(header) for header in headers]
     for row in rows:
@@ -542,8 +619,16 @@ def render_table(headers, rows, aligns):
 
 
 def render_report(
-    summaries, multipliers, fraction, snapshot, window, project_dir, detail, missing=()
-):
+    summaries: list,
+    multipliers: Multipliers,
+    fraction: float,
+    snapshot: datetime,
+    window: float,
+    project_dir: str,
+    detail: list | None,
+    missing: list = (),
+    unreadable: list = (),
+) -> list:
     live = [summary["label"] for summary in summaries if summary["live"]]
     lines = [
         "Project %s" % project_dir,
@@ -552,6 +637,7 @@ def render_report(
         "1-hour write %gx, output %gx."
         % (multipliers.read, multipliers.write_5m, multipliers.write_1h, multipliers.output),
     ]
+    lines.append("`ctx` is the context the session's last call sat on, not a total.")
     if missing:
         lines.append(
             "No orchestrator transcript on disk for %s, so only its dispatches are counted."
@@ -564,6 +650,22 @@ def render_report(
         )
     else:
         lines.append("No session wrote a record within %gs of the snapshot." % window)
+
+    if unreadable:
+        lines.append("")
+        lines.append(
+            "%d transcript%s could not be read and %s excluded from every figure below:"
+            % (
+                len(unreadable),
+                "" if len(unreadable) == 1 else "s",
+                "is" if len(unreadable) == 1 else "are",
+            )
+        )
+        for entry in unreadable:
+            lines.append("  %s (%s): %s" % (entry["label"], entry["role"], entry["reason"]))
+    for summary in summaries:
+        for note in summary["notes"]:
+            lines.append("  %s (%s): %s" % (summary["label"], summary["role"], note))
     lines.append("")
 
     headers = [
@@ -679,8 +781,8 @@ def render_report(
     return lines
 
 
-def _totals_row(summaries):
-    def total(*keys):
+def _totals_row(summaries: list) -> list:
+    def total(*keys: str) -> float:
         running = 0
         for summary in summaries:
             value = summary
@@ -709,7 +811,7 @@ def _totals_row(summaries):
     ]
 
 
-def build_parser():
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Report per-dispatch token spend from the harness transcripts.",
         epilog="Transcripts live only for the life of the session, so run this while the "
@@ -748,8 +850,9 @@ def build_parser():
     parser.add_argument(
         "--assume-5m-writes",
         action="store_true",
-        help="price cache writes at the 5-minute rate when a transcript carries no "
-        "`cache_creation` breakdown by TTL, instead of failing",
+        help="price cache writes at the 5-minute rate when a record that wrote tokens "
+        "carries no `cache_creation` breakdown by TTL, instead of setting that transcript "
+        "aside. A record that wrote nothing needs no breakdown and never asks for this",
     )
     prices = parser.add_argument_group(
         "multipliers", "ratios to the base input price; this script has no price table"
@@ -761,7 +864,7 @@ def build_parser():
     return parser
 
 
-def main(argv=None):
+def main(argv: list | None = None) -> int:
     args = build_parser().parse_args(argv)
     multipliers = Multipliers(
         read=args.read_multiplier,
@@ -772,9 +875,19 @@ def main(argv=None):
     snapshot = datetime.now(timezone.utc)
     try:
         project_dir = find_project(args.projects_root, args.project)
-        sessions, missing = load_sessions(project_dir, args.session, args.assume_5m_writes)
+        sessions, missing, unreadable = load_sessions(
+            project_dir, args.session, args.assume_5m_writes
+        )
     except TranscriptError as error:
         print("dispatch_cost: %s" % error, file=sys.stderr)
+        return 1
+
+    # Every unreadable transcript is named on stderr whether or not a report
+    # reaches stdout, so a skip is never silent.
+    for entry in unreadable:
+        print("dispatch_cost: skipped %s" % entry["reason"], file=sys.stderr)
+    if not sessions:
+        print("dispatch_cost: no transcript could be read", file=sys.stderr)
         return 1
 
     summaries = [
@@ -796,6 +909,7 @@ def main(argv=None):
             "rewrite_fraction": args.rewrite_fraction,
             "live_window_seconds": args.live_window,
             "missing_orchestrator_transcripts": missing,
+            "unreadable": unreadable,
             "sessions": summaries,
         }
         if detail:
@@ -813,6 +927,7 @@ def main(argv=None):
         project_dir,
         detail,
         missing,
+        unreadable,
     ):
         print(line)
     return 0

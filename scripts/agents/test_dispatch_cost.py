@@ -435,7 +435,12 @@ class TestDiscovery(ProjectFixture):
 
 
 class TestFailsLoudly(ProjectFixture):
-    """Every unrecognised shape must be named, never reported as a zero."""
+    """Every unrecognised shape must be named, never reported as a zero.
+
+    These fixtures hold a single transcript, so setting it aside leaves nothing
+    to report and the run exits 1. `TestDegradesOneTranscriptAtATime` covers
+    what happens when a healthy transcript sits beside the broken one.
+    """
 
     def assert_refused(self, *argv, expect):
         code, out, err = self.run_main(*argv)
@@ -465,12 +470,26 @@ class TestFailsLoudly(ProjectFixture):
         self.assert_refused(expect="no record carries `message.usage`")
 
     def test_a_line_that_is_not_json(self):
-        self.orchestrator([record("msg_a", "2026-09-06T09:00:00.000Z"), "{not json"])
+        # Not the last line: a malformed line mid-file is real corruption, not
+        # the incomplete append that a live writer leaves at the tail.
+        self.orchestrator(
+            [
+                record("msg_a", "2026-09-06T09:00:00.000Z"),
+                "{not json",
+                record("msg_b", "2026-09-06T09:00:01.000Z"),
+            ]
+        )
         err = self.assert_refused(expect="line is not JSON")
         self.assertIn(".jsonl:2", err)
 
     def test_a_line_that_is_not_an_object(self):
-        self.orchestrator([record("msg_a", "2026-09-06T09:00:00.000Z"), "[1, 2]"])
+        self.orchestrator(
+            [
+                record("msg_a", "2026-09-06T09:00:00.000Z"),
+                "[1, 2]",
+                record("msg_b", "2026-09-06T09:00:01.000Z"),
+            ]
+        )
         self.assert_refused(expect="line is not a JSON object")
 
     def test_a_missing_usage_field(self):
@@ -525,6 +544,19 @@ class TestFailsLoudly(ProjectFixture):
         self.orchestrator([entry])
         self.assert_refused(expect="`cache_creation` sums to 1007")
 
+    def test_a_cache_creation_that_is_not_an_object(self):
+        # `--assume-5m-writes` covers an absent breakdown, so it must not be
+        # offered as the remedy here: passing it would reproduce this error.
+        entry = record("msg_a", "2026-09-06T09:00:00.000Z", write_5m=1000)
+        entry["message"]["usage"]["cache_creation"] = [{"ephemeral_5m_input_tokens": 1000}]
+        self.orchestrator([entry])
+        err = self.assert_refused(expect="`cache_creation` is not an object")
+        self.assertNotIn("--assume-5m-writes", err)
+
+        code, out, err = self.run_main("--assume-5m-writes")
+        self.assertEqual(code, 1, out)
+        self.assertIn("`cache_creation` is not an object", err)
+
     def test_a_missing_cache_creation_breakdown(self):
         self.orchestrator(
             [record("msg_a", "2026-09-06T09:00:00.000Z", write_5m=1000, breakdown=False)]
@@ -540,6 +572,152 @@ class TestFailsLoudly(ProjectFixture):
         self.assertEqual(session["tokens"]["cache_write_5m"], 1000)
         self.assertEqual(session["tokens"]["cache_write_1h"], 0)
         self.assertEqual(session["units"]["cache_write"], 1250.0)
+
+    def test_a_record_that_wrote_nothing_needs_no_breakdown(self):
+        # Zero tokens cost zero at either TTL, so there is no assumption to
+        # make. Refusing here would push the operator into --assume-5m-writes,
+        # which would then silently reprice real writes elsewhere in the run.
+        self.orchestrator(
+            [record("msg_a", "2026-09-06T09:00:00.000Z", read=5000, output=7, breakdown=False)]
+        )
+        session = self.run_json()["sessions"][0]
+        self.assertEqual(session["calls"], 1)
+        self.assertEqual(session["tokens"]["cache_write_5m"], 0)
+        self.assertEqual(session["units"]["cache_write"], 0.0)
+
+    def test_a_real_write_still_needs_its_breakdown_in_the_same_transcript(self):
+        self.orchestrator(
+            [
+                record("msg_a", "2026-09-06T09:00:00.000Z", read=5000, breakdown=False),
+                record("msg_b", "2026-09-06T09:00:10.000Z", write_5m=1000, breakdown=False),
+            ]
+        )
+        self.assert_refused(expect="breakdown by TTL for its 1000 written tokens")
+
+
+class TestDegradesOneTranscriptAtATime(ProjectFixture):
+    """One unreadable transcript must not take the whole measurement with it.
+
+    The figures cannot be recomputed tomorrow, so a session that has not yet
+    written its first assistant turn must not be able to veto the report for
+    every other session on the machine.
+    """
+
+    OTHER = "99999999-8888-7777-6666-555555555555"
+
+    def test_a_healthy_transcript_is_still_reported_beside_an_unreadable_one(self):
+        self.orchestrator(
+            [record("msg_a", "2026-09-06T09:00:00.000Z", read=5000, output=9)],
+        )
+        self.orchestrator([non_call_record("2026-09-06T09:00:00.000Z")], session=self.OTHER)
+        code, out, err = self.run_main()
+        self.assertEqual(code, 0, err)
+        self.assertIn(SESSION, out)
+        self.assertIn("5,000", out)
+
+    def test_the_transcript_that_was_set_aside_is_named_in_the_report(self):
+        self.orchestrator([record("msg_a", "2026-09-06T09:00:00.000Z")])
+        self.orchestrator([non_call_record("2026-09-06T09:00:00.000Z")], session=self.OTHER)
+        code, out, err = self.run_main()
+        self.assertEqual(code, 0, err)
+        self.assertIn("1 transcript could not be read", out)
+        self.assertIn(self.OTHER, out)
+        self.assertIn("no record carries `message.usage`", out)
+
+    def test_the_skip_also_reaches_stderr(self):
+        self.orchestrator([record("msg_a", "2026-09-06T09:00:00.000Z")])
+        self.orchestrator([non_call_record("2026-09-06T09:00:00.000Z")], session=self.OTHER)
+        code, out, err = self.run_main()
+        self.assertEqual(code, 0)
+        self.assertIn("skipped", err)
+        self.assertIn(self.OTHER, err)
+
+    def test_json_carries_the_skips_under_unreadable(self):
+        self.orchestrator([record("msg_a", "2026-09-06T09:00:00.000Z")])
+        self.orchestrator([non_call_record("2026-09-06T09:00:00.000Z")], session=self.OTHER)
+        payload = self.run_json()
+        self.assertEqual([s["label"] for s in payload["sessions"]], [SESSION])
+        self.assertEqual(len(payload["unreadable"]), 1)
+        self.assertEqual(payload["unreadable"][0]["label"], self.OTHER)
+        self.assertIn("no record carries `message.usage`", payload["unreadable"][0]["reason"])
+
+    def test_an_empty_transcript_does_not_stop_the_report(self):
+        self.orchestrator([record("msg_a", "2026-09-06T09:00:00.000Z")])
+        write_transcript(os.path.join(self.project, self.OTHER + ".jsonl"), [])
+        code, out, err = self.run_main()
+        self.assertEqual(code, 0, err)
+        self.assertIn(SESSION, out)
+        self.assertIn(self.OTHER, out)
+
+    def test_a_corrupt_dispatch_leaves_its_orchestrator_reported(self):
+        self.orchestrator([record("msg_a", "2026-09-06T09:00:00.000Z")])
+        self.dispatch(
+            "aaaa",
+            [
+                record("msg_b", "2026-09-06T09:00:01.000Z"),
+                "{torn",
+                record("msg_c", "2026-09-06T09:00:02.000Z"),
+            ],
+        )
+        payload = self.run_json()
+        self.assertEqual([s["label"] for s in payload["sessions"]], [SESSION])
+        self.assertEqual(payload["unreadable"][0]["label"], "aaaa")
+
+    def test_nothing_readable_is_still_an_error_with_no_report(self):
+        self.orchestrator([non_call_record("2026-09-06T09:00:00.000Z")])
+        self.orchestrator([non_call_record("2026-09-06T09:00:00.000Z")], session=self.OTHER)
+        code, out, err = self.run_main()
+        self.assertEqual(code, 1)
+        self.assertEqual(out, "")
+        self.assertIn("no transcript could be read", err)
+
+
+class TestTornFinalLine(ProjectFixture):
+    """A live writer can be read mid-append, so the tail is held back."""
+
+    def test_an_unparsable_final_line_is_dropped_not_fatal(self):
+        self.orchestrator(
+            [
+                record("msg_a", "2026-09-06T09:00:00.000Z", read=5000),
+                record("msg_b", "2026-09-06T09:00:10.000Z", read=6000),
+                '{"type": "assistant", "message": {"id": "msg_c", "usa',
+            ]
+        )
+        payload = self.run_json()
+        session = payload["sessions"][0]
+        self.assertEqual(session["calls"], 2)
+        self.assertEqual(session["tokens"]["cache_read"], 11000)
+        self.assertEqual(payload["unreadable"], [])
+
+    def test_the_dropped_line_is_noted_in_the_report(self):
+        self.orchestrator([record("msg_a", "2026-09-06T09:00:00.000Z"), '{"type": "assist'])
+        payload = self.run_json()
+        self.assertEqual(
+            payload["sessions"][0]["notes"], ["line 2 was still being written and was skipped"]
+        )
+        code, out, err = self.run_main()
+        self.assertEqual(code, 0, err)
+        self.assertIn("line 2 was still being written and was skipped", out)
+
+    def test_a_complete_final_line_is_still_read(self):
+        self.orchestrator(
+            [
+                record("msg_a", "2026-09-06T09:00:00.000Z", read=5000),
+                record("msg_b", "2026-09-06T09:00:10.000Z", read=6000),
+            ]
+        )
+        payload = self.run_json()
+        self.assertEqual(payload["sessions"][0]["calls"], 2)
+        self.assertEqual(payload["sessions"][0]["notes"], [])
+
+    def test_a_torn_tail_after_a_trailing_blank_line_is_still_the_tail(self):
+        path = os.path.join(self.project, SESSION + ".jsonl")
+        write_transcript(path, [record("msg_a", "2026-09-06T09:00:00.000Z")])
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write('\n{"type": "assist\n')
+        payload = self.run_json()
+        self.assertEqual(payload["sessions"][0]["calls"], 1)
+        self.assertEqual(len(payload["sessions"][0]["notes"]), 1)
 
 
 class TestRendering(ProjectFixture):
@@ -568,6 +746,14 @@ class TestRendering(ProjectFixture):
         self.assertIn("dispatch", out)
         self.assertIn("TOTAL", out)
         self.assertIn("2 sessions", out)
+
+    def test_ctx_is_explained_as_a_last_call_figure_not_a_total(self):
+        # It sits in a row of columns that are all totals, so the report has to
+        # say that this one is not.
+        self.orchestrator([record("msg_a", "2026-09-06T09:00:00.000Z")])
+        code, out, err = self.run_main()
+        self.assertEqual(code, 0, err)
+        self.assertIn("`ctx` is the context the session's last call sat on, not a total.", out)
 
     def test_the_multipliers_in_force_are_printed(self):
         self.orchestrator([record("msg_a", "2026-09-06T09:00:00.000Z")])
