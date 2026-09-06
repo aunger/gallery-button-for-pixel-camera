@@ -26,7 +26,7 @@ These rules are absolute:
    It may carry the user's words to a sub, and a sub's words back to the user.
    It must never carry one sub-agent's words to another sub-agent.
    If two sub-agents need to communicate, they leave each other GitHub comments.
-4. The Orchestrator reads only the titles, labels, and states of the issue and of the PR (no diff, description, comments, mergeability, or check-run results).
+4. The Orchestrator reads only the titles, labels, and open/closed states of the issue and of the PR (no diff, description, comments, mergeability, or check-run results).
    The Orchestrator does not read source files.
    Its only window into CI is the CI Monitor (`scripts/ci_monitor/ci_monitor.py`): no PR-activity subscription, no job log, no fetching PR state on a wake or a timer.
    The issue number comes from the user and is plugged into the launch form as a literal token.
@@ -40,7 +40,7 @@ The Orchestrator is not a Reviewer or a Programmer.
 ### Orchestrator may not
 
 - Read source files (Read, Bash cat/grep, etc.)
-- Read the PR or the issue beyond their titles, labels, and states
+- Read the PR or the issue beyond their titles, labels, and open/closed states
 - Hold a PR-activity subscription or set a timer to re-fetch PR state
 - Edit or write files
 - Diagnose bugs or evaluate code
