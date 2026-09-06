@@ -475,7 +475,7 @@ class TestDiff(unittest.TestCase):
         regions, _ = vgw.diff_regions("body", "body\nfooter")
         self.assertEqual(regions[0].classification, "addition")
 
-    def test_backticks_wrapped_around_a_link_are_classified_as_their_own_behavior(self):
+    def test_backticks_inserted_around_a_link_are_classified_as_their_own_behavior(self):
         # PR #958 (issue #962): links whose label is shaped like an owner/repo
         # pair came back wrapped in inserted back-tick runs, while the links in
         # the same body whose labels held no slash stored intact.  The run
@@ -487,11 +487,19 @@ class TestDiff(unittest.TestCase):
             self.assertEqual(len(regions), 2)
             for region in regions:
                 self.assertEqual((region.sent, region.stored), ("", run))
-                self.assertEqual(region.classification, "back-tick wrapping")
+                self.assertEqual(region.classification, "back-tick insertion")
+
+    def test_a_lone_inserted_backtick_is_classified_the_same_way(self):
+        # The class is named for what one region is, because one region is all
+        # a Region can see.  A single inserted back-tick wraps nothing, so a
+        # class named for a pair would have promised more than it can tell.
+        regions, _ = vgw.diff_regions("see foo() below", "see `foo() below")
+        self.assertEqual(len(regions), 1)
+        self.assertEqual(regions[0].classification, "back-tick insertion")
 
     def test_an_insertion_carrying_more_than_backticks_is_still_an_addition(self):
         # The narrow test keeps an appended footer that happens to contain a
-        # back-tick out of the wrapping class, whose advice would misdirect it.
+        # back-tick out of the insertion class, whose advice would misdirect it.
         regions, _ = vgw.diff_regions("body", "body\n`generated` by a bot")
         self.assertEqual(regions[0].classification, "addition")
 
@@ -579,6 +587,23 @@ class TestAdvice(unittest.TestCase):
         advice = vgw.ADVICE["mention dotting"].lower()
         self.assertNotIn("every attempt", advice)
         self.assertIn("not constant", advice)
+
+    def test_the_backtick_advice_does_not_claim_a_retry_is_pointless(self):
+        # Mention dotting is the one behavior in this table that was probed for
+        # constancy, and it turned out not to be constant.  This one has not
+        # been probed at all, so the determinism claim retracted above is not
+        # available here either.
+        advice = vgw.ADVICE["back-tick insertion"].lower()
+        self.assertNotIn("same result", advice)
+        self.assertIn("not known", advice)
+
+    def test_the_backtick_advice_sends_the_reader_to_the_stored_object(self):
+        # The predicate sees an insertion of back-ticks, not what they enclose,
+        # and PR #958 never pinned down whether the run enclosed the whole link
+        # or only its label.  Those render differently, so the advice must not
+        # assert an outcome it cannot know.
+        advice = vgw.ADVICE["back-tick insertion"].lower()
+        self.assertIn("read it rather than assuming", advice)
 
     def test_every_classification_has_advice(self):
         # build_report indexes ADVICE by classification name, so a behavior
