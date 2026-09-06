@@ -4,6 +4,25 @@
 
 - This slightly competitive interaction between at least two parties is important to the SDLC, because it reduces the presence of untested ideas in our code.
 
+## A PR carries comments on three surfaces
+
+Reading a PR means reading all three.
+Each is a separate call, and none of them reports what the others hold:
+
+| Surface               | What it holds                                              | `mcp__github__pull_request_read` method |
+| --------------------- | ---------------------------------------------------------- | --------------------------------------- |
+| Issue-comment stream  | Ordinary comments on the PR                                | `get_comments`                          |
+| Review bodies         | The top-level text of each submitted review                | `get_reviews`                           |
+| Inline review threads | Comments anchored to a line of the diff, and their replies | `get_review_comments`                   |
+
+An issue has no diff, so it carries only the first surface: "all comments on the issue" is one call.
+
+A fetch of one surface looks the same whether the other two are empty or full, so an unread thread and an absent one are indistinguishable from the result.
+Inline threads are where a human reviewer's comments land; an agent review does not go there (see "Reviewer" below).
+An agent that skips the third surface therefore loses the user's words while every agent-to-agent message still arrives, so the loop looks healthy from inside.
+
+Answer an inline thread inside that thread (`mcp__github__add_reply_to_pull_request_comment`), rather than as a new PR comment, which leaves the thread reading as unanswered.
+
 ## Reviewer
 
 - A *Reviewer* must not make code changes itself, but should communicate discoveries clearly enough to convince an Author of the need to change the PR.
@@ -111,14 +130,14 @@ An Author may change its position between rounds, in either direction:
 - An Author that declined to open a PR may later become convinced and switch to authoring a PR.
   It opens the PR as usual (see `pr_creation.md`), and the review then proceeds against the PR.
 
-Because each round begins by re-reading the issue, the PR (if any), and all comments, an Author is free to adopt whichever position the evidence supports; it is not bound by a position it took in an earlier round.
+Because each round begins by re-reading the issue, the PR (if any), and all three of its comment surfaces, an Author is free to adopt whichever position the evidence supports; it is not bound by a position it took in an earlier round.
 The Author should not flip-flop merely to appease the Reviewer: change position only when genuinely convinced (see the skepticism guidance above).
 
 ## Code review cycles should be overseen by an Orchestrator.
 
 - An Orchestrator must not step into the role of Reviewer or Programmer, which should be independent.
 - The Orchestrator does not carry messages between Author and Reviewer.
-  Author and Reviewer communicate with each other through GitHub comments they read directly.
+  Author and Reviewer communicate with each other through GitHub comments they read directly, on all three surfaces.
   The Orchestrator relays only the user's exact words and exact text from `agents/` files.
   See "Orchestrator communication discipline" in `dev_orchestration.md`.
 
