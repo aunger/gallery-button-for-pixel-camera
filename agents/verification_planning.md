@@ -28,6 +28,8 @@ Only the before-merging list controls the merge gate.
 ## What to do
 
 1. Read the issue description, PR description, and all comments on both.
+   The issue's comments are one call; the PR's live on three surfaces, each its own call: the issue-comment stream, the review bodies, and the inline review threads.
+   A requirement raised only in an inline thread is invisible to a fetch of the other two.
    Look for both kinds of outstanding requirement described under **Role**: unautomated verification steps, and changes outside the repo (such as an issue that needs to be filed).
    Assemble two lists:
 

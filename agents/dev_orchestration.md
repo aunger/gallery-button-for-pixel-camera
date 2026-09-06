@@ -137,13 +137,15 @@ Verification Planner comment: {numeric comment id, or "None"}
 Role assignment statements (copy the applicable line exactly):
 
 - Programmer: "You are a Programmer resolving the linked issue.
-  You *must* start your turn by re-fetching the description and all comments on the issue and, if it exists, on the PR.
+  You *must* start your turn by re-fetching the description and all comments on the issue and, if it exists, on the PR (on a PR, all three comment surfaces: the issue-comment stream, the review bodies, and the inline review threads).
   If no PR exists, create one before you exit, unless the issue warrants declining to open a PR (see "Declining to open a PR" in `pr_participation.md`)."
-- Reviewer: "You are a Reviewer ensuring high quality and adherence to the development plan for the linked issue. You *must* start your turn by re-fetching the description and all comments on the issue and on the PR."
-- Verification planner: "You are a Verification Planner: scan the linked issue and PR for outstanding before-merging requirements and file a tracking issue, linked to the PR, for each one. You *must* start your turn by re-fetching the description and all comments on the issue and on the PR."
+- Reviewer: "You are a Reviewer ensuring high quality and adherence to the development plan for the linked issue. You *must* start your turn by re-fetching the description and all comments on the issue and on the PR (on a PR, all three comment surfaces: the issue-comment stream, the review bodies, and the inline review threads)."
+- Verification planner: "You are a Verification Planner: scan the linked issue and PR for outstanding before-merging requirements and file a tracking issue, linked to the PR, for each one. You *must* start your turn by re-fetching the description and all comments on the issue and on the PR (on a PR, all three comment surfaces: the issue-comment stream, the review bodies, and the inline review threads)."
 - Verification agent: "You are a Verification Agent: carry out the before-merging steps from the Verification Planner report on the linked PR, automating them where possible, and report results. You *must* start your turn by re-fetching the Verification Planner comment on the PR and each before-merging tracking issue it lists."
 
 The Programmer statement names the decline path so the dispatched Programmer receives it in the copied line, not only by reading `pr_participation.md`.
+The first three statements name the three comment surfaces for the same reason: an agent that fetches the issue-comment stream alone reads "all comments" as satisfied, and that result looks identical whether or not review threads are waiting.
+The Verification Agent statement needs no such phrase, because it names its inputs instead of "all comments": the verification-plan comment is posted to the PR's issue-comment stream, and the tracking issues are issues, which have no diff and so no review threads.
 An Author that legitimately declines satisfies its exit obligation by posting the explanatory issue comment and reporting that it opened no PR, pointing to that comment (see the Author work-location report below), instead of creating a PR.
 
 ## Decision-signal templates
