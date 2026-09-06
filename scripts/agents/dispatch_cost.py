@@ -45,7 +45,7 @@ Output is a floor, and the script says by how much
 The final `output_tokens` is written only on a record whose `stop_reason` is
 set. Where a message has no such record the transcript keeps whatever partial
 count the response had streamed so far, and no total for it exists on disk.
-Measured over the 947 calls present on 2026-09-06: 320 recorded a final count
+Measured on 2026-09-06 over a sample of 947 calls: 320 recorded a final count
 and averaged 557 output tokens, while the other 627 averaged 7.
 
 Taking the first record's value instead of the maximum would have lost even the
