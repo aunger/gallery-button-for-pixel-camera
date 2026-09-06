@@ -20,7 +20,7 @@ Note: Both items may be provided in a single URL of the form `https://github.com
 Start by fetching:
 
 1. The Verification Planner comment.
-   If it was not provided, locate it by searching comments for the HTML marker
+   If it was not provided, locate it by searching the PR's comments for the HTML marker
    `<!-- gb4pc-verification-plan -->`.
    In this comment, each markdown checkbox line carries a tracking-issue number.
    Parse the issue numbers from the comment's *before-merging list*, but **ignore the follow-up issue list**, which should not be addressed now.
