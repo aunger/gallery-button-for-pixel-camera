@@ -146,9 +146,6 @@ Role assignment statements (copy the applicable line exactly):
 The Programmer statement names the decline path so the dispatched Programmer receives it in the copied line, not only by reading `pr_participation.md`.
 An Author that legitimately declines satisfies its exit obligation by posting the explanatory issue comment and reporting that it opened no PR, pointing to that comment (see the Author work-location report below), instead of creating a PR.
 
-The first three statements name the three comment surfaces for the same reason: a rule that lives only in a file the agent reads afterwards does not reach the moment the mistake is made.
-The Verification Agent statement needs no such phrase, because it names its inputs instead of "all comments": the verification-plan comment is posted to the PR's issue-comment stream, and the tracking issues are issues, which have no diff and so no review threads.
-
 ## Decision-signal templates
 
 When routing control signals, use these exact lines and no others.

@@ -28,8 +28,7 @@ Only the before-merging list controls the merge gate.
 ## What to do
 
 1. Read the issue description, PR description, and all comments on both.
-   The issue's comments are one call; the PR's live on three surfaces, each its own call: the issue-comment stream, the review bodies, and the inline review threads.
-   A requirement raised only in an inline thread is invisible to a fetch of the other two.
+   The issue's comments are retrieved in one call, but you must check all three comment surfaces of the PR, each its own call: the issue-comment stream, the review bodies, and the inline review threads.
    Look for both kinds of outstanding requirement described under **Role**: unautomated verification steps, and changes outside the repo (such as an issue that needs to be filed).
    Assemble two lists:
 
@@ -77,7 +76,7 @@ Only the before-merging list controls the merge gate.
    c. Do **not** call the `blocked_by` dependency endpoint for follow-on issues.
    Do **not** add any "Blocks PR #..." line to the issue body.
 
-5. Post (or replace) the verification-plan comment in the PR's issue-comment stream, which is where step 2 and the Verification Agent look for it.
+5. Post (or replace) the verification-plan comment in the PR's issue-comment stream.
    The comment must contain the exact HTML marker `<!-- gb4pc-verification-plan -->` on its own line so future runs can find it.
    The rebuilt comment must list all issues--those parsed from the prior-run comment in step 2 and any newly filed in steps 3-4--so that future runs can find the complete record and will not re-file already-existing issues.
    When rebuilding the comment, preserve the checked (`- [x]`) or unchecked (`- [ ]`) state of each item from the prior-run comment for issues that already existed; newly filed issues start as unchecked.
