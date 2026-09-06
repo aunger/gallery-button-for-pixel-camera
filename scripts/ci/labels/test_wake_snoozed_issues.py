@@ -19,9 +19,8 @@ import wake_snoozed_issues as wsi  # noqa: E402
 
 _NOW = datetime(2026, 8, 10, 5, 0, 0, tzinfo=timezone.utc)
 
-# Both spellings of the 30-day rung, as main() hands them to
-# find_label_applied_at().
-_RUNG_30 = ["snooze 30 days", "hold 30 days"]
+# The 30-day rung's label, as main() hands it to find_label_applied_at().
+_RUNG_30 = "snooze 30 days"
 
 
 def _make_issue(number: int, labels: list[str], state: str = "closed", is_pr: bool = False) -> dict:
@@ -139,37 +138,25 @@ class TestFindLabelAppliedAt(unittest.TestCase):
             result = wsi.find_label_applied_at(1, _RUNG_30, "owner/repo", "tok")
         self.assertEqual(result, when)
 
-    def test_matches_the_legacy_spelling_of_the_rung(self):
-        """Renaming a label leaves its old "labeled" events untouched, so the
-        event that started an issue's snooze may name "hold 30 days" while the
-        issue now carries "snooze 30 days"."""
+    def test_ignores_the_legacy_spelling_of_the_rung(self):
+        """A hold 30 days label is not the 30-day rung any more, so an event
+        naming it dates nothing. An issue whose snooze rests only on such an
+        event is left snoozed rather than woken off an event for a label it no
+        longer carries."""
         when = _NOW - timedelta(days=31)
         events = [_labeled_event("hold 30 days", when)]
         with patch.object(wsi.emxl, "gh_api", side_effect=self._paged([events, []])):
             result = wsi.find_label_applied_at(1, _RUNG_30, "owner/repo", "tok")
-        self.assertEqual(result, when)
+        self.assertIsNone(result)
 
     def test_ignores_events_for_another_rung(self):
-        """Only the rung's own spellings count; a different rung's label is as
+        """Only the rung's own label counts; a different rung's is as
         irrelevant as any other label."""
         when = _NOW - timedelta(days=31)
-        events = [_labeled_event("snooze 90 days", when), _labeled_event("hold 90 days", when)]
+        events = [_labeled_event("snooze 90 days", when)]
         with patch.object(wsi.emxl, "gh_api", side_effect=self._paged([events, []])):
             result = wsi.find_label_applied_at(1, _RUNG_30, "owner/repo", "tok")
         self.assertIsNone(result)
-
-    def test_returns_most_recent_across_both_spellings(self):
-        """An issue relabeled from the old spelling to the new one is measured
-        from the newer event, not the stale one it replaced."""
-        older = _NOW - timedelta(days=100)
-        newer = _NOW - timedelta(days=31)
-        events = [
-            _labeled_event("hold 30 days", older),
-            _labeled_event("snooze 30 days", newer),
-        ]
-        with patch.object(wsi.emxl, "gh_api", side_effect=self._paged([events, []])):
-            result = wsi.find_label_applied_at(1, _RUNG_30, "owner/repo", "tok")
-        self.assertEqual(result, newer)
 
     def test_returns_most_recent_of_several_matching_events(self):
         older = _NOW - timedelta(days=100)
@@ -222,28 +209,16 @@ class TestWakeIssue(unittest.TestCase):
             7, ["snooze 30 days"], "owner/repo", "tok", reason="expired-snooze"
         )
 
-    def test_targets_both_spellings_of_the_rung(self):
-        """An issue wearing both spellings must come out of the wake wearing
-        neither: leaving one behind would leave it open and still snoozed, and
-        the next run would find it and wake it a second time."""
+    def test_leaves_the_legacy_spelling_alone(self):
+        """A hold 30 days label is no longer part of the 30-day rung, so it is not
+        the wake's to strip: it is an ordinary label like any other."""
         issue = _make_issue(7, ["snooze 30 days", "hold 30 days", "ci"])
         with patch.object(wsi.emxl, "gh_api", side_effect=[issue, None, None]):
             with patch.object(wsi.emxl, "remove_labels", return_value=True) as mock_remove:
                 result = wsi.wake_issue(7, "snooze 30 days", "owner/repo", "tok")
 
         self.assertTrue(result)
-        targeted = mock_remove.call_args[0][1]
-        self.assertCountEqual(targeted, ["snooze 30 days", "hold 30 days"])
-        self.assertNotIn("ci", targeted)
-
-    def test_targets_the_current_spelling_when_found_under_the_legacy_one(self):
-        """The same holds whichever spelling main() found the issue under."""
-        issue = _make_issue(7, ["hold 30 days", "snooze 30 days"])
-        with patch.object(wsi.emxl, "gh_api", side_effect=[issue, None, None]):
-            with patch.object(wsi.emxl, "remove_labels", return_value=True) as mock_remove:
-                wsi.wake_issue(7, "hold 30 days", "owner/repo", "tok")
-
-        self.assertCountEqual(mock_remove.call_args[0][1], ["hold 30 days", "snooze 30 days"])
+        self.assertEqual(mock_remove.call_args[0][1], ["snooze 30 days"])
 
     def test_leaves_another_rung_alone(self):
         """Only the woken rung is stripped. A different rung is somebody's
@@ -254,15 +229,6 @@ class TestWakeIssue(unittest.TestCase):
                 wsi.wake_issue(7, "snooze 30 days", "owner/repo", "tok")
 
         self.assertEqual(mock_remove.call_args[0][1], ["snooze 30 days"])
-
-    def test_comment_does_not_call_the_other_spelling_a_process_state_label(self):
-        issue = _make_issue(7, ["snooze 30 days", "hold 30 days"])
-        with patch.object(wsi.emxl, "gh_api", side_effect=[issue, None, None]) as mock_api:
-            with patch.object(wsi.emxl, "remove_labels", return_value=True):
-                wsi.wake_issue(7, "snooze 30 days", "owner/repo", "tok")
-
-        comment_body = mock_api.call_args_list[2][1]["body"]["body"]
-        self.assertNotIn("process-state", comment_body)
 
     def test_targets_process_state_labels_alongside_the_snooze_label(self):
         issue = _make_issue(7, ["snooze 90 days", "orchestrate", "changes requested", "ci"])
@@ -386,22 +352,32 @@ class TestMain(unittest.TestCase):
         self.assertEqual(result, 0)
         mock_wake.assert_called_once_with(1, "snooze 30 days", "owner/repo", "test-token")
 
-    def test_wakes_issue_labeled_with_the_legacy_spelling(self):
-        """Until the labels are renamed on GitHub, the issues in flight carry
-        "hold N days"; they wake on the same schedule."""
+    def test_ignores_an_issue_labeled_with_the_legacy_spelling(self):
+        """A hold 30 days label is not a rung any more, so it is not listed, not
+        dated, and never wakes anything.
+
+        find_label_applied_at is patched so that "not dated" is asserted rather
+        than inferred from the wake that did not happen. Leaving it real would
+        also let a regression to the legacy spelling reach the network: main()
+        swallows anything the history read raises, so the live request's error
+        would be logged and the test would pass regardless.
+        """
         issue = _make_issue(1, ["hold 30 days"])
-        applied_at = datetime.now(timezone.utc) - timedelta(days=31)
+        queried = []
 
         def fetch_side_effect(repo, token, label):
+            queried.append(label)
             return [issue] if label == "hold 30 days" else []
 
         with patch.object(wsi, "fetch_issues_with_label", side_effect=fetch_side_effect):
-            with patch.object(wsi, "find_label_applied_at", return_value=applied_at):
+            with patch.object(wsi, "find_label_applied_at", return_value=None) as mock_find:
                 with patch.object(wsi, "wake_issue") as mock_wake:
                     result = wsi.main()
 
         self.assertEqual(result, 0)
-        mock_wake.assert_called_once_with(1, "hold 30 days", "owner/repo", "test-token")
+        self.assertNotIn("hold 30 days", queried)  # not listed
+        mock_find.assert_not_called()  # not dated
+        mock_wake.assert_not_called()  # never woken
 
     def test_each_rung_waits_out_its_own_day_count(self):
         """Four days in, a 3-day snooze has elapsed and a 7-day one has not."""
@@ -422,7 +398,7 @@ class TestMain(unittest.TestCase):
         self.assertEqual(result, 0)
         mock_wake.assert_called_once_with(1, "snooze 3 days", "owner/repo", "test-token")
 
-    def test_queries_every_rung_in_both_spellings(self):
+    def test_queries_every_rung(self):
         queried = []
 
         def fetch_side_effect(repo, token, label):
@@ -435,14 +411,10 @@ class TestMain(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertEqual(
             queried,
-            [
-                label
-                for days in wsi.emxl.SNOOZE_LADDER_DAYS
-                for label in wsi.emxl.snooze_labels_for_days(days)
-            ],
+            [wsi.emxl.snooze_label_for_days(days) for days in wsi.emxl.SNOOZE_LADDER_DAYS],
         )
 
-    def test_reads_label_history_for_both_spellings_of_the_rung(self):
+    def test_reads_label_history_for_the_rung(self):
         issue = _make_issue(1, ["snooze 30 days"])
 
         def fetch_side_effect(repo, token, label):
@@ -455,31 +427,14 @@ class TestMain(unittest.TestCase):
         self.assertEqual(result, 0)
         mock_find.assert_called_once_with(1, _RUNG_30, "owner/repo", "test-token")
 
-    def test_wakes_an_issue_carrying_both_spellings_only_once(self):
-        """Mutual exclusion should prevent this, but a pair that slipped
-        through must not produce two reopens and two comments."""
-        issue = _make_issue(1, ["snooze 30 days", "hold 30 days"])
-        applied_at = datetime.now(timezone.utc) - timedelta(days=31)
-
-        def fetch_side_effect(repo, token, label):
-            return [issue] if label in _RUNG_30 else []
-
-        with patch.object(wsi, "fetch_issues_with_label", side_effect=fetch_side_effect):
-            with patch.object(wsi, "find_label_applied_at", return_value=applied_at):
-                with patch.object(wsi, "wake_issue") as mock_wake:
-                    result = wsi.main()
-
-        self.assertEqual(result, 0)
-        mock_wake.assert_called_once_with(1, "snooze 30 days", "owner/repo", "test-token")
-
-    def test_fetch_error_for_one_spelling_does_not_skip_the_other(self):
-        issue = _make_issue(1, ["hold 30 days"])
-        applied_at = datetime.now(timezone.utc) - timedelta(days=31)
+    def test_fetch_error_for_one_rung_does_not_skip_the_others(self):
+        issue = _make_issue(1, ["snooze 90 days"])
+        applied_at = datetime.now(timezone.utc) - timedelta(days=91)
 
         def fetch_side_effect(repo, token, label):
             if label == "snooze 30 days":
                 raise Exception("network error")
-            return [issue] if label == "hold 30 days" else []
+            return [issue] if label == "snooze 90 days" else []
 
         with patch.object(wsi, "fetch_issues_with_label", side_effect=fetch_side_effect):
             with patch.object(wsi, "find_label_applied_at", return_value=applied_at):
@@ -487,7 +442,7 @@ class TestMain(unittest.TestCase):
                     result = wsi.main()
 
         self.assertEqual(result, 0)
-        mock_wake.assert_called_once_with(1, "hold 30 days", "owner/repo", "test-token")
+        mock_wake.assert_called_once_with(1, "snooze 90 days", "owner/repo", "test-token")
 
     def test_leaves_issue_within_snooze_period(self):
         """applied_at 5 days before real "now" has not yet cleared the 30-day snooze."""

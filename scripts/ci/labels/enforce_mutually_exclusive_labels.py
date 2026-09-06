@@ -19,8 +19,7 @@ Mutually exclusive sets (fixed):
     [changes requested, changes done]
     [orchestrate, orchestrating]
     [snooze 3 days, snooze 7 days, snooze 14 days, snooze 30 days,
-     snooze 90 days, snooze 180 days, plus the legacy "hold N days"
-     spelling of each]  (see SNOOZE_LABEL_DAYS)
+     snooze 90 days, snooze 180 days]  (see SNOOZE_LABEL_DAYS)
 
 Mutually exclusive prefix groups (any label sharing a prefix is exclusive):
     c-a-*          (author model, e.g. c-a-haiku, c-a-sonnet, c-a-opus)
@@ -74,30 +73,26 @@ import urllib.request
 # else's in-flight PR; the long ones were the whole ladder in #821.
 SNOOZE_LADDER_DAYS: tuple[int, ...] = (3, 7, 14, 30, 90, 180)
 
-# A rung is spelled "snooze N days". "hold N days" is the ladder's original
-# spelling (issue #821), still recognized as the same rung so that this code
-# can merge before the labels themselves are renamed on GitHub, which is
-# issue #1019's post-merge follow-up. Both spellings of a rung belong to the
-# same mutually exclusive set, so applying either one clears the other, and a
-# renamed label lands on an issue already carrying the old spelling without
-# leaving it snoozed twice over. Every rung accepts both spellings, including
-# the short ones that never had a "hold" label to be renamed: one rule for
-# the whole ladder is cheaper to state, to implement and to reason about than
-# a per-rung exception, and costs only the recognition of labels nobody has a
-# reason to create.
-SNOOZE_LABEL_TERMS: tuple[str, ...] = ("snooze", "hold")
+
+# A rung is spelled "snooze N days", and that is its only spelling. The long
+# rungs were originally labeled "hold N days" (issue #821); the ladder
+# recognized both spellings for as long as renaming those labels on GitHub
+# took (#1028), and #1029 retired the legacy one once no snooze in flight was
+# still dated from a "hold"-spelled event.
+#
+# Renaming a rung again is not free: wake_snoozed_issues.find_label_applied_at
+# dates a snooze from the rung's "labeled" events, which a rename orphans. Read
+# its docstring first; it says what to do for the issues snoozed at the time.
+def snooze_label_for_days(days: int) -> str:
+    """Return the *days* rung's snooze label."""
+    return f"snooze {days} days"
 
 
-def snooze_labels_for_days(days: int) -> list[str]:
-    """Return every recognized spelling of the *days* rung's snooze label."""
-    return [f"{term} {days} days" for term in SNOOZE_LABEL_TERMS]
-
-
-# Every recognized snooze label, mapped to its duration in days.
+# Every snooze label, mapped to its duration in days.
 # scripts/ci/labels/snooze_issues.py and scripts/ci/labels/wake_snoozed_issues.py
 # both key off this single dict so the ladder is defined in exactly one place.
 SNOOZE_LABEL_DAYS: dict[str, int] = {
-    label: days for days in SNOOZE_LADDER_DAYS for label in snooze_labels_for_days(days)
+    snooze_label_for_days(days): days for days in SNOOZE_LADDER_DAYS
 }
 SNOOZE_LABELS: frozenset[str] = frozenset(SNOOZE_LABEL_DAYS)
 
