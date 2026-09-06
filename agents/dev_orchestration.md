@@ -144,9 +144,10 @@ Role assignment statements (copy the applicable line exactly):
 - Verification agent: "You are a Verification Agent: carry out the before-merging steps from the Verification Planner report on the linked PR, automating them where possible, and report results. You *must* start your turn by re-fetching the Verification Planner comment on the PR and each before-merging tracking issue it lists."
 
 The Programmer statement names the decline path so the dispatched Programmer receives it in the copied line, not only by reading `pr_participation.md`.
-The first three statements name the three comment surfaces for the same reason: an agent that fetches the issue-comment stream alone reads "all comments" as satisfied, and that result looks identical whether or not review threads are waiting.
-The Verification Agent statement needs no such phrase, because it names its inputs instead of "all comments": the verification-plan comment is posted to the PR's issue-comment stream, and the tracking issues are issues, which have no diff and so no review threads.
 An Author that legitimately declines satisfies its exit obligation by posting the explanatory issue comment and reporting that it opened no PR, pointing to that comment (see the Author work-location report below), instead of creating a PR.
+
+The first three statements name the three comment surfaces for the same reason: a rule that lives only in a file the agent reads afterwards does not reach the moment the mistake is made.
+The Verification Agent statement needs no such phrase, because it names its inputs instead of "all comments": the verification-plan comment is posted to the PR's issue-comment stream, and the tracking issues are issues, which have no diff and so no review threads.
 
 ## Decision-signal templates
 
