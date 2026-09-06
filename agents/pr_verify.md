@@ -20,8 +20,8 @@ Note: Both items may be provided in a single URL of the form `https://github.com
 Start by fetching:
 
 1. The Verification Planner comment.
-   If it was not provided, locate it by searching the PR's issue-comment stream, where the Verification Planner posts it, for the HTML marker
-   `<!-- gb4pc-verification-plan -->`.
+   If it was not provided, locate it by searching for the HTML marker
+   `<!-- gb4pc-verification-plan -->` in the PR's issue-comment stream, where the Verification Planner posts it.
    In this comment, each markdown checkbox line carries a tracking-issue number.
    Parse the issue numbers from the comment's *before-merging list*, but **ignore the follow-up issue list**, which should not be addressed now.
 2. Each tracking issue, including its title, body, and all of its comments, to understand what must be verified.

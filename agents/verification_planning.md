@@ -37,7 +37,7 @@ Only the before-merging list controls the merge gate.
    - the *follow-on* list, noting for each item the URL of the source comment or description and a brief reason it is not a merge blocker (e.g., "explicitly deferred in PR comment," "out of scope for this PR").
 
 2. **Before filing any issues**, check whether the PR already has a verification-plan comment from a prior run.
-   Search the PR's issue-comment stream, where step 5 posts it, for one that contains the exact HTML marker `<!-- gb4pc-verification-plan -->`.
+   Search for a comment containing the exact HTML marker `<!-- gb4pc-verification-plan -->` in the PR's issue-comment stream, where step 5 posts it.
    If such a comment exists, parse it to extract the list of already-filed issues (each line with a `- [ ]` or `- [x]` checkbox carries an issue number of the form `#{issue number}`).
    Treat those issues as already filed and do not create duplicates for the corresponding items.
    Record the comment's id (the numeric id returned by the comments API, not its URL) for use in step 5.
