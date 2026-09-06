@@ -80,11 +80,10 @@
 #
 # The trade being made: cooldown is given up for the twelve Google-hosted coordinates, so an androidx.* or Material release can be proposed the day it is published with no window for a bad release to be noticed first.
 # It is kept for the seven Central-hosted ones (junit, org.mockito x2, org.robolectric, org.jetbrains.kotlinx, org.json, com.davemorrissey.labs), where dates resolve correctly and the delay does real work.
-# `default-days: 3` is written explicitly and must stay, though not for the reason #905's implementation note 1 gives.
-# That note says a `cooldown` block listing only `exclude` yields default_days 0 and so disables cooldown repo-wide. It does not.
+# `default-days: 3` is written explicitly and must stay, though omitting it would not turn cooldown off.
 # `Dependabot::Job::DEFAULT_COOLDOWN_DAYS` is 3, and `build_cooldown` passes it into `CooldownDefinition#to_options`, which substitutes it wherever the YAML left `default-days` unset, so an exclude-only block still cools down for three days.
-# `ReleaseCooldownOptions`' own constructor does default `default_days` to 0, which is where that note's evidence came from, but a `cooldown` block in this file never reaches it that way.
-# The real reason to write the 3 out: it pins the delay here rather than inheriting GitHub's default, so a change to that default cannot move this repo's cooldown silently.
+# `ReleaseCooldownOptions`' own constructor does default `default_days` to 0, but a `cooldown` block in this file never reaches it that way.
+# The reason to write the 3 out: it pins the delay here rather than inheriting GitHub's default, so a change to that default cannot move this repo's cooldown silently.
 # The patterns match `group:artifact` through File.fnmatch?, so they are anchored on the group prefix rather than on the substring "androidx": com.davemorrissey.labs:subsampling-scale-image-view-androidx is Central-hosted despite its artifact name and must keep its cooldown.
 # Excluding by prefix rather than naming androidx.lifecycle alone also covers the ignore-rule case above for any coordinate the maven-google registry serves.
 # scripts/test_dependabot_config.sh asserts both halves of this against the real coordinate list in app/build.gradle.kts.
