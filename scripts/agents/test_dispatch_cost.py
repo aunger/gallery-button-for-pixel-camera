@@ -34,7 +34,7 @@ SESSION = "11111111-2222-3333-4444-555555555555"
 
 
 def annotations_of(node):
-    """Yield every annotation `node` carries: parameters, return, or variable."""
+    """Return every annotation `node` carries: parameters, return, or variable."""
     if isinstance(node, ast.AnnAssign):
         return [node.annotation]
     if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -820,7 +820,7 @@ class TestHouseRules(unittest.TestCase):
         # The module docstring states this as the file's annotation position,
         # and #1078 exists because an unchecked prose claim about this same
         # file went stale inside one review round. Both halves of the position
-        # are decidable from the syntax tree, so both are decided here.
+        # are decidable from the syntax tree: this half here, the import below.
         parameterised = []
         for node in ast.walk(self.module_ast()):
             for annotation in annotations_of(node):
