@@ -589,13 +589,29 @@ class TestAdvice(unittest.TestCase):
         self.assertIn("not constant", advice)
 
     def test_the_backtick_advice_does_not_claim_a_retry_is_pointless(self):
-        # Mention dotting is the one behavior in this table that was probed for
-        # constancy, and it turned out not to be constant.  This one has not
-        # been probed at all, so the determinism claim retracted above is not
-        # available here either.
+        # PR #958 altered every post that carried the construct, but that is
+        # reproduction on one surface rather than a controlled re-post, so the
+        # determinism claim retracted above is not available here either and an
+        # agent told a retry is futile would decline it on false grounds.
         advice = vgw.ADVICE["back-tick insertion"].lower()
         self.assertNotIn("same result", advice)
         self.assertIn("not known", advice)
+
+    def test_the_backtick_advice_does_not_read_the_probe_as_non_constancy(self):
+        # The 2026-09-07 probe stored all 39 re-posts intact, but it wrote to
+        # issue comments and issue bodies while every sighting of the insertion
+        # is on a pull request body.  Surface is uncontrolled between the two
+        # sets, and "constant on pull request bodies, never fires on issue
+        # surfaces" fits both of them exactly as well as non-constancy does, so
+        # advice reading the probe as bare non-constancy would aim a retry at
+        # the one surface where it may be futile.  The pins are paired on
+        # purpose: the phrases keep the qualification in, and the absences stop
+        # a conclusion being appended after it, which is the likelier drift.
+        advice = vgw.ADVICE["back-tick insertion"].lower()
+        self.assertNotIn("not constant", advice)
+        self.assertNotIn("will store intact", advice)
+        self.assertIn("issue comments and issue bodies", advice)
+        self.assertIn("pull request body", advice)
 
     def test_the_backtick_advice_sends_the_reader_to_the_stored_object(self):
         # The predicate sees an insertion of back-ticks, not what they enclose,

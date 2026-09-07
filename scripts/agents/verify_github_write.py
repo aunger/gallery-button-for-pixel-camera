@@ -20,10 +20,14 @@ is exactly the comparison this module automates, and no rule written for the
 first three would have predicted it.  What that read-back pinned down is which
 links were altered, not the shape of the alteration: #958 does not record
 whether the inserted run enclosed the whole link or only its label, and its
-first revision could not be recovered to settle it.  Nor was this behavior
-probed for constancy, as mention dotting was; every post that carried the
-construct there was altered, which is reproduction rather than a controlled
-re-post.
+first revision could not be recovered to settle it.  A probe on 2026-09-07
+re-posted the two link labels #958 saw altered 39 times, over both write paths,
+and every one stored intact (issue #1064).  It wrote to issue comments and
+issue bodies, though, while #958 is a pull request body and so is every other
+sighting; surface is uncontrolled between the two sets, so the probe does not
+settle constancy.  What it establishes is that the construct survives the issue
+surfaces.  What makes the insertion fire, and the shape of the run when it
+does, remain open.
 
 This module is the checker behind the `PostToolUse` hook
 `.claude/hooks/post-tool-use-github-readback.sh`, which is wired in
@@ -622,10 +626,13 @@ ADVICE = {
         "characterized so far is a Markdown link whose label is shaped like an owner/repo "
         "pair. On PR #958 two such links came back with back-ticks inserted while the four "
         "links in the same body whose labels held no slash stored intact, on the REST path "
-        "and on the MCP path alike, so changing write path will not avoid it. Whether a "
-        "retry fares better is not known: this behavior has never been probed for "
-        "constancy, and every post that carried the construct on #958 was altered. What "
-        "did work there was plain text, which stored byte for byte."
+        "and on the MCP path alike, so changing write path will not avoid it. A probe on "
+        "2026-09-07 re-posted those same two labels 39 times over both paths and every "
+        "one stored intact, but it wrote to issue comments and issue bodies, and every "
+        "sighting of this insertion is on a pull request body, which it never wrote to. "
+        "Surface is uncontrolled between the two, so whether a retry fares better is "
+        "still not known: make one if you need it, and let this checker tell you whether "
+        "it arrived. What did work on #958 was plain text, which stored byte for byte."
     ),
     "other": (
         "The stored text differs from what was sent in a way this checker has not seen "
