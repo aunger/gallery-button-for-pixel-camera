@@ -451,6 +451,62 @@ class TestNormalize(unittest.TestCase):
 # Diffing
 # ---------------------------------------------------------------------------
 
+AOSP = "https://android.googlesource.com/platform"
+AOSP_HEAD = "+/refs/heads/android15-release"
+
+
+def markdown_link(label: str, url: str) -> str:
+    """Render *label* as a Markdown link to *url*."""
+    return f"[{label}]({url})"
+
+
+def pr_958_reason_one(owner_repo_link=markdown_link) -> str:
+    """Return a reconstruction of PR #958's reason 1, in its Markdown-link form.
+
+    The first revision itself is not recoverable, from any session that has
+    tried (issue #1065), so this is the shape #958's own closing note describes
+    rather than the bytes it stored: four bullets and six AOSP links, of which
+    exactly two carry a label shaped like an owner/repo pair.  Storage inserted
+    a back-tick run around those two and stored the other four byte for byte.
+    That split is what issue #962 records, and an owner/repo-shaped label is
+    the one trigger this module's fourth behavior is characterized on.
+
+    *owner_repo_link* renders the two owner/repo-labelled links, so passing a
+    renderer that adds the run builds the stored side against the sent side's
+    default.  It takes the label and the URL, as `markdown_link` does.
+    """
+    wm = f"{AOSP}/frameworks/base/{AOSP_HEAD}/services/core/java/com/android/server/wm"
+    dispatcher = f"{AOSP}/frameworks/native/{AOSP_HEAD}/services/inputflinger/dispatcher"
+    return "\n".join(
+        [
+            "### 1. The dispatcher excludes the window by type",
+            "",
+            "Every file below was read on android.googlesource.com at the"
+            " `android15-release` branch, which is this AVD's API 35.",
+            "",
+            "- `DisplayPolicy.enablePointerLocation()` adds the readout with"
+            " `lp.type = TYPE_SECURE_SYSTEM_OVERLAY`, in "
+            + owner_repo_link("frameworks/base", f"{AOSP}/frameworks/base")
+            + " at "
+            + markdown_link("DisplayPolicy.java", f"{wm}/DisplayPolicy.java")
+            + ".",
+            "- `InputMonitor.isTrustedOverlay(int type)` lists"
+            " `TYPE_SECURE_SYSTEM_OVERLAY`, and"
+            " `WindowState.isWindowTrustedOverlay()` returns true if that holds ("
+            + markdown_link("InputMonitor.java", f"{wm}/InputMonitor.java")
+            + " and "
+            + markdown_link("WindowState.java", f"{wm}/WindowState.java")
+            + ", same directory).",
+            "- `InputDispatcher::canBeObscuredBy()` returns `false` for any window"
+            " whose `inputConfig` carries `TRUSTED_OVERLAY` ("
+            + markdown_link("InputDispatcher.cpp", f"{dispatcher}/InputDispatcher.cpp")
+            + ").",
+            "- `SecureButton` filters on exactly those two flags and nothing else, in "
+            + owner_repo_link("packages/modules/Permission", f"{AOSP}/packages/modules/Permission")
+            + ".",
+        ]
+    )
+
 
 class TestDiff(unittest.TestCase):
     def test_identical_text_produces_no_regions(self):
@@ -488,6 +544,50 @@ class TestDiff(unittest.TestCase):
             for region in regions:
                 self.assertEqual((region.sent, region.stored), ("", run))
                 self.assertEqual(region.classification, "back-tick insertion")
+
+    def test_the_multi_link_pr_958_body_gives_one_region_per_inserted_run(self):
+        # The case above is one link in a short string.  PR #958's body is four
+        # bullets and six links, and that is what the common-prefix trim and
+        # SequenceMatcher actually have to survive: over a span that long they
+        # can pair an inserted run with unrelated text and report a replacement
+        # instead, which classifies as `other` and collects the wrong advice.
+        # The run length was never characterized, so any run has to count, and
+        # issue #1065 leaves the wrap position unsettled, so both are built
+        # rather than one being assumed.  The class is the same either way,
+        # because a Region sees the insertion and not what it encloses.
+        for run in (vgw.BACK_TICK, vgw.BACK_TICK * 2, vgw.BACK_TICK * 3):
+            for position, render in (
+                ("whole link", lambda label, url, run=run: run + markdown_link(label, url) + run),
+                (
+                    "label only",
+                    lambda label, url, run=run: markdown_link(f"{run}{label}{run}", url),
+                ),
+            ):
+                case = f"run of {len(run)} around the {position}"
+                sent = vgw.normalize(pr_958_reason_one())
+                stored = vgw.normalize(pr_958_reason_one(render))
+                regions, omitted = vgw.diff_regions(sent, stored)
+                # Two links altered, an opening run and a closing one each.
+                self.assertEqual((len(regions), omitted), (4, 0), case)
+                for region in regions:
+                    self.assertEqual((region.sent, region.stored), ("", run), case)
+                    self.assertEqual(region.classification, "back-tick insertion", case)
+
+    def test_the_multi_link_pr_958_body_stays_on_the_fine_diff_path(self):
+        # The four regions above are already proof the coarse fallback was not
+        # taken, since it returns exactly one region however much differs.  This
+        # pins the margin that keeps it so, and names the bound it is measured
+        # against: a MAX_FINE_DIFF_CHARS lowered under the span of a realistic
+        # PR body fails here on its own terms, rather than only turning the
+        # test above into a coarse-path test that no longer covers what it says.
+        sent = vgw.normalize(pr_958_reason_one())
+        stored = vgw.normalize(
+            pr_958_reason_one(
+                lambda label, url: vgw.BACK_TICK + markdown_link(label, url) + vgw.BACK_TICK
+            )
+        )
+        _, sent_middle, stored_middle = vgw._trim_common(sent, stored)
+        self.assertLess(max(len(sent_middle), len(stored_middle)), vgw.MAX_FINE_DIFF_CHARS)
 
     def test_a_lone_inserted_backtick_is_classified_the_same_way(self):
         # The class is named for what one region is, because one region is all
