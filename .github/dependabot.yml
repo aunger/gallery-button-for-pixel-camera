@@ -72,11 +72,12 @@
 # For a Central-hosted coordinate such as org.json:json that is the intended behavior, and a held bump is not a lost one; it is proposed by the next run past the third day.
 #
 # For a Google-hosted coordinate the same default silently drops the bump instead, which is why `cooldown` is written out below with an `exclude` list (issue #905).
-# On https://maven.google.com Dependabot lists versions from group-index.xml, which carries version numbers and no dates, and gets dates from a separate step that reads maven-metadata.xml and records the date of `<release>` alone.
-# A candidate that is not `<release>` therefore has no date, and cooldown holds an undated release ("Release date not available for version 2.11.0 - filtering out").
+# On https://maven.google.com Dependabot lists versions from group-index.xml, which carries version numbers and no dates, and gets dates from a separate step that reads maven-metadata.xml and records the date of `<latest>` alone.
+# That step is dependabot-core's `ReleaseDateExtractor`, which pairs `//metadata/versioning/lastUpdated` with `//metadata/versioning/latest` (gradle/lib/dependabot/gradle/package/release_date_extractor.rb:146).
+# A candidate that is not `<latest>` therefore has no date, and cooldown holds an undated release ("Release date not available for version 2.11.0 - filtering out").
 # That empties the candidate set, so the run reports success and opens nothing, the same silent shape as #897.
-# It hits any Google-hosted coordinate whose newest published version is a prerelease, which AndroidX publishes continuously: androidx.lifecycle 2.11.0 was hidden this way because 2.12.0-alpha01 holds `<release>`.
-# It also hits any coordinate an `ignore` rule caps to a version line, since a capped target is by definition not `<release>`.
+# It hits any Google-hosted coordinate whose newest published version is a prerelease, which AndroidX publishes continuously: androidx.lifecycle 2.11.0 was hidden this way because 2.12.0-alpha01 held `<latest>`.
+# It also hits any coordinate an `ignore` rule caps to a version line, since a capped target is by definition not `<latest>`.
 #
 # The trade being made: cooldown is given up for the twelve Google-hosted coordinates, so an androidx.* or Material release can be proposed the day it is published with no window for a bad release to be noticed first.
 # It is kept for the seven Central-hosted ones (junit, org.mockito x2, org.robolectric, org.jetbrains.kotlinx, org.json, com.davemorrissey.labs), where dates resolve correctly and the delay does real work.
@@ -88,7 +89,7 @@
 # Excluding by prefix rather than naming androidx.lifecycle alone also covers the ignore-rule case above for any coordinate the maven-google registry serves.
 # scripts/test_dependabot_config.sh asserts both halves of this against the real coordinate list in app/build.gradle.kts.
 #
-# The underlying defect is in dependabot-core, not here: the Google repository could supply a per-version date (the .pom or .module timestamp) instead of only `<release>`'s lastUpdated, or treat "date unknown" as "not in cooldown" as it does when no cooldown is configured at all.
+# The underlying defect is in dependabot-core, not here: the Google repository could supply a per-version date (the .pom or .module timestamp) instead of only `<latest>`'s lastUpdated, or treat "date unknown" as "not in cooldown" as it does when no cooldown is configured at all.
 # If that is fixed upstream, this `exclude` can be removed and the three-day delay restored for these packages.
 
 version: 2

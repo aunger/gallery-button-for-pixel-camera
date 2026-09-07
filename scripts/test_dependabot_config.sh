@@ -36,15 +36,18 @@
 # three-day cooldown by default since 2026-07-14, with no `cooldown` key
 # needed. On https://maven.google.com Dependabot lists versions from
 # group-index.xml, which carries version numbers and no dates, and reads a
-# date only for the one version named by `<release>` in maven-metadata.xml.
+# date only for the one version named by `<latest>` in maven-metadata.xml
+# (dependabot-core's `ReleaseDateExtractor`, which pairs
+# `//metadata/versioning/lastUpdated` with `//metadata/versioning/latest`, in
+# gradle/lib/dependabot/gradle/package/release_date_extractor.rb:146).
 # Every other candidate is undated, and cooldown filters an undated release
 # out, so a Google-hosted coordinate whose newest published version is a
 # prerelease has its whole candidate set emptied: the run succeeds, opens
 # nothing, and says nothing. androidx.lifecycle sat at 2.8.7 against a
-# published 2.11.0 this way, because 2.12.0-alpha01 held `<release>`, and
+# published 2.11.0 this way, because 2.12.0-alpha01 held `<latest>`, and
 # AndroidX publishes alphas continuously, so which coordinates this hides
 # moves around over time. The same applies to any coordinate an `ignore` rule
-# caps to a version line, since a capped target is never `<release>`.
+# caps to a version line, since a capped target is never `<latest>`.
 #
 # The fix is a `cooldown` block that excludes the Google-hosted coordinates
 # and keeps the delay for the Central-hosted ones, where dates resolve
