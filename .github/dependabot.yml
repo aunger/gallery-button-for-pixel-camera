@@ -93,7 +93,7 @@
 # Either of two upstream changes would retire this `exclude`: reading a per-version date (the .pom or .module timestamp) instead of only `<latest>`'s lastUpdated, or treating "date unknown" as "not in cooldown".
 # The first now exists upstream, and does not reach these coordinates (issue #1073).
 # `VersionReleaseDateFallbackFetcher` HEADs the .pom and reads its `Last-Modified`, but `fetch_release_metadata` returns before reaching it unless `plugin?`, which is true only of a requirement in the `plugins` group (gradle/lib/dependabot/gradle/package/package_details_fetcher.rb:152 and :427).
-# Every coordinate this `exclude` covers is an `implementation` or `*testImplementation` declaration, so the fallback never runs for any of them.
+# No coordinate this `exclude` matches is declared in the `plugins` block: they are `implementation`, `debugImplementation` and `*testImplementation` declarations in app/build.gradle.kts, so the fallback never runs for any of them.
 # Google is not the side withholding the date: HEAD on the 2.11.0 .pom under https://maven.google.com redirects once to dl.google.com and answers 200 with `Last-Modified: Wed, 17 Jun 2026 17:07:08 GMT`, and Dependabot's Excon stack follows redirects.
 # That gate was already in place in 0.392.0, the version #905's reproduction ran, which is why the run still logged "Release date not available for version 2.11.0 - filtering out".
 # The second is a request for new behavior, not an appeal to behavior that exists: no `.github/dependabot.yml` can reach it.
