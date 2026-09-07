@@ -407,6 +407,7 @@ surfaceBeforeMergingRequirements:
   // scan the issue or PR itself.
   Dispatch a Verification Planner sub-agent using the dispatch template.
   The planner assembles the before-merging list and files a tracking issue per item (see verification_planning.md). It does not consult the user.
+  If the Planner's report says the PR carries more than one verification-plan comment, or one corrupt in some other way, relay that part of the report to the user verbatim, on whichever branch below applies. The Planner leaves such a record as it found it by design, so a human is the only one who can repair it.
   If the Planner reports its before-merging list is empty: this step is complete; apply this transition to **both the issue and the PR**:
 
     | Add label |
