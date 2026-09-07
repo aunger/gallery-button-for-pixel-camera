@@ -821,10 +821,15 @@ class TestHouseRules(unittest.TestCase):
         # and #1078 exists because an unchecked prose claim about this same
         # file went stale inside one review round. Both halves of the position
         # are decidable from the syntax tree: this half here, the import below.
+        #
+        # An annotation is itself a tree, so the whole of it is searched rather
+        # than its root. `list[str] | None` is a `BinOp` holding the subscript,
+        # and `X | None` is this file's idiom for an optional value, so judging
+        # the root alone would wave through the likeliest way in.
         parameterised = []
         for node in ast.walk(self.module_ast()):
             for annotation in annotations_of(node):
-                if isinstance(annotation, ast.Subscript):
+                if any(isinstance(part, ast.Subscript) for part in ast.walk(annotation)):
                     parameterised.append(ast.unparse(annotation))
         self.assertEqual(parameterised, [])
 
