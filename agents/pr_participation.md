@@ -144,6 +144,9 @@ The Author should not flip-flop merely to appease the Reviewer: change position 
   🤖 {your role}
   ```
 
+  The verification-plan comment is the one exception, and carries no attribution line.
+  Its first line is reserved for the HTML marker that step 2 of `agents/verification_planning.md` and the Verification Agent find it by, and a line above the marker makes the comment unfindable.
+
 - Do not append any Claude attribution byline, session URL, or footer to commit messages or issue or PR description text or comment text.
 
 > [!NOTE]
