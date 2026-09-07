@@ -15,7 +15,7 @@ Follows `scripts/agents/link_gh_issues.py` (issue #1000) and
 
 No annotation here is parameterised: a container is the bare `list`, `dict` or
 `tuple`, or one of those `| None`. The file takes no `collections.abc` import
-(#1078).
+(#1078). Both rules are checked by `scripts/agents/test_dispatch_cost.py`.
 
 Layout read
 -----------

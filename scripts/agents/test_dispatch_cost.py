@@ -33,6 +33,18 @@ import dispatch_cost as dc  # noqa: E402
 SESSION = "11111111-2222-3333-4444-555555555555"
 
 
+def annotations_of(node):
+    """Yield every annotation `node` carries: parameters, return, or variable."""
+    if isinstance(node, ast.AnnAssign):
+        return [node.annotation]
+    if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return []
+    args = node.args
+    carriers = args.posonlyargs + args.args + args.kwonlyargs + [args.vararg, args.kwarg]
+    found = [arg.annotation for arg in carriers if arg is not None]
+    return [annotation for annotation in found + [node.returns] if annotation is not None]
+
+
 def usage(input_tokens=2, write_5m=0, write_1h=0, read=0, output=1, breakdown=True):
     block = {
         "input_tokens": input_tokens,
@@ -803,6 +815,33 @@ class TestHouseRules(unittest.TestCase):
             elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
                 names.add(node.module.split(".")[0])
         self.assertEqual({name for name in names if name not in sys.stdlib_module_names}, set())
+
+    def test_no_annotation_is_parameterised(self):
+        # The module docstring states this as the file's annotation position,
+        # and #1078 exists because an unchecked prose claim about this same
+        # file went stale inside one review round. Both halves of the position
+        # are decidable from the syntax tree, so both are decided here.
+        parameterised = []
+        for node in ast.walk(self.module_ast()):
+            for annotation in annotations_of(node):
+                if isinstance(annotation, ast.Subscript):
+                    parameterised.append(ast.unparse(annotation))
+        self.assertEqual(parameterised, [])
+
+    def test_no_collections_abc_import(self):
+        # The other half. `test_no_third_party_imports` does not cover it:
+        # `collections.abc` is stdlib and passes that rule. Annotating
+        # `iter_records`' return is what would cost this import, so a
+        # parameterised `Iterator` would fail both rules and a bare one this
+        # rule alone.
+        imported = set()
+        for node in ast.walk(self.module_ast()):
+            if isinstance(node, ast.Import):
+                imported.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+                imported.add(node.module)
+                imported.update("%s.%s" % (node.module, alias.name) for alias in node.names)
+        self.assertEqual([name for name in imported if name.split(".")[0] == "collections"], [])
 
     def test_the_script_is_executable(self):
         self.assertTrue(os.stat(self.MODULE).st_mode & stat.S_IXUSR)
