@@ -35,7 +35,9 @@ Answer an inline comment in a thread (`mcp__github__add_reply_to_pull_request_co
 
 - The Reviewer may mention positive aspects of the code under review, but must be blunt and brief.
 
-- Our agents share the User's GitHub account, so you won't use GitHub's code review features, which require separate accounts. Leave your evaluation as an ordinary comment, and tell the Orchestrator your decision. The user and other agents know to expect this.
+- Our agents share the User's GitHub account, so you won't use GitHub's approve and request-changes states, which require separate accounts.
+  Leave your evaluation as a review body, and tell the Orchestrator your decision.
+  The user and other agents know to expect this.
 
 - **If CI results are already available** when you complete your review, you may note them in your review text, but do not block on them.
   The Orchestrator runs the CI Monitor script after you exit; you do not need to poll.
@@ -47,8 +49,8 @@ Answer an inline comment in a thread (`mcp__github__add_reply_to_pull_request_co
   (This is the PR-path mechanism. If the Author opened no PR, see "Reviewing an Author who declined to open a PR" below.)
 
   ```text
-  (ReviewText, IsReviewApproval) := <review the diff; form your verdict and review text>
-  post review: mcp__github__pull_request_review_write(ReviewText, IsReviewApproval)
+  ReviewText := <review the diff; form your verdict and review text>
+  post review: mcp__github__pull_request_review_write(ReviewText, event=COMMENT)
   ```
 
 - After posting your review, tell the Orchestrator your decision using the fixed decision-signal vocabulary from `dev_orchestration.md`: one of `LGTM`, `Changes requested`, or `Cannot work`.
