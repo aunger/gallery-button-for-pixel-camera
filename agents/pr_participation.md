@@ -50,7 +50,7 @@ Answer an inline comment in a thread (`mcp__github__add_reply_to_pull_request_co
 
   ```text
   ReviewText := <review the diff; form your verdict and review text>
-  post review: mcp__github__pull_request_review_write(ReviewText, event=COMMENT)
+  post review: mcp__github__pull_request_review_write(method: "create", event: "COMMENT", body: ReviewText)
   ```
 
 - After posting your review, tell the Orchestrator your decision using the fixed decision-signal vocabulary from `dev_orchestration.md`: one of `LGTM`, `Changes requested`, or `Cannot work`.
@@ -61,7 +61,7 @@ Answer an inline comment in a thread (`mcp__github__add_reply_to_pull_request_co
 
   - `LGTM`: the PR is good to merge. If you want any change made before merge, do not use this; request changes instead so the full review cycle continues.
   - `Changes requested`: the PR needs more work, and another Author round can supply it. This sends the Author back to correct or complete its work.
-  - `Cannot work`: the coding phase cannot be completed by any further Author round, because the requirements are unattainable or self-contradictory, or a blocker is outside the Author's control (for example, the CI infrastructure itself is broken). This escalates to the user instead of looping. Explain the specifics in your review comment (or, on the no-PR path, in your issue comment). Do not reach for it merely because the PR is imperfect: use `Changes requested` whenever another round could help.
+  - `Cannot work`: the coding phase cannot be completed by any further Author round, because the requirements are unattainable or self-contradictory, or a blocker is outside the Author's control (for example, the CI infrastructure itself is broken). This escalates to the user instead of looping. Explain the specifics in your review body (or, on the no-PR path, in your issue comment). Do not reach for it merely because the PR is imperfect: use `Changes requested` whenever another round could help.
 
 ### CI checks during the development cycle
 
