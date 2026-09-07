@@ -14,9 +14,8 @@ Follows `scripts/agents/link_gh_issues.py` (issue #1000) and
 `gh` CLI.
 
 No annotation here is parameterised: a container is the bare `list`, `dict` or
-`tuple`. `iter_records` carries no return annotation because a generator's would
-be this file's only `collections.abc` import, and it would say no more than the
-first line of that function's own docstring (#1078).
+`tuple`, or one of those `| None`. The file takes no `collections.abc` import
+(#1078).
 
 Layout read
 -----------
@@ -325,6 +324,10 @@ def iter_records(path: str, notes: list | None = None):
     unparsable final line is that incomplete append, so it is noted and dropped
     rather than failing the whole transcript; a malformed line anywhere else is
     a real corruption and fails.
+
+    No return annotation: a generator's would need `collections.abc`, which this
+    file does not import, and it would say no more than the first line above
+    (#1078).
     """
     held = None
     with open(path, encoding="utf-8") as handle:
