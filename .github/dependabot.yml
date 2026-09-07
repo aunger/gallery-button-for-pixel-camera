@@ -90,12 +90,15 @@
 # scripts/test_dependabot_config.sh asserts both halves of this against the real coordinate list in app/build.gradle.kts.
 #
 # The underlying defect is in dependabot-core, not here.
-# Either of two upstream changes would retire this `exclude`: reading a per-version date (the .pom or .module timestamp) instead of only `<latest>`'s lastUpdated, or treating "date unknown" as "not in cooldown", as Dependabot does when no cooldown is configured at all.
-# The first of those now exists upstream, and does not reach these coordinates (issue #1073).
+# Either of two upstream changes would retire this `exclude`: reading a per-version date (the .pom or .module timestamp) instead of only `<latest>`'s lastUpdated, or treating "date unknown" as "not in cooldown".
+# The first now exists upstream, and does not reach these coordinates (issue #1073).
 # `VersionReleaseDateFallbackFetcher` HEADs the .pom and reads its `Last-Modified`, but `fetch_release_metadata` returns before reaching it unless `plugin?`, which is true only of a requirement in the `plugins` group (gradle/lib/dependabot/gradle/package/package_details_fetcher.rb:152 and :427).
 # Every coordinate this `exclude` covers is an `implementation` or `*testImplementation` declaration, so the fallback never runs for any of them.
 # Google is not the side withholding the date: HEAD on the 2.11.0 .pom under https://maven.google.com redirects once to dl.google.com and answers 200 with `Last-Modified: Wed, 17 Jun 2026 17:07:08 GMT`, and Dependabot's Excon stack follows redirects.
 # That gate was already in place in 0.392.0, the version #905's reproduction ran, which is why the run still logged "Release date not available for version 2.11.0 - filtering out".
+# The second is a request for new behavior, not an appeal to behavior that exists: no `.github/dependabot.yml` can reach it.
+# `missing_release_date_in_cooldown?` filters an undated release out whenever cooldown options are present, and passes it only when they are nil (gradle/lib/dependabot/gradle/update_checker/version_finder.rb:252), and a job always has them, because `build_cooldown` returns `ReleaseCooldownOptions.new(default_days: 3)` when this file carries no `cooldown` key at all (updater/lib/dependabot/job.rb:693).
+# Deleting the `cooldown` block below therefore does not restore these twelve bumps, it re-hides them, which is #905 verbatim.
 # So the `exclude` stays, until dependabot-core ungates that fallback or the Maven ecosystem's ungated equivalent (`fetch_pom_last_modified`, new in v0.393.0 and serving `package-ecosystem: maven`) reaches the Gradle path.
 
 version: 2
