@@ -13,6 +13,11 @@ Follows `scripts/agents/link_gh_issues.py` (issue #1000) and
 `scripts/agents/update_gh_labels.sh` (issue #710): standard library only, no
 `gh` CLI.
 
+No annotation here is parameterised: a container is the bare `list`, `dict` or
+`tuple`. `iter_records` carries no return annotation because a generator's would
+be this file's only `collections.abc` import, and it would say no more than the
+first line of that function's own docstring (#1078).
+
 Layout read
 -----------
 
@@ -626,8 +631,8 @@ def render_report(
     window: float,
     project_dir: str,
     detail: list | None,
-    missing: list = (),
-    unreadable: list = (),
+    missing: list,
+    unreadable: list,
 ) -> list:
     live = [summary["label"] for summary in summaries if summary["live"]]
     lines = [
