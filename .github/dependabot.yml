@@ -89,8 +89,14 @@
 # Excluding by prefix rather than naming androidx.lifecycle alone also covers the ignore-rule case above for any coordinate the maven-google registry serves.
 # scripts/test_dependabot_config.sh asserts both halves of this against the real coordinate list in app/build.gradle.kts.
 #
-# The underlying defect is in dependabot-core, not here: the Google repository could supply a per-version date (the .pom or .module timestamp) instead of only `<latest>`'s lastUpdated, or treat "date unknown" as "not in cooldown" as it does when no cooldown is configured at all.
-# If that is fixed upstream, this `exclude` can be removed and the three-day delay restored for these packages.
+# The underlying defect is in dependabot-core, not here.
+# Either of two upstream changes would retire this `exclude`: reading a per-version date (the .pom or .module timestamp) instead of only `<latest>`'s lastUpdated, or treating "date unknown" as "not in cooldown", as Dependabot does when no cooldown is configured at all.
+# The first of those now exists upstream, and does not reach these coordinates (issue #1073).
+# `VersionReleaseDateFallbackFetcher` HEADs the .pom and reads its `Last-Modified`, but `fetch_release_metadata` returns before reaching it unless `plugin?`, which is true only of a requirement in the `plugins` group (gradle/lib/dependabot/gradle/package/package_details_fetcher.rb:152 and :427).
+# Every coordinate this `exclude` covers is an `implementation` or `*testImplementation` declaration, so the fallback never runs for any of them.
+# Google is not the side withholding the date: HEAD on the 2.11.0 .pom under https://maven.google.com redirects once to dl.google.com and answers 200 with `Last-Modified: Wed, 17 Jun 2026 17:07:08 GMT`, and Dependabot's Excon stack follows redirects.
+# That gate was already in place in 0.392.0, the version #905's reproduction ran, which is why the run still logged "Release date not available for version 2.11.0 - filtering out".
+# So the `exclude` stays, until dependabot-core ungates that fallback or the Maven ecosystem's ungated equivalent (`fetch_pom_last_modified`, new in v0.393.0 and serving `package-ecosystem: maven`) reaches the Gradle path.
 
 version: 2
 registries:

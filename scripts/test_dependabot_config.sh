@@ -538,8 +538,8 @@ for index, entry, names, directories in gradle_entries:
     still_held = sorted(c for c in google_hosted if cooldown_holds(c, cooldown))
     check(
         not still_held,
-        "%s's cooldown exempts all %d of its Google-hosted coordinates, whose release dates maven.google.com "
-        "cannot supply per version%s (issue #905)"
+        "%s's cooldown exempts all %d of its Google-hosted coordinates, for which Dependabot resolves a "
+        "release date only for the version named by `<latest>`%s (issue #905)"
         % (label, len(google_hosted), ("; still held: " + ", ".join(still_held)) if still_held else ""),
     )
 
