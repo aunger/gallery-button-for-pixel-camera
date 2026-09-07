@@ -591,7 +591,7 @@ class TestDiff(unittest.TestCase):
         # pair came back wrapped in inserted back-tick runs, while the links in
         # the same body whose labels held no slash stored intact.  The run
         # length was never characterized, so any run has to count.
-        link = "[frameworks/base](https://android.googlesource.com/platform/frameworks/base)"
+        link = markdown_link(*OWNER_REPO_LINKS[0])
         for run in (vgw.BACK_TICK, vgw.BACK_TICK * 2):
             sent = f"read {link} at head"
             regions, _ = vgw.diff_regions(sent, f"read {run}{link}{run} at head")
