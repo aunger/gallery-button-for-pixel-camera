@@ -616,6 +616,29 @@ class TestDiff(unittest.TestCase):
                 self.assertEqual((region.sent, region.stored), ("", run), case)
                 self.assertEqual(region.classification, "back-tick insertion", case)
 
+    def test_the_multi_link_pr_958_body_positions_the_runs_in_the_sent_text(self):
+        # `position` is the whole of what a reader gets to locate the
+        # alteration, rendered as "at character {position}", and diff_regions
+        # builds it from the sent-side index.  This is the first body in the
+        # suite where the two sides can disagree: four pure insertions
+        # accumulate on the stored side, so a position read from there would
+        # drift by the length of every run before it, and drift further the
+        # longer the run.  Taking the expectation from the sent text is what
+        # makes that visible, and it is why the same four positions are
+        # expected for runs of one, two and three.
+        #
+        # The first of them is also the common prefix the trim removed, which
+        # is several hundred characters on a body this size against 10 in
+        # test_region_position_is_reported_in_the_sent_text below.  A dropped
+        # offset would survive that test and not this one.
+        sent = vgw.normalize(pr_958_reason_one())
+        for case, _, render, positions in pr_958_wrap_variants():
+            stored = vgw.normalize(pr_958_reason_one(render))
+            regions, _ = vgw.diff_regions(sent, stored)
+            offset, _, _ = vgw._trim_common(sent, stored)
+            self.assertEqual([region.position for region in regions], positions, case)
+            self.assertEqual(offset, positions[0], case)
+
     def test_the_multi_link_pr_958_body_stays_on_the_fine_diff_path(self):
         # The four regions above are already proof the coarse fallback was not
         # taken, since it returns exactly one region however much differs.  This
