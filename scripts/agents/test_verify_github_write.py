@@ -454,6 +454,14 @@ class TestNormalize(unittest.TestCase):
 AOSP = "https://android.googlesource.com/platform"
 AOSP_HEAD = "+/refs/heads/android15-release"
 
+# The two links in PR #958's reason 1 whose label is shaped like an owner/repo
+# pair, and so the only two storage altered.  Named here because the fixture
+# below plants them and the position helper has to find them again.
+OWNER_REPO_LINKS = (
+    ("frameworks/base", f"{AOSP}/frameworks/base"),
+    ("packages/modules/Permission", f"{AOSP}/packages/modules/Permission"),
+)
+
 
 def markdown_link(label: str, url: str) -> str:
     """Render *label* as a Markdown link to *url*."""
@@ -486,7 +494,7 @@ def pr_958_reason_one(owner_repo_link=markdown_link) -> str:
             "",
             "- `DisplayPolicy.enablePointerLocation()` adds the readout with"
             " `lp.type = TYPE_SECURE_SYSTEM_OVERLAY`, in "
-            + owner_repo_link("frameworks/base", f"{AOSP}/frameworks/base")
+            + owner_repo_link(*OWNER_REPO_LINKS[0])
             + " at "
             + markdown_link("DisplayPolicy.java", f"{wm}/DisplayPolicy.java")
             + ".",
@@ -502,10 +510,57 @@ def pr_958_reason_one(owner_repo_link=markdown_link) -> str:
             + markdown_link("InputDispatcher.cpp", f"{dispatcher}/InputDispatcher.cpp")
             + ").",
             "- `SecureButton` filters on exactly those two flags and nothing else, in "
-            + owner_repo_link("packages/modules/Permission", f"{AOSP}/packages/modules/Permission")
+            + owner_repo_link(*OWNER_REPO_LINKS[1])
             + ".",
         ]
     )
+
+
+def inserted_run_positions(sent: str, whole_link: bool) -> list:
+    """Return where a run inserted around each owner/repo link lands in *sent*.
+
+    Two per altered link, one before and one after whatever the run enclosed,
+    and both indexed in the sent text, which is what `Region.position` reports.
+    Derived from the sent text by search rather than from `diff_regions`, so
+    this is an oracle for the positions rather than a restatement of them.
+    """
+    positions = []
+    for label, url in OWNER_REPO_LINKS:
+        start = sent.index(markdown_link(label, url))
+        if whole_link:
+            positions += [start, start + len(markdown_link(label, url))]
+        else:
+            positions += [start + len("["), start + len("[") + len(label)]
+    return sorted(positions)
+
+
+def pr_958_wrap_variants():
+    """Yield every way storage could have altered the #958 body, and where.
+
+    Neither dimension of the alteration is settled, so neither is assumed.  The
+    run length was never characterized, so runs of one, two and three back-ticks
+    are all built; issue #1065 records #958's first revision as unrecoverable,
+    so a run around the whole link and a run around the label alone are both
+    built.  The class is the same either way, because a Region sees the
+    insertion and not what it encloses.
+
+    Each variant carries a name for failure messages, the run, a renderer for
+    the two owner/repo-labelled links, and the four positions the runs land at.
+    """
+    sent = vgw.normalize(pr_958_reason_one())
+    for run in (vgw.BACK_TICK, vgw.BACK_TICK * 2, vgw.BACK_TICK * 3):
+        yield (
+            f"a run of {len(run)} around the whole link",
+            run,
+            lambda label, url, run=run: run + markdown_link(label, url) + run,
+            inserted_run_positions(sent, whole_link=True),
+        )
+        yield (
+            f"a run of {len(run)} around the label alone",
+            run,
+            lambda label, url, run=run: markdown_link(f"{run}{label}{run}", url),
+            inserted_run_positions(sent, whole_link=False),
+        )
 
 
 class TestDiff(unittest.TestCase):
@@ -551,27 +606,15 @@ class TestDiff(unittest.TestCase):
         # SequenceMatcher actually have to survive: over a span that long they
         # can pair an inserted run with unrelated text and report a replacement
         # instead, which classifies as `other` and collects the wrong advice.
-        # The run length was never characterized, so any run has to count, and
-        # issue #1065 leaves the wrap position unsettled, so both are built
-        # rather than one being assumed.  The class is the same either way,
-        # because a Region sees the insertion and not what it encloses.
-        for run in (vgw.BACK_TICK, vgw.BACK_TICK * 2, vgw.BACK_TICK * 3):
-            for position, render in (
-                ("whole link", lambda label, url, run=run: run + markdown_link(label, url) + run),
-                (
-                    "label only",
-                    lambda label, url, run=run: markdown_link(f"{run}{label}{run}", url),
-                ),
-            ):
-                case = f"run of {len(run)} around the {position}"
-                sent = vgw.normalize(pr_958_reason_one())
-                stored = vgw.normalize(pr_958_reason_one(render))
-                regions, omitted = vgw.diff_regions(sent, stored)
-                # Two links altered, an opening run and a closing one each.
-                self.assertEqual((len(regions), omitted), (4, 0), case)
-                for region in regions:
-                    self.assertEqual((region.sent, region.stored), ("", run), case)
-                    self.assertEqual(region.classification, "back-tick insertion", case)
+        sent = vgw.normalize(pr_958_reason_one())
+        for case, run, render, _ in pr_958_wrap_variants():
+            stored = vgw.normalize(pr_958_reason_one(render))
+            regions, omitted = vgw.diff_regions(sent, stored)
+            # Two links altered, an opening run and a closing one each.
+            self.assertEqual((len(regions), omitted), (4, 0), case)
+            for region in regions:
+                self.assertEqual((region.sent, region.stored), ("", run), case)
+                self.assertEqual(region.classification, "back-tick insertion", case)
 
     def test_the_multi_link_pr_958_body_stays_on_the_fine_diff_path(self):
         # The four regions above are already proof the coarse fallback was not
@@ -580,14 +623,14 @@ class TestDiff(unittest.TestCase):
         # against: a MAX_FINE_DIFF_CHARS lowered under the span of a realistic
         # PR body fails here on its own terms, rather than only turning the
         # test above into a coarse-path test that no longer covers what it says.
+        # Every variant is measured, because the largest span is the one that
+        # would reach the bound first and it is not the same variant each time.
         sent = vgw.normalize(pr_958_reason_one())
-        stored = vgw.normalize(
-            pr_958_reason_one(
-                lambda label, url: vgw.BACK_TICK + markdown_link(label, url) + vgw.BACK_TICK
-            )
-        )
-        _, sent_middle, stored_middle = vgw._trim_common(sent, stored)
-        self.assertLess(max(len(sent_middle), len(stored_middle)), vgw.MAX_FINE_DIFF_CHARS)
+        for case, _, render, _ in pr_958_wrap_variants():
+            stored = vgw.normalize(pr_958_reason_one(render))
+            _, sent_middle, stored_middle = vgw._trim_common(sent, stored)
+            span = max(len(sent_middle), len(stored_middle))
+            self.assertLess(span, vgw.MAX_FINE_DIFF_CHARS, case)
 
     def test_a_lone_inserted_backtick_is_classified_the_same_way(self):
         # The class is named for what one region is, because one region is all
