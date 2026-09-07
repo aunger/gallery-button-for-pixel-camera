@@ -116,9 +116,19 @@ class TestMain(unittest.TestCase):
             result = si.main()
         self.assertEqual(result, 1)
 
+    def test_does_not_snooze_for_the_legacy_hold_spelling(self):
+        """The 30-day rung's original label name was hold 30 days. It was
+        renamed (#1028) and the spelling retired (#1029); anything still
+        wearing it is an ordinary label, and must not close an issue."""
+        with patch.dict(os.environ, {"ADDED_LABEL": "hold 30 days"}):
+            with patch.object(si.emxl, "gh_api") as mock_api:
+                result = si.main()
+        self.assertEqual(result, 0)
+        mock_api.assert_not_called()
+
     def test_snoozes_for_each_snooze_label(self):
-        """Every rung snoozes, in the current spelling and the legacy one."""
-        for label in (*sorted(si.emxl.SNOOZE_LABELS), "SNOOZE 30 DAYS", "HOLD 30 DAYS"):
+        """Every rung snoozes, whatever the casing of the label."""
+        for label in (*sorted(si.emxl.SNOOZE_LABELS), "SNOOZE 30 DAYS"):
             with self.subTest(label=label):
                 with patch.dict(os.environ, {"ADDED_LABEL": label}):
                     with patch.object(si, "snooze_issue", return_value=True) as mock_snooze:

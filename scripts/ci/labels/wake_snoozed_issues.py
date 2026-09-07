@@ -14,13 +14,14 @@ orchestration state it was closed in, and not silently look dispatchable via
 a leftover `orchestrate`.
 
 The elapsed time is measured from the most recent "labeled" event naming the
-issue's snooze rung, in either of its spellings (the GitHub issue events API;
-see find_label_applied_at), not from the issue's `updated_at`, which any
-comment or other label change would also bump and so would silently extend or
-reset the snooze. If that event cannot be found (should not happen in
-practice; every label application produces one), the issue is left alone
-rather than guessed at--acting on evidence the script does not have would be
-worse than staying snoozed for one more run.
+issue's snooze label (the GitHub issue events API; see find_label_applied_at),
+not from the issue's `updated_at`, which any comment or other label change
+would also bump and so would silently extend or reset the snooze. If that
+event cannot be found, the issue is left alone rather than guessed at--acting
+on evidence the script does not have would be worse than staying snoozed for
+one more run. Renaming a ladder label is what makes an event go missing, and
+it strands every snooze running under that label; see find_label_applied_at
+before renaming one.
 
 Before acting on an issue, wake_issue() re-fetches it and confirms the snooze
 label is still present, and removes labels one at a time by name rather than
@@ -80,26 +81,31 @@ def fetch_issues_with_label(repo: str, token: str, label: str) -> list[dict]:
 
 def find_label_applied_at(
     issue_number: int,
-    labels: list[str],
+    label: str,
     repo: str,
     token: str,
 ) -> datetime.datetime | None:
-    """Return when any of *labels* was last applied to *issue_number*, or None.
+    """Return when *label* was last applied to *issue_number*, or None.
 
-    Reads the issue events API for "labeled" events matching one of *labels*
+    Reads the issue events API for "labeled" events naming *label*
     (case-insensitively) and returns the latest one's timestamp. Returns None
-    if no such event is found--for example if the label predates the
-    repository's event history, though GitHub does not appear to prune it.
+    if no such event is found.
 
-    *labels* is every spelling of a single ladder rung, never a mix of rungs.
-    Both spellings have to count: renaming a label on GitHub does not rewrite
-    the "labeled" events already recorded under its old name, so once the
-    issue #1019 follow-up renames "hold N days" to "snooze N days", an issue
-    carrying the new name still owes its snooze to an event naming the old
-    one. Matching only the current name would find no event at all and leave
-    such an issue snoozed forever.
+    Applying a label always records an event, but under whatever name the
+    label carried at the time, and GitHub does not rewrite those events when
+    the label is later renamed. Renaming a ladder label therefore orphans
+    every snooze running under it: the issue comes out of the rename wearing
+    the new name while its event still names the old one, so nothing here can
+    date it, and main() leaves an issue it cannot date snoozed--closed
+    indefinitely, announced only by one stderr line per daily run.
+
+    So do not rename a ladder label while any issue is snoozed under it. If
+    one must be renamed, then afterwards re-apply the new label to every issue
+    still snoozed under it (remove it, then add it back), which records a
+    fresh event under the current name and re-dates that snooze from the day
+    of the re-application.
     """
-    wanted = {label.lower() for label in labels}
+    wanted = label.lower()
     latest: datetime.datetime | None = None
     page = 1
     while True:
@@ -113,7 +119,7 @@ def find_label_applied_at(
             if event.get("event") != "labeled":
                 continue
             event_label = (event.get("label") or {}).get("name", "")
-            if event_label.lower() not in wanted:
+            if event_label.lower() != wanted:
                 continue
             created_at = datetime.datetime.fromisoformat(event["created_at"].replace("Z", "+00:00"))
             if latest is None or created_at > latest:
@@ -131,10 +137,6 @@ def find_label_applied_at(
 
 def wake_issue(issue_number: int, snooze_label: str, repo: str, token: str) -> bool:
     """Reopen *issue_number* if it is still snoozed under *snooze_label*.
-
-    *snooze_label* is a ladder label, and both of its spellings are stripped:
-    the issue must come out of this carrying none of its rung, or it would be
-    open and snoozed at once.
 
     Re-fetches the issue's current labels immediately before acting, rather
     than reusing the list-call snapshot main() saw when it decided this
@@ -166,18 +168,10 @@ def wake_issue(issue_number: int, snooze_label: str, repo: str, token: str) -> b
         )
         return False
 
-    # Every spelling of this rung, not just the one main() found the issue
-    # under. Stripping only that one would leave a woken issue open and still
-    # wearing the other spelling, which tomorrow's run would find, date from
-    # the same elapsed event, and wake all over again.
-    rung_lower = {
-        lbl.lower() for lbl in emxl.snooze_labels_for_days(emxl.SNOOZE_LABEL_DAYS[snooze_lower])
-    }
-
     to_remove = [
         lbl
         for lbl in current_labels
-        if lbl.lower() in rung_lower or lbl.lower() in pil.PROCESS_STATE_LABELS
+        if lbl.lower() == snooze_lower or lbl.lower() in pil.PROCESS_STATE_LABELS
     ]
 
     # Reopening the issue's state never touches its labels at all--no PATCH
@@ -191,7 +185,7 @@ def wake_issue(issue_number: int, snooze_label: str, repo: str, token: str) -> b
     )
     emxl.remove_labels(issue_number, to_remove, repo, token, reason="expired-snooze")
 
-    other_stripped = sorted(lbl for lbl in to_remove if lbl.lower() not in rung_lower)
+    other_stripped = sorted(lbl for lbl in to_remove if lbl.lower() != snooze_lower)
     stripped_note = ""
     if other_stripped:
         stripped_note = f" Also removed stale process-state label(s): {', '.join(other_stripped)}."
@@ -242,26 +236,21 @@ def main() -> int:
     woken = 0
 
     for snooze_days in emxl.SNOOZE_LADDER_DAYS:
-        rung_labels = emxl.snooze_labels_for_days(snooze_days)
+        snooze_label = emxl.snooze_label_for_days(snooze_days)
 
-        # Which spelling of the rung an issue carries decides only what the
-        # wake comment and log lines name it as. Mutual exclusion keeps an
-        # issue from carrying two spellings at once, but dedupe by issue
-        # number anyway so a pair that slipped through is woken once rather
-        # than reopened and commented on twice in the same run.
-        snoozed: dict[int, str] = {}
-        for label in rung_labels:
-            try:
-                for issue in fetch_issues_with_label(repo, token, label):
-                    snoozed.setdefault(issue["number"], label)
-            except Exception as exc:  # noqa: BLE001
-                print(f"Error fetching issues snoozed with '{label}': {exc}", file=sys.stderr)
+        # A rung that cannot be listed is skipped rather than allowed to fail
+        # the run, so a blip on one rung does not cost the others their turn.
+        try:
+            snoozed = fetch_issues_with_label(repo, token, snooze_label)
+        except Exception as exc:  # noqa: BLE001
+            print(f"Error fetching issues snoozed with '{snooze_label}': {exc}", file=sys.stderr)
+            continue
 
         cutoff = now - datetime.timedelta(days=snooze_days)
 
-        for issue_number, snooze_label in sorted(snoozed.items()):
+        for issue_number in sorted(issue["number"] for issue in snoozed):
             try:
-                applied_at = find_label_applied_at(issue_number, rung_labels, repo, token)
+                applied_at = find_label_applied_at(issue_number, snooze_label, repo, token)
             except Exception as exc:  # noqa: BLE001
                 print(
                     f"Error reading label history for #{issue_number}: {exc}",
