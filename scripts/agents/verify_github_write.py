@@ -2,15 +2,28 @@
 """verify_github_write.py: Read back a GitHub write and diff it against what was sent.
 
 Text an agent posts to GitHub is sometimes different once it is stored, and
-nothing reports the difference (issue #909).  Three alteration behaviors are
+nothing reports the difference (issue #909).  Four alteration behaviors are
 known and no two share a profile: middle dots injected into at-sign mentions,
-angle-bracket constructs removed, and an attribution footer appended that was
-never sent.  They disagree on direction, on write path, and on which construct
-they touch, so no pattern rule generalizes across them.
+angle-bracket constructs removed, an attribution footer appended that was never
+sent, and back-ticks inserted where a Markdown link's label is shaped like an
+owner/repo pair (issue #962).  The construct separates all four, and the write
+path separates some; direction separates only the first three, since the fourth
+adds as the footer does.  No pattern rule generalizes across them.
 
-A comparison of sent text against stored text is indifferent to all three.  It
-needs no prediction about which path alters what, and it catches a fourth
+A comparison of sent text against stored text is indifferent to all four.  It
+needs no prediction about which path alters what, and it catches a fifth
 behavior nobody has characterized yet.  That is the whole of the design.
+
+The fourth behavior is what that claim looks like when it comes true.  It was
+found on PR #958 by reading a stored body back by hand and comparing it, which
+is exactly the comparison this module automates, and no rule written for the
+first three would have predicted it.  What that read-back pinned down is which
+links were altered, not the shape of the alteration: #958 does not record
+whether the inserted run enclosed the whole link or only its label, and its
+first revision could not be recovered to settle it.  Nor was this behavior
+probed for constancy, as mention dotting was; every post that carried the
+construct there was altered, which is reproduction rather than a controlled
+re-post.
 
 This module is the checker behind the `PostToolUse` hook
 `.claude/hooks/post-tool-use-github-readback.sh`, which is wired in
@@ -94,6 +107,7 @@ FETCH_TIMEOUT_SECONDS = 10
 RETRY_DELAY_SECONDS = 1.5
 
 MIDDLE_DOT = "·"
+BACK_TICK = "`"
 
 EXIT_CLEAN = 0
 EXIT_INTERNAL_ERROR = 1
@@ -466,6 +480,11 @@ class Region:
         """Name the alteration behavior this region looks like."""
         if MIDDLE_DOT in self.stored and MIDDLE_DOT not in self.sent:
             return "mention dotting"
+        # A special case of addition, so it has to be tested before it.  ADVICE
+        # and the module docstring list the behaviors in the order they were
+        # characterized; this order is a necessity rather than a disagreement.
+        if not self.sent and set(self.stored) == {BACK_TICK}:
+            return "back-tick insertion"
         if self.sent and not self.stored:
             return "removal"
         if self.stored and not self.sent:
@@ -594,6 +613,19 @@ ADVICE = {
         "Text you did not send is in the stored object. Read it before deciding what to "
         "do: an appended attribution footer is prohibited by AGENTS.md and must be "
         "removed by editing the object."
+    ),
+    "back-tick insertion": (
+        "Storage inserted back-ticks you did not send. Back-ticks are markup, so what the "
+        "stored object renders as is not what you wrote: read it rather than assuming "
+        "which way it broke, because the same insertion can leave a link working with a "
+        "code-styled label or replace it with its own source. The one trigger "
+        "characterized so far is a Markdown link whose label is shaped like an owner/repo "
+        "pair. On PR #958 two such links came back with back-ticks inserted while the four "
+        "links in the same body whose labels held no slash stored intact, on the REST path "
+        "and on the MCP path alike, so changing write path will not avoid it. Whether a "
+        "retry fares better is not known: this behavior has never been probed for "
+        "constancy, and every post that carried the construct on #958 was altered. What "
+        "did work there was plain text, which stored byte for byte."
     ),
     "other": (
         "The stored text differs from what was sent in a way this checker has not seen "
