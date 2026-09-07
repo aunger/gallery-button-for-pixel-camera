@@ -25,6 +25,8 @@ Start by fetching:
    In this comment, each markdown checkbox line carries a tracking-issue number.
    Parse the issue numbers from the comment's *before-merging list*, but **ignore the follow-up issue list**, which should not be addressed now.
    If more than one comment matches, parse the before-merging list of each: prefer verifying an item twice over skipping one.
+   When more than one comment matches, record the ids of the matching comments and report them in your summary comment (see "Report results"), so that a human can inspect them.
+   This lookup repairs nothing, so nothing else records what was found.
 2. Each tracking issue, including its title, body, and all of its comments, to understand what must be verified.
 
 ## Classify each item
@@ -95,6 +97,9 @@ For each tracking issue:
   Leave it open.
 
 After all tracking issues are processed, post a summary comment on the original PR that lists each item and its result (PASS / FAIL / not automatable).
+
+If more than one plan comment matched in the entry point, say so in that summary comment and list the ids of the matching comments.
+The summary comment is the place for it because the report to the Orchestrator below is exactly one terminal signal drawn from a fixed vocabulary of three, which has no room to carry it.
 
 ## Report to the Orchestrator
 

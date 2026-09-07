@@ -45,6 +45,8 @@ Only the before-merging list controls the merge gate.
    In steps 3 and 4, an item is "already covered" if the title that would be assigned to it by step 3a (for before-merging items) or step 4a (for follow-on items) matches the title of a prior issue.
    If the comment does not exist, proceed with filing all items normally.
    If more than one comment matches, or a match is corrupt in some other way, treat the PR as having none: prefer duplicate comments and duplicate issues over the risk of compounding existing corruption.
+   When more than one comment matches, or a match is corrupt in some other way, record the ids of the matching comments and report them in step 6, so that a human can inspect them.
+   This lookup repairs nothing, so nothing else records what was found.
 
 3. For each item on the *before merging* list, do the following.
    Skip sub-steps 3a and 3b for items already covered by a prior-run comment (step 2), but still execute sub-steps 3c and 3d for those items using the internal id recorded in step 2.
@@ -106,6 +108,7 @@ Only the before-merging list controls the merge gate.
 
    - the comment ID of the comment you just posted or updated
    - both lists
+   - if step 2 found more than one matching comment, or a match corrupt in some other way: which of those it found, and the ids of the matching comments
 
 ## Boundaries
 
