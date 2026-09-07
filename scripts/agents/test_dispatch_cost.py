@@ -791,11 +791,13 @@ class TestRendering(ProjectFixture):
 class TestHouseRules(unittest.TestCase):
     MODULE = os.path.join(os.path.dirname(__file__), "dispatch_cost.py")
 
-    def test_no_third_party_imports(self):
+    def module_ast(self):
         with open(self.MODULE, encoding="utf-8") as handle:
-            source = handle.read()
+            return ast.parse(handle.read())
+
+    def test_no_third_party_imports(self):
         names = set()
-        for node in ast.walk(ast.parse(source)):
+        for node in ast.walk(self.module_ast()):
             if isinstance(node, ast.Import):
                 names.update(alias.name.split(".")[0] for alias in node.names)
             elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
