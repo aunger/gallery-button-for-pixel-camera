@@ -39,6 +39,8 @@ Write it for the reader who arrives at that commit during a bisect a year from n
 - **Send round-to-round chatter to PR comments instead**, which do not enter history.
 - **Re-read the description at the end of every round**, with the thread hidden.
   You cannot tell from inside a round whether it is the last one.
+- **Keep the evidence out of it.** The description carries what changed and why; the commands, counts and citations that establish it belong in a PR comment, which is not history and can go stale harmlessly.
+  Every measurement in the description is a claim that must survive every later round.
 
 ## Test plan checkboxes
 
