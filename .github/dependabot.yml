@@ -72,11 +72,12 @@
 # For a Central-hosted coordinate such as org.json:json that is the intended behavior, and a held bump is not a lost one; it is proposed by the next run past the third day.
 #
 # For a Google-hosted coordinate the same default silently drops the bump instead, which is why `cooldown` is written out below with an `exclude` list (issue #905).
-# On https://maven.google.com Dependabot lists versions from group-index.xml, which carries version numbers and no dates, and gets dates from a separate step that reads maven-metadata.xml and records the date of `<release>` alone.
-# A candidate that is not `<release>` therefore has no date, and cooldown holds an undated release ("Release date not available for version 2.11.0 - filtering out").
+# On https://maven.google.com Dependabot lists versions from group-index.xml, which carries version numbers and no dates, and gets dates from a separate step that reads maven-metadata.xml and records the date of `<latest>` alone.
+# That step is dependabot-core's `ReleaseDateExtractor`, which pairs `//metadata/versioning/lastUpdated` with `//metadata/versioning/latest` (gradle/lib/dependabot/gradle/package/release_date_extractor.rb:146).
+# A candidate that is not `<latest>` therefore has no date, and cooldown holds an undated release ("Release date not available for version 2.11.0 - filtering out").
 # That empties the candidate set, so the run reports success and opens nothing, the same silent shape as #897.
-# It hits any Google-hosted coordinate whose newest published version is a prerelease, which AndroidX publishes continuously: androidx.lifecycle 2.11.0 was hidden this way because 2.12.0-alpha01 holds `<release>`.
-# It also hits any coordinate an `ignore` rule caps to a version line, since a capped target is by definition not `<release>`.
+# It hits any Google-hosted coordinate whose newest published version is a prerelease, which AndroidX publishes continuously: androidx.lifecycle 2.11.0 was hidden this way because 2.12.0-alpha01 held `<latest>`.
+# It also hits any coordinate an `ignore` rule caps to a version line, since a capped target is by definition not `<latest>`.
 #
 # The trade being made: cooldown is given up for the twelve Google-hosted coordinates, so an androidx.* or Material release can be proposed the day it is published with no window for a bad release to be noticed first.
 # It is kept for the seven Central-hosted ones (junit, org.mockito x2, org.robolectric, org.jetbrains.kotlinx, org.json, com.davemorrissey.labs), where dates resolve correctly and the delay does real work.
@@ -88,8 +89,17 @@
 # Excluding by prefix rather than naming androidx.lifecycle alone also covers the ignore-rule case above for any coordinate the maven-google registry serves.
 # scripts/test_dependabot_config.sh asserts both halves of this against the real coordinate list in app/build.gradle.kts.
 #
-# The underlying defect is in dependabot-core, not here: the Google repository could supply a per-version date (the .pom or .module timestamp) instead of only `<release>`'s lastUpdated, or treat "date unknown" as "not in cooldown" as it does when no cooldown is configured at all.
-# If that is fixed upstream, this `exclude` can be removed and the three-day delay restored for these packages.
+# The underlying defect is in dependabot-core, not here.
+# Either of two upstream changes would retire this `exclude`: reading a per-version date (the .pom or .module timestamp) instead of only `<latest>`'s lastUpdated, or treating "date unknown" as "not in cooldown".
+# The first now exists upstream, and does not reach these coordinates (issue #1073).
+# `VersionReleaseDateFallbackFetcher` HEADs the .pom and reads its `Last-Modified`, but `fetch_release_metadata` returns before reaching it unless `plugin?`, which is true only of a requirement in the `plugins` group (gradle/lib/dependabot/gradle/package/package_details_fetcher.rb:152 and :427).
+# No coordinate this `exclude` matches is declared in the `plugins` block: they are `implementation`, `debugImplementation` and `*testImplementation` declarations in app/build.gradle.kts, so the fallback never runs for any of them.
+# Google is not the side withholding the date: HEAD on the 2.11.0 .pom under https://maven.google.com redirects once to dl.google.com and answers 200 with `Last-Modified: Wed, 17 Jun 2026 17:07:08 GMT`, and Dependabot's Excon stack follows redirects.
+# That gate was already in place in 0.392.0, the version #905's reproduction ran, which is why the run still logged "Release date not available for version 2.11.0 - filtering out".
+# The second is a request for new behavior, not an appeal to behavior that exists: no `.github/dependabot.yml` can reach it.
+# `missing_release_date_in_cooldown?` filters an undated release out whenever cooldown options are present, and passes it only when they are nil (gradle/lib/dependabot/gradle/update_checker/version_finder.rb:252), and a job always has them, because `build_cooldown` returns `ReleaseCooldownOptions.new(default_days: 3)` when this file carries no `cooldown` key at all (updater/lib/dependabot/job.rb:693).
+# Deleting the `cooldown` block below therefore does not restore these twelve bumps, it re-hides them, which is #905 verbatim.
+# So the `exclude` stays, until dependabot-core ungates that fallback or the Maven ecosystem's ungated equivalent (`fetch_pom_last_modified`, new in v0.393.0 and serving `package-ecosystem: maven`) reaches the Gradle path.
 
 version: 2
 registries:
