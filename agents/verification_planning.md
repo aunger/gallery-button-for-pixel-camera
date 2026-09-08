@@ -27,17 +27,9 @@ Only the before-merging list controls the merge gate.
 
 ### An observation the reviewer closed is not follow-on work
 
-A reviewer who raises something and settles it in the same breath has made a decision, not deferred a task.
-The words that mark it are the reviewer's own: "not a change request", "not asking for a round", "leave it", "nothing to do about it".
-Such an item belongs on neither list.
-Filing it records a closed question as open work, and the next run over the queue reopens an argument its participants had already finished.
-
-Where the reviewer's words settle it, the review comment is the record, and no issue is needed to keep it.
+A reviewer who raises something and settles it in the same breath ("not a change request", "leave it") has decided it, not deferred it.
+Such an item belongs on neither list: the review comment is the record, and filing it reopens a finished argument.
 Ask whether work remains, not whether the point was interesting.
-
-This distinction is load-bearing rather than stylistic: the same wording has been read both ways.
-One run filed a reviewer's "explicitly not a change request" as an issue so it would not evaporate; another declined to file a reviewer's "leave it" on the grounds that filing would misrepresent it as tracked.
-The second reading is the one this document intends.
 
 ## What to do
 
@@ -91,8 +83,9 @@ The second reading is the one this document intends.
    If the source comment declines the work in its own terms, do not file it, and drop it from the list.
    b. Title the issue simply `{task title}`, without referencing the current PR.
    c. In the issue description, include a URL to the source comment or description, and state clearly that this issue does **not** block PR #{number} (for example, "This is a follow-on item and does not block merging PR #{number}.").
-   d. Do **not** call the `blocked_by` dependency endpoint for follow-on issues.
-   Do **not** add any "Blocks PR #..." line to the issue body.
+   d. Where the follow-on cannot be started until this PR merges, record that the **new issue is blocked by the PR**, which is the reverse of step 3c: send that request to `.../issues/{new issue number}/dependencies/blocked_by` with the PR's internal id.
+   Otherwise leave the issue unlinked.
+   Either way, do **not** block the PR on a follow-on issue, and do **not** add any "Blocks PR #..." line to its body.
 
 5. Post (or replace) the verification-plan comment in the PR's issue-comment stream.
    The comment's entire first line must be the HTML marker `<!-- gb4pc-verification-plan -->`, so the step-2 lookup of a future run finds it.
@@ -122,9 +115,6 @@ The second reading is the one this document intends.
 
    - the comment ID of the comment you just posted or updated
    - both lists
-   - any item you dropped under step 4a, named with the comment that settled it
-
-   The last of these keeps the decision auditable without spending an issue on it.
 
 ## Boundaries
 
