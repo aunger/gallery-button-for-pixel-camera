@@ -32,21 +32,11 @@ Answer an inline comment in a thread (`mcp__github__add_reply_to_pull_request_co
 - The Reviewer need not enforce expectations written with "should" language.
 
 - **Weigh a finding by what it costs to fix against what it costs to leave.**
-  A defect in the code, the tests, or their behavior blocks: request changes.
-  A defect confined to the PR description, the PR title, or a comment does not block on its own.
-  Report it as a nit and give your verdict on the diff.
-  If the PR takes another round for a code reason, the Author corrects the prose in that round; if it does not, the nit ships.
+  A defect in the code, the tests, or their behavior blocks: give `Changes requested`.
+  A defect confined to the PR description, the PR title, or a comment is usually a nit: report it, and give your verdict on the diff.
+  If the PR takes another round for a code reason, the Author corrects the prose in that round.
 
-  This is a deliberate trade rather than an oversight.
-  A round costs an Author dispatch and a Reviewer dispatch, both re-reading the PR from the start, and prose has earned those rounds over a miscounted `grep` and a hunk-start line number mistaken for a changed one.
-  `code_edit.md` already puts prose re-verification on the Author before review, where it costs a re-read instead of a cycle.
-
-  Two kinds of prose defect still block, because in each the prose is the deliverable rather than a description of one:
-
-  - A description that misstates what the diff does, since a reader who believes it acts on the wrong understanding of the change.
-  - A claim the change introduces and cannot support, where making that claim is the point: a rule the PR is adding, or a record whose accuracy is the work.
-
-  Everything else in prose is a nit.
+  It blocks where the prose is the deliverable rather than a description of one: a description that misstates what the diff does, a rule the PR is adding, or a record whose accuracy is the work.
 
 - Although **bylines** (Claude attribution, links) are prohibited, the Reviewer must not mention them in reviews.
 
