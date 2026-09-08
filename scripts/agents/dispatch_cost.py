@@ -13,6 +13,10 @@ Follows `scripts/agents/link_gh_issues.py` (issue #1000) and
 `scripts/agents/update_gh_labels.sh` (issue #710): standard library only, no
 `gh` CLI.
 
+No annotation here is parameterised: a container is the bare `list`, `dict` or
+`tuple`, or one of those `| None`. The file takes no `collections.abc` import
+(#1078). Both rules are checked by `scripts/agents/test_dispatch_cost.py`.
+
 Layout read
 -----------
 
@@ -320,6 +324,9 @@ def iter_records(path: str, notes: list | None = None):
     unparsable final line is that incomplete append, so it is noted and dropped
     rather than failing the whole transcript; a malformed line anywhere else is
     a real corruption and fails.
+
+    No return annotation: a generator's would need `collections.abc`, which this
+    file does not import, and it would say no more than the first line above.
     """
     held = None
     with open(path, encoding="utf-8") as handle:
@@ -626,8 +633,8 @@ def render_report(
     window: float,
     project_dir: str,
     detail: list | None,
-    missing: list = (),
-    unreadable: list = (),
+    missing: list,
+    unreadable: list,
 ) -> list:
     live = [summary["label"] for summary in summaries if summary["live"]]
     lines = [
