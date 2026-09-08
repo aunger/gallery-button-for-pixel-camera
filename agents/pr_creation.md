@@ -36,7 +36,7 @@ Write it for the reader who arrives at that commit during a bisect a year from n
 - **It must stand alone**, without leaning on the thread or on the round it happened to be written in.
 - **Do not address the reviewer.** "Fixed the nit from round 2" and "see my comment" say nothing to that reader.
   Describe the change as it now stands, not the path taken to reach it.
-- **Send round-to-round chatter to PR comments instead**, which do not enter history.
+- **Send round-to-round chatter and supporting evidence to PR comments instead**, which do not enter history: the description carries what changed and why, not the commands, counts and citations that establish it.
 - **Re-read the description at the end of every round**, with the thread hidden.
   You cannot tell from inside a round whether it is the last one.
 

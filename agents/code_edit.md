@@ -35,3 +35,4 @@
   - Line numbers, counts and quantities, names of files, paths and symbols, and absolutes ("always", "never") rot first.
   - Do this on rounds that add no new prose too: moving code in a later round is what falsifies prose written in an earlier one.
   - Where a claim and the code disagree, decide which is wrong before you fix either; sometimes the code is the side that should change.
+  - Prefer a claim that does not turn on a count. Where a quantity has to appear, give the commit or date it was measured at.
