@@ -83,9 +83,10 @@ Ask whether work remains, not whether the point was interesting.
    If the source comment declines the work in its own terms, do not file it, and drop it from the list.
    b. Title the issue simply `{task title}`, without referencing the current PR.
    c. In the issue description, include a URL to the source comment or description, and state clearly that this issue does **not** block PR #{number} (for example, "This is a follow-on item and does not block merging PR #{number}.").
-   d. Where the follow-on cannot be started until this PR merges, record that the **new issue is blocked by the PR**, which is the reverse of step 3c: send that request to `.../issues/{new issue number}/dependencies/blocked_by` with the PR's internal id.
+   d. Where the follow-on cannot be started until this work lands, record it as blocked by **the issue this PR resolves**, sending step 3c's request to `.../issues/{new issue number}/dependencies/blocked_by` with that issue's internal id.
+   GitHub refuses a pull request on either side of a dependency, so the issue stands in for it (see `scripts/agents/link_gh_issues.py`).
    Otherwise leave the issue unlinked.
-   Either way, do **not** block the PR on a follow-on issue, and do **not** add any "Blocks PR #..." line to its body.
+   Never block the PR or its issue on a follow-on, and do **not** add any "Blocks PR #..." line to its body.
 
 5. Post (or replace) the verification-plan comment in the PR's issue-comment stream.
    The comment's entire first line must be the HTML marker `<!-- gb4pc-verification-plan -->`, so the step-2 lookup of a future run finds it.
