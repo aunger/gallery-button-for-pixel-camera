@@ -326,8 +326,7 @@ def iter_records(path: str, notes: list | None = None):
     a real corruption and fails.
 
     No return annotation: a generator's would need `collections.abc`, which this
-    file does not import, and it would say no more than the first line above
-    (#1078).
+    file does not import, and it would say no more than the first line above.
     """
     held = None
     with open(path, encoding="utf-8") as handle:
