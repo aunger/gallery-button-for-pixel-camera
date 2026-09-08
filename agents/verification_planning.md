@@ -25,6 +25,12 @@ Both lists are deliverables.
 File a tracking issue for every item in either list so nothing is lost.
 Only the before-merging list controls the merge gate.
 
+### An observation the reviewer closed is not follow-on work
+
+A reviewer who raises something and settles it in the same breath ("not a change request", "leave it") has decided it, not deferred it.
+Such an item belongs on neither list: the review comment is the record, and filing it reopens a finished argument.
+Ask whether work remains, not whether the point was interesting.
+
 ## What to do
 
 1. Read the issue description, PR description, and all comments on both.
@@ -42,7 +48,7 @@ Only the before-merging list controls the merge gate.
    Treat those issues as already filed and do not create duplicates for the corresponding items.
    Record the comment's id (the numeric id returned by the comments API, not its URL) for use in step 5.
    For each parsed issue ID n, fetch the issue (`GET https://api.github.com/repos/{owner}/{repo}/issues/{n}`) and record its title and internal id (the `id` field, not the issue number).
-   In steps 3 and 4, an item is "already covered" if the title that would be assigned to it by step 3a (for before-merging items) or step 4a (for follow-on items) matches the title of a prior issue.
+   In steps 3 and 4, an item is "already covered" if the title that would be assigned to it by step 3a (for before-merging items) or step 4b (for follow-on items) matches the title of a prior issue.
    If the comment does not exist, proceed with filing all items normally.
    If more than one comment matches, or a match is corrupt in some other way, treat the PR as having none: prefer duplicate comments and duplicate issues over the risk of compounding existing corruption.
 
@@ -73,10 +79,14 @@ Only the before-merging list controls the merge gate.
 
 4. Open one GitHub issue for each item on the *follow-on* list that is not already covered by a prior-run comment (step 2).
    For each item:
-   a. Title the issue simply `{task title}`, without referencing the current PR.
-   b. In the issue description, include a URL to the source comment or description, and state clearly that this issue does **not** block PR #{number} (for example, "This is a follow-on item and does not block merging PR #{number}.").
-   c. Do **not** call the `blocked_by` dependency endpoint for follow-on issues.
-   Do **not** add any "Blocks PR #..." line to the issue body.
+   a. Confirm the item is deferred work rather than a question its source already settled (see "An observation the reviewer closed is not follow-on work" above).
+   If the source comment declines the work in its own terms, do not file it, and drop it from the list.
+   b. Title the issue simply `{task title}`, without referencing the current PR.
+   c. In the issue description, include a URL to the source comment or description, and state clearly that this issue does **not** block PR #{number} (for example, "This is a follow-on item and does not block merging PR #{number}.").
+   d. If the follow-on cannot be started until this work lands, record it as blocked by **the issue this PR resolves**, sending step 3c's request to `.../issues/{follow-on issue number}/dependencies/blocked_by` with that issue's internal id.
+   GitHub dependency links don't allow a PR on either side, so the issue stands in for it (see `scripts/agents/link_gh_issues.py`).
+   Otherwise leave the issue unlinked.
+   Never block the PR or its issue by a follow-on.
 
 5. Post (or replace) the verification-plan comment in the PR's issue-comment stream.
    The comment's entire first line must be the HTML marker `<!-- gb4pc-verification-plan -->`, so the step-2 lookup of a future run finds it.
