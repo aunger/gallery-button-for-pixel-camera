@@ -33,7 +33,7 @@ Answer an inline comment in a thread (`mcp__github__add_reply_to_pull_request_co
 
 - **Weigh a finding by what it costs to fix against what it costs to leave.**
   A defect in the code, the tests, or their behavior blocks: give `Changes requested`.
-  A defect confined to the PR description, the PR title, or a comment is usually a nit: report it, and give your verdict on the diff.
+  A defect confined to the PR description, the PR title, or a comment is usually a nit: report it, but give your verdict on the diff.
   If the PR takes another round for a code reason, the Author corrects the prose in that round.
 
   It blocks where the prose is the deliverable rather than a description of one: a description that misstates what the diff does, a rule the PR is adding, or a record whose accuracy is the work.
