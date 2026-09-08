@@ -764,7 +764,7 @@ class TestOneParent(unittest.TestCase):
 
     def parent_calls(self, fake):
         """Every call the run made to an issue's `/parent`, as (method, path)."""
-        return [c[:2] for c in fake.calls if c[1].endswith("/parent")]
+        return [c[:2] for c in fake.calls if c[1].split("?")[0].endswith("/parent")]
 
     def test_moving_a_sub_issue_is_refused_without_the_flag(self):
         fake = self.child_of_17()
