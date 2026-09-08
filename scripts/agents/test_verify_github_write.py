@@ -451,6 +451,117 @@ class TestNormalize(unittest.TestCase):
 # Diffing
 # ---------------------------------------------------------------------------
 
+AOSP = "https://android.googlesource.com/platform"
+AOSP_HEAD = "+/refs/heads/android15-release"
+
+# The two links in PR #958's reason 1 whose label is shaped like an owner/repo
+# pair, and so the only two storage altered.  Named here because the fixture
+# below plants them and the position helper has to find them again.
+OWNER_REPO_LINKS = (
+    ("frameworks/base", f"{AOSP}/frameworks/base"),
+    ("packages/modules/Permission", f"{AOSP}/packages/modules/Permission"),
+)
+
+
+def markdown_link(label: str, url: str) -> str:
+    """Render *label* as a Markdown link to *url*."""
+    return f"[{label}]({url})"
+
+
+def pr_958_reason_one(owner_repo_link=markdown_link) -> str:
+    """Return a reconstruction of PR #958's reason 1, in its Markdown-link form.
+
+    The first revision itself is not recoverable, from any session that has
+    tried (issue #1065), so this is the shape #958's own closing note describes
+    rather than the bytes it stored: four bullets and six AOSP links, of which
+    exactly two carry a label shaped like an owner/repo pair.  Storage inserted
+    a back-tick run around those two and stored the other four byte for byte.
+    That split is what issue #962 records, and an owner/repo-shaped label is
+    the one trigger this module's fourth behavior is characterized on.
+
+    *owner_repo_link* renders the two owner/repo-labelled links, so passing a
+    renderer that adds the run builds the stored side against the sent side's
+    default.  It takes the label and the URL, as `markdown_link` does.
+    """
+    wm = f"{AOSP}/frameworks/base/{AOSP_HEAD}/services/core/java/com/android/server/wm"
+    dispatcher = f"{AOSP}/frameworks/native/{AOSP_HEAD}/services/inputflinger/dispatcher"
+    return "\n".join(
+        [
+            "### 1. The dispatcher excludes the window by type",
+            "",
+            "Every file below was read on android.googlesource.com at the"
+            " `android15-release` branch, which is this AVD's API 35.",
+            "",
+            "- `DisplayPolicy.enablePointerLocation()` adds the readout with"
+            " `lp.type = TYPE_SECURE_SYSTEM_OVERLAY`, in "
+            + owner_repo_link(*OWNER_REPO_LINKS[0])
+            + " at "
+            + markdown_link("DisplayPolicy.java", f"{wm}/DisplayPolicy.java")
+            + ".",
+            "- `InputMonitor.isTrustedOverlay(int type)` lists"
+            " `TYPE_SECURE_SYSTEM_OVERLAY`, and"
+            " `WindowState.isWindowTrustedOverlay()` returns true if that holds ("
+            + markdown_link("InputMonitor.java", f"{wm}/InputMonitor.java")
+            + " and "
+            + markdown_link("WindowState.java", f"{wm}/WindowState.java")
+            + ", same directory).",
+            "- `InputDispatcher::canBeObscuredBy()` returns `false` for any window"
+            " whose `inputConfig` carries `TRUSTED_OVERLAY` ("
+            + markdown_link("InputDispatcher.cpp", f"{dispatcher}/InputDispatcher.cpp")
+            + ").",
+            "- `SecureButton` filters on exactly those two flags and nothing else, in "
+            + owner_repo_link(*OWNER_REPO_LINKS[1])
+            + ".",
+        ]
+    )
+
+
+def inserted_run_positions(sent: str, whole_link: bool) -> list:
+    """Return where a run inserted around each owner/repo link lands in *sent*.
+
+    Two per altered link, one before and one after whatever the run enclosed,
+    and both indexed in the sent text, which is what `Region.position` reports.
+    Derived from the sent text by search rather than from `diff_regions`, so
+    this is an oracle for the positions rather than a restatement of them.
+    """
+    positions = []
+    for label, url in OWNER_REPO_LINKS:
+        start = sent.index(markdown_link(label, url))
+        if whole_link:
+            positions += [start, start + len(markdown_link(label, url))]
+        else:
+            positions += [start + len("["), start + len("[") + len(label)]
+    return sorted(positions)
+
+
+def pr_958_wrap_variants():
+    """Yield every way storage could have altered the #958 body, and where.
+
+    Neither dimension of the alteration is settled, so neither is assumed.  The
+    run length was never characterized, so runs of one, two and three back-ticks
+    are all built; issue #1065 records #958's first revision as unrecoverable,
+    so a run around the whole link and a run around the label alone are both
+    built.  The class is the same either way, because a Region sees the
+    insertion and not what it encloses.
+
+    Each variant carries a name for failure messages, the run, a renderer for
+    the two owner/repo-labelled links, and the four positions the runs land at.
+    """
+    sent = vgw.normalize(pr_958_reason_one())
+    for run in (vgw.BACK_TICK, vgw.BACK_TICK * 2, vgw.BACK_TICK * 3):
+        yield (
+            f"a run of {len(run)} around the whole link",
+            run,
+            lambda label, url, run=run: run + markdown_link(label, url) + run,
+            inserted_run_positions(sent, whole_link=True),
+        )
+        yield (
+            f"a run of {len(run)} around the label alone",
+            run,
+            lambda label, url, run=run: markdown_link(f"{run}{label}{run}", url),
+            inserted_run_positions(sent, whole_link=False),
+        )
+
 
 class TestDiff(unittest.TestCase):
     def test_identical_text_produces_no_regions(self):
@@ -480,7 +591,7 @@ class TestDiff(unittest.TestCase):
         # pair came back wrapped in inserted back-tick runs, while the links in
         # the same body whose labels held no slash stored intact.  The run
         # length was never characterized, so any run has to count.
-        link = "[frameworks/base](https://android.googlesource.com/platform/frameworks/base)"
+        link = markdown_link(*OWNER_REPO_LINKS[0])
         for run in (vgw.BACK_TICK, vgw.BACK_TICK * 2):
             sent = f"read {link} at head"
             regions, _ = vgw.diff_regions(sent, f"read {run}{link}{run} at head")
@@ -488,6 +599,61 @@ class TestDiff(unittest.TestCase):
             for region in regions:
                 self.assertEqual((region.sent, region.stored), ("", run))
                 self.assertEqual(region.classification, "back-tick insertion")
+
+    def test_the_multi_link_pr_958_body_gives_one_region_per_inserted_run(self):
+        # The case above is one link in a short string.  PR #958's body is four
+        # bullets and six links, and that is what the common-prefix trim and
+        # SequenceMatcher actually have to survive: over a span that long they
+        # can pair an inserted run with unrelated text and report a replacement
+        # instead, which classifies as `other` and collects the wrong advice.
+        sent = vgw.normalize(pr_958_reason_one())
+        for case, run, render, _ in pr_958_wrap_variants():
+            stored = vgw.normalize(pr_958_reason_one(render))
+            regions, omitted = vgw.diff_regions(sent, stored)
+            # Two links altered, an opening run and a closing one each.
+            self.assertEqual((len(regions), omitted), (4, 0), case)
+            for region in regions:
+                self.assertEqual((region.sent, region.stored), ("", run), case)
+                self.assertEqual(region.classification, "back-tick insertion", case)
+
+    def test_the_multi_link_pr_958_body_positions_the_runs_in_the_sent_text(self):
+        # `position` is the whole of what a reader gets to locate the
+        # alteration, rendered as "at character {position}", and diff_regions
+        # builds it from the sent-side index.  This is the first body in the
+        # suite where the two sides can disagree: four pure insertions
+        # accumulate on the stored side, so a position read from there would
+        # drift by the length of every run before it, and drift further the
+        # longer the run.  Taking the expectation from the sent text is what
+        # makes that visible, and it is why the same four positions are
+        # expected for runs of one, two and three.
+        #
+        # The first of them is also the common prefix the trim removed, which
+        # is several hundred characters on a body this size against 10 in
+        # test_region_position_is_reported_in_the_sent_text below.  A dropped
+        # offset would survive that test and not this one.
+        sent = vgw.normalize(pr_958_reason_one())
+        for case, _, render, positions in pr_958_wrap_variants():
+            stored = vgw.normalize(pr_958_reason_one(render))
+            regions, _ = vgw.diff_regions(sent, stored)
+            offset, _, _ = vgw._trim_common(sent, stored)
+            self.assertEqual([region.position for region in regions], positions, case)
+            self.assertEqual(offset, positions[0], case)
+
+    def test_the_multi_link_pr_958_body_stays_on_the_fine_diff_path(self):
+        # The four regions above are already proof the coarse fallback was not
+        # taken, since it returns exactly one region however much differs.  This
+        # pins the margin that keeps it so, and names the bound it is measured
+        # against: a MAX_FINE_DIFF_CHARS lowered under the span of a realistic
+        # PR body fails here on its own terms, rather than only turning the
+        # test above into a coarse-path test that no longer covers what it says.
+        # Every variant is measured, because the largest span is the one that
+        # would reach the bound first and it is not the same variant each time.
+        sent = vgw.normalize(pr_958_reason_one())
+        for case, _, render, _ in pr_958_wrap_variants():
+            stored = vgw.normalize(pr_958_reason_one(render))
+            _, sent_middle, stored_middle = vgw._trim_common(sent, stored)
+            span = max(len(sent_middle), len(stored_middle))
+            self.assertLess(span, vgw.MAX_FINE_DIFF_CHARS, case)
 
     def test_a_lone_inserted_backtick_is_classified_the_same_way(self):
         # The class is named for what one region is, because one region is all
