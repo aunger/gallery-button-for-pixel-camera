@@ -18,12 +18,18 @@ Two kinds of outstanding requirement are your responsibility:
 
 Classify each finding into exactly one of two tracks:
 
-- **Before-merging (blocking)**: requirements from the two kinds above that are in scope for this PR and must be resolved before it can be merged.
-- **Follow-on (non-blocking)**: work that is explicitly deferred, out of scope for this PR, or otherwise not a condition of merging (for example, cleanup in another package that the PR explicitly deferred to a follow-up).
+- **Before-merging (blocking)**: requirements from the two kinds above that are in scope for this PR, must be resolved before it can be merged, and can be resolved while it is open.
+- **Follow-on (non-blocking)**: work that is explicitly deferred, out of scope for this PR, only possible once the change is on the default branch, or otherwise not a condition of merging (for example, cleanup in another package that the PR explicitly deferred to a follow-up).
 
 Both lists are deliverables.
 File a tracking issue for every item in either list so nothing is lost.
 Only the before-merging list controls the merge gate.
+
+### A check only the merge can satisfy is not a merge blocker
+
+Some checks read the state the merge produces: what a hosted service does with a config file it takes from the default branch, or what a workflow does on the merge commit.
+Blocking on one deadlocks the PR, because nothing can satisfy it while the PR is open.
+Put it on the follow-on list, and say in the issue that it is to be run after the merge.
 
 ### An observation the reviewer closed is not follow-on work
 
