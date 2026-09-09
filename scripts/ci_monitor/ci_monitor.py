@@ -539,12 +539,12 @@ def format_check_summary(rows):
 # named check really does cause, rather than on a claim that the check drafted
 # the PR.
 #
-# No other terminal word is renamed on its way to the line. `Blocked` reaches a
-# failing check, a branch that is behind or conflicted, and a process label
-# holding the gate alike, and it stays the alarming word for all three (issue
-# #996): softening it to suit the process hold would print a broken build as
-# though a procedure were merely pending. `Infra` stays alarming for the same
-# reason (issue #966).
+# No other terminal word is renamed on its way to the line. A failing check, a
+# branch that is behind or conflicted, and a process label holding the gate all
+# reach `Blocked`, and it stays the alarming word for all three (issue #996):
+# softening it to suit the process hold would print a broken build as though a
+# procedure were merely pending. `Infra` stays alarming for the same reason
+# (issue #966).
 DRAFT_ON_HOLD = "Draft on hold"
 
 

@@ -115,6 +115,9 @@ Covers:
   (bi) #996 terminal words: no terminal word begins with another, so each is
        matchable as a whole token, and `Draft on hold` is the only one printed
        from a display constant rather than from an internal verdict token
+  (bj) #996 main(): every check passed but mergeable_state is behind/dirty, so the
+       terminal is the bare `Blocked (mergeable_state=<state>)` form with no ` by: `
+       attribution, preceded by the undiagnosed-drain flag
 
 No network calls required; no GITHUB_TOKEN needed.
 Run this file directly to execute the suite: exits 0 on success, non-zero on failure.
@@ -298,7 +301,7 @@ MPR_BLOCKED = {"merged": False, "state": "open", "mergeable_state": "blocked"}
 
 
 def main() -> int:
-    """Run every check (a) through (al) and print PASS/FAIL for each.
+    """Run every check (a) through (bj) and print PASS/FAIL for each.
 
     Returns 1 if any check failed, 0 otherwise.
     Only runs when this file is executed directly; see the __main__ guard below.
@@ -6101,6 +6104,83 @@ def main() -> int:
         "the draft terminal prints as Draft on hold",
         "unexpected draft terminal word: %r" % (ci_monitor.DRAFT_ON_HOLD,),
     )
+
+    # ── (bj) #996 main(): the all-passed behind/dirty arm emits a bare Blocked ────
+    print("\n=== (bj) #996 main(): all checks passed + behind/dirty -> bare Blocked ===")
+
+    # The bare terminal is reached only here: every check passed, so `mergeable_state`
+    # alone holds the merge and no check-run can be named. blocking_suffix returns ""
+    # and the line is `PR#N: Blocked (mergeable_state=<state>)`. Every other positive
+    # Blocked assertion in this suite is the attributed ` by: <name>` form, and the
+    # bare string appears elsewhere only inside not-any checks, which no wrong word
+    # can fail. Both states of the arm are exercised, because the emitting site
+    # interpolates the state into the terminal's own suffix.
+    PR_BJ = {"head": {"sha": "996ca11d"}}
+    CHECK_ALL_PASS_BJ = {
+        "total_count": 2,
+        "check_runs": [
+            {"name": "Build and run unit tests", "status": "completed", "conclusion": "success"},
+            {"name": "No blocking labels", "status": "completed", "conclusion": "success"},
+        ],
+    }
+    # Diagnostic check-runs for the drain polls: no Actions targets, so poll_signals
+    # returns False immediately and the drain comes up empty.
+    DIAG_EMPTY_BJ = {"total_count": 0, "check_runs": []}
+
+    for state_bj in ("behind", "dirty"):
+        # Requests: pulls (sha), verdict check-runs (all_passed, reused by poll_signals),
+        # the all-passed path's fresh /pulls fetch for mergeable_state, then
+        # DRAIN_MAX_ATTEMPTS drain polls each self-fetching check-runs. 3 + 3 = 6.
+        side_effects_bj = collections.deque(
+            [
+                PR_BJ,
+                CHECK_ALL_PASS_BJ,
+                {"merged": False, "state": "open", "mergeable_state": state_bj},
+            ]
+        )
+        for _ in range(3):  # DRAIN_MAX_ATTEMPTS drain attempts
+            side_effects_bj.append(DIAG_EMPTY_BJ)
+
+        def fake_request_bj(url, token, raw=False, _queue=side_effects_bj):
+            return _queue.popleft()
+
+        buf_bj = io.StringIO()
+        with (
+            unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_bj),
+            unittest.mock.patch.object(ci_monitor.time, "time", return_value=9600.0),
+            unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None),
+            unittest.mock.patch("sys.stdout", new=buf_bj),
+        ):
+            rc_bj = ci_monitor.main(["ci_monitor.py", "--pr", "996"])
+
+        out_bj = buf_bj.getvalue()
+        lines_bj = out_bj.splitlines()
+        terminal_bj = "PR#996: Blocked (mergeable_state=%s)" % state_bj
+        flag_bj = "PR#996: drain poll found no new diagnostic signals"
+
+        check(
+            lines_bj[-1] == terminal_bj,
+            "mergeable_state=%s with every check passing ends on %r" % (state_bj, terminal_bj),
+            "expected %r as the final line; output: %r" % (terminal_bj, out_bj),
+        )
+        check(
+            not any(" by: " in ln for ln in lines_bj),
+            "the %s terminal carries no ` by: ` attribution (no check-run is blocking)" % state_bj,
+            "unexpected attribution on an all-passed hold; output: %r" % out_bj,
+        )
+        check(
+            flag_bj in lines_bj
+            and terminal_bj in lines_bj
+            and lines_bj.index(flag_bj) < lines_bj.index(terminal_bj),
+            "the undiagnosed-drain flag precedes the bare %s terminal" % state_bj,
+            "drain flag missing or after the terminal; output: %r" % out_bj,
+        )
+        check(
+            len(side_effects_bj) == 0,
+            "all 6 mocked requests consumed (3 polls + 3 drain attempts)",
+            "request deque not drained; %d entries left" % len(side_effects_bj),
+        )
+        check(rc_bj == 0, "main() returned 0", "main() returned %r" % rc_bj)
 
     # ── Summary ────────────────────────────────────────────────────────────────────
     print("\nResults: %d passed, %d failed." % (PASS, FAIL))
