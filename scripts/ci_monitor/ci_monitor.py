@@ -138,7 +138,7 @@ def load_config(path=None):
 # any kind, so a quiet poll loop stays quiet. Every emitted line resets the timer.
 SILENCE_SECONDS = 120
 
-# Gap E (issue #402)--before emitting an On hold/Infra terminal line, re-poll
+# Gap E (issue #402)--before emitting a Blocked/Infra terminal line, re-poll
 # the step/artifact signals a few more times. /actions/runs/{id}/jobs and
 # /actions/runs/{id}/artifacts can lag behind /commits/{sha}/check-runs: the
 # poll where check-runs first reports the failing conclusion may still show the
@@ -398,7 +398,7 @@ def latest_check_runs(check_json):
     its latest run per name: without it, a stale `failure` from an earlier re-run
     of a named check (e.g. a label-gate check that briefly saw a blocking label,
     since removed) would outvote the authoritative later `success` and drive a
-    spurious `On hold` terminal. Feeding the collapsed payload to the verdict,
+    spurious `Blocked` terminal. Feeding the collapsed payload to the verdict,
     the summary, and the Actions-target discovery keeps all three from latching
     onto a superseded run. `total_count` is left as-is:
     only its zero/non-zero distinction is load-bearing (parse_check_result's
@@ -533,34 +533,28 @@ def format_check_summary(rows):
     return lines
 
 
-# Issue #983--the words the terminal lines print are deliberately not the
-# internal verdict tokens. A merge that is held is not necessarily a merge that
-# is broken, so `Blocked` prints as `On hold` and the draft terminal prints as
-# `Draft on hold`. That also makes the shared ` by: <name>` attribution true of
-# both: it attaches to the hold, which the named check really does cause,
-# rather than to a claim that the check broke the PR or drafted it (issues #966
-# and #976). `Infra` is left alarming on purpose--an infrastructure failure is
-# a real problem and should not be softened.
+# Issue #976--`Draft on hold` is the one terminal word no classifier returns:
+# draftness is read from the /pulls/{n} `draft` boolean, so the word is chosen
+# here. It puts the shared ` by: <name>` attribution on the hold, which the
+# named check really does cause, rather than on a claim that the check drafted
+# the PR.
 #
-# Only the display is renamed. parse_check_result and parse_run_result still
-# return "Blocked", and every comparison against that token reads as it did.
-ON_HOLD = "On hold"
+# No other terminal word is renamed on its way to the line. A failing check, a
+# branch that is behind or conflicted, and a process label holding the gate all
+# reach `Blocked`, and it stays the alarming word for all three (issue #996):
+# softening it to suit the process hold would print a broken build as though a
+# procedure were merely pending. `Infra` stays alarming for the same reason
+# (issue #966).
 DRAFT_ON_HOLD = "Draft on hold"
-_TERMINAL_WORDS = {"Blocked": ON_HOLD}
-
-
-def terminal_word(result):
-    """Return the word a terminal line prints for an internal verdict token."""
-    return _TERMINAL_WORDS.get(result, result)
 
 
 def blocking_suffix(rows, failed_steps=None, failed_tests=None):
     """Return the attributed terminal suffix for a set of per-check rows.
 
-    Both hold terminals share it, and in each the ` by: ` attaches to the hold
-    (issue #983): the named check is what holds the merge, whether the terminal
-    reads `On hold` or `Draft on hold`. It does not claim the check broke the
-    PR, and on a draft it does not claim the check drafted it (issue #976).
+    The `Blocked` and `Draft on hold` terminals share it, and in each the named
+    check is what holds the merge. On a draft the ` by: ` therefore attaches to
+    the hold rather than to the draft state, so the line does not claim the
+    check drafted the PR (issue #976).
 
     Returns "" when no row is blocking (caller emits the bare terminal token).
     Returns " by: <names> [label gate]" when every blocking row is a label gate.
@@ -1353,7 +1347,7 @@ def main(argv):
                     # the terminal line; see drain_then_print and DRAIN_DELAY_SECONDS.
                     drain_then_print(
                         sha,
-                        "%s: %s" % (tag, ON_HOLD),
+                        "%s: Blocked" % tag,
                         " (mergeable_state=%s)" % mergeable,
                         summary_rows,
                     )
@@ -1392,11 +1386,11 @@ def main(argv):
                 # so consult it before terminating, exactly as the all_passed path
                 # does (a fresh /pulls fetch). Only an explicitly un-mergeable state
                 # (behind/dirty/blocked) is a real block that falls through to the
-                # terminal the raw scan's Blocked/Infra verdict drives, which still
-                # names the blocking check (including the label gate). A mergeable
-                # state (clean/unstable) reports Clear; anything else (mergeable_state
-                # not yet computed, or another non-blocking state such as has_hooks)
-                # keeps polling rather than terminating, staying symmetric with the
+                # raw scan's Blocked/Infra terminal, which still names the blocking
+                # check (including the label gate). A mergeable state (clean/
+                # unstable) reports Clear; anything else (mergeable_state not yet
+                # computed, or another non-blocking state such as has_hooks) keeps
+                # polling rather than terminating, staying symmetric with the
                 # all_passed path's still-computing else. The raw scan keeps
                 # driving the per-check summary and step/FAIL diagnostics
                 # regardless. A draft PR is settled before any of that is asked
@@ -1431,7 +1425,7 @@ def main(argv):
                     # the internal "non-passing check" state rather than the raw
                     # Blocked/Infra verdict, so--like the all_passed heartbeat, which
                     # avoids the Clear keyword--it can never be mistaken for a
-                    # terminal line by a consumer scanning for On hold/Infra.
+                    # terminal line by a consumer scanning for Blocked/Infra.
                     now = time.time()
                     if now - last_output_ts > SILENCE_SECONDS:
                         print(
@@ -1443,10 +1437,8 @@ def main(argv):
                     time.sleep(30)
                     continue
                 # else: behind/dirty/blocked (a real merge block)--fall through to
-                # the terminal driven by the raw scan's Blocked/Infra verdict below.
-            drain_then_print(
-                sha, "%s: %s" % (tag, terminal_word(result)), "", summary_rows, explicit_targets
-            )
+                # the raw scan's Blocked/Infra terminal below.
+            drain_then_print(sha, "%s: %s" % (tag, result), "", summary_rows, explicit_targets)
             break
         elif result == "Clear":
             # No check runs registered (total_count == 0)--already clear.
