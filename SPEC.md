@@ -12,7 +12,10 @@ The overlay appears when Pixel Camera's viewfinder is in the foreground and disa
 
 - **OV-01** The app manages a single association: one trigger condition (Pixel Camera viewfinder active) mapped to one overlay (the user's chosen gallery app icon).
 - **OV-02** Target: Android 8.0+ (API 26). Kotlin, Jetpack Compose for settings UI.
-- **OV-03** Distribution: sideload / F-Droid. Play Store compatible.
+- **OV-03** Distribution: sideload / F-Droid.
+  Play Store compatibility is an option worth keeping open, not a property this repository maintains: GB4PC should avoid choices that would foreclose Play distribution, but no Play requirement gates a release, and nothing here tracks one (issue #984).
+  It is not satisfied today, because Play's target-API requirement (API 36 or higher for new apps and updates, as of 2026-08-31) is above the `targetSdk = 35` that `app/build.gradle.kts` pins.
+  That gap is a decision rather than a lapse: maintaining Play compatibility would attach an annual deadline to `targetSdk`, which instead moves when the platform behaviors it opts into are worth taking on.
 - **OV-04** The Pixel Camera package name is `com.google.android.GoogleCamera`. If this package is not installed, the main settings screen displays a notice and the service refuses to start.
 
 ______________________________________________________________________
