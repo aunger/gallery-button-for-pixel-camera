@@ -58,15 +58,10 @@ their packages inline and are already visible in the diff; the default this
 guard is about has no such site to read.
 """
 
-import glob
-import os
 import unittest
 
 import yaml
-
-_CI_DIR = os.path.dirname(os.path.abspath(__file__))
-_REPO_ROOT = os.path.dirname(os.path.dirname(_CI_DIR))
-_WORKFLOW_GLOBS = (".github/workflows/*.yml", ".github/workflows/*.yaml")
+from workflow_files import load_workflow, relative, workflow_paths
 
 # The action whose `packages` input this guard inspects, matched on the part
 # before `@` so that a hypothetical `android-actions/setup-android-something`
@@ -83,20 +78,6 @@ BANNED_PACKAGES = frozenset({"tools"})
 # Marks an input the step did not mention at all, distinguishing it from
 # `packages:` written with no value, which YAML gives as None.
 _ABSENT = object()
-
-
-def workflow_paths() -> list[str]:
-    """Return every workflow file in the repository, sorted."""
-    paths: list[str] = []
-    for pattern in _WORKFLOW_GLOBS:
-        paths.extend(glob.glob(os.path.join(_REPO_ROOT, pattern)))
-    return sorted(paths)
-
-
-def load_workflow(path: str) -> dict:
-    """Return a parsed workflow file, or an empty mapping if it holds nothing."""
-    with open(path, encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
 
 
 def setup_android_steps(workflow: dict):
@@ -145,10 +126,10 @@ class SetupAndroidPackagesTest(unittest.TestCase):
         paths = workflow_paths()
         self.assertTrue(paths, "found no workflow files to check")
         for path in paths:
-            relative = os.path.relpath(path, _REPO_ROOT)
-            with self.subTest(workflow=relative):
+            rel = relative(path)
+            with self.subTest(workflow=rel):
                 found = violations(load_workflow(path))
-                self.assertEqual([], found, f"{relative}: " + "; ".join(found))
+                self.assertEqual([], found, f"{rel}: " + "; ".join(found))
 
     def test_the_action_is_actually_used_somewhere(self):
         """A guard over an action no workflow uses would pass on an empty set.
@@ -157,7 +138,7 @@ class SetupAndroidPackagesTest(unittest.TestCase):
         all means the search stopped matching, not that the need went away.
         """
         steps = [
-            (os.path.relpath(path, _REPO_ROOT), job)
+            (relative(path), job)
             for path in workflow_paths()
             for job, _ in setup_android_steps(load_workflow(path))
         ]

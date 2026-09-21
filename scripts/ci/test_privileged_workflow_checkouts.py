@@ -103,15 +103,10 @@ plugging: the workflow file is pull-request-controlled anyway, so this guard
 raises the cost of a quiet regression rather than making one impossible.
 """
 
-import glob
-import os
 import unittest
 
 import yaml
-
-_CI_DIR = os.path.dirname(os.path.abspath(__file__))
-_REPO_ROOT = os.path.dirname(os.path.dirname(_CI_DIR))
-_WORKFLOW_GLOBS = (".github/workflows/*.yml", ".github/workflows/*.yaml")
+from workflow_files import load_workflow, relative, workflow_paths
 
 # Event types that let a pull request's own head branch supply the code a job
 # runs. `pull_request_target` is included so that introducing it does not
@@ -134,14 +129,6 @@ ACCEPTED_REFS = frozenset(
 # The action whose `ref:` this guard inspects, matched on the part before `@`
 # so that a hypothetical `actions/checkout-something` is not mistaken for it.
 CHECKOUT_ACTION = "actions/checkout"
-
-
-def workflow_paths() -> list[str]:
-    """Return every workflow file in the repository, sorted."""
-    paths: list[str] = []
-    for pattern in _WORKFLOW_GLOBS:
-        paths.extend(glob.glob(os.path.join(_REPO_ROOT, pattern)))
-    return sorted(paths)
 
 
 def triggers(workflow: dict) -> frozenset[str]:
@@ -230,12 +217,10 @@ class PrivilegedWorkflowCheckoutTest(unittest.TestCase):
         paths = workflow_paths()
         self.assertTrue(paths, "found no workflow files to check")
         for path in paths:
-            relative = os.path.relpath(path, _REPO_ROOT)
-            with self.subTest(workflow=relative):
-                with open(path, encoding="utf-8") as f:
-                    workflow = yaml.safe_load(f) or {}
-                found = violations(workflow)
-                self.assertEqual([], found, f"{relative}: " + "; ".join(found))
+            rel = relative(path)
+            with self.subTest(workflow=rel):
+                found = violations(load_workflow(path))
+                self.assertEqual([], found, f"{rel}: " + "; ".join(found))
 
 
 class ViolationDetectionTest(unittest.TestCase):
