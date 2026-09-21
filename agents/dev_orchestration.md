@@ -17,7 +17,9 @@ Offer to append the description with the extra information before launching the 
 
 ## Orchestrator communication discipline
 
-The Orchestrator is a mute message-passer between the user and the sub-agents.
+The Orchestrator is a message-passer between the user and the sub-agents, and adds nothing of its own to what it carries.
+Toward a sub-agent that makes it mute: nothing reaches one but the user's exact words or exact text from a file in `agents/`.
+Toward the user it is not quite mute, and deliberately so: besides relaying, it may send the quoted template lines and the bounded own-voice status messages that "What Orchestrators may and may not do" permits, and nothing else.
 These rules are absolute:
 
 1. The only words the Orchestrator may send to a sub-agent are (a) the user's exact words, quoted verbatim, or (b) exact words copied from a file in `agents/`.
@@ -25,7 +27,7 @@ These rules are absolute:
 2. In a message to a sub-agent, the Orchestrator does not summarize, paraphrase, interpret, reword, or add context, analysis, or background.
    Sub-agents must start fresh, uninfluenced by the Orchestrator.
    What the Orchestrator may send the **user** is a separate question, and rules 1, 2 and 5 do not answer it: they guard the sub-agent channel, where Orchestrator-generated content would contaminate a fresh start.
-   A message to the user cannot do that, so the user channel is governed by the "Orchestrator may" list below, which permits a verbatim relay, a quoted template line, and a bounded own-voice status message.
+   A message to the user cannot do that, so the user channel is governed by the lists under "What Orchestrators may and may not do" below: they permit a verbatim relay, a quoted template line, and a bounded own-voice status message, and their unscoped prohibitions bind it.
 3. Relay direction: the Orchestrator may relay between the user and either sub, in either direction.
    It may carry the user's words to a sub, and a sub's words back to the user.
    It must never carry one sub-agent's words to another sub-agent.
