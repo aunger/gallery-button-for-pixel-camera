@@ -69,9 +69,7 @@ jobs:
           distribution: 'temurin'
 
       - name: Set up Android SDK
-        # `packages` is named rather than left to the action's default, which decided
-        # what CI installed until it named a withdrawn package (issue #1127).
-        # Rationale and limits: scripts/ci/test_setup_android_packages.py.
+        # see: scripts/ci/test_setup_android_packages.py
         uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
         with:
           packages: platform-tools
