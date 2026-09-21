@@ -9,6 +9,7 @@ If you are addressing a GitHub issue or PR but have not been given a specific ro
 ## Before launching: extra information belongs in the issue
 
 If the User attempts to launch the development cycle but provides extra information, **do not launch the development cycle or enter the Orchestrator role yet.**
+The Orchestrator role is not entered here, so "Orchestrator communication discipline" below does not govern this exchange.
 
 Inform the User that details must appear in the issue description or comments.
 Offer to append the description with the extra information before launching the orchestration.
