@@ -91,28 +91,42 @@ def setup_android_steps(workflow: dict):
                 yield job_name, step
 
 
+def step_label(job_name: str, step: dict) -> str:
+    """Name the offending step, so two in one job do not read identically.
+
+    A step's `name:` is optional, so the `uses:` value stands in when it is
+    absent. That is weaker, since a job's two setup-android steps would share
+    it, but it is the only other thing the step is guaranteed to carry.
+    """
+    name = step.get("name")
+    if isinstance(name, str) and name.strip():
+        return f"job {job_name!r} step {name.strip()!r}"
+    return f"job {job_name!r} step {step.get('uses')!r}"
+
+
 def violations(workflow: dict) -> list[str]:
     """Return a message for each setup-android step that breaks the rule."""
     found: list[str] = []
     for job_name, step in setup_android_steps(workflow):
+        where = step_label(job_name, step)
         packages = (step.get("with") or {}).get(PACKAGES_INPUT, _ABSENT)
         if packages is _ABSENT:
             found.append(
-                f"job {job_name!r} uses {SETUP_ANDROID_ACTION} without a "
-                f"{PACKAGES_INPUT!r} input, so it installs whatever the pinned "
-                f"release defaults to; name the packages, or '' for none"
+                f"{where} sets no {PACKAGES_INPUT!r} input, so it installs "
+                f"whatever the pinned release defaults to; name the packages, "
+                f"or '' for none"
             )
             continue
         if not isinstance(packages, str):
             found.append(
-                f"job {job_name!r} sets {PACKAGES_INPUT!r} to {packages!r}; write it "
+                f"{where} sets {PACKAGES_INPUT!r} to {packages!r}; write it "
                 f"as a string, using '' to install nothing"
             )
             continue
         banned = sorted(set(packages.split()) & BANNED_PACKAGES)
         if banned:
             found.append(
-                f"job {job_name!r} asks for {', '.join(banned)} in {PACKAGES_INPUT!r}; "
+                f"{where} asks for {', '.join(banned)} in {PACKAGES_INPUT!r}; "
                 f"the package is withdrawn from the SDK catalog and its bin "
                 f"directory is on no PATH the action sets"
             )
@@ -204,6 +218,35 @@ jobs:
             "android-actions/setup-android@", "android-actions/setup-android-something@"
         )
         self.assertEqual([], self._violations(other))
+
+    def test_a_named_step_is_reported_by_its_name(self):
+        named = self.DEFAULTED.replace(
+            "      - uses: android-actions/setup-android@",
+            "      - name: Set up Android SDK\n        uses: android-actions/setup-android@",
+        )
+        found = self._violations(named)
+        self.assertEqual(1, len(found), found)
+        self.assertIn("step 'Set up Android SDK'", found[0])
+
+    def test_an_unnamed_step_falls_back_to_its_uses(self):
+        found = self._violations(self.DEFAULTED)
+        self.assertEqual(1, len(found), found)
+        self.assertIn("android-actions/setup-android@", found[0])
+
+    def test_two_steps_in_one_job_are_told_apart(self):
+        # The reason a step is named at all: two messages that read
+        # identically would leave the reader guessing which step to correct.
+        two = self.DEFAULTED.replace(
+            "      - run: ./gradlew assembleDebug\n",
+            "      - name: Set up Android SDK again\n"
+            "        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699\n",
+        ).replace(
+            "      - uses: android-actions/setup-android@",
+            "      - name: Set up Android SDK\n        uses: android-actions/setup-android@",
+        )
+        found = self._violations(two)
+        self.assertEqual(2, len(found), found)
+        self.assertEqual(2, len(set(found)), found)
 
     def test_every_step_is_judged_not_only_the_first(self):
         two = self.DEFAULTED.replace(
