@@ -105,3 +105,42 @@ Relatedly, a pull request that renames or moves one of these scripts *and* updat
 Land the rename separately, or accept one red job on it.
 
 `scripts/ci/test_privileged_workflow_checkouts.py` enforces the rule over every workflow, and its docstring carries the full rationale and the guard's own limits (among them that it only inspects `actions/checkout` steps, so `gh pr checkout` or a bare `git fetch` would slip past).
+
+## Every setup-android step must name the SDK packages it installs
+
+A step using `android-actions/setup-android` must set the `packages` input:
+
+```yaml
+- uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+  with:
+    packages: platform-tools
+```
+
+Omitting it accepts the action's own default, which its releases change.
+The pin is `v4.0.1`, whose default is `tools platform-tools`.
+Google withdrew the standalone `tools` package from the SDK catalog, so `sdkmanager tools` began exiting 1 and every job that had accepted that default failed at its SDK setup step (issue #1127).
+Nothing in this repository changed; a remote catalog did, and a SHA pin does not cover what the pinned code downloads at run time.
+
+Two forms are accepted, and the difference between them is the part worth knowing:
+
+- `packages: platform-tools` installs that package, and anything else the job needs goes in the same space-separated list.
+  `platform-tools` is what the emulator jobs and `app/build.gradle.kts` resolve `adb` beneath.
+- `packages: ''` installs nothing, for a job that pins its own components afterwards.
+  `regenerate-gradle-toolchain.yml` and `dependabot-verification-metadata-regen.yml` both do this, each following the step with an explicit `sdkmanager --install` naming the components it wants, with a version where the component carries one.
+
+`packages:` written with no value is rejected rather than read as the empty string.
+YAML gives it as None, and whether the runner would then treat the input as unset, and so reapply the action's default, is not a fact this tree can settle.
+Writing `''` is unambiguous to both the runner and the next reader.
+
+Do not ask for `tools`.
+Besides being withdrawn, it was never reachable here: the action adds `cmdline-tools/<version>/bin` and `platform-tools` to `PATH` and nothing else, so no `tools/bin` binary could be run whatever `packages` held.
+`sdkmanager` and `avdmanager` come from the cmdline-tools download the action performs independently of `packages`, which is why a bare `avdmanager` still resolves.
+
+### What naming the packages does not achieve
+
+It does not make the install reproducible.
+`platform-tools` carries no version, so the job takes whatever the catalog serves that day, and a package withdrawn tomorrow breaks exactly as `tools` did.
+What the rule buys is that the set is decided in this tree rather than by an upstream default that moves between releases, so the next such break is traceable to a name someone wrote here.
+A job that needs the stronger property pins versions in its own `sdkmanager --install` step, as the two regeneration workflows do for `build-tools` and `platforms`.
+
+`scripts/ci/test_setup_android_packages.py` enforces the rule over every workflow, and its docstring carries the full rationale and the guard's own limits (among them that it cannot see Google's catalog, so it judges the names a step asks for and never their availability).
