@@ -1,19 +1,13 @@
 #!/usr/bin/env python3
 """Finding and reading this repository's workflow files.
 
-Shared by the guards in this directory that state a rule over every workflow
-and assert it against the tree: `test_privileged_workflow_checkouts.py` and
-`test_setup_android_packages.py`. Both need the same two things, the list of
-workflow files and a parsed one, and both had their own copy until the second
-guard was written.
+Shared by the guards in this directory that assert a rule over every workflow,
+`test_privileged_workflow_checkouts.py` and `test_setup_android_packages.py`,
+which each carried their own copy until the second was written.
 
-Imported by bare module name. `.github/workflows/build.yml` discovers tests
-per directory rather than recursively, so `scripts/ci` is on `sys.path` when
-these guards run, the same way the repository's other intra-directory imports
-resolve.
-
-A guard's rule, its rationale and its limits stay in that guard. Nothing here
-judges a workflow; this module only locates and parses them.
+Imported by bare module name, which resolves because
+`.github/workflows/build.yml` discovers tests per directory rather than
+recursively, putting `scripts/ci` on `sys.path`.
 """
 
 import glob
@@ -23,12 +17,10 @@ import yaml
 
 _CI_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# The repository root, for resolving the globs below and for reporting a
-# workflow by its path relative to the tree rather than by an absolute one.
 REPO_ROOT = os.path.dirname(os.path.dirname(_CI_DIR))
 
-# Both extensions, because GitHub accepts either and a guard that checked only
-# one would pass a workflow it never opened.
+# Both extensions: GitHub accepts either, and a guard that checked one would
+# pass a workflow it never opened.
 WORKFLOW_GLOBS = (".github/workflows/*.yml", ".github/workflows/*.yaml")
 
 

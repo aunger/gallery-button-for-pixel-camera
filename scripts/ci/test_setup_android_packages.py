@@ -1,61 +1,32 @@
 #!/usr/bin/env python3
 """Guard: every setup-android step says which SDK packages it installs.
 
-`android-actions/setup-android` installs whatever its `packages` input names,
-and that input carries a default the action's own releases change. At the
-`v4.0.1` SHA this repository pins, the default is `tools platform-tools`.
-Google then withdrew the standalone `tools` package from the SDK catalog, so
-the action's `sdkmanager tools` call began exiting 1 and every job that had
-accepted the default failed at its SDK setup step (issue #1127). Nothing in
-this repository changed; a remote catalog did, and a SHA pin does not cover
-what the pinned code downloads at run time.
+`android-actions/setup-android` installs whatever its `packages` input
+names, and that input's default changes between the action's releases. At the
+pinned `v4.0.1` it is `tools platform-tools`. Google then withdrew the
+standalone `tools` package from the SDK catalog, so `sdkmanager tools` began
+exiting 1 and every job that had accepted the default failed at its SDK setup
+step (issue #1127). A SHA pin does not cover what the pinned code downloads at
+run time, so the installed set is named here instead.
 
-Every such step now names its packages, so the installed set is a decision
-recorded in this tree rather than whatever the upstream default happens to be
-in a given release. This guard keeps a later edit, or a newly added job, from
-quietly going back to the default.
+The rule: every step using `android-actions/setup-android` must set `packages`
+to a string, and that string must not name `tools`.
 
-The rule enforced here
+`packages: ''` is valid and installs nothing, for a job that pins its own
+components in the step that follows; `regenerate-gradle-toolchain.yml` and
+`dependabot-verification-metadata-regen.yml` both do that, and so never
+requested `tools`. A `packages:` key with no value is rejected instead: YAML
+gives it as None, and whether the runner would then treat the input as unset
+and reapply the action's default is not something this tree can settle.
 
-    Every step using `android-actions/setup-android` must set the `packages`
-    input to a string, and that string must not name `tools`.
+`tools` is rejected by name because the action puts `tools/bin` on no PATH it
+sets. It adds `cmdline-tools/<version>/bin` and `platform-tools`, nothing
+else, so asking for `tools` buys a download and no reachable binary.
 
-The empty string is a valid value and means "install nothing". Two workflows
-use it deliberately, `regenerate-gradle-toolchain.yml` and
-`dependabot-verification-metadata-regen.yml`, because they pin their SDK
-components by version in the step that follows rather than letting the action
-choose. They were never affected by the `tools` withdrawal for the same reason
-this guard exists: they had already stated their packages.
-
-A missing value (`packages:` with nothing after it) is rejected rather than
-read as the empty string. YAML gives it as None, and whether the Actions
-runner would then treat the input as unset, and so reapply the action's
-default, is not something this tree can settle. Writing `''` is unambiguous to
-both the runner and the next reader, so the guard asks for it.
-
-`tools` is rejected by name because it is the package the outage was about,
-and because the action puts `tools/bin` on no code path's PATH: it adds
-`cmdline-tools/<version>/bin` and `platform-tools`, and nothing else. Asking
-for `tools` therefore buys a download and no reachable binary, whether or not
-Google restores the package.
-
-What this guard does not inspect
-
-Only the `packages` input, and only in workflow files.
-
-It does not check that the named packages exist in Google's catalog, which is
-the remote fact that broke here and which no test in this tree can observe. A
-step naming a package withdrawn tomorrow passes this guard and fails in CI,
-exactly as `tools` did.
-
-It does not check the pinned SHA or its currency. Which release the pins
-should be on is a separate decision, and
-`scripts/ci/prs-and-issues/watch_toolchain_bump.py`, which watches the Gradle
-toolchain pins, has no notion of an action SHA.
-
-It does not look at `sdkmanager --install` lines in `run:` steps. Those name
-their packages inline and are already visible in the diff; the default this
-guard is about has no such site to read.
+Limits: this reads the `packages` input of workflow files and nothing else. It
+cannot see Google's catalog, so a step naming a package withdrawn tomorrow
+passes here and fails in CI exactly as `tools` did. It judges no `sdkmanager
+--install` line and no pin currency.
 """
 
 import unittest
@@ -63,20 +34,17 @@ import unittest
 import yaml
 from workflow_files import load_workflow, relative, workflow_paths
 
-# The action whose `packages` input this guard inspects, matched on the part
-# before `@` so that a hypothetical `android-actions/setup-android-something`
-# is not mistaken for it.
+# Matched on the part before `@`, so `setup-android-something` is not mistaken
+# for it.
 SETUP_ANDROID_ACTION = "android-actions/setup-android"
 
-# The input that decides what the action installs.
 PACKAGES_INPUT = "packages"
 
-# Withdrawn from the SDK catalog, and unreachable from PATH even when it
-# installed. See the module docstring.
+# Withdrawn from the catalog, and unreachable from PATH even when it installed.
 BANNED_PACKAGES = frozenset({"tools"})
 
-# Marks an input the step did not mention at all, distinguishing it from
-# `packages:` written with no value, which YAML gives as None.
+# An input the step did not mention, as distinct from `packages:` written with
+# no value, which YAML gives as None.
 _ABSENT = object()
 
 
@@ -94,9 +62,9 @@ def setup_android_steps(workflow: dict):
 def step_label(job_name: str, step: dict) -> str:
     """Name the offending step, so two in one job do not read identically.
 
-    A step's `name:` is optional, so the `uses:` value stands in when it is
-    absent. That is weaker, since a job's two setup-android steps would share
-    it, but it is the only other thing the step is guaranteed to carry.
+    `name:` is optional, so the `uses:` value stands in when it is absent. Two
+    unnamed steps in one job then share a label, but it is the only other thing
+    a step is guaranteed to carry.
     """
     name = step.get("name")
     if isinstance(name, str) and name.strip():
@@ -146,11 +114,7 @@ class SetupAndroidPackagesTest(unittest.TestCase):
                 self.assertEqual([], found, f"{rel}: " + "; ".join(found))
 
     def test_the_action_is_actually_used_somewhere(self):
-        """A guard over an action no workflow uses would pass on an empty set.
-
-        This repository sets up the Android SDK in CI, so finding no step at
-        all means the search stopped matching, not that the need went away.
-        """
+        """A guard over an action no workflow uses would pass on an empty set."""
         steps = [
             (relative(path), job)
             for path in workflow_paths()
@@ -160,11 +124,8 @@ class SetupAndroidPackagesTest(unittest.TestCase):
 
 
 class ViolationDetectionTest(unittest.TestCase):
-    """The rule itself, exercised against synthetic workflows.
-
-    Without these, a guard that had stopped detecting anything would still
-    report a clean tree.
-    """
+    """The rule itself: without these, a guard that had stopped detecting
+    anything would still report a clean tree."""
 
     DEFAULTED = """
 jobs:
@@ -209,8 +170,7 @@ jobs:
         self.assertEqual(1, len(found), found)
 
     def test_platform_tools_alone_does_not_match_the_banned_name(self):
-        # `tools` is matched as a whole entry, not as a substring, or every
-        # `platform-tools` in the tree would be reported.
+        # Matched as a whole entry, not a substring.
         self.assertEqual([], self._violations(self._with_packages("platform-tools emulator")))
 
     def test_a_different_action_is_ignored(self):
@@ -234,8 +194,7 @@ jobs:
         self.assertIn("android-actions/setup-android@", found[0])
 
     def test_two_steps_in_one_job_are_told_apart(self):
-        # The reason a step is named at all: two messages that read
-        # identically would leave the reader guessing which step to correct.
+        # The reason a step is named at all.
         two = self.DEFAULTED.replace(
             "      - run: ./gradlew assembleDebug\n",
             "      - name: Set up Android SDK again\n"
