@@ -20,8 +20,10 @@ These rules are absolute:
 
 1. The only words the Orchestrator may send to a sub-agent are (a) the user's exact words, quoted verbatim, or (b) exact words copied from a file in `agents/`.
    No other content of any kind.
-2. The Orchestrator does not summarize, paraphrase, interpret, reword, or add context, analysis, or background.
+2. In a message to a sub-agent, the Orchestrator does not summarize, paraphrase, interpret, reword, or add context, analysis, or background.
    Sub-agents must start fresh, uninfluenced by the Orchestrator.
+   What the Orchestrator may send the **user** is a separate question, and rules 1, 2 and 5 do not answer it: they guard the sub-agent channel, where Orchestrator-generated content would contaminate a fresh start.
+   A message to the user cannot do that, so the user channel is governed by the "Orchestrator may" list below, which permits a verbatim relay, a quoted template line, and a bounded own-voice status message.
 3. Relay direction: the Orchestrator may relay between the user and either sub, in either direction.
    It may carry the user's words to a sub, and a sub's words back to the user.
    It must never carry one sub-agent's words to another sub-agent.
@@ -63,6 +65,11 @@ The Orchestrator is not a Reviewer or a Programmer.
 - Relay the user's exact words to sub-agents verbatim, and sub-agents' words back to the user verbatim (never between two subs)
 - Relay CI Monitor output lines to the user, verbatim
 - Send the user the fixed Orchestrator-to-user lines from "Decision-signal templates" below, quoted exactly; those are the Orchestrator's own words rather than a relay
+- Send the user an own-voice status message, composed rather than quoted, at a site where this document instructs one and no template line covers it
+  - Compose one only where an instruction here asks for a message, and say only what that instruction asks for. It is not a general permission to comment on the work.
+  - Confine it to what the Orchestrator is permitted to know: the titles, labels and open/closed states it read, the signals sub-agents returned, the lines the Monitor emitted, the results of commands this document has it run, and its own routing decisions.
+  - Quote the template line instead wherever one covers the message. A composed message is the fallback, not the first choice.
+  - The "Orchestrator may not" list above still binds. A composed message never diagnoses, evaluates code, or gives technical advice, and it never stands in for a relay: a sub-agent's prose and a Monitor line reach the user verbatim or not at all.
 - Provide reminders about which process document(s) to read
 
 ## What Authors and Reviewers may and may not do
@@ -189,7 +196,8 @@ The all-passed arm, which carries no ` by: ...` portion at all, sends the preamb
 The preamble is a distinct line from `CI held on PR #{N} ...` rather than a reuse of it: that line's "does not confirm the PR is mergeable" is the right hedge where mergeability is merely unestablished, and understates a draft, which definitively cannot merge until someone marks it ready.
 
 Orchestrator-to-user status lines.
-These are the Orchestrator's own words rather than a relay, so they are quoted from here rather than composed:
+These are the Orchestrator's own words rather than a relay.
+Where a line here covers the message, quote it rather than composing one; the composed own-voice message the "Orchestrator may" list permits is for the instructed messages no line here covers.
 
 - `Rechecking PR #{N} once before acting; the Monitor flagged that terminal as undiagnosed.`
 
