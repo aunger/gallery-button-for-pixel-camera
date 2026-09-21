@@ -9,25 +9,19 @@ If you are addressing a GitHub issue or PR but have not been given a specific ro
 ## Before launching: extra information belongs in the issue
 
 If the User attempts to launch the development cycle but provides extra information, **do not launch the development cycle or enter the Orchestrator role yet.**
-The Orchestrator role is not entered here, so neither "Orchestrator communication discipline" nor the permission lists under "What Orchestrators may and may not do" governs this exchange.
-Both begin at the point the role is entered.
 
 Inform the User that details must appear in the issue description or comments.
 Offer to append the description with the extra information before launching the orchestration.
 
 ## Orchestrator communication discipline
 
-The Orchestrator is a message-passer between the user and the sub-agents, and adds nothing of its own to what it carries.
-Toward a sub-agent, that makes it mute: nothing reaches one but the user's exact words or exact text from a file in `agents/`.
-Toward the user it is not quite mute, and deliberately so: besides relaying, it may send the quoted template lines and the bounded own-voice status messages that "What Orchestrators may and may not do" permits, and nothing else.
+The Orchestrator is a message-passer between the user and the sub-agents: mute toward a sub-agent, and toward the user limited to the messages the lists below permit.
 These rules are absolute:
 
 1. The only words the Orchestrator may send to a sub-agent are (a) the user's exact words, quoted verbatim, or (b) exact words copied from a file in `agents/`.
    No other content of any kind.
 2. In a message to a sub-agent, the Orchestrator does not summarize, paraphrase, interpret, reword, or add context, analysis, or background.
    Sub-agents must start fresh, uninfluenced by the Orchestrator.
-   What the Orchestrator may send the **user** is a separate question, and rules 1, 2 and 5 do not answer it: they guard the sub-agent channel, where Orchestrator-generated content would contaminate a fresh start.
-   A message to the user cannot do that, so the user channel is governed by the lists under "What Orchestrators may and may not do" below: they permit a verbatim relay, a quoted template line, and a bounded own-voice status message, and their unscoped prohibitions bind it.
 3. Relay direction: the Orchestrator may relay between the user and either sub, in either direction.
    It may carry the user's words to a sub, and a sub's words back to the user.
    It must never carry one sub-agent's words to another sub-agent.
@@ -69,12 +63,8 @@ The Orchestrator is not a Reviewer or a Programmer.
 - Relay the user's exact words to sub-agents verbatim, and sub-agents' words back to the user verbatim (never between two subs)
 - Relay CI Monitor output lines to the user, verbatim
 - Send the user the fixed Orchestrator-to-user lines from "Decision-signal templates" below, quoted exactly; those are the Orchestrator's own words rather than a relay
-- Send the user an own-voice status message, composed rather than quoted, at a site where this document instructs one and no template line covers it
-  - Say only what that instruction asks for. It is not a general permission to comment on the work.
-  - Confine it to what the Orchestrator is permitted to know: the titles, labels and open/closed states it read, the signals sub-agents returned, the lines the Monitor emitted, the results of commands this document has it run, and its own routing decisions.
-  - A composed message is the fallback, not the first choice.
-  - Composing one means putting an instruction from this document into the Orchestrator's own words. The two entries above that forbid exactly that, "Summarize, paraphrase, or supply context to a sub-agent" and "Reword or provide interpretations of instructions to a sub-agent", are scoped to the other channel for the same reason rule 2 is.
-  - Every unscoped entry in "Orchestrator may not" still binds. A composed message never diagnoses, evaluates code, or gives technical advice, and it never stands in for a relay: a sub-agent's prose and a Monitor line reach the user verbatim or not at all.
+- Send the user a composed own-voice status message, where this document instructs a message and no template line covers it, saying only what that instruction asks for and drawing only on what the Orchestrator is permitted to know
+  - Every unscoped entry under "Orchestrator may not" still binds it, and it never stands in for a relay: a sub-agent's prose and a Monitor line reach the user verbatim or not at all.
 - Provide reminders about which process document(s) to read
 
 ## What Authors and Reviewers may and may not do
@@ -162,7 +152,6 @@ An Author that legitimately declines satisfies its exit obligation by posting th
 
 When routing control signals, use these exact lines and no others.
 Fill only the tokens in braces.
-"No others" fixes the wording of the lines this section defines; it does not reach the messages elsewhere in this document that the "Orchestrator may" list permits the Orchestrator to compose.
 
 Author-to-Orchestrator work-location report (the Programmer states where its work product is when it finishes a round, reporting only what it did):
 
@@ -202,8 +191,7 @@ The all-passed arm, which carries no ` by: ...` portion at all, sends the preamb
 The preamble is a distinct line from `CI held on PR #{N} ...` rather than a reuse of it: that line's "does not confirm the PR is mergeable" is the right hedge where mergeability is merely unestablished, and understates a draft, which definitively cannot merge until someone marks it ready.
 
 Orchestrator-to-user status lines.
-These are the Orchestrator's own words rather than a relay.
-Where a line here covers the message, quote it rather than composing one; the composed own-voice message the "Orchestrator may" list permits is for the instructed messages no line here covers.
+These are the Orchestrator's own words rather than a relay, so they are quoted from here rather than composed:
 
 - `Rechecking PR #{N} once before acting; the Monitor flagged that terminal as undiagnosed.`
 
