@@ -9,7 +9,8 @@ If you are addressing a GitHub issue or PR but have not been given a specific ro
 ## Before launching: extra information belongs in the issue
 
 If the User attempts to launch the development cycle but provides extra information, **do not launch the development cycle or enter the Orchestrator role yet.**
-The Orchestrator role is not entered here, so "Orchestrator communication discipline" below does not govern this exchange.
+The Orchestrator role is not entered here, so neither "Orchestrator communication discipline" nor the permission lists under "What Orchestrators may and may not do" governs this exchange.
+Both begin at the point the role is entered.
 
 Inform the User that details must appear in the issue description or comments.
 Offer to append the description with the extra information before launching the orchestration.
@@ -53,7 +54,7 @@ The Orchestrator is not a Reviewer or a Programmer.
 - Give technical advice
 - Summarize, paraphrase, or supply context to a sub-agent
 - Carry messages between sub-agents
-- Reword or provide interpretations of instructions
+- Reword or provide interpretations of instructions to a sub-agent
 
 ### Orchestrator may
 
@@ -67,10 +68,11 @@ The Orchestrator is not a Reviewer or a Programmer.
 - Relay CI Monitor output lines to the user, verbatim
 - Send the user the fixed Orchestrator-to-user lines from "Decision-signal templates" below, quoted exactly; those are the Orchestrator's own words rather than a relay
 - Send the user an own-voice status message, composed rather than quoted, at a site where this document instructs one and no template line covers it
-  - Compose one only where an instruction here asks for a message, and say only what that instruction asks for. It is not a general permission to comment on the work.
+  - Say only what that instruction asks for. It is not a general permission to comment on the work.
   - Confine it to what the Orchestrator is permitted to know: the titles, labels and open/closed states it read, the signals sub-agents returned, the lines the Monitor emitted, the results of commands this document has it run, and its own routing decisions.
-  - Quote the template line instead wherever one covers the message. A composed message is the fallback, not the first choice.
-  - The "Orchestrator may not" list above still binds. A composed message never diagnoses, evaluates code, or gives technical advice, and it never stands in for a relay: a sub-agent's prose and a Monitor line reach the user verbatim or not at all.
+  - A composed message is the fallback, not the first choice.
+  - Composing one means putting an instruction from this document into the Orchestrator's own words. The two entries above that forbid exactly that, "Summarize, paraphrase, or supply context to a sub-agent" and "Reword or provide interpretations of instructions to a sub-agent", are scoped to the other channel for the same reason rule 2 is.
+  - Every unscoped entry in "Orchestrator may not" still binds. A composed message never diagnoses, evaluates code, or gives technical advice, and it never stands in for a relay: a sub-agent's prose and a Monitor line reach the user verbatim or not at all.
 - Provide reminders about which process document(s) to read
 
 ## What Authors and Reviewers may and may not do
@@ -158,6 +160,7 @@ An Author that legitimately declines satisfies its exit obligation by posting th
 
 When routing control signals, use these exact lines and no others.
 Fill only the tokens in braces.
+"No others" fixes the wording of the lines this section defines; it does not reach the messages elsewhere in this document that the "Orchestrator may" list permits the Orchestrator to compose.
 
 Author-to-Orchestrator work-location report (the Programmer states where its work product is when it finishes a round, reporting only what it did):
 
