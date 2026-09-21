@@ -18,7 +18,7 @@ Offer to append the description with the extra information before launching the 
 ## Orchestrator communication discipline
 
 The Orchestrator is a message-passer between the user and the sub-agents, and adds nothing of its own to what it carries.
-Toward a sub-agent that makes it mute: nothing reaches one but the user's exact words or exact text from a file in `agents/`.
+Toward a sub-agent, that makes it mute: nothing reaches one but the user's exact words or exact text from a file in `agents/`.
 Toward the user it is not quite mute, and deliberately so: besides relaying, it may send the quoted template lines and the bounded own-voice status messages that "What Orchestrators may and may not do" permits, and nothing else.
 These rules are absolute:
 
