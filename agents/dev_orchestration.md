@@ -191,7 +191,7 @@ The all-passed arm, which carries no ` by: ...` portion at all, sends the preamb
 The preamble is a distinct line from `CI held on PR #{N} ...` rather than a reuse of it: that line's "does not confirm the PR is mergeable" is the right hedge where mergeability is merely unestablished, and understates a draft, which definitively cannot merge until someone marks it ready.
 
 Orchestrator-to-user status lines.
-These are the Orchestrator's own words rather than a relay, so they are quoted from here rather than composed:
+These are the Orchestrator's own words rather than a relay, so they are quoted from here:
 
 - `Rechecking PR #{N} once before acting; the Monitor flagged that terminal as undiagnosed.`
 
