@@ -27,7 +27,8 @@
 #
 # Prerequisites:
 #   - ANDROID_HOME (or ANDROID_SDK_ROOT) must be set
-#   - For full setup: sdkmanager, avdmanager must be on PATH (or in $ANDROID_HOME/cmdline-tools/latest/bin)
+#   - For full setup: sdkmanager and avdmanager, in
+#     $ANDROID_HOME/cmdline-tools/latest/bin or $ANDROID_HOME/cmdline-tools/bin
 
 set -euo pipefail
 
@@ -51,10 +52,17 @@ if [[ ! -x "$ADB" ]]; then
     exit 1
 fi
 
+# The SDK manager installs the command-line tools under `cmdline-tools/latest`;
+# a download unzipped in place and never renamed leaves them in
+# `cmdline-tools/bin`. Both directories hold sdkmanager and avdmanager, so one
+# resolved directory serves both binaries. The fallback named the standalone
+# `tools` package until issue #1133: Google has withdrawn that package from the
+# SDK catalog (issue #1127), so no current install can have the directory.
+# Testing for sdkmanager rather than for the directory also covers a `latest`
+# that exists without the tools in it.
 CMDLINE_TOOLS="$ANDROID_SDK/cmdline-tools/latest/bin"
-if [[ ! -d "$CMDLINE_TOOLS" ]]; then
-    # Try older paths
-    CMDLINE_TOOLS="$ANDROID_SDK/tools/bin"
+if [[ ! -x "$CMDLINE_TOOLS/sdkmanager" ]]; then
+    CMDLINE_TOOLS="$ANDROID_SDK/cmdline-tools/bin"
 fi
 
 # Step 1-3: AVD creation and emulator start (local only)-------------------
@@ -64,8 +72,7 @@ if [[ "$POST_BOOT_ONLY" == false ]]; then
     SYSTEM_IMAGE="system-images;android-${API_LEVEL};google_apis;x86_64"
 
     echo "==> Installing system image: $SYSTEM_IMAGE"
-    "$CMDLINE_TOOLS/sdkmanager" --install "$SYSTEM_IMAGE" "platform-tools" "emulator" || \
-        "$ANDROID_SDK/cmdline-tools/bin/sdkmanager" --install "$SYSTEM_IMAGE" "platform-tools" "emulator"
+    "$CMDLINE_TOOLS/sdkmanager" --install "$SYSTEM_IMAGE" "platform-tools" "emulator"
 
     echo "==> Creating AVD: $AVD_NAME"
     echo "no" | "$CMDLINE_TOOLS/avdmanager" create avd \
