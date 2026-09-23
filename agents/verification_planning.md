@@ -68,8 +68,9 @@ Ask whether work remains, not whether the point was interesting.
    (If the requirement came from the PR or issue description itself rather than a comment, link to that description instead.)
    c. Record the new issue as a **blocker**, using GitHub's issue-dependencies feature.
    GitHub takes issues only on both sides of the link, so the issue this PR resolves stands in for the PR: the new issue blocks that issue.
+   What the item holds up is still this PR, so the stand-in changes where the link is recorded, not what it records.
    Write the link with `scripts/agents/link_gh_issues.py`, which resolves each issue number to the database id the endpoint wants and sends the request itself.
-   Call it rather than the endpoint directly: the script sends the `Content-Type` header the agent proxy requires, and it takes the token from the environment rather than naming it in the command, which a worktree-isolated agent refuses to run.
+   Call it rather than the endpoint directly: the script sends the `Content-Type` header the agent proxy requires, and it takes the token from the environment rather than naming it in the command, which the sandbox guard around a worktree-isolated agent refuses to run.
    `scripts/agents/link_gh_issues.py add {owner} {repo} {parent issue number} --blocked-by {new issue number}`,
    where `{parent issue number}` is the issue this PR resolves and `{new issue number}` is the issue filed for this item by sub-steps 3a and 3b, or for an already-covered item the issue recorded in step 2.
    If this PR resolves no issue, there is nothing to link: state the blocking relationship in plain text as below, and skip sub-step 3d.
