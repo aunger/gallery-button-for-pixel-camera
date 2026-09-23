@@ -508,11 +508,21 @@ else
 fi
 
 # The script leaves the emulator running when it gives up, as a real run does,
-# so the suite reaps it. Asserted rather than assumed: the stub execs its sleep
-# precisely so that the PID the script held is the process still alive here, and
-# a kill that missed would leave an orphan behind every run of this file.
+# so the suite reaps it.
 HANGING_PID="$(cat "$HANGING_EMULATOR_PID" 2>/dev/null || true)"
 if [[ -n "$HANGING_PID" ]]; then
+  # Asserted while it is still alive, because killing the recorded PID only
+  # cleans up if that PID is the whole stub. The stub execs its sleep for
+  # exactly this reason: run as a child instead, the sleep survives a kill
+  # aimed at its parent and is reparented to init, one orphan per run of this
+  # file, which no check on the recorded PID alone would ever notice.
+  ORPHANS="$(pgrep -P "$HANGING_PID" 2>/dev/null || true)"
+  if [[ -z "$ORPHANS" ]]; then
+    pass "the hanging emulator holds no child that a kill would orphan"
+  else
+    fail "killing the hanging emulator would orphan: $(tr '\n' ' ' <<< "$ORPHANS")"
+  fi
+
   kill "$HANGING_PID" 2>/dev/null || true
   REAPED=false
   for _ in $(seq 1 25); do
@@ -523,7 +533,7 @@ if [[ -n "$HANGING_PID" ]]; then
     sleep 0.2
   done
   if [[ "$REAPED" == true ]]; then
-    pass "the hanging emulator is reaped, leaving no orphan behind"
+    pass "the hanging emulator is gone once killed"
   else
     fail "the hanging emulator survived the kill (pid $HANGING_PID)"
   fi
