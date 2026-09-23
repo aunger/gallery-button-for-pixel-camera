@@ -169,6 +169,12 @@ make_emulator_stub() {
   # the failure message. `exit` leaves at once. `hang` stays up without ever
   # producing a device, and writes its PID to <pid file> so the case can reap
   # it: the script leaves it running when it gives up, as a real run would.
+  #
+  # `hang` execs its sleep instead of running it as a child. The PID recorded
+  # here is this wrapper's, which is also the PID the script under test holds as
+  # EMULATOR_PID. A child sleep would survive a kill aimed at the wrapper and be
+  # reparented to init, one orphan per run; exec makes that PID the sleep's own,
+  # so the kill reaches it.
   local path="$1" line="$2" mode="$3" pidfile="${4:-}"
   mkdir -p "$(dirname "$path")"
   {
@@ -177,7 +183,7 @@ make_emulator_stub() {
     printf 'echo %q\n' "$line"
     if [[ "$mode" == "hang" ]]; then
       printf 'echo $$ > %q\n' "$pidfile"
-      echo 'sleep 120'
+      echo 'exec sleep 120'
     fi
     echo 'exit 0'
   } > "$path"
@@ -484,9 +490,28 @@ else
   fail "adb's message was not printed: $OUTPUT"
 fi
 
-# The script leaves the emulator running, as a real run does; this suite does not.
-if [[ -s "$HANGING_EMULATOR_PID" ]]; then
-  kill "$(cat "$HANGING_EMULATOR_PID")" 2>/dev/null || true
+# The script leaves the emulator running when it gives up, as a real run does,
+# so the suite reaps it. Asserted rather than assumed: the stub execs its sleep
+# precisely so that the PID the script held is the process still alive here, and
+# a kill that missed would leave an orphan behind every run of this file.
+HANGING_PID="$(cat "$HANGING_EMULATOR_PID" 2>/dev/null || true)"
+if [[ -n "$HANGING_PID" ]]; then
+  kill "$HANGING_PID" 2>/dev/null || true
+  REAPED=false
+  for _ in $(seq 1 25); do
+    if ! kill -0 "$HANGING_PID" 2>/dev/null; then
+      REAPED=true
+      break
+    fi
+    sleep 0.2
+  done
+  if [[ "$REAPED" == true ]]; then
+    pass "the hanging emulator is reaped, leaving no orphan behind"
+  else
+    fail "the hanging emulator survived the kill (pid $HANGING_PID)"
+  fi
+else
+  fail "the hanging emulator recorded no pid to reap"
 fi
 
 # (k) The emulator exits during startup ---------------------------------------
