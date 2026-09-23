@@ -33,8 +33,8 @@
 #   (i) A failing avdmanager ends the run, keeps its message, and starts no
 #       emulator for the AVD it did not create (issue #1141)
 #   (j) An emulator that never produces a device is given up on, rather than
-#       waited for forever. The failure carries adb's account of why, and the
-#       knob that raises the bound (issue #1141)
+#       waited for forever. The failure carries adb's account of why, the knob
+#       that raises the bound, and the emulator it leaves running (issue #1141)
 #   (k) An emulator that exits during startup is reported as that, at once,
 #       rather than at the bound
 #   (l) A device that does come online carries the run to the end, and a
@@ -497,6 +497,14 @@ if grep -qF "DEVICE_TIMEOUT" <<< "$OUTPUT"; then
   pass "the failure points at the override that raises the bound"
 else
   fail "the failure does not name DEVICE_TIMEOUT: $OUTPUT"
+fi
+
+# The emulator outlives the script here, so the failure has to say so: the next
+# run's `avdmanager create avd --force` would rewrite the AVD underneath it.
+if grep -qE "still running as PID [0-9]+" <<< "$OUTPUT"; then
+  pass "the surviving emulator is named, with its PID"
+else
+  fail "the failure does not say the emulator is still running: $OUTPUT"
 fi
 
 # The script leaves the emulator running when it gives up, as a real run does,

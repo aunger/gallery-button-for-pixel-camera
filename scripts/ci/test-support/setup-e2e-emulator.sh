@@ -197,6 +197,15 @@ if [[ "$POST_BOOT_ONLY" == false ]]; then
             # assumes a single device from here on either way.
             echo "       adb get-state says:" >&2
             "$ADB" get-state 2>&1 | sed 's/^/       /' >&2 || true
+            # Left running on purpose. It may yet be booting, and raising
+            # DEVICE_TIMEOUT should not mean starting it over; a developer who
+            # wants it gone is better placed to decide that than this script is.
+            # Announced because nothing else announces it, and because the
+            # obvious next move is to change something and run again: that run's
+            # `avdmanager create avd --force` rewrites this AVD's files
+            # underneath whatever is still using them.
+            echo "       The emulator is still running as PID $EMULATOR_PID." >&2
+            echo "       Leave it to finish booting, or stop it with: kill $EMULATOR_PID" >&2
             echo "=== $EMULATOR_LOG ===" >&2
             cat "$EMULATOR_LOG" >&2
             exit 1
