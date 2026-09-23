@@ -63,9 +63,15 @@ fi
 # can obtain it now. An SDK that acquired it before the withdrawal still has the
 # directory, and this deliberately stops reaching for it: `tools/bin` is a dead
 # end for anyone setting a machine up today.
-CMDLINE_TOOLS="$ANDROID_SDK/cmdline-tools/latest/bin"
+#
+# The candidates are named once here because the guard below reports them back
+# to the developer, and a message built from these variables cannot drift from
+# the resolution it describes.
+CMDLINE_TOOLS_LATEST="$ANDROID_SDK/cmdline-tools/latest/bin"
+CMDLINE_TOOLS_UNZIPPED="$ANDROID_SDK/cmdline-tools/bin"
+CMDLINE_TOOLS="$CMDLINE_TOOLS_LATEST"
 if [[ ! -x "$CMDLINE_TOOLS/sdkmanager" ]]; then
-    CMDLINE_TOOLS="$ANDROID_SDK/cmdline-tools/bin"
+    CMDLINE_TOOLS="$CMDLINE_TOOLS_UNZIPPED"
 fi
 
 # Step 1-3: AVD creation and emulator start (local only)-------------------
@@ -77,8 +83,8 @@ if [[ "$POST_BOOT_ONLY" == false ]]; then
     # beside the resolution because --post-boot runs, which is how CI invokes
     # this script, need no command-line tools at all.
     if [[ ! -x "$CMDLINE_TOOLS/sdkmanager" ]]; then
-        echo "ERROR: sdkmanager not found in $ANDROID_SDK/cmdline-tools/latest/bin" >&2
-        echo "       or $ANDROID_SDK/cmdline-tools/bin." >&2
+        echo "ERROR: sdkmanager not found in $CMDLINE_TOOLS_LATEST" >&2
+        echo "       or $CMDLINE_TOOLS_UNZIPPED." >&2
         echo "       Install the Android SDK Command-line Tools, or pass --post-boot" >&2
         echo "       to skip AVD creation on an emulator that is already running." >&2
         exit 1
