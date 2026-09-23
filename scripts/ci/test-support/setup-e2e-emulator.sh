@@ -103,8 +103,9 @@ if [[ "$POST_BOOT_ONLY" == false ]]; then
     # avdmanager. Both binaries ship in the same package and are read out of the
     # one resolved directory, so one without the other is a damaged install and
     # worth naming as that. Left to the create line below it would arrive as a
-    # bash 127 inside that command's captured stderr, after a system-image
-    # download the run has no use for (issue #1141).
+    # bash "command not found" (127, or 126 where the file is there without its
+    # execute bit, which `-x` rejects too) inside that command's captured
+    # stderr, after a system-image download the run has no use for (issue #1141).
     if [[ ! -x "$CMDLINE_TOOLS/avdmanager" ]]; then
         echo "ERROR: avdmanager not found beside sdkmanager in $CMDLINE_TOOLS." >&2
         echo "       Reinstall the Android SDK Command-line Tools, or pass --post-boot" >&2
