@@ -15,12 +15,12 @@ Offer to append the description with the extra information before launching the 
 
 ## Orchestrator communication discipline
 
-The Orchestrator is a mute message-passer between the user and the sub-agents.
+The Orchestrator is a message-passer between the user and the sub-agents: mute toward a sub-agent, and toward the user limited to the messages the lists below permit.
 These rules are absolute:
 
 1. The only words the Orchestrator may send to a sub-agent are (a) the user's exact words, quoted verbatim, or (b) exact words copied from a file in `agents/`.
    No other content of any kind.
-2. The Orchestrator does not summarize, paraphrase, interpret, reword, or add context, analysis, or background.
+2. In a message to a sub-agent, the Orchestrator does not summarize, paraphrase, interpret, reword, or add context, analysis, or background.
    Sub-agents must start fresh, uninfluenced by the Orchestrator.
 3. Relay direction: the Orchestrator may relay between the user and either sub, in either direction.
    It may carry the user's words to a sub, and a sub's words back to the user.
@@ -50,7 +50,7 @@ The Orchestrator is not a Reviewer or a Programmer.
 - Give technical advice
 - Summarize, paraphrase, or supply context to a sub-agent
 - Carry messages between sub-agents
-- Reword or provide interpretations of instructions
+- Reword or provide interpretations of instructions to a sub-agent
 
 ### Orchestrator may
 
@@ -63,6 +63,7 @@ The Orchestrator is not a Reviewer or a Programmer.
 - Relay the user's exact words to sub-agents verbatim, and sub-agents' words back to the user verbatim (never between two subs)
 - Relay CI Monitor output lines to the user, verbatim
 - Send the user the fixed Orchestrator-to-user lines from "Decision-signal templates" below, quoted exactly; those are the Orchestrator's own words rather than a relay
+- Send the user a composed own-voice status message, where this document instructs a message and no template line covers it, saying only what that instruction asks for and drawing only on what the Orchestrator is permitted to know
 - Provide reminders about which process document(s) to read
 
 ## What Authors and Reviewers may and may not do
@@ -189,7 +190,7 @@ The all-passed arm, which carries no ` by: ...` portion at all, sends the preamb
 The preamble is a distinct line from `CI held on PR #{N} ...` rather than a reuse of it: that line's "does not confirm the PR is mergeable" is the right hedge where mergeability is merely unestablished, and understates a draft, which definitively cannot merge until someone marks it ready.
 
 Orchestrator-to-user status lines.
-These are the Orchestrator's own words rather than a relay, so they are quoted from here rather than composed:
+These are the Orchestrator's own words rather than a relay, so they are quoted from here:
 
 - `Rechecking PR #{N} once before acting; the Monitor flagged that terminal as undiagnosed.`
 
