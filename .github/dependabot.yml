@@ -160,13 +160,15 @@ updates:
   #
   # The third-party group is `*` minus those two namespaces, rather than a list of the actions in the tree today, so an action a workflow adds tomorrow lands in it with no edit here.
   # A list would give that action a pull request of its own instead, silently.
-  # scripts/test_dependabot_config.sh checks that against the workflows themselves: every action they reference has to be taken by a group, under both of the names Dependabot can give it.
+  # scripts/test_dependabot_config.sh checks that against the workflows themselves: every action they reference has to be taken by a group, under either of the two names its pin style can give it.
   #
   # No `cooldown` key, unlike the gradle entry above: GitHub's Dependabot options reference does not list github-actions among the ecosystems cooldown supports (checked 2026-09-23).
   #
   # No `open-pull-requests-limit` key either.
-  # Every action is grouped, so this entry can want one pull request per group, and the groups partition the ecosystem between them, so that count cannot grow when a workflow adds an action.
-  # The default of 5 covers the five groups #1135 caps the split at, and scripts/test_dependabot_config.sh fails on a sixth group rather than on the run that group would starve.
+  # Every action is grouped, so this entry can want one pull request per group it declares, and the groups partition the ecosystem between them, so that count cannot grow when a workflow adds an action.
+  # GitHub's default of 5 covers the two groups below.
+  # That is checked rather than assumed: scripts/test_dependabot_config.sh reads this entry's effective limit, the key when one is written here and the default when none is, against the groups declared here.
+  # So a limit written here that one of these groups could never use fails, and so does a sixth group, rather than the starved group going unproposed and unreported.
   #
   # Weekly on Monday at 11:00 UTC, an hour past the gradle entry above, on the same reasoning that offsets that entry from dependency-audit.yml and semgrep.yml: the runs do not land in one CI-minute window.
   - package-ecosystem: "github-actions"
