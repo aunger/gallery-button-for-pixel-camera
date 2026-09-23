@@ -33,7 +33,8 @@
 #   (i) A failing avdmanager ends the run, keeps its message, and starts no
 #       emulator for the AVD it did not create (issue #1141)
 #   (j) An emulator that never produces a device is given up on, rather than
-#       waited for forever, and adb's account of why is printed (issue #1141)
+#       waited for forever. The failure carries adb's account of why, and the
+#       knob that raises the bound (issue #1141)
 #   (k) An emulator that exits during startup is reported as that, at once,
 #       rather than at the bound
 #   (l) A device that does come online carries the run to the end, and a
@@ -488,6 +489,14 @@ if grep -qF "error: more than one device/emulator" <<< "$OUTPUT"; then
   pass "adb's own account of why it saw no device is printed"
 else
   fail "adb's message was not printed: $OUTPUT"
+fi
+
+# A machine slower than the bound is the one case this wait newly fails, so the
+# failure has to name the knob that accommodates it.
+if grep -qF "DEVICE_TIMEOUT" <<< "$OUTPUT"; then
+  pass "the failure points at the override that raises the bound"
+else
+  fail "the failure does not name DEVICE_TIMEOUT: $OUTPUT"
 fi
 
 # The script leaves the emulator running when it gives up, as a real run does,

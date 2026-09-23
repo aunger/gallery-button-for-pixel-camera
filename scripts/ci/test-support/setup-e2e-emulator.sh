@@ -33,9 +33,9 @@
 #
 # Environment:
 #   DEVICE_TIMEOUT        Seconds to wait for the emulator to appear on adb
-#                         before giving up (default: 300). Override in tests.
-#   DEVICE_POLL_INTERVAL  Seconds between those checks (default: 5). Override in
-#                         tests.
+#                         before giving up (default: 1200). Raise it if this
+#                         machine is slower than that; the tests lower it.
+#   DEVICE_POLL_INTERVAL  Seconds between those checks (default: 5).
 #   EMULATOR_LOG          Where the emulator's output goes, and what is printed
 #                         when the wait above fails (default: /tmp/emulator.log).
 
@@ -170,7 +170,14 @@ if [[ "$POST_BOOT_ONLY" == false ]]; then
     # the check the workflow's "Start emulator" step makes on the same emulator
     # binary. Either way the log holds the reason, so it is printed alongside.
     echo "==> Waiting for device to come online..."
-    DEVICE_TIMEOUT="${DEVICE_TIMEOUT:-300}"
+    # 1200 is what the "Wait for emulator service readiness" step of
+    # .github/workflows/build.yml already allows this same wait, against an
+    # emulator it has just launched. That runner has KVM and a warm system
+    # image, and a developer's machine may have neither, so the local bound
+    # should not be the tighter of the two. This converts a wait that never gave
+    # up into one that does, and a slow first boot succeeding slowly is the case
+    # that a smaller number would newly break.
+    DEVICE_TIMEOUT="${DEVICE_TIMEOUT:-1200}"
     DEVICE_POLL_INTERVAL="${DEVICE_POLL_INTERVAL:-5}"
     DEVICE_ELAPSED=0
     until [[ "$("$ADB" get-state 2>/dev/null | tr -d '\r')" == "device" ]]; do
@@ -182,6 +189,8 @@ if [[ "$POST_BOOT_ONLY" == false ]]; then
         fi
         if [[ $DEVICE_ELAPSED -ge $DEVICE_TIMEOUT ]]; then
             echo "ERROR: No device came online within ${DEVICE_TIMEOUT}s." >&2
+            echo "       If this machine is just slow to boot an emulator, set" >&2
+            echo "       DEVICE_TIMEOUT higher and run again." >&2
             # The poll discards this to test the state, and it is the one place
             # adb explains itself: "more than one device/emulator" reads very
             # differently from "no devices/emulators found", and the script
