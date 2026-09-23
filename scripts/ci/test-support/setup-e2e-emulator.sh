@@ -55,11 +55,14 @@ fi
 # The SDK manager installs the command-line tools under `cmdline-tools/latest`;
 # a download unzipped in place and never renamed leaves them in
 # `cmdline-tools/bin`. Both directories hold sdkmanager and avdmanager, so one
-# resolved directory serves both binaries. The fallback named the standalone
-# `tools` package until issue #1133: Google has withdrawn that package from the
-# SDK catalog (issue #1127), so no current install can have the directory.
-# Testing for sdkmanager rather than for the directory also covers a `latest`
-# that exists without the tools in it.
+# resolved directory serves both binaries. Testing for sdkmanager rather than
+# for the directory also covers a `latest` that exists without the tools in it.
+#
+# The fallback named the standalone `tools` package until issue #1133. Google
+# has withdrawn that package from the SDK catalog (issue #1127), so no install
+# can obtain it now. An SDK that acquired it before the withdrawal still has the
+# directory, and this deliberately stops reaching for it: `tools/bin` is a dead
+# end for anyone setting a machine up today.
 CMDLINE_TOOLS="$ANDROID_SDK/cmdline-tools/latest/bin"
 if [[ ! -x "$CMDLINE_TOOLS/sdkmanager" ]]; then
     CMDLINE_TOOLS="$ANDROID_SDK/cmdline-tools/bin"
@@ -67,6 +70,20 @@ fi
 
 # Step 1-3: AVD creation and emulator start (local only)-------------------
 if [[ "$POST_BOOT_ONLY" == false ]]; then
+    # Mirrors the adb guard above. Without it the run dies on a bash 127 that
+    # names only whichever candidate the resolution settled on, which is the
+    # unzipped-in-place layout rather than the `cmdline-tools/latest` a
+    # developer most likely needs to create. The guard is here rather than
+    # beside the resolution because --post-boot runs, which is how CI invokes
+    # this script, need no command-line tools at all.
+    if [[ ! -x "$CMDLINE_TOOLS/sdkmanager" ]]; then
+        echo "ERROR: sdkmanager not found in $ANDROID_SDK/cmdline-tools/latest/bin" >&2
+        echo "       or $ANDROID_SDK/cmdline-tools/bin." >&2
+        echo "       Install the Android SDK Command-line Tools, or pass --post-boot" >&2
+        echo "       to skip AVD creation on an emulator that is already running." >&2
+        exit 1
+    fi
+
     AVD_NAME="gb4pc_e2e"
     API_LEVEL=35
     SYSTEM_IMAGE="system-images;android-${API_LEVEL};google_apis;x86_64"

@@ -18,9 +18,10 @@
 #   (b) No cmdline-tools/latest -> cmdline-tools/bin is used instead
 #   (c) cmdline-tools/latest present but holding no sdkmanager -> same fallback
 #   (d) A failing sdkmanager is not retried at a second path (issue #1133)
-#   (e) Neither directory present -> the run fails naming a cmdline-tools path,
-#       and the withdrawn tools/bin is never invoked (issues #1127, #1133)
-#   (f) --post-boot, the form CI invokes, touches no command-line tool at all
+#   (e) Neither directory present -> the script's guard names both candidates
+#       and the withdrawn tools/bin is neither invoked nor named (issue #1127)
+#   (f) --post-boot, the form CI invokes, touches no command-line tool at all,
+#       so the guard in (e) cannot reach a CI run
 #
 # Limits: avdmanager is read out of the same resolved CMDLINE_TOOLS on the line
 # after sdkmanager and is not separately exercised, because reaching it means
@@ -179,15 +180,15 @@ fi
 
 # (e) Neither directory present -----------------------------------------------
 echo ""
-echo "=== (e) With no command-line tools, tools/bin is never reached ==="
+echo "=== (e) With no command-line tools, the script's own guard reports it ==="
 
 SDK_E="$(new_sdk e)"
 run_setup "$SDK_E"
 
-if [[ $RC -ne 0 ]]; then
-  pass "the run fails (exit $RC)"
+if [[ $RC -eq 1 ]]; then
+  pass "the run exits 1 from the guard, not 127 from a missing binary"
 else
-  fail "the run succeeded with no command-line tools installed"
+  fail "expected exit 1, got $RC: $OUTPUT"
 fi
 
 if [[ -s "$INVOKED" ]]; then
@@ -196,11 +197,21 @@ else
   pass "the withdrawn tools/bin package was not invoked"
 fi
 
-if grep -qF "cmdline-tools" <<< "$OUTPUT"; then
-  pass "the failure names a cmdline-tools path"
+if grep -qF "ERROR: sdkmanager not found" <<< "$OUTPUT"; then
+  pass "the guard's message is what reports the failure"
 else
-  fail "the failure does not name cmdline-tools: $OUTPUT"
+  fail "no guard message in the failure: $OUTPUT"
 fi
+
+# Both candidates, so the message does not send a developer to the
+# unzipped-in-place layout when `cmdline-tools/latest` is what they want.
+for candidate in "$SDK_E/cmdline-tools/latest/bin" "$SDK_E/cmdline-tools/bin"; do
+  if grep -qF "$candidate" <<< "$OUTPUT"; then
+    pass "the failure names $candidate"
+  else
+    fail "the failure does not name $candidate: $OUTPUT"
+  fi
+done
 
 if grep -qF "$SDK_E/tools/bin" <<< "$OUTPUT"; then
   fail "the failure names the withdrawn tools/bin package: $OUTPUT"
