@@ -72,6 +72,7 @@ Ask whether work remains, not whether the point was interesting.
    Call it rather than the endpoint directly: the script sends the `Content-Type` header the agent proxy requires, and it takes the token from the environment rather than naming it in the command, which a worktree-isolated agent refuses to run.
    `scripts/agents/link_gh_issues.py add {owner} {repo} {parent issue number} --blocked-by {new issue number}`,
    where `{parent issue number}` is the issue this PR resolves and `{new issue number}` is the issue filed for this item by sub-steps 3a and 3b, or for an already-covered item the issue recorded in step 2.
+   If this PR resolves no issue, there is nothing to link: state the blocking relationship in plain text as below, and skip sub-step 3d.
    A link already in place is reported and counts as success, so running this over an already-covered item is safe.
    Only if the call does not succeed for a reason other than the dependency already existing, state the blocking relationship in plain text in the new issue's description (for example, "Blocks PR #{number}") so it is not lost, and skip the formal link without failing.
    d. Make the new issue a **sub-issue** of that same issue, using GitHub's sub-issues feature.
@@ -90,7 +91,7 @@ Ask whether work remains, not whether the point was interesting.
    d. If the follow-on cannot be started until this work lands, record it as blocked by **the issue this PR resolves**, with the script sub-step 3c uses:
    `scripts/agents/link_gh_issues.py add {owner} {repo} {follow-on issue number} --blocked-by {parent issue number}`
    GitHub dependency links don't allow a PR on either side, so the issue stands in for it.
-   Otherwise leave the issue unlinked.
+   Otherwise, or if this PR resolves no issue, leave the issue unlinked.
    Never block the PR or its issue by a follow-on.
 
 5. Post (or replace) the verification-plan comment in the PR's issue-comment stream.
