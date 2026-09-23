@@ -30,7 +30,7 @@ jobs:
 
       - name: Set up Android SDK
         # see: scripts/ci/test_setup_android_packages.py
-        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
         with:
           packages: platform-tools
 
@@ -78,7 +78,7 @@ jobs:
              app/build/outputs/apk/release/gb4pc-${{ steps.version.outputs.version }}.apk
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
           tag_name: ${{ steps.version.outputs.tag_name }}
           name: GB4PC ${{ steps.version.outputs.tag_name }}
