@@ -30,6 +30,14 @@
 #   - For full setup: sdkmanager and avdmanager, together in whichever of
 #     $ANDROID_HOME/cmdline-tools/latest/bin or $ANDROID_HOME/cmdline-tools/bin
 #     is used; both are read out of the one directory resolved below
+#
+# Environment:
+#   DEVICE_TIMEOUT        Seconds to wait for the emulator to appear on adb
+#                         before giving up (default: 300). Override in tests.
+#   DEVICE_POLL_INTERVAL  Seconds between those checks (default: 5). Override in
+#                         tests.
+#   EMULATOR_LOG          Where the emulator's output goes, and what is printed
+#                         when the wait above fails (default: /tmp/emulator.log).
 
 set -euo pipefail
 
@@ -136,6 +144,7 @@ if [[ "$POST_BOOT_ONLY" == false ]]; then
 
     echo "==> Starting emulator headlessly"
     EMULATOR="$ANDROID_SDK/emulator/emulator"
+    EMULATOR_LOG="${EMULATOR_LOG:-/tmp/emulator.log}"
     nohup "$EMULATOR" \
         -avd "$AVD_NAME" \
         -no-window \
@@ -143,12 +152,45 @@ if [[ "$POST_BOOT_ONLY" == false ]]; then
         -no-boot-anim \
         -gpu swiftshader_indirect \
         -memory 2048 \
-        > /tmp/emulator.log 2>&1 &
+        > "$EMULATOR_LOG" 2>&1 &
     EMULATOR_PID=$!
     echo "Emulator PID: $EMULATOR_PID"
 
+    # `adb wait-for-device` blocks with no bound, which made this the one step in
+    # the sequence that could not give up: the boot and package-manager loops
+    # below both do. Polling `get-state` for the condition wait-for-device waits
+    # on keeps the shape of those loops and needs no `timeout` binary, which is
+    # not on every developer's machine. CI bounds its own wait-for-device
+    # separately, in the "Wait for emulator service readiness" step of
+    # .github/workflows/build.yml.
+    #
+    # An emulator that dies during startup, the common local failure, is reported
+    # as soon as its process is gone rather than at the timeout. That mirrors the
+    # liveness check the workflow's "Start emulator" step makes on the same
+    # binary, launched the same way. Either way the log holds the reason, so it
+    # is printed with the failure.
     echo "==> Waiting for device to come online..."
-    "$ADB" wait-for-device
+    DEVICE_TIMEOUT="${DEVICE_TIMEOUT:-300}"
+    DEVICE_POLL_INTERVAL="${DEVICE_POLL_INTERVAL:-5}"
+    DEVICE_ELAPSED=0
+    until [[ "$("$ADB" get-state 2>/dev/null | tr -d '\r')" == "device" ]]; do
+        if ! kill -0 "$EMULATOR_PID" 2>/dev/null; then
+            echo "ERROR: The emulator exited before a device came online." >&2
+            echo "=== $EMULATOR_LOG ===" >&2
+            cat "$EMULATOR_LOG" >&2
+            exit 1
+        fi
+        if [[ $DEVICE_ELAPSED -ge $DEVICE_TIMEOUT ]]; then
+            echo "ERROR: No device came online within ${DEVICE_TIMEOUT}s." >&2
+            echo "=== $EMULATOR_LOG ===" >&2
+            cat "$EMULATOR_LOG" >&2
+            exit 1
+        fi
+        sleep "$DEVICE_POLL_INTERVAL"
+        DEVICE_ELAPSED=$((DEVICE_ELAPSED + DEVICE_POLL_INTERVAL))
+        echo "  ...waiting for device ($DEVICE_ELAPSED / ${DEVICE_TIMEOUT}s)"
+    done
+    echo "==> Device online."
 
     echo "==> Waiting for full boot (sys.boot_completed=1)..."
     BOOT_TIMEOUT=180
