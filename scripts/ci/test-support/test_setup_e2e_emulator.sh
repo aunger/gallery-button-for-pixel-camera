@@ -33,7 +33,7 @@
 #   (i) A failing avdmanager ends the run, keeps its message, and starts no
 #       emulator for the AVD it did not create (issue #1141)
 #   (j) An emulator that never produces a device is given up on, rather than
-#       waited for forever (issue #1141)
+#       waited for forever, and adb's account of why is printed (issue #1141)
 #   (k) An emulator that exits during startup is reported as that, at once,
 #       rather than at the bound
 #   (l) A device that does come online carries the run to the end, and a
@@ -134,18 +134,24 @@ make_cmdline_tools() {
 }
 
 make_adb_stub() {
-  # Usage: make_adb_stub <path> <get-state answer>
-  # An adb whose `get-state` gives <get-state answer>, which is what the device
-  # wait polls, and whose `shell getprop` answers 1 so a case that gets past
-  # that wait is not then held in the boot loop. Everything else succeeds
-  # silently, as make_quiet_stub does.
+  # Usage: make_adb_stub <path> <state|error text>
+  # An adb for the cases that reach the device wait. `get-state` answers as the
+  # real one does: "device" on stdout and exit 0 when a device is there, and
+  # otherwise nothing on stdout, the given text on stderr as `error: <text>`,
+  # and exit 1. `shell getprop` answers 1, so a case that gets past the wait is
+  # not then held in the boot loop. Everything else succeeds silently.
   local path="$1" state="$2"
   mkdir -p "$(dirname "$path")"
   {
     echo '#!/usr/bin/env bash'
     echo 'if [[ "${1:-}" == "get-state" ]]; then'
-    printf '  echo %q\n' "$state"
-    echo '  exit 0'
+    if [[ "$state" == "device" ]]; then
+      echo '  echo device'
+      echo '  exit 0'
+    else
+      printf '  echo %q >&2\n' "error: $state"
+      echo '  exit 1'
+    fi
     echo 'fi'
     echo 'if [[ "${1:-}" == "shell" && "${2:-}" == "getprop" ]]; then'
     echo '  echo 1'
@@ -445,7 +451,7 @@ echo "=== (j) An emulator that never produces a device is given up on ==="
 # used to block on forever (issue #1141).
 SDK_J="$(new_sdk j)"
 make_cmdline_tools "$SDK_J/cmdline-tools/latest/bin" 0
-make_adb_stub "$SDK_J/platform-tools/adb" "offline"
+make_adb_stub "$SDK_J/platform-tools/adb" "more than one device/emulator"
 HANGING_EMULATOR_PID="$TMPDIR_TESTS/hanging-emulator.pid"
 make_emulator_stub "$SDK_J/emulator/emulator" \
   "emulator: up, no device" hang "$HANGING_EMULATOR_PID"
@@ -469,6 +475,15 @@ else
   fail "the emulator log was not printed: $OUTPUT"
 fi
 
+# What adb says is the difference between a device that has not booted yet and
+# one the script can never single out. The poll discards it to read the state,
+# so the failure asks again.
+if grep -qF "error: more than one device/emulator" <<< "$OUTPUT"; then
+  pass "adb's own account of why it saw no device is printed"
+else
+  fail "adb's message was not printed: $OUTPUT"
+fi
+
 # The script leaves the emulator running, as a real run does; this suite does not.
 if [[ -s "$HANGING_EMULATOR_PID" ]]; then
   kill "$(cat "$HANGING_EMULATOR_PID")" 2>/dev/null || true
@@ -480,7 +495,7 @@ echo "=== (k) An emulator that exits is reported without waiting out the bound =
 
 SDK_K="$(new_sdk k)"
 make_cmdline_tools "$SDK_K/cmdline-tools/latest/bin" 0
-make_adb_stub "$SDK_K/platform-tools/adb" "offline"
+make_adb_stub "$SDK_K/platform-tools/adb" "no devices/emulators found"
 make_emulator_stub "$SDK_K/emulator/emulator" "emulator: PANIC: no KVM" exit
 
 # Far beyond run_setup's own 60s bound, so a run that reaches this failure by

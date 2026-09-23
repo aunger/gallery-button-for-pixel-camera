@@ -182,6 +182,12 @@ if [[ "$POST_BOOT_ONLY" == false ]]; then
         fi
         if [[ $DEVICE_ELAPSED -ge $DEVICE_TIMEOUT ]]; then
             echo "ERROR: No device came online within ${DEVICE_TIMEOUT}s." >&2
+            # The poll discards this to test the state, and it is the one place
+            # adb explains itself: "more than one device/emulator" reads very
+            # differently from "no devices/emulators found", and the script
+            # assumes a single device from here on either way.
+            echo "       adb get-state says:" >&2
+            "$ADB" get-state 2>&1 | sed 's/^/       /' >&2 || true
             echo "=== $EMULATOR_LOG ===" >&2
             cat "$EMULATOR_LOG" >&2
             exit 1
