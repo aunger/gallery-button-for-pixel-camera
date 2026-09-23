@@ -122,41 +122,21 @@
 # rather than approximated. A group scoped to `applies-to: security-updates`
 # takes no version update and is modelled as taking nothing.
 #
-# The fourth family, the github-actions checks, guards the entry issue #1135
-# added over this repository's action pins. Nothing watched those before it:
-# scripts/ci/prs-and-issues/watch_toolchain_bump.py covers the Gradle toolchain
-# pins and has no notion of an action pin, so six android-actions/setup-android
-# pins sat three releases behind upstream and nothing here noticed (#1127).
+# The fourth family, the github-actions checks, covers the entry that watches
+# the action pins (issue #1135). Three properties, none of them readable from
+# the file's shape alone: every action the workflows use is taken by some
+# group, the group count stays inside the one-to-five band #1135 settled on,
+# and the entry's pull request limit covers one per group. Ungrouped,
+# Dependabot opens a pull request per action; a limit under the group count
+# starves one of them permanently.
 #
-# What these check is the grouping, because ungrouped is the configuration
-# #1135 rejected: Dependabot's default opens a pull request per action, which
-# relocates the noise onto the review queue rather than removing it. So every
-# action the workflows reference has to be taken by some group, and the number
-# of groups has to stay inside the one-to-five band #1135 settled on.
+# The action list is read out of the workflows, so an action no pattern reaches
+# fails a check instead of quietly getting a pull request of its own.
 #
-# The entry's open-pull-requests-limit is then read against that group count,
-# rather than the band's upper bound being trusted to sit under whatever
-# GitHub's default happens to be. An entry with two groups and a limit of 1
-# starves one of them permanently, and every other check here passes on it.
-# Coverage is enough, where the gradle entry above needs a strict margin. Once
-# every action is grouped, which the check above is, this entry's streams are
-# the groups it declares, and that count cannot rise without an edit to the
-# groups block, which the band check reads.
-#
-# The action list is read out of the workflows rather than kept here, so an
-# action added to a workflow that no pattern reaches fails this check instead
-# of quietly getting a pull request of its own. That is the property the
-# catch-all third-party group in .github/dependabot.yml has and a list of
-# today's actions would not.
-#
-# Both of the names Dependabot can give one reference are checked. Its parser
-# names a dependency `owner/repo`, and keeps the subpath instead when the
-# reference carries one and is pinned to a SHA, or when it names a reusable
-# workflow (github_actions/lib/dependabot/github_actions/file_parser.rb:166).
-# So `github/codeql-action/init@v4` is `github/codeql-action` today and
-# `github/codeql-action/init` the day that pin becomes a SHA, and a pattern
-# that takes one name and not the other would move an action between pull
-# requests as its pin style changed, or leave it with one of its own.
+# Both names Dependabot can give a reference are checked, `owner/repo` and
+# `owner/repo/path`, because which one it gets follows from how it is pinned: a
+# pattern taking one name and not the other would move an action between pull
+# requests as its pin style changed.
 #
 # What this cannot check is whether GitHub's Dependabot service accepts the
 # file and whether a run actually opens pull requests, or honors the raised
@@ -699,13 +679,9 @@ for index, entry, names, directories in gradle_entries:
 # GitHub Actions pins (issue #1135). See the file header.
 
 # The band #1135 settled on: at least one group, because ungrouped is a pull
-# request per action, and at most five. Both numbers are that decision's, not a
-# derivation from DEFAULT_OPEN_PULL_REQUESTS_LIMIT, which is five today by
-# GitHub's choice and not by this repository's. The relation between the two is
-# what matters and is checked rather than asserted: the limit check below reads
-# the entry's own limit against the groups it declares, so if those two fives
-# ever move apart, an entry wanting more slots than it has is reported rather
-# than quietly starved.
+# request per action, and at most five. This five is that decision's and
+# DEFAULT_OPEN_PULL_REQUESTS_LIMIT is GitHub's; the limit check below reads one
+# against the other rather than either being derived from the other.
 GITHUB_ACTIONS_MAX_GROUPS = 5
 
 
@@ -747,22 +723,14 @@ def dependency_names(reference):
     `owner/repo` normally, and `owner/repo/path` when the reference carries a
     subpath and is pinned to a SHA or names a reusable workflow. Which one a
     reference gets therefore follows from how it is pinned, so both are
-    checked rather than the pin style being read here; see the file header.
+    checked rather than the pin style being read here.
 
-    The parser has a third form this deliberately does not return: a reference
-    whose ref is itself path-based, `Version.path_based?` matching a ref such
-    as `release/v1.2.3` that a monorepo tags one action with, is named by the
-    whole `uses:` string, `@ref` included
-    (github_actions/lib/dependabot/github_actions/file_parser.rb:170 and
-    github_actions/lib/dependabot/github_actions/version.rb:33). Returning it
-    here would test a name Dependabot gives no reference in this tree, and
-    would report a pattern naming an action exactly as splitting it, which is
-    a failure that cannot happen. No reference here carries such a ref, and a
-    reference that did would be read below under `owner/repo`: a prefix
-    pattern such as `actions/*` matches that and the whole string alike, so
-    the grouping checks answer the same either way, while a pattern naming an
-    action exactly would match only the modelled name. That is the case to
-    revisit if a path-based ref ever appears here.
+    A third form is not returned: a ref that is itself path-based, such as the
+    `release/v1.2.3` tag a monorepo gives one action, names the dependency
+    after the whole `uses:` string (`Version.path_based?`, in dependabot-core's
+    github_actions version class). Nothing here carries such a ref, and one
+    that did is read below under `owner/repo`, which a prefix pattern such as
+    `actions/*` matches alike and an exact-name pattern does not.
     """
     parts = reference.split("/")
     names = {"/".join(parts[:2])}
@@ -852,21 +820,14 @@ if check(
             % (label, ("; split: " + ", ".join(split)) if split else ""),
         )
 
-        # What the entry can want open at once: one pull request per group it
-        # declares, plus one for each action no group takes.
+        # One pull request per group the entry declares, plus one per action no
+        # group takes. Declared, not populated: a group whose patterns match
+        # nothing yet fills as soon as a workflow adds an action they reach.
         #
-        # Every group it declares, not only the ones with a member today. A
-        # group whose patterns match nothing yet fills the moment a workflow
-        # adds an action they reach, with no edit to .github/dependabot.yml, so
-        # counting non-empty groups alone would let a limit through that the
-        # next workflow edit starves.
-        #
-        # Coverage, not the strict margin the gradle entry above requires. That
-        # margin exists because a coordinate added to app/build.gradle.kts adds
-        # a stream to an entry that cannot see it coming. Here, with every
-        # action grouped, the stream count is the declared group count, which
-        # cannot rise without an edit to the groups block, and the band check
-        # above fails on the group that would need a sixth slot.
+        # Coverage, not the strict margin the gradle entry above requires: with
+        # every action grouped, the streams are the declared groups, and that
+        # count rises only by an edit to the groups block, which the band check
+        # above reads.
         streams = len(groups) + len(ungrouped)
         limit = entry.get("open-pull-requests-limit", DEFAULT_OPEN_PULL_REQUESTS_LIMIT)
         if check(
