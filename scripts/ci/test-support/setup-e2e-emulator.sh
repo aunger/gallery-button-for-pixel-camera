@@ -101,10 +101,10 @@ if [[ "$POST_BOOT_ONLY" == false ]]; then
 
     # The resolution keys on sdkmanager, so nothing so far has looked for
     # avdmanager. Both binaries ship in the same package and are read out of the
-    # one resolved directory, so one without the other is a damaged install.
-    # Left to the create line below, that absence produced no diagnosis at all:
-    # the failure went to a discarded stderr and the run continued into starting
-    # an emulator for an AVD that was never created (issue #1141).
+    # one resolved directory, so one without the other is a damaged install and
+    # worth naming as that. Left to the create line below it would arrive as a
+    # bash 127 inside that command's captured stderr, after a system-image
+    # download the run has no use for (issue #1141).
     if [[ ! -x "$CMDLINE_TOOLS/avdmanager" ]]; then
         echo "ERROR: avdmanager not found beside sdkmanager in $CMDLINE_TOOLS." >&2
         echo "       Reinstall the Android SDK Command-line Tools, or pass --post-boot" >&2
@@ -126,9 +126,9 @@ if [[ "$POST_BOOT_ONLY" == false ]]; then
     # is worth hiding, and a non-zero exit now ends the run (issue #1141).
     #
     # avdmanager writes progress and package warnings to stderr even when it
-    # succeeds, which is why the stream was silenced. Capturing it instead keeps
-    # a successful run as quiet as before, and gives a failing one the diagnosis
-    # that `2>/dev/null` used to throw away along with the failure itself.
+    # succeeds, so the stream is captured rather than left on the terminal. A
+    # successful run is as quiet as `2>/dev/null` made it, and a failing one
+    # gets the diagnosis that redirection threw away along with the failure.
     AVD_CREATE_LOG="$(mktemp)"
     if ! echo "no" | "$CMDLINE_TOOLS/avdmanager" create avd \
         --name "$AVD_NAME" \
@@ -164,11 +164,11 @@ if [[ "$POST_BOOT_ONLY" == false ]]; then
     # separately, in the "Wait for emulator service readiness" step of
     # .github/workflows/build.yml.
     #
-    # An emulator that dies during startup, the common local failure, is reported
-    # as soon as its process is gone rather than at the timeout. That mirrors the
-    # liveness check the workflow's "Start emulator" step makes on the same
-    # binary, launched the same way. Either way the log holds the reason, so it
-    # is printed with the failure.
+    # An emulator that dies during startup (no KVM, a corrupt AVD) is reported as
+    # soon as its process is gone rather than at the bound, since nothing is
+    # gained by waiting out a clock for a process that has already left. That is
+    # the check the workflow's "Start emulator" step makes on the same emulator
+    # binary. Either way the log holds the reason, so it is printed alongside.
     echo "==> Waiting for device to come online..."
     DEVICE_TIMEOUT="${DEVICE_TIMEOUT:-300}"
     DEVICE_POLL_INTERVAL="${DEVICE_POLL_INTERVAL:-5}"
