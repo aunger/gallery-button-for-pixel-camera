@@ -219,19 +219,27 @@ def is_google_maven(registry):
 
 def entry_directories(index, entry):
     """The directory paths an update entry covers, or None if it declares none."""
+    ecosystem = entry.get("package-ecosystem")
     if "directories" in entry:
         directories = entry["directories"]
-        if not check(isinstance(directories, list), "gradle update entry %d's directories key is a list" % index):
+        if not check(
+            isinstance(directories, list), "%s update entry %d's directories key is a list" % (ecosystem, index)
+        ):
             return None
         return directories
     if "directory" in entry:
         return [entry["directory"]]
-    check(False, "gradle update entry %d declares a directory or directories key" % index)
+    check(False, "%s update entry %d declares a directory or directories key" % (ecosystem, index))
     return None
 
 
-def entry_label(index, directories):
-    return "gradle update entry %d (%s)" % (index, ", ".join(str(d) for d in directories))
+def entry_label(index, entry, directories):
+    """Name one update entry in a check message, by its ecosystem and directories."""
+    return "%s update entry %d (%s)" % (
+        entry.get("package-ecosystem"),
+        index,
+        ", ".join(str(d) for d in directories),
+    )
 
 
 referenced = set()
@@ -280,7 +288,7 @@ for name in sorted(referenced):
         )
 
 for index, entry, names, directories in gradle_entries:
-    label = entry_label(index, directories)
+    label = entry_label(index, entry, directories)
 
     # A root-scoped entry reads settings.gradle.kts itself, so it finds
     # google() there without a registry; anything narrower cannot.
@@ -495,7 +503,7 @@ def cooldown_holds(coordinate, cooldown):
 # rather than trusted.
 declarations = {}
 for index, entry, names, directories in gradle_entries:
-    label = entry_label(index, directories)
+    label = entry_label(index, entry, directories)
     declared = {}
     for directory in directories:
         paths = manifest_paths(directory)
@@ -508,7 +516,7 @@ for index, entry, names, directories in gradle_entries:
 
 
 for index, entry, names, directories in gradle_entries:
-    label = entry_label(index, directories)
+    label = entry_label(index, entry, directories)
 
     google_hosted = set()
     central_hosted = set()
@@ -553,7 +561,7 @@ for index, entry, names, directories in gradle_entries:
 
 # Grouping and the pull request limit (issue #873). See the file header.
 for index, entry, names, directories in gradle_entries:
-    label = entry_label(index, directories)
+    label = entry_label(index, entry, directories)
 
     declared = declarations[index]
 
