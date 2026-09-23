@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # Fails the job (no continue-on-error), so every subsequent step that is
       # not marked `if: always()` is implicitly skipped.

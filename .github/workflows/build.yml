@@ -22,7 +22,7 @@ jobs:
     outputs:
       needs_full_build: ${{ steps.diff_check.outputs.needs_full_build }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -53,7 +53,7 @@ jobs:
     needs: [check-diff]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install Python script dependencies
         # Some scripts/test_*.sh drive Python scripts end-to-end: e.g.
@@ -136,7 +136,7 @@ jobs:
       needs_full_build: ${{ needs.check-diff.outputs.needs_full_build }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install Python script dependencies
         if: needs.check-diff.outputs.needs_full_build == 'true'
@@ -179,7 +179,7 @@ jobs:
 
       - name: Set up JDK 17
         if: needs.check-diff.outputs.needs_full_build == 'true'
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           java-version: '17'
           distribution: 'temurin'
@@ -201,7 +201,7 @@ jobs:
 
       - name: Cache Gradle packages
         if: needs.check-diff.outputs.needs_full_build == 'true'
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.gradle/caches
@@ -1378,26 +1378,26 @@ jobs:
         # write scopes and runs a script out of this checkout (issue #882).
         # The fallback covers this workflow's non-pull-request events. Rule,
         # rationale and limits: scripts/ci/test_privileged_workflow_checkouts.py.
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.base.sha || github.sha }}
 
       - name: Download unit test results
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: unit-test-results
           path: downloaded-artifacts/unit-test-results
         continue-on-error: true
 
       - name: Download E2E test results
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: e2e-test-results
           path: downloaded-artifacts/e2e-test-results
         continue-on-error: true
 
       - name: Download instrumented test results
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: instrumented-test-results
           path: downloaded-artifacts/instrumented-test-results
@@ -1492,7 +1492,7 @@ jobs:
         # Pinned to a ref the pull request does not control: this job holds
         # write scopes and runs a script out of this checkout (issue #882). Rule,
         # rationale and limits: scripts/ci/test_privileged_workflow_checkouts.py.
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.base.sha }}
 
@@ -1517,10 +1517,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           java-version: '17'
           distribution: 'temurin'
@@ -1532,7 +1532,7 @@ jobs:
           packages: platform-tools
 
       - name: Cache Gradle packages
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.gradle/caches

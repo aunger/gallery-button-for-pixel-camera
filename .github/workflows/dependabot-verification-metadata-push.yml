@@ -77,7 +77,7 @@ jobs:
     steps:
       - name: Download the regenerated file, if one was produced
         id: download
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: dependabot-verification-metadata
           github-token: ${{ secrets.GITHUB_TOKEN }}
