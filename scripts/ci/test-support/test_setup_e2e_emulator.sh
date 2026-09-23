@@ -73,13 +73,30 @@ make_stub() {
 make_quiet_stub() {
   # Usage: make_quiet_stub <path>
   # A stub that succeeds without recording. adb is called dozens of times by the
-  # post-boot steps and the emulator once; recording either would drown out the
-  # command-line tool invocations these tests assert on.
+  # post-boot steps, and recording those would drown out the invocations these
+  # tests assert on. The emulator records, since it runs at most once and
+  # whether it ran is the thing several cases are about.
   local path="$1"
   mkdir -p "$(dirname "$path")"
   {
     echo '#!/usr/bin/env bash'
     echo 'exit 0'
+  } > "$path"
+  chmod +x "$path"
+}
+
+make_noisy_stub() {
+  # Usage: make_noisy_stub <path> <stderr text> <exit code>
+  # Records like make_stub, and writes <stderr text> to stderr before exiting.
+  # avdmanager reports what went wrong there, so a case can assert that the text
+  # reached the developer instead of /dev/null.
+  local path="$1" message="$2" code="$3"
+  mkdir -p "$(dirname "$path")"
+  {
+    echo '#!/usr/bin/env bash'
+    echo 'echo "$0" >> "$INVOKED"'
+    printf 'echo %q >&2\n' "$message"
+    echo "exit $code"
   } > "$path"
   chmod +x "$path"
 }
@@ -104,7 +121,7 @@ new_sdk() {
   # would share one tree.
   local sdk="$TMPDIR_TESTS/sdk-$1"
   make_quiet_stub "$sdk/platform-tools/adb"
-  make_quiet_stub "$sdk/emulator/emulator"
+  make_stub "$sdk/emulator/emulator" 0
   make_stub "$sdk/tools/bin/sdkmanager" 1
   make_stub "$sdk/tools/bin/avdmanager" 1
   echo "$sdk"
@@ -117,8 +134,13 @@ run_setup() {
   shift
   : > "$INVOKED"
   RC=0
-  OUTPUT="$(ANDROID_HOME="$sdk" bash "$SETUP" "$@" 2>&1)" || RC=$?
+  # Bounded, because what this suite tests is a script that used to wait for a
+  # device forever. A case that regains that behavior should fail the run, not
+  # hang the job; `timeout` reports 124, which no assertion here accepts.
+  OUTPUT="$(ANDROID_HOME="$sdk" timeout 60 bash "$SETUP" "$@" 2>&1)" || RC=$?
 }
+
+emulator_started() { grep -qF "/emulator/emulator" "$INVOKED"; }
 
 invocations() { cat "$INVOKED"; }
 
@@ -309,6 +331,42 @@ if [[ -s "$INVOKED" ]]; then
   fail "a command-line tool ran: $(invocations)"
 else
   pass "the avdmanager in cmdline-tools/bin was not reached for"
+fi
+
+# (i) A failing avdmanager is reported, not discarded -------------------------
+echo ""
+echo "=== (i) A failing avdmanager ends the run and keeps its message ==="
+
+SDK_I="$(new_sdk i)"
+make_stub "$SDK_I/cmdline-tools/latest/bin/sdkmanager" 0
+make_noisy_stub "$SDK_I/cmdline-tools/latest/bin/avdmanager" \
+  "Error: Package path is not valid." 1
+run_setup "$SDK_I"
+
+if [[ $RC -eq 1 ]]; then
+  pass "the run exits 1"
+else
+  fail "expected exit 1, got $RC: $OUTPUT"
+fi
+
+if grep -qF "Error: Package path is not valid." <<< "$OUTPUT"; then
+  pass "avdmanager's own stderr reaches the developer"
+else
+  fail "avdmanager's stderr was discarded: $OUTPUT"
+fi
+
+if grep -qF "ERROR: avdmanager could not create the AVD" <<< "$OUTPUT"; then
+  pass "the script names the step that failed"
+else
+  fail "no diagnosis of the failed step: $OUTPUT"
+fi
+
+# The point of the issue: the run used to continue from here and wait forever
+# for a device belonging to an AVD that was never created.
+if emulator_started; then
+  fail "the emulator was started although AVD creation failed: $(invocations)"
+else
+  pass "no emulator started after a failed AVD creation"
 fi
 
 # Summary ----------------------------------------------------------------------

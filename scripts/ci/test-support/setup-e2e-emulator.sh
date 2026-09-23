@@ -112,11 +112,27 @@ if [[ "$POST_BOOT_ONLY" == false ]]; then
     "$CMDLINE_TOOLS/sdkmanager" --install "$SYSTEM_IMAGE" "platform-tools" "emulator"
 
     echo "==> Creating AVD: $AVD_NAME"
-    echo "no" | "$CMDLINE_TOOLS/avdmanager" create avd \
+    # `--force` is what makes a re-run idempotent: it overwrites an existing AVD
+    # rather than refusing to create one. That overwrite is the only case the
+    # discarded exit status here was written for, so nothing else it was hiding
+    # is worth hiding, and a non-zero exit now ends the run (issue #1141).
+    #
+    # avdmanager writes progress and package warnings to stderr even when it
+    # succeeds, which is why the stream was silenced. Capturing it instead keeps
+    # a successful run as quiet as before, and gives a failing one the diagnosis
+    # that `2>/dev/null` used to throw away along with the failure itself.
+    AVD_CREATE_LOG="$(mktemp)"
+    if ! echo "no" | "$CMDLINE_TOOLS/avdmanager" create avd \
         --name "$AVD_NAME" \
         --package "$SYSTEM_IMAGE" \
         --device "pixel_6" \
-        --force 2>/dev/null || true   # --force overwrites existing AVD (idempotent)
+        --force 2>"$AVD_CREATE_LOG"; then
+        echo "ERROR: avdmanager could not create the AVD $AVD_NAME." >&2
+        cat "$AVD_CREATE_LOG" >&2
+        rm -f "$AVD_CREATE_LOG"
+        exit 1
+    fi
+    rm -f "$AVD_CREATE_LOG"
 
     echo "==> Starting emulator headlessly"
     EMULATOR="$ANDROID_SDK/emulator/emulator"
