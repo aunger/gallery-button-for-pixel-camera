@@ -135,3 +135,35 @@ updates:
           - "androidx.compose.ui:ui-test-junit4"
           - "org.jetbrains.kotlinx:kotlinx-coroutines-test"
           - "org.json:json"
+
+  # GitHub Action pins, which nothing else in this repository watches (issue #1135).
+  #
+  # directory is "/" because that is where Dependabot looks for workflows: it reads `.github/workflows`, and a root `action.yml`, from there and nowhere else.
+  #
+  # The two groups split third-party actions from first-party ones, the split agents/code_edit.md draws.
+  # A third-party action is pinned to a commit SHA, so its bump rewrites that SHA and the version comment beside it and wants a review of its own; the `actions/` and `github/` namespaces are tag pins, whose bump moves a major tag.
+  # The third-party group is `*` minus those two namespaces, so an action a workflow adds later falls into it instead of getting a pull request to itself.
+  #
+  # No `cooldown` key, unlike the gradle entry above: GitHub's Dependabot options reference does not list github-actions among the ecosystems cooldown supports (checked 2026-09-23).
+  # No `open-pull-requests-limit` either: every action is grouped, so this entry wants one pull request per group, and the default of 5 covers that.
+  # scripts/test_dependabot_config.sh checks the grouping and the limit against the workflows.
+  #
+  # 11:00 Monday keeps the run an hour clear of the gradle entry above.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "11:00"
+      timezone: "UTC"
+    groups:
+      first-party-actions:
+        patterns:
+          - "actions/*"
+          - "github/*"
+      third-party-actions:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "actions/*"
+          - "github/*"
