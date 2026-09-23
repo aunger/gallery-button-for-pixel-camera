@@ -113,9 +113,8 @@ Ask whether work remains, not whether the point was interesting.
 
    If either section is empty, write "None." in place of the list.
    If a prior-run comment already exists (step 2), replace it rather than posting a second comment.
-   To replace it, use the GitHub REST API to edit the existing comment body:
-   `curl -sX PATCH -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/{owner}/{repo}/issues/comments/{comment_id} -d '{"body": "..."}'`,
-   where `{comment_id}` is the id of the existing verification-plan comment, and `{body}` is the markdown that will completely replace the existing body.
+   To replace it, edit the existing comment body with `mcp__github__update_issue_comment`, passing the comment id recorded in step 2 and the markdown that will completely replace the existing body.
+   Do not fall back to `curl`, which is refused before it reaches GitHub for the reasons given in sub-step 3c.
 
 6. Report the following to the Orchestrator and exit:
 
