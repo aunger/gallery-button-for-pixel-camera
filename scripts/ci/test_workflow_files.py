@@ -13,16 +13,21 @@ here while letting a `.yaml` workflow escape both guards.
 `load_workflow()` returns `or {}` for a file that parses to nothing, and no workflow here
 is empty, so dropping that arm would fail nothing here while handing both guards a None
 to call `.get()` on.
-`relative()` names a workflow for the guards' failure messages, and nothing asserts on what
-it returns, so a body of `return path` would fail nothing here while spelling those
-messages as absolute paths of whatever directory the runner checked the repository out
-into.
+`relative()` names a workflow for the failure messages its callers build, the two guards
+above and `scripts/test_dependabot_config.sh`, and nothing asserts on what it returns, so a
+body of `return path` would fail nothing here while spelling those messages as absolute
+paths of whatever directory the runner checked the repository out into.
 Pinning those three decisions is what this file is for.
 
 Neither branch is reachable from the real tree, so the fixtures for those two are built
 under a temporary directory instead.
-`workflow_paths()` and `relative()` read `REPO_ROOT`, which the tests point elsewhere;
+`workflow_paths()` reads `REPO_ROOT`, which those tests point at that directory;
 `load_workflow()` opens the path it is handed, so it needs no such redirection.
+
+`relative()` is the one decision here the real tree does reach, since both guards call it on
+every workflow they open, so it is pinned over those paths as well, unpatched.
+Its other two cases point `REPO_ROOT` at roots that are written down rather than created:
+`relative()` opens nothing, so nothing under them has to exist.
 
 Each arm is tested next to its companion: a `.yml` file beside the `.yaml` one, a
 populated file beside the empty one, the real tree's own workflow paths beside the
@@ -128,8 +133,8 @@ class RelativeTest(unittest.TestCase):
     name a failure message gives a workflow, and none of them asserts on what comes back,
     so nothing else in the tree would notice a body of `return path` (issue #1140).
 
-    `os.path.relpath` opens nothing, so the roots below need not exist: a path under a
-    fabricated root is enough to say where the result is cut.
+    `os.path.relpath` opens nothing, so the two roots written down below need not exist;
+    the third test runs against the real tree, where the callers reach it.
     """
 
     CHECKOUT = os.path.join(os.sep, "runner", "work", "checkout")
@@ -160,8 +165,8 @@ class RelativeTest(unittest.TestCase):
         """Over the paths the callers actually hand it, unpatched: each result is
         relative, and rejoins `REPO_ROOT` to the file it was asked about.
 
-        The two tests above hold for a `relative()` that had been narrowed to the
-        fabricated root they build; this one does not.
+        The two tests above hold for a `relative()` that had been narrowed to the roots
+        they write down; this one does not.
 
         The subtest is labelled from the path handed in, not from `rel`: a label is read
         only when the case fails, which is when the value under test is the one thing
