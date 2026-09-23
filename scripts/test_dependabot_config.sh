@@ -122,6 +122,22 @@
 # rather than approximated. A group scoped to `applies-to: security-updates`
 # takes no version update and is modelled as taking nothing.
 #
+# The fourth family, the github-actions checks, covers the entry that watches
+# the action pins (issue #1135). Three properties, none of them readable from
+# the file's shape alone: every action the workflows use is taken by some
+# group, the group count stays inside the one-to-five band #1135 settled on,
+# and the entry's pull request limit covers one per group. Ungrouped,
+# Dependabot opens a pull request per action; a limit under the group count
+# starves one of them permanently.
+#
+# The action list is read out of the workflows, so an action no pattern reaches
+# fails a check instead of quietly getting a pull request of its own.
+#
+# Both names Dependabot can give a reference are checked, `owner/repo` and
+# `owner/repo/path`, because which one it gets follows from how it is pinned: a
+# pattern taking one name and not the other would move an action between pull
+# requests as its pin style changed.
+#
 # What this cannot check is whether GitHub's Dependabot service accepts the
 # file and whether a run actually opens pull requests, or honors the raised
 # limit when a sixth pull request is wanted. Only a live run on the default
@@ -168,6 +184,15 @@ try:
 except ImportError:
     print("  FAIL: PyYAML is not installed (see scripts/requirements.txt); cannot check dependabot.yml")
     sys.exit(1)
+
+# The workflow reader the guards in scripts/ci share, for the github-actions
+# checks at the foot of this file: they ask what the workflows use, and a
+# second walk of .github/workflows here would be a second place to fix when
+# that answer changes. scripts/ci is not on the path of a script run from
+# scripts/, and workflow_files imports yaml itself, so this follows the check
+# above rather than sitting with the imports at the top.
+sys.path.insert(0, os.path.join(repo_root, "scripts", "ci"))
+from workflow_files import load_workflow, relative, workflow_paths  # noqa: E402
 
 results = []
 
@@ -219,19 +244,27 @@ def is_google_maven(registry):
 
 def entry_directories(index, entry):
     """The directory paths an update entry covers, or None if it declares none."""
+    ecosystem = entry.get("package-ecosystem")
     if "directories" in entry:
         directories = entry["directories"]
-        if not check(isinstance(directories, list), "gradle update entry %d's directories key is a list" % index):
+        if not check(
+            isinstance(directories, list), "%s update entry %d's directories key is a list" % (ecosystem, index)
+        ):
             return None
         return directories
     if "directory" in entry:
         return [entry["directory"]]
-    check(False, "gradle update entry %d declares a directory or directories key" % index)
+    check(False, "%s update entry %d declares a directory or directories key" % (ecosystem, index))
     return None
 
 
-def entry_label(index, directories):
-    return "gradle update entry %d (%s)" % (index, ", ".join(str(d) for d in directories))
+def entry_label(index, entry, directories):
+    """Name one update entry in a check message, by its ecosystem and directories."""
+    return "%s update entry %d (%s)" % (
+        entry.get("package-ecosystem"),
+        index,
+        ", ".join(str(d) for d in directories),
+    )
 
 
 referenced = set()
@@ -280,7 +313,7 @@ for name in sorted(referenced):
         )
 
 for index, entry, names, directories in gradle_entries:
-    label = entry_label(index, directories)
+    label = entry_label(index, entry, directories)
 
     # A root-scoped entry reads settings.gradle.kts itself, so it finds
     # google() there without a registry; anything narrower cannot.
@@ -495,7 +528,7 @@ def cooldown_holds(coordinate, cooldown):
 # rather than trusted.
 declarations = {}
 for index, entry, names, directories in gradle_entries:
-    label = entry_label(index, directories)
+    label = entry_label(index, entry, directories)
     declared = {}
     for directory in directories:
         paths = manifest_paths(directory)
@@ -508,7 +541,7 @@ for index, entry, names, directories in gradle_entries:
 
 
 for index, entry, names, directories in gradle_entries:
-    label = entry_label(index, directories)
+    label = entry_label(index, entry, directories)
 
     google_hosted = set()
     central_hosted = set()
@@ -553,7 +586,7 @@ for index, entry, names, directories in gradle_entries:
 
 # Grouping and the pull request limit (issue #873). See the file header.
 for index, entry, names, directories in gradle_entries:
-    label = entry_label(index, directories)
+    label = entry_label(index, entry, directories)
 
     declared = declarations[index]
 
@@ -642,6 +675,183 @@ for index, entry, names, directories in gradle_entries:
             "once (%s), leaving a slot for the next coordinate added rather than starving it%s "
             "(issues #873, #937)" % (label, limit, streams, composition, detail),
         )
+
+# GitHub Actions pins (issue #1135). See the file header.
+
+# The band #1135 settled on: at least one group, because ungrouped is a pull
+# request per action, and at most five. This five is that decision's and
+# DEFAULT_OPEN_PULL_REQUESTS_LIMIT is GitHub's; the limit check below reads one
+# against the other rather than either being derived from the other.
+GITHUB_ACTIONS_MAX_GROUPS = 5
+
+
+def workflow_action_references():
+    """Every GitHub-hosted action the workflows use, mapped to the files using it.
+
+    Reads `uses:` at both levels that carry one: a step, and a job calling a
+    reusable workflow.
+
+    A local action (`./.github/actions/...`) is this repository's own code and
+    a `docker://` reference names no GitHub repository, so Dependabot's
+    github-actions parser tracks neither and neither needs a group.
+    """
+    references = {}
+    for path in workflow_paths():
+        jobs = load_workflow(path).get("jobs")
+        if not isinstance(jobs, dict):
+            continue
+        for job in jobs.values():
+            if not isinstance(job, dict):
+                continue
+            uses_values = [job.get("uses")]
+            steps = job.get("steps")
+            if isinstance(steps, list):
+                uses_values.extend(step.get("uses") for step in steps if isinstance(step, dict))
+            for uses in uses_values:
+                if not isinstance(uses, str):
+                    continue
+                reference = uses.split("@", 1)[0].strip()
+                if not reference or reference.startswith(".") or "://" in reference:
+                    continue
+                references.setdefault(reference, set()).add(relative(path))
+    return references
+
+
+def dependency_names(reference):
+    """The two names Dependabot can give one `uses:` reference by its path.
+
+    `owner/repo` normally, and `owner/repo/path` when the reference carries a
+    subpath and is pinned to a SHA or names a reusable workflow. Which one a
+    reference gets therefore follows from how it is pinned, so both are
+    checked rather than the pin style being read here.
+
+    A third form is not returned: a ref that is itself path-based, such as the
+    `release/v1.2.3` tag a monorepo gives one action, names the dependency
+    after the whole `uses:` string (`Version.path_based?`, in dependabot-core's
+    github_actions version class). Nothing here carries such a ref, and one
+    that did is read below under `owner/repo`, which a prefix pattern such as
+    `actions/*` matches alike and an exact-name pattern does not.
+    """
+    parts = reference.split("/")
+    names = {"/".join(parts[:2])}
+    if len(parts) > 2:
+        names.add(reference)
+    return names
+
+
+actions_entries = [
+    (index, entry)
+    for index, entry in enumerate(updates)
+    if isinstance(entry, dict) and entry.get("package-ecosystem") == "github-actions"
+]
+
+if check(
+    bool(actions_entries),
+    "an update entry covers the github-actions ecosystem, without which nothing in this repository watches an "
+    "action pin for ageing (issue #1135)",
+):
+    references = workflow_action_references()
+
+    # Every check below passes vacuously on a repository whose workflows use
+    # no action, so the set they read is asserted to be non-empty first.
+    check(bool(references), "the workflows use at least one action for that entry to cover (issue #1135)")
+
+    names = set()
+    for reference in references:
+        names |= dependency_names(reference)
+
+    for index, entry in actions_entries:
+        directories = entry_directories(index, entry)
+        if directories is None:
+            continue
+        label = entry_label(index, entry, directories)
+
+        check(
+            any(str(directory) == "/" for directory in directories),
+            '%s covers "/", the one directory Dependabot reads workflows from (it scans .github/workflows, and a '
+            "root action.yml, from there alone), so a narrower directory scans no workflow at all (issue #1135)"
+            % label,
+        )
+
+        groups = entry.get("groups") or {}
+        if not check(isinstance(groups, dict), "%s's groups key is a mapping of group name to definition" % label):
+            continue
+
+        check(
+            1 <= len(groups) <= GITHUB_ACTIONS_MAX_GROUPS,
+            "%s declares between 1 and %d groups (found %d): ungrouped, Dependabot opens a pull request per "
+            "action, and a group per action relocates that rather than removing it (issue #1135)"
+            % (label, GITHUB_ACTIONS_MAX_GROUPS, len(groups)),
+        )
+
+        # Modelled exactly as the gradle groups above are, including reporting
+        # a definition this cannot read as taking nothing: its members then
+        # count as ungrouped, which fails the check below rather than passing it.
+        grouped = {}
+        for name in sorted(groups):
+            error = group_model_error(groups[name])
+            check(
+                not error,
+                "%s's %r group selects its members by patterns alone, which is what the checks below model%s "
+                "(issue #1135)" % (label, name, ("; it " + error) if error else ""),
+            )
+            grouped[name] = set() if error else group_members(names, groups[name])
+
+        taken_by = {name: frozenset(group for group in grouped if name in grouped[group]) for name in names}
+
+        ungrouped = sorted(
+            "%s (%s)" % (reference, ", ".join(sorted(references[reference])))
+            for reference in references
+            if not all(taken_by[name] for name in dependency_names(reference))
+        )
+        check(
+            not ungrouped,
+            "%s groups every action the workflows use, so none of them gets a pull request of its own%s "
+            "(issue #1135)" % (label, ("; ungrouped: " + ", ".join(ungrouped)) if ungrouped else ""),
+        )
+
+        split = sorted(
+            reference for reference in references if len({taken_by[name] for name in dependency_names(reference)}) > 1
+        )
+        check(
+            not split,
+            "%s takes each action into the same group under either name Dependabot can give it, so changing how "
+            "one is pinned does not move it between pull requests%s (issue #1135)"
+            % (label, ("; split: " + ", ".join(split)) if split else ""),
+        )
+
+        # One pull request per group the entry declares, plus one per action no
+        # group takes. Declared, not populated: a group whose patterns match
+        # nothing yet fills as soon as a workflow adds an action they reach.
+        #
+        # Coverage, not the strict margin the gradle entry above requires: with
+        # every action grouped, the streams are the declared groups, and that
+        # count rises only by an edit to the groups block, which the band check
+        # above reads.
+        streams = len(groups) + len(ungrouped)
+        limit = entry.get("open-pull-requests-limit", DEFAULT_OPEN_PULL_REQUESTS_LIMIT)
+        if check(
+            isinstance(limit, int) and not isinstance(limit, bool),
+            "%s's open-pull-requests-limit is a number (found %r)" % (label, limit),
+        ):
+            check(
+                limit >= streams,
+                "%s's open-pull-requests-limit of %d covers the %d pull requests its %d group(s) and %d ungrouped "
+                "action(s) can want open at once%s (issues #1135, #937)"
+                % (
+                    label,
+                    limit,
+                    streams,
+                    len(groups),
+                    len(ungrouped),
+                    (
+                        "; %d of them cannot be proposed at all, and raising the limit to %d is what fixes it"
+                        % (streams - limit, streams)
+                    )
+                    if limit < streams
+                    else "",
+                ),
+            )
 
 for name in registries:
     check(name in referenced, "declared registry %r is referenced by an update entry" % name)
