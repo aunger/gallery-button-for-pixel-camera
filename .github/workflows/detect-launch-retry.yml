@@ -49,10 +49,10 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Download overlay logcat artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: ci-monitor-feed-PixelCameraOverlayE2ETest
           github-token: ${{ secrets.GITHUB_TOKEN }}
