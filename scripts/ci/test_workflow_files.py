@@ -161,12 +161,23 @@ class RelativeTest(unittest.TestCase):
         relative, and rejoins `REPO_ROOT` to the file it was asked about.
 
         The two tests above hold for a `relative()` that had been narrowed to the
-        fabricated root they build; this one does not."""
+        fabricated root they build; this one does not.
+
+        The subtest is labelled from the path handed in, not from `rel`: a label is read
+        only when the case fails, which is when the value under test is the one thing
+        that cannot be trusted to name the workflow it came from.
+        The call sits inside the subtest for the same reason, so that a `relative()` that
+        raised would be reported once per workflow rather than ending the loop.
+
+        Both assertions are load-bearing.
+        `os.path.join()` returns an absolute second argument unchanged, so the equality
+        alone passes for a body of `return path`, and `os.path.isabs()` is what fails
+        it."""
         paths = workflow_paths()
         self.assertTrue(paths, "found no workflow files to check")
         for path in paths:
-            rel = relative(path)
-            with self.subTest(workflow=rel):
+            with self.subTest(workflow=os.path.basename(path)):
+                rel = relative(path)
                 self.assertFalse(os.path.isabs(rel))
                 self.assertEqual(path, os.path.join(workflow_files.REPO_ROOT, rel))
 
