@@ -9,9 +9,10 @@
 # are stubbed too, but silently: only the tools under test are recorded.
 #
 # The stub sdkmanager exits 1, which under the script's `set -e` ends the run at
-# the first line that dereferences CMDLINE_TOOLS. That keeps the full-setup
-# cases from reaching the emulator launch a few lines later, so no case here
-# starts a process or writes an emulator log.
+# the install line, the first place the resolved directory is invoked rather
+# than merely tested. That keeps the full-setup cases from reaching the emulator
+# launch a few lines later, so no case here starts a process or writes an
+# emulator log.
 #
 # Covers:
 #   (a) cmdline-tools/latest/bin holds sdkmanager -> it is the one invoked
