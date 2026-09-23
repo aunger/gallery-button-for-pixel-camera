@@ -53,7 +53,7 @@ Ask whether work remains, not whether the point was interesting.
    If such a comment exists, parse it to extract the list of already-filed issues (each line with a `- [ ]` or `- [x]` checkbox carries an issue number of the form `#{issue number}`).
    Treat those issues as already filed and do not create duplicates for the corresponding items.
    Record the comment's id (the numeric id returned by the comments API, not its URL) for use in step 5.
-   For each parsed issue ID n, fetch the issue (`GET https://api.github.com/repos/{owner}/{repo}/issues/{n}`) and record its title.
+   For each parsed issue ID n, fetch the issue with `mcp__github__issue_read` (method `get`) and record its title.
    In steps 3 and 4, an item is "already covered" if the title that would be assigned to it by step 3a (for before-merging items) or step 4b (for follow-on items) matches the title of a prior issue.
    If the comment does not exist, proceed with filing all items normally.
    If more than one comment matches, or a match is corrupt in some other way, treat the PR as having none: prefer duplicate comments and duplicate issues over the risk of compounding existing corruption.
