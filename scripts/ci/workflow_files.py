@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """Finding and reading this repository's workflow files.
 
-Shared by the guards in this directory that assert a rule over every workflow,
-`test_privileged_workflow_checkouts.py` and `test_setup_android_packages.py`,
-which each carried their own copy until the second was written.
+Shared by the guards that assert a rule over every workflow:
+`test_privileged_workflow_checkouts.py` and `test_setup_android_packages.py`
+in this directory, which each carried their own copy until the second was
+written, and `scripts/test_dependabot_config.sh`, which asks which actions the
+workflows use.
 
-Imported by bare module name, which resolves because
+Imported by bare module name, which resolves for the two here because
 `.github/workflows/build.yml` discovers tests per directory rather than
-recursively, putting `scripts/ci` on `sys.path`.
+recursively, putting `scripts/ci` on `sys.path`. A caller outside this
+directory puts it there itself.
 """
 
 import glob

@@ -135,3 +135,55 @@ updates:
           - "androidx.compose.ui:ui-test-junit4"
           - "org.jetbrains.kotlinx:kotlinx-coroutines-test"
           - "org.json:json"
+
+  # GitHub Actions pins (issue #1135).
+  #
+  # Nothing in this repository watched them before this entry.
+  # scripts/ci/prs-and-issues/watch_toolchain_bump.py watches the Gradle toolchain pins and has no notion of an action pin, so six `android-actions/setup-android` pins sat three releases behind upstream and nothing here noticed (#1127, #1134).
+  #
+  # #1135 records what was rejected.
+  # Teaching that watcher to compare each pinned SHA against its floating major tag adds a second axis to a job whose docstring argues narrowness is the point, warning that broad reporting "trains the reader to ignore the job", and action pins drift often enough to be exactly that kind of report.
+  # Closing with no mechanism, on the grounds that this repository pins deliberately, leaves deliberate pinning and unnoticed ageing indistinguishable, and nothing here tells them apart.
+  #
+  # Recorded so it is not overclaimed: this would not have caught #1127.
+  # That outage was Google withdrawing a package from its own catalog, not the action moving, so the pinned code was unchanged and broke anyway.
+  # What this prevents is a pin silently ageing, the condition that left #1127 unfixed for four days after upstream had already shipped the fix in `v4.0.2`.
+  #
+  # directory is "/" because that is the only directory Dependabot reads workflows from: it scans `.github/workflows`, and a root `action.yml`/`action.yaml`, from there alone, so a narrower directory scans nothing.
+  # This repository declares no composite action of its own, so `.github/workflows` is the whole surface.
+  #
+  # Grouped, which #1135 settles as part of the decision rather than as an implementation detail: the ungrouped default opens a pull request per action, which relocates the noise onto the review queue rather than removing it.
+  #
+  # Two groups, split where agents/code_edit.md already splits these dependencies: a third-party action must be pinned to a commit SHA, and the `actions/` and `github/` namespaces are first-party and exempt.
+  # A third-party bump therefore rewrites a SHA and the version comment beside it, which is the supply-chain review that pinning rule exists for, while a first-party bump moves a major tag.
+  # Keeping the two apart leaves a third-party bump reviewable, holdable and revertable on its own, rather than arriving inside a batch of tag moves.
+  #
+  # The third-party group is `*` minus those two namespaces, rather than a list of the actions in the tree today, so an action a workflow adds tomorrow lands in it with no edit here.
+  # A list would give that action a pull request of its own instead, silently.
+  # scripts/test_dependabot_config.sh checks that against the workflows themselves: every action they reference has to be taken by a group, under both of the names Dependabot can give it.
+  #
+  # No `cooldown` key, unlike the gradle entry above: GitHub's Dependabot options reference does not list github-actions among the ecosystems cooldown supports (checked 2026-09-23).
+  #
+  # No `open-pull-requests-limit` key either.
+  # Every action is grouped, so this entry can want one pull request per group, and the groups partition the ecosystem between them, so that count cannot grow when a workflow adds an action.
+  # The default of 5 covers the five groups #1135 caps the split at, and scripts/test_dependabot_config.sh fails on a sixth group rather than on the run that group would starve.
+  #
+  # Weekly on Monday at 11:00 UTC, an hour past the gradle entry above, on the same reasoning that offsets that entry from dependency-audit.yml and semgrep.yml: the runs do not land in one CI-minute window.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "11:00"
+      timezone: "UTC"
+    groups:
+      first-party-actions:
+        patterns:
+          - "actions/*"
+          - "github/*"
+      third-party-actions:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "actions/*"
+          - "github/*"

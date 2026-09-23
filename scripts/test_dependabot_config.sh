@@ -122,6 +122,34 @@
 # rather than approximated. A group scoped to `applies-to: security-updates`
 # takes no version update and is modelled as taking nothing.
 #
+# The fourth family, the github-actions checks, guards the entry issue #1135
+# added over this repository's action pins. Nothing watched those before it:
+# scripts/ci/prs-and-issues/watch_toolchain_bump.py covers the Gradle toolchain
+# pins and has no notion of an action pin, so six android-actions/setup-android
+# pins sat three releases behind upstream and nothing here noticed (#1127).
+#
+# What these check is the grouping, because ungrouped is the configuration
+# #1135 rejected: Dependabot's default opens a pull request per action, which
+# relocates the noise onto the review queue rather than removing it. So every
+# action the workflows reference has to be taken by some group, and the number
+# of groups has to stay inside the one-to-five band #1135 settled on, which is
+# also what keeps the default limit of 5 covering what the entry can want open.
+#
+# The action list is read out of the workflows rather than kept here, so an
+# action added to a workflow that no pattern reaches fails this check instead
+# of quietly getting a pull request of its own. That is the property the
+# catch-all third-party group in .github/dependabot.yml has and a list of
+# today's actions would not.
+#
+# Both of the names Dependabot can give one reference are checked. Its parser
+# names a dependency `owner/repo`, and keeps the subpath instead when the
+# reference carries one and is pinned to a SHA, or when it names a reusable
+# workflow (github_actions/lib/dependabot/github_actions/file_parser.rb:166).
+# So `github/codeql-action/init@v4` is `github/codeql-action` today and
+# `github/codeql-action/init` the day that pin becomes a SHA, and a pattern
+# that takes one name and not the other would move an action between pull
+# requests as its pin style changed, or leave it with one of its own.
+#
 # What this cannot check is whether GitHub's Dependabot service accepts the
 # file and whether a run actually opens pull requests, or honors the raised
 # limit when a sixth pull request is wanted. Only a live run on the default
@@ -168,6 +196,15 @@ try:
 except ImportError:
     print("  FAIL: PyYAML is not installed (see scripts/requirements.txt); cannot check dependabot.yml")
     sys.exit(1)
+
+# The workflow reader the guards in scripts/ci share, for the github-actions
+# checks at the foot of this file: they ask what the workflows use, and a
+# second walk of .github/workflows here would be a second place to fix when
+# that answer changes. scripts/ci is not on the path of a script run from
+# scripts/, and workflow_files imports yaml itself, so this follows the check
+# above rather than sitting with the imports at the top.
+sys.path.insert(0, os.path.join(repo_root, "scripts", "ci"))
+from workflow_files import load_workflow, relative, workflow_paths  # noqa: E402
 
 results = []
 
@@ -649,6 +686,142 @@ for index, entry, names, directories in gradle_entries:
             "%s's open-pull-requests-limit of %d is above the %d pull requests its coordinates can want open at "
             "once (%s), leaving a slot for the next coordinate added rather than starving it%s "
             "(issues #873, #937)" % (label, limit, streams, composition, detail),
+        )
+
+# GitHub Actions pins (issue #1135). See the file header.
+
+# The band #1135 settled on: at least one group, because ungrouped is a pull
+# request per action, and at most five, which the default
+# open-pull-requests-limit of 5 still covers once every action is grouped.
+GITHUB_ACTIONS_MAX_GROUPS = 5
+
+
+def workflow_action_references():
+    """Every GitHub-hosted action the workflows use, mapped to the files using it.
+
+    Reads `uses:` at both levels that carry one: a step, and a job calling a
+    reusable workflow.
+
+    A local action (`./.github/actions/...`) is this repository's own code and
+    a `docker://` reference names no GitHub repository, so Dependabot's
+    github-actions parser tracks neither and neither needs a group.
+    """
+    references = {}
+    for path in workflow_paths():
+        jobs = load_workflow(path).get("jobs")
+        if not isinstance(jobs, dict):
+            continue
+        for job in jobs.values():
+            if not isinstance(job, dict):
+                continue
+            uses_values = [job.get("uses")]
+            steps = job.get("steps")
+            if isinstance(steps, list):
+                uses_values.extend(step.get("uses") for step in steps if isinstance(step, dict))
+            for uses in uses_values:
+                if not isinstance(uses, str):
+                    continue
+                reference = uses.split("@", 1)[0].strip()
+                if not reference or reference.startswith(".") or "://" in reference:
+                    continue
+                references.setdefault(reference, set()).add(relative(path))
+    return references
+
+
+def dependency_names(reference):
+    """The names Dependabot can give one `uses:` reference.
+
+    `owner/repo` normally, and `owner/repo/path` when the reference carries a
+    subpath and is pinned to a SHA or names a reusable workflow. Which one a
+    reference gets therefore follows from how it is pinned, so both are
+    checked rather than the pin style being read here; see the file header.
+    """
+    parts = reference.split("/")
+    names = {"/".join(parts[:2])}
+    if len(parts) > 2:
+        names.add(reference)
+    return names
+
+
+actions_entries = [
+    (index, entry)
+    for index, entry in enumerate(updates)
+    if isinstance(entry, dict) and entry.get("package-ecosystem") == "github-actions"
+]
+
+if check(
+    bool(actions_entries),
+    "an update entry covers the github-actions ecosystem, without which nothing in this repository watches an "
+    "action pin for ageing (issue #1135)",
+):
+    references = workflow_action_references()
+
+    # Every check below passes vacuously on a repository whose workflows use
+    # no action, so the set they read is asserted to be non-empty first.
+    check(bool(references), "the workflows use at least one action for that entry to cover (issue #1135)")
+
+    names = set()
+    for reference in references:
+        names |= dependency_names(reference)
+
+    for index, entry in actions_entries:
+        directories = entry_directories(index, entry)
+        if directories is None:
+            continue
+        label = entry_label(index, entry, directories)
+
+        check(
+            any(str(directory) == "/" for directory in directories),
+            '%s covers "/", the one directory Dependabot reads workflows from (it scans .github/workflows, and a '
+            "root action.yml, from there alone), so a narrower directory scans no workflow at all (issue #1135)"
+            % label,
+        )
+
+        groups = entry.get("groups") or {}
+        if not check(isinstance(groups, dict), "%s's groups key is a mapping of group name to definition" % label):
+            continue
+
+        check(
+            1 <= len(groups) <= GITHUB_ACTIONS_MAX_GROUPS,
+            "%s declares between 1 and %d groups (found %d): ungrouped, Dependabot opens a pull request per "
+            "action, and a group per action relocates that rather than removing it (issue #1135)"
+            % (label, GITHUB_ACTIONS_MAX_GROUPS, len(groups)),
+        )
+
+        # Modelled exactly as the gradle groups above are, including reporting
+        # a definition this cannot read as taking nothing: its members then
+        # count as ungrouped, which fails the check below rather than passing it.
+        grouped = {}
+        for name in sorted(groups):
+            error = group_model_error(groups[name])
+            check(
+                not error,
+                "%s's %r group selects its members by patterns alone, which is what the checks below model%s "
+                "(issue #1135)" % (label, name, ("; it " + error) if error else ""),
+            )
+            grouped[name] = set() if error else group_members(names, groups[name])
+
+        taken_by = {name: frozenset(group for group in grouped if name in grouped[group]) for name in names}
+
+        ungrouped = sorted(
+            "%s (%s)" % (reference, ", ".join(sorted(references[reference])))
+            for reference in references
+            if not all(taken_by[name] for name in dependency_names(reference))
+        )
+        check(
+            not ungrouped,
+            "%s groups every action the workflows use, so none of them gets a pull request of its own%s "
+            "(issue #1135)" % (label, ("; ungrouped: " + ", ".join(ungrouped)) if ungrouped else ""),
+        )
+
+        split = sorted(
+            reference for reference in references if len({taken_by[name] for name in dependency_names(reference)}) > 1
+        )
+        check(
+            not split,
+            "%s takes each action into the same group under either name Dependabot can give it, so changing how "
+            "one is pinned does not move it between pull requests%s (issue #1135)"
+            % (label, ("; split: " + ", ".join(split)) if split else ""),
         )
 
 for name in registries:
