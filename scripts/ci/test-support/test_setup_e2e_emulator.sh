@@ -22,11 +22,14 @@
 #   (e) Neither directory present -> the script's guard names both candidates
 #       and the withdrawn tools/bin is neither invoked nor named (issue #1127)
 #   (f) --post-boot, the form CI invokes, touches no command-line tool at all,
-#       so the guard in (e) cannot reach a CI run
+#       so the guards in (e) and (g) cannot reach a CI run
+#   (g) sdkmanager resolved but no avdmanager beside it -> refused by a guard of
+#       its own, ahead of the install line (issue #1141)
+#   (h) An avdmanager in the candidate directory the resolution did not choose
+#       does not rescue that run: both binaries come from one directory
 #
-# Limits: avdmanager is read out of the same resolved CMDLINE_TOOLS on the line
-# after sdkmanager and is not separately exercised, because reaching it means
-# letting the run continue into starting the emulator.
+# Because both binaries are required together, the fixtures install them as a
+# pair, except where a case is about one of them being absent.
 #
 # Always exits 0 on success, non-zero on failure.
 
@@ -81,6 +84,17 @@ make_quiet_stub() {
   chmod +x "$path"
 }
 
+make_cmdline_tools() {
+  # Usage: make_cmdline_tools <directory> [exit code]
+  # A command-line tools directory as an install leaves it: sdkmanager and
+  # avdmanager together. Both record, so a case can assert that avdmanager was
+  # not reached as well as which sdkmanager ran. The default exit code is 1,
+  # which ends a full-setup run at the install line.
+  local dir="$1" code="${2:-1}"
+  make_stub "$dir/sdkmanager" "$code"
+  make_stub "$dir/avdmanager" "$code"
+}
+
 new_sdk() {
   # Usage: new_sdk <case letter>
   # Creates an SDK tree with adb, an emulator, and the withdrawn tools/bin
@@ -113,8 +127,8 @@ echo ""
 echo "=== (a) sdkmanager in cmdline-tools/latest/bin is the one invoked ==="
 
 SDK_A="$(new_sdk a)"
-make_stub "$SDK_A/cmdline-tools/latest/bin/sdkmanager" 1
-make_stub "$SDK_A/cmdline-tools/bin/sdkmanager" 1
+make_cmdline_tools "$SDK_A/cmdline-tools/latest/bin"
+make_cmdline_tools "$SDK_A/cmdline-tools/bin"
 run_setup "$SDK_A"
 
 if [[ "$(invocations)" == "$SDK_A/cmdline-tools/latest/bin/sdkmanager" ]]; then
@@ -128,7 +142,7 @@ echo ""
 echo "=== (b) Without cmdline-tools/latest, cmdline-tools/bin is used ==="
 
 SDK_B="$(new_sdk b)"
-make_stub "$SDK_B/cmdline-tools/bin/sdkmanager" 1
+make_cmdline_tools "$SDK_B/cmdline-tools/bin"
 run_setup "$SDK_B"
 
 if [[ "$(invocations)" == "$SDK_B/cmdline-tools/bin/sdkmanager" ]]; then
@@ -143,7 +157,7 @@ echo "=== (c) An empty cmdline-tools/latest falls back to cmdline-tools/bin ==="
 
 SDK_C="$(new_sdk c)"
 mkdir -p "$SDK_C/cmdline-tools/latest/bin"
-make_stub "$SDK_C/cmdline-tools/bin/sdkmanager" 1
+make_cmdline_tools "$SDK_C/cmdline-tools/bin"
 run_setup "$SDK_C"
 
 if [[ "$(invocations)" == "$SDK_C/cmdline-tools/bin/sdkmanager" ]]; then
@@ -237,6 +251,64 @@ if [[ -s "$INVOKED" ]]; then
   fail "--post-boot invoked a command-line tool: $(invocations)"
 else
   pass "no sdkmanager or avdmanager invoked"
+fi
+
+# (g) sdkmanager resolved, no avdmanager beside it ----------------------------
+echo ""
+echo "=== (g) sdkmanager without avdmanager is refused before anything runs ==="
+
+SDK_G="$(new_sdk g)"
+make_stub "$SDK_G/cmdline-tools/latest/bin/sdkmanager" 1
+run_setup "$SDK_G"
+
+if [[ $RC -eq 1 ]]; then
+  pass "the run exits 1"
+else
+  fail "expected exit 1, got $RC: $OUTPUT"
+fi
+
+if grep -qF "ERROR: avdmanager not found" <<< "$OUTPUT"; then
+  pass "the guard names avdmanager as the missing binary"
+else
+  fail "no avdmanager guard message in the failure: $OUTPUT"
+fi
+
+if grep -qF "$SDK_G/cmdline-tools/latest/bin" <<< "$OUTPUT"; then
+  pass "the failure names the directory the resolution chose"
+else
+  fail "the failure does not name the resolved directory: $OUTPUT"
+fi
+
+# The guard sits ahead of the install line, so a run that cannot create an AVD
+# does not first spend a system-image download finding that out.
+if [[ -s "$INVOKED" ]]; then
+  fail "a command-line tool ran before the guard fired: $(invocations)"
+else
+  pass "no sdkmanager invocation: the guard precedes the install"
+fi
+
+# (h) avdmanager only in the candidate that was not chosen --------------------
+echo ""
+echo "=== (h) avdmanager in the unresolved candidate does not rescue the run ==="
+
+# sdkmanager resolves to cmdline-tools/latest/bin, and the only avdmanager sits
+# in cmdline-tools/bin. Issue #1133 settled that one resolved directory serves
+# both binaries, so this is still a failure and not a second fallback.
+SDK_H="$(new_sdk h)"
+make_stub "$SDK_H/cmdline-tools/latest/bin/sdkmanager" 1
+make_stub "$SDK_H/cmdline-tools/bin/avdmanager" 1
+run_setup "$SDK_H"
+
+if [[ $RC -eq 1 ]] && grep -qF "ERROR: avdmanager not found" <<< "$OUTPUT"; then
+  pass "the guard still fires (exit $RC)"
+else
+  fail "expected the avdmanager guard to fire, got exit $RC: $OUTPUT"
+fi
+
+if [[ -s "$INVOKED" ]]; then
+  fail "a command-line tool ran: $(invocations)"
+else
+  pass "the avdmanager in cmdline-tools/bin was not reached for"
 fi
 
 # Summary ----------------------------------------------------------------------

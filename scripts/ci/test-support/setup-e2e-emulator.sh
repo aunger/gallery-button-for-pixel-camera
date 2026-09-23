@@ -27,8 +27,9 @@
 #
 # Prerequisites:
 #   - ANDROID_HOME (or ANDROID_SDK_ROOT) must be set
-#   - For full setup: sdkmanager and avdmanager, in
+#   - For full setup: sdkmanager and avdmanager, together in whichever of
 #     $ANDROID_HOME/cmdline-tools/latest/bin or $ANDROID_HOME/cmdline-tools/bin
+#     is used; both are read out of the one directory resolved below
 
 set -euo pipefail
 
@@ -86,6 +87,19 @@ if [[ "$POST_BOOT_ONLY" == false ]]; then
         echo "ERROR: sdkmanager not found in $CMDLINE_TOOLS_LATEST" >&2
         echo "       or $CMDLINE_TOOLS_UNZIPPED." >&2
         echo "       Install the Android SDK Command-line Tools, or pass --post-boot" >&2
+        echo "       to skip AVD creation on an emulator that is already running." >&2
+        exit 1
+    fi
+
+    # The resolution keys on sdkmanager, so nothing so far has looked for
+    # avdmanager. Both binaries ship in the same package and are read out of the
+    # one resolved directory, so one without the other is a damaged install.
+    # Left to the create line below, that absence produced no diagnosis at all:
+    # the failure went to a discarded stderr and the run continued into starting
+    # an emulator for an AVD that was never created (issue #1141).
+    if [[ ! -x "$CMDLINE_TOOLS/avdmanager" ]]; then
+        echo "ERROR: avdmanager not found beside sdkmanager in $CMDLINE_TOOLS." >&2
+        echo "       Reinstall the Android SDK Command-line Tools, or pass --post-boot" >&2
         echo "       to skip AVD creation on an emulator that is already running." >&2
         exit 1
     fi
