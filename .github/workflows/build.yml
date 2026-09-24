@@ -316,7 +316,10 @@ jobs:
           # reach it, so the waits in this step have to fit inside its 600 seconds
           # together: 240 here leaves 360 for the boot-flag poll and the 120s
           # settings-service loop that follow, and for the step's non-waiting work.
-          # scripts/ci/test_reachable_wait_bounds.py keeps this arithmetic from rotting.
+          # That sum is a judgement recorded here, not a checked one: nothing adds these
+          # three waits up, and the loops' bounds are not written as `timeout` at all.
+          # scripts/ci/test_reachable_wait_bounds.py checks the one part that is
+          # mechanical, that 240 stays under the 600 this step is killed at.
           echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Waiting for ADB device (timeout 240s)..."
           timeout 240 "$ADB" wait-for-device || {
             echo "ERROR: Emulator did not appear on ADB after 240s" >&2
