@@ -36,13 +36,13 @@
 #   (j) An emulator that never produces a device is given up on, rather than
 #       waited for forever. The failure carries adb's account of why, the knob
 #       that raises the bound, and the emulator it leaves running (issue #1141).
-#       The wait polls at the interval the environment set, not a fixed one
+#       The wait sleeps, and counts, in the interval the environment set
 #   (k) An emulator that exits during startup is reported as that, at once,
 #       rather than at the bound
 #   (l) An emulator that comes online but never finishes booting is given up
 #       on, and that failure names the knob raising its own bound: it is the
 #       next bound a run that raised DEVICE_TIMEOUT meets (issue #1156). This
-#       wait, too, polls at the interval the environment set
+#       wait, too, sleeps and counts in the interval the environment set
 #   (m) A device that leaves after coming online is reported as adb now finds
 #       it, rather than as the slow boot it is indistinguishable from through
 #       the polled property alone
@@ -92,6 +92,32 @@ export BOOT_POLL_INTERVAL=1
 # Inside the suite's own directory, so no case writes over the emulator log of a
 # real run on the developer's machine.
 export EMULATOR_LOG="$TMPDIR_TESTS/emulator.log"
+
+# Each wait reads its poll interval twice: once into `sleep`, which spaces the
+# checks, and once into the counter that decides when the bound is reached. A
+# loop that stopped reading the variable in the first place while still adding
+# it in the second would print progress lines that look exactly right and take
+# five times as long to reach a bound measured in seconds, so the number that
+# reaches `sleep` has to be asserted on directly. This stub records it and then
+# sleeps for real, so the waits keep their timing and a case can see what they
+# asked for.
+#
+# The real sleep is resolved now, by absolute path, because the stub execs it
+# and PATH will have the stub itself in front by then.
+REAL_SLEEP="$(command -v sleep)"
+if [[ -z "$REAL_SLEEP" ]]; then
+  echo "FAIL: no sleep on PATH to record" >&2
+  exit 1
+fi
+export SLEPT="$TMPDIR_TESTS/slept.log"
+STUB_BIN="$TMPDIR_TESTS/bin"
+mkdir -p "$STUB_BIN"
+{
+  echo '#!/usr/bin/env bash'
+  echo 'echo "$1" >> "$SLEPT"'
+  printf 'exec %q "$@"\n' "$REAL_SLEEP"
+} > "$STUB_BIN/sleep"
+chmod +x "$STUB_BIN/sleep"
 
 make_stub() {
   # Usage: make_stub <path> <exit-code>
@@ -211,6 +237,10 @@ make_emulator_stub() {
   # producing a device, and writes its PID to <pid file> so the case can reap
   # it: the script leaves it running when it gives up, as a real run would.
   #
+  # The sleep here is the real one, by absolute path, so that the fixture's own
+  # wait stays out of the recording stub's log: what that log is read for is the
+  # interval the script under test asked to sleep for.
+  #
   # `hang` execs its sleep instead of running it as a child. The PID recorded
   # here is this wrapper's, which is also the PID the script under test holds as
   # EMULATOR_PID. A child sleep would survive a kill aimed at the wrapper and be
@@ -224,7 +254,7 @@ make_emulator_stub() {
     printf 'echo %q\n' "$line"
     if [[ "$mode" == "hang" ]]; then
       printf 'echo $$ > %q\n' "$pidfile"
-      echo 'exec sleep 120'
+      printf 'exec %q 120\n' "$REAL_SLEEP"
     fi
     echo 'exit 0'
   } > "$path"
@@ -253,11 +283,12 @@ run_setup() {
   shift
   : > "$INVOKED"
   : > "$EMULATOR_LOG"
+  : > "$SLEPT"
   RC=0
   # Bounded, because what this suite tests is a script that used to wait for a
   # device forever. A case that regains that behavior should fail the run, not
   # hang the job; `timeout` reports 124, which no assertion here accepts.
-  OUTPUT="$(ANDROID_HOME="$sdk" timeout 60 bash "$SETUP" "$@" 2>&1)" || RC=$?
+  OUTPUT="$(ANDROID_HOME="$sdk" PATH="$STUB_BIN:$PATH" timeout 60 bash "$SETUP" "$@" 2>&1)" || RC=$?
 }
 
 emulator_started() { grep -qF "/emulator/emulator" "$INVOKED"; }
@@ -539,15 +570,26 @@ else
   fail "the failure does not name DEVICE_TIMEOUT: $OUTPUT"
 fi
 
-# Nothing above would notice the loop ignoring DEVICE_POLL_INTERVAL: a
-# hardcoded sleep reaches the same bound and prints every message asserted so
-# far, so the documented knob could stop working with the suite still green.
-# The progress line is where the two differ, because a 5-second step never
-# prints a first second.
+# Nothing else here would notice the loop ignoring DEVICE_POLL_INTERVAL: a
+# hardcoded sleep reaches the same bound and prints every message asserted
+# above, so the documented knob could stop working with the suite still green.
+# The two reads of it are covered separately, because either alone can break.
+#
+# The counter: the progress line is printed from it, and a five-second step
+# never prints a first second.
 if grep -qF "...waiting for device (1 / ${DEVICE_TIMEOUT}s)" <<< "$OUTPUT"; then
-  pass "the wait polls at the interval DEVICE_POLL_INTERVAL set"
+  pass "the wait counts in the steps DEVICE_POLL_INTERVAL set"
 else
-  fail "DEVICE_POLL_INTERVAL was not honoured: $OUTPUT"
+  fail "DEVICE_POLL_INTERVAL did not reach the counter: $OUTPUT"
+fi
+
+# The sleep: this is the read that spaces the checks the header documents, and
+# the progress line above cannot see it. A loop that counts in ones while
+# sleeping fives prints the same lines and waits five times the bound.
+if [[ -s "$SLEPT" && "$(sort -u "$SLEPT")" == "$DEVICE_POLL_INTERVAL" ]]; then
+  pass "every sleep the wait took was the interval DEVICE_POLL_INTERVAL set"
+else
+  fail "with DEVICE_POLL_INTERVAL=$DEVICE_POLL_INTERVAL the wait slept: $(tr '\n' ' ' < "$SLEPT")"
 fi
 
 # The emulator outlives the script here, so the failure has to say so: the next
@@ -679,13 +721,21 @@ else
   fail "the failure does not report adb's answer: $OUTPUT"
 fi
 
-# As in case (j), and for the same reason: with a hardcoded sleep this case
-# still reaches the bound and still prints every message asserted above, so
-# only the progress line tells a read interval from an ignored one.
+# Both reads of BOOT_POLL_INTERVAL, covered as case (j) covers the device
+# wait's: the counter through the progress line, and the sleep through the
+# recording stub, because this bound is the one the issue is about and a loop
+# that sleeps five seconds per one-second step gives up after 3000 seconds of a
+# 600-second bound.
 if grep -qF "...waiting for boot (1 / ${BOOT_TIMEOUT}s)" <<< "$OUTPUT"; then
-  pass "the wait polls at the interval BOOT_POLL_INTERVAL set"
+  pass "the wait counts in the steps BOOT_POLL_INTERVAL set"
 else
-  fail "BOOT_POLL_INTERVAL was not honoured: $OUTPUT"
+  fail "BOOT_POLL_INTERVAL did not reach the counter: $OUTPUT"
+fi
+
+if [[ -s "$SLEPT" && "$(sort -u "$SLEPT")" == "$BOOT_POLL_INTERVAL" ]]; then
+  pass "every sleep the wait took was the interval BOOT_POLL_INTERVAL set"
+else
+  fail "with BOOT_POLL_INTERVAL=$BOOT_POLL_INTERVAL the wait slept: $(tr '\n' ' ' < "$SLEPT")"
 fi
 
 # The emulator outlives this failure as it outlives the device wait's, so the
