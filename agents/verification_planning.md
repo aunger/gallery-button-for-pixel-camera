@@ -73,13 +73,15 @@ Runs on other PRs file under this rule too, and each has exited before the next 
 2. **Before filing any issues**, check whether the PR already has a verification-plan comment from a prior run.
    Search for a comment whose entire first line is the HTML marker `<!-- gb4pc-verification-plan -->`, in the PR's issue-comment stream, where step 5 posts it.
    A comment that quotes the marker without opening with it, as a review discussing this document does, is not a plan comment.
-   If such a comment exists, parse it to extract the list of already-filed issues (each line with a `- [ ]` or `- [x]` checkbox carries an issue number of the form `#{issue number}`).
+   If such a comment exists, parse it to extract the list of already-filed issues (each line with a `- [ ]` or `- [x]` checkbox carries an issue number of the form `#{issue number}`, the line's first `#` followed by digits).
    Treat those issues as already filed and do not create duplicates for the corresponding items.
-   Read the comment's **Not filed** section too, whose lines carry no checkbox and no issue number: it records what a prior run declined under step 4a.
+   Read the comment's **Not filed** section too, whose lines carry no checkbox and no issue number: it records what a prior run declined under sub-step 4a.
    Treat those items as decided, carry them into the rebuilt comment in step 5, and file one only if something has happened since that gives it the consequence it lacked.
    Record the comment's id (the numeric id returned by the comments API, not its URL) for use in step 5.
    For each parsed issue ID n, fetch the issue with `mcp__github__issue_read` (method `get`) and record its title.
-   In steps 3 and 4, an item is "already covered" if the title that would be assigned to it by step 3a (for before-merging items) or step 4c (for follow-on items) matches the title of a prior issue.
+   In step 3, a before-merging item is "already covered" if the title sub-step 3a would assign it matches the title of a prior issue.
+   In step 4, the key is instead the source comment URL step 1 recorded for the item: it is already covered if that URL appears on a **Follow-on** line, and declined if it appears under **Not filed**.
+   A URL still matches where a title would not, because one issue may cover two items (sub-step 4b) and can carry only one title.
    If the comment does not exist, proceed with filing all items normally.
    If more than one comment matches, or a match is corrupt in some other way, treat the PR as having none: prefer duplicate comments and duplicate issues over the risk of compounding existing corruption.
 
@@ -114,9 +116,10 @@ Runs on other PRs file under this rule too, and each has exited before the next 
    If the source comment declines the work in its own terms, or the item fails the second test, do not file it.
    Move it to a *declined* list, with the URL of its source comment and a one-sentence reason, for step 5 to record and step 6 to report.
    b. Find the item's root fact, and check what already rests on it (see "Two follow-on items resting on one fact are one issue" above).
-   Look in two places: the rest of this list, and the open issues, which you search with `mcp__github__search_issues` over the file, symbol, or number the fact is about.
-   Where another item on this list shares it, file one issue covering both, each finding as its own part, and treat the other item as covered by it.
-   Where an open issue already carries it, do not file a second: add a comment to that issue naming the new finding, the URL of its source comment, and the fact the two share, then read "the new issue" in the sub-steps below as that issue.
+   Search this repository's issues for one that already carries the fact, with `mcp__github__search_issues` over the file, symbol, or number the fact is about, and read the state of any candidate: a closed issue has been decided, and commenting a finding onto it reopens the argument.
+   Where an open one carries the fact, do not file a second.
+   Comment the finding onto it, with the URL of the item's source comment and the fact the two share, then skip sub-steps 4c and 4d, which would retitle and rewrite an issue you did not open, and apply sub-step 4e to it as written.
+   Where none does, but another item on this list shares the fact, file one issue covering both, each finding as its own part, and treat the other item as covered by it.
    c. Title the issue simply `{task title}`, without referencing the current PR.
    d. In the issue description, include a URL to the source comment or description, and state clearly that this issue does **not** block PR #{number} (for example, "This is a follow-on item and does not block merging PR #{number}.").
    e. If the follow-on cannot be started until this work lands, record it as blocked by **the issue this PR resolves**, with the script sub-step 3c uses:
@@ -128,7 +131,8 @@ Runs on other PRs file under this rule too, and each has exited before the next 
 5. Post (or replace) the verification-plan comment in the PR's issue-comment stream.
    The comment's entire first line must be the HTML marker `<!-- gb4pc-verification-plan -->`, so the step-2 lookup of a future run finds it.
    The rebuilt comment must list all issues--those parsed from the prior-run comment in step 2 and any newly filed in steps 3-4--so that future runs can find the complete record and will not re-file already-existing issues.
-   It must likewise carry every declined item, those parsed in step 2 and those step 4a added, so that a future run does not re-litigate a decision this one made.
+   It must likewise carry every declined item, those parsed in step 2 and those sub-step 4a added, so that a future run does not re-litigate a decision this one made.
+   Each **Follow-on** line carries the source comment URL of every item its issue covers, which is how step 2 recognises an item folded into an issue titled for another, or commented onto an issue an earlier run filed (sub-step 4b).
    When rebuilding the comment, preserve the checked (`- [x]`) or unchecked (`- [ ]`) state of each item from the prior-run comment for issues that already existed; newly filed issues start as unchecked.
    Format the comment as follows (use actual issue numbers):
 
@@ -141,7 +145,7 @@ Runs on other PRs file under this rule too, and each has exited before the next 
    - [ ] #{issue number of item 2}
 
    **Follow-on** (does not block merging):
-   - [ ] #{issue number of item A}
+   - [ ] #{issue number of item A}: {source comment URL of every item that issue covers}
 
    **Not filed** (declined; the source comment is the record):
    - {what the item was}: {why it was declined}, {URL of the source comment}
@@ -166,5 +170,5 @@ Runs on other PRs file under this rule too, and each has exited before the next 
 - Do not modify source files.
 - Do not commit or push anything.
 - Do not apply or remove any label.
-- Limit your reading to the issue, PR, project test infrastructure references, and a search of the open issues for one that already rests on a fact you are about to file (sub-step 4b).
-- The only repository-changing actions you take are filing the tracking issues described above, commenting a finding onto an existing issue that already carries its root fact (sub-step 4b), linking them to the PR, and posting the verification-plan comment on the PR.
+- Limit your reading to the issue, PR, project test infrastructure references, and a search of this repository's issues for one that already rests on a fact you are about to file (sub-step 4b).
+- The only repository-changing actions you take are filing the tracking issues described above, commenting a finding onto an existing issue that already carries its root fact (sub-step 4b), linking issues as steps 3 and 4 direct, and posting the verification-plan comment on the PR.
