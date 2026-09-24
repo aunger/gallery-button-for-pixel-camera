@@ -4,7 +4,8 @@
 The module's ordinary path is already covered: `test_privileged_workflow_checkouts.py`
 and `test_setup_android_packages.py` both run it over the real tree on every CI run, and
 each asserts that the path list comes back non-empty.
-Two of its decisions are covered by nothing (issue #1132).
+Three of its decisions were covered by nothing: two branches (issue #1132), and
+`relative()` entire (issue #1140).
 
 `WORKFLOW_GLOBS` covers `.github/workflows/*.yaml` as well as `*.yml`, and this
 repository has no `.yaml` workflow, so dropping that half of the tuple would fail nothing
@@ -12,18 +13,28 @@ here while letting a `.yaml` workflow escape both guards.
 `load_workflow()` returns `or {}` for a file that parses to nothing, and no workflow here
 is empty, so dropping that arm would fail nothing here while handing both guards a None
 to call `.get()` on.
-Pinning those two arms is what this file is for.
+`relative()` names a workflow for the failure messages its callers build, the two guards
+above and `scripts/test_dependabot_config.sh`, and nothing asserts on what it returns, so a
+body of `return path` would fail nothing here while spelling those messages as absolute
+paths of whatever directory the runner checked the repository out into.
+Pinning those three decisions is what this file is for.
 
-Neither arm is reachable from the real tree, so the fixtures are built under a temporary
-directory instead.
-`workflow_paths()` reads `REPO_ROOT`, which the tests point at that directory;
+Neither branch is reachable from the real tree, so the fixtures for those two are built
+under a temporary directory instead.
+`workflow_paths()` reads `REPO_ROOT`, which those tests point at that directory;
 `load_workflow()` opens the path it is handed, so it needs no such redirection.
 
+`relative()` is the one decision here the real tree does reach, since both guards call it on
+every workflow they open, so it is pinned over those paths as well, unpatched.
+Its other two cases point `REPO_ROOT` at roots that are written down rather than created:
+`relative()` opens nothing, so nothing under them has to exist.
+
 Each arm is tested next to its companion: a `.yml` file beside the `.yaml` one, a
-populated file beside the empty one.
+populated file beside the empty one, the real tree's own workflow paths beside the
+fabricated ones.
 Without the companions, a module that had stopped doing the general thing--a glob tuple
-that had lost `.yml`, a `load_workflow()` that returned `{}` for everything--would still
-pass on the arms alone.
+that had lost `.yml`, a `load_workflow()` that returned `{}` for everything, a
+`relative()` that answered for the fixture alone--would still pass on the arms.
 
 Imported by bare module name, as the two guards beside it are, which resolves because
 `.github/workflows/build.yml` discovers tests per directory rather than recursively,
@@ -36,7 +47,7 @@ import unittest
 from unittest import mock
 
 import workflow_files
-from workflow_files import load_workflow, workflow_paths
+from workflow_files import load_workflow, relative, workflow_paths
 
 
 class WorkflowPathsTest(unittest.TestCase):
@@ -113,6 +124,67 @@ class LoadWorkflowTest(unittest.TestCase):
         ways for this reason."""
         loaded = load_workflow(self.write("on: push\njobs:\n  build:\n    steps: []\n"))
         self.assertEqual({True: "push", "jobs": {"build": {"steps": []}}}, loaded)
+
+
+class RelativeTest(unittest.TestCase):
+    """`relative()`, which no caller asserts on.
+
+    Both guards beside this file and `scripts/test_dependabot_config.sh` call it for the
+    name a failure message gives a workflow, and none of them asserts on what comes back,
+    so nothing else in the tree would notice a body of `return path` (issue #1140).
+
+    `os.path.relpath` opens nothing, so the two roots written down below need not exist;
+    the third test runs against the real tree, where the callers reach it.
+    """
+
+    CHECKOUT = os.path.join(os.sep, "runner", "work", "checkout")
+    WORKFLOW = os.path.join(CHECKOUT, ".github", "workflows", "build.yml")
+
+    def relative_under(self, root: str, path: str) -> str:
+        """Return `relative(path)` as computed with `REPO_ROOT` pointing at `root`."""
+        with mock.patch.object(workflow_files, "REPO_ROOT", root):
+            return relative(path)
+
+    def test_a_workflow_under_the_root_comes_back_without_it(self):
+        """What the messages carry: the path a reader can look up in the repository,
+        rather than one that names the directory the runner checked it out into."""
+        self.assertEqual(
+            os.path.join(".github", "workflows", "build.yml"),
+            self.relative_under(self.CHECKOUT, self.WORKFLOW),
+        )
+
+    def test_the_cut_is_made_at_the_repository_root(self):
+        """`REPO_ROOT` is read at the call, not baked into the answer: the same path
+        under a shallower root keeps the segments that root does not cover."""
+        self.assertEqual(
+            os.path.join("checkout", ".github", "workflows", "build.yml"),
+            self.relative_under(os.path.dirname(self.CHECKOUT), self.WORKFLOW),
+        )
+
+    def test_the_real_tree_s_workflows_come_back_relative(self):
+        """Over the paths the callers actually hand it, unpatched: each result is
+        relative, and rejoins `REPO_ROOT` to the file it was asked about.
+
+        The two tests above hold for a `relative()` that had been narrowed to the roots
+        they write down; this one does not.
+
+        The subtest is labelled from the path handed in, not from `rel`: a label is read
+        only when the case fails, which is when the value under test is the one thing
+        that cannot be trusted to name the workflow it came from.
+        The call sits inside the subtest for the same reason, so that a `relative()` that
+        raised would be reported once per workflow rather than ending the loop.
+
+        Both assertions are load-bearing.
+        `os.path.join()` returns an absolute second argument unchanged, so the equality
+        alone passes for a body of `return path`, and `os.path.isabs()` is what fails
+        it."""
+        paths = workflow_paths()
+        self.assertTrue(paths, "found no workflow files to check")
+        for path in paths:
+            with self.subTest(workflow=os.path.basename(path)):
+                rel = relative(path)
+                self.assertFalse(os.path.isabs(rel))
+                self.assertEqual(path, os.path.join(workflow_files.REPO_ROOT, rel))
 
 
 if __name__ == "__main__":
