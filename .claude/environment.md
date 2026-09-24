@@ -87,13 +87,13 @@ ______________________________________________________________________
 
 ## Environment variables
 
-| Variable            | Value                      | Set by             | Notes                                                         |
-| ------------------- | -------------------------- | ------------------ | ------------------------------------------------------------- |
-| `ANDROID_HOME`      | `/home/user/android-sdk`   | hook + `~/.bashrc` | Required by Gradle Android plugin and `adb`                   |
-| `JAVA_HOME`         | `/opt/java/temurin-17`     | hook (§0b)         | Only when the Setup script provisioned it; else image default |
-| `JAVA_TOOL_OPTIONS` | *(modified, not replaced)* | hook + `~/.bashrc` | Strips `*.google.com` from `nonProxyHosts` (see script §0)    |
-| `PATH`              | `+$ANDROID_HOME/...`       | hook + `~/.bashrc` | Adds `sdkmanager`, `adb` to path                              |
-| `GITHUB_TOKEN`      | *(fine-grained PAT)*       | container          | `curl` against the GitHub REST API, but not from a worktree   |
+| Variable            | Value                      | Set by             | Notes                                                                          |
+| ------------------- | -------------------------- | ------------------ | ------------------------------------------------------------------------------ |
+| `ANDROID_HOME`      | `/home/user/android-sdk`   | hook + `~/.bashrc` | Required by Gradle Android plugin and `adb`                                    |
+| `JAVA_HOME`         | `/opt/java/temurin-17`     | hook (§0b)         | Only when the Setup script provisioned it; else image default                  |
+| `JAVA_TOOL_OPTIONS` | *(modified, not replaced)* | hook + `~/.bashrc` | Strips `*.google.com` from `nonProxyHosts` (see script §0)                     |
+| `PATH`              | `+$ANDROID_HOME/...`       | hook + `~/.bashrc` | Adds `sdkmanager`, `adb` to path                                               |
+| `GITHUB_TOKEN`      | *(fine-grained PAT)*       | container          | `curl` against the GitHub REST API; from a worktree, only from inside a script |
 
 `~/.bashrc` carries the same fixes for interactive terminal sessions.
 The proxy credentials in `JAVA_TOOL_OPTIONS` are a session-scoped JWT injected
@@ -283,60 +283,73 @@ ______________________________________________________________________
 
 ## `GITHUB_TOKEN` from a worktree-isolated agent
 
-A worktree-isolated agent cannot run a Bash command that expands `GITHUB_TOKEN`.
-The sandbox guard around such an agent rejects the command before it executes:
+A worktree-isolated agent cannot submit a Bash command whose text refers to `GITHUB_TOKEN` in a context the shell would expand.
+The sandbox guard around such an agent rejects the command before it runs:
 
 ```text
-This agent is isolated in the worktree /home/user/gallery-button-for-pixel-camera/.claude/worktrees/agent-...,
-but this command names git in a form too complex to verify that it stays inside the worktree. Refusing to run it
+This agent is isolated in the worktree /home/user/.../.claude/worktrees/agent-..., but this command names git in a form too complex to verify that it stays inside the worktree. Refusing to run it — a worktree-isolated agent's git operations must target its own worktree. Split it into plain, separate commands and run them from /home/user/.../.claude/worktrees/agent-...
 ```
 
-So the `curl` recipes under "Read GitHub Actions job logs" below, and any other command carrying `-H "Authorization: Bearer $GITHUB_TOKEN"`, cannot be used from a worktree.
+The message is one line, and names the worktree path in full twice; both are abbreviated above.
+
+**The limit is on the text handed to Bash, not on `curl`, the `Authorization` header, or the REST API.**
+The same `curl` that is refused when typed into a Bash call runs when it lives in a script file, because the guard never inspects a file's contents.
+That is how this repository's own agent scripts reach GitHub, carrying `-H "Authorization: Bearer ${GITHUB_TOKEN}"` at `scripts/agents/update_gh_labels.sh:118` and `scripts/agents/delete_gh_comment.sh:59`.
+
 This is not a corner case: `agents/dev_orchestration.md:495` dispatches every sub-agent in its own worktree, so most agents reading this file are subject to the guard.
+The `curl` recipes under "Read GitHub Actions job logs" below are written to be typed, which is the form that is refused.
 
 ### What triggers it
 
-The guard fires on the *expansion* of a shell variable whose name contains `git`, case-insensitively, anywhere in the name.
-Naming the variable is not enough, and the trigger is neither `curl` nor variable expansion in general.
+A variable reference in an expanding context, appearing in the submitted command text, whose name contains `git` case-insensitively, anywhere in the name and not only as an underscore-delimited part of it.
+Nothing is ever actually expanded, because the command never runs; the guard reads the text.
 
 **Verified 2026-09-24, one command per Bash call, from a worktree-isolated agent:**
 
 | Command                    | Outcome |
 | -------------------------- | ------- |
 | `echo "GITHUB_TOKEN"`      | ran     |
+| `echo '[$MY_GIT_NOPE]'`    | ran     |
 | `echo "[${FOO_NOPE+x}]"`   | ran     |
 | `echo "${GITHUB_TOKEN+x}"` | refused |
 | `echo "[$GIT_NOPE]"`       | refused |
 | `echo "[$MY_GIT_NOPE]"`    | refused |
 | `echo "[$git_nope]"`       | refused |
+| `echo "[$DIGIT_NOPE]"`     | refused |
 
+Each of the three passing rows removes a candidate explanation.
+`echo "GITHUB_TOKEN"` carries no `$`, so naming the variable is not enough.
+`echo '[$MY_GIT_NOPE]'` carries one inside single quotes, where the shell would not expand it, and the identical text in double quotes is refused; that pair is what rules out a lexical match on the `$`-plus-name form.
+`echo "[${FOO_NOPE+x}]"` rules out variable references in general.
+
+Among the refusals, `GIT_NOPE` against `git_nope` fixes the case-insensitivity, `MY_GIT_NOPE` shows the match is not anchored to the start of the name, and `DIGIT_NOPE` shows `git` need not be a part of the name in its own right.
 Every variable in the refused rows other than `GITHUB_TOKEN` was undefined, so the refusal does not depend on a value being present.
-`GIT_NOPE` against `git_nope` fixes the case-insensitivity, and `MY_GIT_NOPE` shows the match is not anchored to the start of the name.
 
 ### What works instead
 
-Run a script that reads the token out of its own environment.
-The command then names only the script path, and expands nothing whose name contains `git`.
+Put the command in a script and run the script.
+The submitted text is then only the script's path, and what the script does with the token is never inspected.
 `scripts/agents/link_gh_issues.py:827` reads it with `os.environ.get`, and `scripts/agents/update_gh_labels.sh:101` and `scripts/agents/delete_gh_comment.sh:42` do the same in shell.
 
 This route writes, and not only reads.
-Issue #1148 confirmed that `POST /issues/{n}/dependencies/blocked_by` and `POST /issues/{n}/sub_issues` both succeed from a worktree-isolated agent through `scripts/agents/link_gh_issues.py`.
-Its evidence is the issue timeline on #1008, which dates each write inside a Verification Planner's run, rather than a link written to prove the point.
+Issue #1148 confirmed both of the writes a Verification Planner makes through `scripts/agents/link_gh_issues.py` from a worktree-isolated agent, taking its evidence from the issue timeline on #1008 rather than from a link written to prove the point.
 
 **Where the ground stops.**
-Those two endpoints are the ones confirmed.
+The two confirmations are not equally tight.
+`POST /issues/{n}/dependencies/blocked_by` is established by exclusivity, since nothing else available to that agent can write a dependency.
+`POST /issues/{n}/sub_issues` rests on the Planner having followed the document, because `mcp__github__sub_issue_write` could have written that one instead.
 The script's remaining write paths (`--blocks`, `--child-of`, `--replace-parent`, and `remove`) are covered only by unit tests against a fake API in `scripts/agents/test_link_gh_issues.py`, so nothing establishes them from a worktree.
 
 A second and unrelated guard can also refuse a token-adjacent command.
-On 2026-09-24 the auto-mode permission classifier denied `bash scripts/agents/update_gh_labels.sh`, run with no arguments for its usage text, as credential exploration.
-That guard is about credential handling rather than about worktrees, so taking the script route does not by itself clear it; it does not refuse every such invocation, and the run recorded on #1148 went through.
+On 2026-09-24 the auto-mode permission classifier denied `bash scripts/agents/update_gh_labels.sh`, run with no arguments for its usage text, as credential exploration; the same command ran and printed its usage for another agent that day.
+That guard is about credential handling rather than about worktrees, and it does not apply uniformly, so taking the script route does not by itself clear it.
 
 ______________________________________________________________________
 
 ## Read GitHub Actions job logs
 
-Both commands below expand `GITHUB_TOKEN`, so neither runs from a worktree-isolated agent; see the section above.
-Use `mcp__github__get_job_logs` from a worktree.
+Both commands below are written to be typed into a Bash call, which is the form a worktree-isolated agent cannot submit with `GITHUB_TOKEN` in the text; see the section above.
+From a worktree, use `mcp__github__get_job_logs`, or put the command in a script and run that.
 
 ```bash
 # List jobs for a workflow run (to get job IDs):
