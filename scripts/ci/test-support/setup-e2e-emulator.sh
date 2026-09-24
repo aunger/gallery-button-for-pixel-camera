@@ -36,8 +36,12 @@
 #                         before giving up (default: 1200). Raise it if this
 #                         machine is slower than that; the tests lower it.
 #   DEVICE_POLL_INTERVAL  Seconds between those checks (default: 5).
+#   BOOT_TIMEOUT          Seconds to wait, from the device coming online, for
+#                         sys.boot_completed=1 before giving up (default: 600).
+#                         Raise it for the same reason, on the same machine.
+#   BOOT_POLL_INTERVAL    Seconds between those checks (default: 5).
 #   EMULATOR_LOG          Where the emulator's output goes, and what is printed
-#                         when the wait above fails (default: /tmp/emulator.log).
+#                         when either wait above fails (default: /tmp/emulator.log).
 
 set -euo pipefail
 
@@ -218,15 +222,39 @@ if [[ "$POST_BOOT_ONLY" == false ]]; then
     echo "==> Device online."
 
     echo "==> Waiting for full boot (sys.boot_completed=1)..."
-    BOOT_TIMEOUT=180
+    # This is the next bound a developer who has just raised DEVICE_TIMEOUT
+    # meets, so it gives way the same way: from the environment, and named in
+    # the failure that suggests it (issue #1156). A machine slow enough to need
+    # the advice the wait above prints has no reason to reach adbd quickly and
+    # then complete its boot fast.
+    #
+    # 600 is what CI allows the same wait. The "Wait for emulator service
+    # readiness" step of .github/workflows/build.yml puts no bound of its own on
+    # its boot poll; the step's `timeout-minutes: 10` is the whole of it, shared
+    # with the device wait before it and the settings-service wait after it. So
+    # 600 is the most that runner, which has KVM and a warm system image, ever
+    # allows a boot, and a developer's machine should not be held to less.
+    #
+    # The run that pays for the larger bound is one whose emulator will never
+    # finish booting: it now waits 10 minutes to say so rather than 3. The wait
+    # above resolved the same trade the same way.
+    BOOT_TIMEOUT="${BOOT_TIMEOUT:-600}"
+    BOOT_POLL_INTERVAL="${BOOT_POLL_INTERVAL:-5}"
     BOOT_ELAPSED=0
     while [[ "$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" != "1" ]]; do
         if [[ $BOOT_ELAPSED -ge $BOOT_TIMEOUT ]]; then
             echo "ERROR: Emulator did not finish booting within ${BOOT_TIMEOUT}s." >&2
+            echo "       If this machine is just slow to boot an emulator, set" >&2
+            echo "       BOOT_TIMEOUT higher and run again." >&2
+            # A boot that never completes leaves nothing else to go on: the
+            # property this polls is the whole of the device's account of
+            # itself, and the log is where the emulator gives its own.
+            echo "=== $EMULATOR_LOG ===" >&2
+            cat "$EMULATOR_LOG" >&2
             exit 1
         fi
-        sleep 5
-        BOOT_ELAPSED=$((BOOT_ELAPSED + 5))
+        sleep "$BOOT_POLL_INTERVAL"
+        BOOT_ELAPSED=$((BOOT_ELAPSED + BOOT_POLL_INTERVAL))
         echo "  ...waiting ($BOOT_ELAPSED / ${BOOT_TIMEOUT}s)"
     done
     echo "==> Device fully booted."

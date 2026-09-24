@@ -12,10 +12,11 @@
 # Cases (a) to (h) are about resolution, and their stub sdkmanager exits 1: under
 # the script's `set -e` that ends the run at the install line, the first place
 # the resolved directory is invoked rather than merely tested, and short of the
-# emulator launch below it. Cases (i) to (l) are about what happens from the AVD
+# emulator launch below it. Cases (i) to (m) are about what happens from the AVD
 # onwards, so their sdkmanager succeeds and the run goes further. Those cases
-# compress the device wait's bound to seconds and point $EMULATOR_LOG inside the
-# suite's own directory, both through the environment the script reads them from.
+# compress the device and boot waits' bounds to seconds and point $EMULATOR_LOG
+# inside the suite's own directory, both through the environment the script
+# reads them from.
 #
 # Covers:
 #   (a) cmdline-tools/latest/bin holds sdkmanager -> it is the one invoked
@@ -37,7 +38,10 @@
 #       that raises the bound, and the emulator it leaves running (issue #1141)
 #   (k) An emulator that exits during startup is reported as that, at once,
 #       rather than at the bound
-#   (l) A device that does come online carries the run to the end, and a
+#   (l) An emulator that comes online but never finishes booting is given up
+#       on, and that failure names the knob raising its own bound: it is the
+#       next bound a run that raised DEVICE_TIMEOUT meets (issue #1156)
+#   (m) A device that does come online carries the run to the end, and a
 #       successful AVD creation prints nothing
 #
 # Because both binaries are required together, the fixtures install them as a
@@ -69,11 +73,14 @@ trap 'rm -rf "$TMPDIR_TESTS"' EXIT
 # down.
 export INVOKED="$TMPDIR_TESTS/invoked.log"
 
-# The script's device wait is bounded and its bound is overridable, so the cases
-# that exercise it run in seconds rather than the default five minutes. See
-# "Environment" in setup-e2e-emulator.sh.
+# Both waits on the way to a booted emulator are bounded, and both bounds are
+# overridable, so the cases that exercise them run in seconds rather than the
+# script's defaults of 1200s and 600s. See "Environment" in
+# setup-e2e-emulator.sh.
 export DEVICE_TIMEOUT=2
 export DEVICE_POLL_INTERVAL=1
+export BOOT_TIMEOUT=2
+export BOOT_POLL_INTERVAL=1
 
 # Inside the suite's own directory, so no case writes over the emulator log of a
 # real run on the developer's machine.
@@ -135,13 +142,16 @@ make_cmdline_tools() {
 }
 
 make_adb_stub() {
-  # Usage: make_adb_stub <path> <state|error text>
+  # Usage: make_adb_stub <path> <state|error text> [sys.boot_completed value]
   # An adb for the cases that reach the device wait. `get-state` answers as the
   # real one does: "device" on stdout and exit 0 when a device is there, and
   # otherwise nothing on stdout, the given text on stderr as `error: <text>`,
-  # and exit 1. `shell getprop` answers 1, so a case that gets past the wait is
-  # not then held in the boot loop. Everything else succeeds silently.
-  local path="$1" state="$2"
+  # and exit 1. `shell getprop` answers with the given value, which defaults to
+  # 1 so a case that gets past the device wait is not then held in the boot
+  # loop. An empty value is what a real getprop prints for a property that is
+  # not set, and holds the case in that loop instead. Everything else succeeds
+  # silently.
+  local path="$1" state="$2" boot="${3-1}"
   mkdir -p "$(dirname "$path")"
   {
     echo '#!/usr/bin/env bash'
@@ -155,7 +165,7 @@ make_adb_stub() {
     fi
     echo 'fi'
     echo 'if [[ "${1:-}" == "shell" && "${2:-}" == "getprop" ]]; then'
-    echo '  echo 1'
+    printf '  echo %q\n' "$boot"
     echo '  exit 0'
     echo 'fi'
     echo 'exit 0'
@@ -575,18 +585,73 @@ else
   fail "the emulator log was not printed: $OUTPUT"
 fi
 
-# (l) A run in which everything works -----------------------------------------
+# (l) The device comes online but the boot never completes ---------------------
 echo ""
-echo "=== (l) A device that comes online carries the run through to the end ==="
+echo "=== (l) An emulator that never finishes booting is given up on ==="
 
+# The bound a developer who has just raised DEVICE_TIMEOUT meets next, on a
+# machine slow enough to have needed that (issue #1156). Everything up to the
+# boot wait succeeds, and then sys.boot_completed never reads 1 while the
+# emulator stays alive.
 SDK_L="$(new_sdk l)"
-make_stub "$SDK_L/cmdline-tools/latest/bin/sdkmanager" 0
-# Succeeds, but writes to stderr as avdmanager does even when it works.
-make_noisy_stub "$SDK_L/cmdline-tools/latest/bin/avdmanager" \
-  "Warning: this package is obsolete." 0
-make_adb_stub "$SDK_L/platform-tools/adb" "device"
-make_emulator_stub "$SDK_L/emulator/emulator" "emulator: booting" exit
+make_cmdline_tools "$SDK_L/cmdline-tools/latest/bin" 0
+make_adb_stub "$SDK_L/platform-tools/adb" "device" ""
+UNBOOTED_EMULATOR_PID="$TMPDIR_TESTS/unbooted-emulator.pid"
+make_emulator_stub "$SDK_L/emulator/emulator" \
+  "emulator: up, still booting" hang "$UNBOOTED_EMULATOR_PID"
 run_setup "$SDK_L"
+
+if [[ $RC -eq 1 ]]; then
+  pass "the run gives up and exits 1"
+else
+  fail "expected exit 1 (124 means it hung), got $RC: $OUTPUT"
+fi
+
+if grep -qF "ERROR: Emulator did not finish booting within ${BOOT_TIMEOUT}s." <<< "$OUTPUT"; then
+  pass "the failure names the bound it waited out"
+else
+  fail "no boot-timeout message in the failure: $OUTPUT"
+fi
+
+# The bound above is a number, so it tells a developer on a slow machine nothing
+# about how to raise it. This is the knob, and the wait before this one names
+# its own for the same reason.
+if grep -qF "BOOT_TIMEOUT" <<< "$OUTPUT"; then
+  pass "the failure points at the override that raises the bound"
+else
+  fail "the failure does not name BOOT_TIMEOUT: $OUTPUT"
+fi
+
+# A boot that stalls says nothing through the property being polled, so the
+# emulator's own log is all the failure has to offer.
+if grep -qF "emulator: up, still booting" <<< "$OUTPUT"; then
+  pass "the emulator log is printed with the failure"
+else
+  fail "the emulator log was not printed: $OUTPUT"
+fi
+
+# Left running by the script, as a real run leaves it, so the suite reaps it.
+# The stub execs its sleep, so this PID is the sleep's own and the kill reaches
+# it rather than orphaning a child; case (j) asserts that property of the stub.
+UNBOOTED_PID="$(cat "$UNBOOTED_EMULATOR_PID" 2>/dev/null || true)"
+if [[ -n "$UNBOOTED_PID" ]]; then
+  kill "$UNBOOTED_PID" 2>/dev/null || true
+else
+  fail "the unbooted emulator recorded no pid to reap"
+fi
+
+# (m) A run in which everything works -----------------------------------------
+echo ""
+echo "=== (m) A device that comes online carries the run through to the end ==="
+
+SDK_M="$(new_sdk m)"
+make_stub "$SDK_M/cmdline-tools/latest/bin/sdkmanager" 0
+# Succeeds, but writes to stderr as avdmanager does even when it works.
+make_noisy_stub "$SDK_M/cmdline-tools/latest/bin/avdmanager" \
+  "Warning: this package is obsolete." 0
+make_adb_stub "$SDK_M/platform-tools/adb" "device"
+make_emulator_stub "$SDK_M/emulator/emulator" "emulator: booting" exit
+run_setup "$SDK_M"
 
 if [[ $RC -eq 0 ]]; then
   pass "the run completes (exit 0)"
