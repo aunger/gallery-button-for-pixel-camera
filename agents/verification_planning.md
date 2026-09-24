@@ -62,6 +62,22 @@ Decline it when it is either of these:
 A declined item is not discarded.
 The source comment remains the record, as it does for the test above, and step 4a passes the item to step 5, which lists it in the plan comment where a human can overrule you.
 
+### Two follow-on items resting on one fact are one issue
+
+Two items that rest on the same root fact, the same line, the same measurement, or the same bound, are one issue, whoever deferred them and out of whichever review they came.
+File that issue once and carry each finding into it as its own part, rather than a ticket per remark.
+
+You are looking at one root fact when any of these hold:
+
+- the items cite the same line, or the same measurement;
+- one item's answer sets the premise of the other, so that one has to be read first;
+- you are writing the same paragraph into two issues.
+
+The last is the one you can catch yourself doing.
+
+Runs on other PRs file under this rule too, and each has exited by the time the next one starts, so the collecting falls to the run that is filing now.
+Look at the open issues, not only at this PR's list.
+
 ## What to do
 
 1. Read the issue description, PR description, and all comments on both.
@@ -81,7 +97,7 @@ The source comment remains the record, as it does for the test above, and step 4
    Treat those items as decided, carry them into the rebuilt comment in step 5, and file one only if something has happened since that gives it the consequence it lacked.
    Record the comment's id (the numeric id returned by the comments API, not its URL) for use in step 5.
    For each parsed issue ID n, fetch the issue with `mcp__github__issue_read` (method `get`) and record its title.
-   In steps 3 and 4, an item is "already covered" if the title that would be assigned to it by step 3a (for before-merging items) or step 4b (for follow-on items) matches the title of a prior issue.
+   In steps 3 and 4, an item is "already covered" if the title that would be assigned to it by step 3a (for before-merging items) or step 4c (for follow-on items) matches the title of a prior issue.
    If the comment does not exist, proceed with filing all items normally.
    If more than one comment matches, or a match is corrupt in some other way, treat the PR as having none: prefer duplicate comments and duplicate issues over the risk of compounding existing corruption.
 
@@ -115,9 +131,13 @@ The source comment remains the record, as it does for the test above, and step 4
    a. Confirm the item is deferred work rather than a question its source already settled (see "An observation the reviewer closed is not follow-on work" above), and that work would remain if someone picked it up (see "A deferral with no consequence is not follow-on work" above).
    If the source comment declines the work in its own terms, or the item fails the second test, do not file it.
    Move it to a *declined* list, with the URL of its source comment and a one-sentence reason, for step 5 to record and step 6 to report.
-   b. Title the issue simply `{task title}`, without referencing the current PR.
-   c. In the issue description, include a URL to the source comment or description, and state clearly that this issue does **not** block PR #{number} (for example, "This is a follow-on item and does not block merging PR #{number}.").
-   d. If the follow-on cannot be started until this work lands, record it as blocked by **the issue this PR resolves**, with the script sub-step 3c uses:
+   b. Find the item's root fact, and check what already rests on it (see "Two follow-on items resting on one fact are one issue" above).
+   Look in two places: the rest of this list, and the open issues, which you search with `mcp__github__search_issues` over the file, symbol, or number the fact is about.
+   Where another item on this list shares it, file one issue covering both, each finding as its own part, and treat the other item as covered by it.
+   Where an open issue already carries it, do not file a second: add a comment to that issue naming the new finding, the URL of its source comment, and the fact the two share, then read "the new issue" in the sub-steps below as that issue.
+   c. Title the issue simply `{task title}`, without referencing the current PR.
+   d. In the issue description, include a URL to the source comment or description, and state clearly that this issue does **not** block PR #{number} (for example, "This is a follow-on item and does not block merging PR #{number}.").
+   e. If the follow-on cannot be started until this work lands, record it as blocked by **the issue this PR resolves**, with the script sub-step 3c uses:
    `scripts/agents/link_gh_issues.py add {owner} {repo} {follow-on issue number} --blocked-by {parent issue number}`
    GitHub dependency links don't allow a PR on either side, so the issue stands in for it.
    Otherwise, or if this PR resolves no issue, leave the issue unlinked.
@@ -164,5 +184,5 @@ The source comment remains the record, as it does for the test above, and step 4
 - Do not modify source files.
 - Do not commit or push anything.
 - Do not apply or remove any label.
-- Limit your reading to the issue, PR, and project test infrastructure references.
-- The only repository-changing actions you take are filing the tracking issues described above, linking them to the PR, and posting the verification-plan comment on the PR.
+- Limit your reading to the issue, PR, project test infrastructure references, and a search of the open issues for one that already rests on a fact you are about to file (sub-step 4b).
+- The only repository-changing actions you take are filing the tracking issues described above, commenting a finding onto an existing issue that already carries its root fact (sub-step 4b), linking them to the PR, and posting the verification-plan comment on the PR.
