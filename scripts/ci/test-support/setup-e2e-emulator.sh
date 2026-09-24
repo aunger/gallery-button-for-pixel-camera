@@ -38,7 +38,8 @@
 #   DEVICE_POLL_INTERVAL  Seconds between those checks (default: 5).
 #   BOOT_TIMEOUT          Seconds to wait, from the device coming online, for
 #                         sys.boot_completed=1 before giving up (default: 600).
-#                         Raise it for the same reason, on the same machine.
+#                         Raise it for the same reason, on the same machine;
+#                         the tests lower it too.
 #   BOOT_POLL_INTERVAL    Seconds between those checks (default: 5).
 #   EMULATOR_LOG          Where the emulator's output goes, and what is printed
 #                         when either wait above fails (default: /tmp/emulator.log).
@@ -273,7 +274,7 @@ if [[ "$POST_BOOT_ONLY" == false ]]; then
         fi
         sleep "$BOOT_POLL_INTERVAL"
         BOOT_ELAPSED=$((BOOT_ELAPSED + BOOT_POLL_INTERVAL))
-        echo "  ...waiting ($BOOT_ELAPSED / ${BOOT_TIMEOUT}s)"
+        echo "  ...waiting for boot ($BOOT_ELAPSED / ${BOOT_TIMEOUT}s)"
     done
     echo "==> Device fully booted."
 fi

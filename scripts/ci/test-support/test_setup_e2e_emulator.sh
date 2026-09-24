@@ -647,6 +647,19 @@ fi
 UNBOOTED_PID="$(cat "$UNBOOTED_EMULATOR_PID" 2>/dev/null || true)"
 if [[ -n "$UNBOOTED_PID" ]]; then
   kill "$UNBOOTED_PID" 2>/dev/null || true
+  UNBOOTED_REAPED=false
+  for _ in $(seq 1 25); do
+    if ! kill -0 "$UNBOOTED_PID" 2>/dev/null; then
+      UNBOOTED_REAPED=true
+      break
+    fi
+    sleep 0.2
+  done
+  if [[ "$UNBOOTED_REAPED" == true ]]; then
+    pass "the unbooted emulator is gone once killed"
+  else
+    fail "the unbooted emulator survived the kill (pid $UNBOOTED_PID)"
+  fi
 else
   fail "the unbooted emulator recorded no pid to reap"
 fi
