@@ -35,12 +35,14 @@
 #       emulator for the AVD it did not create (issue #1141)
 #   (j) An emulator that never produces a device is given up on, rather than
 #       waited for forever. The failure carries adb's account of why, the knob
-#       that raises the bound, and the emulator it leaves running (issue #1141)
+#       that raises the bound, and the emulator it leaves running (issue #1141).
+#       The wait polls at the interval the environment set, not a fixed one
 #   (k) An emulator that exits during startup is reported as that, at once,
 #       rather than at the bound
 #   (l) An emulator that comes online but never finishes booting is given up
 #       on, and that failure names the knob raising its own bound: it is the
-#       next bound a run that raised DEVICE_TIMEOUT meets (issue #1156)
+#       next bound a run that raised DEVICE_TIMEOUT meets (issue #1156). This
+#       wait, too, polls at the interval the environment set
 #   (m) An emulator that exits while booting is reported as that, at once,
 #       rather than at the boot bound
 #   (n) A device that does come online carries the run to the end, and a
@@ -511,6 +513,17 @@ else
   fail "the failure does not name DEVICE_TIMEOUT: $OUTPUT"
 fi
 
+# Nothing above would notice the loop ignoring DEVICE_POLL_INTERVAL: a
+# hardcoded sleep reaches the same bound and prints every message asserted so
+# far, so the documented knob could stop working with the suite still green.
+# The progress line is where the two differ, because a 5-second step never
+# prints a first second.
+if grep -qF "...waiting for device (1 / ${DEVICE_TIMEOUT}s)" <<< "$OUTPUT"; then
+  pass "the wait polls at the interval DEVICE_POLL_INTERVAL set"
+else
+  fail "DEVICE_POLL_INTERVAL was not honoured: $OUTPUT"
+fi
+
 # The emulator outlives the script here, so the failure has to say so: the next
 # run's `avdmanager create avd --force` would rewrite the AVD underneath it.
 if grep -qE "still running as PID [0-9]+" <<< "$OUTPUT"; then
@@ -630,6 +643,15 @@ if grep -qF "emulator: up, still booting" <<< "$OUTPUT"; then
   pass "the emulator log is printed with the failure"
 else
   fail "the emulator log was not printed: $OUTPUT"
+fi
+
+# As in case (j), and for the same reason: with a hardcoded sleep this case
+# still reaches the bound and still prints every message asserted above, so
+# only the progress line tells a read interval from an ignored one.
+if grep -qF "...waiting for boot (1 / ${BOOT_TIMEOUT}s)" <<< "$OUTPUT"; then
+  pass "the wait polls at the interval BOOT_POLL_INTERVAL set"
+else
+  fail "BOOT_POLL_INTERVAL was not honoured: $OUTPUT"
 fi
 
 # The emulator outlives this failure as it outlives the device wait's, so the
