@@ -1,18 +1,21 @@
 #!/usr/bin/env bash
 # test_setup_e2e_emulator.sh: Shell-based tests for setup-e2e-emulator.sh's
-# resolution of the Android command-line tools.
+# resolution of the Android command-line tools, and for the failures it reports
+# on the way to a running emulator.
 #
 # The script calls sdkmanager and avdmanager by absolute path, out of one
 # CMDLINE_TOOLS directory it resolves once. These tests run it against a
-# fabricated SDK tree whose command-line tools are stubs that record their own
-# path, so each case can assert which directory was used. adb and the emulator
-# are stubbed too, but silently: only the tools under test are recorded.
+# fabricated SDK tree whose command-line tools and emulator are stubs that
+# record their own path, so each case can assert what ran and from where. adb is
+# stubbed silently, since the post-boot steps call it dozens of times.
 #
-# The stub sdkmanager exits 1, which under the script's `set -e` ends the run at
-# the install line, the first place the resolved directory is invoked rather
-# than merely tested. That keeps the full-setup cases from reaching the emulator
-# launch a few lines later, so no case here starts a process or writes an
-# emulator log.
+# Cases (a) to (h) are about resolution, and their stub sdkmanager exits 1: under
+# the script's `set -e` that ends the run at the install line, the first place
+# the resolved directory is invoked rather than merely tested, and short of the
+# emulator launch below it. Cases (i) to (l) are about what happens from the AVD
+# onwards, so their sdkmanager succeeds and the run goes further. Those cases
+# compress the device wait's bound to seconds and point $EMULATOR_LOG inside the
+# suite's own directory, both through the environment the script reads them from.
 #
 # Covers:
 #   (a) cmdline-tools/latest/bin holds sdkmanager -> it is the one invoked
@@ -22,11 +25,23 @@
 #   (e) Neither directory present -> the script's guard names both candidates
 #       and the withdrawn tools/bin is neither invoked nor named (issue #1127)
 #   (f) --post-boot, the form CI invokes, touches no command-line tool at all,
-#       so the guard in (e) cannot reach a CI run
+#       so the guards in (e) and (g) cannot reach a CI run
+#   (g) sdkmanager resolved but no avdmanager beside it -> refused by a guard of
+#       its own, ahead of the install line (issue #1141)
+#   (h) An avdmanager in the candidate directory the resolution did not choose
+#       does not rescue that run: both binaries come from one directory
+#   (i) A failing avdmanager ends the run, keeps its message, and starts no
+#       emulator for the AVD it did not create (issue #1141)
+#   (j) An emulator that never produces a device is given up on, rather than
+#       waited for forever. The failure carries adb's account of why, the knob
+#       that raises the bound, and the emulator it leaves running (issue #1141)
+#   (k) An emulator that exits during startup is reported as that, at once,
+#       rather than at the bound
+#   (l) A device that does come online carries the run to the end, and a
+#       successful AVD creation prints nothing
 #
-# Limits: avdmanager is read out of the same resolved CMDLINE_TOOLS on the line
-# after sdkmanager and is not separately exercised, because reaching it means
-# letting the run continue into starting the emulator.
+# Because both binaries are required together, the fixtures install them as a
+# pair, except where a case is about one of them being absent.
 #
 # Always exits 0 on success, non-zero on failure.
 
@@ -54,6 +69,16 @@ trap 'rm -rf "$TMPDIR_TESTS"' EXIT
 # down.
 export INVOKED="$TMPDIR_TESTS/invoked.log"
 
+# The script's device wait is bounded and its bound is overridable, so the cases
+# that exercise it run in seconds rather than the default five minutes. See
+# "Environment" in setup-e2e-emulator.sh.
+export DEVICE_TIMEOUT=2
+export DEVICE_POLL_INTERVAL=1
+
+# Inside the suite's own directory, so no case writes over the emulator log of a
+# real run on the developer's machine.
+export EMULATOR_LOG="$TMPDIR_TESTS/emulator.log"
+
 make_stub() {
   # Usage: make_stub <path> <exit-code>
   # A stub that records its own path in $INVOKED before exiting.
@@ -70,12 +95,97 @@ make_stub() {
 make_quiet_stub() {
   # Usage: make_quiet_stub <path>
   # A stub that succeeds without recording. adb is called dozens of times by the
-  # post-boot steps and the emulator once; recording either would drown out the
-  # command-line tool invocations these tests assert on.
+  # post-boot steps, and recording those would drown out the invocations these
+  # tests assert on. The emulator records, since it runs at most once and
+  # whether it ran is the thing several cases are about.
   local path="$1"
   mkdir -p "$(dirname "$path")"
   {
     echo '#!/usr/bin/env bash'
+    echo 'exit 0'
+  } > "$path"
+  chmod +x "$path"
+}
+
+make_noisy_stub() {
+  # Usage: make_noisy_stub <path> <stderr text> <exit code>
+  # Records like make_stub, and writes <stderr text> to stderr before exiting.
+  # avdmanager reports what went wrong there, so a case can assert that the text
+  # reached the developer instead of /dev/null.
+  local path="$1" message="$2" code="$3"
+  mkdir -p "$(dirname "$path")"
+  {
+    echo '#!/usr/bin/env bash'
+    echo 'echo "$0" >> "$INVOKED"'
+    printf 'echo %q >&2\n' "$message"
+    echo "exit $code"
+  } > "$path"
+  chmod +x "$path"
+}
+
+make_cmdline_tools() {
+  # Usage: make_cmdline_tools <directory> [exit code]
+  # A command-line tools directory as an install leaves it: sdkmanager and
+  # avdmanager together. Both record, so a case can assert that avdmanager was
+  # not reached as well as which sdkmanager ran. The default exit code is 1,
+  # which ends a full-setup run at the install line.
+  local dir="$1" code="${2:-1}"
+  make_stub "$dir/sdkmanager" "$code"
+  make_stub "$dir/avdmanager" "$code"
+}
+
+make_adb_stub() {
+  # Usage: make_adb_stub <path> <state|error text>
+  # An adb for the cases that reach the device wait. `get-state` answers as the
+  # real one does: "device" on stdout and exit 0 when a device is there, and
+  # otherwise nothing on stdout, the given text on stderr as `error: <text>`,
+  # and exit 1. `shell getprop` answers 1, so a case that gets past the wait is
+  # not then held in the boot loop. Everything else succeeds silently.
+  local path="$1" state="$2"
+  mkdir -p "$(dirname "$path")"
+  {
+    echo '#!/usr/bin/env bash'
+    echo 'if [[ "${1:-}" == "get-state" ]]; then'
+    if [[ "$state" == "device" ]]; then
+      echo '  echo device'
+      echo '  exit 0'
+    else
+      printf '  echo %q >&2\n' "error: $state"
+      echo '  exit 1'
+    fi
+    echo 'fi'
+    echo 'if [[ "${1:-}" == "shell" && "${2:-}" == "getprop" ]]; then'
+    echo '  echo 1'
+    echo '  exit 0'
+    echo 'fi'
+    echo 'exit 0'
+  } > "$path"
+  chmod +x "$path"
+}
+
+make_emulator_stub() {
+  # Usage: make_emulator_stub <path> <log line> <exit|hang> [pid file]
+  # An emulator that records, then writes <log line> to stdout, which the script
+  # redirects into $EMULATOR_LOG; a case can then assert that the log reached
+  # the failure message. `exit` leaves at once. `hang` stays up without ever
+  # producing a device, and writes its PID to <pid file> so the case can reap
+  # it: the script leaves it running when it gives up, as a real run would.
+  #
+  # `hang` execs its sleep instead of running it as a child. The PID recorded
+  # here is this wrapper's, which is also the PID the script under test holds as
+  # EMULATOR_PID. A child sleep would survive a kill aimed at the wrapper and be
+  # reparented to init, one orphan per run; exec makes that PID the sleep's own,
+  # so the kill reaches it.
+  local path="$1" line="$2" mode="$3" pidfile="${4:-}"
+  mkdir -p "$(dirname "$path")"
+  {
+    echo '#!/usr/bin/env bash'
+    echo 'echo "$0" >> "$INVOKED"'
+    printf 'echo %q\n' "$line"
+    if [[ "$mode" == "hang" ]]; then
+      printf 'echo $$ > %q\n' "$pidfile"
+      echo 'exec sleep 120'
+    fi
     echo 'exit 0'
   } > "$path"
   chmod +x "$path"
@@ -90,7 +200,7 @@ new_sdk() {
   # would share one tree.
   local sdk="$TMPDIR_TESTS/sdk-$1"
   make_quiet_stub "$sdk/platform-tools/adb"
-  make_quiet_stub "$sdk/emulator/emulator"
+  make_stub "$sdk/emulator/emulator" 0
   make_stub "$sdk/tools/bin/sdkmanager" 1
   make_stub "$sdk/tools/bin/avdmanager" 1
   echo "$sdk"
@@ -102,9 +212,15 @@ run_setup() {
   local sdk="$1"
   shift
   : > "$INVOKED"
+  : > "$EMULATOR_LOG"
   RC=0
-  OUTPUT="$(ANDROID_HOME="$sdk" bash "$SETUP" "$@" 2>&1)" || RC=$?
+  # Bounded, because what this suite tests is a script that used to wait for a
+  # device forever. A case that regains that behavior should fail the run, not
+  # hang the job; `timeout` reports 124, which no assertion here accepts.
+  OUTPUT="$(ANDROID_HOME="$sdk" timeout 60 bash "$SETUP" "$@" 2>&1)" || RC=$?
 }
+
+emulator_started() { grep -qF "/emulator/emulator" "$INVOKED"; }
 
 invocations() { cat "$INVOKED"; }
 
@@ -113,8 +229,8 @@ echo ""
 echo "=== (a) sdkmanager in cmdline-tools/latest/bin is the one invoked ==="
 
 SDK_A="$(new_sdk a)"
-make_stub "$SDK_A/cmdline-tools/latest/bin/sdkmanager" 1
-make_stub "$SDK_A/cmdline-tools/bin/sdkmanager" 1
+make_cmdline_tools "$SDK_A/cmdline-tools/latest/bin"
+make_cmdline_tools "$SDK_A/cmdline-tools/bin"
 run_setup "$SDK_A"
 
 if [[ "$(invocations)" == "$SDK_A/cmdline-tools/latest/bin/sdkmanager" ]]; then
@@ -128,7 +244,7 @@ echo ""
 echo "=== (b) Without cmdline-tools/latest, cmdline-tools/bin is used ==="
 
 SDK_B="$(new_sdk b)"
-make_stub "$SDK_B/cmdline-tools/bin/sdkmanager" 1
+make_cmdline_tools "$SDK_B/cmdline-tools/bin"
 run_setup "$SDK_B"
 
 if [[ "$(invocations)" == "$SDK_B/cmdline-tools/bin/sdkmanager" ]]; then
@@ -143,7 +259,7 @@ echo "=== (c) An empty cmdline-tools/latest falls back to cmdline-tools/bin ==="
 
 SDK_C="$(new_sdk c)"
 mkdir -p "$SDK_C/cmdline-tools/latest/bin"
-make_stub "$SDK_C/cmdline-tools/bin/sdkmanager" 1
+make_cmdline_tools "$SDK_C/cmdline-tools/bin"
 run_setup "$SDK_C"
 
 if [[ "$(invocations)" == "$SDK_C/cmdline-tools/bin/sdkmanager" ]]; then
@@ -237,6 +353,259 @@ if [[ -s "$INVOKED" ]]; then
   fail "--post-boot invoked a command-line tool: $(invocations)"
 else
   pass "no sdkmanager or avdmanager invoked"
+fi
+
+# (g) sdkmanager resolved, no avdmanager beside it ----------------------------
+echo ""
+echo "=== (g) sdkmanager without avdmanager is refused before anything runs ==="
+
+SDK_G="$(new_sdk g)"
+make_stub "$SDK_G/cmdline-tools/latest/bin/sdkmanager" 1
+run_setup "$SDK_G"
+
+if [[ $RC -eq 1 ]]; then
+  pass "the run exits 1"
+else
+  fail "expected exit 1, got $RC: $OUTPUT"
+fi
+
+if grep -qF "ERROR: avdmanager not found" <<< "$OUTPUT"; then
+  pass "the guard names avdmanager as the missing binary"
+else
+  fail "no avdmanager guard message in the failure: $OUTPUT"
+fi
+
+if grep -qF "$SDK_G/cmdline-tools/latest/bin" <<< "$OUTPUT"; then
+  pass "the failure names the directory the resolution chose"
+else
+  fail "the failure does not name the resolved directory: $OUTPUT"
+fi
+
+# The guard sits ahead of the install line, so a run that cannot create an AVD
+# does not first spend a system-image download finding that out.
+if [[ -s "$INVOKED" ]]; then
+  fail "a command-line tool ran before the guard fired: $(invocations)"
+else
+  pass "no sdkmanager invocation: the guard precedes the install"
+fi
+
+# (h) avdmanager only in the candidate that was not chosen --------------------
+echo ""
+echo "=== (h) avdmanager in the unresolved candidate does not rescue the run ==="
+
+# sdkmanager resolves to cmdline-tools/latest/bin, and the only avdmanager sits
+# in cmdline-tools/bin. Issue #1133 settled that one resolved directory serves
+# both binaries, so this is still a failure and not a second fallback.
+SDK_H="$(new_sdk h)"
+make_stub "$SDK_H/cmdline-tools/latest/bin/sdkmanager" 1
+make_stub "$SDK_H/cmdline-tools/bin/avdmanager" 1
+run_setup "$SDK_H"
+
+if [[ $RC -eq 1 ]] && grep -qF "ERROR: avdmanager not found" <<< "$OUTPUT"; then
+  pass "the guard still fires (exit $RC)"
+else
+  fail "expected the avdmanager guard to fire, got exit $RC: $OUTPUT"
+fi
+
+if [[ -s "$INVOKED" ]]; then
+  fail "a command-line tool ran: $(invocations)"
+else
+  pass "the avdmanager in cmdline-tools/bin was not reached for"
+fi
+
+# (i) A failing avdmanager is reported, not discarded -------------------------
+echo ""
+echo "=== (i) A failing avdmanager ends the run and keeps its message ==="
+
+SDK_I="$(new_sdk i)"
+make_stub "$SDK_I/cmdline-tools/latest/bin/sdkmanager" 0
+make_noisy_stub "$SDK_I/cmdline-tools/latest/bin/avdmanager" \
+  "Error: Package path is not valid." 1
+run_setup "$SDK_I"
+
+if [[ $RC -eq 1 ]]; then
+  pass "the run exits 1"
+else
+  fail "expected exit 1, got $RC: $OUTPUT"
+fi
+
+if grep -qF "Error: Package path is not valid." <<< "$OUTPUT"; then
+  pass "avdmanager's own stderr reaches the developer"
+else
+  fail "avdmanager's stderr was discarded: $OUTPUT"
+fi
+
+if grep -qF "ERROR: avdmanager could not create the AVD" <<< "$OUTPUT"; then
+  pass "the script names the step that failed"
+else
+  fail "no diagnosis of the failed step: $OUTPUT"
+fi
+
+# The point of the issue: the run used to continue from here and wait forever
+# for a device belonging to an AVD that was never created.
+if emulator_started; then
+  fail "the emulator was started although AVD creation failed: $(invocations)"
+else
+  pass "no emulator started after a failed AVD creation"
+fi
+
+# (j) The device never arrives -------------------------------------------------
+echo ""
+echo "=== (j) An emulator that never produces a device is given up on ==="
+
+# Everything up to the wait succeeds, and then no device ever appears while the
+# emulator stays alive. This is the shape the unbounded `adb wait-for-device`
+# used to block on forever (issue #1141).
+SDK_J="$(new_sdk j)"
+make_cmdline_tools "$SDK_J/cmdline-tools/latest/bin" 0
+make_adb_stub "$SDK_J/platform-tools/adb" "more than one device/emulator"
+HANGING_EMULATOR_PID="$TMPDIR_TESTS/hanging-emulator.pid"
+make_emulator_stub "$SDK_J/emulator/emulator" \
+  "emulator: up, no device" hang "$HANGING_EMULATOR_PID"
+run_setup "$SDK_J"
+
+if [[ $RC -eq 1 ]]; then
+  pass "the run gives up and exits 1"
+else
+  fail "expected exit 1 (124 means it hung), got $RC: $OUTPUT"
+fi
+
+if grep -qF "ERROR: No device came online within ${DEVICE_TIMEOUT}s." <<< "$OUTPUT"; then
+  pass "the failure names the bound it waited out"
+else
+  fail "no timeout message in the failure: $OUTPUT"
+fi
+
+if grep -qF "emulator: up, no device" <<< "$OUTPUT"; then
+  pass "the emulator log is printed with the failure"
+else
+  fail "the emulator log was not printed: $OUTPUT"
+fi
+
+# What adb says is the difference between a device that has not booted yet and
+# one the script can never single out. The poll discards it to read the state,
+# so the failure asks again.
+if grep -qF "error: more than one device/emulator" <<< "$OUTPUT"; then
+  pass "adb's own account of why it saw no device is printed"
+else
+  fail "adb's message was not printed: $OUTPUT"
+fi
+
+# A machine slower than the bound is the one case this wait newly fails, so the
+# failure has to name the knob that accommodates it.
+if grep -qF "DEVICE_TIMEOUT" <<< "$OUTPUT"; then
+  pass "the failure points at the override that raises the bound"
+else
+  fail "the failure does not name DEVICE_TIMEOUT: $OUTPUT"
+fi
+
+# The emulator outlives the script here, so the failure has to say so: the next
+# run's `avdmanager create avd --force` would rewrite the AVD underneath it.
+if grep -qE "still running as PID [0-9]+" <<< "$OUTPUT"; then
+  pass "the surviving emulator is named, with its PID"
+else
+  fail "the failure does not say the emulator is still running: $OUTPUT"
+fi
+
+# The script leaves the emulator running when it gives up, as a real run does,
+# so the suite reaps it.
+HANGING_PID="$(cat "$HANGING_EMULATOR_PID" 2>/dev/null || true)"
+if [[ -n "$HANGING_PID" ]]; then
+  # Asserted while it is still alive, because killing the recorded PID only
+  # cleans up if that PID is the whole stub. The stub execs its sleep for
+  # exactly this reason: run as a child instead, the sleep survives a kill
+  # aimed at its parent and is reparented to init, one orphan per run of this
+  # file, which no check on the recorded PID alone would ever notice.
+  ORPHANS="$(pgrep -P "$HANGING_PID" 2>/dev/null || true)"
+  if [[ -z "$ORPHANS" ]]; then
+    pass "the hanging emulator holds no child that a kill would orphan"
+  else
+    fail "killing the hanging emulator would orphan: $(tr '\n' ' ' <<< "$ORPHANS")"
+  fi
+
+  kill "$HANGING_PID" 2>/dev/null || true
+  REAPED=false
+  for _ in $(seq 1 25); do
+    if ! kill -0 "$HANGING_PID" 2>/dev/null; then
+      REAPED=true
+      break
+    fi
+    sleep 0.2
+  done
+  if [[ "$REAPED" == true ]]; then
+    pass "the hanging emulator is gone once killed"
+  else
+    fail "the hanging emulator survived the kill (pid $HANGING_PID)"
+  fi
+else
+  fail "the hanging emulator recorded no pid to reap"
+fi
+
+# (k) The emulator exits during startup ---------------------------------------
+echo ""
+echo "=== (k) An emulator that exits is reported without waiting out the bound ==="
+
+SDK_K="$(new_sdk k)"
+make_cmdline_tools "$SDK_K/cmdline-tools/latest/bin" 0
+make_adb_stub "$SDK_K/platform-tools/adb" "no devices/emulators found"
+make_emulator_stub "$SDK_K/emulator/emulator" "emulator: PANIC: no KVM" exit
+
+# Far beyond run_setup's own 60s bound, so a run that reaches this failure by
+# waiting out the clock cannot pass: only the liveness check can end it in time.
+DEVICE_TIMEOUT_SAVED="$DEVICE_TIMEOUT"
+export DEVICE_TIMEOUT=600
+run_setup "$SDK_K"
+export DEVICE_TIMEOUT="$DEVICE_TIMEOUT_SAVED"
+
+if [[ $RC -eq 1 ]]; then
+  pass "the run exits 1 long before the 600s bound"
+else
+  fail "expected exit 1 (124 means it waited), got $RC: $OUTPUT"
+fi
+
+if grep -qF "ERROR: The emulator exited before a device came online." <<< "$OUTPUT"; then
+  pass "the failure names the dead emulator, not a timeout"
+else
+  fail "no emulator-exited message in the failure: $OUTPUT"
+fi
+
+if grep -qF "emulator: PANIC: no KVM" <<< "$OUTPUT"; then
+  pass "the emulator log carries the reason"
+else
+  fail "the emulator log was not printed: $OUTPUT"
+fi
+
+# (l) A run in which everything works -----------------------------------------
+echo ""
+echo "=== (l) A device that comes online carries the run through to the end ==="
+
+SDK_L="$(new_sdk l)"
+make_stub "$SDK_L/cmdline-tools/latest/bin/sdkmanager" 0
+# Succeeds, but writes to stderr as avdmanager does even when it works.
+make_noisy_stub "$SDK_L/cmdline-tools/latest/bin/avdmanager" \
+  "Warning: this package is obsolete." 0
+make_adb_stub "$SDK_L/platform-tools/adb" "device"
+make_emulator_stub "$SDK_L/emulator/emulator" "emulator: booting" exit
+run_setup "$SDK_L"
+
+if [[ $RC -eq 0 ]]; then
+  pass "the run completes (exit 0)"
+else
+  fail "expected exit 0, got $RC: $OUTPUT"
+fi
+
+if grep -qF "==> Device online." <<< "$OUTPUT"; then
+  pass "the device wait passes rather than bounding a working run"
+else
+  fail "the device wait did not complete: $OUTPUT"
+fi
+
+# The captured stderr is the replacement for `2>/dev/null`, so a successful
+# creation must still say nothing.
+if grep -qF "Warning: this package is obsolete." <<< "$OUTPUT"; then
+  fail "avdmanager's stderr was printed although it succeeded: $OUTPUT"
+else
+  pass "a successful AVD creation stays quiet"
 fi
 
 # Summary ----------------------------------------------------------------------

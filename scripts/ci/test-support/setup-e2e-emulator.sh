@@ -27,8 +27,17 @@
 #
 # Prerequisites:
 #   - ANDROID_HOME (or ANDROID_SDK_ROOT) must be set
-#   - For full setup: sdkmanager and avdmanager, in
+#   - For full setup: sdkmanager and avdmanager, together in whichever of
 #     $ANDROID_HOME/cmdline-tools/latest/bin or $ANDROID_HOME/cmdline-tools/bin
+#     is used; both are read out of the one directory resolved below
+#
+# Environment:
+#   DEVICE_TIMEOUT        Seconds to wait for the emulator to appear on adb
+#                         before giving up (default: 1200). Raise it if this
+#                         machine is slower than that; the tests lower it.
+#   DEVICE_POLL_INTERVAL  Seconds between those checks (default: 5).
+#   EMULATOR_LOG          Where the emulator's output goes, and what is printed
+#                         when the wait above fails (default: /tmp/emulator.log).
 
 set -euo pipefail
 
@@ -63,9 +72,15 @@ fi
 # can obtain it now. An SDK that acquired it before the withdrawal still has the
 # directory, and this deliberately stops reaching for it: `tools/bin` is a dead
 # end for anyone setting a machine up today.
-CMDLINE_TOOLS="$ANDROID_SDK/cmdline-tools/latest/bin"
+#
+# The candidates are named once here because the guard below reports them back
+# to the developer, and a message built from these variables cannot drift from
+# the resolution it describes.
+CMDLINE_TOOLS_LATEST="$ANDROID_SDK/cmdline-tools/latest/bin"
+CMDLINE_TOOLS_UNZIPPED="$ANDROID_SDK/cmdline-tools/bin"
+CMDLINE_TOOLS="$CMDLINE_TOOLS_LATEST"
 if [[ ! -x "$CMDLINE_TOOLS/sdkmanager" ]]; then
-    CMDLINE_TOOLS="$ANDROID_SDK/cmdline-tools/bin"
+    CMDLINE_TOOLS="$CMDLINE_TOOLS_UNZIPPED"
 fi
 
 # Step 1-3: AVD creation and emulator start (local only)-------------------
@@ -77,9 +92,23 @@ if [[ "$POST_BOOT_ONLY" == false ]]; then
     # beside the resolution because --post-boot runs, which is how CI invokes
     # this script, need no command-line tools at all.
     if [[ ! -x "$CMDLINE_TOOLS/sdkmanager" ]]; then
-        echo "ERROR: sdkmanager not found in $ANDROID_SDK/cmdline-tools/latest/bin" >&2
-        echo "       or $ANDROID_SDK/cmdline-tools/bin." >&2
+        echo "ERROR: sdkmanager not found in $CMDLINE_TOOLS_LATEST" >&2
+        echo "       or $CMDLINE_TOOLS_UNZIPPED." >&2
         echo "       Install the Android SDK Command-line Tools, or pass --post-boot" >&2
+        echo "       to skip AVD creation on an emulator that is already running." >&2
+        exit 1
+    fi
+
+    # The resolution keys on sdkmanager, so nothing so far has looked for
+    # avdmanager. Both binaries ship in the same package and are read out of the
+    # one resolved directory, so one without the other is a damaged install and
+    # worth naming as that. Left to the create line below it would arrive as a
+    # bash "command not found" (127, or 126 where the file is there without its
+    # execute bit, which `-x` rejects too) inside that command's captured
+    # stderr, after a system-image download the run has no use for (issue #1141).
+    if [[ ! -x "$CMDLINE_TOOLS/avdmanager" ]]; then
+        echo "ERROR: avdmanager not found beside sdkmanager in $CMDLINE_TOOLS." >&2
+        echo "       Reinstall the Android SDK Command-line Tools, or pass --post-boot" >&2
         echo "       to skip AVD creation on an emulator that is already running." >&2
         exit 1
     fi
@@ -92,14 +121,31 @@ if [[ "$POST_BOOT_ONLY" == false ]]; then
     "$CMDLINE_TOOLS/sdkmanager" --install "$SYSTEM_IMAGE" "platform-tools" "emulator"
 
     echo "==> Creating AVD: $AVD_NAME"
-    echo "no" | "$CMDLINE_TOOLS/avdmanager" create avd \
+    # `--force` is what makes a re-run idempotent: it overwrites an existing AVD
+    # rather than refusing to create one. That overwrite is the only case the
+    # discarded exit status here was written for, so nothing else it was hiding
+    # is worth hiding, and a non-zero exit now ends the run (issue #1141).
+    #
+    # avdmanager writes progress and package warnings to stderr even when it
+    # succeeds, so the stream is captured rather than left on the terminal. A
+    # successful run is as quiet as `2>/dev/null` made it, and a failing one
+    # gets the diagnosis that redirection threw away along with the failure.
+    AVD_CREATE_LOG="$(mktemp)"
+    if ! echo "no" | "$CMDLINE_TOOLS/avdmanager" create avd \
         --name "$AVD_NAME" \
         --package "$SYSTEM_IMAGE" \
         --device "pixel_6" \
-        --force 2>/dev/null || true   # --force overwrites existing AVD (idempotent)
+        --force 2>"$AVD_CREATE_LOG"; then
+        echo "ERROR: avdmanager could not create the AVD $AVD_NAME." >&2
+        cat "$AVD_CREATE_LOG" >&2
+        rm -f "$AVD_CREATE_LOG"
+        exit 1
+    fi
+    rm -f "$AVD_CREATE_LOG"
 
     echo "==> Starting emulator headlessly"
     EMULATOR="$ANDROID_SDK/emulator/emulator"
+    EMULATOR_LOG="${EMULATOR_LOG:-/tmp/emulator.log}"
     nohup "$EMULATOR" \
         -avd "$AVD_NAME" \
         -no-window \
@@ -107,12 +153,69 @@ if [[ "$POST_BOOT_ONLY" == false ]]; then
         -no-boot-anim \
         -gpu swiftshader_indirect \
         -memory 2048 \
-        > /tmp/emulator.log 2>&1 &
+        > "$EMULATOR_LOG" 2>&1 &
     EMULATOR_PID=$!
     echo "Emulator PID: $EMULATOR_PID"
 
+    # `adb wait-for-device` blocks with no bound, which made this the one step in
+    # the sequence that could not give up: the boot and package-manager loops
+    # below both do. Polling `get-state` for the condition wait-for-device waits
+    # on keeps the shape of those loops and needs no `timeout` binary, which is
+    # not on every developer's machine. CI bounds its own wait-for-device
+    # separately, in the "Wait for emulator service readiness" step of
+    # .github/workflows/build.yml.
+    #
+    # An emulator that dies during startup (no KVM, a corrupt AVD) is reported as
+    # soon as its process is gone rather than at the bound, since nothing is
+    # gained by waiting out a clock for a process that has already left. That is
+    # the check the workflow's "Start emulator" step makes on the same emulator
+    # binary. Either way the log holds the reason, so it is printed alongside.
     echo "==> Waiting for device to come online..."
-    "$ADB" wait-for-device
+    # 1200 is what the "Wait for emulator service readiness" step of
+    # .github/workflows/build.yml already allows this same wait, against an
+    # emulator it has just launched. That runner has KVM and a warm system
+    # image, and a developer's machine may have neither, so the local bound
+    # should not be the tighter of the two. This converts a wait that never gave
+    # up into one that does, and a slow first boot succeeding slowly is the case
+    # that a smaller number would newly break.
+    DEVICE_TIMEOUT="${DEVICE_TIMEOUT:-1200}"
+    DEVICE_POLL_INTERVAL="${DEVICE_POLL_INTERVAL:-5}"
+    DEVICE_ELAPSED=0
+    until [[ "$("$ADB" get-state 2>/dev/null | tr -d '\r')" == "device" ]]; do
+        if ! kill -0 "$EMULATOR_PID" 2>/dev/null; then
+            echo "ERROR: The emulator exited before a device came online." >&2
+            echo "=== $EMULATOR_LOG ===" >&2
+            cat "$EMULATOR_LOG" >&2
+            exit 1
+        fi
+        if [[ $DEVICE_ELAPSED -ge $DEVICE_TIMEOUT ]]; then
+            echo "ERROR: No device came online within ${DEVICE_TIMEOUT}s." >&2
+            echo "       If this machine is just slow to boot an emulator, set" >&2
+            echo "       DEVICE_TIMEOUT higher and run again." >&2
+            # The poll discards this to test the state, and it is the one place
+            # adb explains itself: "more than one device/emulator" reads very
+            # differently from "no devices/emulators found", and the script
+            # assumes a single device from here on either way.
+            echo "       adb get-state says:" >&2
+            "$ADB" get-state 2>&1 | sed 's/^/       /' >&2 || true
+            # Left running on purpose. It may yet be booting, and raising
+            # DEVICE_TIMEOUT should not mean starting it over; a developer who
+            # wants it gone is better placed to decide that than this script is.
+            # Announced because nothing else announces it, and because the
+            # obvious next move is to change something and run again: that run's
+            # `avdmanager create avd --force` rewrites this AVD's files
+            # underneath whatever is still using them.
+            echo "       The emulator is still running as PID $EMULATOR_PID." >&2
+            echo "       Leave it to finish booting, or stop it with: kill $EMULATOR_PID" >&2
+            echo "=== $EMULATOR_LOG ===" >&2
+            cat "$EMULATOR_LOG" >&2
+            exit 1
+        fi
+        sleep "$DEVICE_POLL_INTERVAL"
+        DEVICE_ELAPSED=$((DEVICE_ELAPSED + DEVICE_POLL_INTERVAL))
+        echo "  ...waiting for device ($DEVICE_ELAPSED / ${DEVICE_TIMEOUT}s)"
+    done
+    echo "==> Device online."
 
     echo "==> Waiting for full boot (sys.boot_completed=1)..."
     BOOT_TIMEOUT=180
