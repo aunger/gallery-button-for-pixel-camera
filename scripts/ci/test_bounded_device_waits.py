@@ -60,8 +60,16 @@ WAIT_FOR_DEVICE = "wait-for-device"
 TIMEOUT_PREFIX = re.compile(r"\btimeout\s+(?:-\S+\s+)*\d+[smhd]?\s")
 
 # What makes a loop a device poll: its condition drives adb, through the $ADB
-# the workflows resolve once per step, or through the bare binary name.
-ADB_CALL = re.compile(r"\$\{?ADB\b|(?<![\w./-])adb\s")
+# the workflows resolve once per step, or through the binary itself, named bare
+# or by a path.
+#
+# A path separator is deliberately absent from the lookbehind's excluded set.
+# `$ANDROID_HOME/platform-tools/adb` is the string every step of build.yml
+# assigns $ADB from, so a step that inlines it, or that names adb once and keeps
+# no variable for it, would otherwise have its polls read as nothing at all. The
+# set excludes what makes `adb` the tail of a longer word instead, `read-adb`
+# among them.
+ADB_CALL = re.compile(r"\$\{?ADB\b|(?<![\w.-])adb\s")
 
 # An elapsed-against-bound check, as both loops in "Wait for emulator service
 # readiness" and every bounded loop in setup-e2e-emulator.sh spell one:
@@ -276,6 +284,33 @@ class ViolationDetectionTest(unittest.TestCase):
     def test_a_loop_that_drives_no_adb_is_ignored(self):
         self.assertEqual(
             [], self._violations('while IFS= read -r dir; do\n  echo "$dir"\ndone < list\n')
+        )
+
+    def test_a_poll_driving_adb_by_its_path_is_reported(self):
+        # The form every step of build.yml assigns $ADB from. Read as nothing at
+        # all until the lookbehind stopped excluding a path separator, which let
+        # a loop with no bound of any kind report clean.
+        found = self._violations(
+            'until [[ "$($ANDROID_HOME/platform-tools/adb shell getprop sys.boot_completed)" '
+            '== "1" ]]; do\n'
+            "  sleep 5\n"
+            "done\n"
+        )
+        self.assertEqual(1, len(found), found)
+        self.assertIn("checks no elapsed time", found[0])
+
+    def test_a_bounded_poll_driving_adb_by_its_path_is_accepted(self):
+        self.assertEqual(
+            [],
+            self._violations(
+                "until $ANDROID_HOME/platform-tools/adb shell true; do\n"
+                "  if [[ $WAITED -ge 180 ]]; then\n"
+                "    exit 1\n"
+                "  fi\n"
+                "  sleep 5\n"
+                "  WAITED=$((WAITED + 5))\n"
+                "done\n"
+            ),
         )
 
     def test_a_word_ending_in_adb_is_not_an_adb_call(self):
