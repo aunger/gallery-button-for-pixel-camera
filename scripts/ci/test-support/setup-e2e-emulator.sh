@@ -33,7 +33,7 @@
 #
 # Environment:
 #   DEVICE_TIMEOUT        Seconds to wait for the emulator to appear on adb
-#                         before giving up (default: 1200). Raise it if this
+#                         before giving up (default: 600). Raise it if this
 #                         machine is slower than that; the tests lower it.
 #   DEVICE_POLL_INTERVAL  Seconds between those checks (default: 5).
 #   EMULATOR_LOG          Where the emulator's output goes, and what is printed
@@ -171,14 +171,22 @@ if [[ "$POST_BOOT_ONLY" == false ]]; then
     # the check the workflow's "Start emulator" step makes on the same emulator
     # binary. Either way the log holds the reason, so it is printed alongside.
     echo "==> Waiting for device to come online..."
-    # 1200 is what the "Wait for emulator service readiness" step of
-    # .github/workflows/build.yml already allows this same wait, against an
-    # emulator it has just launched. That runner has KVM and a warm system
-    # image, and a developer's machine may have neither, so the local bound
-    # should not be the tighter of the two. This converts a wait that never gave
-    # up into one that does, and a slow first boot succeeding slowly is the case
-    # that a smaller number would newly break.
-    DEVICE_TIMEOUT="${DEVICE_TIMEOUT:-1200}"
+    # 600 is the whole budget CI gives the "Wait for emulator service readiness"
+    # step of .github/workflows/build.yml, the `timeout-minutes: 10` that is the
+    # largest figure in that step CI actually enforces. That step spends it on
+    # three waits in a row and allows this one 240 of it, against an emulator it
+    # has just launched. That runner has KVM and a warm system image, and a
+    # developer's machine may have neither, so the local bound takes the step's
+    # whole budget rather than this wait's share of it, and is deliberately the
+    # more generous of the two.
+    #
+    # It was 1200 until issue #1162, read off a `timeout 1200` that the same
+    # step's 10 minutes killed first, so it was never a figure CI allowed this
+    # wait at all.
+    #
+    # A slow first boot succeeding slowly is the case a smaller number would
+    # newly break, and DEVICE_TIMEOUT is how such a machine says so.
+    DEVICE_TIMEOUT="${DEVICE_TIMEOUT:-600}"
     DEVICE_POLL_INTERVAL="${DEVICE_POLL_INTERVAL:-5}"
     DEVICE_ELAPSED=0
     until [[ "$("$ADB" get-state 2>/dev/null | tr -d '\r')" == "device" ]]; do

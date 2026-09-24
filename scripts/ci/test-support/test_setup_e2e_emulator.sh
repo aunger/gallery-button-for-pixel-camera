@@ -39,6 +39,8 @@
 #       rather than at the bound
 #   (l) A device that does come online carries the run to the end, and a
 #       successful AVD creation prints nothing
+#   (m) Every default the script's "Environment" header documents is the one
+#       the script actually falls back to (issue #1162)
 #
 # Because both binaries are required together, the fixtures install them as a
 # pair, except where a case is about one of them being absent.
@@ -70,7 +72,7 @@ trap 'rm -rf "$TMPDIR_TESTS"' EXIT
 export INVOKED="$TMPDIR_TESTS/invoked.log"
 
 # The script's device wait is bounded and its bound is overridable, so the cases
-# that exercise it run in seconds rather than the default five minutes. See
+# that exercise it run in seconds rather than the script's 600s default. See
 # "Environment" in setup-e2e-emulator.sh.
 export DEVICE_TIMEOUT=2
 export DEVICE_POLL_INTERVAL=1
@@ -606,6 +608,46 @@ if grep -qF "Warning: this package is obsolete." <<< "$OUTPUT"; then
   fail "avdmanager's stderr was printed although it succeeded: $OUTPUT"
 else
   pass "a successful AVD creation stays quiet"
+fi
+
+# (m) The header's defaults are the script's defaults -------------------------
+echo ""
+echo "=== (m) Every default the header documents is the one the script uses ==="
+
+# The header is where a developer reads what a knob defaults to before deciding
+# whether to set it, and nothing else compares the two numbers. Issue #1162
+# moved DEVICE_TIMEOUT's, which is the kind of edit that leaves the other copy
+# behind. The pairs are read out of the "Environment" block rather than listed
+# here, so a knob added later is covered without this case being touched.
+#
+# A block entry runs over several lines, and its default can sit on any of them:
+# a new entry is one whose first word after the comment marker is the name, and
+# the lines after it belong to that entry.
+DOCUMENTED="$(awk '
+  /^# Environment:/ { inblock = 1; next }
+  inblock && $1 != "#" { inblock = 0 }
+  inblock {
+    text = $0
+    sub(/^#[[:space:]]*/, "", text)
+    if ($2 ~ /^[A-Z_]+$/) { if (entry != "") print entry; entry = text }
+    else if (entry != "") { entry = entry " " text }
+  }
+  END { if (entry != "") print entry }
+' "$SETUP" | sed -nE 's/^([A-Z_]+).*\(default: ([^)]+)\).*/\1 \2/p')"
+
+if [[ -z "$DOCUMENTED" ]]; then
+  fail "the header's Environment block documents no defaults to check"
+else
+  while read -r NAME VALUE; do
+    # The one spelling this script gives a default in, so a knob that stopped
+    # reading the environment is reported rather than skipped.
+    if grep -qF "${NAME}=\"\${${NAME}:-${VALUE}}\"" "$SETUP"; then
+      pass "$NAME defaults to $VALUE in both the header and the script"
+    else
+      ACTUAL="$(grep -oE "${NAME}=\"[^\"]*\"" "$SETUP" | head -1)"
+      fail "the header says $NAME defaults to $VALUE; the script has ${ACTUAL:-no such assignment}"
+    fi
+  done <<< "$DOCUMENTED"
 fi
 
 # Summary ----------------------------------------------------------------------
