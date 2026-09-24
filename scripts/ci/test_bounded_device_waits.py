@@ -46,6 +46,13 @@ A bound anywhere in a loop's body satisfies the check, including one that
 belongs to a loop nested inside that body and so cannot end the outer loop.
 Telling the two apart means parsing the shell rather than reading it, which is
 a large amount of machinery for a shape this tree does not write.
+
+What it accepts as a bound is a numeric comparison, `-ge` or `-gt`, and nothing
+establishes that the comparison is against elapsed time or that the body counts
+up what it compares: `if [[ $RETRY_BUDGET -gt 0 ]]` passes as readily as `if [[
+$BOOTWAIT -ge 180 ]]`. So this is weaker than "the loop gives up", and reads
+better as "the loop was written with a way out in mind". Both blind spots here
+are pinned by tests, so that they are known rather than merely undiscovered.
 """
 
 import re
@@ -260,6 +267,20 @@ class ViolationDetectionTest(unittest.TestCase):
             "done\n"
         )
         self.assertEqual(1, len(found), found)
+
+    def test_a_comparison_that_bounds_nothing_is_credited_as_a_bound(self):
+        # The other blind spot, pinned for the same reason: `-gt` here compares a
+        # retry budget the body never counts up, so the loop still cannot give up,
+        # and the scan credits the comparison anyway. See "Limits" above.
+        self.assertEqual(
+            [],
+            self._violations(
+                'until "$ADB" shell getprop sys.boot_completed; do\n'
+                "  if [[ $RETRY_BUDGET -gt 0 ]]; then echo hi; fi\n"
+                "  sleep 5\n"
+                "done\n"
+            ),
+        )
 
     def test_a_bound_nested_inside_the_body_is_credited_to_the_poll_around_it(self):
         # A blind spot, pinned here so it is a known one: the `-ge` bounds the
