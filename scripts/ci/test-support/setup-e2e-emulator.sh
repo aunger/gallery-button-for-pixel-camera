@@ -219,15 +219,15 @@ if [[ "$POST_BOOT_ONLY" == false ]]; then
 
     echo "==> Waiting for full boot (sys.boot_completed=1)..."
     BOOT_TIMEOUT=180
-    ELAPSED=0
+    BOOT_ELAPSED=0
     while [[ "$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" != "1" ]]; do
-        if [[ $ELAPSED -ge $BOOT_TIMEOUT ]]; then
+        if [[ $BOOT_ELAPSED -ge $BOOT_TIMEOUT ]]; then
             echo "ERROR: Emulator did not finish booting within ${BOOT_TIMEOUT}s." >&2
             exit 1
         fi
         sleep 5
-        ELAPSED=$((ELAPSED + 5))
-        echo "  ...waiting ($ELAPSED / ${BOOT_TIMEOUT}s)"
+        BOOT_ELAPSED=$((BOOT_ELAPSED + 5))
+        echo "  ...waiting ($BOOT_ELAPSED / ${BOOT_TIMEOUT}s)"
     done
     echo "==> Device fully booted."
 fi
