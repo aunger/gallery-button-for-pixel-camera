@@ -257,17 +257,27 @@ if [[ "$POST_BOOT_ONLY" == false ]]; then
         fi
         if [[ $BOOT_ELAPSED -ge $BOOT_TIMEOUT ]]; then
             echo "ERROR: Emulator did not finish booting within ${BOOT_TIMEOUT}s." >&2
-            echo "       If this machine is just slow to boot an emulator, set" >&2
-            echo "       BOOT_TIMEOUT higher and run again." >&2
+            # This loop is entered on one `device` from the wait above and then
+            # never asks again. A device that goes offline afterwards, or that
+            # leaves the device list altogether, reports an unset property
+            # exactly as a slow boot does, and the emulator process outlives
+            # both, so the liveness check above tells them apart no better.
+            # Only adb can, which is why the wait above prints this too: a
+            # larger bound is the answer to a slow boot and no answer at all to
+            # a device that has gone.
+            echo "       adb get-state says:" >&2
+            "$ADB" get-state 2>&1 | sed 's/^/       /' >&2 || true
+            echo "       If that reads \"device\" and this machine is just slow" >&2
+            echo "       to boot an emulator, set BOOT_TIMEOUT higher and run" >&2
+            echo "       again. Anything else means the device went away after" >&2
+            echo "       coming online, and no bound waits that out." >&2
             # Still running: the check above cleared it within the last poll
             # interval. Said for the reason the wait above says it, the next
             # run's `avdmanager create avd --force` rewriting this AVD's files
             # underneath whatever is still using them.
             echo "       The emulator is still running as PID $EMULATOR_PID." >&2
-            echo "       Leave it to finish booting, or stop it with: kill $EMULATOR_PID" >&2
-            # A boot that never completes leaves nothing else to go on: the
-            # property this polls is the whole of the device's account of
-            # itself, and the log is where the emulator gives its own.
+            echo "       Leave it running, or stop it with: kill $EMULATOR_PID" >&2
+            # The device's account of itself is above; this is the emulator's.
             echo "=== $EMULATOR_LOG ===" >&2
             cat "$EMULATOR_LOG" >&2
             exit 1
