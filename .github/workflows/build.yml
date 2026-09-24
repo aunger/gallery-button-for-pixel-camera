@@ -316,11 +316,36 @@ jobs:
             exit 1
           }
 
-          echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Waiting for sys.boot_completed=1..."
+          # 180s is what scripts/ci/test-support/setup-e2e-emulator.sh allows the same
+          # property on an AVD of the same API level and image (its BOOT_TIMEOUT), measured
+          # from the same point: the device answering adb. Bounded here so a boot that
+          # stalls is reported as the boot flag, naming what the emulator was doing, rather
+          # than as this step reaching its timeout-minutes (issue #1154); that step-level
+          # bound stays as the backstop it was, and 180s leaves the settings-service loop
+          # below its own 120s inside it.
+          echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Waiting for sys.boot_completed=1 (timeout 180s)..."
+          BOOTWAIT=0
           until [[  "$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]]; do
+            if [[ $BOOTWAIT -ge 180 ]]; then
+              echo "ERROR: sys.boot_completed did not reach 1 within 180s of the device appearing." >&2
+              # Unredirected, so adb's own complaint ("device offline", "no devices") reaches
+              # the log in place of the value the poll above discards.
+              echo "       adb shell getprop sys.boot_completed says:" >&2
+              "$ADB" shell getprop sys.boot_completed >&2 || true
+              if [[ -n "${EMULATOR_PID:-}" ]] && kill -0 "$EMULATOR_PID" 2>/dev/null; then
+                echo "       The emulator process (PID $EMULATOR_PID) is still running." >&2
+              else
+                echo "       The emulator process (PID ${EMULATOR_PID:-unknown}) is gone." >&2
+              fi
+              echo "=== Emulator log (last 80 lines) ===" >&2
+              tail -80 /tmp/emulator.log >&2
+              exit 1
+            fi
             sleep 5
+            BOOTWAIT=$((BOOTWAIT + 5))
+            echo "  ...not booted yet (${BOOTWAIT}s since the device appeared)"
           done
-          echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Boot flag set."
+          echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Boot flag set (${BOOTWAIT}s after the device appeared)."
 
           echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Waiting for settings service..."
           SVCWAIT=0
@@ -1055,42 +1080,72 @@ jobs:
               # battery-optimization exclusion) rather than reverting to MEDIA or failing to
               # render at all.
               echo "=== Verifying the setup flow recovers without losing progress ==="
-              "$ADB" wait-for-device
-              RECOVERED_PID=""
-              for _ in $(seq 1 10); do
-                RECOVERED_PID=$("$ADB" shell pidof com.gb4pc | tr -d '\r' || true)
-                [[ -n "$RECOVERED_PID" ]] && break
-                sleep 1
-              done
-              echo "com.gb4pc pid after recovery wait: '${RECOVERED_PID:-<not running>}'"
-              # This suite runs last in the job (see scripts/ci/test-support/setup-e2e-emulator.sh's step 9 and
-              # SetupActivityDeniedE2ETest's class doc), so the PIN-secured keyguard the setup
-              # script configures can have re-engaged by the time this recovery relaunch runs. A
-              # swipe-only dismissal does nothing against it; replay the same PIN-aware sequence
-              # E2EFixture.dismissSecureKeyguard() and the setup script's step 9 use. This runs
-              # host-side (the instrumented process may be dead), so the Kotlin helper itself
-              # cannot be called; the shell sequence is replayed directly instead.
-              "$ADB" shell input keyevent KEYCODE_WAKEUP
-              "$ADB" shell wm dismiss-keyguard
-              "$ADB" shell input text 1234
-              "$ADB" shell input keyevent 66
-              sleep 2
-              "$ADB" shell am start -n com.gb4pc/com.gb4pc.ui.setup.SetupActivity
-              sleep 3
-              "$ADB" shell uiautomator dump /sdcard/e2e-recovery-dump.xml > /dev/null 2>&1 || true
-              RECOVERY_DUMP=$("$ADB" shell cat /sdcard/e2e-recovery-dump.xml 2>/dev/null || true)
-              if echo "$RECOVERY_DUMP" | grep -q 'Battery Optimization' \
-                && ! echo "$RECOVERY_DUMP" | grep -q 'Photos &amp; Media'; then
-                echo "CONFIRMED: relaunching SetupActivity lands on the BATTERY step and MEDIA"
-                echo "           is not shown again, so the grant survived the restart and no"
-                echo "           setup progress was lost."
-                echo "outcome=success" >> "$GITHUB_OUTPUT"
+              # Bounded, because this step declares no timeout-minutes of its own: an
+              # unbounded wait here is held only by the job's 60-minute budget, so a device
+              # that never came back would burn what is left of that budget and be reported
+              # as the job running out of time rather than as this wait (issue #1154).
+              #
+              # 120s, rather than the 1200s the "Wait for emulator service readiness" step
+              # allows the same call: that one waits on an emulator still booting a cold
+              # system image, while this one waits on an emulator that has already carried
+              # every suite in the job. Only com.gb4pc was torn down here, and adb outlives
+              # that, so the device is expected back at once; two minutes is slack for one
+              # that is busy rather than gone.
+              if timeout 120 "$ADB" wait-for-device; then
+                RECOVERED_PID=""
+                for _ in $(seq 1 10); do
+                  RECOVERED_PID=$("$ADB" shell pidof com.gb4pc | tr -d '\r' || true)
+                  [[ -n "$RECOVERED_PID" ]] && break
+                  sleep 1
+                done
+                echo "com.gb4pc pid after recovery wait: '${RECOVERED_PID:-<not running>}'"
+                # This suite runs last in the job (see scripts/ci/test-support/setup-e2e-emulator.sh's step 9 and
+                # SetupActivityDeniedE2ETest's class doc), so the PIN-secured keyguard the setup
+                # script configures can have re-engaged by the time this recovery relaunch runs. A
+                # swipe-only dismissal does nothing against it; replay the same PIN-aware sequence
+                # E2EFixture.dismissSecureKeyguard() and the setup script's step 9 use. This runs
+                # host-side (the instrumented process may be dead), so the Kotlin helper itself
+                # cannot be called; the shell sequence is replayed directly instead.
+                "$ADB" shell input keyevent KEYCODE_WAKEUP
+                "$ADB" shell wm dismiss-keyguard
+                "$ADB" shell input text 1234
+                "$ADB" shell input keyevent 66
+                sleep 2
+                "$ADB" shell am start -n com.gb4pc/com.gb4pc.ui.setup.SetupActivity
+                sleep 3
+                "$ADB" shell uiautomator dump /sdcard/e2e-recovery-dump.xml > /dev/null 2>&1 || true
+                RECOVERY_DUMP=$("$ADB" shell cat /sdcard/e2e-recovery-dump.xml 2>/dev/null || true)
+                if echo "$RECOVERY_DUMP" | grep -q 'Battery Optimization' \
+                  && ! echo "$RECOVERY_DUMP" | grep -q 'Photos &amp; Media'; then
+                  echo "CONFIRMED: relaunching SetupActivity lands on the BATTERY step and MEDIA"
+                  echo "           is not shown again, so the grant survived the restart and no"
+                  echo "           setup progress was lost."
+                  echo "outcome=success" >> "$GITHUB_OUTPUT"
+                else
+                  echo "REGRESSION: relaunching SetupActivity did not land cleanly on the BATTERY"
+                  echo "            step after the restart (dump snippet:"
+                  echo "            $(echo "$RECOVERY_DUMP" | tr -d '\n' | head -c 500)). Either"
+                  echo "            the flow reverted to MEDIA or failed to render, so the crash"
+                  echo "            was not the benign, expected scoped-storage restart."
+                  echo "outcome=failure" >> "$GITHUB_OUTPUT"
+                fi
               else
-                echo "REGRESSION: relaunching SetupActivity did not land cleanly on the BATTERY"
-                echo "            step after the restart (dump snippet:"
-                echo "            $(echo "$RECOVERY_DUMP" | tr -d '\n' | head -c 500)). Either"
-                echo "            the flow reverted to MEDIA or failed to render, so the crash"
-                echo "            was not the benign, expected scoped-storage restart."
+                echo "ERROR: no device on ADB within 120s of the media-grant restart." >&2
+                echo "       READ_MEDIA_IMAGES is granted (reported above), but whether the" >&2
+                echo "       setup flow kept its progress could not be checked." >&2
+                echo "       adb devices:" >&2
+                "$ADB" devices >&2 || true
+                if [[ -n "${EMULATOR_PID:-}" ]] && kill -0 "$EMULATOR_PID" 2>/dev/null; then
+                  echo "       The emulator process (PID $EMULATOR_PID) is still running." >&2
+                else
+                  echo "       The emulator process (PID ${EMULATOR_PID:-unknown}) is gone." >&2
+                fi
+                echo "=== Emulator log (last 80 lines) ===" >&2
+                # Tolerated, unlike the same tail in "Wait for emulator service readiness",
+                # which is on its way out through `exit 1` anyway: this branch reports
+                # through the outcome output rather than through the step's exit status
+                # (issue #309), and still has this suite's screenrecord to stop below.
+                tail -80 /tmp/emulator.log >&2 || true
                 echo "outcome=failure" >> "$GITHUB_OUTPUT"
               fi
             else
