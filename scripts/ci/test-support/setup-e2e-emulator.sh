@@ -235,17 +235,35 @@ if [[ "$POST_BOOT_ONLY" == false ]]; then
     # 600 is the most that runner, which has KVM and a warm system image, ever
     # allows a boot, and a developer's machine should not be held to less.
     #
-    # The run that pays for the larger bound is one whose emulator will never
-    # finish booting: it now waits 10 minutes to say so rather than 3. The wait
-    # above resolved the same trade the same way.
+    # The run that pays for the larger bound is one whose emulator is alive and
+    # will never finish booting: it now waits 10 minutes to say so rather than
+    # 3. The wait above resolved the same trade the same way, and its liveness
+    # check is repeated here so that an emulator which has died is not charged
+    # the wait at all.
     BOOT_TIMEOUT="${BOOT_TIMEOUT:-600}"
     BOOT_POLL_INTERVAL="${BOOT_POLL_INTERVAL:-5}"
     BOOT_ELAPSED=0
     while [[ "$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" != "1" ]]; do
+        # A device on adb is no promise of a live emulator: the process can
+        # still die here, and one that has gone will not set the property this
+        # polls however long it is given. Reported at once for the reason the
+        # wait above reports it, and the log holds the reason either way.
+        if ! kill -0 "$EMULATOR_PID" 2>/dev/null; then
+            echo "ERROR: The emulator exited before finishing its boot." >&2
+            echo "=== $EMULATOR_LOG ===" >&2
+            cat "$EMULATOR_LOG" >&2
+            exit 1
+        fi
         if [[ $BOOT_ELAPSED -ge $BOOT_TIMEOUT ]]; then
             echo "ERROR: Emulator did not finish booting within ${BOOT_TIMEOUT}s." >&2
             echo "       If this machine is just slow to boot an emulator, set" >&2
             echo "       BOOT_TIMEOUT higher and run again." >&2
+            # Still running: the check above cleared it within the last poll
+            # interval. Said for the reason the wait above says it, the next
+            # run's `avdmanager create avd --force` rewriting this AVD's files
+            # underneath whatever is still using them.
+            echo "       The emulator is still running as PID $EMULATOR_PID." >&2
+            echo "       Leave it to finish booting, or stop it with: kill $EMULATOR_PID" >&2
             # A boot that never completes leaves nothing else to go on: the
             # property this polls is the whole of the device's account of
             # itself, and the log is where the emulator gives its own.

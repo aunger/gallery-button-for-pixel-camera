@@ -12,7 +12,7 @@
 # Cases (a) to (h) are about resolution, and their stub sdkmanager exits 1: under
 # the script's `set -e` that ends the run at the install line, the first place
 # the resolved directory is invoked rather than merely tested, and short of the
-# emulator launch below it. Cases (i) to (m) are about what happens from the AVD
+# emulator launch below it. Cases (i) to (n) are about what happens from the AVD
 # onwards, so their sdkmanager succeeds and the run goes further. Those cases
 # compress the device and boot waits' bounds to seconds and point $EMULATOR_LOG
 # inside the suite's own directory, both through the environment the script
@@ -41,7 +41,9 @@
 #   (l) An emulator that comes online but never finishes booting is given up
 #       on, and that failure names the knob raising its own bound: it is the
 #       next bound a run that raised DEVICE_TIMEOUT meets (issue #1156)
-#   (m) A device that does come online carries the run to the end, and a
+#   (m) An emulator that exits while booting is reported as that, at once,
+#       rather than at the boot bound
+#   (n) A device that does come online carries the run to the end, and a
 #       successful AVD creation prints nothing
 #
 # Because both binaries are required together, the fixtures install them as a
@@ -630,6 +632,15 @@ else
   fail "the emulator log was not printed: $OUTPUT"
 fi
 
+# The emulator outlives this failure as it outlives the device wait's, so the
+# failure has to say so: the next run's `avdmanager create avd --force` would
+# rewrite the AVD underneath it.
+if grep -qE "still running as PID [0-9]+" <<< "$OUTPUT"; then
+  pass "the surviving emulator is named, with its PID"
+else
+  fail "the failure does not say the emulator is still running: $OUTPUT"
+fi
+
 # Left running by the script, as a real run leaves it, so the suite reaps it.
 # The stub execs its sleep, so this PID is the sleep's own and the kill reaches
 # it rather than orphaning a child; case (j) asserts that property of the stub.
@@ -640,18 +651,55 @@ else
   fail "the unbooted emulator recorded no pid to reap"
 fi
 
-# (m) A run in which everything works -----------------------------------------
+# (m) The emulator dies between the device appearing and the boot completing ---
 echo ""
-echo "=== (m) A device that comes online carries the run through to the end ==="
+echo "=== (m) An emulator that exits while booting is reported without waiting ==="
 
+# The bound raised for a slow machine must not also be charged to a run that has
+# nothing left to wait for: the property polled below is set by the emulator,
+# and a dead emulator will never set it (issue #1156).
 SDK_M="$(new_sdk m)"
-make_stub "$SDK_M/cmdline-tools/latest/bin/sdkmanager" 0
-# Succeeds, but writes to stderr as avdmanager does even when it works.
-make_noisy_stub "$SDK_M/cmdline-tools/latest/bin/avdmanager" \
-  "Warning: this package is obsolete." 0
-make_adb_stub "$SDK_M/platform-tools/adb" "device"
-make_emulator_stub "$SDK_M/emulator/emulator" "emulator: booting" exit
+make_cmdline_tools "$SDK_M/cmdline-tools/latest/bin" 0
+make_adb_stub "$SDK_M/platform-tools/adb" "device" ""
+make_emulator_stub "$SDK_M/emulator/emulator" "emulator: PANIC: out of memory" exit
+
+# Far beyond run_setup's own 60s bound, as in case (k), so a run that reaches
+# this failure by waiting out the clock cannot pass.
+BOOT_TIMEOUT_SAVED="$BOOT_TIMEOUT"
+export BOOT_TIMEOUT=600
 run_setup "$SDK_M"
+export BOOT_TIMEOUT="$BOOT_TIMEOUT_SAVED"
+
+if [[ $RC -eq 1 ]]; then
+  pass "the run exits 1 long before the 600s bound"
+else
+  fail "expected exit 1 (124 means it waited), got $RC: $OUTPUT"
+fi
+
+if grep -qF "ERROR: The emulator exited before finishing its boot." <<< "$OUTPUT"; then
+  pass "the failure names the dead emulator, not a timeout"
+else
+  fail "no emulator-exited message in the failure: $OUTPUT"
+fi
+
+if grep -qF "emulator: PANIC: out of memory" <<< "$OUTPUT"; then
+  pass "the emulator log carries the reason"
+else
+  fail "the emulator log was not printed: $OUTPUT"
+fi
+
+# (n) A run in which everything works -----------------------------------------
+echo ""
+echo "=== (n) A device that comes online carries the run through to the end ==="
+
+SDK_N="$(new_sdk n)"
+make_stub "$SDK_N/cmdline-tools/latest/bin/sdkmanager" 0
+# Succeeds, but writes to stderr as avdmanager does even when it works.
+make_noisy_stub "$SDK_N/cmdline-tools/latest/bin/avdmanager" \
+  "Warning: this package is obsolete." 0
+make_adb_stub "$SDK_N/platform-tools/adb" "device"
+make_emulator_stub "$SDK_N/emulator/emulator" "emulator: booting" exit
+run_setup "$SDK_N"
 
 if [[ $RC -eq 0 ]]; then
   pass "the run completes (exit 0)"
