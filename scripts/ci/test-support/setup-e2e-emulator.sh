@@ -38,8 +38,7 @@
 #   DEVICE_POLL_INTERVAL  Seconds between those checks (default: 5).
 #   BOOT_TIMEOUT          Seconds to wait, from the device coming online, for
 #                         sys.boot_completed=1 before giving up (default: 600).
-#                         Raise it for the same reason, on the same machine;
-#                         the tests lower it too.
+#                         Raise it on the same machine; the tests lower it.
 #   BOOT_POLL_INTERVAL    Seconds between those checks (default: 5).
 #   EMULATOR_LOG          Where the emulator's output goes, and what is printed
 #                         when either wait above fails (default: /tmp/emulator.log).
@@ -223,32 +222,20 @@ if [[ "$POST_BOOT_ONLY" == false ]]; then
     echo "==> Device online."
 
     echo "==> Waiting for full boot (sys.boot_completed=1)..."
-    # This is the next bound a developer who has just raised DEVICE_TIMEOUT
-    # meets, so it gives way the same way: from the environment, and named in
-    # the failure that suggests it (issue #1156). A machine slow enough to need
-    # the advice the wait above prints has no reason to reach adbd quickly and
-    # then complete its boot fast.
-    #
-    # 600 is what CI allows the same wait. The "Wait for emulator service
-    # readiness" step of .github/workflows/build.yml puts no bound of its own on
-    # its boot poll; the step's `timeout-minutes: 10` is the whole of it, shared
-    # with the device wait before it and the settings-service wait after it. So
-    # 600 is the most that runner, which has KVM and a warm system image, ever
-    # allows a boot, and a developer's machine should not be held to less.
-    #
-    # The run that pays for the larger bound is one whose emulator is alive and
-    # will never finish booting: it now waits 10 minutes to say so rather than
-    # 3. The wait above resolved the same trade the same way, and its liveness
-    # check is repeated here so that an emulator which has died is not charged
-    # the wait at all.
+    # The bound a developer meets right after raising DEVICE_TIMEOUT, so it
+    # gives way the same way: from the environment, named in its own failure
+    # (issue #1156). 600 is what CI allows this wait, whose boot poll is bounded
+    # only by the `timeout-minutes: 10` on the "Wait for emulator service
+    # readiness" step of .github/workflows/build.yml, shared there with the
+    # waits either side of it. That runner has KVM and a warm system image, so a
+    # developer's machine should not be held to less. The liveness check below
+    # keeps an emulator that has died out of the larger bound.
     BOOT_TIMEOUT="${BOOT_TIMEOUT:-600}"
     BOOT_POLL_INTERVAL="${BOOT_POLL_INTERVAL:-5}"
     BOOT_ELAPSED=0
     while [[ "$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" != "1" ]]; do
-        # A device on adb is no promise of a live emulator: the process can
-        # still die here, and one that has gone will not set the property this
-        # polls however long it is given. Reported at once for the reason the
-        # wait above reports it, and the log holds the reason either way.
+        # A device on adb is no promise of a live emulator, and one that has
+        # gone will never set the property this polls.
         if ! kill -0 "$EMULATOR_PID" 2>/dev/null; then
             echo "ERROR: The emulator exited before finishing its boot." >&2
             echo "=== $EMULATOR_LOG ===" >&2
@@ -257,27 +244,21 @@ if [[ "$POST_BOOT_ONLY" == false ]]; then
         fi
         if [[ $BOOT_ELAPSED -ge $BOOT_TIMEOUT ]]; then
             echo "ERROR: Emulator did not finish booting within ${BOOT_TIMEOUT}s." >&2
-            # This loop is entered on one `device` from the wait above and then
-            # never asks again. A device that goes offline afterwards, or that
-            # leaves the device list altogether, reports an unset property
-            # exactly as a slow boot does, and the emulator process outlives
-            # both, so the liveness check above tells them apart no better.
-            # Only adb can, which is why the wait above prints this too: a
-            # larger bound is the answer to a slow boot and no answer at all to
-            # a device that has gone.
+            # Entered on one `device` from the wait above and never asked
+            # again: a device that has since gone offline, or left the list,
+            # reports this property exactly as a slow boot does and passes the
+            # liveness check too. Only adb separates them.
             echo "       adb get-state says:" >&2
             "$ADB" get-state 2>&1 | sed 's/^/       /' >&2 || true
             echo "       If that reads \"device\" and this machine is just slow" >&2
             echo "       to boot an emulator, set BOOT_TIMEOUT higher and run" >&2
             echo "       again. Anything else means the device went away after" >&2
             echo "       coming online, and no bound waits that out." >&2
-            # Still running: the check above cleared it within the last poll
-            # interval. Said for the reason the wait above says it, the next
-            # run's `avdmanager create avd --force` rewriting this AVD's files
-            # underneath whatever is still using them.
+            # Still running: the check above cleared it a poll ago. Said
+            # because the next run's `avdmanager create avd --force` rewrites
+            # this AVD underneath it.
             echo "       The emulator is still running as PID $EMULATOR_PID." >&2
             echo "       Leave it running, or stop it with: kill $EMULATOR_PID" >&2
-            # The device's account of itself is above; this is the emulator's.
             echo "=== $EMULATOR_LOG ===" >&2
             cat "$EMULATOR_LOG" >&2
             exit 1
