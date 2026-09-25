@@ -42,21 +42,17 @@ Ask whether work remains, not whether the point was interesting.
 
 ### A deferral with no consequence is declined
 
-The test above asks whether the item was deferred; this one asks what someone who picked it up would do.
-"Worth an issue" costs a reviewer one clause, and the issue costs a branch, a PR, an Author, a Reviewer, a Planner and a CI run, so a reviewer having asked for one is not by itself a reason to file it.
+The test above asks whether the item was deferred; this one asks what work is left.
+A reviewer's "worth an issue" costs one clause; the issue costs a branch, a PR, a review cycle and CI.
 
-File the item when it names a defect in behaviour that ships, in a test, or in a record whose accuracy is itself the deliverable, or a decision whose answer changes code and something already observed turns on that answer.
-Decline the wording of a comment that misleads no caller into writing wrong code, and a "should X be like Y" whose asymmetry is real but which nothing observed has met: symmetry is not evidence.
+File a defect in behaviour that ships, in a test, or in a record whose accuracy is the deliverable, or a decision whose answer changes code and something observed turns on it.
+Decline a comment's wording that misleads no caller, and a "should X be like Y" nothing observed has met: symmetry is not evidence.
 
 ### Two follow-on items resting on one fact are one issue
 
-Two items that rest on the same root fact, the same line, the same measurement, or the same bound, are one issue, whoever deferred them and out of whichever review they came.
-File it once and carry each finding into it as its own part, rather than a ticket per remark.
-
-You are looking at one root fact when the items cite the same line or measurement, when one item's answer sets the premise of the other, or when you are writing the same paragraph into two issues.
-The last is the one you can catch yourself doing.
-
-Runs on other PRs file under this rule too, and each has exited before the next starts, so look at the open issues and not only at this PR's list.
+Two items resting on one root fact are one issue, from whichever review: file it once, each finding its own part.
+One root fact means the same line or measurement, one answer setting the other's premise, or the same paragraph twice.
+Runs on other PRs file under it too, so search the open issues, not just this list.
 
 ## What to do
 
