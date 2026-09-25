@@ -12,10 +12,10 @@
 # Cases (a) to (h) are about resolution, and their stub sdkmanager exits 1: under
 # the script's `set -e` that ends the run at the install line, the first place
 # the resolved directory is invoked rather than merely tested, and short of the
-# emulator launch below it. Cases (i) to (l) are about what happens from the AVD
+# emulator launch below it. Cases (i) to (o) are about what happens from the AVD
 # onwards, so their sdkmanager succeeds and the run goes further. Those cases
-# compress the device wait's bound to seconds and point $EMULATOR_LOG inside the
-# suite's own directory, both through the environment the script reads them from.
+# compress both waits' bounds to seconds and point $EMULATOR_LOG inside the
+# suite's own directory, through the environment the script reads them from.
 #
 # Covers:
 #   (a) cmdline-tools/latest/bin holds sdkmanager -> it is the one invoked
@@ -34,10 +34,19 @@
 #       emulator for the AVD it did not create (issue #1141)
 #   (j) An emulator that never produces a device is given up on, rather than
 #       waited for forever. The failure carries adb's account of why, the knob
-#       that raises the bound, and the emulator it leaves running (issue #1141)
+#       that raises the bound, and the emulator it leaves running (issue #1141),
+#       and it sleeps and counts in the interval the environment set
 #   (k) An emulator that exits during startup is reported as that, at once,
 #       rather than at the bound
-#   (l) A device that does come online carries the run to the end, and a
+#   (l) An emulator that comes online but never finishes booting is given up
+#       on, and that failure names the knob raising its own bound, the next one
+#       a run that raised DEVICE_TIMEOUT meets (issue #1156). Same two
+#       interval assertions as (j)
+#   (m) A device that leaves after coming online is reported as adb now finds
+#       it, not as the slow boot the polled property alone makes it look like
+#   (n) An emulator that exits while booting is reported as that, at once,
+#       rather than at the boot bound
+#   (o) A device that does come online carries the run to the end, and a
 #       successful AVD creation prints nothing
 #   (m) Every default the script's "Environment" header documents is the one
 #       the script actually falls back to (issue #1162)
@@ -71,15 +80,37 @@ trap 'rm -rf "$TMPDIR_TESTS"' EXIT
 # down.
 export INVOKED="$TMPDIR_TESTS/invoked.log"
 
-# The script's device wait is bounded and its bound is overridable, so the cases
-# that exercise it run in seconds rather than the script's 600s default. See
-# "Environment" in setup-e2e-emulator.sh.
+# Both bounds are overridable, so the cases that exercise them run in seconds
+# rather than the script's 600s defaults. See "Environment" in
+# setup-e2e-emulator.sh.
 export DEVICE_TIMEOUT=2
 export DEVICE_POLL_INTERVAL=1
+export BOOT_TIMEOUT=2
+export BOOT_POLL_INTERVAL=1
 
 # Inside the suite's own directory, so no case writes over the emulator log of a
 # real run on the developer's machine.
 export EMULATOR_LOG="$TMPDIR_TESTS/emulator.log"
+
+# Each wait reads its poll interval twice: into `sleep`, which spaces the
+# checks, and into the counter that decides when the bound is reached. Only the
+# counter reaches the progress line, so what is passed to `sleep` is recorded
+# here instead. The stub sleeps for real, keeping each wait's timing, and
+# resolves the real sleep now because PATH will hold the stub by then.
+REAL_SLEEP="$(command -v sleep)"
+if [[ -z "$REAL_SLEEP" ]]; then
+  echo "FAIL: no sleep on PATH to record" >&2
+  exit 1
+fi
+export SLEPT="$TMPDIR_TESTS/slept.log"
+STUB_BIN="$TMPDIR_TESTS/bin"
+mkdir -p "$STUB_BIN"
+{
+  echo '#!/usr/bin/env bash'
+  echo 'echo "$1" >> "$SLEPT"'
+  printf 'exec %q "$@"\n' "$REAL_SLEEP"
+} > "$STUB_BIN/sleep"
+chmod +x "$STUB_BIN/sleep"
 
 make_stub() {
   # Usage: make_stub <path> <exit-code>
@@ -136,28 +167,50 @@ make_cmdline_tools() {
   make_stub "$dir/avdmanager" "$code"
 }
 
+emit_get_state_answer() {
+  # Usage: emit_get_state_answer <state|error text> <indent>
+  # The body of one `adb get-state` answer, as the real one gives it: "device"
+  # on stdout and exit 0, or the text on stderr as `error: <text>` and exit 1.
+  # Emitted twice when a case gives a later answer, so the two cannot drift.
+  local answer="$1" indent="$2"
+  if [[ "$answer" == "device" ]]; then
+    printf '%secho device\n' "$indent"
+    printf '%sexit 0\n' "$indent"
+  else
+    printf '%secho %q >&2\n' "$indent" "error: $answer"
+    printf '%sexit 1\n' "$indent"
+  fi
+}
+
 make_adb_stub() {
-  # Usage: make_adb_stub <path> <state|error text>
+  # Usage: make_adb_stub <path> <state|error text> [boot value] [later state]
   # An adb for the cases that reach the device wait. `get-state` answers as the
-  # real one does: "device" on stdout and exit 0 when a device is there, and
-  # otherwise nothing on stdout, the given text on stderr as `error: <text>`,
-  # and exit 1. `shell getprop` answers 1, so a case that gets past the wait is
-  # not then held in the boot loop. Everything else succeeds silently.
-  local path="$1" state="$2"
+  # real one does (see emit_get_state_answer). `shell getprop` answers with the
+  # given value, which defaults to 1 so a case past the device wait is not held
+  # in the boot loop; an empty value is what a real getprop prints for an unset
+  # property, and holds it there instead. Everything else succeeds silently.
+  #
+  # With a later state, the first `get-state` answers <state> and the rest
+  # <later state>, so the device wait sees a device arrive and whoever asks
+  # next sees what became of it. The switch goes in a file beside the stub,
+  # since each adb call is its own process.
+  local path="$1" state="$2" boot="${3-1}" later="${4-}"
+  local seen="$path.get-state-seen"
+  rm -f "$seen"
   mkdir -p "$(dirname "$path")"
   {
     echo '#!/usr/bin/env bash'
     echo 'if [[ "${1:-}" == "get-state" ]]; then'
-    if [[ "$state" == "device" ]]; then
-      echo '  echo device'
-      echo '  exit 0'
-    else
-      printf '  echo %q >&2\n' "error: $state"
-      echo '  exit 1'
+    if [[ -n "$later" ]]; then
+      printf '  if [[ -e %q ]]; then\n' "$seen"
+      emit_get_state_answer "$later" "    "
+      echo '  fi'
+      printf '  : > %q\n' "$seen"
     fi
+    emit_get_state_answer "$state" "  "
     echo 'fi'
     echo 'if [[ "${1:-}" == "shell" && "${2:-}" == "getprop" ]]; then'
-    echo '  echo 1'
+    printf '  echo %q\n' "$boot"
     echo '  exit 0'
     echo 'fi'
     echo 'exit 0'
@@ -173,6 +226,9 @@ make_emulator_stub() {
   # producing a device, and writes its PID to <pid file> so the case can reap
   # it: the script leaves it running when it gives up, as a real run would.
   #
+  # Its sleep is the real one, by absolute path, so the fixture's own wait stays
+  # out of the recording stub's log, which is read for what the script asked.
+  #
   # `hang` execs its sleep instead of running it as a child. The PID recorded
   # here is this wrapper's, which is also the PID the script under test holds as
   # EMULATOR_PID. A child sleep would survive a kill aimed at the wrapper and be
@@ -186,7 +242,7 @@ make_emulator_stub() {
     printf 'echo %q\n' "$line"
     if [[ "$mode" == "hang" ]]; then
       printf 'echo $$ > %q\n' "$pidfile"
-      echo 'exec sleep 120'
+      printf 'exec %q 120\n' "$REAL_SLEEP"
     fi
     echo 'exit 0'
   } > "$path"
@@ -215,11 +271,34 @@ run_setup() {
   shift
   : > "$INVOKED"
   : > "$EMULATOR_LOG"
+  : > "$SLEPT"
   RC=0
   # Bounded, because what this suite tests is a script that used to wait for a
   # device forever. A case that regains that behavior should fail the run, not
   # hang the job; `timeout` reports 124, which no assertion here accepts.
-  OUTPUT="$(ANDROID_HOME="$sdk" timeout 60 bash "$SETUP" "$@" 2>&1)" || RC=$?
+  OUTPUT="$(ANDROID_HOME="$sdk" PATH="$STUB_BIN:$PATH" timeout 60 bash "$SETUP" "$@" 2>&1)" || RC=$?
+}
+
+reap_emulator() {
+  # Usage: reap_emulator <pid file> <what it is>
+  # Kills an emulator the script left running when it gave up, as a real run
+  # leaves it, and asserts it went: a kill that silently fails would leave the
+  # stub's sleep behind for every later case to share the machine with.
+  local pidfile="$1" what="$2" pid
+  pid="$(cat "$pidfile" 2>/dev/null || true)"
+  if [[ -z "$pid" ]]; then
+    fail "the $what recorded no pid to reap"
+    return
+  fi
+  kill "$pid" 2>/dev/null || true
+  for _ in $(seq 1 25); do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      pass "the $what is gone once killed"
+      return
+    fi
+    sleep 0.2
+  done
+  fail "the $what survived the kill (pid $pid)"
 }
 
 emulator_started() { grep -qF "/emulator/emulator" "$INVOKED"; }
@@ -501,6 +580,26 @@ else
   fail "the failure does not name DEVICE_TIMEOUT: $OUTPUT"
 fi
 
+# Nothing above would notice the loop ignoring DEVICE_POLL_INTERVAL: a
+# hardcoded sleep reaches the same bound and prints the same messages. Its two
+# reads are asserted separately, since either alone can break. First the
+# counter, which the progress line is printed from: a five-second step never
+# prints a first second.
+if grep -qF "...waiting for device (1 / ${DEVICE_TIMEOUT}s)" <<< "$OUTPUT"; then
+  pass "the wait counts in the steps DEVICE_POLL_INTERVAL set"
+else
+  fail "DEVICE_POLL_INTERVAL did not reach the counter: $OUTPUT"
+fi
+
+# Then the sleep, which is what spaces the checks and what the progress line
+# cannot see: a loop counting in ones while sleeping fives prints the same
+# lines and waits five times the bound.
+if [[ -s "$SLEPT" && "$(sort -u "$SLEPT")" == "$DEVICE_POLL_INTERVAL" ]]; then
+  pass "every sleep the wait took was the interval DEVICE_POLL_INTERVAL set"
+else
+  fail "with DEVICE_POLL_INTERVAL=$DEVICE_POLL_INTERVAL the wait slept: $(tr '\n' ' ' < "$SLEPT")"
+fi
+
 # The emulator outlives the script here, so the failure has to say so: the next
 # run's `avdmanager create avd --force` would rewrite the AVD underneath it.
 if grep -qE "still running as PID [0-9]+" <<< "$OUTPUT"; then
@@ -509,39 +608,20 @@ else
   fail "the failure does not say the emulator is still running: $OUTPUT"
 fi
 
-# The script leaves the emulator running when it gives up, as a real run does,
-# so the suite reaps it.
+# Asserted while it is still alive, because killing the recorded PID only
+# cleans up if that PID is the whole stub. The stub execs its sleep for exactly
+# this reason: run as a child instead, the sleep survives a kill aimed at its
+# parent and is reparented to init, one orphan per run of this file, which no
+# check on the recorded PID alone would ever notice.
 HANGING_PID="$(cat "$HANGING_EMULATOR_PID" 2>/dev/null || true)"
-if [[ -n "$HANGING_PID" ]]; then
-  # Asserted while it is still alive, because killing the recorded PID only
-  # cleans up if that PID is the whole stub. The stub execs its sleep for
-  # exactly this reason: run as a child instead, the sleep survives a kill
-  # aimed at its parent and is reparented to init, one orphan per run of this
-  # file, which no check on the recorded PID alone would ever notice.
-  ORPHANS="$(pgrep -P "$HANGING_PID" 2>/dev/null || true)"
-  if [[ -z "$ORPHANS" ]]; then
-    pass "the hanging emulator holds no child that a kill would orphan"
-  else
-    fail "killing the hanging emulator would orphan: $(tr '\n' ' ' <<< "$ORPHANS")"
-  fi
-
-  kill "$HANGING_PID" 2>/dev/null || true
-  REAPED=false
-  for _ in $(seq 1 25); do
-    if ! kill -0 "$HANGING_PID" 2>/dev/null; then
-      REAPED=true
-      break
-    fi
-    sleep 0.2
-  done
-  if [[ "$REAPED" == true ]]; then
-    pass "the hanging emulator is gone once killed"
-  else
-    fail "the hanging emulator survived the kill (pid $HANGING_PID)"
-  fi
+ORPHANS="$(pgrep -P "$HANGING_PID" 2>/dev/null || true)"
+if [[ -n "$HANGING_PID" && -z "$ORPHANS" ]]; then
+  pass "the hanging emulator holds no child that a kill would orphan"
 else
-  fail "the hanging emulator recorded no pid to reap"
+  fail "killing the hanging emulator would orphan: $(tr '\n' ' ' <<< "$ORPHANS")"
 fi
+
+reap_emulator "$HANGING_EMULATOR_PID" "hanging emulator"
 
 # (k) The emulator exits during startup ---------------------------------------
 echo ""
@@ -577,18 +657,174 @@ else
   fail "the emulator log was not printed: $OUTPUT"
 fi
 
-# (l) A run in which everything works -----------------------------------------
+# (l) The device comes online but the boot never completes ---------------------
 echo ""
-echo "=== (l) A device that comes online carries the run through to the end ==="
+echo "=== (l) An emulator that never finishes booting is given up on ==="
 
+# The bound a developer who has just raised DEVICE_TIMEOUT meets next, on a
+# machine slow enough to have needed that (issue #1156). Everything up to the
+# boot wait succeeds, and then sys.boot_completed never reads 1 while the
+# emulator stays alive.
 SDK_L="$(new_sdk l)"
-make_stub "$SDK_L/cmdline-tools/latest/bin/sdkmanager" 0
-# Succeeds, but writes to stderr as avdmanager does even when it works.
-make_noisy_stub "$SDK_L/cmdline-tools/latest/bin/avdmanager" \
-  "Warning: this package is obsolete." 0
-make_adb_stub "$SDK_L/platform-tools/adb" "device"
-make_emulator_stub "$SDK_L/emulator/emulator" "emulator: booting" exit
+make_cmdline_tools "$SDK_L/cmdline-tools/latest/bin" 0
+make_adb_stub "$SDK_L/platform-tools/adb" "device" ""
+UNBOOTED_EMULATOR_PID="$TMPDIR_TESTS/unbooted-emulator.pid"
+make_emulator_stub "$SDK_L/emulator/emulator" \
+  "emulator: up, still booting" hang "$UNBOOTED_EMULATOR_PID"
 run_setup "$SDK_L"
+
+if [[ $RC -eq 1 ]]; then
+  pass "the run gives up and exits 1"
+else
+  fail "expected exit 1 (124 means it hung), got $RC: $OUTPUT"
+fi
+
+if grep -qF "ERROR: Emulator did not finish booting within ${BOOT_TIMEOUT}s." <<< "$OUTPUT"; then
+  pass "the failure names the bound it waited out"
+else
+  fail "no boot-timeout message in the failure: $OUTPUT"
+fi
+
+# The bound above is a number, so it tells a developer on a slow machine nothing
+# about how to raise it. This is the knob, and the wait before this one names
+# its own for the same reason.
+if grep -qF "BOOT_TIMEOUT" <<< "$OUTPUT"; then
+  pass "the failure points at the override that raises the bound"
+else
+  fail "the failure does not name BOOT_TIMEOUT: $OUTPUT"
+fi
+
+# A boot that stalls says nothing through the property being polled, so the
+# emulator's own log is all the failure has to offer.
+if grep -qF "emulator: up, still booting" <<< "$OUTPUT"; then
+  pass "the emulator log is printed with the failure"
+else
+  fail "the emulator log was not printed: $OUTPUT"
+fi
+
+# The device is still there here, which is what makes raising the bound the
+# right advice; case (m) is the same failure with a different answer.
+if grep -qE "^[[:space:]]+device$" <<< "$OUTPUT"; then
+  pass "the failure reports the device adb still sees"
+else
+  fail "the failure does not report adb's answer: $OUTPUT"
+fi
+
+# Both reads of BOOT_POLL_INTERVAL, as case (j) covers the device wait's. A
+# loop sleeping five seconds per one-second step gives up after 3000 seconds of
+# a 600-second bound.
+if grep -qF "...waiting for boot (1 / ${BOOT_TIMEOUT}s)" <<< "$OUTPUT"; then
+  pass "the wait counts in the steps BOOT_POLL_INTERVAL set"
+else
+  fail "BOOT_POLL_INTERVAL did not reach the counter: $OUTPUT"
+fi
+
+if [[ -s "$SLEPT" && "$(sort -u "$SLEPT")" == "$BOOT_POLL_INTERVAL" ]]; then
+  pass "every sleep the wait took was the interval BOOT_POLL_INTERVAL set"
+else
+  fail "with BOOT_POLL_INTERVAL=$BOOT_POLL_INTERVAL the wait slept: $(tr '\n' ' ' < "$SLEPT")"
+fi
+
+# The emulator outlives this failure as it outlives the device wait's, so the
+# failure has to say so: the next run's `avdmanager create avd --force` would
+# rewrite the AVD underneath it.
+if grep -qE "still running as PID [0-9]+" <<< "$OUTPUT"; then
+  pass "the surviving emulator is named, with its PID"
+else
+  fail "the failure does not say the emulator is still running: $OUTPUT"
+fi
+
+reap_emulator "$UNBOOTED_EMULATOR_PID" "unbooted emulator"
+
+# (m) The device leaves after coming online -----------------------------------
+echo ""
+echo "=== (m) A device that goes away mid-boot is not blamed on the bound ==="
+
+# A device that goes offline or leaves the list looks exactly like a slow boot
+# through the polled property, and passes the liveness check too. Raising
+# BOOT_TIMEOUT fixes one and not the other, so the failure has to carry what
+# adb now says (issue #1156).
+SDK_M="$(new_sdk m)"
+make_cmdline_tools "$SDK_M/cmdline-tools/latest/bin" 0
+make_adb_stub "$SDK_M/platform-tools/adb" "device" "" "no devices/emulators found"
+DEPARTED_EMULATOR_PID="$TMPDIR_TESTS/departed-emulator.pid"
+make_emulator_stub "$SDK_M/emulator/emulator" \
+  "emulator: up, device gone" hang "$DEPARTED_EMULATOR_PID"
+run_setup "$SDK_M"
+
+if [[ $RC -eq 1 ]]; then
+  pass "the run gives up and exits 1"
+else
+  fail "expected exit 1 (124 means it hung), got $RC: $OUTPUT"
+fi
+
+# The state printed is the one adb reports now, not the `device` the wait above
+# saw on its way in.
+if grep -qF "error: no devices/emulators found" <<< "$OUTPUT"; then
+  pass "the failure carries what adb says about the device now"
+else
+  fail "the failure does not ask adb again: $OUTPUT"
+fi
+
+# And the advice is stated as a rule about that answer, not as "wait longer" to
+# a developer whose device has gone.
+if grep -qF 'If that reads "device"' <<< "$OUTPUT"; then
+  pass "raising the bound is offered only for a device that is still there"
+else
+  fail "the failure advises raising BOOT_TIMEOUT unconditionally: $OUTPUT"
+fi
+
+reap_emulator "$DEPARTED_EMULATOR_PID" "emulator left behind"
+
+# (n) The emulator dies between the device appearing and the boot completing ---
+echo ""
+echo "=== (n) An emulator that exits while booting is reported without waiting ==="
+
+# The bound raised for a slow machine must not also be charged to a run that has
+# nothing left to wait for: the property polled below is set by the emulator,
+# and a dead emulator will never set it (issue #1156).
+SDK_N="$(new_sdk n)"
+make_cmdline_tools "$SDK_N/cmdline-tools/latest/bin" 0
+make_adb_stub "$SDK_N/platform-tools/adb" "device" ""
+make_emulator_stub "$SDK_N/emulator/emulator" "emulator: PANIC: out of memory" exit
+
+# Far beyond run_setup's own 60s bound, as in case (k), so a run that reaches
+# this failure by waiting out the clock cannot pass.
+BOOT_TIMEOUT_SAVED="$BOOT_TIMEOUT"
+export BOOT_TIMEOUT=600
+run_setup "$SDK_N"
+export BOOT_TIMEOUT="$BOOT_TIMEOUT_SAVED"
+
+if [[ $RC -eq 1 ]]; then
+  pass "the run exits 1 long before the 600s bound"
+else
+  fail "expected exit 1 (124 means it waited), got $RC: $OUTPUT"
+fi
+
+if grep -qF "ERROR: The emulator exited before finishing its boot." <<< "$OUTPUT"; then
+  pass "the failure names the dead emulator, not a timeout"
+else
+  fail "no emulator-exited message in the failure: $OUTPUT"
+fi
+
+if grep -qF "emulator: PANIC: out of memory" <<< "$OUTPUT"; then
+  pass "the emulator log carries the reason"
+else
+  fail "the emulator log was not printed: $OUTPUT"
+fi
+
+# (o) A run in which everything works -----------------------------------------
+echo ""
+echo "=== (o) A device that comes online carries the run through to the end ==="
+
+SDK_O="$(new_sdk o)"
+make_stub "$SDK_O/cmdline-tools/latest/bin/sdkmanager" 0
+# Succeeds, but writes to stderr as avdmanager does even when it works.
+make_noisy_stub "$SDK_O/cmdline-tools/latest/bin/avdmanager" \
+  "Warning: this package is obsolete." 0
+make_adb_stub "$SDK_O/platform-tools/adb" "device"
+make_emulator_stub "$SDK_O/emulator/emulator" "emulator: booting" exit
+run_setup "$SDK_O"
 
 if [[ $RC -eq 0 ]]; then
   pass "the run completes (exit 0)"
