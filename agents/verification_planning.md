@@ -21,12 +21,10 @@ Classify each finding into exactly one of three tracks:
 - **Before-merging (blocking)**: requirements from the two kinds above that are in scope for this PR, must be resolved before it can be merged, and can be resolved while it is open.
 - **Follow-on (non-blocking)**: work that is explicitly deferred, out of scope for this PR, only possible once the change is on the default branch, or otherwise not a condition of merging (for example, cleanup in another package that the PR explicitly deferred to a follow-up).
 - **Declined (not filed)**: a finding that leaves nobody anything to do, by either of the two tests below.
-  Step 5 records it under **Not filed**, where a later run reads it and a human can overrule you, and its source comment stays the record.
 
 All three lists are deliverables.
 Every item on the first two gets an issue of its own, so that nothing which is still work is lost.
 Only the before-merging list controls the merge gate, and it takes every item on it whatever the item's size.
-The two declining tests govern the follow-on list only.
 
 ### A check only the merge can satisfy is not a merge blocker
 
@@ -37,23 +35,24 @@ Put it on the follow-on list, and say in the issue that it is to be run after th
 ### An observation the reviewer closed is declined
 
 A reviewer who raises something and settles it in the same breath ("not a change request", "leave it") has decided it, not deferred it.
-Filing it reopens a finished argument.
+Filing it would reopen a finished argument.
 Ask whether work remains, not whether the point was interesting.
 
-### A deferral with no consequence is declined
+### A finding that leaves no work is declined
 
-The test above asks whether the item was deferred; this one asks what work is left.
-A reviewer's "worth an issue" costs one clause; the issue costs a branch, a PR, a review cycle and CI.
-
-File a defect in behaviour that ships, in a test, or in a record whose accuracy is the deliverable, or a decision whose answer changes code and something observed turns on it.
-Decline a comment's wording that misleads no caller, and a "should X be like Y" nothing observed has met: symmetry is not evidence.
+That test asks whether a point was deferred or settled; this one asks whether work remains.
+Writing "worth an issue" costs one clause; the issue costs a branch, a pull request, a review cycle and a CI run.
+File a defect in shipped behaviour, a test, or a record whose accuracy is the deliverable.
+File a decision whose answer would change code, where something observed turns on it.
+Decline wording that misleads no caller, or a "should X be like Y" that nothing observed has met.
+Symmetry is not evidence.
 
 ## What to do
 
 1. Read the issue description, PR description, and all comments on both.
    The issue's comments are retrieved in one call, but you must check all three comment surfaces of the PR, each its own call: the issue-comment stream, the review bodies, and the inline review threads.
    Look for both kinds of outstanding requirement described under **Role**: unautomated verification steps, and changes outside the repo (such as an issue that needs to be filed).
-   Sort every finding into one of three lists, by the routing rules under **Three lists**, which you apply here and only here.
+   Sort every finding into one of three lists, by the routing rules under **Three lists**:
 
    - the *before merging* list, labeling each item as either an unautomated verification step or a change outside the repo, and noting for each item the URL of the specific PR comment that called for it;
    - the *follow-on* list, noting for each item the URL of the source comment or description and a brief reason it is not a merge blocker (e.g., "explicitly deferred in PR comment," "out of scope for this PR"); and
@@ -97,7 +96,6 @@ Decline a comment's wording that misleads no caller, and a "should X be like Y" 
    Do not pass `--replace-parent` to force a link the script refused: it would move the issue out of the parent it already has.
 
 4. File an issue for each item on the *follow-on* list that a prior-run comment (step 2) records neither as already filed nor as declined.
-   Step 1 applied the declining tests, so there is nothing left to weigh here.
    For each item:
    a. Title the issue simply `{task title}`, without referencing the current PR.
    b. In the issue description, include a URL to the source comment or description, and state clearly that this issue does **not** block PR #{number} (for example, "This is a follow-on item and does not block merging PR #{number}.").
