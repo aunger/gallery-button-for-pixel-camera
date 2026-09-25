@@ -319,10 +319,7 @@ jobs:
           # 180s is what scripts/ci/test-support/setup-e2e-emulator.sh allows the same
           # property on an AVD of the same API level and image (its BOOT_TIMEOUT), measured
           # from the same point: the device answering adb. Bounded here so a boot that
-          # stalls is reported as the boot flag, naming what the emulator was doing, rather
-          # than as this step reaching its timeout-minutes (issue #1154); that step-level
-          # bound stays as the backstop it was, and 180s leaves the settings-service loop
-          # below its own 120s inside it.
+          # stalls is reported as the boot flag, naming what the emulator was doing.
           echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Waiting for sys.boot_completed=1 (timeout 180s)..."
           BOOTWAIT=0
           until [[  "$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]]; do
