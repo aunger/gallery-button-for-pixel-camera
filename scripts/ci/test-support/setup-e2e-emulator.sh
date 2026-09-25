@@ -36,8 +36,12 @@
 #                         before giving up (default: 1200). Raise it if this
 #                         machine is slower than that; the tests lower it.
 #   DEVICE_POLL_INTERVAL  Seconds between those checks (default: 5).
+#   BOOT_TIMEOUT          Seconds to wait, from the device coming online, for
+#                         sys.boot_completed=1 before giving up (default: 600).
+#                         Raise it on the same machine; the tests lower it.
+#   BOOT_POLL_INTERVAL    Seconds between those checks (default: 5).
 #   EMULATOR_LOG          Where the emulator's output goes, and what is printed
-#                         when the wait above fails (default: /tmp/emulator.log).
+#                         when either wait above fails (default: /tmp/emulator.log).
 
 set -euo pipefail
 
@@ -218,16 +222,50 @@ if [[ "$POST_BOOT_ONLY" == false ]]; then
     echo "==> Device online."
 
     echo "==> Waiting for full boot (sys.boot_completed=1)..."
-    BOOT_TIMEOUT=180
-    ELAPSED=0
+    # The bound a developer meets right after raising DEVICE_TIMEOUT, so it
+    # gives way the same way: from the environment, named in its own failure.
+    # 600 is what CI allows this wait, whose boot poll is bounded
+    # only by the `timeout-minutes: 10` on the "Wait for emulator service
+    # readiness" step of .github/workflows/build.yml, shared there with the
+    # waits either side of it. That runner has KVM and a warm system image, so a
+    # developer's machine should not be held to less. The liveness check below
+    # keeps an emulator that has died out of the larger bound.
+    BOOT_TIMEOUT="${BOOT_TIMEOUT:-600}"
+    BOOT_POLL_INTERVAL="${BOOT_POLL_INTERVAL:-5}"
+    BOOT_ELAPSED=0
     while [[ "$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" != "1" ]]; do
-        if [[ $ELAPSED -ge $BOOT_TIMEOUT ]]; then
-            echo "ERROR: Emulator did not finish booting within ${BOOT_TIMEOUT}s." >&2
+        # A device on adb is no promise of a live emulator, and one that has
+        # gone will never set the property this polls.
+        if ! kill -0 "$EMULATOR_PID" 2>/dev/null; then
+            echo "ERROR: The emulator exited before finishing its boot." >&2
+            echo "=== $EMULATOR_LOG ===" >&2
+            cat "$EMULATOR_LOG" >&2
             exit 1
         fi
-        sleep 5
-        ELAPSED=$((ELAPSED + 5))
-        echo "  ...waiting ($ELAPSED / ${BOOT_TIMEOUT}s)"
+        if [[ $BOOT_ELAPSED -ge $BOOT_TIMEOUT ]]; then
+            echo "ERROR: Emulator did not finish booting within ${BOOT_TIMEOUT}s." >&2
+            # Entered on one `device` from the wait above and never asked
+            # again: a device that has since gone offline, or left the list,
+            # reports this property exactly as a slow boot does and passes the
+            # liveness check too. Only adb separates them.
+            echo "       adb get-state says:" >&2
+            "$ADB" get-state 2>&1 | sed 's/^/       /' >&2 || true
+            echo "       If that reads \"device\" and this machine is just slow" >&2
+            echo "       to boot an emulator, set BOOT_TIMEOUT higher and run" >&2
+            echo "       again. Anything else means the device went away after" >&2
+            echo "       coming online, and no bound waits that out." >&2
+            # Still running: the check above cleared it a poll ago. Said
+            # because the next run's `avdmanager create avd --force` rewrites
+            # this AVD underneath it.
+            echo "       The emulator is still running as PID $EMULATOR_PID." >&2
+            echo "       Leave it running, or stop it with: kill $EMULATOR_PID" >&2
+            echo "=== $EMULATOR_LOG ===" >&2
+            cat "$EMULATOR_LOG" >&2
+            exit 1
+        fi
+        sleep "$BOOT_POLL_INTERVAL"
+        BOOT_ELAPSED=$((BOOT_ELAPSED + BOOT_POLL_INTERVAL))
+        echo "  ...waiting for boot ($BOOT_ELAPSED / ${BOOT_TIMEOUT}s)"
     done
     echo "==> Device fully booted."
 fi
