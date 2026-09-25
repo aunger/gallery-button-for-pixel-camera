@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
@@ -71,6 +72,14 @@ class PickerActivity : ComponentActivity() {
         finish()
     }
 }
+
+/**
+ * Test tag for the app list. A `LazyColumn` composes only the rows on screen, so a test
+ * that wants a row further down has to scroll the list, and it has to name the list to do
+ * so: `hasScrollAction()` alone is ambiguous here, because the single-line search field
+ * scrolls its own contents and carries the same semantics action.
+ */
+const val PICKER_APP_LIST_TEST_TAG = "picker_app_list"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -130,7 +139,7 @@ fun PickerScreen(
                 singleLine = true,
             )
 
-            LazyColumn {
+            LazyColumn(modifier = Modifier.testTag(PICKER_APP_LIST_TEST_TAG)) {
                 if (!showAll) {
                     item {
                         Text(
