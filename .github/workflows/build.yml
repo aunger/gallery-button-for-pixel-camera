@@ -308,9 +308,21 @@ jobs:
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
 
-          echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Waiting for ADB device (timeout 1200s)..."
-          timeout 1200 "$ADB" wait-for-device || {
-            echo "ERROR: Emulator did not appear on ADB after 1200s" >&2
+          # 240s, where this wait carried 1200s until issue #1162. The step is killed at
+          # its own `timeout-minutes: 10` above, so a 1200s bound could never fire: an
+          # emulator that never reached adb was reported as this step running out of
+          # time, and the message below, together with the emulator log it tails, was
+          # never printed. A bound names the wait it belongs to only if the wait can
+          # reach it, so the waits in this step have to fit inside its 600 seconds
+          # together: 240 here leaves 360 for the boot-flag poll and the 120s
+          # settings-service loop that follow, and for the step's non-waiting work.
+          # That sum is a judgement recorded here, not a checked one: nothing adds these
+          # three waits up, and the loops' bounds are not written as `timeout` at all.
+          # scripts/ci/test_reachable_wait_bounds.py checks the one part that is
+          # mechanical, that 240 stays under the 600 this step is killed at.
+          echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Waiting for ADB device (timeout 240s)..."
+          timeout 240 "$ADB" wait-for-device || {
+            echo "ERROR: Emulator did not appear on ADB after 240s" >&2
             echo "=== Emulator log (last 80 lines) ===" >&2
             tail -80 /tmp/emulator.log >&2
             exit 1
