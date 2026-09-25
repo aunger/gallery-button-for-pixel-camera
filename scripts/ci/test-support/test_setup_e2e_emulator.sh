@@ -48,7 +48,7 @@
 #       rather than at the boot bound
 #   (o) A device that does come online carries the run to the end, and a
 #       successful AVD creation prints nothing
-#   (m) Every default the script's "Environment" header documents is the one
+#   (p) Every default the script's "Environment" header documents is the one
 #       the script actually falls back to (issue #1162)
 #
 # Because both binaries are required together, the fixtures install them as a
@@ -846,9 +846,9 @@ else
   pass "a successful AVD creation stays quiet"
 fi
 
-# (m) The header's defaults are the script's defaults -------------------------
+# (p) The header's defaults are the script's defaults -------------------------
 echo ""
-echo "=== (m) Every default the header documents is the one the script uses ==="
+echo "=== (p) Every default the header documents is the one the script uses ==="
 
 # The header is where a developer reads what a knob defaults to before deciding
 # whether to set it, and nothing else compares the two numbers. Issue #1162
