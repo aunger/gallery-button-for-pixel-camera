@@ -624,8 +624,10 @@ ADVICE = {
         "links in the same body whose labels held no slash stored intact, on the REST path "
         "and on the MCP path alike, so changing write path will not avoid it. Whether a "
         "retry fares better is not known: this behavior has never been probed for "
-        "constancy, and every post that carried the construct on #958 was altered. What "
-        "did work there was plain text, which stored byte for byte."
+        "constancy, and every post that carried the construct on #958 was altered. Keep "
+        "the link. A citation that no longer resolves is a worse artifact than one whose "
+        "label renders oddly, so do not fall back to plain text: edit the stored object, "
+        "keep the target, and move the label out of the shape that triggers this."
     ),
     "other": (
         "The stored text differs from what was sent in a way this checker has not seen "
