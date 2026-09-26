@@ -771,6 +771,17 @@ class TestAdvice(unittest.TestCase):
         advice = vgw.ADVICE["back-tick insertion"].lower()
         self.assertIn("read it rather than assuming", advice)
 
+    def test_the_backtick_advice_does_not_recommend_dropping_the_link(self):
+        # The advice once ended by noting that plain text stored byte for byte on
+        # #958.  Agents read that as the remedy and replaced their citations with
+        # unlinked text, which trades a working reference for a tidy diff: four
+        # reviews in one session lost their links that way.  A link whose label
+        # renders as code still resolves; one that was deleted does not.
+        advice = vgw.ADVICE["back-tick insertion"].lower()
+        self.assertIn("keep the link", advice)
+        self.assertIn("do not fall back to plain text", advice)
+        self.assertNotIn("what did work", advice)
+
     def test_every_classification_has_advice(self):
         # build_report indexes ADVICE by classification name, so a behavior
         # added without advice would raise while reporting a real finding,
