@@ -613,12 +613,21 @@ fi
 # this reason: run as a child instead, the sleep survives a kill aimed at its
 # parent and is reparented to init, one orphan per run of this file, which no
 # check on the recorded PID alone would ever notice.
+#
+# A pid file with nothing in it is not this assertion's to report: `pgrep -P ""`
+# exits 2 with a usage message rather than listing children, so a missing pid
+# reaches the orphan test as an empty list and reads there as an emulator that
+# holds none. The `reap_emulator` below refuses that same empty pid file and
+# names it, so the orphan test stands aside rather than answering a question it
+# was given no pid to ask.
 HANGING_PID="$(cat "$HANGING_EMULATOR_PID" 2>/dev/null || true)"
-ORPHANS="$(pgrep -P "$HANGING_PID" 2>/dev/null || true)"
-if [[ -n "$HANGING_PID" && -z "$ORPHANS" ]]; then
-  pass "the hanging emulator holds no child that a kill would orphan"
-else
-  fail "killing the hanging emulator would orphan: $(tr '\n' ' ' <<< "$ORPHANS")"
+if [[ -n "$HANGING_PID" ]]; then
+  ORPHANS="$(pgrep -P "$HANGING_PID" 2>/dev/null || true)"
+  if [[ -z "$ORPHANS" ]]; then
+    pass "the hanging emulator holds no child that a kill would orphan"
+  else
+    fail "killing the hanging emulator would orphan: $(tr '\n' ' ' <<< "$ORPHANS")"
+  fi
 fi
 
 reap_emulator "$HANGING_EMULATOR_PID" "hanging emulator"
