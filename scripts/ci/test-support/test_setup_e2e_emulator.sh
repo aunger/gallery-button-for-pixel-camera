@@ -84,20 +84,22 @@ export INVOKED="$TMPDIR_TESTS/invoked.log"
 # rather than the script's 600s defaults. See "Environment" in
 # setup-e2e-emulator.sh.
 #
-# No two of these hold the same number, so an assertion that interpolates one
-# of them fails when the loop under test read another (issue #1162). They held
-# one number per pair until then, which let either loop read the other wait's
-# interval, for both of its own reads, without a single assertion noticing.
+# Four different numbers, so an assertion that interpolates one of them fails
+# when the loop under test read the other wait's in its place (issue #1162).
+# That covers each loop's sleep, its counter, and the bound it prints. Each
+# pair held a single number before, and every one of those reads could come
+# from either variable of the pair without an assertion noticing. Neither
+# interval divides the other, or a loop counting in the other's step would
+# still reach the progress line its own assertion greps for, a few steps later.
 #
-# Neither interval divides the other either. A loop counting in the other
-# wait's interval would otherwise still reach, and print, the progress line its
-# own assertion greps for, a few steps later in the same run. Each bound is a
-# whole number of its own wait's steps, so a case waits its bound and no more.
-#
-# What no choice of numbers here makes visible is the bound a loop compares
-# against, as opposed to the one it prints: nothing observes where a wait
-# stopped, and the message names its own variable either way.
-export DEVICE_TIMEOUT=6
+# The read no assertion covers is the bound a loop compares against, as opposed
+# to the bound it prints. These numbers leave it observable to whoever adds an
+# assertion on it: a wait gives up at the first multiple of its own interval at
+# or above the bound it compared, and swapping in the other wait's bound moves
+# that multiple for both waits, so the progress lines change. It need not hold.
+# A 6s device bound against this 4s boot bound gives 6 either way, and a device
+# wait so bounded would print exactly what a correct one prints.
+export DEVICE_TIMEOUT=9
 export DEVICE_POLL_INTERVAL=3
 export BOOT_TIMEOUT=4
 export BOOT_POLL_INTERVAL=2
@@ -725,9 +727,11 @@ else
   fail "the failure does not report adb's answer: $OUTPUT"
 fi
 
-# Both reads of BOOT_POLL_INTERVAL, as case (j) covers the device wait's. A
-# loop that sleeps the script's own five seconds per step it counts as two
-# spends more than twice its bound before it gives up.
+# Both reads of BOOT_POLL_INTERVAL, as case (j) covers the device wait's. The
+# line it greps for is one neither other step this loop could be counting in,
+# the script's own default or the device wait's interval, ever lands on. A loop
+# that sleeps five seconds per step it counts as two spends more than twice its
+# bound before it gives up.
 if grep -qF "...waiting for boot (${BOOT_POLL_INTERVAL} / ${BOOT_TIMEOUT}s)" <<< "$OUTPUT"; then
   pass "the wait counts in the steps BOOT_POLL_INTERVAL set"
 else
