@@ -83,10 +83,26 @@ export INVOKED="$TMPDIR_TESTS/invoked.log"
 # Both bounds are overridable, so the cases that exercise them run in seconds
 # rather than the script's 600s defaults. See "Environment" in
 # setup-e2e-emulator.sh.
-export DEVICE_TIMEOUT=2
-export DEVICE_POLL_INTERVAL=1
-export BOOT_TIMEOUT=2
-export BOOT_POLL_INTERVAL=1
+#
+# Four different numbers, so an assertion that interpolates one of them fails
+# when the loop under test read the other wait's in its place (issue #1162).
+# That covers each loop's sleep, its counter, and the bound it prints. Each
+# pair held a single number before, and every one of those reads could come
+# from either variable of the pair without an assertion noticing. Neither
+# interval divides the other, or a loop counting in the other's step would
+# still reach the progress line its own assertion greps for, a few steps later.
+#
+# The read no assertion covers is the bound a loop compares against, as opposed
+# to the bound it prints. These numbers leave it observable to whoever adds an
+# assertion on it: a wait gives up at the first multiple of its own interval at
+# or above the bound it compared, and swapping in the other wait's bound moves
+# that multiple for both waits, so the progress lines change. It need not hold.
+# A 6s device bound against this 4s boot bound gives 6 either way, and a device
+# wait so bounded would print exactly what a correct one prints.
+export DEVICE_TIMEOUT=9
+export DEVICE_POLL_INTERVAL=3
+export BOOT_TIMEOUT=4
+export BOOT_POLL_INTERVAL=2
 
 # Inside the suite's own directory, so no case writes over the emulator log of a
 # real run on the developer's machine.
@@ -583,17 +599,18 @@ fi
 # Nothing above would notice the loop ignoring DEVICE_POLL_INTERVAL: a
 # hardcoded sleep reaches the same bound and prints the same messages. Its two
 # reads are asserted separately, since either alone can break. First the
-# counter, which the progress line is printed from: a five-second step never
-# prints a first second.
-if grep -qF "...waiting for device (1 / ${DEVICE_TIMEOUT}s)" <<< "$OUTPUT"; then
+# counter, which the progress line is printed from: neither step this loop
+# could be counting in by mistake, the script's own default or the boot wait's
+# interval, ever lands on this line.
+if grep -qF "...waiting for device (${DEVICE_POLL_INTERVAL} / ${DEVICE_TIMEOUT}s)" <<< "$OUTPUT"; then
   pass "the wait counts in the steps DEVICE_POLL_INTERVAL set"
 else
   fail "DEVICE_POLL_INTERVAL did not reach the counter: $OUTPUT"
 fi
 
 # Then the sleep, which is what spaces the checks and what the progress line
-# cannot see: a loop counting in ones while sleeping fives prints the same
-# lines and waits five times the bound.
+# cannot see: a loop that counts in its interval while sleeping a hardcoded
+# five prints the same lines and waits far longer than the bound.
 if [[ -s "$SLEPT" && "$(sort -u "$SLEPT")" == "$DEVICE_POLL_INTERVAL" ]]; then
   pass "every sleep the wait took was the interval DEVICE_POLL_INTERVAL set"
 else
@@ -710,10 +727,12 @@ else
   fail "the failure does not report adb's answer: $OUTPUT"
 fi
 
-# Both reads of BOOT_POLL_INTERVAL, as case (j) covers the device wait's. A
-# loop sleeping five seconds per one-second step gives up after 3000 seconds of
-# a 600-second bound.
-if grep -qF "...waiting for boot (1 / ${BOOT_TIMEOUT}s)" <<< "$OUTPUT"; then
+# Both reads of BOOT_POLL_INTERVAL, as case (j) covers the device wait's. The
+# line it greps for is one neither other step this loop could be counting in,
+# the script's own default or the device wait's interval, ever lands on. A loop
+# that sleeps five seconds per step it counts as two spends more than twice its
+# bound before it gives up.
+if grep -qF "...waiting for boot (${BOOT_POLL_INTERVAL} / ${BOOT_TIMEOUT}s)" <<< "$OUTPUT"; then
   pass "the wait counts in the steps BOOT_POLL_INTERVAL set"
 else
   fail "BOOT_POLL_INTERVAL did not reach the counter: $OUTPUT"
