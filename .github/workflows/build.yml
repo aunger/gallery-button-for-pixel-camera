@@ -328,9 +328,13 @@ jobs:
             exit 1
           }
 
-          # 180s of the 360 the device wait above leaves this step, keeping 120 for the
-          # settings-service loop below. Bounded here so a boot that stalls is reported as
-          # the boot flag, naming what the emulator was doing.
+          # 180s, taken in #1158 from the bound setup-e2e-emulator.sh then gave the same
+          # property; the script has since raised its own for developers' machines. It
+          # still fits this step: of the 360 the device wait above leaves, 180 goes here,
+          # 120 to the settings-service loop below, and 60 to the step's other work,
+          # including the adb calls both loops make on top of the sleeps they count.
+          # Bounded here so a boot that stalls is reported as the boot flag, naming what
+          # the emulator was doing.
           echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Waiting for sys.boot_completed=1 (timeout 180s)..."
           BOOTWAIT=0
           until [[  "$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]]; do
