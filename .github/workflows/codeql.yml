@@ -13,8 +13,7 @@ permissions:
   contents: read
 
 jobs:
-  # Detect which languages have changed so language-specific CodeQL jobs can
-  # skip themselves when no relevant files are modified.
+  # Detect which languages have changed so language-specific CodeQL jobs can skip themselves when no relevant files are modified.
   # On push to main or a scheduled run, all languages are always scanned.
   detect-changes:
     runs-on: ubuntu-latest
