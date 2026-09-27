@@ -232,12 +232,12 @@ if [[ "$POST_BOOT_ONLY" == false ]]; then
     echo "==> Waiting for full boot (sys.boot_completed=1)..."
     # The bound a developer meets right after raising DEVICE_TIMEOUT, so it
     # gives way the same way: from the environment, named in its own failure.
-    # 600 is what CI allows this wait, whose boot poll is bounded
-    # only by the `timeout-minutes: 10` on the "Wait for emulator service
-    # readiness" step of .github/workflows/build.yml, shared there with the
-    # waits either side of it. That runner has KVM and a warm system image, so a
-    # developer's machine should not be held to less. The liveness check below
-    # keeps an emulator that has died out of the larger bound.
+    # 600 is the whole `timeout-minutes: 10` of the "Wait for emulator service
+    # readiness" step of .github/workflows/build.yml, the figure DEVICE_TIMEOUT
+    # takes and for the same reason: that step gives its own boot poll only a
+    # share of it, on a runner with KVM and a warm system image, and a
+    # developer's machine may have neither. The liveness check below keeps an
+    # emulator that has died out of the larger bound.
     BOOT_TIMEOUT="${BOOT_TIMEOUT:-600}"
     BOOT_POLL_INTERVAL="${BOOT_POLL_INTERVAL:-5}"
     BOOT_ELAPSED=0
