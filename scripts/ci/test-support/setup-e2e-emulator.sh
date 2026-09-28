@@ -193,7 +193,7 @@ if [[ "$POST_BOOT_ONLY" == false ]]; then
     DEVICE_TIMEOUT="${DEVICE_TIMEOUT:-600}"
     DEVICE_POLL_INTERVAL="${DEVICE_POLL_INTERVAL:-5}"
     # Timed by the clock rather than by adding up sleeps, so the time each adb
-    # poll takes counts toward the bound too (issue #1182).
+    # poll takes counts toward the bound too.
     DEVICE_START=$SECONDS
     until [[ "$("$ADB" get-state 2>/dev/null | tr -d '\r')" == "device" ]]; do
         if ! kill -0 "$EMULATOR_PID" 2>/dev/null; then
