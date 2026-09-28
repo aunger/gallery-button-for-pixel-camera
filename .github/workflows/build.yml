@@ -331,14 +331,17 @@ jobs:
           # 180s, taken in #1158 from the bound setup-e2e-emulator.sh then gave the same
           # property; the script has since raised its own for developers' machines. It
           # still fits this step: of the 360 the device wait above leaves, 180 goes here,
-          # 120 to the settings-service loop below, and 60 to the step's other work,
-          # including the adb calls both loops make on top of the sleeps they count.
+          # 120 to the settings-service loop below, and 60 to the step's other work.
+          # Both loops read the clock, so their adb calls count toward their own bounds
+          # (issue #1182), but each checks only after a poll: it can overrun its bound by
+          # one `sleep 5` and its last poll, and the boot loop's failure branch makes one
+          # more adb call. The 60 covers that.
           # Bounded here so a boot that stalls is reported as the boot flag, naming what
           # the emulator was doing.
           echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Waiting for sys.boot_completed=1 (timeout 180s)..."
-          BOOTWAIT=0
+          BOOT_START=$SECONDS
           until [[  "$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]]; do
-            if [[ $BOOTWAIT -ge 180 ]]; then
+            if [[ $((SECONDS - BOOT_START)) -ge 180 ]]; then
               echo "ERROR: sys.boot_completed did not reach 1 within 180s of the device appearing." >&2
               # Unredirected, so adb's own complaint ("device offline", "no devices") reaches
               # the log in place of the value the poll above discards.
@@ -354,23 +357,21 @@ jobs:
               exit 1
             fi
             sleep 5
-            BOOTWAIT=$((BOOTWAIT + 5))
-            echo "  ...not booted yet (${BOOTWAIT}s since the device appeared)"
+            echo "  ...not booted yet ($((SECONDS - BOOT_START))s since the device appeared)"
           done
-          echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Boot flag set (${BOOTWAIT}s after the device appeared)."
+          echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Boot flag set ($((SECONDS - BOOT_START))s after the device appeared)."
 
           echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Waiting for settings service..."
-          SVCWAIT=0
+          SVC_START=$SECONDS
           until "$ADB" shell settings get global airplane_mode_on > /dev/null 2>&1; do
-            if [[ $SVCWAIT -ge 120 ]]; then
+            if [[ $((SECONDS - SVC_START)) -ge 120 ]]; then
               echo "ERROR: Services not ready after 120s post-boot." >&2
               exit 1
             fi
             sleep 5
-            SVCWAIT=$((SVCWAIT + 5))
-            echo "  ...not ready yet (${SVCWAIT}s since boot flag)"
+            echo "  ...not ready yet ($((SECONDS - SVC_START))s since boot flag)"
           done
-          echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Services ready (${SVCWAIT}s after boot flag)."
+          echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Services ready ($((SECONDS - SVC_START))s after boot flag)."
 
           # Wake, unlock, keep on, and disable animations now that services are up.
           # Use the same wake + upward-swipe sequence as the pre-flight step and

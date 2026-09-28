@@ -40,7 +40,7 @@ one it misses is missed silently.
 
 It judges one `timeout` at a time and never adds up the waits in a step. Two
 waits of 400 seconds each in a 10-minute step pass here and cannot both fire.
-Nor does it see a bound written as a loop counting elapsed seconds, the other
+Nor does it see a bound written as a loop checking elapsed seconds, the other
 shape this tree writes a wait in, so the room a `timeout` leaves for the loops
 after it is a judgement for whoever writes the step, recorded in its comments.
 
