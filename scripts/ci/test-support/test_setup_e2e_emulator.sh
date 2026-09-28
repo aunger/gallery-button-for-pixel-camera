@@ -35,13 +35,13 @@
 #   (j) An emulator that never produces a device is given up on, rather than
 #       waited for forever. The failure carries adb's account of why, the knob
 #       that raises the bound, and the emulator it leaves running (issue #1141),
-#       and it sleeps and counts in the interval the environment set
+#       and it sleeps the interval the environment set
 #   (k) An emulator that exits during startup is reported as that, at once,
 #       rather than at the bound
 #   (l) An emulator that comes online but never finishes booting is given up
 #       on, and that failure names the knob raising its own bound, the next one
-#       a run that raised DEVICE_TIMEOUT meets (issue #1156). Same two
-#       interval assertions as (j)
+#       a run that raised DEVICE_TIMEOUT meets (issue #1156). Same interval
+#       assertion as (j)
 #   (m) A device that leaves after coming online is reported as adb now finds
 #       it, not as the slow boot the polled property alone makes it look like
 #   (n) An emulator that exits while booting is reported as that, at once,
@@ -50,6 +50,8 @@
 #       successful AVD creation prints nothing
 #   (p) Every default the script's "Environment" header documents is the one
 #       the script actually falls back to (issue #1162)
+#   (q) Each wait's bound counts the time its adb polls take, not only the
+#       time it sleeps (issue #1182)
 #
 # Because both binaries are required together, the fixtures install them as a
 # pair, except where a case is about one of them being absent.
@@ -92,11 +94,10 @@ export BOOT_POLL_INTERVAL=1
 # real run on the developer's machine.
 export EMULATOR_LOG="$TMPDIR_TESTS/emulator.log"
 
-# Each wait reads its poll interval twice: into `sleep`, which spaces the
-# checks, and into the counter that decides when the bound is reached. Only the
-# counter reaches the progress line, so what is passed to `sleep` is recorded
-# here instead. The stub sleeps for real, keeping each wait's timing, and
-# resolves the real sleep now because PATH will hold the stub by then.
+# Each wait reads its poll interval only into `sleep`, and no output shows it,
+# so what is passed to `sleep` is recorded here instead. The stub sleeps for
+# real, keeping each wait's timing, and resolves the real sleep now because
+# PATH will hold the stub by then.
 REAL_SLEEP="$(command -v sleep)"
 if [[ -z "$REAL_SLEEP" ]]; then
   echo "FAIL: no sleep on PATH to record" >&2
@@ -194,12 +195,16 @@ make_adb_stub() {
   # <later state>, so the device wait sees a device arrive and whoever asks
   # next sees what became of it. The switch goes in a file beside the stub,
   # since each adb call is its own process.
+  #
+  # With ADB_DELAY set, every call first takes that many seconds, through the
+  # real sleep so the recording stub logs only the script's own sleeps.
   local path="$1" state="$2" boot="${3-1}" later="${4-}"
   local seen="$path.get-state-seen"
   rm -f "$seen"
   mkdir -p "$(dirname "$path")"
   {
     echo '#!/usr/bin/env bash'
+    printf 'if [[ -n "${ADB_DELAY:-}" ]]; then %q "$ADB_DELAY"; fi\n' "$REAL_SLEEP"
     echo 'if [[ "${1:-}" == "get-state" ]]; then'
     if [[ -n "$later" ]]; then
       printf '  if [[ -e %q ]]; then\n' "$seen"
@@ -580,20 +585,16 @@ else
   fail "the failure does not name DEVICE_TIMEOUT: $OUTPUT"
 fi
 
-# Nothing above would notice the loop ignoring DEVICE_POLL_INTERVAL: a
-# hardcoded sleep reaches the same bound and prints the same messages. Its two
-# reads are asserted separately, since either alone can break. First the
-# counter, which the progress line is printed from: a five-second step never
-# prints a first second.
-if grep -qF "...waiting for device (1 / ${DEVICE_TIMEOUT}s)" <<< "$OUTPUT"; then
-  pass "the wait counts in the steps DEVICE_POLL_INTERVAL set"
+# The progress line reads the clock, so its seconds vary with load; only its
+# shape is asserted.
+if grep -qE "\.\.\.waiting for device \([0-9]+ / ${DEVICE_TIMEOUT}s\)" <<< "$OUTPUT"; then
+  pass "the wait reports its progress against the bound"
 else
-  fail "DEVICE_POLL_INTERVAL did not reach the counter: $OUTPUT"
+  fail "no progress line against the bound: $OUTPUT"
 fi
 
-# Then the sleep, which is what spaces the checks and what the progress line
-# cannot see: a loop counting in ones while sleeping fives prints the same
-# lines and waits five times the bound.
+# Nothing above would notice the loop ignoring DEVICE_POLL_INTERVAL: a
+# hardcoded sleep reaches the same bound and prints the same messages.
 if [[ -s "$SLEPT" && "$(sort -u "$SLEPT")" == "$DEVICE_POLL_INTERVAL" ]]; then
   pass "every sleep the wait took was the interval DEVICE_POLL_INTERVAL set"
 else
@@ -719,13 +720,12 @@ else
   fail "the failure does not report adb's answer: $OUTPUT"
 fi
 
-# Both reads of BOOT_POLL_INTERVAL, as case (j) covers the device wait's. A
-# loop sleeping five seconds per one-second step gives up after 3000 seconds of
-# a 600-second bound.
-if grep -qF "...waiting for boot (1 / ${BOOT_TIMEOUT}s)" <<< "$OUTPUT"; then
-  pass "the wait counts in the steps BOOT_POLL_INTERVAL set"
+# The progress line and BOOT_POLL_INTERVAL, as case (j) covers the device
+# wait's.
+if grep -qE "\.\.\.waiting for boot \([0-9]+ / ${BOOT_TIMEOUT}s\)" <<< "$OUTPUT"; then
+  pass "the wait reports its progress against the bound"
 else
-  fail "BOOT_POLL_INTERVAL did not reach the counter: $OUTPUT"
+  fail "no progress line against the bound: $OUTPUT"
 fi
 
 if [[ -s "$SLEPT" && "$(sort -u "$SLEPT")" == "$BOOT_POLL_INTERVAL" ]]; then
@@ -894,6 +894,41 @@ else
     fi
   done <<< "$DOCUMENTED"
 fi
+
+# (q) A slow poll counts toward the bound ---------------------------------------
+echo ""
+echo "=== (q) Each wait's bound counts its polls' time, not only its sleeps ==="
+
+# Every adb call takes as long as the interval between them. A wait that added
+# up only its sleeps would give up after sleeping TIMEOUT / INTERVAL times, at
+# about twice its bound; one that reads the clock gives up after fewer.
+export ADB_DELAY=1
+for WAIT in device boot; do
+  SDK_Q="$(new_sdk "q-$WAIT")"
+  make_cmdline_tools "$SDK_Q/cmdline-tools/latest/bin" 0
+  if [[ "$WAIT" == device ]]; then
+    make_adb_stub "$SDK_Q/platform-tools/adb" "no devices/emulators found"
+    TIMEOUT_Q="$DEVICE_TIMEOUT"
+    INTERVAL_Q="$DEVICE_POLL_INTERVAL"
+  else
+    make_adb_stub "$SDK_Q/platform-tools/adb" "device" ""
+    TIMEOUT_Q="$BOOT_TIMEOUT"
+    INTERVAL_Q="$BOOT_POLL_INTERVAL"
+  fi
+  SLOW_EMULATOR_PID="$TMPDIR_TESTS/slow-$WAIT-emulator.pid"
+  make_emulator_stub "$SDK_Q/emulator/emulator" "emulator: up" hang "$SLOW_EMULATOR_PID"
+  run_setup "$SDK_Q"
+
+  SLEEPS="$(wc -l < "$SLEPT")"
+  if [[ $RC -eq 1 && $SLEEPS -lt $((TIMEOUT_Q / INTERVAL_Q)) ]]; then
+    pass "the $WAIT wait gave up after $SLEEPS sleeps of $INTERVAL_Q in a ${TIMEOUT_Q}s bound"
+  else
+    fail "the $WAIT wait exited $RC after $SLEEPS sleeps of $INTERVAL_Q in a ${TIMEOUT_Q}s bound: $OUTPUT"
+  fi
+
+  reap_emulator "$SLOW_EMULATOR_PID" "slow-$WAIT emulator"
+done
+unset ADB_DELAY
 
 # Summary ----------------------------------------------------------------------
 echo ""

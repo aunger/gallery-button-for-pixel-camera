@@ -192,7 +192,9 @@ if [[ "$POST_BOOT_ONLY" == false ]]; then
     # newly break, and DEVICE_TIMEOUT is how such a machine says so.
     DEVICE_TIMEOUT="${DEVICE_TIMEOUT:-600}"
     DEVICE_POLL_INTERVAL="${DEVICE_POLL_INTERVAL:-5}"
-    DEVICE_ELAPSED=0
+    # Timed by the clock rather than by adding up sleeps, so the time each adb
+    # poll takes counts toward the bound too (issue #1182).
+    DEVICE_START=$SECONDS
     until [[ "$("$ADB" get-state 2>/dev/null | tr -d '\r')" == "device" ]]; do
         if ! kill -0 "$EMULATOR_PID" 2>/dev/null; then
             echo "ERROR: The emulator exited before a device came online." >&2
@@ -200,7 +202,7 @@ if [[ "$POST_BOOT_ONLY" == false ]]; then
             cat "$EMULATOR_LOG" >&2
             exit 1
         fi
-        if [[ $DEVICE_ELAPSED -ge $DEVICE_TIMEOUT ]]; then
+        if [[ $((SECONDS - DEVICE_START)) -ge $DEVICE_TIMEOUT ]]; then
             echo "ERROR: No device came online within ${DEVICE_TIMEOUT}s." >&2
             echo "       If this machine is just slow to boot an emulator, set" >&2
             echo "       DEVICE_TIMEOUT higher and run again." >&2
@@ -224,8 +226,7 @@ if [[ "$POST_BOOT_ONLY" == false ]]; then
             exit 1
         fi
         sleep "$DEVICE_POLL_INTERVAL"
-        DEVICE_ELAPSED=$((DEVICE_ELAPSED + DEVICE_POLL_INTERVAL))
-        echo "  ...waiting for device ($DEVICE_ELAPSED / ${DEVICE_TIMEOUT}s)"
+        echo "  ...waiting for device ($((SECONDS - DEVICE_START)) / ${DEVICE_TIMEOUT}s)"
     done
     echo "==> Device online."
 
@@ -240,7 +241,7 @@ if [[ "$POST_BOOT_ONLY" == false ]]; then
     # emulator that has died out of the larger bound.
     BOOT_TIMEOUT="${BOOT_TIMEOUT:-600}"
     BOOT_POLL_INTERVAL="${BOOT_POLL_INTERVAL:-5}"
-    BOOT_ELAPSED=0
+    BOOT_START=$SECONDS
     while [[ "$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" != "1" ]]; do
         # A device on adb is no promise of a live emulator, and one that has
         # gone will never set the property this polls.
@@ -250,7 +251,7 @@ if [[ "$POST_BOOT_ONLY" == false ]]; then
             cat "$EMULATOR_LOG" >&2
             exit 1
         fi
-        if [[ $BOOT_ELAPSED -ge $BOOT_TIMEOUT ]]; then
+        if [[ $((SECONDS - BOOT_START)) -ge $BOOT_TIMEOUT ]]; then
             echo "ERROR: Emulator did not finish booting within ${BOOT_TIMEOUT}s." >&2
             # Entered on one `device` from the wait above and never asked
             # again: a device that has since gone offline, or left the list,
@@ -272,8 +273,7 @@ if [[ "$POST_BOOT_ONLY" == false ]]; then
             exit 1
         fi
         sleep "$BOOT_POLL_INTERVAL"
-        BOOT_ELAPSED=$((BOOT_ELAPSED + BOOT_POLL_INTERVAL))
-        echo "  ...waiting for boot ($BOOT_ELAPSED / ${BOOT_TIMEOUT}s)"
+        echo "  ...waiting for boot ($((SECONDS - BOOT_START)) / ${BOOT_TIMEOUT}s)"
     done
     echo "==> Device fully booted."
 fi
@@ -283,15 +283,14 @@ fi
 # install sessions. Poll until 'pm list packages' succeeds.
 echo "==> Waiting for package manager to be ready..."
 PM_TIMEOUT=120
-PM_ELAPSED=0
+PM_START=$SECONDS
 until "$ADB" shell pm list packages > /dev/null 2>&1; do
-    if [[ $PM_ELAPSED -ge $PM_TIMEOUT ]]; then
+    if [[ $((SECONDS - PM_START)) -ge $PM_TIMEOUT ]]; then
         echo "ERROR: Package manager not ready after ${PM_TIMEOUT}s." >&2
         exit 1
     fi
     sleep 5
-    PM_ELAPSED=$((PM_ELAPSED + 5))
-    echo "  ...waiting for PM ($PM_ELAPSED / ${PM_TIMEOUT}s)"
+    echo "  ...waiting for PM ($((SECONDS - PM_START)) / ${PM_TIMEOUT}s)"
 done
 echo "Package manager is ready."
 
