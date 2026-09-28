@@ -49,9 +49,9 @@ a large amount of machinery for a shape this tree does not write.
 
 What it accepts as a bound is a numeric comparison, `-ge` or `-gt`, and nothing
 establishes that the comparison is against elapsed time or that the body counts
-up what it compares: `if [[ $RETRY_BUDGET -gt 0 ]]` passes as readily as `if [[
-$BOOTWAIT -ge 180 ]]`. So this is weaker than "the loop gives up", and reads
-better as "the loop was written with a way out in mind". Both blind spots here
+up what it compares: `if [[ $RETRY_BUDGET -gt 0 ]]` passes as readily as
+`if [[ $((SECONDS - BOOT_START)) -ge 180 ]]`. So this is weaker than "the loop
+gives up", and reads better as "the loop was written with a way out in mind". Both blind spots here
 are pinned by tests, so that they are known rather than merely undiscovered.
 """
 
@@ -80,7 +80,7 @@ ADB_CALL = re.compile(r"\$\{?ADB\b|(?<![\w.-])adb\s")
 
 # An elapsed-against-bound check, as both loops in "Wait for emulator service
 # readiness" and every bounded loop in setup-e2e-emulator.sh spell one:
-# `if [[ $SVCWAIT -ge 120 ]]; then`.
+# `if [[ $((SECONDS - SVC_START)) -ge 120 ]]; then`.
 BOUND_CHECK = re.compile(r"-(?:ge|gt)\s")
 
 LOOP_HEADER = re.compile(r"^(?P<indent>[ \t]*)(?:until|while)\s")
