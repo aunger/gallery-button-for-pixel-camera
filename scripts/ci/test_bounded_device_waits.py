@@ -51,8 +51,9 @@ What it accepts as a bound is a numeric comparison, `-ge` or `-gt`, and nothing
 establishes that the comparison is against elapsed time or that the body counts
 up what it compares: `if [[ $RETRY_BUDGET -gt 0 ]]` passes as readily as
 `if [[ $((SECONDS - BOOT_START)) -ge 180 ]]`. So this is weaker than "the loop
-gives up", and reads better as "the loop was written with a way out in mind". Both blind spots here
-are pinned by tests, so that they are known rather than merely undiscovered.
+gives up", and reads better as "the loop was written with a way out in mind".
+Both blind spots here are pinned by tests, so that they are known rather than
+merely undiscovered.
 """
 
 import re
@@ -238,11 +239,10 @@ class ViolationDetectionTest(unittest.TestCase):
             [],
             self._violations(
                 'until [[ "$("$ADB" shell getprop sys.boot_completed)" == "1" ]]; do\n'
-                "  if [[ $BOOTWAIT -ge 180 ]]; then\n"
+                "  if [[ $((SECONDS - BOOT_START)) -ge 180 ]]; then\n"
                 "    exit 1\n"
                 "  fi\n"
                 "  sleep 5\n"
-                "  BOOTWAIT=$((BOOTWAIT + 5))\n"
                 "done\n"
             ),
         )

@@ -50,8 +50,8 @@
 #       successful AVD creation prints nothing
 #   (p) Every default the script's "Environment" header documents is the one
 #       the script actually falls back to (issue #1162)
-#   (q) Each wait's bound counts the time its adb polls take, not only the
-#       time it sleeps (issue #1182)
+#   (q) The device and boot waits' bounds count the time their adb polls
+#       take, not only the time they sleep (issue #1182)
 #
 # Because both binaries are required together, the fixtures install them as a
 # pair, except where a case is about one of them being absent.
@@ -897,7 +897,7 @@ fi
 
 # (q) A slow poll counts toward the bound ---------------------------------------
 echo ""
-echo "=== (q) Each wait's bound counts its polls' time, not only its sleeps ==="
+echo "=== (q) The device and boot waits count their polls' time, not only sleeps ==="
 
 # Every adb call takes as long as the interval between them. A wait that added
 # up only its sleeps would give up after sleeping TIMEOUT / INTERVAL times, at
