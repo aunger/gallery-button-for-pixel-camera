@@ -96,6 +96,22 @@ SNOOZE_LABEL_DAYS: dict[str, int] = {
 }
 SNOOZE_LABELS: frozenset[str] = frozenset(SNOOZE_LABEL_DAYS)
 
+# The two review-cycle pairs below are deliberately separate sets, not one.
+# They track independent things: `verification needed`/`verified` is the state
+# of the before-merging requirements, and `changes requested`/`changes done` is
+# the state of the Author/Reviewer round. Merging them would rule out states
+# that are coherent, and would open a hole in the merge gate:
+#   - `verified` + `changes requested`: a Reviewer asks for changes on a PR
+#     that is still verified for its current head. Adding the second label
+#     would strip `verified` for no reason (remove-verified-on-push.yml already
+#     clears it when a push makes it stale).
+#   - `verification needed` + `changes requested`/`changes done`: manual
+#     before-merging items are still open while a code round runs. A shared
+#     set would drop the label that says so.
+#   - Merge gate: `verified` does not block merging, but the other three labels
+#     do (check_blocking_labels.py). Adding `verified` to a PR carrying
+#     `changes requested` or `changes done` would remove a blocking label, and
+#     outside an orchestration run nothing else holds the gate closed.
 MUTUALLY_EXCLUSIVE_SETS: list[frozenset[str]] = [
     frozenset({"p1", "p2", "p3"}),
     frozenset({"verification needed", "verified"}),
