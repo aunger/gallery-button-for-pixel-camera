@@ -5,6 +5,14 @@ Each stdout line is the interface: terminal lines (`Clear`/`Blocked`/`Infra`, pl
 
 For how the Orchestrator uses this script as part of the development cycle (the Monitor loop, routing decisions, and the Verification Planner dispatch), see [`agents/dev_orchestration.md`](../../agents/dev_orchestration.md).
 
+## The Monitor knows nothing about this repository
+
+The Monitor reports what CI did and carries no knowledge of this repository.
+Repository-specific behavior reaches it only through `ci_monitor.config.json`, whose in-code defaults assume nothing about this repository.
+Which checks matter is policy, stated by the Monitor's consumers: the Orchestrator's named checks are in `agents/dev_orchestration.md`.
+
+Two known exceptions remain: `OWNER` and `REPO` are hardcoded in `ci_monitor.py` (#1111), and `label_gate_check_regex` names a process concept of this repository (#1121).
+
 ## Running the monitor
 
 Run it from the repo root, passing **exactly one** identifier:
