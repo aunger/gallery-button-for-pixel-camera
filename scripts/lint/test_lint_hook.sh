@@ -81,11 +81,17 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 # Create a fresh repo wired to the real hook, and print its path.
+#
+# The repo sits outside this checkout, so ruff would not find this repo's
+# ruff.toml and would lint with its own built-in defaults, which change between
+# ruff releases (0.16 added EXE001, which fails case (p)). Copying the config in
+# makes every case lint with the rules this repo actually runs.
 new_repo() {
     local repo
     repo="$(mktemp -d "$TMP/repo.XXXXXX")"
     git -C "$repo" init -q -b main
     git -C "$repo" config core.hooksPath "$HOOKS_DIR"
+    cp "$SCRIPT_DIR/../../ruff.toml" "$repo/"
     echo "$repo"
 }
 
