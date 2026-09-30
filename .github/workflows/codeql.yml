@@ -44,7 +44,9 @@ jobs:
             KOTLIN_CHANGED=$(echo "$CHANGED" | grep -E '\.(kt|kts|java)$' || true)
             echo "kotlin=$([ -n "$KOTLIN_CHANGED" ] && echo true || echo false)" >> $GITHUB_OUTPUT
 
-            PYTHON_CHANGED=$(echo "$CHANGED" | grep -E '\.py$' || true)
+            # Python sources, plus the pip requirements locks and inputs and the
+            # audit suppression file (requirements-audit-ignore.toml) beside them.
+            PYTHON_CHANGED=$(echo "$CHANGED" | grep -E '\.py$|(^|/)requirements[^/]*\.(in|txt|toml)$' || true)
             echo "python=$([ -n "$PYTHON_CHANGED" ] && echo true || echo false)" >> $GITHUB_OUTPUT
 
             ACTIONS_CHANGED=$(echo "$CHANGED" | grep -E '^\.github/(workflows|actions)/' || true)
