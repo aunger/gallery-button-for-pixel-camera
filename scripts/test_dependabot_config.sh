@@ -152,10 +152,12 @@
 # a package only the locks name, and the limit must cover the groups.
 # The updater pins with `-P NAME==VERSION`, which uv applies to every fork of a
 # universal resolution, so a package a lock pins at two versions under
-# complementary markers (rpds-py, split at Python 3.11) cannot be moved; the
-# entry's `ignore` must name exactly those packages. And every locked package
-# must have an entry Dependabot's uv parser keeps, since it drops one whose
-# marker contains "<" without the substring `python_version`.
+# complementary markers (rpds-py was, until the locks' Python floor rose to 3.11
+# in issue #1196) cannot be moved; the entry's `ignore` must name exactly those
+# packages, and none is needed while no lock pins one twice.
+# And every locked package must have an entry Dependabot's uv parser keeps,
+# since it drops one whose marker contains "<" without the substring
+# `python_version`.
 # scripts/test_dependabot_config_uv.sh breaks each config-side property in turn
 # and checks the matching check fails.
 #
@@ -906,7 +908,7 @@ def lock_pins(path):
 
 
 # A pin line with its environment marker, if it has one:
-# `rpds-py==0.30.0 ; python_full_version < '3.11' \`.
+# `typing-extensions==4.16.0 ; python_full_version < '3.13' \`.
 PIN_WITH_MARKER_RE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)==([^\s;\\]+)\s*(?:;\s*(.*?))?\s*\\?\s*$")
 
 
@@ -928,7 +930,7 @@ def parser_keeps(marker):
     A marker naming `python_version` is evaluated against the Dependabot
     runner's own interpreter, which nothing here can know, so it is scored as
     dropped. Any other marker containing "<" is dropped outright, which is what
-    happens to `python_full_version < '3.11'`: that spelling does not contain
+    happens to `python_full_version < '3.13'`: that spelling does not contain
     the substring `python_version`.
     """
     if not marker:

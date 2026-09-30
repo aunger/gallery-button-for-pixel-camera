@@ -14,6 +14,10 @@
 # The checks that read the lock files rather than the config (the sibling
 # `.in` and the header flags) are not driven from here: the script reads the
 # locks from the repository it sits in, and a fixture config cannot move them.
+# The fork checks are the exception (issue #1196). No real lock pins a package
+# at two versions at the current Python floor, so those are driven from a copy
+# of the repository in which one lock does, the script under test being run from
+# that copy so that it reads the copy's locks.
 #
 # Always exits 0 on success, non-zero on failure.
 
@@ -76,10 +80,8 @@ elif mutation == "unnormalized-name":
             groups[name][key] = ["PyYAML" if p == "pyyaml" else p for p in groups[name].get(key, [])]
 elif mutation == "no-groups":
     del entry["groups"]
-elif mutation == "forked-package-not-ignored":
-    del entry["ignore"]
 elif mutation == "stale-ignore":
-    entry["ignore"].append({"dependency-name": "requests"})
+    entry.setdefault("ignore", []).append({"dependency-name": "requests"})
 else:
     sys.exit("unknown mutation " + mutation)
 
@@ -106,6 +108,35 @@ expect_failure() {
     fi
 }
 
+# Build a copy of what the script under test reads (the config, the workflows,
+# the app's dependency list and scripts/), with `requests` locked a second time
+# under a complementary marker, and print the copy's root. $2 is "ignored" to
+# name `requests` in the copy's uv entry `ignore`, as the check requires.
+make_forked_repo() {
+    local name="$1" ignored="$2" root="$TMP_DIR/$1"
+    mkdir -p "$root/app"
+    cp -r "$REPO_ROOT/scripts" "$REPO_ROOT/.github" "$root/"
+    cp "$REPO_ROOT/app/build.gradle.kts" "$root/app/"
+    printf "requests==2.0.0 ; python_full_version < '3.11' \\\n    --hash=sha256:00\n" \
+        >> "$root/scripts/requirements.txt"
+    if [ "$ignored" = "ignored" ]; then
+        python3 - "$root/.github/dependabot.yml" <<'PY' || return 1
+import sys
+
+import yaml
+
+path = sys.argv[1]
+with open(path) as handle:
+    doc = yaml.safe_load(handle)
+entry = next(e for e in doc["updates"] if e.get("package-ecosystem") == "uv")
+entry["ignore"] = [{"dependency-name": "requests"}]
+with open(path, "w") as handle:
+    yaml.safe_dump(doc, handle, sort_keys=False)
+PY
+    fi
+    printf '%s\n' "$root"
+}
+
 echo "Checking the Python lock checks in $TARGET"
 
 if bash "$TARGET" "$CONFIG" > "$TMP_DIR/baseline.txt" 2>&1; then
@@ -122,8 +153,33 @@ expect_failure direct-pin-in-transitive-group "keeps the \`.in\` pins and the pa
 expect_failure direct-pin-ungrouped "a pull request of its own; ungrouped: pyyaml"
 expect_failure unnormalized-name "not normalized: PyYAML"
 expect_failure no-groups "pull requests its groups and ungrouped packages can want open at once"
-expect_failure forked-package-not-ignored "not ignored: rpds-py (scripts/ci/requirements-semgrep.txt)"
 expect_failure stale-ignore "stale: requests"
+
+# A lock that pins a package at two versions needs that package in `ignore`.
+if root="$(make_forked_repo forked-package-not-ignored unignored)"; then
+    output="$(bash "$root/scripts/test_dependabot_config.sh" 2>&1)"
+    status=$?
+    if [ "$status" -ne 0 ] \
+        && grep -F -- "  FAIL: " <<< "$output" | grep -qF -- "not ignored: requests (scripts/requirements.txt)"; then
+        pass "forked-package-not-ignored fails the check containing \"not ignored: requests (scripts/requirements.txt)\""
+    else
+        fail "forked-package-not-ignored: expected a FAIL naming requests, got status $status; output was: $output"
+    fi
+else
+    fail "forked-package-not-ignored: the fixture repository could not be written"
+fi
+
+# The same fork passes once `requests` is named in `ignore`: the check does not
+# reject a fork outright, and an ignore entry for a package that has one is not stale.
+if root="$(make_forked_repo forked-package-ignored ignored)"; then
+    if output="$(bash "$root/scripts/test_dependabot_config.sh" 2>&1)"; then
+        pass "a forked package named in ignore passes, and its entry is not stale"
+    else
+        fail "forked-package-ignored: the script under test failed; output was: $output"
+    fi
+else
+    fail "forked-package-ignored: the fixture repository could not be written"
+fi
 
 echo
 echo "test_dependabot_config_uv.sh: $PASS passed, $FAIL failed"
