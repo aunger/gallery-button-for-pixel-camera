@@ -8,10 +8,14 @@ For how the Orchestrator uses this script as part of the development cycle (the 
 ## The Monitor knows nothing about this repository
 
 The Monitor reports what CI did and carries no knowledge of this repository.
-Repository-specific behavior reaches it only through `ci_monitor.config.json`, whose in-code defaults assume nothing about this repository.
+Repository-specific behavior reaches it only through `ci_monitor.config.json`.
 Which checks matter is policy, stated by the Monitor's consumers: the Orchestrator's named checks are in `agents/dev_orchestration.md`.
 
-Two known exceptions remain: `OWNER` and `REPO` are hardcoded in `ci_monitor.py` (#1111), and `label_gate_check_regex` names a process concept of this repository (#1121).
+Three known exceptions remain:
+
+- `OWNER` and `REPO` are hardcoded in `ci_monitor.py` (#1111).
+- `label_gate_check_regex` names a process concept of this repository (#1121).
+- The `artifact_name_regex` default, `^testresults-`, is this repository's historical artifact prefix (`ci_monitor.py:58`).
 
 ## Running the monitor
 
