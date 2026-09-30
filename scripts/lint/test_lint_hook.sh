@@ -84,7 +84,7 @@ trap 'rm -rf "$TMP"' EXIT
 #
 # The repo sits outside this checkout, so ruff would not find this repo's
 # ruff.toml and would lint with its own built-in defaults, which change between
-# ruff releases (0.16 added EXE001, which fails case (p)). Copying the config in
+# ruff releases (0.16 enables EXE001, which fails case (p)). Copying the config in
 # makes every case lint with the rules this repo actually runs.
 new_repo() {
     local repo
