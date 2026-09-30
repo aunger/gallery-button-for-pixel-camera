@@ -263,3 +263,4 @@ semgrep relaxes its `pyjwt[crypto]~=2.13.0` requirement to admit 2.14.0 or later
 or this repo starts running `semgrep mcp`. In the first case, regenerating the lock \
 clears the finding; in the second, the reachability argument no longer holds and \
 the pin has to be forced or semgrep dropped."""
+
