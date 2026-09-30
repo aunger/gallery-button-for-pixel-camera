@@ -21,7 +21,7 @@ These are the required checks on `main` (per `GET /repos/{owner}/{repo}/rules/br
 A change that adds or removes a required check updates this list in the same change.
 No automated guard checks the list: `workflow_job_names` in `scripts/lib/workflow_yaml.sh` emits job ids rather than the check names a `name:` override produces, and silently drops some jobs (#956).
 
-A named check is green when its conclusion is `success`, `neutral` or `skipped`, the conclusions GitHub accepts for a required check.
+A named check is green when its conclusion is `success`, `neutral`, or `skipped`, the conclusions GitHub accepts for a required check.
 
 ## Before launching: extra information belongs in the issue
 
