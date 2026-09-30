@@ -6,6 +6,23 @@ If you are addressing a GitHub issue or PR but have not been given a specific ro
 
 **This document holds RULES for the Orchestrator, not suggestions. They aren't negotiable.**
 
+## The Orchestrator's goal is consensus and green named checks, not a mergeable branch
+
+Making the branch mergeable is not the Orchestrator's job.
+It drives the pull request toward consensus among the sub-agents and a green result on these **named checks**:
+
+- `build-and-test`
+- `pip-audit`
+- `shell-tests`
+- `check-diff`
+
+These are the required checks on `main` (per `GET /repos/{owner}/{repo}/rules/branches/main` on 2026-09-18) less one.
+`No blocking labels` is left off deliberately: it is the merge gate, it is red for the whole of every cycle by design, and no agent may act on it (see "Orchestrator may not").
+A change that adds or removes a required check updates this list in the same change.
+No automated guard checks the list: `workflow_job_names` in `scripts/lib/workflow_yaml.sh` emits job ids rather than the check names a `name:` override produces, and silently drops some jobs (#956).
+
+A named check is green when its conclusion is `success`, `neutral` or `skipped`, the conclusions GitHub accepts for a required check.
+
 ## Before launching: extra information belongs in the issue
 
 If the User attempts to launch the development cycle but provides extra information, **do not launch the development cycle or enter the Orchestrator role yet.**
@@ -29,6 +46,7 @@ These rules are absolute:
 4. The Orchestrator reads only the titles, labels, and open/closed states of the issue and of the PR (no diff, description, comments, mergeability, or check-run results).
    The Orchestrator does not read source files.
    Its only window into CI is the CI Monitor (`scripts/ci_monitor/ci_monitor.py`): no PR-activity subscription, no job log, no fetching PR state on a wake or a timer.
+   Reading the per-check rows the Monitor emits is permitted, and they are its CI decision input; fetching check-run state from GitHub is not (PR #1018).
    The issue number comes from the user and is plugged into the launch form as a literal token.
 5. Permitted-words test: before sending anything to a sub-agent, verify each sentence is either the user's exact words or an exact quote from an `agents/` file.
    If it is neither, do not send it.
@@ -42,6 +60,8 @@ The Orchestrator is not a Reviewer or a Programmer.
 - Read source files (Read, Bash cat/grep, etc.)
 - Read the PR or the issue beyond their titles, labels, and open/closed states
 - Hold a PR-activity subscription or set a timer to re-fetch PR state
+- Remove a label, or take any other step, to turn the `No blocking labels` check green: that would circumvent the one mechanism that keeps an agent from taking the merge onus on.
+  The labels come off at the end of the cycle, in "Concluding PR orchestration".
 - Edit or write files
 - Diagnose bugs or evaluate code
 - Make git commits or push changes
@@ -170,29 +190,18 @@ Reviewer-to-Orchestrator outcome vocabulary (the Reviewer emits one):
 - `Cannot work`: the coding phase cannot be completed--the requirements are incomplete, unattainable, or self-contradictory, or no code change could address the issue.
   The Reviewer describes the specifics in a PR comment, or in an issue comment on the no-PR path (where there is no PR to comment on).
 
-Orchestrator-to-user terminal CI lines:
+Orchestrator-to-user lines for the facts a Monitor terminal reports about the PR itself:
 
-- `CI cleared on PR #{N}.`
-- `CI held on PR #{N} by the process-label gate; no code or test failed. This does not confirm the PR is mergeable.`
-- `CI blocked on PR #{N}; routing a new Author round.`
-- `CI infrastructure problem on PR #{N}; escalating.`
 - `PR #{N} merged; no CI outcome left to act on.`
 - `PR #{N} was closed without merging; not reopening it or starting another round.`
+- `PR #{N} is a draft, so it cannot merge until someone marks it ready for review.`
 
-Orchestrator-to-user draft lines, for a `Draft on hold` terminal.
-The preamble is sent on every one; then at most one arm line, chosen by what the terminal's ` by: ...` portion names (see `draftHeld`).
-
-- Preamble, sent on every `Draft on hold` terminal: `PR #{N} is a draft, so it cannot merge until someone marks it ready for review.`
-- The ` by: ...` portion ends in `[label gate]`: `No code or test failed; a process label is holding the gate.`
-- The ` by: ...` portion names a substantive check: `Not passing: {checks}.`
-
-The all-passed arm, which carries no ` by: ...` portion at all, sends the preamble alone.
-The preamble is a distinct line from `CI held on PR #{N} ...` rather than a reuse of it: that line's "does not confirm the PR is mergeable" is the right hedge where mergeability is merely unestablished, and understates a draft, which definitively cannot merge until someone marks it ready.
+What the named checks concluded has no template line; the Orchestrator reports it in a composed own-voice message (see `namedChecks`).
 
 Orchestrator-to-user status lines.
 These are the Orchestrator's own words rather than a relay, so they are quoted from here:
 
-- `Rechecking PR #{N} once before acting; the Monitor flagged that terminal as undiagnosed.`
+- `Rechecking PR #{N} once before acting; a named check has not reported.`
 
 Orchestrator escalation/abort line:
 
@@ -210,7 +219,7 @@ Verification Agent outcome vocabulary (a dispatched Verification Agent emits one
 Routing on the Verification Agent's signal:
 
 - `Verification passed`: every before-merging item was confirmed automatically.
-  This *before-merging requirements* process is complete. The PR is not mergeable yet: the process-label gate stays red until "Concluding PR orchestration" removes `orchestrating`.
+  This *before-merging requirements* process is complete. The PR is not mergeable yet: the `No blocking labels` check stays red until "Concluding PR orchestration" removes `orchestrating`.
   If the PR is a draft, removing that label is not sufficient either: a draft PR cannot merge until someone marks it ready for review, and that is the user's call.
   Apply this transition to the PR:
 
@@ -323,89 +332,52 @@ monitorLoop:
   Each stdout line arrives as a task-notification event.
   Terminal lines and failure markers (`FAIL`/`SKIP`) are relayed to the user, verbatim.
   Every other line is relayed or withheld at the Orchestrator's discretion; nothing obliges it to forward routine progress output.
-  The Orchestrator **acts only on the terminal lines** `Clear`, `Blocked` (including the `Blocked by: <name>` form), `Infra`, `Draft on hold` (including the `Draft on hold by: <name>` form), `Merged`, or `Closed`.
-  A terminal line is the `PR#N: ` prefix, then its **terminal word**, then any ` by: ...` attribution and any ` (mergeable_state=...)` diagnostic.
-  Match the terminal word as a whole token. The six are mutually exclusive and none of them begins with another, so a line's word identifies exactly one of the six. `Draft on hold` in particular is a terminal word in its own right, not another word wearing an extra adjective: a `Draft on hold` line never satisfies a `Blocked` branch below, and a `Blocked` line never satisfies the `Draft on hold` branch.
-  The branches settle draftness first regardless of that, mirroring the Monitor, which tests draftness ahead of every mergeable state (issue #968).
-  Other output, including `step`, `FAIL`, `summary`, `in_progress` keepalives, and per-check information are progress reports; they do NOT end the loop or start a new Author round.
-  if Monitor emits a `Draft on hold` line -> goto draftHeld
-  if Monitor emits `drain poll found no new diagnostic signals` immediately followed by a `Blocked` or `Infra` line -> goto undiagnosedTerminal
-  (Note: the attributed `Blocked by: <name>` form already names the blocking check in the per-check summary block and the terminal suffix, so the Monitor suppresses the drain flag in that case. The `goto undiagnosedTerminal` branch therefore applies only to a bare `Blocked`/`Infra` line that the Monitor itself flagged as undiagnosed. The flag never precedes a `Draft on hold` line at all, since that arm is reached only with a blocking check already named.)
-  if Monitor emits a `Blocked` line where the terminal ends with `[label gate]` (the ` by: ...` suffix names only label-gate checks) -> goto labelGateBlock
-  if Monitor emits a `Blocked` line -> goto "Assigning a Programmer" above
-  if Monitor emits an `Infra` line -> escalate to user; stop
+  A terminal line is the `PR#N: ` prefix, then its **terminal word** (`Clear`, `Blocked`, `Infra`, `Draft on hold`, `Merged` or `Closed`), then any ` by: ...` attribution and any ` (mergeable_state=...)` diagnostic.
+  A terminal line means only that the stream has ended.
+  `Merged`, `Closed` and `Draft on hold` report facts about the PR and are acted on as such; the other three words are the Monitor's verdict, and nothing routes on them.
+  The decision input is the per-check summary block, which the Monitor prints immediately before the terminal line (see namedChecks).
   if Monitor emits a `Merged` line -> send the user the `PR #{N} merged; ...` line from "Decision-signal templates" above; stop
   if Monitor emits a `Closed` line -> do NOT reopen it or start a new Author round; send the user the `PR #{N} was closed without merging; ...` line from "Decision-signal templates" above; stop
   if Monitor times out (30 min) -> escalate to user; stop
   if a user message wakes the session before Monitor delivers any terminal line -> goto silentVanish
-  if Monitor emits a `Clear` line -> goto surfaceBeforeMergingRequirements (entered on the Clear path)
+  if Monitor emits any other terminal line -> goto namedChecks
 
-draftHeld:
-  // Reached when the PR is a draft and its checks have reported. Draftness is not a
-  // destination: it is an orthogonal fact about the PR, so it changes what the Orchestrator
-  // says, not where it goes. A draft PR cannot be merged however green it is, and marking one
-  // ready for review is the user's call and not the Orchestrator's, which the standing preamble
-  // states once for all three arms; but the evidence to act on is the same as ever,
-  // namely whether any non-label-gate check is failing. The three shapes therefore route
-  // exactly as their non-draft counterparts do, and a failed test is a failed test whether or
-  // not the PR can merge. What GitHub's `mergeable_state` does not reveal for a draft PR is
-  // whether a non-passing check is required, which is why the Monitor never reports a merge
-  // block off one.
+namedChecks:
+  // Each row of the summary block is `<name> .... <conclusion>` followed by optional
+  // annotations, one row per check-run name, already collapsed to that name's latest run
+  // (`latest_check_runs`, scripts/ci_monitor/ci_monitor.py:381; issues #707 and #719), which
+  // is how GitHub itself judges a required check. The Monitor ends only once every check-run
+  // it can see has completed, so a row always carries a conclusion.
+  // Read only the rows of the named checks (see "The Orchestrator's goal ..." above). Ignore
+  // every other row, including `No blocking labels`, and every annotation the Monitor adds
+  // (`[BLOCKING]`, `[label gate]`, the terminal's ` by: ...` portion): which checks matter is
+  // policy stated in this document, not something the Monitor computes.
   //
-  // Verification runs on a draft PR, and that is intended: `verified` is a claim about
-  // before-merging requirements, not about mergeability, so the PR being a draft falsifies
-  // nothing it asserts.
+  // Draftness changes what the Orchestrator says, not where it goes: a failed test is a failed
+  // test whether or not the PR can merge. Verification runs on a draft PR, and that is
+  // intended: `verified` is a claim about before-merging requirements, not about mergeability.
   //
-  // Without this branch the Monitor's `Draft on hold` line would match no branch and the loop
-  // would sit until the 30-minute timeout (issue #968).
-  Relay the `Draft on hold` line. Then send the user the `PR #{N} is a draft, ...` preamble from "Decision-signal templates" above.
-  if the line carries no ` by: ...` portion (every check passed) -> goto surfaceBeforeMergingRequirements (entered on the draft path)
-  if the ` by: ...` portion ends in `[label gate]` before the `(mergeable_state=...)` suffix (so every non-passing check is a process-label gate):
-    Send the user the `No code or test failed; ...` line from "Decision-signal templates" above, which is what the terminal positively asserts.
-    This is the expected shape during a cycle, since `orchestrating` is a blocking label in order to guard against merge before verification.
-    Do NOT describe it as inconclusive, and do NOT remove the label to turn the gate green (see labelGateBlock for why that would circumvent the merge onus).
-    goto surfaceBeforeMergingRequirements (entered on the draft path)
-  otherwise (the ` by: ...` portion names a substantive non-passing check):
-    Send the user the `Not passing: {checks}.` line from "Decision-signal templates" above, filling {checks} from the terminal's ` by: ...` portion.
-    goto "Assigning a Programmer" above
-
-labelGateBlock:
-  // Reached on a `Blocked` terminal ending in `[label gate]` (never a `Draft on hold` one,
-  // which draftHeld takes), which is the gate working, not CI breaking. The
-  // suffix means every blocking check-run is a label gate, so no code failed and no test
-  // failed. It does NOT mean the PR is otherwise mergeable: the Monitor reaches this terminal
-  // only when `mergeable_state` is `behind`, `dirty` or `blocked`, so a PR carrying a merge
-  // conflict or sitting behind its base arrives here wearing the same suffix. Never tell the
-  // user the PR is clear to merge on the strength of this line.
-  //
-  // This branch removes no label and re-launches nothing: merging is not the Orchestrator's
-  // goal, and clearing a label to turn the gate green would circumvent the one mechanism that
-  // keeps an agent from taking the merge onus on. Issue #516's Step 8a did remove
-  // `orchestrating` here and re-launch to watch CI go green; that is the part retired. The
-  // labels come off at the end of the cycle, in "Concluding PR orchestration".
-  //
-  // The Orchestrator does not diagnose which blocking label the gate reported, or whose. The
-  // check asks whether *any* open PR at this head commit carries a blocking label, and it
-  // fails closed when it cannot be evaluated at all, so a sibling PR's label and a gate that
-  // never ran both arrive here looking exactly like this PR's own `orchestrating` (issue
-  // #833). Only the job log tells them apart, and reading it would be a second window into
-  // CI. Say what the terminal supports and no more; distinguishing those cases is the
-  // Monitor's job to carry in the terminal itself.
-  If any blocking label other than `orchestrating` is applied to the PR (`verification needed`, `changes requested`, or `changes done`, alone or alongside it): this is an unexpected state the routing above should not produce. Do not remove any label; escalate to the user; stop.
-
-  Otherwise:
-
-    Send the user the `CI held on PR #{N} ...` line from "Decision-signal templates" above.
-    goto surfaceBeforeMergingRequirements (entered on the label-gate path)
+  // The Orchestrator acts on no `mergeable_state` it sees in a terminal suffix. A merge
+  // conflict present when the head commit is pushed stops the `pull_request` workflows from
+  // running, which surfaces here as named checks with no row. A conflict that arises after the
+  // named checks ran is not caught: resolving it is part of merging, which is not the
+  // Orchestrator's goal.
+  if the terminal word is `Draft on hold` -> send the user the `PR #{N} is a draft, ...` line from "Decision-signal templates" above, then continue below
+  if any named check has no row -> goto missingNamedCheck
+  Send the user an own-voice status message naming each named check that is not green with its conclusion, or saying that every named check is green.
+  if any named check concluded other than green or `failure` -> escalate to user; stop
+    // `cancelled`, `timed_out`, `stale`, `startup_failure` and `action_required` mean the
+    // run did not deliver a verdict, which no Author round can repair.
+  if any named check concluded `failure` -> goto "Assigning a Programmer" above
+  otherwise (every named check is green) -> goto surfaceBeforeMergingRequirements
 
 surfaceBeforeMergingRequirements:
   // Surfaces outstanding before-merging requirements (unautomated verification steps,
-  // changes outside the repo). Entered on the Clear path, on the label-gate path, and on the
-  // draft path. None of them proves the PR is mergeable: the label-gate path says only that no
-  // code or test failed, and the draft path says the PR cannot merge at all until someone
-  // marks it ready. Neither bears on the requirements surfaced here, which are about what must
-  // be true before a merge, not about whether one is possible today. The Orchestrator does not
-  // scan the issue or PR itself.
+  // changes outside the repo). Entered once every named check is green, which does not prove
+  // the PR is mergeable: `No blocking labels` is still red, and a draft cannot merge at all
+  // until someone marks it ready. Neither bears on the requirements surfaced here, which are
+  // about what must be true before a merge, not about whether one is possible today. The
+  // Orchestrator does not scan the issue or PR itself.
   Dispatch a Verification Planner sub-agent using the dispatch template.
   The planner assembles the before-merging list and files a tracking issue per item (see verification_planning.md). It does not consult the user.
   If the Planner reports its before-merging list is empty: this step is complete; apply this transition to **both the issue and the PR**:
@@ -423,24 +395,17 @@ surfaceBeforeMergingRequirements:
   Dispatch a Verification Agent (see pr_verify.md) to carry out those items; it does not consult the user.
   Route on its terminal signal per "Routing on the Verification Agent's signal" above.
 
-undiagnosedTerminal:
-  // Issue #410 (Run G, issue #402): "drain poll found no new diagnostic
-  // signals" right before Blocked/Infra means the bounded in-process drain
-  // (see ci_monitor/README.md) found nothing this process, but the
-  // underlying lag can resolve minutes later, outliving that one Monitor
-  // process.
-  // Note: the Monitor only emits this flag when no named check-run is
-  // identified as a blocker. An attributed "Blocked by: <name>" terminal
-  // (issue #516) already names the cause via the per-check summary block
-  // and the terminal suffix, so in that case the drain flag is suppressed
-  // and this detour is never entered for that terminal shape.
-  // Give it one out-of-process recheck before treating it as real.
-  Relay the flagged terminal line to the user. Then, in a message of its own, send the user the `Rechecking PR #{N} ...` line from "Decision-signal templates" above.
+missingNamedCheck:
+  // A named check with no row never registered a check-run the Monitor could see: the
+  // workflow had not started when every other check finished, the run died before creating
+  // the job, or the workflows never ran (no check-runs at all, as behind a merge conflict).
+  // A check that registered but never concludes keeps the Monitor polling, so the 30-minute
+  // timeout covers that case instead. Give a missing row one out-of-process recheck before
+  // treating it as real, so a dead run escalates rather than becoming an indefinite wait.
+  Send the user the `Rechecking PR #{N} ...` line from "Decision-signal templates" above.
   Wait 5 minutes without a sleep loop: issue a Bash tool call running `sleep 300` (run_in_background: true), and treat its completion notification as the wake-up.
   Launch the Monitor.
-  // With that check suppressed the re-run needs no routing of its own: a repeat of the
-  // flagged terminal routes as an ordinary Blocked or Infra, and anything else as itself.
-  goto monitorLoop (do not re-apply the `drain poll found no new diagnostic signals` -> goto undiagnosedTerminal check on this pass, so the recheck gets at most one detour)
+  goto monitorLoop (on this pass, a named check with no row escalates to the user and stops instead of re-entering missingNamedCheck, so the recheck gets at most one detour)
 
 silentVanish:
   // Issue #411: the Monitor task can silently vanish--the process exits
@@ -451,7 +416,7 @@ silentVanish:
   // is still alive using TaskOutput (passing the Monitor's task ID).
   // If TaskOutput returns "No task found with ID: <id>", the task record has
   // been dropped--a silent vanish. Launch the Monitor and go to monitorLoop once
-  // immediately, applying all normal checks, including undiagnosedTerminal if warranted.
+  // immediately, applying all normal checks, including missingNamedCheck if warranted.
   // If that re-launched invocation also vanishes silently (a second user
   // message arrives before any terminal line), escalate to the user; stop.
   // To make that double-vanish escalation reachable: the routing loop sends
@@ -485,8 +450,8 @@ The poll loop lives in [`scripts/ci_monitor/ci_monitor.py`](../scripts/ci_monito
 Orchestrator-specific notes:
 
 - The 30-minute escalation threshold is enforced by `timeout_ms: 1800000` on the Monitor call--no elapsed-time tracking needed.
-- `step`/`FAIL`/`SKIP`/`PASS` lines, `summary` header lines, and per-check summary rows are progress reports, not terminal outcomes.
-- The `Blocked by: <name>` attributed form (issue #516) names which check-run held CI. A terminal ending with `[label gate]` means every blocking check-run is a process-label gate: no code failed and no test failed. It does not mean the PR is otherwise mergeable, since the Monitor reaches that terminal only when `mergeable_state` is `behind`, `dirty` or `blocked`. Do not read the held merge as a problem to solve: merging is not the Orchestrator's goal, and holding the merge while the Orchestrator works is exactly what the blocking labels are for.
+- The per-check summary rows of the named checks are the decision input; the terminal line only marks the end of the stream. `step`/`FAIL`/`SKIP`/`PASS` lines are progress reports.
+- The Verification Agent still reads the terminal words (`agents/pr_verify.md`, "Monitor workflow runs"). That is deliberate: the Monitor keeps emitting them, and only the Orchestrator's routing stopped treating them as a verdict.
 - The Monitor loop replaces the patterns of subscribing to PR events and sleep+poll, which are often unreliable. Do not delay dispatching the Reviewer while waiting for CI.
 
 ## Delegation rules

@@ -50,10 +50,10 @@ The price of that is a verdict that can name a label the PR no longer carries,
 since a run whose event has been superseded, or whose listing lagged a label
 removal, reports the labels of the moment it read. Re-running the job re-reads
 both sources and clears it. Over-blocking is the safe direction, so this is the
-trade taken deliberately. Note that no agent reads this log: the Orchestrator's
-`labelGateBlock` branch deliberately does not diagnose which label the gate
-reported, or whose, because doing so would need a second window into CI. A human
-reads it, or the CI Monitor grows a terminal that carries the distinction.
+trade taken deliberately. Note that no agent reads this log: the Orchestrator
+does not route on this check at all (it is left off the named checks in
+agents/dev_orchestration.md), so it never diagnoses which label the gate
+reported, or whose. A human reads it.
 
 Usage:
     python3 scripts/ci/labels/check_blocking_labels.py

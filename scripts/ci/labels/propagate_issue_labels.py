@@ -168,8 +168,8 @@ def fetch_closing_issue_labels(
 #     starts, and the PR carries `orchestrating` for the whole cycle. Holding
 #     the "No blocking labels" gate red while it does is the label's purpose,
 #     so nothing removes it mid-cycle to open that gate
-#     (dev_orchestration.md's labelGateBlock); "Concluding PR orchestration"
-#     clears it from both at the end.
+#     (dev_orchestration.md's "Orchestrator may not"); "Concluding PR
+#     orchestration" clears it from both at the end.
 #   - `changes requested`/`changes done` transitions apply "to the PR if one
 #     exists; apply it to the issue otherwise"--once a PR exists, these live
 #     on the PR only, and the issue's copy (if any) goes stale by design.
