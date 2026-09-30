@@ -156,13 +156,14 @@
 # in issue #1196) cannot be moved; the entry's name-only `ignore` rules must name
 # exactly those packages, and none is needed while no lock pins one twice.
 # The same pin cannot move a package past a cap in semgrep's own requirements
-# (issue #1195), so those packages are ignored by version instead: each rule
-# names a package one lock pins (`ignore` applies to every lock in the entry, so
-# a package two locks pin is refused) and a closed range of versions, so a
-# forgotten rule expires once the package publishes a version above it. A range
-# must sit above every version its lock pins, since it exists to hide releases
-# the lock has not reached; a lock that reaches one leaves it stale, and the
-# check names it.
+# (issue #1195), and pydantic-core's newer releases resolve only by moving
+# pydantic to a pre-release (PR #1203), so those packages are ignored by version
+# instead: each rule names a package one lock pins (`ignore` applies to every
+# lock in the entry, so a package two locks pin is refused) and a closed range
+# of versions, so a forgotten rule expires once the package publishes a version
+# above it. A range must sit above every version its lock pins, since it exists
+# to hide releases the lock has not reached; a lock that reaches one leaves it
+# stale, and the check names it.
 # And every locked package must have an entry Dependabot's uv parser keeps,
 # since it drops one whose marker contains "<" without the substring
 # `python_version`.
@@ -1144,8 +1145,9 @@ if check(
         # (issue #1195). The updater's per-package resolution cannot move a
         # package past a cap in semgrep's own requirements, and the range hides
         # exactly the releases that fail so the run log does not record an update
-        # error for each. Closed, so a rule nobody revisits stops hiding
-        # anything once the package publishes a version above it.
+        # error for each; pydantic-core's range hides the releases only a pydantic
+        # pre-release asks for (PR #1203). Closed, so a rule nobody revisits stops
+        # hiding anything once the package publishes a version above it.
         ranged = [
             rule
             for rule in ignore
@@ -1192,7 +1194,7 @@ if check(
         check(
             not shared,
             "%s gives a range of versions only for packages one lock pins, since `ignore` applies to every lock "
-            "in the entry and the ranges are sized against the lock that carries semgrep's caps%s (issue #1195)"
+            "in the entry and each range is sized against the one lock whose resolution it concerns%s (issue #1195)"
             % (label, ("; pinned by more than one lock: " + ", ".join(shared)) if shared else ""),
         )
 
