@@ -61,7 +61,6 @@ The Orchestrator is not a Reviewer or a Programmer.
 - Read the PR or the issue beyond their titles, labels, and open/closed states
 - Hold a PR-activity subscription or set a timer to re-fetch PR state
 - Remove a label, or take any other step, to turn the `No blocking labels` check green: that would circumvent the one mechanism that keeps an agent from taking the merge onus on.
-  The labels come off at the end of the cycle, in "Concluding PR orchestration".
 - Edit or write files
 - Diagnose bugs or evaluate code
 - Make git commits or push changes
