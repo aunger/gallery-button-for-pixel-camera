@@ -138,6 +138,27 @@
 # pattern taking one name and not the other would move an action between pull
 # requests as its pin style changed.
 #
+# The fifth family, the uv checks, covers the entry that updates the Python
+# locks under scripts/ (issue #1191). The locks are found and parsed by
+# scripts/ci/audit_requirements.py, the same way pip-audit's gate finds them,
+# so a lock that gates an audit and that no entry reaches fails here. Each lock
+# needs its `.in` beside it under the same basename and a header recording
+# `--universal` and `--python-version`, since that is how Dependabot's uv
+# updater finds what to recompile and how it reproduces the lock as it was
+# made. No `pip` entry may reach them, because pip-compile would re-resolve
+# them for one interpreter. The entry must allow indirect dependencies, or the
+# lock-only packages, where #1189's pyjwt advisory was, are never proposed.
+# Every locked package must be grouped, no group may take both a `.in` pin and
+# a package only the locks name, and the limit must cover the groups.
+# The updater pins with `-P NAME==VERSION`, which uv applies to every fork of a
+# universal resolution, so a package a lock pins at two versions under
+# complementary markers (rpds-py, split at Python 3.11) cannot be moved; the
+# entry's `ignore` must name exactly those packages. And every locked package
+# must have an entry Dependabot's uv parser keeps, since it drops one whose
+# marker contains "<" without the substring `python_version`.
+# scripts/test_dependabot_config_uv.sh breaks each config-side property in turn
+# and checks the matching check fails.
+#
 # What this cannot check is whether GitHub's Dependabot service accepts the
 # file and whether a run actually opens pull requests, or honors the raised
 # limit when a sixth pull request is wanted. Only a live run on the default
@@ -175,6 +196,7 @@ import glob
 import os
 import re
 import sys
+from pathlib import Path
 
 config_path = sys.argv[1]
 repo_root = sys.argv[2]
@@ -193,6 +215,11 @@ except ImportError:
 # above rather than sitting with the imports at the top.
 sys.path.insert(0, os.path.join(repo_root, "scripts", "ci"))
 from workflow_files import load_workflow, relative, workflow_paths  # noqa: E402
+
+# The lock reader pip-audit's gate uses, for the Python lock checks: the locks
+# this file asks Dependabot to cover are the ones that gate audits, found and
+# parsed the same way.
+from audit_requirements import discover_locks, normalize, parse_pins  # noqa: E402
 
 results = []
 
@@ -851,6 +878,270 @@ if check(
                     if limit < streams
                     else "",
                 ),
+            )
+
+# Python locks (issue #1191). See the file header.
+
+
+def scanned_directories(directory):
+    """The repo-relative directories the uv file fetcher reads for one entry directory.
+
+    The directory itself and each directory immediately below it
+    (`req_txt_and_in_files` and `req_files_for_dir` in dependabot-core's
+    python/lib/dependabot/python/shared_file_fetcher.rb); nothing deeper.
+    """
+    base = str(directory).strip("/")
+    root = os.path.join(repo_root, base)
+    found = {base}
+    if os.path.isdir(root):
+        for name in os.listdir(root):
+            if os.path.isdir(os.path.join(root, name)):
+                found.add(os.path.join(base, name) if base else name)
+    return found
+
+
+def lock_pins(path):
+    with open(path) as handle:
+        return {pin.name for pin in parse_pins(handle.read(), path)}
+
+
+# A pin line with its environment marker, if it has one:
+# `rpds-py==0.30.0 ; python_full_version < '3.11' \`.
+PIN_WITH_MARKER_RE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)==([^\s;\\]+)\s*(?:;\s*(.*?))?\s*\\?\s*$")
+
+
+def lock_entries(path):
+    """Every `name==version` line in a lock, as (normalized name, version, marker or "")."""
+    entries = []
+    with open(path) as handle:
+        for line in handle:
+            match = PIN_WITH_MARKER_RE.match(line.rstrip("\n"))
+            if match:
+                entries.append((normalize(match.group(1)), match.group(2), match.group(3) or ""))
+    return entries
+
+
+def parser_keeps(marker):
+    """Whether Dependabot's uv parser keeps an `==` pin carrying this marker.
+
+    Mirrors `blocking_marker?` (dependabot-core uv/lib/dependabot/uv/file_parser.rb:281-295).
+    A marker naming `python_version` is evaluated against the Dependabot
+    runner's own interpreter, which nothing here can know, so it is scored as
+    dropped. Any other marker containing "<" is dropped outright, which is what
+    happens to `python_full_version < '3.11'`: that spelling does not contain
+    the substring `python_version`.
+    """
+    if not marker:
+        return True
+    if "python_version" in marker:
+        return False
+    return "<" not in marker
+
+
+# The flags the uv updater reads back out of a lock to regenerate it as it was
+# made (uv_compile_options_from_compiled_file in dependabot-core's
+# uv/lib/dependabot/uv/file_updater/compile_file_updater.rb). A lock missing
+# one is regenerated without it.
+UV_HEADER_FLAGS = ("--universal", "--python-version")
+
+locks = [os.path.relpath(str(path), repo_root) for path in discover_locks(Path(repo_root))]
+check(bool(locks), "scripts/ holds at least one Python lock for the uv entry to cover (issue #1191)")
+
+pip_entries = [
+    (index, entry)
+    for index, entry in enumerate(updates)
+    if isinstance(entry, dict) and entry.get("package-ecosystem") == "pip"
+]
+for index, entry in pip_entries:
+    directories = entry_directories(index, entry) or []
+    reached = set()
+    for directory in directories:
+        reached |= scanned_directories(directory)
+    claimed = sorted(lock for lock in locks if os.path.dirname(lock) in reached)
+    check(
+        not claimed,
+        "%s covers none of the uv-compiled locks, which its pip-compile would re-resolve for the Dependabot "
+        "runner's interpreter alone, dropping their marker-gated entries%s (issue #1191)"
+        % (entry_label(index, entry, directories), ("; it reaches " + ", ".join(claimed)) if claimed else ""),
+    )
+
+uv_entries = [
+    (index, entry)
+    for index, entry in enumerate(updates)
+    if isinstance(entry, dict) and entry.get("package-ecosystem") == "uv"
+]
+
+if check(
+    bool(uv_entries),
+    "an update entry covers the uv ecosystem, without which nothing proposes an update to the Python locks and "
+    "an advisory surfaces only as a red pip-audit on an unrelated pull request (issue #1191)",
+):
+    reached_by = {}
+    for index, entry in uv_entries:
+        directories = entry_directories(index, entry) or []
+        for directory in directories:
+            for scanned in scanned_directories(directory):
+                reached_by.setdefault(scanned, []).append(index)
+
+    unreached = sorted(lock for lock in locks if os.path.dirname(lock) not in reached_by)
+    check(
+        not unreached,
+        "every lock pip-audit gates on sits in a directory a uv entry names or directly below one, the depth "
+        "Dependabot's fetcher reads%s (issue #1191)" % (("; unreached: " + ", ".join(unreached)) if unreached else ""),
+    )
+
+    for lock in locks:
+        source = lock[: -len(".txt")] + ".in"
+        if not check(
+            os.path.isfile(os.path.join(repo_root, source)),
+            "%s has its input beside it as %s, the basename pairing Dependabot uses to find what to recompile "
+            "(issue #1191)" % (lock, source),
+        ):
+            continue
+        with open(os.path.join(repo_root, lock)) as handle:
+            header = "".join(line for line in handle if line.startswith("#"))
+        missing = [flag for flag in UV_HEADER_FLAGS if flag not in header]
+        check(
+            not missing,
+            "%s's header records %s, which the uv updater reads back to regenerate it as it was made%s "
+            "(issue #1191)"
+            % (lock, " and ".join(UV_HEADER_FLAGS), ("; missing: " + ", ".join(missing)) if missing else ""),
+        )
+
+    for index, entry in uv_entries:
+        directories = entry_directories(index, entry)
+        if directories is None:
+            continue
+        label = entry_label(index, entry, directories)
+        reached = set()
+        for directory in directories:
+            reached |= scanned_directories(directory)
+        covered = [lock for lock in locks if os.path.dirname(lock) in reached]
+
+        # Every pin in a covered `.in` is direct; every other locked package
+        # is indirect, which is how the uv parser reads a compiled lock
+        # (file_parser.rb gives a compiled file's entries no requirements).
+        direct = set()
+        locked = set()
+        for lock in covered:
+            source = os.path.join(repo_root, lock[: -len(".txt")] + ".in")
+            if os.path.isfile(source):
+                direct |= lock_pins(source)
+            locked |= lock_pins(os.path.join(repo_root, lock))
+        transitive = locked - direct
+
+        allow = entry.get("allow") or []
+        check(
+            isinstance(allow, list)
+            and any(isinstance(rule, dict) and rule == {"dependency-type": "all"} for rule in allow),
+            "%s allows dependency-type all, without which a version update skips every package the `.in` files do "
+            "not pin, pyjwt among them (issues #1189, #1191)" % label,
+        )
+
+        # A package a lock pins at more than one version (under complementary
+        # markers) cannot be moved: the updater pins it with -P NAME==VERSION,
+        # which uv applies to every fork of the universal resolution, so the
+        # fork that needs the other version has no solution. Those are named
+        # in `ignore`, and only those, so the gap is stated in the config and
+        # an entry goes when its fork does.
+        forked = {}
+        visible = set()
+        for lock in covered:
+            versions = {}
+            for name, version, marker in lock_entries(os.path.join(repo_root, lock)):
+                versions.setdefault(name, set()).add(version)
+                if parser_keeps(marker):
+                    visible.add(name)
+            for name, pinned in versions.items():
+                if len(pinned) > 1:
+                    forked.setdefault(name, []).append(lock)
+
+        ignore = entry.get("ignore") or []
+        ignored = {
+            normalize(str(rule["dependency-name"]))
+            for rule in ignore
+            if isinstance(rule, dict) and set(rule) == {"dependency-name"}
+        }
+        unignored = sorted("%s (%s)" % (name, ", ".join(forked[name])) for name in forked if name not in ignored)
+        check(
+            not unignored,
+            "%s ignores every package a lock pins at more than one version, which -P NAME==VERSION cannot "
+            "reproduce, so the gap is written in the config rather than logged as a weekly error%s (issue #1191)"
+            % (label, ("; not ignored: " + ", ".join(unignored)) if unignored else ""),
+        )
+        stale = sorted(ignored - set(forked))
+        check(
+            not stale,
+            "%s ignores only packages some lock pins at more than one version, so an entry goes once its fork "
+            "does%s (issue #1191)" % (label, ("; stale: " + ", ".join(stale)) if stale else ""),
+        )
+
+        invisible = sorted(locked - visible - ignored)
+        check(
+            not invisible,
+            "%s can see every locked package: each has at least one entry Dependabot's uv parser keeps, which "
+            "drops an entry whose marker contains '<'%s (issue #1191)"
+            % (label, ("; unseen: " + ", ".join(invisible)) if invisible else ""),
+        )
+
+        groups = entry.get("groups") or {}
+        if not check(isinstance(groups, dict), "%s's groups key is a mapping of group name to definition" % label):
+            continue
+
+        grouped = {}
+        for name in sorted(groups):
+            error = group_model_error(groups[name])
+            check(
+                not error,
+                "%s's %r group selects its members by patterns alone, which is what the checks below model%s "
+                "(issue #1191)" % (label, name, ("; it " + error) if error else ""),
+            )
+            grouped[name] = set() if error else group_members(locked, groups[name])
+
+        # Patterns are compared in normalized form on both sides, the form the
+        # uv parser gives a dependency's name.
+        for name in sorted(groups):
+            definition = groups[name] if isinstance(groups[name], dict) else {}
+            for key in ("patterns", "exclude-patterns"):
+                unnormalized = sorted(str(p) for p in definition.get(key) or [] if normalize(str(p)) != str(p))
+                check(
+                    not unnormalized,
+                    "%s's %r group writes its %s PEP 503-normalized%s (issue #1191)"
+                    % (label, name, key, ("; not normalized: " + ", ".join(unnormalized)) if unnormalized else ""),
+                )
+
+        ungrouped = sorted(package for package in locked if not any(package in grouped[g] for g in grouped))
+        check(
+            not ungrouped,
+            "%s groups every locked package, so none of them gets a pull request of its own%s (issue #1191)"
+            % (label, ("; ungrouped: " + ", ".join(ungrouped)) if ungrouped else ""),
+        )
+
+        mixed = sorted(g for g in grouped if grouped[g] & direct and grouped[g] & transitive)
+        check(
+            not mixed,
+            "%s keeps the `.in` pins and the packages they pull in in separate groups, so a tool bump that needs "
+            "work cannot hold a transitive security fix back%s (issue #1191)"
+            % (
+                label,
+                "".join(
+                    "; %r takes direct %s and %d transitive package(s)"
+                    % (g, ", ".join(sorted(grouped[g] & direct)), len(grouped[g] & transitive))
+                    for g in mixed
+                ),
+            ),
+        )
+
+        streams = len([g for g in grouped if grouped[g]]) + len(ungrouped)
+        limit = entry.get("open-pull-requests-limit", DEFAULT_OPEN_PULL_REQUESTS_LIMIT)
+        if check(
+            isinstance(limit, int) and not isinstance(limit, bool),
+            "%s's open-pull-requests-limit is a number (found %r)" % (label, limit),
+        ):
+            check(
+                limit >= streams,
+                "%s's open-pull-requests-limit of %d covers the %d pull requests its groups and ungrouped packages "
+                "can want open at once (issue #1191)" % (label, limit, streams),
             )
 
 for name in registries:
