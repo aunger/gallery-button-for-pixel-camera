@@ -14,7 +14,7 @@
 #
 # Regenerating the lock (do this whenever the pin here changes):
 #
-#   uv pip compile --universal --python-version 3.10 --generate-hashes \
+#   uv pip compile --universal --python-version 3.11 --generate-hashes \
 #       scripts/ci/requirements-semgrep.in -o scripts/ci/requirements-semgrep.txt
 #
 # That command keeps the versions already present in the lock, so on its own it
@@ -24,7 +24,14 @@
 # the whole closure, or -P/--upgrade-package NAME to move one package and
 # whatever it drags with it, which keeps a security bump to a reviewable diff.
 #
-# --universal + --python-version 3.10 make the lock a superset covering every
+# --universal + --python-version 3.11 make the lock a superset covering every
 # interpreter the install site uses (setup-python's "3.x" in the workflow), so
 # every marker-gated and platform-gated entry resolves under --require-hashes.
+#
+# The floor is 3.11 (issue #1196), so the lock does not cover Python 3.10.
+# A package whose newest release dropped 3.10 is locked at that release alone,
+# not at two versions under complementary markers, which Dependabot's uv updater
+# cannot move (see the uv entry in .github/dependabot.yml).
+# Raise the floor again, and regenerate every lock, when packages start dropping
+# 3.11; check first that no install site still runs the version being dropped.
 semgrep==1.178.0
