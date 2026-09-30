@@ -76,6 +76,10 @@ elif mutation == "unnormalized-name":
             groups[name][key] = ["PyYAML" if p == "pyyaml" else p for p in groups[name].get(key, [])]
 elif mutation == "no-groups":
     del entry["groups"]
+elif mutation == "forked-package-not-ignored":
+    del entry["ignore"]
+elif mutation == "stale-ignore":
+    entry["ignore"].append({"dependency-name": "requests"})
 else:
     sys.exit("unknown mutation " + mutation)
 
@@ -118,6 +122,8 @@ expect_failure direct-pin-in-transitive-group "keeps the \`.in\` pins and the pa
 expect_failure direct-pin-ungrouped "a pull request of its own; ungrouped: pyyaml"
 expect_failure unnormalized-name "not normalized: PyYAML"
 expect_failure no-groups "pull requests its groups and ungrouped packages can want open at once"
+expect_failure forked-package-not-ignored "not ignored: rpds-py (scripts/ci/requirements-semgrep.txt)"
+expect_failure stale-ignore "stale: requests"
 
 echo
 echo "test_dependabot_config_uv.sh: $PASS passed, $FAIL failed"

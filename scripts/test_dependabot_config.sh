@@ -150,6 +150,12 @@
 # lock-only packages, where #1189's pyjwt advisory was, are never proposed.
 # Every locked package must be grouped, no group may take both a `.in` pin and
 # a package only the locks name, and the limit must cover the groups.
+# The updater pins with `-P NAME==VERSION`, which uv applies to every fork of a
+# universal resolution, so a package a lock pins at two versions under
+# complementary markers (rpds-py, split at Python 3.11) cannot be moved; the
+# entry's `ignore` must name exactly those packages. And every locked package
+# must have an entry Dependabot's uv parser keeps, since it drops one whose
+# marker contains "<" without the substring `python_version`.
 # scripts/test_dependabot_config_uv.sh breaks each config-side property in turn
 # and checks the matching check fails.
 #
@@ -899,6 +905,39 @@ def lock_pins(path):
         return {pin.name for pin in parse_pins(handle.read(), path)}
 
 
+# A pin line with its environment marker, if it has one:
+# `rpds-py==0.30.0 ; python_full_version < '3.11' \`.
+PIN_WITH_MARKER_RE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)==([^\s;\\]+)\s*(?:;\s*(.*?))?\s*\\?\s*$")
+
+
+def lock_entries(path):
+    """Every `name==version` line in a lock, as (normalized name, version, marker or "")."""
+    entries = []
+    with open(path) as handle:
+        for line in handle:
+            match = PIN_WITH_MARKER_RE.match(line.rstrip("\n"))
+            if match:
+                entries.append((normalize(match.group(1)), match.group(2), match.group(3) or ""))
+    return entries
+
+
+def parser_keeps(marker):
+    """Whether Dependabot's uv parser keeps an `==` pin carrying this marker.
+
+    Mirrors `blocking_marker?` (dependabot-core uv/lib/dependabot/uv/file_parser.rb:281-295).
+    A marker naming `python_version` is evaluated against the Dependabot
+    runner's own interpreter, which nothing here can know, so it is scored as
+    dropped. Any other marker containing "<" is dropped outright, which is what
+    happens to `python_full_version < '3.11'`: that spelling does not contain
+    the substring `python_version`.
+    """
+    if not marker:
+        return True
+    if "python_version" in marker:
+        return False
+    return "<" not in marker
+
+
 # The flags the uv updater reads back out of a lock to regenerate it as it was
 # made (uv_compile_options_from_compiled_file in dependabot-core's
 # uv/lib/dependabot/uv/file_updater/compile_file_updater.rb). A lock missing
@@ -997,6 +1036,52 @@ if check(
             and any(isinstance(rule, dict) and rule == {"dependency-type": "all"} for rule in allow),
             "%s allows dependency-type all, without which a version update skips every package the `.in` files do "
             "not pin, pyjwt among them (issues #1189, #1191)" % label,
+        )
+
+        # A package a lock pins at more than one version (under complementary
+        # markers) cannot be moved: the updater pins it with -P NAME==VERSION,
+        # which uv applies to every fork of the universal resolution, so the
+        # fork that needs the other version has no solution. Those are named
+        # in `ignore`, and only those, so the gap is stated in the config and
+        # an entry goes when its fork does.
+        forked = {}
+        visible = set()
+        for lock in covered:
+            versions = {}
+            for name, version, marker in lock_entries(os.path.join(repo_root, lock)):
+                versions.setdefault(name, set()).add(version)
+                if parser_keeps(marker):
+                    visible.add(name)
+            for name, pinned in versions.items():
+                if len(pinned) > 1:
+                    forked.setdefault(name, []).append(lock)
+
+        ignore = entry.get("ignore") or []
+        ignored = {
+            normalize(str(rule["dependency-name"]))
+            for rule in ignore
+            if isinstance(rule, dict) and set(rule) == {"dependency-name"}
+        }
+        unignored = sorted("%s (%s)" % (name, ", ".join(forked[name])) for name in forked if name not in ignored)
+        check(
+            not unignored,
+            "%s ignores every package a lock pins at more than one version, which -P NAME==VERSION cannot "
+            "reproduce, so the gap is written in the config rather than logged as a weekly error%s (issue #1191)"
+            % (label, ("; not ignored: " + ", ".join(unignored)) if unignored else ""),
+        )
+        stale = sorted(ignored - set(forked))
+        check(
+            not stale,
+            "%s ignores only packages some lock pins at more than one version, so an entry goes once its fork "
+            "does%s (issue #1191)" % (label, ("; stale: " + ", ".join(stale)) if stale else ""),
+        )
+
+        invisible = sorted(locked - visible - ignored)
+        check(
+            not invisible,
+            "%s can see every locked package: each has at least one entry Dependabot's uv parser keeps, which "
+            "drops an entry whose marker contains '<'%s (issue #1191)"
+            % (label, ("; unseen: " + ", ".join(invisible)) if invisible else ""),
         )
 
         groups = entry.get("groups") or {}
