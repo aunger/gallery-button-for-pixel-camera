@@ -41,68 +41,6 @@
 # carried CVE-2026-7246 against click 8.1.8 while GitHub did not alert on it).
 
 # ---------------------------------------------------------------------------
-# semgrep's transitive `mcp` pin. See issue #788 for the full analysis.
-#
-# semgrep declares `mcp==1.23.3` as an exact requirement, as a core dependency
-# rather than an extra, and has done so in every release through 1.172.0, so
-# regenerating this lock cannot move it, because `uv pip compile --upgrade` resolves
-# to 1.23.3 again at any semgrep version.
-#
-# All three advisories are bugs in MCP *server* transports, and each names an
-# explicit precondition that a server has to meet to be affected. Note that the
-# package is genuinely imported on every scan (semgrep/cli.py imports the `mcp`
-# subcommand at module import time to register it), so "the code never loads"
-# would be false; what is true is that no MCP server is ever started.
-# `semgrep scan` in .github/workflows/semgrep.yml is the only semgrep
-# invocation in this repo, and nothing runs `semgrep mcp`.
-# ---------------------------------------------------------------------------
-
-[[ignore."scripts/ci/requirements-semgrep.txt"]]
-id = "PYSEC-2026-3481"
-package = "mcp"
-reason = """
-CVE-2026-52870 / GHSA-hvrp-rf83-w775: the experimental tasks feature's default \
-request handlers do not check which session created a task, so on a server with \
-several connected clients one client can read and cancel another's tasks. \
-Affects only a server that calls `server.experimental.enable_tasks()`. This repo \
-starts no MCP server at all, and semgrep does not enable tasks."""
-remove_when = """
-semgrep relaxes its exact `mcp==1.23.3` requirement to admit 1.27.2 or later, or \
-this repo starts running `semgrep mcp`. In the first case, regenerating the lock \
-clears the finding; in the second, the reachability argument no longer holds and \
-the pin has to be forced or semgrep dropped."""
-
-[[ignore."scripts/ci/requirements-semgrep.txt"]]
-id = "PYSEC-2026-3482"
-package = "mcp"
-reason = """
-CVE-2026-52869 / GHSA-jpw9-pfvf-9f58: the SSE and stateful Streamable HTTP server \
-transports route a request to an existing session by session ID alone, without \
-checking that it is authenticated as the principal that created the session. \
-Affects only a server that serves one of those HTTP transports and authenticates \
-requests. This repo starts no MCP server at all, so neither transport is ever bound."""
-remove_when = """
-semgrep relaxes its exact `mcp==1.23.3` requirement to admit 1.27.2 or later, or \
-this repo starts running `semgrep mcp`. In the first case, regenerating the lock \
-clears the finding; in the second, the reachability argument no longer holds and \
-the pin has to be forced or semgrep dropped."""
-
-[[ignore."scripts/ci/requirements-semgrep.txt"]]
-id = "PYSEC-2026-3483"
-package = "mcp"
-reason = """
-CVE-2026-59950 / GHSA-vj7q-gjh5-988w: the deprecated WebSocket server transport \
-(`mcp.server.websocket.websocket_server`) completes the handshake with no Host or \
-Origin validation, because TransportSecuritySettings was never wired into it. \
-Affects only a server that exposes that transport. This repo starts no MCP server \
-at all, and semgrep does not expose a WebSocket transport."""
-remove_when = """
-semgrep relaxes its exact `mcp==1.23.3` requirement to admit 1.28.1 or later, or \
-this repo starts running `semgrep mcp`. In the first case, regenerating the lock \
-clears the finding; in the second, the reachability argument no longer holds and \
-the pin has to be forced or semgrep dropped."""
-
-# ---------------------------------------------------------------------------
 # semgrep's transitive `pyjwt` pin. See issue #1189.
 #
 # semgrep declares `pyjwt[crypto]~=2.13.0` in every release through 1.178.0, so
@@ -115,10 +53,10 @@ the pin has to be forced or semgrep dropped."""
 # `jwt.decode` on bearer tokens sent to semgrep's MCP server. Only
 # `setup_mcp_server` in semgrep/commands/mcp.py constructs it, so only `semgrep
 # mcp` reaches it. `mcp` itself only calls `jwt.encode`, in a client-credentials
-# extension semgrep never imports. As with `mcp` above, `jwt` is imported on every
-# scan (cli.py imports commands/mcp.py, which imports token_verifier.py, which
-# imports jwt), but `semgrep scan`, this repo's only semgrep invocation, never
-# calls into it.
+# extension semgrep never imports. `jwt` is imported on every scan (cli.py
+# imports commands/mcp.py, which imports token_verifier.py, which imports jwt),
+# but `semgrep scan`, this repo's only semgrep invocation, never calls into it,
+# and nothing in this repo runs `semgrep mcp`.
 # ---------------------------------------------------------------------------
 
 [[ignore."scripts/ci/requirements-semgrep.txt"]]

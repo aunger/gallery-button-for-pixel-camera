@@ -1,1 +1,8 @@
 line-length = 100
+
+[lint]
+# Pinned to the rule set ruff 0.15 enabled by default. ruff 0.16 enables a much
+# larger default set, which at 0.16.9 reported 874 findings across 27 codes in
+# this tree (measured at 84e32e8, PR #1198). Selecting explicitly keeps a ruff
+# bump from changing which rules run; widening the set is a separate decision.
+select = ["E4", "E7", "E9", "F"]
