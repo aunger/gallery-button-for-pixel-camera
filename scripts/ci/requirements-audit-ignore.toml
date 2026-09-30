@@ -5,7 +5,8 @@
 # repo". It is not a dismissal of the advisory; it is a record of a reachability
 # argument, and it has to carry enough to re-check that argument later:
 #
-#   id           the advisory ID exactly as pip-audit reports it (PYSEC-..., GHSA-...).
+#   id           the advisory ID exactly as pip-audit reports it (PYSEC-...,
+#                GHSA-..., CVE-...).
 #   package      the distribution the advisory is against; a mismatch fails the audit.
 #   reason       why the finding does not apply to this repo's usage.
 #   remove_when  what would have to become true for this entry to be deleted.
@@ -114,9 +115,10 @@ the pin has to be forced or semgrep dropped."""
 # `jwt.decode` on bearer tokens sent to semgrep's MCP server. Only
 # `setup_mcp_server` in semgrep/commands/mcp.py constructs it, so only `semgrep
 # mcp` reaches it. `mcp` itself only calls `jwt.encode`, in a client-credentials
-# extension semgrep never imports. As with `mcp` above, the module is imported on
-# every scan, but `semgrep scan`, this repo's only semgrep invocation, never calls
-# into pyjwt.
+# extension semgrep never imports. As with `mcp` above, `jwt` is imported on every
+# scan (cli.py imports commands/mcp.py, which imports token_verifier.py, which
+# imports jwt), but `semgrep scan`, this repo's only semgrep invocation, never
+# calls into it.
 # ---------------------------------------------------------------------------
 
 [[ignore."scripts/ci/requirements-semgrep.txt"]]
