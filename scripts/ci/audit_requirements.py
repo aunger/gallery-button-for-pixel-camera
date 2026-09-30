@@ -35,16 +35,17 @@ Why the locks are not handed to ``pip-audit`` directly
     The locks are generated with ``uv pip compile --universal``, so they are a
     superset covering every interpreter and platform the install sites use, and
     some entries are marker-gated (``pywin32 ; sys_platform == 'win32'``,
-    ``rpds-py==0.30.0 ; python_full_version < '3.11'``, and similar).
+    ``typing-extensions==4.16.0 ; python_full_version < '3.13'``, and similar).
     ``pip-audit -r <lock>`` evaluates those markers against the interpreter it
-    happens to run under and silently skips the rest, so a CPython-on-Linux
-    runner audits neither of those two.  Instead this script re-derives the pin
+    happens to run under and silently skips the rest, so pywin32, for one, is
+    never audited on a Linux runner.  Instead this script re-derives the pin
     list from the lock text and audits every pin regardless of marker.  A pin
     the parser does not recognize is an error, not a skip, so a change in the
     lock format shows up as a red build rather than as silent under-coverage.
-    (Names repeated at different versions, as ``rpds-py`` is, cannot share one
-    requirements file, because ``pip-audit`` rejects the duplicate, so the pins
-    are audited in as many rounds as the most-repeated name requires.)
+    (Names repeated at different versions, as ``rpds-py`` was until the locks'
+    Python floor rose to 3.11, cannot share one requirements file, because
+    ``pip-audit`` rejects the duplicate, so the pins are audited in as many
+    rounds as the most-repeated name requires.)
 
 Locks are discovered rather than listed, so a lock added later is audited
 without anyone having to remember to register it here.
@@ -231,8 +232,8 @@ def plan_rounds(pins: list[Pin]) -> list[list[Pin]]:
     """Split *pins* into groups in which no package name repeats.
 
     A universal lock can pin one name at two versions under complementary
-    markers (``rpds-py`` is pinned at 0.30.0 for Python < 3.11 and at 2026.6.3
-    otherwise).  pip-audit rejects a requirements file with a duplicate name,
+    markers (``rpds-py`` was pinned at 0.30.0 for Python < 3.11 and at 2026.6.3
+    otherwise, until the locks' Python floor rose to 3.11).  pip-audit rejects a requirements file with a duplicate name,
     so those versions have to be audited in separate passes.  Almost always
     this returns a single round.
     """
@@ -455,7 +456,7 @@ def evaluate(
 
     An entry covers its advisory for its package in its lock at *every* version
     that lock pins the package at.  A universal lock can carry two versions of
-    one name under complementary markers (``rpds-py``), and the reachability
+    one name under complementary markers (``rpds-py`` did), and the reachability
     argument an entry records is about how this repo uses the package, not about
     a version, so splitting one advisory into a per-version entry would be noise.
     Both findings are still listed individually in the report; what is shared is
