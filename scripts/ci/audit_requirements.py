@@ -233,9 +233,9 @@ def plan_rounds(pins: list[Pin]) -> list[list[Pin]]:
 
     A universal lock can pin one name at two versions under complementary
     markers (``rpds-py`` was pinned at 0.30.0 for Python < 3.11 and at 2026.6.3
-    otherwise, until the locks' Python floor rose to 3.11).  pip-audit rejects a requirements file with a duplicate name,
-    so those versions have to be audited in separate passes.  Almost always
-    this returns a single round.
+    otherwise, until the locks' Python floor rose to 3.11).  pip-audit rejects
+    a requirements file with a duplicate name, so those versions have to be
+    audited in separate passes.  Almost always this returns a single round.
     """
     rounds: list[dict[str, Pin]] = []
     for pin in pins:
