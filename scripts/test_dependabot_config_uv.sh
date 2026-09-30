@@ -62,7 +62,6 @@ with open(source) as handle:
     doc = yaml.safe_load(handle)
 
 
-
 def pyjwt(entry):
     """The ranged `ignore` rule for pyjwt, the package #1189 concerned."""
     return next(rule for rule in entry["ignore"] if rule["dependency-name"] == "pyjwt")
@@ -103,6 +102,8 @@ elif mutation == "range-behind-lock":
     pyjwt(entry)["versions"] = [">=2.0, <2.10"]
 elif mutation == "range-for-unlocked-package":
     entry["ignore"].append({"dependency-name": "nonesuch", "versions": [">=1, <2"]})
+elif mutation == "range-for-package-in-two-locks":
+    entry["ignore"].append({"dependency-name": "requests", "versions": [">=99, <100"]})
 elif mutation == "unmodeled-ignore-rule":
     entry["ignore"].append({"dependency-name": "pyjwt", "update-types": ["version-update:semver-minor"]})
 else:
@@ -182,6 +183,7 @@ expect_failure inverted-range "not closed: pyjwt '>=2.17, <2.14'"
 expect_failure range-covers-lock "at or below the lock: pyjwt >=2.13, <2.17 (locked 2.13.0)"
 expect_failure range-behind-lock "at or below the lock: pyjwt >=2.0, <2.10 (locked 2.13.0)"
 expect_failure range-for-unlocked-package "not locked: nonesuch"
+expect_failure range-for-package-in-two-locks "pinned by more than one lock: requests"
 expect_failure unmodeled-ignore-rule "the two shapes the checks here model"
 
 # A lock that pins a package at two versions needs that package in `ignore`.

@@ -157,10 +157,12 @@
 # exactly those packages, and none is needed while no lock pins one twice.
 # The same pin cannot move a package past a cap in semgrep's own requirements
 # (issue #1195), so those packages are ignored by version instead: each rule
-# names a locked package and a closed range of versions, so a forgotten rule
-# expires once the package publishes a version above it. A range must sit above
-# every version its lock pins, since it exists to hide releases the lock has not
-# reached; a lock that reaches one leaves it stale, and the check names it.
+# names a package one lock pins (`ignore` applies to every lock in the entry, so
+# a package two locks pin is refused) and a closed range of versions, so a
+# forgotten rule expires once the package publishes a version above it. A range
+# must sit above every version its lock pins, since it exists to hide releases
+# the lock has not reached; a lock that reaches one leaves it stale, and the
+# check names it.
 # And every locked package must have an entry Dependabot's uv parser keeps,
 # since it drops one whose marker contains "<" without the substring
 # `python_version`.
@@ -1104,8 +1106,8 @@ if check(
         # markers) cannot be moved: the updater pins it with -P NAME==VERSION,
         # which uv applies to every fork of the universal resolution, so the
         # fork that needs the other version has no solution. Those are named
-        # in `ignore`, and only those, so the gap is stated in the config and
-        # an entry goes when its fork does.
+        # in name-only `ignore` rules, and only those, so the gap is stated in
+        # the config and a rule goes when its fork does.
         forked = {}
         visible = set()
         for lock in covered:
@@ -1127,15 +1129,15 @@ if check(
         unignored = sorted("%s (%s)" % (name, ", ".join(forked[name])) for name in forked if name not in ignored)
         check(
             not unignored,
-            "%s ignores every package a lock pins at more than one version, which -P NAME==VERSION cannot "
+            "%s ignores by name every package a lock pins at more than one version, which -P NAME==VERSION cannot "
             "reproduce, so the gap is written in the config rather than logged as a weekly error%s (issue #1191)"
             % (label, ("; not ignored: " + ", ".join(unignored)) if unignored else ""),
         )
         stale = sorted(ignored - set(forked))
         check(
             not stale,
-            "%s ignores only packages some lock pins at more than one version, so an entry goes once its fork "
-            "does%s (issue #1191)" % (label, ("; stale: " + ", ".join(stale)) if stale else ""),
+            "%s ignores by name only packages some lock pins at more than one version, so a rule goes once its "
+            "fork does%s (issue #1191)" % (label, ("; stale: " + ", ".join(stale)) if stale else ""),
         )
 
         # The rest of `ignore`: a package named with a closed range of versions
@@ -1176,6 +1178,22 @@ if check(
             not unlocked,
             "%s gives a range of versions only for packages a lock pins, so a rule goes once its package does%s "
             "(issue #1195)" % (label, ("; not locked: " + ", ".join(unlocked)) if unlocked else ""),
+        )
+
+        pinned_by = {}
+        for lock in covered:
+            for name in {name for name, _version, _marker in lock_entries(os.path.join(repo_root, lock))}:
+                pinned_by.setdefault(name, []).append(lock)
+        shared = sorted(
+            "%s (%s)" % (normalize(str(rule["dependency-name"])), ", ".join(pinned_by[normalize(str(rule["dependency-name"]))]))
+            for rule in ranged
+            if len(pinned_by.get(normalize(str(rule["dependency-name"])), ())) > 1
+        )
+        check(
+            not shared,
+            "%s gives a range of versions only for packages one lock pins, since `ignore` applies to every lock "
+            "in the entry and the ranges are sized against the lock that carries semgrep's caps%s (issue #1195)"
+            % (label, ("; pinned by more than one lock: " + ", ".join(shared)) if shared else ""),
         )
 
         open_ended = []

@@ -199,8 +199,8 @@ updates:
   # The range starts at the first version semgrep's requirements exclude and ends above the newest release published on 2026-09-30.
   # It is closed on purpose: once the package publishes a version above the range, Dependabot tries it again, and either the bump succeeds (semgrep relaxed its cap) or the update error returns as the reminder to widen the range or drop the rule.
   # An open-ended range such as `>=2.14` would hide the package's updates for good once forgotten.
-  # The width follows how fast the line ships: a release line or two above the newest for a slow package, several minors for the opentelemetry lines, up to the next major where the cap is a major.
-  # `mcp` is pinned exactly by semgrep, so it moves only with semgrep and its range runs to the next major.
+  # The width follows how fast the line ships: a release line or two above the newest for a slow package, several minors for the opentelemetry lines, through the newest release's major where the cap is a major.
+  # `mcp` is pinned exactly by semgrep, so it moves only with semgrep and its range runs through the newest release's major, to `<3`.
   # Dependabot's uv requirement parser splits a `versions` string on commas and requires every clause (`initialize` in python/lib/dependabot/python/requirement.rb, which the uv ecosystem reuses), so `>=2.14, <2.17` is 2.14 up to but excluding 2.17.
   # The opentelemetry `0.x` lines ship only pre-releases, so their bounds carry the suffix (`>=0.59b0, <0.71b0`): a final `0.59` sorts above every `0.59bN`, so `>=0.59` would hide none of them, and `<0.71` would still admit `0.71b0`.
   # A range hides only releases above the version the lock pins.
