@@ -22,7 +22,7 @@
 #
 # Regenerating the lock (do this whenever a pin here changes):
 #
-#   uv pip compile --universal --python-version 3.10 --generate-hashes \
+#   uv pip compile --universal --python-version 3.11 --generate-hashes \
 #       scripts/lint/requirements-lint.in -o scripts/lint/requirements-lint.txt
 #
 # That command keeps the versions already present in the lock, so on its own it
@@ -35,11 +35,18 @@
 # `uv` is not installed by the session-start hook. Install it first with
 # `pip install uv` (see .claude/environment.md).
 #
-# --universal + --python-version 3.10 make the lock a superset that covers
+# --universal + --python-version 3.11 make the lock a superset that covers
 # every interpreter the install sites use (system python3 in
-# .claude/hooks/session-start.sh, and setup-python's "3.x" in CI), so
-# marker-gated entries (for example tomli on Python < 3.11) resolve
-# correctly wherever pip runs it under --require-hashes.
+# .claude/hooks/session-start.sh, and setup-python's "3.x" in CI), so any
+# marker-gated entry resolves correctly wherever pip runs it under
+# --require-hashes.
+#
+# The floor is 3.11 (issue #1196), so the lock does not cover Python 3.10.
+# A package whose newest release dropped 3.10 is locked at that release alone,
+# not at two versions under complementary markers, which Dependabot's uv updater
+# cannot move (see the uv entry in .github/dependabot.yml).
+# Raise the floor again, and regenerate every lock, when packages start dropping
+# 3.11; check first that no install site still runs the version being dropped.
 ruff==0.16.9
 pre-commit-hooks==6.0.0
 mdformat==1.0.0

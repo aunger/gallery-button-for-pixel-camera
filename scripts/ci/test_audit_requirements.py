@@ -101,8 +101,9 @@ class TestPlanRounds(unittest.TestCase):
         self.assertEqual(ar.plan_rounds(pins), [[ar.Pin("a", "1"), ar.Pin("b", "2")]])
 
     def test_repeated_name_is_split_across_rounds(self):
-        # rpds-py is pinned at two versions under complementary markers, and
-        # pip-audit rejects a requirements file naming a package twice.
+        # A universal lock can pin a package (rpds-py did) at two versions under
+        # complementary markers, and pip-audit rejects a requirements file naming
+        # a package twice.
         pins = [ar.Pin("rpds-py", "0.30.0"), ar.Pin("a", "1"), ar.Pin("rpds-py", "2026.6.3")]
         self.assertEqual(
             ar.plan_rounds(pins),
@@ -376,10 +377,10 @@ class TestEvaluate(unittest.TestCase):
         self.assertEqual(report.unignored, [])
 
     def test_one_entry_covers_both_versions_of_a_package_pinned_twice(self):
-        # A universal lock pins rpds-py at two versions under complementary
-        # markers. The reachability argument an entry records is about how the
-        # repo uses the package, not about a version, so one entry covers both
-        # but both findings still appear in the report.
+        # A universal lock can pin rpds-py (as one did) at two versions under
+        # complementary markers. The reachability argument an entry records is
+        # about how the repo uses the package, not about a version, so one entry
+        # covers both but both findings still appear in the report.
         both = [
             finding(package="rpds-py", version="0.30.0"),
             finding(package="rpds-py", version="2026.6.3"),
