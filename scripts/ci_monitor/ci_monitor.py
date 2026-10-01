@@ -82,18 +82,21 @@ DEFAULT_TEST_MARKER_REGEX = r"##TEST##"
 # honest `Build and run unit tests` step is surfaced but must not be annotated).
 DEFAULT_DEFERRED_VERDICT_STEP_REGEX = r"(?!)"
 
-# Match (re.search) against a check-run's `name` to identify it as a process-label
-# gate rather than a substantive code/test block. The never-match default keeps the
-# rule repo-agnostic; the project-specific name is supplied via config, mirroring
-# how `interesting_step_regex` defaults to never-match.
-DEFAULT_LABEL_GATE_CHECK_REGEX = r"(?!)"
+# Match (re.search) against a check-run's `name` to exclude it from the verdict
+# (issue #1121): an ignored check never makes the verdict Blocked/Infra, never
+# keeps it in_progress, and never reaches the `by: ...` suffix, whatever its
+# conclusion. It still appears in the summary block, marked [ignored], so the
+# block describes what CI did. Which checks to ignore is the consumer's policy;
+# the never-match default keeps the rule repo-agnostic, mirroring how
+# `interesting_step_regex` defaults to never-match.
+DEFAULT_IGNORED_CHECK_REGEX = r"(?!)"
 
 
 def load_config(path=None):
     """Load the CI Monitor config, falling back to in-code defaults.
 
     Returns a dict with keys artifact_name_regex, interesting_step_regex,
-    deferred_verdict_step_regex, test_marker_regex, and label_gate_check_regex.
+    deferred_verdict_step_regex, test_marker_regex, and ignored_check_regex.
     A missing file, unreadable file, or invalid JSON falls back entirely to the
     DEFAULT_* regexes (the Monitor must never abort on config). Each key
     independently defaults if absent, and a value that does not compile as a
@@ -104,7 +107,7 @@ def load_config(path=None):
         "interesting_step_regex": DEFAULT_INTERESTING_STEP_REGEX,
         "deferred_verdict_step_regex": DEFAULT_DEFERRED_VERDICT_STEP_REGEX,
         "test_marker_regex": DEFAULT_TEST_MARKER_REGEX,
-        "label_gate_check_regex": DEFAULT_LABEL_GATE_CHECK_REGEX,
+        "ignored_check_regex": DEFAULT_IGNORED_CHECK_REGEX,
     }
     if path is None:
         path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ci_monitor.config.json")
@@ -429,6 +432,33 @@ def latest_check_runs(check_json):
     return result
 
 
+def _is_ignored_check(run, ignored_check_regex):
+    """True when `run`'s name matches the ignored_check_regex (issue #1121)."""
+    return bool(re.search(ignored_check_regex, run.get("name") or ""))
+
+
+def without_ignored_checks(check_json, ignored_check_regex=DEFAULT_IGNORED_CHECK_REGEX):
+    """Drop the check runs the verdict must not count (issue #1121).
+
+    Returns a shallow copy of `check_json` whose `check_runs` omits every run
+    whose name matches `ignored_check_regex`, whatever its status or conclusion,
+    mirroring the shape of `latest_check_runs`. Only the verdict reads this
+    copy: the summary block is built from the unfiltered payload, so it still
+    lists an ignored check (marked [ignored]) and describes what CI did.
+
+    `total_count` is left as-is, as `latest_check_runs` leaves it, so it keeps
+    meaning "checks are registered on this commit". When every check is
+    ignored, parse_check_result therefore returns 'all_passed' rather than
+    'Clear': under --pr that still consults mergeable_state and prints the
+    summary, where the total_count == 0 'Clear' path does neither.
+    """
+    result = dict(check_json)
+    result["check_runs"] = [
+        r for r in check_json.get("check_runs", []) if not _is_ignored_check(r, ignored_check_regex)
+    ]
+    return result
+
+
 def parse_check_result(check_json):
     """Map a /commits/{sha}/check-runs response to an overall result token.
 
@@ -451,17 +481,18 @@ def parse_check_result(check_json):
     return "in_progress"
 
 
-def parse_check_summary(check_json, label_gate_check_regex=DEFAULT_LABEL_GATE_CHECK_REGEX):
-    """Extract per-check (name, conclusion, blocking, label_gate, run_id) rows.
+def parse_check_summary(check_json, ignored_check_regex=DEFAULT_IGNORED_CHECK_REGEX):
+    """Extract per-check (name, conclusion, blocking, ignored, run_id) rows.
 
     Returns a list of dicts (one per check run, preserving order):
-      {"name": str, "conclusion": str, "blocking": bool, "label_gate": bool,
+      {"name": str, "conclusion": str, "blocking": bool, "ignored": bool,
        "run_id": str | None}
 
-    Conclusions in the "blocking" set match what parse_check_result treats as
-    Blocked/Infra. The label_gate_check_regex is matched (re.search) against
-    each check run's name; a True label_gate lets the consumer annotate a
-    process-label block distinctly from a substantive code/test failure.
+    `ignored` is True when ignored_check_regex matches (re.search) the check
+    run's name; such a check is excluded from the verdict (see
+    without_ignored_checks), so it is never `blocking`, whatever its
+    conclusion. For every other row, conclusions in the "blocking" set match
+    what parse_check_result treats as Blocked/Infra.
 
     `run_id` is the GitHub Actions workflow run the check came from
     (via _actions_run_id), or None for a non-Actions check; it lets the
@@ -482,14 +513,14 @@ def parse_check_summary(check_json, label_gate_check_regex=DEFAULT_LABEL_GATE_CH
         # For completed checks use the conclusion; otherwise use the in-progress status
         # so the summary renders e.g. "in_progress" rather than a blank slot.
         effective = conclusion if status == "completed" else status
-        blocking = status == "completed" and conclusion in _BLOCKING_CONCLUSIONS
-        label_gate = bool(re.search(label_gate_check_regex, name))
+        ignored = _is_ignored_check(r, ignored_check_regex)
+        blocking = not ignored and status == "completed" and conclusion in _BLOCKING_CONCLUSIONS
         rows.append(
             {
                 "name": name,
                 "conclusion": effective,
                 "blocking": blocking,
-                "label_gate": label_gate,
+                "ignored": ignored,
                 "run_id": _actions_run_id(r),
             }
         )
@@ -500,11 +531,12 @@ def format_check_summary(rows):
     """Format per-check rows into a summary block (without the PR#N: prefix).
 
     Returns [] when rows is empty. The first line is "summary", followed by one
-    aligned dotted line per check. Blocking rows carry [BLOCKING]; a label-gate
-    blocking row additionally carries [label gate]. A row that carries a
+    aligned dotted line per check. Blocking rows carry [BLOCKING]; ignored rows
+    (issue #1121) carry [ignored] instead, whatever their conclusion, since the
+    verdict did not count them. A row that carries a
     non-None `run_id` (a GitHub Actions check) ends with a `[run <id>]` token
     naming the workflow run it came from (issue #720); non-Actions rows omit it.
-    The token rides after the [BLOCKING]/[label gate] cluster, outside the dotted
+    The token rides after the [BLOCKING]/[ignored] marker, outside the dotted
     column, so the existing alignment is unchanged. Column width is capped at 60
     characters to avoid pathological output on long check names.
     """
@@ -522,8 +554,9 @@ def format_check_summary(rows):
         line = "  %s %s %s" % (display_name, dots, conclusion)
         if r["blocking"]:
             line += "   [BLOCKING]"
-            if r["label_gate"]:
-                line += " [label gate]"
+        # .get keeps manually constructed rows without an `ignored` key valid.
+        elif r.get("ignored"):
+            line += "   [ignored]"
         # .get keeps the formatter tolerant of rows built without a run_id key
         # (e.g. manually constructed rows); a non-Actions check has run_id None.
         run_id = r.get("run_id")
@@ -556,8 +589,8 @@ def blocking_suffix(rows, failed_steps=None, failed_tests=None):
     the hold rather than to the draft state, so the line does not claim the
     check drafted the PR (issue #976).
 
-    Returns "" when no row is blocking (caller emits the bare terminal token).
-    Returns " by: <names> [label gate]" when every blocking row is a label gate.
+    Returns "" when no row is blocking (caller emits the bare terminal token);
+    an ignored check is never blocking (issue #1121), so it never appears here.
     Otherwise returns " by: <names>", enriched (issue #602) with the specific
     failing step(s) and test(s) that explain the block when they are known:
 
@@ -569,19 +602,13 @@ def blocking_suffix(rows, failed_steps=None, failed_tests=None):
     name alone (e.g. the single `build-and-test` job) does not say which step or
     test failed--the deferred-verdict E2E steps all conclude `success` and the
     real verdict is the `Gate on test failures` step--so this names the blocker at
-    step/test granularity (asks #519 and #591, issue #602). The extra detail is
-    added only for a substantive (non-label-gate) block; a label-gate-only block
-    keeps its bare " by: <names> [label gate]" form (no test failed), and
-    `[label gate]` stays the terminal suffix's final token so the Orchestrator's
-    label-gate detection is unaffected.
+    step/test granularity (asks #519 and #591, issue #602).
     """
     blocking = [r for r in rows if r["blocking"]]
     if not blocking:
         return ""
     names = [r["name"] for r in blocking]
     suffix = " by: %s" % ", ".join(names)
-    if all(r["label_gate"] for r in blocking):
-        return suffix + " [label gate]"
     detail = []
     if failed_steps:
         detail.extend('step "%s" -> %s' % (name, concl) for name, concl in failed_steps)
@@ -1022,7 +1049,7 @@ def main(argv):
     interesting_step_regex = config["interesting_step_regex"]
     deferred_verdict_step_regex = config["deferred_verdict_step_regex"]
     test_marker_regex = config["test_marker_regex"]
-    label_gate_check_regex = config["label_gate_check_regex"]
+    ignored_check_regex = config["ignored_check_regex"]
 
     last_output_ts = time.time()
 
@@ -1299,9 +1326,16 @@ def main(argv):
             # mergeable_state.
             if check_json:
                 check_json = latest_check_runs(check_json)
-            result = parse_check_result(check_json) if check_json else None
+            # Issue #1121--the verdict counts only the checks the config does
+            # not ignore; the summary still lists every check, so it describes
+            # what CI did while the verdict is scoped.
+            result = (
+                parse_check_result(without_ignored_checks(check_json, ignored_check_regex))
+                if check_json
+                else None
+            )
             summary_rows = (
-                parse_check_summary(check_json, label_gate_check_regex) if check_json else []
+                parse_check_summary(check_json, ignored_check_regex) if check_json else []
             )
 
             # --- Streamed test-result signals -------------------------------------
@@ -1387,7 +1421,7 @@ def main(argv):
                 # does (a fresh /pulls fetch). Only an explicitly un-mergeable state
                 # (behind/dirty/blocked) is a real block that falls through to the
                 # raw scan's Blocked/Infra terminal, which still names the blocking
-                # check (including the label gate). A mergeable state (clean/
+                # check. A mergeable state (clean/
                 # unstable) reports Clear; anything else (mergeable_state not yet
                 # computed, or another non-blocking state such as has_hooks) keeps
                 # polling rather than terminating, staying symmetric with the
