@@ -561,6 +561,17 @@ def format_check_summary(rows):
 # softening it to suit the process hold would print a broken build as though a
 # procedure were merely pending. `Infra` stays alarming for the same reason
 # (issue #966).
+#
+# The draft word, conversely, stays `Draft on hold` even when the named check
+# genuinely failed (issue #997). For a draft the dominant fact is that it cannot
+# merge at all, and the attribution already names the failing check, its step
+# and its conclusion. The Orchestrator reads only the fact of draftness from
+# the word; it decides on the per-check summary rows and ignores the ` by: `
+# portion (agents/dev_orchestration.md, namedChecks), so no decision rests on
+# the word's tone. Two alternatives were rejected. Choosing the word by cause
+# (`Draft blocked` for a failure) would make the vocabulary depend on which
+# checks are ignored, which issue #996 declines for `Blocked`. A bare `Draft`
+# would put ` by: ` back on a claim that the check drafted the PR (issue #976).
 DRAFT_ON_HOLD = "Draft on hold"
 
 
