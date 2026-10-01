@@ -15,7 +15,8 @@
 #   (e) The scratchpad directory itself warns
 #   (f) Paths inside the worktree's own subdirectory are silent
 #   (g) One good path does not excuse a stray one in the same command
-#   (h) A Write to a stray file_path warns; to the subdirectory, is silent
+#   (h) A Write, Edit or NotebookEdit to a stray path warns; to the
+#       subdirectory, is silent
 #   (i) A command that does not touch the scratchpad is silent
 #   (j) A component that only begins with "scratchpad" is not the scratchpad
 #   (k) Other tools, and unreadable input, are silent and exit 0
@@ -128,6 +129,16 @@ expect_warning "(h) Write at the top level" "$SP/sweep.sh"
 run_hook "$(write_payload "$WT_CWD" "$SP/$WT/sweep.sh")"
 expect_silent "(h) Write in the worktree's subdirectory"
 
+run_hook "$(payload "$WT_CWD" Edit "$(jq -cn --arg p "$SP/sweep.sh" '{file_path: $p}')")"
+expect_warning "(h) Edit at the top level" "$SP/sweep.sh"
+
+run_hook "$(payload "$WT_CWD" Edit "$(jq -cn --arg p "$SP/$WT/sweep.sh" '{file_path: $p}')")"
+expect_silent "(h) Edit in the worktree's subdirectory"
+
+run_hook "$(payload "$WT_CWD" NotebookEdit "$(jq -cn --arg p "$SP/n.ipynb" '{notebook_path: $p}')")"
+expect_warning "(h) NotebookEdit at the top level" "$SP/n.ipynb"
+
+echo ""
 echo "=== (l) paths joined in one token are checked one by one ==="
 run_hook "$(bash_payload "$WT_CWD" "bash $SP/$WT/a.sh,$SP/b")"
 expect_warning "(l) comma-joined: the stray second path" "  $SP/b"

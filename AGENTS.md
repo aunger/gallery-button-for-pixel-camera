@@ -19,4 +19,4 @@ A helper left at its top level can be overwritten or run by another agent, which
 - A helper that reports a test result prints the worktree path and `HEAD` it ran against, and you check both before reporting.
 
 The second point is what catches a crossed result; the first only makes one rarer.
-`.claude/hooks/post-tool-use-scratchpad-isolation.sh` warns a worktree agent whose `Bash` command or `Write` path reaches the scratchpad outside its subdirectory.
+`.claude/hooks/post-tool-use-scratchpad-isolation.sh` warns a worktree agent whose `Bash` command, or `Write`, `Edit` or `NotebookEdit` path, reaches the scratchpad outside its subdirectory.

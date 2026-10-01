@@ -3,18 +3,19 @@
 # the shared scratchpad outside its own subdirectory (issue #1187).
 #
 # Configured in .claude/settings.json under PostToolUse with the matcher
-# "Bash|Write".  Every sub-agent in a session gets the same scratchpad
+# "Bash|Write|Edit|NotebookEdit".  Every sub-agent in a session gets the same scratchpad
 # directory, so a helper one agent leaves at its top level can be overwritten
 # or run by another, which then reports a result from a tree it never touched.
 # AGENTS.md asks each agent to keep scratch files under a subdirectory named
 # after its worktree directory; this hook warns when a call strays from that.
 #
-# What it checks: the Bash command, or the Write file_path, for every path that
-# has a component named "scratchpad".  Each one must continue into a
-# subdirectory named after the agent's worktree.  A single path that does not
-# draws the warning, even when the same command names the worktree elsewhere
-# (a "cd <worktree> && bash <scratchpad>/sweep.sh" is the incident in #1187).
-# Paths joined by ",", ":" or "=" (a PATH= prefix, a --files=a,b argument) are
+# What it checks: the Bash command, or the file_path (notebook_path for
+# NotebookEdit) of a Write or Edit, for every path that has a component named
+# "scratchpad".  Each one must continue into a subdirectory named after the
+# agent's worktree.  A single path that does not draws the warning, even when
+# the same command names the worktree elsewhere: "cd <worktree> && bash
+# <scratchpad>/sweep.sh" is the incident in #1187.  Paths
+# joined by ",", ":" or "=" (a PATH= prefix, a --files=a,b argument) are
 # checked one by one.
 #
 # Who it checks: only an agent whose cwd (from the hook's input) lies under
@@ -51,7 +52,8 @@ WORKTREE="${WORKTREE%%/*}"
 
 case "$(read_field '.tool_name')" in
     Bash) TEXT="$(read_field '.tool_input.command')" ;;
-    Write) TEXT="$(read_field '.tool_input.file_path')" ;;
+    Write | Edit) TEXT="$(read_field '.tool_input.file_path')" ;;
+    NotebookEdit) TEXT="$(read_field '.tool_input.notebook_path')" ;;
     *) exit 0 ;;
 esac
 [[ -n "$TEXT" ]] || exit 0
