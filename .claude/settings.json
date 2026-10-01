@@ -35,6 +35,15 @@
             "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-tool-use-github-readback.sh"
           }
         ]
+      },
+      {
+        "matcher": "Bash|Write|Edit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-tool-use-scratchpad-isolation.sh"
+          }
+        ]
       }
     ]
   },
