@@ -14,6 +14,8 @@
 # subdirectory named after the agent's worktree.  A single path that does not
 # draws the warning, even when the same command names the worktree elsewhere
 # (a "cd <worktree> && bash <scratchpad>/sweep.sh" is the incident in #1187).
+# Paths joined by ",", ":" or "=" (a PATH= prefix, a --files=a,b argument) are
+# checked one by one.
 #
 # Who it checks: only an agent whose cwd (from the hook's input) lies under
 # .claude/worktrees/.  The worktree name comes from that cwd rather than from
@@ -54,8 +56,10 @@ case "$(read_field '.tool_name')" in
 esac
 [[ -n "$TEXT" ]] || exit 0
 
-# Each match is one whole path token with a "/scratchpad" in it.
-TOKEN="[^[:space:]\"';|&()<>]*"
+# Each match is one path with a "/scratchpad" in it.  A path ends at
+# whitespace, a quote, a shell operator, or a ",", ":" or "=" joining it to
+# another path.
+TOKEN="[^[:space:]\"';|&()<>,:=]*"
 STRAYED=()
 while IFS= read -r MATCH; do
     REST="${MATCH#*/scratchpad}"

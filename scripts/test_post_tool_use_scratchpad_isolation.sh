@@ -19,6 +19,7 @@
 #   (i) A command that does not touch the scratchpad is silent
 #   (j) A component that only begins with "scratchpad" is not the scratchpad
 #   (k) Other tools, and unreadable input, are silent and exit 0
+#   (l) Paths joined by "," or ":" in one token are checked one by one
 #
 # Modeled on scripts/test_post_tool_use_fetch.sh.
 #
@@ -126,6 +127,16 @@ expect_warning "(h) Write at the top level" "$SP/sweep.sh"
 
 run_hook "$(write_payload "$WT_CWD" "$SP/$WT/sweep.sh")"
 expect_silent "(h) Write in the worktree's subdirectory"
+
+echo "=== (l) paths joined in one token are checked one by one ==="
+run_hook "$(bash_payload "$WT_CWD" "bash $SP/$WT/a.sh,$SP/b")"
+expect_warning "(l) comma-joined: the stray second path" "  $SP/b"
+
+run_hook "$(bash_payload "$WT_CWD" "PATH=$SP/$WT:\$PATH PYTHONPATH=$SP/$WT/lib foo")"
+expect_silent "(l) PATH= and colon-joined paths inside the subdirectory"
+
+run_hook "$(bash_payload "$WT_CWD" "PYTHONPATH=/opt/lib:$SP/lib foo")"
+expect_warning "(l) colon-joined: the stray second path" "  $SP/lib"
 
 echo ""
 echo "=== (i)-(k) unrelated calls are silent ==="
