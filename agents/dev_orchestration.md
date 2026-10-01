@@ -310,8 +310,9 @@ No-PR routing:
     stop
 ```
 
-PR routing (Monitor loop).
-The fence holds only the routing; what each labelled block assumes, and why, is under "Monitor loop blocks" after it:
+The PR-routing fence below holds only the routing; what each labelled block assumes, and why, is under "Monitor loop blocks" after it.
+
+PR routing (Monitor loop):
 
 ```text
   if Reviewer requested changes -> goto "Assigning a Programmer" above
@@ -401,7 +402,7 @@ Which check, if any, a pass suppresses is named by the arriving goto.
 
 #### `namedChecks`
 
-Each row of the summary block is `<name> .... <conclusion>` followed by optional annotations, one row per check-run name, already collapsed to that name's latest run (`latest_check_runs`, `scripts/ci_monitor/ci_monitor.py:379`; issues #707 and #719).
+Each row of the summary block is `<name> .... <conclusion>` followed by optional annotations, one row per check-run name, already collapsed to that name's latest run (`latest_check_runs`, `scripts/ci_monitor/ci_monitor.py:381`; issues #707 and #719).
 That is how GitHub itself judges a required check.
 The Monitor ends only once every check-run it can see has completed, so a row always carries a conclusion.
 
@@ -421,13 +422,13 @@ A conflict that arises after the named checks ran is not caught: resolving it is
 `surfaceBeforeMergingRequirements` surfaces outstanding before-merging requirements: unautomated verification steps, and changes outside the repo.
 It is entered once every named check is green, which does not prove the PR is mergeable.
 `No blocking labels` is still red, and a draft cannot merge at all until someone marks it ready.
-Neither bears on the requirements surfaced here, which are about what must be true before a merge, not about whether one is possible today.
+Neither bears on the requirements `surfaceBeforeMergingRequirements` surfaces, which are about what must be true before a merge, not about whether one is possible today.
 The Orchestrator does not scan the issue or PR itself.
 
 #### `missingNamedCheck`
 
 A named check with no row never registered a check-run the Monitor could see.
-The workflow had not started when every other check finished, the run died before creating the job, or the workflows never ran (no check-runs at all, as behind a merge conflict).
+One of three things happened: the workflow had not started when every other check finished, the run died before creating the job, or the workflows never ran (no check-runs at all, as behind a merge conflict).
 A check that registered but never concludes keeps the Monitor polling, so the 30-minute timeout covers that case instead.
 `missingNamedCheck` gives a missing row one out-of-process recheck before treating it as real, so a dead run escalates rather than becoming an indefinite wait.
 
