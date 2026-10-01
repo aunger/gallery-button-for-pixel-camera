@@ -72,7 +72,7 @@ Covers:
        each (by check-run id); the raw payload's stale failure reads
        Blocked while the collapsed one reads all_passed; distinct names and
        unnamed runs are preserved; only the latest run is a diagnostic target
-  (az) #707 main(): a stale label-gate re-run (failure) between two successes
+  (az) #707 main(): a stale gate-check re-run (failure) between two successes
        does not outvote the authoritative latest success -- the monitor
        terminates Clear (mergeable_state=clean), lists the gate once, and polls
        only the latest run's jobs/artifacts
@@ -4792,7 +4792,7 @@ def main() -> int:
     # recurs three times against the same commit as a label was added then
     # removed, leaving a stale middle 'failure' between two 'success' runs. Only
     # the most recent (highest started_at / id) is authoritative.
-    LABEL_GATE_3 = {
+    GATE_RERUNS_3 = {
         "total_count": 3,
         "check_runs": [
             {
@@ -4828,12 +4828,12 @@ def main() -> int:
     # Before collapsing, the stale 'failure' makes the raw payload read Blocked --
     # this is the bug in issue #707.
     check(
-        ci_monitor.parse_check_result(LABEL_GATE_3) == "Blocked",
+        ci_monitor.parse_check_result(GATE_RERUNS_3) == "Blocked",
         "raw payload (with the stale failure) still reads Blocked -- documents the bug",
-        "expected raw Blocked; got %r" % ci_monitor.parse_check_result(LABEL_GATE_3),
+        "expected raw Blocked; got %r" % ci_monitor.parse_check_result(GATE_RERUNS_3),
     )
 
-    collapsed_ay = ci_monitor.latest_check_runs(LABEL_GATE_3)
+    collapsed_ay = ci_monitor.latest_check_runs(GATE_RERUNS_3)
     check(
         len(collapsed_ay["check_runs"]) == 1,
         "the three same-named runs collapse to a single surviving run",
@@ -4963,7 +4963,7 @@ def main() -> int:
 
     # ── (az) #707 main(): a stale same-named re-run no longer drives Blocked ────────
     print(
-        "\n=== (az) #707 main(): a stale label-gate re-run does not outvote the latest success ==="
+        "\n=== (az) #707 main(): a stale gate-check re-run does not outvote the latest success ==="
     )
 
     # End-to-end reproduction of issue #707 in --pr mode: the head commit carries
@@ -4980,7 +4980,7 @@ def main() -> int:
     side_effects_az = collections.deque(
         [
             PR_AZ,  # pulls -> sha
-            LABEL_GATE_3,  # verdict check-runs (collapsed -> latest success; reused by poll_signals)
+            GATE_RERUNS_3,  # verdict check-runs (collapsed -> latest success; reused by poll_signals)
             JOBS_EMPTY_AZ,  # run 333 jobs -> nothing to surface
             ARTS_EMPTY_AZ,  # run 333 artifacts -> nothing (no zip)
             PR_MERGEABLE_AZ,  # all_passed -> mergeable_state fetch -> clean -> Clear
@@ -5016,20 +5016,20 @@ def main() -> int:
     ]
     check(
         len(label_rows_az) == 1,
-        "the summary lists the label-gate check exactly once (stale duplicates collapsed)",
+        "the summary lists the gate check exactly once (stale duplicates collapsed)",
         "expected 1 'No blocking labels' summary row; got %d: %r" % (len(label_rows_az), out_az),
     )
     check(
         not any("[BLOCKING]" in ln for ln in label_rows_az),
-        "the surviving label-gate row is not marked [BLOCKING]",
-        "label-gate row wrongly marked blocking; output: %r" % out_az,
+        "the surviving gate-check row is not marked [BLOCKING]",
+        "gate-check row wrongly marked blocking; output: %r" % out_az,
     )
     # #720: the surviving summary row names the run that won the collapse (333),
     # end-to-end through main().
     check(
         len(label_rows_az) == 1 and "[run 333]" in label_rows_az[0],
-        "the surviving label-gate summary row carries '[run 333]'",
-        "expected '[run 333]' on the label-gate row; output: %r" % out_az,
+        "the surviving gate-check summary row carries '[run 333]'",
+        "expected '[run 333]' on the gate-check row; output: %r" % out_az,
     )
     check(
         len(side_effects_az) == 0,

@@ -364,9 +364,9 @@ def _check_run_recency_key(run):
     """Return a sort key ordering check runs oldest-to-newest by check-run id.
 
     GitHub attaches several check runs with the same `name` to one commit when a
-    workflow re-runs (e.g. each PR-side label add/remove re-triggers the
-    label-gate workflow), so that gate's check-run name accumulates several
-    entries against the same head commit, of which only the most recent is
+    workflow re-runs (e.g. a workflow triggered by every label change on a PR),
+    so that check-run name accumulates several entries against the same head
+    commit, of which only the most recent is
     authoritative (issue #707). A re-run always creates a new check-run row with
     a higher `id`, and--unlike `started_at`, which GitHub leaves null until a run
     actually starts (issue #719)--the `id` is assigned at creation, so a
@@ -399,8 +399,8 @@ def latest_check_runs(check_json):
 
     This mirrors GitHub's own `mergeable_state`, which judges a required check by
     its latest run per name: without it, a stale `failure` from an earlier re-run
-    of a named check (e.g. a label-gate check that briefly saw a blocking label,
-    since removed) would outvote the authoritative later `success` and drive a
+    of a named check (e.g. a check that briefly failed on one label change and
+    passed on the next) would outvote the authoritative later `success` and drive a
     spurious `Blocked` terminal. Feeding the collapsed payload to the verdict,
     the summary, and the Actions-target discovery keeps all three from latching
     onto a superseded run. `total_count` is left as-is:
@@ -533,9 +533,9 @@ def format_check_summary(rows):
     Returns [] when rows is empty. The first line is "summary", followed by one
     aligned dotted line per check. Blocking rows carry [BLOCKING]; ignored rows
     (issue #1121) carry [ignored] instead, whatever their conclusion, since the
-    verdict did not count them. A row that carries a
-    non-None `run_id` (a GitHub Actions check) ends with a `[run <id>]` token
-    naming the workflow run it came from (issue #720); non-Actions rows omit it.
+    verdict did not count them. A row that carries a non-None `run_id` (a GitHub
+    Actions check) ends with a `[run <id>]` token naming the workflow run it came
+    from (issue #720); non-Actions rows omit it.
     The token rides after the [BLOCKING]/[ignored] marker, outside the dotted
     column, so the existing alignment is unchanged. Column width is capped at 60
     characters to avoid pathological output on long check names.
@@ -1421,11 +1421,10 @@ def main(argv):
                 # does (a fresh /pulls fetch). Only an explicitly un-mergeable state
                 # (behind/dirty/blocked) is a real block that falls through to the
                 # raw scan's Blocked/Infra terminal, which still names the blocking
-                # check. A mergeable state (clean/
-                # unstable) reports Clear; anything else (mergeable_state not yet
-                # computed, or another non-blocking state such as has_hooks) keeps
-                # polling rather than terminating, staying symmetric with the
-                # all_passed path's still-computing else. The raw scan keeps
+                # check. A mergeable state (clean/unstable) reports Clear; anything
+                # else (mergeable_state not yet computed, or another non-blocking
+                # state such as has_hooks) keeps polling rather than terminating,
+                # staying symmetric with the all_passed path's still-computing else. The raw scan keeps
                 # driving the per-check summary and step/FAIL diagnostics
                 # regardless. A draft PR is settled before any of that is asked
                 # (issue #968), exactly as in the all_passed ladder.
