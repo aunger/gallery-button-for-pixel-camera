@@ -562,15 +562,8 @@ def format_check_summary(rows):
 # procedure were merely pending. `Infra` stays alarming for the same reason
 # (issue #966).
 #
-# The draft word stays `Draft on hold` even when a check genuinely failed
-# (issue #997). The word reports a fact about the pull request: a draft cannot
-# merge until someone marks it ready, whatever its checks say. What the checks
-# did is reported beside it: the ` by: ` attribution names each non-passing
-# check (with its failing step and that step's conclusion when the jobs payload
-# supplies them), and the per-check summary block printed just before the
-# terminal carries every check's conclusion. A word chosen by cause, such as
-# `Draft blocked`, would repeat that report in a second place. A bare `Draft`
-# would put ` by: ` back on a claim that the check drafted the PR (issue #976).
+# A draft keeps this word even when a check failed: the word says the draft
+# cannot merge, and the ` by: ` attribution says which checks did not pass.
 DRAFT_ON_HOLD = "Draft on hold"
 
 
