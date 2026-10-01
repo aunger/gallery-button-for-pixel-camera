@@ -3,9 +3,10 @@
 # the shared scratchpad outside its own subdirectory (issue #1187).
 #
 # Configured in .claude/settings.json under PostToolUse with the matcher
-# "Bash|Write|Edit|NotebookEdit".  Every sub-agent in a session gets the same scratchpad
-# directory, so a helper one agent leaves at its top level can be overwritten
-# or run by another, which then reports a result from a tree it never touched.
+# "Bash|Write|Edit|NotebookEdit".  Every agent in a session, including each
+# worktree sub-agent, gets the same scratchpad directory, so a helper one agent
+# leaves at its top level can be overwritten or run by another, which then
+# reports a result from a tree it never touched.
 # AGENTS.md asks each agent to keep scratch files under a subdirectory named
 # after its worktree directory; this hook warns when a call strays from that.
 #

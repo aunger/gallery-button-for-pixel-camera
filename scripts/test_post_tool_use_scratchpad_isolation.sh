@@ -20,7 +20,7 @@
 #   (i) A command that does not touch the scratchpad is silent
 #   (j) A component that only begins with "scratchpad" is not the scratchpad
 #   (k) Other tools, and unreadable input, are silent and exit 0
-#   (l) Paths joined by "," or ":" in one token are checked one by one
+#   (l) Paths joined by ",", ":" or "=" in one token are checked one by one
 #
 # Modeled on scripts/test_post_tool_use_fetch.sh.
 #
@@ -137,6 +137,9 @@ expect_silent "(h) Edit in the worktree's subdirectory"
 
 run_hook "$(payload "$WT_CWD" NotebookEdit "$(jq -cn --arg p "$SP/n.ipynb" '{notebook_path: $p}')")"
 expect_warning "(h) NotebookEdit at the top level" "$SP/n.ipynb"
+
+run_hook "$(payload "$WT_CWD" NotebookEdit "$(jq -cn --arg p "$SP/$WT/n.ipynb" '{notebook_path: $p}')")"
+expect_silent "(h) NotebookEdit in the worktree's subdirectory"
 
 echo ""
 echo "=== (l) paths joined in one token are checked one by one ==="
