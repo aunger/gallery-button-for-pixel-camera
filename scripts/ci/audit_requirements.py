@@ -58,6 +58,9 @@ Ignore file format (TOML; see scripts/ci/requirements-audit-ignore.toml)::
     reason = "why this finding is tolerated"
     remove_when = "what would make this entry stop being needed"
 
+``id`` may be the finding's primary ID or any of its aliases (a CVE, a GHSA, a
+PYSEC ID), since which one pip-audit reports as primary can change between runs.
+
 Usage::
 
     python3 scripts/ci/audit_requirements.py [--ignore-file PATH] [LOCK ...]
@@ -70,7 +73,8 @@ misfiled, so a narrowed run is visibly not the full gate.
 Exit codes:
     0  every lock is clean, or every finding is ignored and every ignore entry
        is still doing work.
-    1  a finding is not ignored, or an ignore entry is stale/mismatched.
+    1  a finding is not ignored, an ignore entry is stale/mismatched, or a
+       finding is ignored by more than one entry.
     2  the ignore file is invalid, a lock could not be parsed, or ``pip-audit``
        could not be run.
 """
@@ -132,6 +136,11 @@ class Finding:
     fix_versions: tuple[str, ...]
     aliases: tuple[str, ...]
 
+    @property
+    def ids(self) -> tuple[str, ...]:
+        """Every ID this finding is known by: its primary ID, then its aliases."""
+        return tuple(dict.fromkeys((self.vuln_id, *self.aliases)))
+
     def describe(self) -> str:
         alias_text = f" ({', '.join(self.aliases)})" if self.aliases else ""
         fix_text = ", ".join(self.fix_versions) if self.fix_versions else "none"
@@ -160,13 +169,15 @@ class Report:
     unignored: list[Finding]
     stale: list[IgnoreEntry]
     mismatched: list[tuple[IgnoreEntry, Finding]]
+    # Findings claimed by more than one entry, each with every entry claiming it.
+    redundant: list[tuple[Finding, list[IgnoreEntry]]]
     # Entries for locks a narrowed run did not audit. Never a failure, but
     # reported so a subset run is not mistaken for the full gate.
     out_of_scope: list[IgnoreEntry]
 
     @property
     def failed(self) -> bool:
-        return bool(self.unignored or self.stale or self.mismatched)
+        return bool(self.unignored or self.stale or self.mismatched or self.redundant)
 
 
 # ---------------------------------------------------------------------------
@@ -471,18 +482,33 @@ def evaluate(
     wrong package.  An entry is only reported as naming the wrong package when
     the ID is reported against a package that has no entry of its own to
     explain it.
+
+    An entry matches a finding through the finding's primary ID or any of its
+    aliases.  Which of an advisory's IDs pip-audit reports as primary is not
+    stable: issue #1217's pyjwt advisories moved from CVE to PYSEC primary IDs
+    between two runs, with the CVE kept as an alias, and matching on the
+    primary ID alone turned every entry stale and every finding unignored.  An
+    entry matched through an alias is live, not stale.  When more than one
+    entry matches the same finding, say one keyed by the CVE and one by the
+    PYSEC ID, every one of them is honored, so none is reported as stale, but
+    the finding is reported as redundantly ignored and fails the audit: one
+    justification per finding is what keeps the reasoning in one place.
     """
     by_package: dict[tuple[str, str, str], list[Finding]] = {}
     by_id: dict[tuple[str, str], list[Finding]] = {}
     for f in findings:
-        by_package.setdefault((f.lock, f.package, f.vuln_id), []).append(f)
-        by_id.setdefault((f.lock, f.vuln_id), []).append(f)
+        for vuln_id in f.ids:
+            by_package.setdefault((f.lock, f.package, vuln_id), []).append(f)
+            by_id.setdefault((f.lock, vuln_id), []).append(f)
 
-    # Every (lock, package, id) an ignore entry claims, regardless of whether
-    # it currently matches a finding. Computed once over the whole list so the
-    # stale/mismatched split below does not depend on the order entries are
-    # processed in.
-    entry_keys = {(e.lock, e.package, e.vuln_id) for e in ignores}
+    # Every entry that matches each finding, regardless of whether the entry
+    # is processed before or after the finding's other claimants. Computed
+    # once over the whole list so the stale/mismatched split below does not
+    # depend on the order entries are processed in.
+    claimants: dict[Finding, list[IgnoreEntry]] = {}
+    for entry in ignores:
+        for f in by_package.get((entry.lock, entry.package, entry.vuln_id), []):
+            claimants.setdefault(f, []).append(entry)
 
     honored: list[tuple[IgnoreEntry, Finding]] = []
     stale: list[IgnoreEntry] = []
@@ -495,7 +521,7 @@ def evaluate(
             accounted.update(matches)
             continue
         others = by_id.get((entry.lock, entry.vuln_id), [])
-        unclaimed = [f for f in others if (f.lock, f.package, f.vuln_id) not in entry_keys]
+        unclaimed = [f for f in others if f not in claimants]
         if unclaimed:
             # Reported, but against a package that has no entry of its own
             # either, so this entry is naming the wrong package rather than
@@ -514,6 +540,7 @@ def evaluate(
         unignored=unignored,
         stale=stale,
         mismatched=mismatched,
+        redundant=[(f, entries) for f, entries in claimants.items() if len(entries) > 1],
         out_of_scope=list(out_of_scope or ()),
     )
 
@@ -576,6 +603,18 @@ def format_report(report: Report, ignore_file: str) -> str:
             f"Correct the `package` field in {ignore_file}, or file the entry under the "
             "advisory ID that actually covers the package it names. These are not listed "
             "above as unignored: they already have an entry, it is just wrong."
+        )
+
+    if report.redundant:
+        lines.append("")
+        lines.append("Findings ignored by more than one entry:")
+        for finding, entries in report.redundant:
+            ids = ", ".join(entry.vuln_id for entry in entries)
+            lines.append(f"  [{finding.lock}] {finding.describe()}")
+            lines.append(f"      matched by the entries for: {ids}")
+        lines.append(
+            f"Merge each group into one entry in {ignore_file}. An entry may name the "
+            "advisory by any ID pip-audit reports for it, primary or alias."
         )
 
     return "\n".join(lines)

@@ -5,8 +5,12 @@
 # repo". It is not a dismissal of the advisory; it is a record of a reachability
 # argument, and it has to carry enough to re-check that argument later:
 #
-#   id           the advisory ID exactly as pip-audit reports it (PYSEC-...,
-#                GHSA-..., CVE-...).
+#   id           any ID pip-audit reports for the advisory, primary or alias
+#                (PYSEC-..., GHSA-..., CVE-...). Which one pip-audit reports as
+#                primary can change between runs (issue #1217), so an entry
+#                matches through aliases too. One finding may be matched by
+#                only one entry; a second entry naming another of its IDs fails
+#                the audit.
 #   package      the distribution the advisory is against; a mismatch fails the audit.
 #   reason       why the finding does not apply to this repo's usage.
 #   remove_when  what would have to become true for this entry to be deleted.
