@@ -367,7 +367,14 @@ namedChecks:
   if any named check concluded other than green or `failure` -> escalate to user; stop
     // `cancelled`, `timed_out`, `stale`, `startup_failure` and `action_required` mean the
     // run did not deliver a verdict, which no Author round can repair.
-  if any named check concluded `failure` -> goto "Assigning a Programmer" above
+  if any named check concluded `failure`:
+    Apply this transition to the PR, as the Reviewer and Verification Agent routes do before an Author round:
+
+    | Add label |
+    |---|
+    | `changes requested` |
+
+    goto "Assigning a Programmer" above
   otherwise (every named check is green) -> goto surfaceBeforeMergingRequirements
 
 surfaceBeforeMergingRequirements:
