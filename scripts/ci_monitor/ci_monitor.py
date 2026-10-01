@@ -561,6 +561,9 @@ def format_check_summary(rows):
 # softening it to suit the process hold would print a broken build as though a
 # procedure were merely pending. `Infra` stays alarming for the same reason
 # (issue #966).
+#
+# A draft keeps this word even when a check failed: the word says the draft
+# cannot merge, and the ` by: ` attribution says which checks did not pass.
 DRAFT_ON_HOLD = "Draft on hold"
 
 
