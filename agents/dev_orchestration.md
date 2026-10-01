@@ -18,7 +18,7 @@ It drives the pull request toward consensus among the sub-agents and a green res
 
 These are the required checks on `main` (per `GET /repos/{owner}/{repo}/rules/branches/main` on 2026-09-18) less one.
 `No blocking labels` is left off deliberately: it is the merge gate, it is red for the whole of every cycle by design, and no agent may act on it (see "Orchestrator may not").
-`ignored_check_regex` in `scripts/ci_monitor/ci_monitor.config.json` carries the same decision into the Monitor, which leaves the check out of its verdict.
+`ignored_check_regex` in `scripts/ci_monitor/ci_monitor.config.json` leaves it out of the Monitor's verdict too.
 A change that adds or removes a required check updates this list in the same change.
 No automated guard checks the list: `workflow_job_names` in `scripts/lib/workflow_yaml.sh` emits job ids rather than the check names a `name:` override produces, and silently drops some jobs (#956).
 
@@ -345,7 +345,7 @@ monitorLoop:
 namedChecks:
   // Each row of the summary block is `<name> .... <conclusion>` followed by optional
   // annotations, one row per check-run name, already collapsed to that name's latest run
-  // (`latest_check_runs`, scripts/ci_monitor/ci_monitor.py:384; issues #707 and #719), which
+  // (`latest_check_runs`, scripts/ci_monitor/ci_monitor.py:380; issues #707 and #719), which
   // is how GitHub itself judges a required check. The Monitor ends only once every check-run
   // it can see has completed, apart from those its config ignores (`No blocking labels`, here),
   // so a named check's row always carries a conclusion.

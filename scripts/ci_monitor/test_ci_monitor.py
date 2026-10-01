@@ -120,13 +120,8 @@ Covers:
   (bj) #996 main(): every check passed but mergeable_state is behind/dirty, so the
        terminal is the bare `Blocked (mergeable_state=<state>)` form with no ` by: `
        attribution, preceded by the undiagnosed-drain flag
-  (bk) #1121 without_ignored_checks: a check matched by ignored_check_regex is
-       dropped from the verdict whatever its status or conclusion, total_count
-       is left as-is (so an all-ignored payload reads all_passed, not Clear),
-       the input is not mutated, and the default ignores nothing; through
-       main(), an ignored red check neither blocks a --sha Clear nor appears
-       in a --pr Blocked terminal's ` by: ` list, while its summary row still
-       shows, marked [ignored]
+  (bk) without_ignored_checks: ignored checks leave the verdict but stay in
+       the summary, marked [ignored]
 
 No network calls required; no GITHUB_TOKEN needed.
 Run this file directly to execute the suite: exits 0 on success, non-zero on failure.
@@ -3519,7 +3514,7 @@ def main() -> int:
     )
     check(rc_af == 0, "main() returned 0", "main() returned %r" % rc_af)
 
-    # ── (ag) #516/#1121 parse_check_summary: per-check rows, blocking, ignored ─────
+    # ── (ag) #516 parse_check_summary: per-check rows, blocking, ignored ─────
     print("\n=== (ag) #516 parse_check_summary: rows with correct fields ===")
 
     # Payload with a failing 'No blocking labels' check plus three passing checks.
@@ -3552,7 +3547,7 @@ def main() -> int:
     blocking_rows_ag = [r for r in rows_ag if r["blocking"]]
     check(
         blocking_rows_ag == [],
-        "an ignored failing check is not blocking (issue #1121)",
+        "an ignored failing check is not blocking",
         "expected no blocking row; got %r" % (blocking_rows_ag,),
     )
     ignored_rows_ag = [r for r in rows_ag if r["ignored"]]
@@ -3851,19 +3846,12 @@ def main() -> int:
         "committed config wrong; got %r" % cfg_ai_repo.get("ignored_check_regex"),
     )
 
-    # ── (aj) #516/#1121 end-to-end: an ignored red gate on a non-draft PR ─────────
-    print(
-        "\n=== (aj) #516/#1121 end-to-end: ignored gate hold -> 'Infra (mergeable_state=blocked)' ==="
-    )
+    # ── (aj) #516 end-to-end: an ignored red gate on a non-draft PR ─────────
+    print("\n=== (aj) #516 end-to-end: ignored gate hold -> 'Infra (mergeable_state=blocked)' ===")
 
-    # Mirrors the #513 scenario: verdict check-runs contains a 'No blocking labels'
-    # failure plus three passing checks. The committed ci_monitor.config.json sets
-    # ignored_check_regex to 'No blocking labels', so main() loads it automatically (no
-    # patch needed beyond the standard _request mock) and the verdict counts only the
-    # three passing checks (issue #1121). The gate is required, so mergeable_state is
-    # still "blocked", and the all-passed ladder prints the bare Infra terminal. The
-    # summary still shows all four checks, the gate marked [ignored]; no check is
-    # blocking, so the undiagnosed-drain flag is printed.
+    # A red 'No blocking labels' gate, ignored by the committed config, beside three
+    # passing checks. mergeable_state is still "blocked", so the terminal is the bare
+    # Infra, preceded by the undiagnosed-drain flag.
     PR_AJ = {"head": {"sha": "513c0de1"}}
     CHECK_BL_GATE_AJ = {
         "total_count": 4,
@@ -5961,12 +5949,8 @@ def main() -> int:
     )
     check(rc_bg7 == 0, "main() returned 0", "main() returned %r" % rc_bg7)
 
-    # Case 8--the shape this repo actually produces. `orchestrating` is a blocking
-    # label, so the required "No blocking labels" gate fails for the whole duration of
-    # a development cycle: a draft PR under orchestration has exactly one non-passing
-    # check, and it is the gate. The committed config ignores the gate (issue #1121), so
-    # the verdict is all_passed and the draft terminates with the bare Draft on hold
-    # form straight from the all-passed ladder, without a drain.
+    # Case 8--a draft under orchestration: the only red check is the ignored gate, so
+    # the draft ends on the bare Draft on hold, without a drain.
     CHECK_GATE_FAIL_BG = {
         "total_count": 2,
         "check_runs": [
@@ -6202,10 +6186,8 @@ def main() -> int:
         )
         check(rc_bj == 0, "main() returned 0", "main() returned %r" % rc_bj)
 
-    # ── (bk) #1121 without_ignored_checks: ignored checks leave the verdict ───────
-    print(
-        "\n=== (bk) #1121 without_ignored_checks: ignored checks do not count toward the verdict ==="
-    )
+    # ── (bk) without_ignored_checks: ignored checks leave the verdict ───────
+    print("\n=== (bk) without_ignored_checks: ignored checks do not count toward the verdict ===")
 
     GATE_BK = "No blocking labels"
     CHECK_GATE_RED_BK = {
@@ -6294,9 +6276,7 @@ def main() -> int:
         "expected all_passed",
     )
 
-    # main() --sha: the committed config ignores the gate, so a red gate beside a
-    # green build terminates Clear, with the gate's row marked [ignored]. Requests:
-    # the verdict check-runs (reused by poll_signals; no Actions targets) only.
+    # main() --sha: a red ignored gate beside a green build ends Clear. One request.
     side_effects_bk1 = collections.deque([CHECK_GATE_RED_BK])
 
     def fake_request_bk1(url, token, raw=False):
@@ -6309,13 +6289,13 @@ def main() -> int:
         unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None),
         unittest.mock.patch("sys.stdout", new=buf_bk1),
     ):
-        rc_bk1 = ci_monitor.main(["ci_monitor.py", "--sha", "1121abcdef"])
+        rc_bk1 = ci_monitor.main(["ci_monitor.py", "--sha", "abcdef1234"])
 
     lines_bk1 = buf_bk1.getvalue().splitlines()
     check(
-        lines_bk1[-1:] == ["SHA#1121abc: Clear"],
+        lines_bk1[-1:] == ["SHA#abcdef1: Clear"],
         "--sha: an ignored red check does not stop a Clear",
-        "expected 'SHA#1121abc: Clear' last; output: %r" % (lines_bk1,),
+        "expected 'SHA#abcdef1: Clear' last; output: %r" % (lines_bk1,),
     )
     check(
         any(GATE_BK in ln and "failure" in ln and ln.endswith("[ignored]") for ln in lines_bk1),
@@ -6329,10 +6309,9 @@ def main() -> int:
     )
 
     # main() --pr: a red build beside the red ignored gate is Blocked by the build
-    # alone. Requests: pulls, verdict check-runs, the #748 mergeable_state fetch
-    # (blocked), then DRAIN_MAX_ATTEMPTS drain polls. 3 + 3 = 6.
+    # alone. Requests: pulls, check-runs, mergeable_state, 3 drain polls.
     side_effects_bk2 = collections.deque(
-        [{"head": {"sha": "1121beef"}}, CHECK_BOTH_RED_BK, MPR_BLOCKED]
+        [{"head": {"sha": "beefcafe"}}, CHECK_BOTH_RED_BK, MPR_BLOCKED]
     )
     for _ in range(3):  # DRAIN_MAX_ATTEMPTS drain attempts
         side_effects_bk2.append({"total_count": 0, "check_runs": []})
@@ -6347,13 +6326,13 @@ def main() -> int:
         unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None),
         unittest.mock.patch("sys.stdout", new=buf_bk2),
     ):
-        rc_bk2 = ci_monitor.main(["ci_monitor.py", "--pr", "1121"])
+        rc_bk2 = ci_monitor.main(["ci_monitor.py", "--pr", "42"])
 
     lines_bk2 = buf_bk2.getvalue().splitlines()
     check(
-        lines_bk2[-1:] == ["PR#1121: Blocked by: build-and-test"],
+        lines_bk2[-1:] == ["PR#42: Blocked by: build-and-test"],
         "--pr: the terminal names only the check that is not ignored",
-        "expected 'PR#1121: Blocked by: build-and-test' last; output: %r" % (lines_bk2,),
+        "expected 'PR#42: Blocked by: build-and-test' last; output: %r" % (lines_bk2,),
     )
     check(
         any("build-and-test" in ln and ln.endswith("[BLOCKING]") for ln in lines_bk2)

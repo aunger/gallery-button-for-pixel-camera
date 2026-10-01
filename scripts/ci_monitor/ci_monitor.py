@@ -82,13 +82,9 @@ DEFAULT_TEST_MARKER_REGEX = r"##TEST##"
 # honest `Build and run unit tests` step is surfaced but must not be annotated).
 DEFAULT_DEFERRED_VERDICT_STEP_REGEX = r"(?!)"
 
-# Match (re.search) against a check-run's `name` to exclude it from the verdict
-# (issue #1121): an ignored check never makes the verdict Blocked/Infra, never
-# keeps it in_progress, and never reaches the `by: ...` suffix, whatever its
-# conclusion. It still appears in the summary block, marked [ignored], so the
-# block describes what CI did. Which checks to ignore is the consumer's policy;
-# the never-match default keeps the rule repo-agnostic, mirroring how
-# `interesting_step_regex` defaults to never-match.
+# Match (re.search) against a check-run's `name` to leave it out of the verdict,
+# whatever its conclusion; it still shows in the summary, marked [ignored]. The
+# never-match default ignores nothing.
 DEFAULT_IGNORED_CHECK_REGEX = r"(?!)"
 
 
@@ -433,24 +429,14 @@ def latest_check_runs(check_json):
 
 
 def _is_ignored_check(run, ignored_check_regex):
-    """True when `run`'s name matches the ignored_check_regex (issue #1121)."""
+    """True when `run`'s name matches ignored_check_regex."""
     return bool(re.search(ignored_check_regex, run.get("name") or ""))
 
 
 def without_ignored_checks(check_json, ignored_check_regex=DEFAULT_IGNORED_CHECK_REGEX):
-    """Drop the check runs the verdict must not count (issue #1121).
+    """Return a shallow copy of `check_json` without the ignored check runs.
 
-    Returns a shallow copy of `check_json` whose `check_runs` omits every run
-    whose name matches `ignored_check_regex`, whatever its status or conclusion,
-    mirroring the shape of `latest_check_runs`. Only the verdict reads this
-    copy: the summary block is built from the unfiltered payload, so it still
-    lists an ignored check (marked [ignored]) and describes what CI did.
-
-    `total_count` is left as-is, as `latest_check_runs` leaves it, so it keeps
-    meaning "checks are registered on this commit". When every check is
-    ignored, parse_check_result therefore returns 'all_passed' rather than
-    'Clear': under --pr that still consults mergeable_state and prints the
-    summary, where the total_count == 0 'Clear' path does neither.
+    `total_count` is kept, so an all-ignored payload reads all_passed, not Clear.
     """
     result = dict(check_json)
     result["check_runs"] = [
@@ -488,11 +474,9 @@ def parse_check_summary(check_json, ignored_check_regex=DEFAULT_IGNORED_CHECK_RE
       {"name": str, "conclusion": str, "blocking": bool, "ignored": bool,
        "run_id": str | None}
 
-    `ignored` is True when ignored_check_regex matches (re.search) the check
-    run's name; such a check is excluded from the verdict (see
-    without_ignored_checks), so it is never `blocking`, whatever its
-    conclusion. For every other row, conclusions in the "blocking" set match
-    what parse_check_result treats as Blocked/Infra.
+    `ignored` is True when ignored_check_regex matches the name; an ignored row
+    is never `blocking`. Otherwise "blocking" matches what parse_check_result
+    treats as Blocked/Infra.
 
     `run_id` is the GitHub Actions workflow run the check came from
     (via _actions_run_id), or None for a non-Actions check; it lets the
@@ -532,10 +516,9 @@ def format_check_summary(rows):
 
     Returns [] when rows is empty. The first line is "summary", followed by one
     aligned dotted line per check. Blocking rows carry [BLOCKING]; ignored rows
-    (issue #1121) carry [ignored] instead, whatever their conclusion, since the
-    verdict did not count them. A row that carries a non-None `run_id` (a GitHub
-    Actions check) ends with a `[run <id>]` token naming the workflow run it came
-    from (issue #720); non-Actions rows omit it.
+    carry [ignored]. A row that carries a non-None `run_id` (a GitHub Actions
+    check) ends with a `[run <id>]` token naming the workflow run it came from
+    (issue #720); non-Actions rows omit it.
     The token rides after the [BLOCKING]/[ignored] marker, outside the dotted
     column, so the existing alignment is unchanged. Column width is capped at 60
     characters to avoid pathological output on long check names.
@@ -589,8 +572,7 @@ def blocking_suffix(rows, failed_steps=None, failed_tests=None):
     the hold rather than to the draft state, so the line does not claim the
     check drafted the PR (issue #976).
 
-    Returns "" when no row is blocking (caller emits the bare terminal token);
-    an ignored check is never blocking (issue #1121), so it never appears here.
+    Returns "" when no row is blocking (caller emits the bare terminal token).
     Otherwise returns " by: <names>", enriched (issue #602) with the specific
     failing step(s) and test(s) that explain the block when they are known:
 
@@ -1326,9 +1308,7 @@ def main(argv):
             # mergeable_state.
             if check_json:
                 check_json = latest_check_runs(check_json)
-            # Issue #1121--the verdict counts only the checks the config does
-            # not ignore; the summary still lists every check, so it describes
-            # what CI did while the verdict is scoped.
+            # The verdict skips ignored checks; the summary lists them all.
             result = (
                 parse_check_result(without_ignored_checks(check_json, ignored_check_regex))
                 if check_json
