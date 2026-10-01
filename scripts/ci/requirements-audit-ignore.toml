@@ -41,10 +41,12 @@
 # carried CVE-2026-7246 against click 8.1.8 while GitHub did not alert on it).
 
 # ---------------------------------------------------------------------------
-# semgrep's transitive `pyjwt` pin. See issue #1189.
+# semgrep's transitive `pyjwt` pin. See issues #1189 and #1211.
 #
 # semgrep declares `pyjwt[crypto]~=2.13.0` in every release through 1.178.0, so
-# regenerating this lock cannot reach the fixed 2.14.0.
+# regenerating this lock cannot reach 2.14.0, which fixes most of the advisories
+# below. CVE-2026-101918 is fixed only in 2.15.0, so its entry outlives the rest
+# if semgrep's requirement moves to `~=2.14.0`.
 #
 # Every advisory below is a bug in verifying tokens (`jwt.decode`, PyJWK and
 # PyJWKSet key parsing, the HMAC key guard) or in `PyJWKClient` fetching a JWKS.
@@ -73,6 +75,25 @@ semgrep relaxes its `pyjwt[crypto]~=2.13.0` requirement to admit 2.14.0 or later
 or this repo starts running `semgrep mcp`. In the first case, regenerating the lock \
 clears the finding; in the second, the reachability argument no longer holds and \
 the pin has to be forced or semgrep dropped."""
+
+[[ignore."scripts/ci/requirements-semgrep.txt"]]
+id = "CVE-2026-101918"
+package = "pyjwt"
+reason = """
+CVE-2026-101918 / GHSA-42vr-xj54-vc7v: a deeply nested token payload makes \
+`json.loads` raise a RecursionError that escapes `jwt.decode` as neither a \
+DecodeError nor any PyJWTError, on the paths that parse the payload before \
+verifying the signature (`PyJWKClient.get_signing_key_from_jwt`, \
+`verify_signature=False`); a deeply nested JWKS response does the same in \
+`PyJWKClient.fetch_data`. Affects only code that decodes untrusted tokens through \
+those paths. pyjwt's only caller here is the `semgrep mcp` token verifier (see \
+above), and this repo runs only `semgrep scan`."""
+remove_when = """
+semgrep relaxes its `pyjwt[crypto]~=2.13.0` requirement to admit 2.15.0 or later, \
+or this repo starts running `semgrep mcp`. 2.14.0 does not fix this advisory. In the \
+first case, regenerating the lock clears the finding; in the second, the \
+reachability argument no longer holds and the pin has to be forced or semgrep \
+dropped."""
 
 [[ignore."scripts/ci/requirements-semgrep.txt"]]
 id = "CVE-2026-102265"
@@ -147,6 +168,21 @@ clears the finding; in the second, the reachability argument no longer holds and
 the pin has to be forced or semgrep dropped."""
 
 [[ignore."scripts/ci/requirements-semgrep.txt"]]
+id = "CVE-2026-102270"
+package = "pyjwt"
+reason = """
+CVE-2026-102270 / GHSA-jwrc-g2q2-pq5p: the regex in `is_pem_format` backtracks \
+quadratically on input of repeated PEM BEGIN lines with no END line. Affects only an \
+application that passes attacker-controlled key or certificate bytes to pyjwt's key \
+preparation. pyjwt's only caller here is the `semgrep mcp` token verifier (see \
+above), and this repo runs only `semgrep scan`."""
+remove_when = """
+semgrep relaxes its `pyjwt[crypto]~=2.13.0` requirement to admit 2.14.0 or later, \
+or this repo starts running `semgrep mcp`. In the first case, regenerating the lock \
+clears the finding; in the second, the reachability argument no longer holds and \
+the pin has to be forced or semgrep dropped."""
+
+[[ignore."scripts/ci/requirements-semgrep.txt"]]
 id = "CVE-2026-102271"
 package = "pyjwt"
 reason = """
@@ -199,5 +235,23 @@ above), and this repo runs only `semgrep scan`."""
 remove_when = """
 semgrep relaxes its `pyjwt[crypto]~=2.13.0` requirement to admit 2.14.0 or later, \
 or this repo starts running `semgrep mcp`. In the first case, regenerating the lock \
+clears the finding; in the second, the reachability argument no longer holds and \
+the pin has to be forced or semgrep dropped."""
+
+[[ignore."scripts/ci/requirements-semgrep.txt"]]
+id = "CVE-2026-103001"
+package = "pyjwt"
+reason = """
+CVE-2026-103001 / GHSA-gvp8-978c-rx2q: `jwt.decode` with a falsy `verify_signature` \
+writes `verify_exp=False` and the other claim switches into the caller's `options` \
+dict, so a later fully verified call that reuses the same dict skips its claim \
+checks. Affects only code that reuses one `options` dict across decode calls. \
+pyjwt's only caller here is the `semgrep mcp` token verifier (see above), which \
+passes a fresh `options` literal on each call, and this repo runs only `semgrep \
+scan`."""
+remove_when = """
+semgrep relaxes its `pyjwt[crypto]~=2.13.0` requirement to admit 2.14.0 or later, \
+or this repo starts running `semgrep mcp`. The advisory names no fixed version, but \
+records 2.13.0 as the last affected one. In the first case, regenerating the lock \
 clears the finding; in the second, the reachability argument no longer holds and \
 the pin has to be forced or semgrep dropped."""
