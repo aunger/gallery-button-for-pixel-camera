@@ -323,14 +323,20 @@ def entry(lock="lock.txt", vuln_id="PYSEC-1", package="somepkg") -> ar.IgnoreEnt
     return ar.IgnoreEntry(lock=lock, vuln_id=vuln_id, package=package, reason="r", remove_when="w")
 
 
-def finding(lock="lock.txt", vuln_id="PYSEC-1", package="somepkg", version="1.0") -> ar.Finding:
+def finding(
+    lock="lock.txt",
+    vuln_id="PYSEC-1",
+    package="somepkg",
+    version="1.0",
+    aliases: tuple[str, ...] = (),
+) -> ar.Finding:
     return ar.Finding(
         lock=lock,
         package=package,
         version=version,
         vuln_id=vuln_id,
         fix_versions=("2.0",),
-        aliases=(),
+        aliases=aliases,
     )
 
 
@@ -427,8 +433,57 @@ class TestEvaluate(unittest.TestCase):
         self.assertEqual(report.mismatched, [])
         self.assertEqual([e.package for e in report.stale], ["otherpkg"])
 
+    def test_entry_keyed_by_an_alias_tolerates_the_finding(self):
+        # Issue #1217: pip-audit began reporting pyjwt advisories under PYSEC
+        # primary IDs, with the CVE the entries were keyed by kept as an alias.
+        rekeyed = finding(vuln_id="PYSEC-2", aliases=("GHSA-x", "CVE-1"))
+        report = ar.evaluate([("lock.txt", 3, 1)], [rekeyed], [entry(vuln_id="CVE-1")])
+        self.assertFalse(report.failed)
+        self.assertEqual(report.honored, [(entry(vuln_id="CVE-1"), rekeyed)])
+        self.assertEqual(report.stale, [])
+        self.assertEqual(report.unignored, [])
+
+    def test_entry_keyed_by_an_alias_for_the_wrong_package_is_mismatched(self):
+        aliased = finding(vuln_id="PYSEC-2", aliases=("CVE-1",))
+        report = ar.evaluate(
+            [("lock.txt", 3, 1)], [aliased], [entry(vuln_id="CVE-1", package="elsewhere")]
+        )
+        self.assertTrue(report.failed)
+        self.assertEqual(
+            report.mismatched, [(entry(vuln_id="CVE-1", package="elsewhere"), aliased)]
+        )
+        self.assertEqual(report.unignored, [])
+
+    def test_two_entries_for_one_finding_are_redundant_not_stale(self):
+        # Both entries match, so neither is spent; but two justifications for
+        # one finding fail the audit, so they get merged into one.
+        aliased = finding(vuln_id="PYSEC-2", aliases=("CVE-1",))
+        entries = [entry(vuln_id="CVE-1"), entry(vuln_id="PYSEC-2")]
+        report = ar.evaluate([("lock.txt", 3, 1)], [aliased], entries)
+        self.assertTrue(report.failed)
+        self.assertEqual(report.stale, [])
+        self.assertEqual(report.unignored, [])
+        self.assertEqual(report.redundant, [(aliased, entries)])
+
+    def test_alias_repeating_the_primary_id_is_matched_once(self):
+        repeated = finding(vuln_id="PYSEC-1", aliases=("PYSEC-1", "CVE-1"))
+        self.assertEqual(repeated.ids, ("PYSEC-1", "CVE-1"))
+        report = ar.evaluate([("lock.txt", 3, 1)], [repeated], [entry()])
+        self.assertFalse(report.failed)
+        self.assertEqual(len(report.honored), 1)
+
 
 class TestFormatReport(unittest.TestCase):
+    def test_redundant_entries_report_names_every_matching_id(self):
+        aliased = finding(vuln_id="PYSEC-2", aliases=("CVE-1",))
+        report = ar.evaluate(
+            [("lock.txt", 3, 1)], [aliased], [entry(vuln_id="CVE-1"), entry(vuln_id="PYSEC-2")]
+        )
+        text = ar.format_report(report, "ignore.toml")
+        self.assertIn("ignored by more than one entry", text)
+        self.assertIn("matched by the entries for: CVE-1, PYSEC-2", text)
+        self.assertIn("ignore.toml", text)
+
     def test_stale_entry_report_names_the_removal_condition(self):
         report = ar.evaluate([("lock.txt", 3, 0)], [], [entry()])
         text = ar.format_report(report, "ignore.toml")
@@ -497,6 +552,15 @@ class TestMain(IgnoreFileTestCase):
         code, out = self.run_main(self.TOOL_ENTRY, {})
         self.assertEqual(code, 1)
         self.assertIn("Stale ignore entries", out)
+
+    def test_entry_keyed_by_an_alias_passes_after_the_primary_id_changes(self):
+        # Issue #1217 end to end: the entry names the ID that is now an alias.
+        code, out = self.run_main(
+            self.TOOL_ENTRY, {"risky": [vuln("PYSEC-2", aliases=("GHSA-x", "PYSEC-1"))]}
+        )
+        self.assertEqual(code, 0, out)
+        self.assertIn("no server is ever started", out)
+        self.assertNotIn("Stale ignore entries", out)
 
     def test_invalid_ignore_file_exits_two(self):
         code, _ = self.run_main('[[ignore."scripts/nope.txt"]]\nid = "X"\n', {})
