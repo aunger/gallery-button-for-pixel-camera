@@ -12,10 +12,10 @@
 
 ## Scratchpad files
 
-Every sub-agent in a session is given the same scratchpad directory, though each has its own worktree.
+Every agent in a session, including each worktree sub-agent, is given the same scratchpad directory.
 A helper left at its top level can be overwritten or run by another agent, which then reports results from a tree it never touched.
 
-- Keep scratch files in a subdirectory of the scratchpad named after the directory you work in (for a worktree, `agent-<id>`), never at its top level.
+- Keep scratch files in a subdirectory of the scratchpad named after your worktree directory (`agent-<id>`), or for the top-level agent, the checkout directory, never at its top level.
 - A helper that reports a test result prints the worktree path and `HEAD` it ran against, and you check both before reporting.
 
 The second point is what catches a crossed result; the first only makes one rarer.

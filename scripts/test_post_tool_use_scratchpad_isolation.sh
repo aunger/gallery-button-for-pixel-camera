@@ -10,7 +10,7 @@
 #   (b) A Bash command naming a top-level scratchpad file warns, naming the
 #       worktree and the stray path
 #   (c) A command naming the worktree elsewhere still warns for a stray path
-#       (the incident in issue #1187)
+#       (the likely shape of the incident in issue #1187)
 #   (d) Another worktree's subdirectory warns
 #   (e) The scratchpad directory itself warns
 #   (f) Paths inside the worktree's own subdirectory are silent

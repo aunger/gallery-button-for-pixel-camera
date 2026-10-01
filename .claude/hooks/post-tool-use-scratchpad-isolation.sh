@@ -14,7 +14,7 @@
 # "scratchpad".  Each one must continue into a subdirectory named after the
 # agent's worktree.  A single path that does not draws the warning, even when
 # the same command names the worktree elsewhere: "cd <worktree> && bash
-# <scratchpad>/sweep.sh" is the incident in #1187.  Paths
+# <scratchpad>/sweep.sh" is the likely shape of the incident in #1187.  Paths
 # joined by ",", ":" or "=" (a PATH= prefix, a --files=a,b argument) are
 # checked one by one.
 #
@@ -23,10 +23,13 @@
 # this script's own path, because $CLAUDE_PROJECT_DIR can point a worktree
 # agent at the main checkout's copy of this script.
 #
-# What it misses: a path held in a variable set by an earlier command, and a
-# script that writes to the scratchpad internally.  It is a warning, not a
-# guard; the rule's second point (print the worktree and HEAD a result came
-# from) is what catches the failure.
+# What it misses: a path held in a variable set by an earlier command, a
+# relative path such as "../sweep.sh" that climbs out of the subdirectory, and
+# a script that writes to the scratchpad internally.  What it wrongly warns
+# on: text that only mentions a scratchpad path, such as a comment body or
+# commit message quoting one; disregard the warning then.  It is a warning,
+# not a guard; the rule's second point (print the worktree and HEAD a result
+# came from) is what catches the failure.
 #
 # Exit codes:
 #   0  nothing to say, or the input could not be read
