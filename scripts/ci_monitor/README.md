@@ -14,7 +14,7 @@ Which checks matter is policy, stated by the Monitor's consumers: the Orchestrat
 Two known exceptions remain:
 
 - `DEFAULT_REPOSITORY`, the repository polled when neither `--repo` nor `$GITHUB_REPOSITORY` names one, is this repository.
-- The `artifact_name_regex` default, `^testresults-`, is this repository's historical artifact prefix (`ci_monitor.py:89`).
+- The `artifact_name_regex` default, `^testresults-`, is this repository's historical artifact prefix.
 
 ## Running the monitor
 

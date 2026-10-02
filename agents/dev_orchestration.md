@@ -352,7 +352,7 @@ monitorLoop:
 
 #### `namedChecks`
 
-Each row of the summary block is `<name> .... <conclusion>` followed by optional annotations, one row per check-run name, already collapsed to that name's latest run (`latest_check_runs`, `scripts/ci_monitor/ci_monitor.py:412`; issues #707 and #719).
+Each row of the summary block is `<name> .... <conclusion>` followed by optional annotations, one row per check-run name, already collapsed to that name's latest run.
 That is how GitHub itself judges a required check.
 The Monitor ends only once every check-run it can see has completed, apart from those its config ignores (`No blocking labels`, here), so a named check's row always carries a conclusion.
 
