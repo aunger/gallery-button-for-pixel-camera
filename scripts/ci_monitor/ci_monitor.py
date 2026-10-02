@@ -7,13 +7,14 @@ interface: terminal outcome lines end the loop, while informational lines
 (in_progress heartbeat, per-step deltas, per-test FAILs) keep it alive.
 
 See scripts/ci_monitor/README.md for full usage instructions, including the
-command-line arguments, per-outcome filter flags, and the outcome vocabulary.
+command-line arguments (--repo, --config, and the per-outcome filter flags)
+and the outcome vocabulary.
 
 Usage:
-    python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER> [filter flags]
-    python3 scripts/ci_monitor/ci_monitor.py --sha <SHA> [filter flags]
-    python3 scripts/ci_monitor/ci_monitor.py --run-id <RUN_ID> [filter flags]
-    python3 scripts/ci_monitor/ci_monitor.py --branch <BRANCH> [filter flags]
+    python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER> [flags]
+    python3 scripts/ci_monitor/ci_monitor.py --sha <SHA> [flags]
+    python3 scripts/ci_monitor/ci_monitor.py --run-id <RUN_ID> [flags]
+    python3 scripts/ci_monitor/ci_monitor.py --branch <BRANCH> [flags]
 
 Exactly one of --pr/--sha/--run-id/--branch is required. --sha, --run-id, and
 --branch have no PR to consult, so their `Clear` terminal fires directly off
@@ -22,7 +23,8 @@ an all-passed check verdict--no `mergeable_state` gating (that concept is
 (PR#/SHA#/RUN#/BRANCH#).
 
 Environment:
-    GITHUB_TOKEN  GitHub token used for the REST calls (required).
+    GITHUB_TOKEN       GitHub token used for the REST calls (required).
+    GITHUB_REPOSITORY  OWNER/REPO to poll when --repo is not given.
 
 NOTE on error handling: the poll loop must survive transient REST/parse
 failures. HTTP and JSON errors are caught per-call and treated as "no data this
@@ -42,15 +44,39 @@ import urllib.parse
 import urllib.request
 import zipfile
 
-OWNER = "aunger"
-REPO = "gallery-button-for-pixel-camera"
+# The repository polled when neither --repo nor $GITHUB_REPOSITORY names one.
+DEFAULT_REPOSITORY = "aunger/gallery-button-for-pixel-camera"
 API_BASE = "https://api.github.com"
+
+
+def repo_api(repository):
+    """Return the REST base URL for an "OWNER/REPO" repository."""
+    return "%s/repos/%s" % (API_BASE, repository)
+
+
+def _repository_arg(value):
+    """argparse type for --repo: an "OWNER/REPO" pair that GitHub could name.
+
+    OWNER is letters, digits, `-` and `_` (a GitHub login has no `.`); REPO adds
+    `.` but may not be `.` or `..`, which GitHub reserves. The value is
+    interpolated into every REST URL, so anything else (a missing half, a third
+    path segment, a dot segment, a query character) is a usage error rather
+    than a request to some other endpoint.
+    """
+    match = re.fullmatch(r"[A-Za-z0-9_-]+/([A-Za-z0-9_.-]+)", value)
+    if not match or match.group(1) in (".", ".."):
+        raise argparse.ArgumentTypeError(
+            "expected OWNER/REPO (from --repo or $GITHUB_REPOSITORY), got %r" % value
+        )
+    return value
+
 
 # Configurable behavior (issue #500). Each tunable is a regex with an in-code
 # default; the committed scripts/ci_monitor/ci_monitor.config.json overrides the
-# defaults with this repo's specifics. load_config() reads that file, falling
-# back to these defaults when the file is absent, unreadable, invalid, or missing
-# a key, so the resilient poll loop never aborts on configuration.
+# defaults with this repo's specifics. load_config() reads that file, or the one
+# --config names, falling back to these defaults when the file is absent,
+# unreadable, invalid, or missing a key, so the resilient poll loop never aborts
+# on configuration.
 
 # Match (re.search) against an artifact's `name` to decide whether it carries
 # per-test ndjson markers worth downloading. Preserves the historical
@@ -91,7 +117,8 @@ DEFAULT_IGNORED_CHECK_REGEX = r"(?!)"
 def load_config(path=None):
     """Load the CI Monitor config, falling back to in-code defaults.
 
-    Returns a dict with keys artifact_name_regex, interesting_step_regex,
+    `path` is the --config value; None means ci_monitor.config.json next to
+    this script. Returns a dict with keys artifact_name_regex, interesting_step_regex,
     deferred_verdict_step_regex, test_marker_regex, and ignored_check_regex.
     A missing file, unreadable file, or invalid JSON falls back entirely to the
     DEFAULT_* regexes (the Monitor must never abort on config). Each key
@@ -893,14 +920,17 @@ def fetch_with_retry(url, token, attempts=3, base_delay=2):
     return None
 
 
-def fetch_pr_with_retry(pr, token, attempts=3, base_delay=2):
+def fetch_pr_with_retry(pr, token, attempts=3, base_delay=2, api=None):
     """Fetch /pulls/{n} with bounded exponential backoff and rate-limit handling.
 
     Thin wrapper over fetch_with_retry that builds the /pulls/{n} URL; kept as
     its own function since it is the --pr path's entry point and is exercised
-    directly by the test suite.
+    directly by the test suite. `api` is the repository's REST base from
+    repo_api(); None means DEFAULT_REPOSITORY's.
     """
-    url = "%s/repos/%s/%s/pulls/%s" % (API_BASE, OWNER, REPO, pr)
+    if api is None:
+        api = repo_api(DEFAULT_REPOSITORY)
+    url = "%s/pulls/%s" % (api, pr)
     return fetch_with_retry(url, token, attempts=attempts, base_delay=base_delay)
 
 
@@ -1023,8 +1053,27 @@ def main(argv):
             help="Suppress all %s markers." % outcome.upper(),
         )
 
+    parser.add_argument(
+        "--config",
+        metavar="PATH",
+        default=None,
+        help="The config file to load (default: ci_monitor.config.json next to the script).",
+    )
+    # argparse runs a string default through `type` when the option is absent,
+    # so a malformed $GITHUB_REPOSITORY is rejected the way a malformed --repo
+    # is. When --repo is given, the default is never checked: the flag wins
+    # over a malformed ambient variable.
+    parser.add_argument(
+        "--repo",
+        metavar="OWNER/REPO",
+        type=_repository_arg,
+        default=os.environ.get("GITHUB_REPOSITORY") or DEFAULT_REPOSITORY,
+        help="The repository to poll (default: $GITHUB_REPOSITORY, then %s)." % DEFAULT_REPOSITORY,
+    )
+
     args = parser.parse_args(argv[1:])
     token = os.environ.get("GITHUB_TOKEN", "")
+    api = repo_api(args.repo)
     outcome_filters = _parse_outcome_filters(args)
 
     mode, tag = _select_mode(args)
@@ -1032,7 +1081,7 @@ def main(argv):
     # Configurable run/artifact/step/marker behavior (issue #500). Loaded once at
     # startup and threaded into the parsers below; a missing or invalid config
     # falls back to the DEFAULT_* regexes without aborting the loop.
-    config = load_config()
+    config = load_config(args.config)
     artifact_name_regex = config["artifact_name_regex"]
     interesting_step_regex = config["interesting_step_regex"]
     deferred_verdict_step_regex = config["deferred_verdict_step_regex"]
@@ -1101,9 +1150,7 @@ def main(argv):
             targets = explicit_targets
         else:
             if check_json is None:
-                check_json = _request(
-                    "%s/repos/%s/%s/commits/%s/check-runs" % (API_BASE, OWNER, REPO, sha), token
-                )
+                check_json = _request("%s/commits/%s/check-runs" % (api, sha), token)
                 # Collapse same-named re-runs (issue #707) on the drain's own
                 # self-fetch too, so a stale run's jobs are not tracked; the
                 # main-loop caller already passes a collapsed check_json, and
@@ -1132,7 +1179,7 @@ def main(argv):
             job_ids = run_job_ids[run_id]
             # Signal 1--per-step conclusion deltas for the tracked job(s).
             jobs_json = _request(
-                "%s/repos/%s/%s/actions/runs/%s/jobs?per_page=30" % (API_BASE, OWNER, REPO, run_id),
+                "%s/actions/runs/%s/jobs?per_page=30" % (api, run_id),
                 token,
             )
             if jobs_json:
@@ -1151,8 +1198,7 @@ def main(argv):
             # Download each new artifact once, parse its per-test ndjson markers,
             # and emit new FAIL entries.
             artifacts_json = _request(
-                "%s/repos/%s/%s/actions/runs/%s/artifacts?per_page=100"
-                % (API_BASE, OWNER, REPO, run_id),
+                "%s/actions/runs/%s/artifacts?per_page=100" % (api, run_id),
                 token,
             )
             if artifacts_json:
@@ -1160,7 +1206,7 @@ def main(argv):
                     artifacts_json, seen_arts, artifact_name_regex
                 ):
                     zip_bytes = _request(
-                        "%s/repos/%s/%s/actions/artifacts/%s/zip" % (API_BASE, OWNER, REPO, aid),
+                        "%s/actions/artifacts/%s/zip" % (api, aid),
                         token,
                         raw=True,
                     )
@@ -1249,14 +1295,12 @@ def main(argv):
             # Gap C--retry the SHA fetch with backoff and rate-limit awareness
             # instead of a flat 30s retry, so transient blips and 403/429
             # throttles are handled without hammering the API.
-            pr_json = fetch_pr_with_retry(args.pr, token)
+            pr_json = fetch_pr_with_retry(args.pr, token, api=api)
             sha = parse_pr_sha(pr_json) if pr_json else ""
         elif mode == "sha":
             sha = args.sha
         elif mode == "branch":
-            commit_json = fetch_with_retry(
-                "%s/repos/%s/%s/commits/%s" % (API_BASE, OWNER, REPO, args.branch), token
-            )
+            commit_json = fetch_with_retry("%s/commits/%s" % (api, args.branch), token)
             sha = parse_commit_sha(commit_json) if commit_json else ""
         else:  # mode == "run"
             sha = None  # --run-id resolves head_sha from the run object below
@@ -1287,9 +1331,7 @@ def main(argv):
             # the run object itself, not from /commits/{sha}/check-runs, so
             # tracking stays scoped to this run and is not confused by an
             # unrelated check on the same commit.
-            run_json = _request(
-                "%s/repos/%s/%s/actions/runs/%s" % (API_BASE, OWNER, REPO, args.run_id), token
-            )
+            run_json = _request("%s/actions/runs/%s" % (api, args.run_id), token)
             if run_json is None:
                 now = time.time()
                 if now - last_output_ts > SILENCE_SECONDS:
@@ -1303,9 +1345,7 @@ def main(argv):
             summary_rows = []
             poll_signals(sha, explicit_targets=[(str(args.run_id), None)])
         else:
-            check_json = _request(
-                "%s/repos/%s/%s/commits/%s/check-runs" % (API_BASE, OWNER, REPO, sha), token
-            )
+            check_json = _request("%s/commits/%s/check-runs" % (api, sha), token)
             # Collapse same-named check runs to the latest each (issue #707) so a
             # stale conclusion from an earlier re-run of a named check does not
             # outvote its authoritative latest run. The one collapsed payload
@@ -1340,9 +1380,7 @@ def main(argv):
                 last_output_ts = now
         elif result == "all_passed":
             if mode == "pr":
-                mpr_json = _request(
-                    "%s/repos/%s/%s/pulls/%s" % (API_BASE, OWNER, REPO, args.pr), token
-                )
+                mpr_json = _request("%s/pulls/%s" % (api, args.pr), token)
                 mergeable = mpr_json.get("mergeable_state", "unknown") if mpr_json else "unknown"
                 if pr_is_draft(mpr_json or pr_json) or mergeable == "draft":
                     # Issue #968--draftness is tested BEFORE every mergeable
@@ -1414,9 +1452,7 @@ def main(argv):
                 # driving the per-check summary and step/FAIL diagnostics
                 # regardless. A draft PR is settled before any of that is asked
                 # (issue #968), exactly as in the all_passed ladder.
-                mpr_json = _request(
-                    "%s/repos/%s/%s/pulls/%s" % (API_BASE, OWNER, REPO, args.pr), token
-                )
+                mpr_json = _request("%s/pulls/%s" % (api, args.pr), token)
                 mergeable = mpr_json.get("mergeable_state", "unknown") if mpr_json else "unknown"
                 if pr_is_draft(mpr_json or pr_json) or mergeable == "draft":
                     # Issue #968--as in the all_passed ladder above. The raw

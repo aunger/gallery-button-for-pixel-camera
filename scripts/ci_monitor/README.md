@@ -8,23 +8,23 @@ For how the Orchestrator uses this script as part of the development cycle (the 
 ## The Monitor knows nothing about this repository
 
 The Monitor reports what CI did and carries no knowledge of this repository.
-Repository-specific behavior reaches it only through `ci_monitor.config.json`.
+Repository-specific behavior reaches it only through `ci_monitor.config.json` and the repository it is told to poll.
 Which checks matter is policy, stated by the Monitor's consumers: the Orchestrator's named checks are in `agents/dev_orchestration.md`.
 
 Two known exceptions remain:
 
-- `OWNER` and `REPO` are hardcoded in `ci_monitor.py` (#1111).
-- The `artifact_name_regex` default, `^testresults-`, is this repository's historical artifact prefix (`ci_monitor.py:58`).
+- `DEFAULT_REPOSITORY`, the repository polled when neither `--repo` nor `$GITHUB_REPOSITORY` names one, is this repository.
+- The `artifact_name_regex` default, `^testresults-`, is this repository's historical artifact prefix.
 
 ## Running the monitor
 
 Run it from the repo root, passing **exactly one** identifier:
 
 ```bash
-python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER> [filter flags]
-python3 scripts/ci_monitor/ci_monitor.py --sha <SHA> [filter flags]
-python3 scripts/ci_monitor/ci_monitor.py --run-id <RUN_ID> [filter flags]
-python3 scripts/ci_monitor/ci_monitor.py --branch <BRANCH> [filter flags]
+python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER> [--repo OWNER/REPO] [--config PATH] [filter flags]
+python3 scripts/ci_monitor/ci_monitor.py --sha <SHA> [--repo OWNER/REPO] [--config PATH] [filter flags]
+python3 scripts/ci_monitor/ci_monitor.py --run-id <RUN_ID> [--repo OWNER/REPO] [--config PATH] [filter flags]
+python3 scripts/ci_monitor/ci_monitor.py --branch <BRANCH> [--repo OWNER/REPO] [--config PATH] [filter flags]
 ```
 
 | Flag                | Tracks                                                                                       | Output prefix          |
@@ -46,7 +46,10 @@ A failing NON-required check (for example an advisory label linter) leaves `merg
 
 `--run-id` additionally does not fetch `/commits/{sha}/check-runs` at all--it resolves its verdict from the run object itself (`GET /actions/runs/{run_id}`, which carries `status`/`conclusion`/`head_sha` directly), and scopes step/artifact diagnostics to that one run's jobs. This keeps `--run-id` immune to an unrelated check on the same commit (e.g. this repo's `semgrep.yml`, which also runs on every commit) confusing its verdict--the problem `--pr`/`--sha`/`--branch` modes can in principle have if unrelated checks land on the same commit.
 
-`OWNER`/`REPO` default to this repo at the top of the script, and it reads `$GITHUB_TOKEN` from the environment (required).
+The repository polled is the one `--repo OWNER/REPO` names, else `$GITHUB_REPOSITORY` (which GitHub Actions sets to the workflow's repository), else `DEFAULT_REPOSITORY`, this repository.
+A value from the source used that GitHub could not issue as `OWNER/REPO` is a usage error, reported before any request is made: `OWNER` is letters, digits, `-` and `_`, and `REPO` adds `.` but may not be `.` or `..`, so no dot segment reaches a request path.
+A `--repo` value wins without `$GITHUB_REPOSITORY` being checked at all.
+The script reads `$GITHUB_TOKEN` from the environment (required).
 The script catches transient REST/parse failures per call so they cannot kill the resilient poll loop.
 
 In `--pr`/`--sha`/`--branch` modes, the Monitor discovers which workflow run(s) and job(s) to track from the `/commits/{sha}/check-runs` payload, by parsing each GitHub Actions check run's `details_url` for its `(run_id, job_id)` (gated on `app.slug == "github-actions"`, with a `/actions/runs/` URL-pattern fallback when the `app` block is absent).
@@ -103,7 +106,8 @@ With no pattern (`--include-pass ''`), every passing test is reported.
 ## Configuration
 
 `ci_monitor.config.json` (next to the script) tunes five behaviors as regexes.
-The monitor loads it once at startup; each value is optional, and a missing file, unreadable file, invalid JSON, or non-compiling regex falls back to the in-code default for that key without aborting the resilient poll loop.
+`--config PATH` loads a different file in its place, so a copy of the script vendored into another repository can read that repository's configuration from wherever it is kept.
+The monitor loads the file once at startup; each value is optional, and a missing file, unreadable file, invalid JSON, or non-compiling regex falls back to the in-code default for that key without aborting the resilient poll loop.
 
 | Config key                    | Default (in code)      | Matched against                              | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | ----------------------------- | ---------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
