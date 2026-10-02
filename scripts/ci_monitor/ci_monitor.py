@@ -14,8 +14,11 @@ Usage:
     python3 scripts/ci_monitor/ci_monitor.py --sha <SHA> [filter flags]
     python3 scripts/ci_monitor/ci_monitor.py --run-id <RUN_ID> [filter flags]
     python3 scripts/ci_monitor/ci_monitor.py --branch <BRANCH> [filter flags]
+    python3 scripts/ci_monitor/ci_monitor.py --once (--pr <N> | --sha <SHA> | --branch <BRANCH>)
 
-Exactly one of --pr/--sha/--run-id/--branch is required. --sha, --run-id, and
+Exactly one of --pr/--sha/--run-id/--branch is required. --once prints one
+read of the commit's check-runs, collapsed to the latest run per name, and
+exits without polling. --sha, --run-id, and
 --branch have no PR to consult, so their `Clear` terminal fires directly off
 an all-passed check verdict--no `mergeable_state` gating (that concept is
 --pr-only). See scripts/ci_monitor/README.md for the per-mode output prefixes
@@ -908,7 +911,7 @@ def fetch_pr_with_retry(pr, token, attempts=3, base_delay=2):
 CHECK_RUNS_PER_PAGE = 100
 
 
-def fetch_latest_check_runs(sha, token):
+def fetch_latest_check_runs(sha, token, fetch=None):
     """Fetch every page of `sha`'s check-runs, collapsed to the latest run per name.
 
     GitHub lists check-runs newest first, 30 to a page by default, and every
@@ -919,12 +922,14 @@ def fetch_latest_check_runs(sha, token):
 
     Returns {"total_count", "check_runs"} passed through latest_check_runs
     (issue #707), or None when any page fails: a partial listing can be missing
-    a check outright.
+    a check outright. Each page is read with `fetch`, _request by default;
+    --once passes fetch_with_retry, since it has no next poll to retry on.
     """
+    fetch = fetch or _request
     runs = []
     page = 1
     while True:
-        check_json = _request(
+        check_json = fetch(
             "%s/repos/%s/%s/commits/%s/check-runs?per_page=%d&page=%d"
             % (API_BASE, OWNER, REPO, sha, CHECK_RUNS_PER_PAGE, page),
             token,
@@ -957,6 +962,37 @@ def resolve_sha(mode, args, token):
         )
         return (parse_commit_sha(commit_json) if commit_json else ""), None
     return args.sha, None
+
+
+def run_once(mode, args, tag, token, ignored_check_regex):
+    """--once (issue #1023): print one read of a commit's check-runs, then exit.
+
+    For a reader that wants the check-runs as they stand now rather than wait
+    for CI to finish. The summary block lists each check name once, at its
+    latest run, from every page of the listing; the last line is
+    `snapshot <sha> <verdict>`, where the verdict is the raw per-check scan of
+    the checks that are not ignored: in_progress, all_passed, Blocked or Infra
+    (with the shared ` by: ` attribution), or no_checks. No mergeable_state is
+    consulted and no step or test diagnostics are fetched.
+
+    Returns 0, or 1 when the SHA or the check-runs could not be fetched.
+    """
+    sha, _ = resolve_sha(mode, args, token)
+    check_json = fetch_latest_check_runs(sha, token, fetch=fetch_with_retry) if sha else None
+    if check_json is None:
+        print("%s: could not fetch %s" % (tag, "check-runs" if sha else "SHA"))
+        sys.stdout.flush()
+        return 1
+    rows = parse_check_summary(check_json, ignored_check_regex)
+    verdict = parse_check_result(without_ignored_checks(check_json, ignored_check_regex))
+    if verdict == "Clear":  # parse_check_result's word for total_count == 0
+        verdict = "no_checks"
+    elif verdict in ("Blocked", "Infra"):
+        verdict += blocking_suffix(rows)
+    for line in format_check_summary(rows) + ["snapshot %s %s" % (sha, verdict)]:
+        print("%s: %s" % (tag, line))
+    sys.stdout.flush()
+    return 0
 
 
 # Main poll loop-----------------------------------------------------------------
@@ -1056,6 +1092,11 @@ def main(argv):
         metavar="BRANCH",
         help="A branch name to monitor; its head SHA is re-resolved every poll.",
     )
+    parser.add_argument(
+        "--once",
+        action="store_true",
+        help="Print one read of the commit's check-runs and exit, without polling.",
+    )
 
     # Per-outcome filter flags. Each outcome has an --include-* (optional regex)
     # and a --no-include-* suppressor. Defaults: all FAIL, all SKIP, no PASS.
@@ -1083,6 +1124,8 @@ def main(argv):
     outcome_filters = _parse_outcome_filters(args)
 
     mode, tag = _select_mode(args)
+    if args.once and mode == "run":
+        parser.error("--once reads a commit's check-runs; use it with --pr, --sha or --branch")
 
     # Configurable run/artifact/step/marker behavior (issue #500). Loaded once at
     # startup and threaded into the parsers below; a missing or invalid config
@@ -1093,6 +1136,9 @@ def main(argv):
     deferred_verdict_step_regex = config["deferred_verdict_step_regex"]
     test_marker_regex = config["test_marker_regex"]
     ignored_check_regex = config["ignored_check_regex"]
+
+    if args.once:
+        return run_once(mode, args, tag, token, ignored_check_regex)
 
     last_output_ts = time.time()
 
