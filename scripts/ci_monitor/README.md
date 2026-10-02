@@ -21,10 +21,10 @@ Two known exceptions remain:
 Run it from the repo root, passing **exactly one** identifier:
 
 ```bash
-python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER> [filter flags]
-python3 scripts/ci_monitor/ci_monitor.py --sha <SHA> [filter flags]
-python3 scripts/ci_monitor/ci_monitor.py --run-id <RUN_ID> [filter flags]
-python3 scripts/ci_monitor/ci_monitor.py --branch <BRANCH> [filter flags]
+python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER> [--repo OWNER/REPO] [--config PATH] [filter flags]
+python3 scripts/ci_monitor/ci_monitor.py --sha <SHA> [--repo OWNER/REPO] [--config PATH] [filter flags]
+python3 scripts/ci_monitor/ci_monitor.py --run-id <RUN_ID> [--repo OWNER/REPO] [--config PATH] [filter flags]
+python3 scripts/ci_monitor/ci_monitor.py --branch <BRANCH> [--repo OWNER/REPO] [--config PATH] [filter flags]
 ```
 
 | Flag                | Tracks                                                                                       | Output prefix          |

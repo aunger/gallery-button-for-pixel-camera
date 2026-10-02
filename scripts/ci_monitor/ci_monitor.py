@@ -10,10 +10,10 @@ See scripts/ci_monitor/README.md for full usage instructions, including the
 command-line arguments, per-outcome filter flags, and the outcome vocabulary.
 
 Usage:
-    python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER> [filter flags]
-    python3 scripts/ci_monitor/ci_monitor.py --sha <SHA> [filter flags]
-    python3 scripts/ci_monitor/ci_monitor.py --run-id <RUN_ID> [filter flags]
-    python3 scripts/ci_monitor/ci_monitor.py --branch <BRANCH> [filter flags]
+    python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER> [repository flags] [filter flags]
+    python3 scripts/ci_monitor/ci_monitor.py --sha <SHA> [repository flags] [filter flags]
+    python3 scripts/ci_monitor/ci_monitor.py --run-id <RUN_ID> [repository flags] [filter flags]
+    python3 scripts/ci_monitor/ci_monitor.py --branch <BRANCH> [repository flags] [filter flags]
 
 Exactly one of --pr/--sha/--run-id/--branch is required. --sha, --run-id, and
 --branch have no PR to consult, so their `Clear` terminal fires directly off
@@ -21,7 +21,7 @@ an all-passed check verdict--no `mergeable_state` gating (that concept is
 --pr-only). See scripts/ci_monitor/README.md for the per-mode output prefixes
 (PR#/SHA#/RUN#/BRANCH#).
 
-Options:
+Repository flags (the filter flags are listed in scripts/ci_monitor/README.md):
     --repo OWNER/REPO  The repository to poll. Defaults to $GITHUB_REPOSITORY,
                        then to DEFAULT_REPOSITORY (this repository).
     --config PATH      The config file to load. Defaults to
