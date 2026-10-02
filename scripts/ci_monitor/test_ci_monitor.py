@@ -122,10 +122,16 @@ Covers:
        attribution, preceded by the undiagnosed-drain flag
   (bk) without_ignored_checks: ignored checks leave the verdict but stay in
        the summary, marked [ignored]
-  (bl) #1225 fetch_latest_check_runs: every page of check-runs is read before
+  (bl) #1111 main(): the polled repository comes from --repo, then
+       $GITHUB_REPOSITORY, then DEFAULT_REPOSITORY; a malformed value from
+       the source used is a usage error before any request, while a valid
+       --repo wins over a malformed $GITHUB_REPOSITORY
+  (bm) #1111 main(): --config PATH is the file load_config() reads; without
+       it, load_config() gets None and reads the file next to the script
+  (bn) #1225 fetch_latest_check_runs: every page of check-runs is read before
        the collapse, a short page ends the read, a failed page fails it, and
        main() reports a failing check that only page 2 holds
-  (bm) #1023 --once: one collapsed read of a commit's check-runs, ending in a
+  (bo) #1023 --once: one collapsed read of a commit's check-runs, ending in a
        `snapshot <sha> <verdict>` line, with no polling, no PID line and no
        Merged/Closed short-circuit; fetch failures exit 1; --run-id is refused
 
@@ -282,7 +288,7 @@ def check_runs_payload(*pairs):
     """
     runs = []
     for run_id, job_id in pairs:
-        url = "https://github.com/%s/%s/actions/runs/%s" % (OWNER_T, REPO_T, run_id)
+        url = "https://github.com/%s/actions/runs/%s" % (REPOSITORY_T, run_id)
         if job_id is not None:
             url += "/job/%s" % job_id
         runs.append(
@@ -296,8 +302,7 @@ def check_runs_payload(*pairs):
     return {"total_count": len(runs), "check_runs": runs}
 
 
-OWNER_T = ci_monitor.OWNER
-REPO_T = ci_monitor.REPO
+REPOSITORY_T = ci_monitor.DEFAULT_REPOSITORY
 
 # Issue #748: on the --pr Blocked/Infra path the monitor now re-fetches /pulls for
 # mergeable_state before terminating (mirroring the all_passed path), and emits the
@@ -311,7 +316,7 @@ MPR_BLOCKED = {"merged": False, "state": "open", "mergeable_state": "blocked"}
 
 
 def main() -> int:
-    """Run every check (a) through (bj) and print PASS/FAIL for each.
+    """Run every check (a) through (bm) and print PASS/FAIL for each.
 
     Returns 1 if any check failed, 0 otherwise.
     Only runs when this file is executed directly; see the __main__ guard below.
@@ -4417,7 +4422,7 @@ def main() -> int:
         "fetch_pr_with_retry returns fetch_with_retry's result",
         "expected the delegate's return value; got %r" % got_as,
     )
-    expected_url_as = "%s/repos/%s/%s/pulls/999" % (ci_monitor.API_BASE, OWNER_T, REPO_T)
+    expected_url_as = "%s/repos/%s/pulls/999" % (ci_monitor.API_BASE, REPOSITORY_T)
     check(
         len(delegate_calls_as) == 1 and delegate_calls_as[0][0] == expected_url_as,
         "fetch_pr_with_retry builds the same /pulls/{n} URL as before and calls"
@@ -4576,8 +4581,7 @@ def main() -> int:
     # Cross-host redirect (the real bug: api.github.com -> *.blob.core.windows.net,
     # a SAS-signed URL that itself rejects an unexpected bearer Authorization header).
     cross_host_req = ci_monitor.urllib.request.Request(
-        "%s/repos/%s/%s/actions/artifacts/1/zip"
-        % (ci_monitor.API_BASE, ci_monitor.OWNER, ci_monitor.REPO)
+        "%s/actions/artifacts/1/zip" % ci_monitor.repo_api(REPOSITORY_T)
     )
     cross_host_req.add_header("Authorization", "Bearer sekrit")
     cross_host_req.add_header("Accept", "application/vnd.github+json")
@@ -4601,8 +4605,7 @@ def main() -> int:
     # Same-host redirect: Authorization is not the cross-host leak this guards
     # against, so it is left intact.
     same_host_req = ci_monitor.urllib.request.Request(
-        "%s/repos/%s/%s/actions/artifacts/1/zip"
-        % (ci_monitor.API_BASE, ci_monitor.OWNER, ci_monitor.REPO)
+        "%s/actions/artifacts/1/zip" % ci_monitor.repo_api(REPOSITORY_T)
     )
     same_host_req.add_header("Authorization", "Bearer sekrit")
     same_host_redirected = _redirect_handler.redirect_request(
@@ -4611,8 +4614,7 @@ def main() -> int:
         302,
         "Found",
         {},
-        "%s/repos/%s/%s/actions/artifacts/1/zip/redirected"
-        % (ci_monitor.API_BASE, ci_monitor.OWNER, ci_monitor.REPO),
+        "%s/actions/artifacts/1/zip/redirected" % ci_monitor.repo_api(REPOSITORY_T),
     )
     check(
         same_host_redirected is not None
@@ -4648,8 +4650,7 @@ def main() -> int:
         ),
     ):
         got_raw = ci_monitor._request(
-            "%s/repos/%s/%s/actions/artifacts/1/zip"
-            % (ci_monitor.API_BASE, ci_monitor.OWNER, ci_monitor.REPO),
+            "%s/actions/artifacts/1/zip" % ci_monitor.repo_api(REPOSITORY_T),
             "tok",
             raw=True,
         )
@@ -4796,7 +4797,7 @@ def main() -> int:
                 "conclusion": "success",
                 "started_at": "2026-07-16T16:57:43Z",
                 "app": {"slug": "github-actions"},
-                "details_url": "https://github.com/%s/%s/actions/runs/111" % (OWNER_T, REPO_T),
+                "details_url": "https://github.com/%s/actions/runs/111" % REPOSITORY_T,
             },
             {
                 "id": 87687158072,
@@ -4805,7 +4806,7 @@ def main() -> int:
                 "conclusion": "failure",
                 "started_at": "2026-07-16T16:58:25Z",
                 "app": {"slug": "github-actions"},
-                "details_url": "https://github.com/%s/%s/actions/runs/222" % (OWNER_T, REPO_T),
+                "details_url": "https://github.com/%s/actions/runs/222" % REPOSITORY_T,
             },
             {
                 "id": 87688242514,
@@ -4814,7 +4815,7 @@ def main() -> int:
                 "conclusion": "success",
                 "started_at": "2026-07-16T17:02:58Z",
                 "app": {"slug": "github-actions"},
-                "details_url": "https://github.com/%s/%s/actions/runs/333" % (OWNER_T, REPO_T),
+                "details_url": "https://github.com/%s/actions/runs/333" % REPOSITORY_T,
             },
         ],
     }
@@ -6352,10 +6353,130 @@ def main() -> int:
         "deque has %d left; rc %r" % (len(side_effects_bk2), rc_bk2),
     )
 
-    # ── (bl) #1225 fetch_latest_check_runs reads every page ────────────────────────
-    print("\n=== (bl) #1225 fetch_latest_check_runs: every page is read, then collapsed ===")
+    # ── (bl) #1111 --repo / $GITHUB_REPOSITORY / DEFAULT_REPOSITORY ───────────────
+    print("\n=== (bl) #1111 main(): --repo, then $GITHUB_REPOSITORY, then the default ===")
+
+    def _first_url_bl(argv, env_repo):
+        """Run main() on a merged PR and return the URLs it requested.
+
+        env_repo None removes GITHUB_REPOSITORY from the environment; a string
+        sets it. A merged PR is a terminal on the first /pulls fetch, so exactly
+        one request is made and its URL shows which repository was polled.
+        """
+        urls = []
+
+        def fake_request_bl(url, token, raw=False):
+            urls.append(url)
+            return {"head": {"sha": "feedface"}, "merged": True, "state": "closed"}
+
+        env = {k: v for k, v in os.environ.items() if k != "GITHUB_REPOSITORY"}
+        if env_repo is not None:
+            env["GITHUB_REPOSITORY"] = env_repo
+        with (
+            unittest.mock.patch.dict(os.environ, env, clear=True),
+            unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_bl),
+            unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None),
+            unittest.mock.patch("sys.stdout", new=io.StringIO()),
+        ):
+            ci_monitor.main(["ci_monitor.py", "--pr", "7"] + argv)
+        return urls
+
+    def _pulls_url_bl(repository):
+        return "%s/repos/%s/pulls/7" % (ci_monitor.API_BASE, repository)
+
+    for argv_bl, env_bl, want_bl, label_bl in (
+        ([], None, REPOSITORY_T, "neither --repo nor $GITHUB_REPOSITORY"),
+        ([], "", REPOSITORY_T, "an empty $GITHUB_REPOSITORY"),
+        ([], "env-owner/env.repo", "env-owner/env.repo", "$GITHUB_REPOSITORY alone"),
+        (["--repo", "flag_owner/flag-repo"], None, "flag_owner/flag-repo", "--repo alone"),
+        (["--repo", "owner/.github"], None, "owner/.github", "--repo with a leading-dot REPO"),
+        (
+            ["--repo", "flag_owner/flag-repo"],
+            "env-owner/env.repo",
+            "flag_owner/flag-repo",
+            "--repo over $GITHUB_REPOSITORY",
+        ),
+        (
+            ["--repo", "flag_owner/flag-repo"],
+            "no-slash",
+            "flag_owner/flag-repo",
+            "--repo over a malformed $GITHUB_REPOSITORY",
+        ),
+    ):
+        got_bl = _first_url_bl(argv_bl, env_bl)
+        check(
+            got_bl == [_pulls_url_bl(want_bl)],
+            "%s polls %s" % (label_bl, want_bl),
+            "%s: expected [%r], got %r" % (label_bl, _pulls_url_bl(want_bl), got_bl),
+        )
+
+    for argv_bl, env_bl, label_bl in (
+        (["--repo", "no-slash"], None, "--repo with no slash"),
+        (["--repo", "a/b/c"], None, "--repo with a third path segment"),
+        (["--repo", "/repo"], None, "--repo with an empty owner"),
+        (["--repo", "owner/r?x=1"], None, "--repo with a query character"),
+        (["--repo", "../.."], None, "--repo of two dot-dot segments"),
+        (["--repo", "owner/.."], None, "--repo with a dot-dot REPO"),
+        (["--repo", "owner/."], None, "--repo with a dot REPO"),
+        (["--repo", "./x"], None, "--repo with a dot OWNER"),
+        (["--repo", "own.er/x"], None, "--repo with a dot in OWNER"),
+        ([], "no-slash", "$GITHUB_REPOSITORY with no slash"),
+    ):
+        err_bl = io.StringIO()
+        try:
+            with unittest.mock.patch("sys.stderr", new=err_bl):
+                urls_bl = _first_url_bl(argv_bl, env_bl)
+            _fail("%s should exit with a usage error; it requested %r" % (label_bl, urls_bl))
+        except SystemExit as e:
+            check(
+                e.code == 2 and "expected OWNER/REPO" in err_bl.getvalue(),
+                "%s exits 2 with an OWNER/REPO usage error before any request" % label_bl,
+                "%s: exit %r, stderr %r" % (label_bl, e.code, err_bl.getvalue()),
+            )
+
+    # ── (bm) #1111 --config PATH ──────────────────────────────────────────────────
+    print("\n=== (bm) #1111 main(): --config names the file load_config() reads ===")
+
+    def _config_paths_bm(argv):
+        """Run main() on a merged PR and return the paths load_config() was given."""
+        with (
+            unittest.mock.patch.object(
+                ci_monitor, "load_config", wraps=ci_monitor.load_config
+            ) as spy_bm,
+            unittest.mock.patch.object(
+                ci_monitor,
+                "_request",
+                return_value={"head": {"sha": "feedface"}, "merged": True, "state": "closed"},
+            ),
+            unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None),
+            unittest.mock.patch("sys.stdout", new=io.StringIO()),
+            unittest.mock.patch("sys.stderr", new=io.StringIO()),
+        ):
+            ci_monitor.main(["ci_monitor.py", "--pr", "7"] + argv)
+        return [c.args for c in spy_bm.call_args_list]
+
+    _p_bm = _write_tmp("{}")
+    try:
+        got_bm = _config_paths_bm(["--config", _p_bm])
+    finally:
+        os.remove(_p_bm)
+    check(
+        got_bm == [(_p_bm,)],
+        "--config PATH is passed to load_config() exactly once",
+        "expected [(%r,)], got %r" % (_p_bm, got_bm),
+    )
+    got_bm_default = _config_paths_bm([])
+    check(
+        got_bm_default == [(None,)],
+        "without --config, load_config() gets None (the file next to the script)",
+        "expected [(None,)], got %r" % (got_bm_default,),
+    )
+
+    # ── (bn) #1225 fetch_latest_check_runs reads every page ────────────────────────
+    print("\n=== (bn) #1225 fetch_latest_check_runs: every page is read, then collapsed ===")
 
     GATE_BL = "No blocking labels"
+    API_BL = ci_monitor.repo_api(ci_monitor.DEFAULT_REPOSITORY)
     # 100 gate runs fill page 1 (newest first, so the highest ids); the only
     # build-and-test run is the oldest and lands alone on page 2.
     PAGE1_BL = {
@@ -6384,7 +6505,7 @@ def main() -> int:
     with unittest.mock.patch.object(
         ci_monitor, "_request", side_effect=paged_bl([PAGE1_BL, PAGE2_BL], urls_bl)
     ):
-        got_bl = ci_monitor.fetch_latest_check_runs("abc", "tok")
+        got_bl = ci_monitor.fetch_latest_check_runs(API_BL, "abc", "tok")
     check(
         [u.split("?", 1)[1] for u in urls_bl] == ["per_page=100&page=1", "per_page=100&page=2"],
         "two pages of 100 are requested for 101 runs",
@@ -6403,7 +6524,7 @@ def main() -> int:
     with unittest.mock.patch.object(
         ci_monitor, "_request", side_effect=paged_bl([PAGE2_BL], urls_bl2)
     ):
-        ci_monitor.fetch_latest_check_runs("abc", "tok")
+        ci_monitor.fetch_latest_check_runs(API_BL, "abc", "tok")
     check(
         len(urls_bl2) == 1,
         "a page shorter than 100 is the last one requested",
@@ -6413,7 +6534,7 @@ def main() -> int:
     # A failed later page fails the whole read rather than return a listing
     # missing the checks that page held.
     with unittest.mock.patch.object(ci_monitor, "_request", side_effect=paged_bl([PAGE1_BL], [])):
-        got_bl3 = ci_monitor.fetch_latest_check_runs("abc", "tok")
+        got_bl3 = ci_monitor.fetch_latest_check_runs(API_BL, "abc", "tok")
     check(got_bl3 is None, "a failed page 2 returns None", "got %r" % (got_bl3,))
 
     # main() --sha: the failing check on page 2 drives the verdict. Reading page 1
@@ -6434,8 +6555,8 @@ def main() -> int:
         "expected 'SHA#abcdef1: Blocked by: build-and-test' last; output: %r" % (lines_bl,),
     )
 
-    # ── (bm) #1023 --once prints one collapsed read and exits ──────────────────────
-    print("\n=== (bm) #1023 --once: one collapsed read of a commit's check-runs, no polling ===")
+    # ── (bo) #1023 --once prints one collapsed read and exits ──────────────────────
+    print("\n=== (bo) #1023 --once: one collapsed read of a commit's check-runs, no polling ===")
 
     def once_bm(argv, check_runs, pr=None, commit=None):
         """Run main() with --once; return (lines, rc, urls, sleep mock)."""
