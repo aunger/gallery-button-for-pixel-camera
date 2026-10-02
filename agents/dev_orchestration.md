@@ -311,15 +311,30 @@ No-PR routing:
     stop
 ```
 
-The PR-routing fence below holds only the routing; what each labelled block assumes, and why, is under "Monitor loop blocks" after it.
+The PR routing below is split by labelled block: each block has its rationale in prose, followed by a fence that holds only its routing.
 
 PR routing (Monitor loop):
+
+To launch the Monitor is to issue a Monitor tool call running `python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER>` from the repo root (`run_in_background: true`, `timeout_ms: 1800000`), and to record the task ID it returns for use in `silentVanish` recovery.
+Launching also clears the `silentVanish` re-launch flag, since the invocation a launch creates is not a recovery re-launch.
+`silentVanish` is the one site that sets the flag, and says so where it launches.
 
 ```text
   if Reviewer requested changes -> goto "Assigning a Programmer" above
   if Reviewer gave `Cannot work` -> escalate to user; stop (do NOT route to a new Author round; leave the PR open for the user to close; the Reviewer's PR comment describes why)
   if Reviewer gave LGTM -> launch the Monitor; goto monitorLoop
+```
 
+### Monitor loop blocks
+
+#### `monitorLoop`
+
+`monitorLoop` is reached only by `goto monitorLoop`, with or without a parenthetical, from a site that has just launched the Monitor.
+Every site that enters it launches first.
+
+Which check, if any, a pass suppresses is named by the arriving goto.
+
+```text
 monitorLoop:
   Each stdout line arrives as a task-notification event.
   Terminal lines and failure markers (`FAIL`/`SKIP`) are relayed to the user, verbatim.
@@ -333,73 +348,7 @@ monitorLoop:
   if Monitor times out (30 min) -> escalate to user; stop
   if a user message wakes the session before Monitor delivers any terminal line -> goto silentVanish
   if Monitor emits any other terminal line -> goto namedChecks
-
-namedChecks:
-  if the terminal word is `Draft on hold` -> send the user the `PR #{N} is a draft, ...` line from "Decision-signal templates" above, then continue below
-  if any named check has no row -> goto missingNamedCheck
-  Send the user an own-voice status message naming each named check that is not green with its conclusion, or saying that every named check is green.
-  if any named check concluded other than green or `failure` -> escalate to user; stop
-    // `cancelled`, `timed_out`, `stale`, `startup_failure` and `action_required` mean the
-    // run did not deliver a verdict, which no Author round can repair.
-  if any named check concluded `failure`:
-    Apply this transition to the PR, as the Reviewer and Verification Agent routes do before an Author round:
-
-    | Add label |
-    |---|
-    | `changes requested` |
-
-    goto "Assigning a Programmer" above
-  otherwise (every named check is green) -> goto surfaceBeforeMergingRequirements
-
-surfaceBeforeMergingRequirements:
-  Dispatch a Verification Planner sub-agent using the dispatch template.
-  The planner assembles the before-merging list and files a tracking issue per item (see verification_planning.md). It does not consult the user.
-  If the Planner reports its before-merging list is empty: this step is complete; apply this transition to **both the issue and the PR**:
-
-    | Add label |
-    |---|
-    | `verified` |
-
-  Otherwise, relay the before-merging list to the user verbatim, and apply this transition to the PR:
-
-  | Add label |
-  |---|
-  | `verification needed` |
-
-  Dispatch a Verification Agent (see pr_verify.md) to carry out those items; it does not consult the user.
-  Route on its terminal signal per "Routing on the Verification Agent's signal" above.
-
-missingNamedCheck:
-  Send the user the `Rechecking PR #{N} ...` line from "Decision-signal templates" above.
-  Wait 5 minutes without a sleep loop: issue a Bash tool call running `sleep 300` (run_in_background: true), and treat its completion notification as the wake-up.
-  Launch the Monitor.
-  goto monitorLoop (on this pass, a named check with no row escalates to the user and stops instead of re-entering missingNamedCheck, so the recheck gets at most one detour)
-
-silentVanish:
-  if TaskOutput for the Monitor's task ID returns "No task found with ID: <id>":
-    // Confirmed vanish: the task record was dropped.
-    if the current Monitor invocation is itself a silentVanish re-launch (the re-launch flag is set):
-      // A re-launched Monitor vanished too; one recovery attempt has already been spent.
-      -> escalate to user; stop
-    Inform the user that the Monitor task vanished without a terminal notification and is being re-launched.
-    Launch the Monitor. Set the silentVanish re-launch flag for the invocation it creates, overriding the clear a launch otherwise performs.
-    goto monitorLoop
-  else (the Monitor task is still registered--a user message is not proof of a vanish):
-    Inform the user that CI is still running and the Monitor is alive; then continue waiting for the Monitor's terminal line; do not re-launch.
 ```
-
-### Monitor loop blocks
-
-#### `monitorLoop`
-
-`monitorLoop` is reached only by `goto monitorLoop`, with or without a parenthetical, from a site that has just launched the Monitor.
-Every site that enters it launches first.
-
-To launch the Monitor is to issue a Monitor tool call running `python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER>` from the repo root (`run_in_background: true`, `timeout_ms: 1800000`), and to record the task ID it returns for use in `silentVanish` recovery.
-Launching also clears the `silentVanish` re-launch flag, since the invocation a launch creates is not a recovery re-launch.
-`silentVanish` is the one site that sets the flag, and says so where it launches.
-
-Which check, if any, a pass suppresses is named by the arriving goto.
 
 #### `namedChecks`
 
@@ -418,6 +367,25 @@ The Orchestrator acts on no `mergeable_state` it sees in a terminal suffix.
 A merge conflict present when the head commit is pushed stops the `pull_request` workflows from running, which surfaces in `namedChecks` as named checks with no row.
 A conflict that arises after the named checks ran is not caught: resolving it is part of merging, which is not the Orchestrator's goal.
 
+```text
+namedChecks:
+  if the terminal word is `Draft on hold` -> send the user the `PR #{N} is a draft, ...` line from "Decision-signal templates" above, then continue below
+  if any named check has no row -> goto missingNamedCheck
+  Send the user an own-voice status message naming each named check that is not green with its conclusion, or saying that every named check is green.
+  if any named check concluded other than green or `failure` -> escalate to user; stop
+    // `cancelled`, `timed_out`, `stale`, `startup_failure` and `action_required` mean the
+    // run did not deliver a verdict, which no Author round can repair.
+  if any named check concluded `failure`:
+    Apply this transition to the PR, as the Reviewer and Verification Agent routes do before an Author round:
+
+    | Add label |
+    |---|
+    | `changes requested` |
+
+    goto "Assigning a Programmer" above
+  otherwise (every named check is green) -> goto surfaceBeforeMergingRequirements
+```
+
 #### `surfaceBeforeMergingRequirements`
 
 `surfaceBeforeMergingRequirements` surfaces outstanding before-merging requirements: unautomated verification steps, and changes outside the repo.
@@ -426,6 +394,26 @@ It is entered once every named check is green, which does not prove the PR is me
 Neither bears on the requirements `surfaceBeforeMergingRequirements` surfaces, which are about what must be true before a merge, not about whether one is possible today.
 The Orchestrator does not scan the issue or PR itself.
 
+```text
+surfaceBeforeMergingRequirements:
+  Dispatch a Verification Planner sub-agent using the dispatch template.
+  The planner assembles the before-merging list and files a tracking issue per item (see verification_planning.md). It does not consult the user.
+  If the Planner reports its before-merging list is empty: this step is complete; apply this transition to **both the issue and the PR**:
+
+    | Add label |
+    |---|
+    | `verified` |
+
+  Otherwise, relay the before-merging list to the user verbatim, and apply this transition to the PR:
+
+  | Add label |
+  |---|
+  | `verification needed` |
+
+  Dispatch a Verification Agent (see pr_verify.md) to carry out those items; it does not consult the user.
+  Route on its terminal signal per "Routing on the Verification Agent's signal" above.
+```
+
 #### `missingNamedCheck`
 
 A named check with no row never registered a check-run the Monitor could see.
@@ -433,23 +421,41 @@ One of three things happened: the workflow had not started when every other chec
 A check that registered but never concludes keeps the Monitor polling, so the 30-minute timeout covers that case instead.
 `missingNamedCheck` gives a missing row one out-of-process recheck before treating it as real, so a dead run escalates rather than becoming an indefinite wait.
 
+```text
+missingNamedCheck:
+  Send the user the `Rechecking PR #{N} ...` line from "Decision-signal templates" above.
+  Wait 5 minutes without a sleep loop: issue a Bash tool call running `sleep 300` (run_in_background: true), and treat its completion notification as the wake-up.
+  Launch the Monitor.
+  goto monitorLoop (on this pass, a named check with no row escalates to the user and stops instead of re-entering missingNamedCheck, so the recheck gets at most one detour)
+```
+
 #### `silentVanish`
 
 The Monitor task can silently vanish (issue #411): the process exits without the task-notification infrastructure delivering any terminal line, not even a timeout notification.
 That leaves the session stuck until the user sends a message.
-When a user message wakes the session while a Monitor invocation is still nominally pending, check whether the task is still alive using TaskOutput, passing the Monitor's task ID.
-If TaskOutput returns `No task found with ID: <id>`, the task record has been dropped: a silent vanish.
-Launch the Monitor and go to `monitorLoop` once immediately, applying all normal checks, including `missingNamedCheck` if warranted.
-If that re-launched invocation also vanishes silently (a second user message arrives before any terminal line), escalate to the user and stop.
+A re-launch after a confirmed vanish goes through `monitorLoop` with all its normal checks, including `missingNamedCheck` if warranted.
 
-To make that double-vanish escalation reachable, the routing loop sends every user-message wake-up to `silentVanish` via `goto silentVanish`.
+To make the double-vanish escalation reachable, the routing loop sends every user-message wake-up to `silentVanish` via `goto silentVanish`.
 The second vanish therefore re-enters the block from the top rather than reaching a nested instruction after the re-launch.
-Track whether the current Monitor invocation is itself a `silentVanish` re-launch: every launch clears the flag, and the re-launch in `silentVanish` is the one that sets it.
-On a confirmed vanish, the re-launch flag decides whether to re-launch (first vanish) or escalate (second vanish); a still-alive task never escalates.
+That is why the block tracks whether the current Monitor invocation is itself a re-launch: the flag tells a first vanish (re-launch) from a second (escalate), and a still-alive task never escalates.
 
 The user message that sends the Orchestrator to `silentVanish` is treated as a wake-up event only.
 Its content, if any, is set aside: the Orchestrator's narrow scope during CI monitoring means user questions or instructions cannot be addressed mid-monitor.
 The user is informed of CI status instead (see the branches of `silentVanish`), which is the appropriate response in this context.
+
+```text
+silentVanish:
+  if TaskOutput for the Monitor's task ID returns "No task found with ID: <id>":
+    // Confirmed vanish: the task record was dropped.
+    if the current Monitor invocation is itself a silentVanish re-launch (the re-launch flag is set):
+      // A re-launched Monitor vanished too; one recovery attempt has already been spent.
+      -> escalate to user; stop
+    Inform the user that the Monitor task vanished without a terminal notification and is being re-launched.
+    Launch the Monitor. Set the silentVanish re-launch flag for the invocation it creates, overriding the clear a launch otherwise performs.
+    goto monitorLoop
+  else (the Monitor task is still registered--a user message is not proof of a vanish):
+    Inform the user that CI is still running and the Monitor is alive; then continue waiting for the Monitor's terminal line; do not re-launch.
+```
 
 ### Monitor script
 
