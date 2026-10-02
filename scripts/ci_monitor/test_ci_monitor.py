@@ -128,6 +128,12 @@ Covers:
        --repo wins over a malformed $GITHUB_REPOSITORY
   (bm) #1111 main(): --config PATH is the file load_config() reads; without
        it, load_config() gets None and reads the file next to the script
+  (bn) #1225 fetch_latest_check_runs: every page of check-runs is read before
+       the collapse, a short page ends the read, a failed page fails it, and
+       main() reports a failing check that only page 2 holds
+  (bo) #1023 --once: one collapsed read of a commit's check-runs, ending in a
+       `snapshot <sha> <verdict>` line, with no polling, no PID line and no
+       Merged/Closed short-circuit; fetch failures exit 1; --run-id is refused
 
 No network calls required; no GITHUB_TOKEN needed.
 Run this file directly to execute the suite: exits 0 on success, non-zero on failure.
@@ -6464,6 +6470,220 @@ def main() -> int:
         got_bm_default == [(None,)],
         "without --config, load_config() gets None (the file next to the script)",
         "expected [(None,)], got %r" % (got_bm_default,),
+    )
+
+    # ── (bn) #1225 fetch_latest_check_runs reads every page ────────────────────────
+    print("\n=== (bn) #1225 fetch_latest_check_runs: every page is read, then collapsed ===")
+
+    GATE_BL = "No blocking labels"
+    API_BL = ci_monitor.repo_api(ci_monitor.DEFAULT_REPOSITORY)
+    # 100 gate runs fill page 1 (newest first, so the highest ids); the only
+    # build-and-test run is the oldest and lands alone on page 2.
+    PAGE1_BL = {
+        "total_count": 101,
+        "check_runs": [
+            {"id": 1000 - i, "name": GATE_BL, "status": "completed", "conclusion": "success"}
+            for i in range(100)
+        ],
+    }
+    PAGE2_BL = {
+        "total_count": 101,
+        "check_runs": [
+            {"id": 1, "name": "build-and-test", "status": "completed", "conclusion": "failure"}
+        ],
+    }
+
+    def paged_bl(pages, urls):
+        def fake(url, token, raw=False):
+            urls.append(url)
+            page = int(re.search(r"[?&]page=(\d+)", url).group(1))
+            return pages[page - 1] if page <= len(pages) else None
+
+        return fake
+
+    urls_bl = []
+    with unittest.mock.patch.object(
+        ci_monitor, "_request", side_effect=paged_bl([PAGE1_BL, PAGE2_BL], urls_bl)
+    ):
+        got_bl = ci_monitor.fetch_latest_check_runs(API_BL, "abc", "tok")
+    check(
+        [u.split("?", 1)[1] for u in urls_bl] == ["per_page=100&page=1", "per_page=100&page=2"],
+        "two pages of 100 are requested for 101 runs",
+        "requested %r" % (urls_bl,),
+    )
+    check(
+        got_bl is not None
+        and [(r["name"], r["id"]) for r in got_bl["check_runs"]]
+        == [(GATE_BL, 1000), ("build-and-test", 1)],
+        "the page-2 check is kept, and the gate collapses to its highest id",
+        "got %r" % (got_bl,),
+    )
+
+    # A short page ends the read: total_count alone does not cause another request.
+    urls_bl2 = []
+    with unittest.mock.patch.object(
+        ci_monitor, "_request", side_effect=paged_bl([PAGE2_BL], urls_bl2)
+    ):
+        ci_monitor.fetch_latest_check_runs(API_BL, "abc", "tok")
+    check(
+        len(urls_bl2) == 1,
+        "a page shorter than 100 is the last one requested",
+        "requested %r" % (urls_bl2,),
+    )
+
+    # A failed later page fails the whole read rather than return a listing
+    # missing the checks that page held.
+    with unittest.mock.patch.object(ci_monitor, "_request", side_effect=paged_bl([PAGE1_BL], [])):
+        got_bl3 = ci_monitor.fetch_latest_check_runs(API_BL, "abc", "tok")
+    check(got_bl3 is None, "a failed page 2 returns None", "got %r" % (got_bl3,))
+
+    # main() --sha: the failing check on page 2 drives the verdict. Reading page 1
+    # alone would see only green gate runs and report Clear.
+    buf_bl = io.StringIO()
+    with (
+        unittest.mock.patch.object(
+            ci_monitor, "_request", side_effect=paged_bl([PAGE1_BL, PAGE2_BL], [])
+        ),
+        unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None),
+        unittest.mock.patch("sys.stdout", new=buf_bl),
+    ):
+        rc_bl = ci_monitor.main(["ci_monitor.py", "--sha", "abcdef1234"])
+    lines_bl = buf_bl.getvalue().splitlines()
+    check(
+        lines_bl[-1:] == ["SHA#abcdef1: Blocked by: build-and-test"] and rc_bl == 0,
+        "--sha: a failing check found only on page 2 is Blocked",
+        "expected 'SHA#abcdef1: Blocked by: build-and-test' last; output: %r" % (lines_bl,),
+    )
+
+    # ── (bo) #1023 --once prints one collapsed read and exits ──────────────────────
+    print("\n=== (bo) #1023 --once: one collapsed read of a commit's check-runs, no polling ===")
+
+    def once_bm(argv, check_runs, pr=None, commit=None):
+        """Run main() with --once; return (lines, rc, urls, sleep mock)."""
+        urls = []
+
+        def fake(url, token, raw=False):
+            urls.append(url)
+            if "/check-runs" in url:
+                return check_runs
+            if "/pulls/" in url:
+                return pr
+            return commit
+
+        buf = io.StringIO()
+        with (
+            unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake),
+            unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None) as sleep,
+            unittest.mock.patch("sys.stdout", new=buf),
+        ):
+            rc = ci_monitor.main(["ci_monitor.py", "--once"] + argv)
+        return buf.getvalue().splitlines(), rc, urls, sleep
+
+    GATE_BM = "No blocking labels"
+    CHECKS_BM = {
+        "total_count": 3,
+        "check_runs": [
+            {"id": 9, "name": GATE_BM, "status": "completed", "conclusion": "failure"},
+            {"id": 7, "name": "build-and-test", "status": "completed", "conclusion": "success"},
+            {"id": 4, "name": GATE_BM, "status": "completed", "conclusion": "success"},
+        ],
+    }
+    # A merged PR is still read: --once has no Merged/Closed short-circuit.
+    MERGED_PR_BM = {"head": {"sha": "beefcafe"}, "state": "closed", "merged": True}
+    lines_bm, rc_bm, urls_bm, sleep_bm = once_bm(["--pr", "42"], CHECKS_BM, pr=MERGED_PR_BM)
+    check(
+        lines_bm[0] == "PR#42: summary"
+        and lines_bm[-1] == "PR#42: snapshot beefcafe all_passed"
+        and len(lines_bm) == 4,
+        "--pr: the summary block then one snapshot line, and nothing else",
+        "output: %r" % (lines_bm,),
+    )
+    check(
+        sum(GATE_BM in ln for ln in lines_bm) == 1
+        and any(GATE_BM in ln and "failure" in ln and ln.endswith("[ignored]") for ln in lines_bm),
+        "--pr: the gate is listed once, at its latest run, marked [ignored]",
+        "output: %r" % (lines_bm,),
+    )
+    check(
+        rc_bm == 0 and len(urls_bm) == 2 and not sleep_bm.called,
+        "--pr: two requests (the PR, one page of check-runs), no sleep, exit 0",
+        "rc %r; urls %r; sleep called %r" % (rc_bm, urls_bm, sleep_bm.called),
+    )
+
+    for checks_bm, want_bm, label_bm in (
+        (
+            {
+                "total_count": 1,
+                "check_runs": [
+                    {"name": "build-and-test", "status": "completed", "conclusion": "failure"}
+                ],
+            },
+            "Blocked by: build-and-test",
+            "a failed check reads Blocked, attributed",
+        ),
+        (
+            {
+                "total_count": 1,
+                "check_runs": [
+                    {"name": "build-and-test", "status": "completed", "conclusion": "cancelled"}
+                ],
+            },
+            "Infra by: build-and-test",
+            "an infrastructure conclusion reads Infra, attributed",
+        ),
+        (
+            {"total_count": 1, "check_runs": [{"name": "build-and-test", "status": "queued"}]},
+            "in_progress",
+            "a queued check reads in_progress, not a wait",
+        ),
+        ({"total_count": 0, "check_runs": []}, "no_checks", "no check-runs reads no_checks"),
+    ):
+        lines_bm2, rc_bm2, _, sleep_bm2 = once_bm(["--sha", "abcdef1234"], checks_bm)
+        check(
+            lines_bm2[-1:] == ["SHA#abcdef1: snapshot abcdef1234 %s" % want_bm]
+            and rc_bm2 == 0
+            and not sleep_bm2.called,
+            "--sha: %s" % label_bm,
+            "output: %r; rc %r" % (lines_bm2, rc_bm2),
+        )
+
+    lines_bm3, rc_bm3, urls_bm3, _ = once_bm(
+        ["--branch", "main"], CHECKS_BM, commit={"sha": "cafef00d"}
+    )
+    check(
+        lines_bm3[-1:] == ["BRANCH#main: snapshot cafef00d all_passed"]
+        and "/commits/cafef00d/check-runs" in urls_bm3[-1],
+        "--branch: the head is resolved, then its check-runs read",
+        "output: %r; urls %r" % (lines_bm3, urls_bm3),
+    )
+
+    # Fetch failures exit 1 after fetch_with_retry's attempts, with a line saying which.
+    lines_bm4, rc_bm4, _, _ = once_bm(["--pr", "42"], CHECKS_BM, pr=None)
+    check(
+        lines_bm4 == ["PR#42: could not fetch SHA"] and rc_bm4 == 1,
+        "--pr: an unreadable PR exits 1, naming the SHA",
+        "output: %r; rc %r" % (lines_bm4, rc_bm4),
+    )
+    lines_bm5, rc_bm5, urls_bm5, _ = once_bm(["--sha", "abcdef1234"], None)
+    check(
+        lines_bm5 == ["SHA#abcdef1: could not fetch check-runs"]
+        and rc_bm5 == 1
+        and len(urls_bm5) == 3,
+        "--sha: unreadable check-runs exit 1 after three attempts",
+        "output: %r; rc %r; urls %r" % (lines_bm5, rc_bm5, urls_bm5),
+    )
+
+    err_bm = io.StringIO()
+    with unittest.mock.patch("sys.stderr", new=err_bm):
+        try:
+            ci_monitor.main(["ci_monitor.py", "--once", "--run-id", "5"])
+            code_bm = None
+        except SystemExit as e:
+            code_bm = e.code
+    check(
+        code_bm == 2 and "--once" in err_bm.getvalue(),
+        "--once with --run-id is a usage error",
+        "exit %r; stderr %r" % (code_bm, err_bm.getvalue()),
     )
 
     # ── Summary ────────────────────────────────────────────────────────────────────

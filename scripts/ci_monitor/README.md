@@ -36,6 +36,20 @@ python3 scripts/ci_monitor/ci_monitor.py --branch <BRANCH> [--repo OWNER/REPO] [
 
 Supplying zero or more than one of these flags is a usage error (argparse exits with an error before any request is made).
 
+### One read, no polling (`--once`)
+
+```bash
+python3 scripts/ci_monitor/ci_monitor.py --once --pr <PR_NUMBER>
+```
+
+`--once`, with `--pr`, `--sha` or `--branch`, reads the commit's check-runs once and exits, for a reader that wants them as they stand now rather than wait for CI to finish (issue #1023).
+It prints the summary block, one row per check name at its latest run (see "Same-named check-run collapsing"), then `snapshot <sha> <verdict>`, and exits 0.
+The verdict is the per-check scan of the checks that are not ignored: `in_progress`, `all_passed`, `Blocked by: ...`, `Infra by: ...`, or `no_checks`.
+Under `--pr` it consults no `mergeable_state` and has no `Merged`/`Closed` short-circuit, so it reads a merged PR's head too, and its `Blocked` says a check failed, not that the PR cannot merge.
+It fetches no step or test diagnostics, so the filter flags have no effect.
+When the SHA or the check-runs cannot be fetched, it prints `could not fetch SHA` or `could not fetch check-runs` and exits 1.
+`--once` with `--run-id` is a usage error.
+
 `--pr` mode is the only one with a pull request to consult, so it alone: (1) treats a merged or closed PR as an immediate terminal (`Merged`/`Closed`), (2) treats a draft PR as a terminal once its checks have reported (`Draft on hold`), and (3) gates its remaining terminals on `mergeable_state`, GitHub's authoritative "can this merge" signal.
 Draftness is read from the `draft` boolean on the `/pulls/{n}` payload, not from `mergeable_state`: that field holds one value drawn from a ladder whose precedence GitHub does not document, so a draft PR waiting on a required check or carrying a conflict can report `blocked` or `dirty` instead, and keying off the string would turn a held PR into a false `Infra` escalation or a false merge-block terminal (issue #968).
 A draft PR therefore reports `Draft on hold` whatever its `mergeable_state`, which the terminal still names in its suffix as a diagnostic; the `draft` mergeable_state is kept as a fallback for a payload that carries no `draft` field at all.
@@ -55,6 +69,10 @@ The script catches transient REST/parse failures per call so they cannot kill th
 In `--pr`/`--sha`/`--branch` modes, the Monitor discovers which workflow run(s) and job(s) to track from the `/commits/{sha}/check-runs` payload, by parsing each GitHub Actions check run's `details_url` for its `(run_id, job_id)` (gated on `app.slug == "github-actions"`, with a `/actions/runs/` URL-pattern fallback when the `app` block is absent).
 It does not name a workflow or job; the run/job to follow is derived from the same check-runs data that produces the verdict.
 In `--run-id` mode, the run to track is simply the one named on the command line--no check-runs payload is consulted for this purpose.
+
+The Monitor reads every page of `/commits/{sha}/check-runs`, 100 runs to a page.
+GitHub lists check-runs newest first, so once label events pile runs onto a commit, the default page of 30 drops the oldest, and with them any check whose only run is among them (issue #1225).
+A page that fails to load fails the whole read, which the poll treats as no data rather than judge a listing with checks missing.
 
 ### Same-named check-run collapsing
 

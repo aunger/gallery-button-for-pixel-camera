@@ -15,9 +15,12 @@ Usage:
     python3 scripts/ci_monitor/ci_monitor.py --sha <SHA> [flags]
     python3 scripts/ci_monitor/ci_monitor.py --run-id <RUN_ID> [flags]
     python3 scripts/ci_monitor/ci_monitor.py --branch <BRANCH> [flags]
+    python3 scripts/ci_monitor/ci_monitor.py --once (--pr <N> | --sha <SHA> | --branch <BRANCH>)
 
-Exactly one of --pr/--sha/--run-id/--branch is required. --sha, --run-id, and
---branch have no PR to consult, so their `Clear` terminal fires directly off
+Exactly one of --pr/--sha/--run-id/--branch is required. --once prints one
+read of the commit's check-runs, collapsed to the latest run per name, and
+exits without polling. --sha, --run-id, and --branch have no PR to consult,
+so their `Clear` terminal fires directly off
 an all-passed check verdict--no `mergeable_state` gating (that concept is
 --pr-only). See scripts/ci_monitor/README.md for the per-mode output prefixes
 (PR#/SHA#/RUN#/BRANCH#).
@@ -934,6 +937,93 @@ def fetch_pr_with_retry(pr, token, attempts=3, base_delay=2, api=None):
     return fetch_with_retry(url, token, attempts=attempts, base_delay=base_delay)
 
 
+# Page size for /commits/{sha}/check-runs; 100 is the most GitHub allows.
+CHECK_RUNS_PER_PAGE = 100
+
+
+def fetch_latest_check_runs(api, sha, token, fetch=None):
+    """Fetch every page of `sha`'s check-runs, collapsed to the latest run per name.
+
+    `api` is the repository's REST base from repo_api().
+
+    GitHub lists check-runs newest first, 30 to a page by default, and every
+    label event on a PR adds a run of the label gate to its head commit. Reading
+    only the first page drops the oldest runs, and with them any check whose
+    only run is among them (issue #1225), so this follows the pages until one
+    comes back short or `total_count` runs are in hand.
+
+    Returns {"total_count", "check_runs"} passed through latest_check_runs
+    (issue #707), or None when any page fails: a partial listing can be missing
+    a check outright. Each page is read with `fetch`, _request by default;
+    --once passes fetch_with_retry, since it has no next poll to retry on.
+    """
+    fetch = fetch or _request
+    runs = []
+    page = 1
+    while True:
+        check_json = fetch(
+            "%s/commits/%s/check-runs?per_page=%d&page=%d" % (api, sha, CHECK_RUNS_PER_PAGE, page),
+            token,
+        )
+        if not check_json:
+            return None
+        page_runs = check_json.get("check_runs", [])
+        runs.extend(page_runs)
+        total = check_json.get("total_count", 0)
+        if len(page_runs) < CHECK_RUNS_PER_PAGE or len(runs) >= total:
+            break
+        page += 1
+    return latest_check_runs({"total_count": total, "check_runs": runs})
+
+
+def resolve_sha(mode, args, token, api):
+    """Return (sha, pr_json) for a --pr, --sha or --branch read of the `api` repository.
+
+    `sha` is "" when the PR or the branch head could not be fetched. `pr_json`
+    is the /pulls/{n} payload under --pr and None otherwise. Gap C: both fetches
+    retry with backoff and rate-limit awareness, so transient blips and 403/429
+    throttles are handled without hammering the API.
+    """
+    if mode == "pr":
+        pr_json = fetch_pr_with_retry(args.pr, token, api=api)
+        return (parse_pr_sha(pr_json) if pr_json else ""), pr_json
+    if mode == "branch":
+        commit_json = fetch_with_retry("%s/commits/%s" % (api, args.branch), token)
+        return (parse_commit_sha(commit_json) if commit_json else ""), None
+    return args.sha, None
+
+
+def run_once(mode, args, tag, token, api, ignored_check_regex):
+    """--once (issue #1023): print one read of a commit's check-runs, then exit.
+
+    For a reader that wants the check-runs as they stand now rather than wait
+    for CI to finish. The summary block lists each check name once, at its
+    latest run, from every page of the listing; the last line is
+    `snapshot <sha> <verdict>`, where the verdict is the raw per-check scan of
+    the checks that are not ignored: in_progress, all_passed, Blocked or Infra
+    (with the shared ` by: ` attribution), or no_checks. No mergeable_state is
+    consulted and no step or test diagnostics are fetched.
+
+    Returns 0, or 1 when the SHA or the check-runs could not be fetched.
+    """
+    sha, _ = resolve_sha(mode, args, token, api)
+    check_json = fetch_latest_check_runs(api, sha, token, fetch=fetch_with_retry) if sha else None
+    if check_json is None:
+        print("%s: could not fetch %s" % (tag, "check-runs" if sha else "SHA"))
+        sys.stdout.flush()
+        return 1
+    rows = parse_check_summary(check_json, ignored_check_regex)
+    verdict = parse_check_result(without_ignored_checks(check_json, ignored_check_regex))
+    if verdict == "Clear":  # parse_check_result's word for total_count == 0
+        verdict = "no_checks"
+    elif verdict in ("Blocked", "Infra"):
+        verdict += blocking_suffix(rows)
+    for line in format_check_summary(rows) + ["snapshot %s %s" % (sha, verdict)]:
+        print("%s: %s" % (tag, line))
+    sys.stdout.flush()
+    return 0
+
+
 # Main poll loop-----------------------------------------------------------------
 
 
@@ -1031,6 +1121,11 @@ def main(argv):
         metavar="BRANCH",
         help="A branch name to monitor; its head SHA is re-resolved every poll.",
     )
+    parser.add_argument(
+        "--once",
+        action="store_true",
+        help="Print one read of the commit's check-runs and exit, without polling.",
+    )
 
     # Per-outcome filter flags. Each outcome has an --include-* (optional regex)
     # and a --no-include-* suppressor. Defaults: all FAIL, all SKIP, no PASS.
@@ -1077,6 +1172,8 @@ def main(argv):
     outcome_filters = _parse_outcome_filters(args)
 
     mode, tag = _select_mode(args)
+    if args.once and mode == "run":
+        parser.error("--once reads a commit's check-runs; use it with --pr, --sha or --branch")
 
     # Configurable run/artifact/step/marker behavior (issue #500). Loaded once at
     # startup and threaded into the parsers below; a missing or invalid config
@@ -1087,6 +1184,9 @@ def main(argv):
     deferred_verdict_step_regex = config["deferred_verdict_step_regex"]
     test_marker_regex = config["test_marker_regex"]
     ignored_check_regex = config["ignored_check_regex"]
+
+    if args.once:
+        return run_once(mode, args, tag, token, api, ignored_check_regex)
 
     last_output_ts = time.time()
 
@@ -1150,13 +1250,9 @@ def main(argv):
             targets = explicit_targets
         else:
             if check_json is None:
-                check_json = _request("%s/commits/%s/check-runs" % (api, sha), token)
-                # Collapse same-named re-runs (issue #707) on the drain's own
-                # self-fetch too, so a stale run's jobs are not tracked; the
-                # main-loop caller already passes a collapsed check_json, and
-                # re-collapsing that is a no-op.
-                if check_json:
-                    check_json = latest_check_runs(check_json)
+                # Collapsed on the drain's own self-fetch too (issue #707), so
+                # a stale run's jobs are not tracked.
+                check_json = fetch_latest_check_runs(api, sha, token)
             targets = parse_actions_targets(check_json) if check_json else []
         if not targets:
             return emitted[0]
@@ -1291,19 +1387,10 @@ def main(argv):
         # Resolve this poll's sha (mode-specific) and check for the one
         # mode-specific early terminal (--pr's merged/closed short-circuit;
         # issue #603 keeps that concept --pr-only, per Gap A below).
-        if mode == "pr":
-            # Gap C--retry the SHA fetch with backoff and rate-limit awareness
-            # instead of a flat 30s retry, so transient blips and 403/429
-            # throttles are handled without hammering the API.
-            pr_json = fetch_pr_with_retry(args.pr, token, api=api)
-            sha = parse_pr_sha(pr_json) if pr_json else ""
-        elif mode == "sha":
-            sha = args.sha
-        elif mode == "branch":
-            commit_json = fetch_with_retry("%s/commits/%s" % (api, args.branch), token)
-            sha = parse_commit_sha(commit_json) if commit_json else ""
-        else:  # mode == "run"
+        if mode == "run":
             sha = None  # --run-id resolves head_sha from the run object below
+        else:
+            sha, pr_json = resolve_sha(mode, args, token, api)
 
         if mode != "run" and not sha:
             # Throttle the noise: only surface the failure after >120s of
@@ -1345,15 +1432,13 @@ def main(argv):
             summary_rows = []
             poll_signals(sha, explicit_targets=[(str(args.run_id), None)])
         else:
-            check_json = _request("%s/commits/%s/check-runs" % (api, sha), token)
-            # Collapse same-named check runs to the latest each (issue #707) so a
-            # stale conclusion from an earlier re-run of a named check does not
-            # outvote its authoritative latest run. The one collapsed payload
-            # then drives the verdict, the summary, and poll_signals' target
+            # Collapsed to the latest run per name (issue #707) so a stale
+            # conclusion from an earlier run of a named check does not outvote
+            # its authoritative latest run. The one collapsed payload then
+            # drives the verdict, the summary, and poll_signals' target
             # discovery, keeping all three consistent with GitHub's own
             # mergeable_state.
-            if check_json:
-                check_json = latest_check_runs(check_json)
+            check_json = fetch_latest_check_runs(api, sha, token)
             # The verdict skips ignored checks; the summary lists them all.
             result = (
                 parse_check_result(without_ignored_checks(check_json, ignored_check_regex))
