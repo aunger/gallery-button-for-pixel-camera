@@ -15,17 +15,22 @@ import re
 import urllib.error
 import urllib.request
 
-# A coordinate's host follows from its group, not from its artifact name:
+# Each entry is matched against the start of "group:artifact", because an
+# artifact name says nothing about the host:
 # com.davemorrissey.labs:subsampling-scale-image-view-androidx is served by
-# Maven Central despite ending in "androidx". That is the case a loose
-# "*androidx*" exclude pattern would wrongly exempt, and the reason this
-# classification keys off the group alone.
+# Maven Central despite ending in "androidx", the case a loose "*androidx*"
+# exclude pattern would wrongly exempt. Most entries name a group prefix,
+# since most groups are served from one host. A group split between hosts
+# needs an entry naming the artifact. maven.google.com lists
+# org.jetbrains.kotlin only for a few experimental builds, so an entry for one
+# of them is "org.jetbrains.kotlin:kotlin-compiler-embeddable", where
+# "org.jetbrains.kotlin" would also take kotlin-stdlib, which Maven Central
+# serves.
 #
-# Each entry is matched against the start of "group:artifact". The list is a
-# model of what Google's Maven repository serves, small enough to read, and it
-# is not the authority: scripts/ci/test_gradle_coordinates.py asks
-# https://maven.google.com about every coordinate the gradle entries declare,
-# and fails when this list classes one differently (issue #914).
+# The list is a model of what Google's Maven repository serves, small enough
+# to read, and it is not the authority: scripts/ci/test_gradle_coordinates.py
+# asks https://maven.google.com about every coordinate the gradle entries
+# declare, and fails when this list classes one differently (issue #914).
 #
 # That check is what stops the model failing quietly. A Google-hosted group
 # outside these prefixes (com.google.firebase, say) would be classed
@@ -167,8 +172,11 @@ def google_maven_artifacts(group, timeout=30):
     org.jetbrains.kotlin, for a few experimental builds, while kotlin-stdlib and
     the rest of that group are served by Maven Central.
 
-    Raises urllib.error.URLError (an HTTPError for any status but 404) when the
-    repository cannot be reached or does not answer with an index.
+    Raises urllib.error.URLError when no connection can be made, and its
+    HTTPError subclass for any status but 404. Other failures are not wrapped:
+    a connection that drops or times out mid-response raises what http.client
+    or socket raises, and a body that is not XML (a captive portal's page, say)
+    raises the XML parser's error.
     """
     try:
         # The URL is built from GOOGLE_MAVEN_URL; the file:// risk does not apply.

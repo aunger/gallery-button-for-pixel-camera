@@ -53,8 +53,12 @@
 # and keeps the delay for the Central-hosted ones, where dates resolve
 # correctly. These checks assert both halves of that against the coordinates
 # actually declared in each entry's Gradle manifest, rather than against a
-# list duplicated here, so adding a Google-hosted dependency that the patterns
-# do not cover fails the check instead of going quiet.
+# list duplicated here. So adding a Google-hosted dependency that the patterns
+# do not cover fails a check instead of going quiet: this file's, when the
+# prefix model in scripts/ci/gradle_coordinates.py classes it Google-hosted,
+# and otherwise scripts/ci/test_gradle_coordinates.py's, which asks
+# https://maven.google.com and fails on a coordinate the model classes wrongly
+# (issue #914).
 #
 # The third family, the grouping and pull request limit checks, guards the
 # starvation #872 fixed (issue #873). Dependabot proposes nothing once an

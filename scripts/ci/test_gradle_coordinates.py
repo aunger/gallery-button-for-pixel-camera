@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
 """Tests for gradle_coordinates, the Gradle reader behind scripts/test_dependabot_config.sh.
 
-The live test at the foot of this file is what holds GOOGLE_MAVEN_COORDINATE_PREFIXES
-to the repository it models (issue #914). The Dependabot config guard classes
-each declared coordinate as Google- or Central-hosted by prefix and requires
-cooldown to exempt the first kind and hold the second. A coordinate the prefixes
-class wrongly turns that requirement around: a Google-hosted one classed
-Central-hosted is demanded the cooldown that hides its bumps (issue #905). So
-this asks https://maven.google.com about every coordinate the gradle entries in
-.github/dependabot.yml declare, and fails on any the prefixes disagree with.
+The live test at the foot of this file is what holds
+GOOGLE_MAVEN_COORDINATE_PREFIXES to the repository it models (issue #914). The
+Dependabot config guard classes each declared coordinate as Google- or
+Central-hosted by prefix and requires cooldown to exempt the first kind and
+hold the second. A coordinate the prefixes class wrongly turns that requirement
+around: a Google-hosted one classed Central-hosted is demanded the cooldown
+that hides its bumps (issue #905). So this asks https://maven.google.com about
+every coordinate the gradle entries in .github/dependabot.yml declare, and
+fails on any the prefixes disagree with.
 
-It needs the network. Outside GitHub Actions an unreachable repository skips it;
-under GitHub Actions it fails, since the build there resolves from the same
-repository and a skip would let the check lapse unnoticed.
+It needs the network. Outside GitHub Actions, a repository it cannot connect to
+skips it, while a connection that fails partway or an answer that is not an
+index errors (see google_maven_artifacts). Under GitHub Actions every failure is
+an error, since the build there resolves from the same repository and a skip
+would let the check lapse unnoticed.
 """
 
 import os
