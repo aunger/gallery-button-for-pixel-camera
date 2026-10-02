@@ -20,3 +20,19 @@ A helper left at its top level can be overwritten or run by another agent, which
 
 The second point is what catches a crossed result; the first only makes one rarer.
 `.claude/hooks/post-tool-use-scratchpad-isolation.sh` warns a worktree agent whose `Bash` command, or `Write`, `Edit` or `NotebookEdit` path, reaches the scratchpad outside its subdirectory.
+
+## Reading a commit's check-runs
+
+A commit keeps every check-run ever attached to it.
+A re-run adds a run of the same name without retiring the earlier one, and each label event on a PR re-fires the `No blocking labels` gate, so one head commit can carry several failures of a check that is now green.
+GitHub judges a required check by the latest run of its name on the commit, and so must you.
+
+- Prefer `python3 scripts/ci_monitor/ci_monitor.py --pr <N>` or `--sha <SHA>` (usage in `scripts/ci_monitor/README.md`).
+  Its per-check summary block, printed before its terminal line, is already collapsed to the latest run per name by `latest_check_runs` (`scripts/ci_monitor/ci_monitor.py:380`).
+  It reads only the first page of the listing until issue #1225 is fixed, so a check with no row may have run anyway.
+- If you read the raw listing instead (`GET /repos/{owner}/{repo}/commits/{sha}/check-runs`, or the `get_check_runs` method of `mcp__github__pull_request_read`), keep only the run with the highest `id` for each `name` before reading or counting any conclusion.
+  Judge recency by `id`, not `started_at`, which is null on a run still queued (issue #719).
+- Read every page of the raw listing, until you hold `total_count` runs.
+  The default page is 30 runs, newest first, and accumulated label-gate runs can push a check's only run off it (issue #1225).
+
+The Orchestrator fetches no check-runs at all (rule 4 of "Orchestrator communication discipline" in `agents/dev_orchestration.md`); this section is for every other role.
