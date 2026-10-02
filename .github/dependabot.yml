@@ -40,12 +40,14 @@
 # The one exception is androidx.compose:compose-bom, declared identically under both androidTestImplementation and the shipping implementation block; it stays ungrouped and travels with the app-runtime Compose bump instead, since grouping it would fold a shipping dependency into the test group.
 # androidx.test* is scoped to the "androidx.test" package prefix, so it does not capture the shipping androidx.core, androidx.lifecycle, androidx.activity, androidx.compose, or androidx.viewpager2 artifacts.
 #
-# What the runs since have shown (issue #873): grouping does what it was added for.
-# The 2026-08-11 run closed #845 through #849 as superseded by one grouped pull request, #874, and dependabot-verification-metadata-regen.yml then ran once for the whole group instead of once per package.
-# The raised limit is a different matter: no run has yet wanted a sixth pull request open at once, so nothing observed distinguishes a limit of 10 from the old 5.
-# The 2026-08-18 run opened five (#899 through #903) from an empty slate; the 2026-08-20 run opened two more (#915, #916) against three still open. Both landed exactly on five.
+# What the runs since have shown (issue #873): both keys do what they were added for.
+# Grouping: the 2026-08-11 run closed #845 through #849 as superseded by one grouped pull request, #874, and dependabot-verification-metadata-regen.yml then ran once for the whole group instead of once per package.
+# The raised limit: the 2026-09-14 run opened #1116 while five pull requests from this entry were already open (#900, #901, #903, #915, #916), and the 2026-09-28 run opened #1186 against five (#900, #915, #916, #1117, #1145).
+# GitHub documents the limit as raising no further version-update pull request once that many are open, so a limit of 5 would have held both back.
+# Both were test-dependencies group pull requests.
+# That a group pull request counts toward the limit like any other is read from that documentation, which makes no exception for groups, rather than observed: the limit is applied by GitHub's service, not by dependabot-core.
 #
-# scripts/test_dependabot_config.sh guards the property the raise was for rather than that observation: it counts the pull requests this entry's coordinates can want open at once, one per non-empty group plus one per ungrouped coordinate, and requires the limit to exceed that count.
+# scripts/test_dependabot_config.sh guards the property the raise was for rather than any one run's outcome: it counts the pull requests this entry's coordinates can want open at once, one per non-empty group plus one per ungrouped coordinate, and requires the limit to exceed that count.
 # It fails at 9 against the default of 5 this file used to inherit, which is the starvation #871 reported, and it fails at 9 against 9 too: a limit equal to the count covers exactly what today's manifest can want and starves the next ungrouped coordinate added to it (issue #937).
 # Today's 9 against 10 passes with one slot to spare, so the check goes red on the pull request that adds a tenth ungrouped shipping coordinate rather than on the one after it, and the failure names the limit to raise it to.
 # It asserts both directions of the grouping claim above too: every test-only coordinate lands in a group, and no group takes a coordinate that ships in the APK, which is what keeps each app-runtime dependency in a pull request and a review of its own.
