@@ -561,8 +561,9 @@ def format_check_summary(rows):
 # would print a broken build as though a procedure were merely pending. A
 # process label holding the gate reaches `Blocked` only while the gate counts
 # toward the verdict; once `ignored_check_regex` matches it, as this repo's
-# config does, the red gate is dropped and `mergeable_state=blocked` reaches
-# `Infra`. `Infra` stays alarming for the same reason (issue #966).
+# config does, the red gate is dropped from the verdict, and a red required
+# gate leaves `mergeable_state=blocked`, which reaches `Infra`. `Infra` stays
+# alarming for the same reason (issue #966).
 #
 # A draft keeps this word even when a check failed: the word says the draft
 # cannot merge, and the ` by: ` attribution says which checks did not pass.
