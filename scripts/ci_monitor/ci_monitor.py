@@ -904,6 +904,18 @@ def fetch_pr_with_retry(pr, token, attempts=3, base_delay=2):
     return fetch_with_retry(url, token, attempts=attempts, base_delay=base_delay)
 
 
+def fetch_latest_check_runs(sha, token):
+    """Fetch `sha`'s check-runs, collapsed to the latest run per name.
+
+    Returns the /commits/{sha}/check-runs payload passed through
+    latest_check_runs (issue #707), or None when the request fails.
+    """
+    check_json = _request(
+        "%s/repos/%s/%s/commits/%s/check-runs" % (API_BASE, OWNER, REPO, sha), token
+    )
+    return latest_check_runs(check_json) if check_json else None
+
+
 # Main poll loop-----------------------------------------------------------------
 
 
@@ -1101,15 +1113,9 @@ def main(argv):
             targets = explicit_targets
         else:
             if check_json is None:
-                check_json = _request(
-                    "%s/repos/%s/%s/commits/%s/check-runs" % (API_BASE, OWNER, REPO, sha), token
-                )
-                # Collapse same-named re-runs (issue #707) on the drain's own
-                # self-fetch too, so a stale run's jobs are not tracked; the
-                # main-loop caller already passes a collapsed check_json, and
-                # re-collapsing that is a no-op.
-                if check_json:
-                    check_json = latest_check_runs(check_json)
+                # Collapsed on the drain's own self-fetch too (issue #707), so
+                # a stale run's jobs are not tracked.
+                check_json = fetch_latest_check_runs(sha, token)
             targets = parse_actions_targets(check_json) if check_json else []
         if not targets:
             return emitted[0]
@@ -1303,17 +1309,13 @@ def main(argv):
             summary_rows = []
             poll_signals(sha, explicit_targets=[(str(args.run_id), None)])
         else:
-            check_json = _request(
-                "%s/repos/%s/%s/commits/%s/check-runs" % (API_BASE, OWNER, REPO, sha), token
-            )
-            # Collapse same-named check runs to the latest each (issue #707) so a
-            # stale conclusion from an earlier re-run of a named check does not
-            # outvote its authoritative latest run. The one collapsed payload
-            # then drives the verdict, the summary, and poll_signals' target
+            # Collapsed to the latest run per name (issue #707) so a stale
+            # conclusion from an earlier run of a named check does not outvote
+            # its authoritative latest run. The one collapsed payload then
+            # drives the verdict, the summary, and poll_signals' target
             # discovery, keeping all three consistent with GitHub's own
             # mergeable_state.
-            if check_json:
-                check_json = latest_check_runs(check_json)
+            check_json = fetch_latest_check_runs(sha, token)
             # The verdict skips ignored checks; the summary lists them all.
             result = (
                 parse_check_result(without_ignored_checks(check_json, ignored_check_regex))
