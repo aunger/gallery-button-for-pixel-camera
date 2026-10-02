@@ -24,6 +24,8 @@ an all-passed check verdict--no `mergeable_state` gating (that concept is
 Options:
     --repo OWNER/REPO  The repository to poll. Defaults to $GITHUB_REPOSITORY,
                        then to DEFAULT_REPOSITORY (this repository).
+    --config PATH      The config file to load. Defaults to
+                       ci_monitor.config.json next to this script.
 
 Environment:
     GITHUB_TOKEN       GitHub token used for the REST calls (required).
@@ -73,9 +75,10 @@ def _repository_arg(value):
 
 # Configurable behavior (issue #500). Each tunable is a regex with an in-code
 # default; the committed scripts/ci_monitor/ci_monitor.config.json overrides the
-# defaults with this repo's specifics. load_config() reads that file, falling
-# back to these defaults when the file is absent, unreadable, invalid, or missing
-# a key, so the resilient poll loop never aborts on configuration.
+# defaults with this repo's specifics. load_config() reads that file, or the one
+# --config names, falling back to these defaults when the file is absent,
+# unreadable, invalid, or missing a key, so the resilient poll loop never aborts
+# on configuration.
 
 # Match (re.search) against an artifact's `name` to decide whether it carries
 # per-test ndjson markers worth downloading. Preserves the historical
@@ -116,7 +119,8 @@ DEFAULT_IGNORED_CHECK_REGEX = r"(?!)"
 def load_config(path=None):
     """Load the CI Monitor config, falling back to in-code defaults.
 
-    Returns a dict with keys artifact_name_regex, interesting_step_regex,
+    `path` is the --config value; None means ci_monitor.config.json next to
+    this script. Returns a dict with keys artifact_name_regex, interesting_step_regex,
     deferred_verdict_step_regex, test_marker_regex, and ignored_check_regex.
     A missing file, unreadable file, or invalid JSON falls back entirely to the
     DEFAULT_* regexes (the Monitor must never abort on config). Each key
@@ -1051,6 +1055,12 @@ def main(argv):
             help="Suppress all %s markers." % outcome.upper(),
         )
 
+    parser.add_argument(
+        "--config",
+        metavar="PATH",
+        default=None,
+        help="The config file to load (default: ci_monitor.config.json next to the script).",
+    )
     # argparse runs a string default through `type` too, so a malformed
     # $GITHUB_REPOSITORY is rejected the same way a malformed --repo is.
     parser.add_argument(
@@ -1071,7 +1081,7 @@ def main(argv):
     # Configurable run/artifact/step/marker behavior (issue #500). Loaded once at
     # startup and threaded into the parsers below; a missing or invalid config
     # falls back to the DEFAULT_* regexes without aborting the loop.
-    config = load_config()
+    config = load_config(args.config)
     artifact_name_regex = config["artifact_name_regex"]
     interesting_step_regex = config["interesting_step_regex"]
     deferred_verdict_step_regex = config["deferred_verdict_step_regex"]

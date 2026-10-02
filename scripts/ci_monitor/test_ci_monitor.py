@@ -125,6 +125,8 @@ Covers:
   (bl) #1111 main(): the polled repository comes from --repo, then
        $GITHUB_REPOSITORY, then DEFAULT_REPOSITORY; a malformed value from
        either source is a usage error before any request
+  (bm) #1111 main(): --config PATH is the file load_config() reads; without
+       it, load_config() gets None and reads the file next to the script
 
 No network calls required; no GITHUB_TOKEN needed.
 Run this file directly to execute the suite: exits 0 on success, non-zero on failure.
@@ -307,7 +309,7 @@ MPR_BLOCKED = {"merged": False, "state": "open", "mergeable_state": "blocked"}
 
 
 def main() -> int:
-    """Run every check (a) through (bl) and print PASS/FAIL for each.
+    """Run every check (a) through (bm) and print PASS/FAIL for each.
 
     Returns 1 if any check failed, 0 otherwise.
     Only runs when this file is executed directly; see the __main__ guard below.
@@ -6412,6 +6414,44 @@ def main() -> int:
                 "%s exits 2 with an OWNER/REPO usage error before any request" % label_bl,
                 "%s: exit %r, stderr %r" % (label_bl, e.code, err_bl.getvalue()),
             )
+
+    # ── (bm) #1111 --config PATH ──────────────────────────────────────────────────
+    print("\n=== (bm) #1111 main(): --config names the file load_config() reads ===")
+
+    def _config_paths_bm(argv):
+        """Run main() on a merged PR and return the paths load_config() was given."""
+        with (
+            unittest.mock.patch.object(
+                ci_monitor, "load_config", wraps=ci_monitor.load_config
+            ) as spy_bm,
+            unittest.mock.patch.object(
+                ci_monitor,
+                "_request",
+                return_value={"head": {"sha": "feedface"}, "merged": True, "state": "closed"},
+            ),
+            unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None),
+            unittest.mock.patch("sys.stdout", new=io.StringIO()),
+            unittest.mock.patch("sys.stderr", new=io.StringIO()),
+        ):
+            ci_monitor.main(["ci_monitor.py", "--pr", "7"] + argv)
+        return [c.args for c in spy_bm.call_args_list]
+
+    _p_bm = _write_tmp("{}")
+    try:
+        got_bm = _config_paths_bm(["--config", _p_bm])
+    finally:
+        os.remove(_p_bm)
+    check(
+        got_bm == [(_p_bm,)],
+        "--config PATH is passed to load_config() exactly once",
+        "expected [(%r,)], got %r" % (_p_bm, got_bm),
+    )
+    got_bm_default = _config_paths_bm([])
+    check(
+        got_bm_default == [(None,)],
+        "without --config, load_config() gets None (the file next to the script)",
+        "expected [(None,)], got %r" % (got_bm_default,),
+    )
 
     # ── Summary ────────────────────────────────────────────────────────────────────
     print("\nResults: %d passed, %d failed." % (PASS, FAIL))
