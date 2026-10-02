@@ -171,10 +171,11 @@
 # and checks the matching check fails.
 #
 # What this cannot check is whether GitHub's Dependabot service accepts the
-# file and whether a run actually opens pull requests, or honors the raised
-# limit when a sixth pull request is wanted. Only a live run on the default
-# branch shows that; it starts within about three minutes of any change to
-# this file landing.
+# file and whether a run actually opens pull requests, or honors the limit the
+# file sets. Only a live run on the default branch shows that; it starts within
+# about three minutes of any change to .github/dependabot.yml landing. The
+# gradle entry's runs have since shown its grouping and its raised limit at
+# work, as that file records (issue #873).
 #
 # Always exits 0 on success, non-zero on failure.
 
