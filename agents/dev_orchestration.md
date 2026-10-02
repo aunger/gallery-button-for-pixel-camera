@@ -294,8 +294,8 @@ If the Reviewer requested changes, additionally apply this transition to the sam
 | ------------------- |
 | `changes requested` |
 
-Whether a PR exists decides which routing fence applies.
-If no PR exists, there is no diff or CI to run, so follow the no-PR routing fence; if a PR exists, follow the Monitor loop fence.
+Whether a PR exists decides which routing applies.
+If no PR exists, there is no diff or CI to run, so follow the no-PR routing below; if a PR exists, follow the PR routing (Monitor loop) below.
 Decide it afresh each round rather than carrying the last round's answer over: an Author may have opened a PR this time, or closed the one it opened and switched to declining (see "Changing position" in `pr_participation.md`).
 
 No-PR routing:
