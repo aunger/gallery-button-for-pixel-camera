@@ -276,7 +276,7 @@ def check_runs_payload(*pairs):
     """
     runs = []
     for run_id, job_id in pairs:
-        url = "https://github.com/%s/%s/actions/runs/%s" % (OWNER_T, REPO_T, run_id)
+        url = "https://github.com/%s/actions/runs/%s" % (REPOSITORY_T, run_id)
         if job_id is not None:
             url += "/job/%s" % job_id
         runs.append(
@@ -290,8 +290,7 @@ def check_runs_payload(*pairs):
     return {"total_count": len(runs), "check_runs": runs}
 
 
-OWNER_T = ci_monitor.OWNER
-REPO_T = ci_monitor.REPO
+REPOSITORY_T = ci_monitor.DEFAULT_REPOSITORY
 
 # Issue #748: on the --pr Blocked/Infra path the monitor now re-fetches /pulls for
 # mergeable_state before terminating (mirroring the all_passed path), and emits the
@@ -4411,7 +4410,7 @@ def main() -> int:
         "fetch_pr_with_retry returns fetch_with_retry's result",
         "expected the delegate's return value; got %r" % got_as,
     )
-    expected_url_as = "%s/repos/%s/%s/pulls/999" % (ci_monitor.API_BASE, OWNER_T, REPO_T)
+    expected_url_as = "%s/repos/%s/pulls/999" % (ci_monitor.API_BASE, REPOSITORY_T)
     check(
         len(delegate_calls_as) == 1 and delegate_calls_as[0][0] == expected_url_as,
         "fetch_pr_with_retry builds the same /pulls/{n} URL as before and calls"
@@ -4570,8 +4569,7 @@ def main() -> int:
     # Cross-host redirect (the real bug: api.github.com -> *.blob.core.windows.net,
     # a SAS-signed URL that itself rejects an unexpected bearer Authorization header).
     cross_host_req = ci_monitor.urllib.request.Request(
-        "%s/repos/%s/%s/actions/artifacts/1/zip"
-        % (ci_monitor.API_BASE, ci_monitor.OWNER, ci_monitor.REPO)
+        "%s/actions/artifacts/1/zip" % ci_monitor.repo_api(REPOSITORY_T)
     )
     cross_host_req.add_header("Authorization", "Bearer sekrit")
     cross_host_req.add_header("Accept", "application/vnd.github+json")
@@ -4595,8 +4593,7 @@ def main() -> int:
     # Same-host redirect: Authorization is not the cross-host leak this guards
     # against, so it is left intact.
     same_host_req = ci_monitor.urllib.request.Request(
-        "%s/repos/%s/%s/actions/artifacts/1/zip"
-        % (ci_monitor.API_BASE, ci_monitor.OWNER, ci_monitor.REPO)
+        "%s/actions/artifacts/1/zip" % ci_monitor.repo_api(REPOSITORY_T)
     )
     same_host_req.add_header("Authorization", "Bearer sekrit")
     same_host_redirected = _redirect_handler.redirect_request(
@@ -4605,8 +4602,7 @@ def main() -> int:
         302,
         "Found",
         {},
-        "%s/repos/%s/%s/actions/artifacts/1/zip/redirected"
-        % (ci_monitor.API_BASE, ci_monitor.OWNER, ci_monitor.REPO),
+        "%s/actions/artifacts/1/zip/redirected" % ci_monitor.repo_api(REPOSITORY_T),
     )
     check(
         same_host_redirected is not None
@@ -4642,8 +4638,7 @@ def main() -> int:
         ),
     ):
         got_raw = ci_monitor._request(
-            "%s/repos/%s/%s/actions/artifacts/1/zip"
-            % (ci_monitor.API_BASE, ci_monitor.OWNER, ci_monitor.REPO),
+            "%s/actions/artifacts/1/zip" % ci_monitor.repo_api(REPOSITORY_T),
             "tok",
             raw=True,
         )
@@ -4790,7 +4785,7 @@ def main() -> int:
                 "conclusion": "success",
                 "started_at": "2026-07-16T16:57:43Z",
                 "app": {"slug": "github-actions"},
-                "details_url": "https://github.com/%s/%s/actions/runs/111" % (OWNER_T, REPO_T),
+                "details_url": "https://github.com/%s/actions/runs/111" % REPOSITORY_T,
             },
             {
                 "id": 87687158072,
@@ -4799,7 +4794,7 @@ def main() -> int:
                 "conclusion": "failure",
                 "started_at": "2026-07-16T16:58:25Z",
                 "app": {"slug": "github-actions"},
-                "details_url": "https://github.com/%s/%s/actions/runs/222" % (OWNER_T, REPO_T),
+                "details_url": "https://github.com/%s/actions/runs/222" % REPOSITORY_T,
             },
             {
                 "id": 87688242514,
@@ -4808,7 +4803,7 @@ def main() -> int:
                 "conclusion": "success",
                 "started_at": "2026-07-16T17:02:58Z",
                 "app": {"slug": "github-actions"},
-                "details_url": "https://github.com/%s/%s/actions/runs/333" % (OWNER_T, REPO_T),
+                "details_url": "https://github.com/%s/actions/runs/333" % REPOSITORY_T,
             },
         ],
     }

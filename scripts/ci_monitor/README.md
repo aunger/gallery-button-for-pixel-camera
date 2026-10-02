@@ -13,7 +13,7 @@ Which checks matter is policy, stated by the Monitor's consumers: the Orchestrat
 
 Two known exceptions remain:
 
-- `OWNER` and `REPO` are hardcoded in `ci_monitor.py` (#1111).
+- The repository it polls, `DEFAULT_REPOSITORY`, is hardcoded in `ci_monitor.py` (#1111).
 - The `artifact_name_regex` default, `^testresults-`, is this repository's historical artifact prefix (`ci_monitor.py:58`).
 
 ## Running the monitor
@@ -46,7 +46,7 @@ A failing NON-required check (for example an advisory label linter) leaves `merg
 
 `--run-id` additionally does not fetch `/commits/{sha}/check-runs` at all--it resolves its verdict from the run object itself (`GET /actions/runs/{run_id}`, which carries `status`/`conclusion`/`head_sha` directly), and scopes step/artifact diagnostics to that one run's jobs. This keeps `--run-id` immune to an unrelated check on the same commit (e.g. this repo's `semgrep.yml`, which also runs on every commit) confusing its verdict--the problem `--pr`/`--sha`/`--branch` modes can in principle have if unrelated checks land on the same commit.
 
-`OWNER`/`REPO` default to this repo at the top of the script, and it reads `$GITHUB_TOKEN` from the environment (required).
+`DEFAULT_REPOSITORY` names this repo at the top of the script, and it reads `$GITHUB_TOKEN` from the environment (required).
 The script catches transient REST/parse failures per call so they cannot kill the resilient poll loop.
 
 In `--pr`/`--sha`/`--branch` modes, the Monitor discovers which workflow run(s) and job(s) to track from the `/commits/{sha}/check-runs` payload, by parsing each GitHub Actions check run's `details_url` for its `(run_id, job_id)` (gated on `app.slug == "github-actions"`, with a `/actions/runs/` URL-pattern fallback when the `app` block is absent).
