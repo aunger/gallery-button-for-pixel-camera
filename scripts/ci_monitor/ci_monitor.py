@@ -1064,8 +1064,10 @@ def main(argv):
         default=None,
         help="The config file to load (default: ci_monitor.config.json next to the script).",
     )
-    # argparse runs a string default through `type` too, so a malformed
-    # $GITHUB_REPOSITORY is rejected the same way a malformed --repo is.
+    # argparse runs a string default through `type` when the option is absent,
+    # so a malformed $GITHUB_REPOSITORY is rejected the way a malformed --repo
+    # is. When --repo is given, the default is never checked: the flag wins
+    # over a malformed ambient variable.
     parser.add_argument(
         "--repo",
         metavar="OWNER/REPO",

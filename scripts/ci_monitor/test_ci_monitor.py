@@ -124,7 +124,8 @@ Covers:
        the summary, marked [ignored]
   (bl) #1111 main(): the polled repository comes from --repo, then
        $GITHUB_REPOSITORY, then DEFAULT_REPOSITORY; a malformed value from
-       either source is a usage error before any request
+       the source used is a usage error before any request, while a valid
+       --repo wins over a malformed $GITHUB_REPOSITORY
   (bm) #1111 main(): --config PATH is the file load_config() reads; without
        it, load_config() gets None and reads the file next to the script
 
@@ -6388,6 +6389,12 @@ def main() -> int:
             "env-owner/env.repo",
             "flag_owner/flag-repo",
             "--repo over $GITHUB_REPOSITORY",
+        ),
+        (
+            ["--repo", "flag_owner/flag-repo"],
+            "no-slash",
+            "flag_owner/flag-repo",
+            "--repo over a malformed $GITHUB_REPOSITORY",
         ),
     ):
         got_bl = _first_url_bl(argv_bl, env_bl)
