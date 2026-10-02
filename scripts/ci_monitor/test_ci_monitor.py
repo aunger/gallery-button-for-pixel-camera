@@ -6382,6 +6382,7 @@ def main() -> int:
         ([], "", REPOSITORY_T, "an empty $GITHUB_REPOSITORY"),
         ([], "env-owner/env.repo", "env-owner/env.repo", "$GITHUB_REPOSITORY alone"),
         (["--repo", "flag_owner/flag-repo"], None, "flag_owner/flag-repo", "--repo alone"),
+        (["--repo", "owner/.github"], None, "owner/.github", "--repo with a leading-dot REPO"),
         (
             ["--repo", "flag_owner/flag-repo"],
             "env-owner/env.repo",
@@ -6401,6 +6402,11 @@ def main() -> int:
         (["--repo", "a/b/c"], None, "--repo with a third path segment"),
         (["--repo", "/repo"], None, "--repo with an empty owner"),
         (["--repo", "owner/r?x=1"], None, "--repo with a query character"),
+        (["--repo", "../.."], None, "--repo of two dot-dot segments"),
+        (["--repo", "owner/.."], None, "--repo with a dot-dot REPO"),
+        (["--repo", "owner/."], None, "--repo with a dot REPO"),
+        (["--repo", "./x"], None, "--repo with a dot OWNER"),
+        (["--repo", "own.er/x"], None, "--repo with a dot in OWNER"),
         ([], "no-slash", "$GITHUB_REPOSITORY with no slash"),
     ):
         err_bl = io.StringIO()

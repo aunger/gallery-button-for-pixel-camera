@@ -47,7 +47,7 @@ A failing NON-required check (for example an advisory label linter) leaves `merg
 `--run-id` additionally does not fetch `/commits/{sha}/check-runs` at all--it resolves its verdict from the run object itself (`GET /actions/runs/{run_id}`, which carries `status`/`conclusion`/`head_sha` directly), and scopes step/artifact diagnostics to that one run's jobs. This keeps `--run-id` immune to an unrelated check on the same commit (e.g. this repo's `semgrep.yml`, which also runs on every commit) confusing its verdict--the problem `--pr`/`--sha`/`--branch` modes can in principle have if unrelated checks land on the same commit.
 
 The repository polled is the one `--repo OWNER/REPO` names, else `$GITHUB_REPOSITORY` (which GitHub Actions sets to the workflow's repository), else `DEFAULT_REPOSITORY`, this repository.
-A value from either source that is not of the form `OWNER/REPO` is a usage error, reported before any request is made.
+A value from either source that GitHub could not issue as `OWNER/REPO` is a usage error, reported before any request is made: `OWNER` is letters, digits, `-` and `_`, and `REPO` adds `.` but may not be `.` or `..`, so no dot segment reaches a request path.
 The script reads `$GITHUB_TOKEN` from the environment (required).
 The script catches transient REST/parse failures per call so they cannot kill the resilient poll loop.
 

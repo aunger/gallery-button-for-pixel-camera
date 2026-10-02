@@ -60,13 +60,16 @@ def repo_api(repository):
 
 
 def _repository_arg(value):
-    """argparse type for --repo: an "OWNER/REPO" pair of GitHub name characters.
+    """argparse type for --repo: an "OWNER/REPO" pair that GitHub could name.
 
-    The value is interpolated into every REST URL, so anything else (a missing
-    half, a third path segment, a query character) is a usage error rather than
-    a request to some other endpoint.
+    OWNER is letters, digits, `-` and `_` (a GitHub login has no `.`); REPO adds
+    `.` but may not be `.` or `..`, which GitHub reserves. The value is
+    interpolated into every REST URL, so anything else (a missing half, a third
+    path segment, a dot segment, a query character) is a usage error rather
+    than a request to some other endpoint.
     """
-    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", value):
+    match = re.fullmatch(r"[A-Za-z0-9_-]+/([A-Za-z0-9_.-]+)", value)
+    if not match or match.group(1) in (".", ".."):
         raise argparse.ArgumentTypeError(
             "expected OWNER/REPO (from --repo or $GITHUB_REPOSITORY), got %r" % value
         )
