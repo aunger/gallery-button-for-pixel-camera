@@ -940,6 +940,25 @@ def fetch_latest_check_runs(sha, token):
     return latest_check_runs({"total_count": total, "check_runs": runs})
 
 
+def resolve_sha(mode, args, token):
+    """Return (sha, pr_json) for a --pr, --sha or --branch read.
+
+    `sha` is "" when the PR or the branch head could not be fetched. `pr_json`
+    is the /pulls/{n} payload under --pr and None otherwise. Gap C: both fetches
+    retry with backoff and rate-limit awareness, so transient blips and 403/429
+    throttles are handled without hammering the API.
+    """
+    if mode == "pr":
+        pr_json = fetch_pr_with_retry(args.pr, token)
+        return (parse_pr_sha(pr_json) if pr_json else ""), pr_json
+    if mode == "branch":
+        commit_json = fetch_with_retry(
+            "%s/repos/%s/%s/commits/%s" % (API_BASE, OWNER, REPO, args.branch), token
+        )
+        return (parse_commit_sha(commit_json) if commit_json else ""), None
+    return args.sha, None
+
+
 # Main poll loop-----------------------------------------------------------------
 
 
@@ -1275,21 +1294,10 @@ def main(argv):
         # Resolve this poll's sha (mode-specific) and check for the one
         # mode-specific early terminal (--pr's merged/closed short-circuit;
         # issue #603 keeps that concept --pr-only, per Gap A below).
-        if mode == "pr":
-            # Gap C--retry the SHA fetch with backoff and rate-limit awareness
-            # instead of a flat 30s retry, so transient blips and 403/429
-            # throttles are handled without hammering the API.
-            pr_json = fetch_pr_with_retry(args.pr, token)
-            sha = parse_pr_sha(pr_json) if pr_json else ""
-        elif mode == "sha":
-            sha = args.sha
-        elif mode == "branch":
-            commit_json = fetch_with_retry(
-                "%s/repos/%s/%s/commits/%s" % (API_BASE, OWNER, REPO, args.branch), token
-            )
-            sha = parse_commit_sha(commit_json) if commit_json else ""
-        else:  # mode == "run"
+        if mode == "run":
             sha = None  # --run-id resolves head_sha from the run object below
+        else:
+            sha, pr_json = resolve_sha(mode, args, token)
 
         if mode != "run" and not sha:
             # Throttle the noise: only surface the failure after >120s of
