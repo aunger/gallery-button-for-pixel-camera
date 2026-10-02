@@ -21,8 +21,13 @@ an all-passed check verdict--no `mergeable_state` gating (that concept is
 --pr-only). See scripts/ci_monitor/README.md for the per-mode output prefixes
 (PR#/SHA#/RUN#/BRANCH#).
 
+Options:
+    --repo OWNER/REPO  The repository to poll. Defaults to $GITHUB_REPOSITORY,
+                       then to DEFAULT_REPOSITORY (this repository).
+
 Environment:
-    GITHUB_TOKEN  GitHub token used for the REST calls (required).
+    GITHUB_TOKEN       GitHub token used for the REST calls (required).
+    GITHUB_REPOSITORY  OWNER/REPO to poll when --repo is not given.
 
 NOTE on error handling: the poll loop must survive transient REST/parse
 failures. HTTP and JSON errors are caught per-call and treated as "no data this
@@ -42,6 +47,7 @@ import urllib.parse
 import urllib.request
 import zipfile
 
+# The repository polled when neither --repo nor $GITHUB_REPOSITORY names one.
 DEFAULT_REPOSITORY = "aunger/gallery-button-for-pixel-camera"
 API_BASE = "https://api.github.com"
 
@@ -49,6 +55,20 @@ API_BASE = "https://api.github.com"
 def repo_api(repository):
     """Return the REST base URL for an "OWNER/REPO" repository."""
     return "%s/repos/%s" % (API_BASE, repository)
+
+
+def _repository_arg(value):
+    """argparse type for --repo: an "OWNER/REPO" pair of GitHub name characters.
+
+    The value is interpolated into every REST URL, so anything else (a missing
+    half, a third path segment, a query character) is a usage error rather than
+    a request to some other endpoint.
+    """
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", value):
+        raise argparse.ArgumentTypeError(
+            "expected OWNER/REPO (from --repo or $GITHUB_REPOSITORY), got %r" % value
+        )
+    return value
 
 
 # Configurable behavior (issue #500). Each tunable is a regex with an in-code
@@ -1031,9 +1051,19 @@ def main(argv):
             help="Suppress all %s markers." % outcome.upper(),
         )
 
+    # argparse runs a string default through `type` too, so a malformed
+    # $GITHUB_REPOSITORY is rejected the same way a malformed --repo is.
+    parser.add_argument(
+        "--repo",
+        metavar="OWNER/REPO",
+        type=_repository_arg,
+        default=os.environ.get("GITHUB_REPOSITORY") or DEFAULT_REPOSITORY,
+        help="The repository to poll (default: $GITHUB_REPOSITORY, then %s)." % DEFAULT_REPOSITORY,
+    )
+
     args = parser.parse_args(argv[1:])
     token = os.environ.get("GITHUB_TOKEN", "")
-    api = repo_api(DEFAULT_REPOSITORY)
+    api = repo_api(args.repo)
     outcome_filters = _parse_outcome_filters(args)
 
     mode, tag = _select_mode(args)

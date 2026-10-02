@@ -122,6 +122,9 @@ Covers:
        attribution, preceded by the undiagnosed-drain flag
   (bk) without_ignored_checks: ignored checks leave the verdict but stay in
        the summary, marked [ignored]
+  (bl) #1111 main(): the polled repository comes from --repo, then
+       $GITHUB_REPOSITORY, then DEFAULT_REPOSITORY; a malformed value from
+       either source is a usage error before any request
 
 No network calls required; no GITHUB_TOKEN needed.
 Run this file directly to execute the suite: exits 0 on success, non-zero on failure.
@@ -304,7 +307,7 @@ MPR_BLOCKED = {"merged": False, "state": "open", "mergeable_state": "blocked"}
 
 
 def main() -> int:
-    """Run every check (a) through (bj) and print PASS/FAIL for each.
+    """Run every check (a) through (bl) and print PASS/FAIL for each.
 
     Returns 1 if any check failed, 0 otherwise.
     Only runs when this file is executed directly; see the __main__ guard below.
@@ -6340,6 +6343,75 @@ def main() -> int:
         "--pr: all 6 mocked requests consumed and main() returned 0",
         "deque has %d left; rc %r" % (len(side_effects_bk2), rc_bk2),
     )
+
+    # ── (bl) #1111 --repo / $GITHUB_REPOSITORY / DEFAULT_REPOSITORY ───────────────
+    print("\n=== (bl) #1111 main(): --repo, then $GITHUB_REPOSITORY, then the default ===")
+
+    def _first_url_bl(argv, env_repo):
+        """Run main() on a merged PR and return the URLs it requested.
+
+        env_repo None removes GITHUB_REPOSITORY from the environment; a string
+        sets it. A merged PR is a terminal on the first /pulls fetch, so exactly
+        one request is made and its URL shows which repository was polled.
+        """
+        urls = []
+
+        def fake_request_bl(url, token, raw=False):
+            urls.append(url)
+            return {"head": {"sha": "feedface"}, "merged": True, "state": "closed"}
+
+        env = {k: v for k, v in os.environ.items() if k != "GITHUB_REPOSITORY"}
+        if env_repo is not None:
+            env["GITHUB_REPOSITORY"] = env_repo
+        with (
+            unittest.mock.patch.dict(os.environ, env, clear=True),
+            unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_bl),
+            unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None),
+            unittest.mock.patch("sys.stdout", new=io.StringIO()),
+        ):
+            ci_monitor.main(["ci_monitor.py", "--pr", "7"] + argv)
+        return urls
+
+    def _pulls_url_bl(repository):
+        return "%s/repos/%s/pulls/7" % (ci_monitor.API_BASE, repository)
+
+    for argv_bl, env_bl, want_bl, label_bl in (
+        ([], None, REPOSITORY_T, "neither --repo nor $GITHUB_REPOSITORY"),
+        ([], "", REPOSITORY_T, "an empty $GITHUB_REPOSITORY"),
+        ([], "env-owner/env.repo", "env-owner/env.repo", "$GITHUB_REPOSITORY alone"),
+        (["--repo", "flag_owner/flag-repo"], None, "flag_owner/flag-repo", "--repo alone"),
+        (
+            ["--repo", "flag_owner/flag-repo"],
+            "env-owner/env.repo",
+            "flag_owner/flag-repo",
+            "--repo over $GITHUB_REPOSITORY",
+        ),
+    ):
+        got_bl = _first_url_bl(argv_bl, env_bl)
+        check(
+            got_bl == [_pulls_url_bl(want_bl)],
+            "%s polls %s" % (label_bl, want_bl),
+            "%s: expected [%r], got %r" % (label_bl, _pulls_url_bl(want_bl), got_bl),
+        )
+
+    for argv_bl, env_bl, label_bl in (
+        (["--repo", "no-slash"], None, "--repo with no slash"),
+        (["--repo", "a/b/c"], None, "--repo with a third path segment"),
+        (["--repo", "/repo"], None, "--repo with an empty owner"),
+        (["--repo", "owner/r?x=1"], None, "--repo with a query character"),
+        ([], "no-slash", "$GITHUB_REPOSITORY with no slash"),
+    ):
+        err_bl = io.StringIO()
+        try:
+            with unittest.mock.patch("sys.stderr", new=err_bl):
+                urls_bl = _first_url_bl(argv_bl, env_bl)
+            _fail("%s should exit with a usage error; it requested %r" % (label_bl, urls_bl))
+        except SystemExit as e:
+            check(
+                e.code == 2 and "expected OWNER/REPO" in err_bl.getvalue(),
+                "%s exits 2 with an OWNER/REPO usage error before any request" % label_bl,
+                "%s: exit %r, stderr %r" % (label_bl, e.code, err_bl.getvalue()),
+            )
 
     # ── Summary ────────────────────────────────────────────────────────────────────
     print("\nResults: %d passed, %d failed." % (PASS, FAIL))
