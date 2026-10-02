@@ -2,12 +2,18 @@
 
 scripts/test_dependabot_config.sh reads app/build.gradle.kts through this module
 to check the gradle entry's cooldown, grouping and pull request limit against
-the coordinates it actually declares.
+the coordinates it actually declares. scripts/ci/test_gradle_coordinates.py
+checks the host classification it uses against Google's Maven repository.
+
+defusedxml is imported only where a group index is parsed, so the guard, which
+never fetches one, needs nothing beyond PyYAML.
 """
 
 import glob
 import os
 import re
+import urllib.error
+import urllib.request
 
 # A coordinate's host follows from its group, not from its artifact name:
 # com.davemorrissey.labs:subsampling-scale-image-view-androidx is served by
@@ -15,13 +21,28 @@ import re
 # "*androidx*" exclude pattern would wrongly exempt, and the reason this
 # classification keys off the group alone.
 #
-# These two prefixes cover what app/build.gradle.kts declares today, not every
-# group maven.google.com serves. A Google-hosted group outside them
-# (com.google.firebase, say) is classed Central-hosted, and the last cooldown
-# check in scripts/test_dependabot_config.sh then insists cooldown keep holding
-# it, which is the configuration that hides it. Adding such a dependency means
-# adding its prefix here as well as to the exclude list in .github/dependabot.yml.
+# Each entry is matched against the start of "group:artifact". The list is a
+# model of what Google's Maven repository serves, small enough to read, and it
+# is not the authority: scripts/ci/test_gradle_coordinates.py asks
+# https://maven.google.com about every coordinate the gradle entries declare,
+# and fails when this list classes one differently (issue #914).
+#
+# That check is what stops the model failing quietly. A Google-hosted group
+# outside these prefixes (com.google.firebase, say) would be classed
+# Central-hosted, and the last cooldown check in
+# scripts/test_dependabot_config.sh would then insist cooldown keep holding
+# it, which is the configuration that hides it (issue #905). Instead, the pull
+# request that declares it fails that test, which names the coordinate. The
+# fix is an entry here and a matching pattern in the cooldown exclude list in
+# .github/dependabot.yml.
+#
+# The guard itself does not ask the repository, so it stays an offline,
+# deterministic check that the harnesses beside it can run many times over.
 GOOGLE_MAVEN_GROUP_PREFIXES = ("androidx.", "com.google.android.")
+
+# The Google Maven repository Dependabot's maven-google registry points at. It
+# lists what it serves in one group-index.xml per group.
+GOOGLE_MAVEN_URL = "https://maven.google.com"
 
 # One dependency declaration: the Gradle configuration it is declared in, then
 # a quoted "group:artifact:version" literal. A `platform(...)` wrapper is
@@ -79,4 +100,40 @@ def declared_coordinates(manifest_path):
 
 
 def is_google_hosted(coordinate):
+    """Whether GOOGLE_MAVEN_GROUP_PREFIXES classes "group:artifact" as Google-hosted."""
     return coordinate.startswith(GOOGLE_MAVEN_GROUP_PREFIXES)
+
+
+def group_index_url(group):
+    """The group-index.xml listing what Google's Maven repository serves under a group."""
+    return "%s/%s/group-index.xml" % (GOOGLE_MAVEN_URL, group.replace(".", "/"))
+
+
+def parse_group_index(document):
+    """The artifact names a group-index.xml lists, one child element of the root each."""
+    import defusedxml.ElementTree as ET
+
+    return {child.tag for child in ET.fromstring(document)}
+
+
+def google_maven_artifacts(group, timeout=30):
+    """The artifacts Google's Maven repository serves under a group.
+
+    An empty set when it serves no such group, which it answers with a 404.
+    This names the artifacts rather than answering for the group as a whole,
+    because some groups are split between hosts: maven.google.com lists
+    org.jetbrains.kotlin, for a few experimental builds, while kotlin-stdlib and
+    the rest of that group are served by Maven Central.
+
+    Raises urllib.error.URLError (an HTTPError for any status but 404) when the
+    repository cannot be reached or does not answer with an index.
+    """
+    try:
+        # The URL is built from GOOGLE_MAVEN_URL; the file:// risk does not apply.
+        url = group_index_url(group)
+        with urllib.request.urlopen(url, timeout=timeout) as response:  # nosemgrep
+            return parse_group_index(response.read())
+    except urllib.error.HTTPError as err:
+        if err.code == 404:
+            return set()
+        raise

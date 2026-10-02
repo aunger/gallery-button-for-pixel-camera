@@ -231,8 +231,10 @@ from workflow_files import load_workflow, relative, workflow_paths  # noqa: E402
 # parsed the same way.
 from audit_requirements import discover_locks, normalize, parse_pins  # noqa: E402
 
-# The coordinates each gradle entry's manifests declare, and which of them
-# Google's Maven repository serves, for the cooldown, grouping and limit checks.
+# The coordinates each gradle entry's manifests declare, and which of them are
+# Google-hosted, for the cooldown, grouping and limit checks. The classification
+# is a prefix model that scripts/ci/test_gradle_coordinates.py holds to what
+# https://maven.google.com actually serves (issue #914).
 from gradle_coordinates import declared_coordinates, is_google_hosted, manifest_paths  # noqa: E402
 
 results = []
