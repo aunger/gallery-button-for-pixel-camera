@@ -454,6 +454,21 @@ class TestEvaluate(unittest.TestCase):
         )
         self.assertEqual(report.unignored, [])
 
+    def test_spent_entry_keyed_by_an_alias_is_stale_not_mismatched(self):
+        # The alias form of the sibling-entry case above: otherpkg's entry is
+        # keyed by CVE-1 and its finding is gone, while CVE-1 is still
+        # reported as an alias of somepkg's finding, which its own entry
+        # (keyed by the primary ID) accounts for. The spent entry comes first
+        # so the verdict cannot lean on somepkg's entry having run already.
+        spent = entry(vuln_id="CVE-1", package="otherpkg")
+        own = entry(vuln_id="PYSEC-2", package="somepkg")
+        aliased = finding(vuln_id="PYSEC-2", package="somepkg", aliases=("CVE-1",))
+        report = ar.evaluate([("lock.txt", 3, 1)], [aliased], [spent, own])
+        self.assertTrue(report.failed)
+        self.assertEqual(report.honored, [(own, aliased)])
+        self.assertEqual(report.stale, [spent])
+        self.assertEqual(report.mismatched, [])
+
     def test_two_entries_for_one_finding_are_redundant_not_stale(self):
         # Both entries match, so neither is spent; but two justifications for
         # one finding fail the audit, so they get merged into one.
