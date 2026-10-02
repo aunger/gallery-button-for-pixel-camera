@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Tests for gradle_coordinates, the Gradle reader behind scripts/test_dependabot_config.sh.
 
-The live test at the foot of this file is what holds GOOGLE_MAVEN_GROUP_PREFIXES
+The live test at the foot of this file is what holds GOOGLE_MAVEN_COORDINATE_PREFIXES
 to the repository it models (issue #914). The Dependabot config guard classes
 each declared coordinate as Google- or Central-hosted by prefix and requires
 cooldown to exempt the first kind and hold the second. A coordinate the prefixes
@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 import yaml
 
 from gradle_coordinates import (
-    GOOGLE_MAVEN_GROUP_PREFIXES,
+    GOOGLE_MAVEN_COORDINATE_PREFIXES,
     covered_directories,
     entry_declarations,
     google_maven_artifacts,
@@ -129,14 +129,14 @@ class TestDeclaredCoordinatesMatchGoogleMaven(unittest.TestCase):
                 self.assertEqual(
                     is_google_hosted(coordinate),
                     served,
-                    "%s is %s by https://maven.google.com, but GOOGLE_MAVEN_GROUP_PREFIXES %r in "
+                    "%s is %s by https://maven.google.com, but GOOGLE_MAVEN_COORDINATE_PREFIXES %r in "
                     "scripts/ci/gradle_coordinates.py classes it %s-hosted, so "
                     "scripts/test_dependabot_config.sh would demand the cooldown setting that "
                     "is wrong for it. %s (issue #914)"
                     % (
                         coordinate,
                         "served" if served else "not served",
-                        GOOGLE_MAVEN_GROUP_PREFIXES,
+                        GOOGLE_MAVEN_COORDINATE_PREFIXES,
                         "Central" if served else "Google",
                         "Add an entry matching it there, and a matching pattern to the cooldown "
                         "exclude list in .github/dependabot.yml."

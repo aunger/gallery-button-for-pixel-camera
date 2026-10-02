@@ -38,7 +38,7 @@ import urllib.request
 #
 # The guard itself does not ask the repository, so it stays an offline,
 # deterministic check that the harnesses beside it can run many times over.
-GOOGLE_MAVEN_GROUP_PREFIXES = ("androidx.", "com.google.android.")
+GOOGLE_MAVEN_COORDINATE_PREFIXES = ("androidx.", "com.google.android.")
 
 # The Google Maven repository Dependabot's maven-google registry points at. It
 # lists what it serves in one group-index.xml per group.
@@ -142,8 +142,8 @@ def entry_declarations(repo_root, directories):
 
 
 def is_google_hosted(coordinate):
-    """Whether GOOGLE_MAVEN_GROUP_PREFIXES classes "group:artifact" as Google-hosted."""
-    return coordinate.startswith(GOOGLE_MAVEN_GROUP_PREFIXES)
+    """Whether GOOGLE_MAVEN_COORDINATE_PREFIXES classes "group:artifact" as Google-hosted."""
+    return coordinate.startswith(GOOGLE_MAVEN_COORDINATE_PREFIXES)
 
 
 def group_index_url(group):
