@@ -122,6 +122,9 @@ Covers:
        attribution, preceded by the undiagnosed-drain flag
   (bk) without_ignored_checks: ignored checks leave the verdict but stay in
        the summary, marked [ignored]
+  (bl) #1225 fetch_latest_check_runs: every page of check-runs is read before
+       the collapse, a short page ends the read, a failed page fails it, and
+       main() reports a failing check that only page 2 holds
 
 No network calls required; no GITHUB_TOKEN needed.
 Run this file directly to execute the suite: exits 0 on success, non-zero on failure.
@@ -6344,6 +6347,88 @@ def main() -> int:
         len(side_effects_bk2) == 0 and rc_bk2 == 0,
         "--pr: all 6 mocked requests consumed and main() returned 0",
         "deque has %d left; rc %r" % (len(side_effects_bk2), rc_bk2),
+    )
+
+    # ── (bl) #1225 fetch_latest_check_runs reads every page ────────────────────────
+    print("\n=== (bl) #1225 fetch_latest_check_runs: every page is read, then collapsed ===")
+
+    GATE_BL = "No blocking labels"
+    # 100 gate runs fill page 1 (newest first, so the highest ids); the only
+    # build-and-test run is the oldest and lands alone on page 2.
+    PAGE1_BL = {
+        "total_count": 101,
+        "check_runs": [
+            {"id": 1000 - i, "name": GATE_BL, "status": "completed", "conclusion": "success"}
+            for i in range(100)
+        ],
+    }
+    PAGE2_BL = {
+        "total_count": 101,
+        "check_runs": [
+            {"id": 1, "name": "build-and-test", "status": "completed", "conclusion": "failure"}
+        ],
+    }
+
+    def paged_bl(pages, urls):
+        def fake(url, token, raw=False):
+            urls.append(url)
+            page = int(re.search(r"[?&]page=(\d+)", url).group(1))
+            return pages[page - 1] if page <= len(pages) else None
+
+        return fake
+
+    urls_bl = []
+    with unittest.mock.patch.object(
+        ci_monitor, "_request", side_effect=paged_bl([PAGE1_BL, PAGE2_BL], urls_bl)
+    ):
+        got_bl = ci_monitor.fetch_latest_check_runs("abc", "tok")
+    check(
+        [u.split("?", 1)[1] for u in urls_bl] == ["per_page=100&page=1", "per_page=100&page=2"],
+        "two pages of 100 are requested for 101 runs",
+        "requested %r" % (urls_bl,),
+    )
+    check(
+        got_bl is not None
+        and [(r["name"], r["id"]) for r in got_bl["check_runs"]]
+        == [(GATE_BL, 1000), ("build-and-test", 1)],
+        "the page-2 check is kept, and the gate collapses to its highest id",
+        "got %r" % (got_bl,),
+    )
+
+    # A short page ends the read: total_count alone does not cause another request.
+    urls_bl2 = []
+    with unittest.mock.patch.object(
+        ci_monitor, "_request", side_effect=paged_bl([PAGE2_BL], urls_bl2)
+    ):
+        ci_monitor.fetch_latest_check_runs("abc", "tok")
+    check(
+        len(urls_bl2) == 1,
+        "a page shorter than 100 is the last one requested",
+        "requested %r" % (urls_bl2,),
+    )
+
+    # A failed later page fails the whole read rather than return a listing
+    # missing the checks that page held.
+    with unittest.mock.patch.object(ci_monitor, "_request", side_effect=paged_bl([PAGE1_BL], [])):
+        got_bl3 = ci_monitor.fetch_latest_check_runs("abc", "tok")
+    check(got_bl3 is None, "a failed page 2 returns None", "got %r" % (got_bl3,))
+
+    # main() --sha: the failing check on page 2 drives the verdict. Reading page 1
+    # alone would see only green gate runs and report Clear.
+    buf_bl = io.StringIO()
+    with (
+        unittest.mock.patch.object(
+            ci_monitor, "_request", side_effect=paged_bl([PAGE1_BL, PAGE2_BL], [])
+        ),
+        unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None),
+        unittest.mock.patch("sys.stdout", new=buf_bl),
+    ):
+        rc_bl = ci_monitor.main(["ci_monitor.py", "--sha", "abcdef1234"])
+    lines_bl = buf_bl.getvalue().splitlines()
+    check(
+        lines_bl[-1:] == ["SHA#abcdef1: Blocked by: build-and-test"] and rc_bl == 0,
+        "--sha: a failing check found only on page 2 is Blocked",
+        "expected 'SHA#abcdef1: Blocked by: build-and-test' last; output: %r" % (lines_bl,),
     )
 
     # ── Summary ────────────────────────────────────────────────────────────────────

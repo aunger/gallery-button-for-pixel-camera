@@ -904,16 +904,40 @@ def fetch_pr_with_retry(pr, token, attempts=3, base_delay=2):
     return fetch_with_retry(url, token, attempts=attempts, base_delay=base_delay)
 
 
-def fetch_latest_check_runs(sha, token):
-    """Fetch `sha`'s check-runs, collapsed to the latest run per name.
+# Page size for /commits/{sha}/check-runs; 100 is the most GitHub allows.
+CHECK_RUNS_PER_PAGE = 100
 
-    Returns the /commits/{sha}/check-runs payload passed through
-    latest_check_runs (issue #707), or None when the request fails.
+
+def fetch_latest_check_runs(sha, token):
+    """Fetch every page of `sha`'s check-runs, collapsed to the latest run per name.
+
+    GitHub lists check-runs newest first, 30 to a page by default, and every
+    label event on a PR adds a run of the label gate to its head commit. Reading
+    only the first page drops the oldest runs, and with them any check whose
+    only run is among them (issue #1225), so this follows the pages until one
+    comes back short or `total_count` runs are in hand.
+
+    Returns {"total_count", "check_runs"} passed through latest_check_runs
+    (issue #707), or None when any page fails: a partial listing can be missing
+    a check outright.
     """
-    check_json = _request(
-        "%s/repos/%s/%s/commits/%s/check-runs" % (API_BASE, OWNER, REPO, sha), token
-    )
-    return latest_check_runs(check_json) if check_json else None
+    runs = []
+    page = 1
+    while True:
+        check_json = _request(
+            "%s/repos/%s/%s/commits/%s/check-runs?per_page=%d&page=%d"
+            % (API_BASE, OWNER, REPO, sha, CHECK_RUNS_PER_PAGE, page),
+            token,
+        )
+        if not check_json:
+            return None
+        page_runs = check_json.get("check_runs", [])
+        runs.extend(page_runs)
+        total = check_json.get("total_count", 0)
+        if len(page_runs) < CHECK_RUNS_PER_PAGE or len(runs) >= total:
+            break
+        page += 1
+    return latest_check_runs({"total_count": total, "check_runs": runs})
 
 
 # Main poll loop-----------------------------------------------------------------

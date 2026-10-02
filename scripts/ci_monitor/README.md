@@ -53,6 +53,10 @@ In `--pr`/`--sha`/`--branch` modes, the Monitor discovers which workflow run(s) 
 It does not name a workflow or job; the run/job to follow is derived from the same check-runs data that produces the verdict.
 In `--run-id` mode, the run to track is simply the one named on the command line--no check-runs payload is consulted for this purpose.
 
+The Monitor reads every page of `/commits/{sha}/check-runs`, 100 runs to a page.
+GitHub lists check-runs newest first, so once label events pile runs onto a commit, the default page of 30 drops the oldest, and with them any check whose only run is among them (issue #1225).
+A page that fails to load fails the whole read, which the poll treats as no data rather than judge a listing with checks missing.
+
 ### Same-named check-run collapsing
 
 Before reading the verdict, summary, or run/job targets, the Monitor collapses the `/commits/{sha}/check-runs` payload so that each distinct check-run *name* keeps only its most recent run (issue #707).
