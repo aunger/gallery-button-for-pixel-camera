@@ -24,7 +24,7 @@ The second point is what catches a crossed result; the first only makes one rare
 ## Reading a commit's check-runs
 
 A commit keeps every check-run ever attached to it.
-A re-run adds a run of the same name without retiring the earlier one, and each label event on a PR re-fires the `No blocking labels` gate, so one head commit can carry several failures of a check that is now green.
+Each new workflow run adds its check-runs beside the earlier ones of the same name without retiring them, and each label event on a PR fires the `No blocking labels` gate as a new workflow run, so one head commit can carry several failures of a check that is now green.
 GitHub judges a required check by the latest run of its name on the commit, and so must you.
 
 - Prefer `python3 scripts/ci_monitor/ci_monitor.py --pr <N>` or `--sha <SHA>` (usage in `scripts/ci_monitor/README.md`).
