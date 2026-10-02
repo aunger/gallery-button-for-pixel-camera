@@ -8,6 +8,7 @@
 - If scanning for outstanding before-merging requirements (unautomated verification steps or changes outside the repo), or planning automation of such steps, read `./agents/verification_planning.md`.
 - If carrying out the before-merging steps from a Verification Planner report on a PR (as a Verification Agent), read `./agents/pr_verify.md`.
 - If a sub-agent that is delegating work to nested sub-agents via the Agent tool, read `./agents/subagent_delegation.md`.
+- If reading a PR's or commit's check-runs, run `python3 scripts/ci_monitor/ci_monitor.py --once --pr <N>` (or `--sha <SHA>`) rather than listing them by hand, and see "One read, no polling" in `scripts/ci_monitor/README.md`.
 - If bumping the Gradle, AGP, KGP, or Compose-plugin version, or working on a Dependabot PR or the `gradle/verification-metadata.xml` regeneration workflows, read `./gradle/README.md`.
 
 ## Scratchpad files
