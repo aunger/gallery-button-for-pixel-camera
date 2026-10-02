@@ -24,11 +24,11 @@ import yaml
 
 from gradle_coordinates import (
     GOOGLE_MAVEN_GROUP_PREFIXES,
-    declared_coordinates,
+    covered_directories,
+    entry_declarations,
     google_maven_artifacts,
     group_index_url,
     is_google_hosted,
-    manifest_paths,
     parse_group_index,
 )
 
@@ -39,8 +39,9 @@ _CONFIG_PATH = os.path.join(_REPO_ROOT, ".github", "dependabot.yml")
 def _gradle_entry_coordinates():
     """Every versioned coordinate the gradle entries' manifests declare.
 
-    The same walk scripts/test_dependabot_config.sh makes, so this checks the
-    coordinates that script classifies.
+    Read through covered_directories and entry_declarations, the calls
+    scripts/test_dependabot_config.sh makes, so this checks the coordinates that
+    script classifies. Reporting a malformed entry is that script's job.
     """
     with open(_CONFIG_PATH) as handle:
         doc = yaml.safe_load(handle)
@@ -48,10 +49,8 @@ def _gradle_entry_coordinates():
     for entry in doc.get("updates") or []:
         if entry.get("package-ecosystem") != "gradle":
             continue
-        directories = entry["directories"] if "directories" in entry else [entry["directory"]]
-        for directory in directories:
-            for path in manifest_paths(_REPO_ROOT, directory):
-                coordinates.update(declared_coordinates(path))
+        declared, _manifests = entry_declarations(_REPO_ROOT, covered_directories(entry) or [])
+        coordinates.update(declared)
     return coordinates
 
 

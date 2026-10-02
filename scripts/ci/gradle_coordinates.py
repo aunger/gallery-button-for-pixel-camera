@@ -99,6 +99,48 @@ def declared_coordinates(manifest_path):
     return coordinates
 
 
+def covered_directories(entry):
+    """The directories an update entry covers, or None if it names none that can be read.
+
+    Its `directories` list when it has that key, and otherwise its one
+    `directory`. A `directories` key that is not a list names none.
+    """
+    if "directories" in entry:
+        directories = entry["directories"]
+        return directories if isinstance(directories, list) else None
+    if "directory" in entry:
+        return [entry["directory"]]
+    return None
+
+
+def entry_declarations(repo_root, directories):
+    """Every versioned coordinate the manifests in an update entry's directories declare.
+
+    Returns (declared, manifests). `declared` maps "group:artifact" to the Gradle
+    configurations declaring it, merged across every manifest found. `manifests`
+    pairs each directory with the manifests found in it, so a caller can report
+    a directory that has none.
+
+    This is the one walk both consumers of this module make, so a coordinate
+    the Dependabot config guard classifies is one the live host check sees.
+
+    Only the manifests in the directories the entry itself names. Gradle
+    subprojects are not walked, so a "/"-scoped entry sees the root
+    build.gradle.kts, which declares no dependencies block, and nothing of
+    app/. Today's entry is scoped to /app, so that path is unreached, but a "/"
+    entry would need this widened rather than trusted.
+    """
+    declared = {}
+    manifests = []
+    for directory in directories:
+        paths = manifest_paths(repo_root, directory)
+        manifests.append((directory, paths))
+        for path in paths:
+            for coordinate, configurations in declared_coordinates(path).items():
+                declared.setdefault(coordinate, set()).update(configurations)
+    return declared, manifests
+
+
 def is_google_hosted(coordinate):
     """Whether GOOGLE_MAVEN_GROUP_PREFIXES classes "group:artifact" as Google-hosted."""
     return coordinate.startswith(GOOGLE_MAVEN_GROUP_PREFIXES)

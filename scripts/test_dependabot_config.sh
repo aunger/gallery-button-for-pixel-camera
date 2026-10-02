@@ -235,7 +235,7 @@ from audit_requirements import discover_locks, normalize, parse_pins  # noqa: E4
 # Google-hosted, for the cooldown, grouping and limit checks. The classification
 # is a prefix model that scripts/ci/test_gradle_coordinates.py holds to what
 # https://maven.google.com actually serves (issue #914).
-from gradle_coordinates import declared_coordinates, is_google_hosted, manifest_paths  # noqa: E402
+from gradle_coordinates import covered_directories, entry_declarations, is_google_hosted  # noqa: E402
 
 results = []
 
@@ -286,19 +286,19 @@ def is_google_maven(registry):
 
 
 def entry_directories(index, entry):
-    """The directory paths an update entry covers, or None if it declares none."""
+    """The directory paths an update entry covers, or None if it declares none.
+
+    gradle_coordinates.covered_directories decides which key counts, so the
+    live host check in scripts/ci reads the same directories; this reports why
+    an entry names none.
+    """
     ecosystem = entry.get("package-ecosystem")
+    directories = covered_directories(entry)
     if "directories" in entry:
-        directories = entry["directories"]
-        if not check(
-            isinstance(directories, list), "%s update entry %d's directories key is a list" % (ecosystem, index)
-        ):
-            return None
-        return directories
-    if "directory" in entry:
-        return [entry["directory"]]
-    check(False, "%s update entry %d declares a directory or directories key" % (ecosystem, index))
-    return None
+        check(directories is not None, "%s update entry %d's directories key is a list" % (ecosystem, index))
+    elif directories is None:
+        check(False, "%s update entry %d declares a directory or directories key" % (ecosystem, index))
+    return directories
 
 
 def entry_label(index, entry, directories):
@@ -487,26 +487,21 @@ def cooldown_holds(coordinate, cooldown):
     return not matches("exclude")
 
 
-# One walk of each entry's manifests, consumed by every per-entry check below.
+# One walk of each entry's manifests, consumed by every per-entry check below,
+# and made by gradle_coordinates.entry_declarations so that the live host check
+# in scripts/ci walks the same manifests.
 #
-# Only the manifests in the directories the entry itself names. Gradle
-# subprojects are not walked, so a "/"-scoped entry sees the root
-# build.gradle.kts, which declares no dependencies block, and nothing of app/;
-# it finds no Google-hosted coordinate and falls through the cooldown branch
-# below unchecked. Today's entry is scoped to /app, so that path is unreached,
-# but a "/" entry would hit issue #905 identically and would need this widened
+# That walk does not descend into Gradle subprojects, so a "/"-scoped entry
+# finds no Google-hosted coordinate and falls through the cooldown branch below
+# unchecked. Today's entry is scoped to /app, so that path is unreached, but a
+# "/" entry would hit issue #905 identically and would need the walk widened
 # rather than trusted.
 declarations = {}
 for index, entry, names, directories in gradle_entries:
     label = entry_label(index, entry, directories)
-    declared = {}
-    for directory in directories:
-        paths = manifest_paths(repo_root, directory)
-        if not check(bool(paths), "%s covers a directory containing a Gradle manifest (%s)" % (label, directory)):
-            continue
-        for path in paths:
-            for coordinate, configurations in declared_coordinates(path).items():
-                declared.setdefault(coordinate, set()).update(configurations)
+    declared, manifests = entry_declarations(repo_root, directories)
+    for directory, paths in manifests:
+        check(bool(paths), "%s covers a directory containing a Gradle manifest (%s)" % (label, directory))
     declarations[index] = declared
 
 
