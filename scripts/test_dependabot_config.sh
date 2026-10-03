@@ -53,8 +53,12 @@
 # and keeps the delay for the Central-hosted ones, where dates resolve
 # correctly. These checks assert both halves of that against the coordinates
 # actually declared in each entry's Gradle manifest, rather than against a
-# list duplicated here, so adding a Google-hosted dependency that the patterns
-# do not cover fails the check instead of going quiet.
+# list duplicated here. So adding a Google-hosted dependency that the patterns
+# do not cover fails a check instead of going quiet: this file's, when the
+# prefix model in scripts/ci/gradle_coordinates.py classes it Google-hosted,
+# and otherwise scripts/ci/test_gradle_coordinates.py's, which asks
+# https://maven.google.com and fails on a coordinate the model classes wrongly
+# (issue #914).
 #
 # The third family, the grouping and pull request limit checks, guards the
 # starvation #872 fixed (issue #873). Dependabot proposes nothing once an
@@ -204,7 +208,6 @@ pass "$CONFIG exists"
 set +e
 OUTPUT="$(python3 - "$CONFIG" "$REPO_ROOT" <<'PY'
 import fnmatch
-import glob
 import os
 import re
 import sys
@@ -232,6 +235,12 @@ from workflow_files import load_workflow, relative, workflow_paths  # noqa: E402
 # this file asks Dependabot to cover are the ones that gate audits, found and
 # parsed the same way.
 from audit_requirements import discover_locks, normalize, parse_pins  # noqa: E402
+
+# The coordinates each gradle entry's manifests declare, and which of them are
+# Google-hosted, for the cooldown, grouping and limit checks. The classification
+# is a prefix model that scripts/ci/test_gradle_coordinates.py holds to what
+# https://maven.google.com actually serves (issue #914).
+from gradle_coordinates import covered_directories, entry_declarations, is_google_hosted  # noqa: E402
 
 results = []
 
@@ -282,19 +291,19 @@ def is_google_maven(registry):
 
 
 def entry_directories(index, entry):
-    """The directory paths an update entry covers, or None if it declares none."""
+    """The directory paths an update entry covers, or None if it declares none.
+
+    gradle_coordinates.covered_directories decides which key counts, so the
+    live host check in scripts/ci reads the same directories; this reports why
+    an entry names none.
+    """
     ecosystem = entry.get("package-ecosystem")
+    directories = covered_directories(entry)
     if "directories" in entry:
-        directories = entry["directories"]
-        if not check(
-            isinstance(directories, list), "%s update entry %d's directories key is a list" % (ecosystem, index)
-        ):
-            return None
-        return directories
-    if "directory" in entry:
-        return [entry["directory"]]
-    check(False, "%s update entry %d declares a directory or directories key" % (ecosystem, index))
-    return None
+        check(directories is not None, "%s update entry %d's directories key is a list" % (ecosystem, index))
+    elif directories is None:
+        check(False, "%s update entry %d declares a directory or directories key" % (ecosystem, index))
+    return directories
 
 
 def entry_label(index, entry, directories):
@@ -365,20 +374,6 @@ for index, entry, names, directories in gradle_entries:
         "androidx.* or com.google.android.material coordinate is ever queried (issue #897)" % label,
     )
 
-# A coordinate's host follows from its group, not from its artifact name:
-# com.davemorrissey.labs:subsampling-scale-image-view-androidx is served by
-# Maven Central despite ending in "androidx". That is the case a loose
-# "*androidx*" exclude pattern would wrongly exempt, and the reason this
-# classification keys off the group alone.
-#
-# These two prefixes cover what app/build.gradle.kts declares today, not every
-# group maven.google.com serves. A Google-hosted group outside them
-# (com.google.firebase, say) is classed Central-hosted, and the last check
-# below then insists cooldown keep holding it, which is the configuration that
-# hides it. Adding such a dependency means adding its prefix here as well as to
-# the exclude list in .github/dependabot.yml.
-GOOGLE_MAVEN_GROUP_PREFIXES = ("androidx.", "com.google.android.")
-
 # Dependabot::Job::DEFAULT_COOLDOWN_DAYS. An entry with no `cooldown` block
 # gets ReleaseCooldownOptions.new(default_days: 3); an entry whose block omits
 # `default-days` gets to_options(default_days: 3), which substitutes it for the
@@ -389,25 +384,6 @@ DEFAULT_COOLDOWN_DAYS = 3
 
 # Dependabot's open-pull-requests-limit when an entry omits the key.
 DEFAULT_OPEN_PULL_REQUESTS_LIMIT = 5
-
-# One dependency declaration: the Gradle configuration it is declared in, then
-# a quoted "group:artifact:version" literal. A `platform(...)` wrapper is
-# unwrapped, so the Compose BOM reads as a declaration of the configuration
-# around it rather than of `platform`.
-#
-# The group is not required to contain a dot: junit:junit has none, and
-# demanding one dropped it from the Central-hosted set silently, which left an
-# over-broad exclude pattern such as "junit*" free to exempt it with every
-# check still passing.
-#
-# Versionless coordinates (androidx.compose.ui:ui and friends, whose versions
-# come from the Compose BOM) are the one deliberate omission: Dependabot
-# proposes no update for them, so they say nothing about whether cooldown,
-# grouping or the pull request limit is configured correctly.
-DECLARATION_RE = re.compile(
-    r'^[ \t]*(\w+)\s*\(\s*(?:platform\s*\(\s*)?"([A-Za-z][\w.-]*):([\w.-]+):([^"\s]+)"',
-    re.M,
-)
 
 # The Gradle configurations whose dependencies never ship in an APK. Matched
 # by prefix so testFixturesImplementation and the debug/release variants of
@@ -423,42 +399,6 @@ DECLARATION_RE = re.compile(
 # is the loud direction, and the fix then is a decision recorded here, not a
 # pattern quietly absorbing it.
 TEST_CONFIGURATION_PREFIXES = ("test", "androidTest")
-
-# The top-level `dependencies { ... }` block, up to the first line that is a
-# closing brace in column 0.
-DEPENDENCIES_BLOCK_RE = re.compile(r"^dependencies\s*\{\s*$(.*?)^\}\s*$", re.M | re.S)
-
-GRADLE_MANIFESTS = ("build.gradle.kts", "build.gradle")
-
-
-def manifest_paths(directory):
-    """Existing Gradle manifests in one of an update entry's directories.
-
-    Dependabot's `directories` key accepts globs, so the path is expanded
-    rather than tested literally; a path with no wildcard expands to itself.
-    """
-    base = os.path.join(repo_root, str(directory).strip("/"))
-    paths = []
-    for name in GRADLE_MANIFESTS:
-        paths.extend(glob.glob(os.path.join(base, name), recursive=True))
-    return sorted(paths)
-
-
-def declared_coordinates(manifest_path):
-    """Every versioned dependency the manifest declares.
-
-    Maps "group:artifact" to the set of Gradle configurations declaring it. A
-    coordinate can appear under more than one: androidx.compose:compose-bom is
-    declared identically under `implementation` and `androidTestImplementation`.
-    """
-    with open(manifest_path) as manifest:
-        source = manifest.read()
-    coordinates = {}
-    for block in DEPENDENCIES_BLOCK_RE.findall(source):
-        for configuration, group, artifact, _version in DECLARATION_RE.findall(block):
-            coordinates.setdefault("%s:%s" % (group, artifact), set()).add(configuration)
-    return coordinates
-
 
 def ships_in_the_apk(configurations):
     """Whether any of the configurations declaring a coordinate is a shipping one."""
@@ -518,10 +458,6 @@ def group_members(coordinates, definition):
     return {c for c in coordinates if selects(c, patterns) and not selects(c, excluded)}
 
 
-def is_google_hosted(coordinate):
-    return coordinate.startswith(GOOGLE_MAVEN_GROUP_PREFIXES)
-
-
 def cooldown_holds(coordinate, cooldown):
     """Whether cooldown delays a proposed update to this coordinate.
 
@@ -556,26 +492,21 @@ def cooldown_holds(coordinate, cooldown):
     return not matches("exclude")
 
 
-# One walk of each entry's manifests, consumed by every per-entry check below.
+# One walk of each entry's manifests, consumed by every per-entry check below,
+# and made by gradle_coordinates.entry_declarations so that the live host check
+# in scripts/ci walks the same manifests.
 #
-# Only the manifests in the directories the entry itself names. Gradle
-# subprojects are not walked, so a "/"-scoped entry sees the root
-# build.gradle.kts, which declares no dependencies block, and nothing of app/;
-# it finds no Google-hosted coordinate and falls through the cooldown branch
-# below unchecked. Today's entry is scoped to /app, so that path is unreached,
-# but a "/" entry would hit issue #905 identically and would need this widened
+# That walk does not descend into Gradle subprojects, so a "/"-scoped entry
+# finds no Google-hosted coordinate and falls through the cooldown branch below
+# unchecked. Today's entry is scoped to /app, so that path is unreached, but a
+# "/" entry would hit issue #905 identically and would need the walk widened
 # rather than trusted.
 declarations = {}
 for index, entry, names, directories in gradle_entries:
     label = entry_label(index, entry, directories)
-    declared = {}
-    for directory in directories:
-        paths = manifest_paths(directory)
-        if not check(bool(paths), "%s covers a directory containing a Gradle manifest (%s)" % (label, directory)):
-            continue
-        for path in paths:
-            for coordinate, configurations in declared_coordinates(path).items():
-                declared.setdefault(coordinate, set()).update(configurations)
+    declared, manifests = entry_declarations(repo_root, directories)
+    for directory, paths in manifests:
+        check(bool(paths), "%s covers a directory containing a Gradle manifest (%s)" % (label, directory))
     declarations[index] = declared
 
 

@@ -90,6 +90,8 @@
 # The patterns match `group:artifact` through File.fnmatch?, so they are anchored on the group prefix rather than on the substring "androidx": com.davemorrissey.labs:subsampling-scale-image-view-androidx is Central-hosted despite its artifact name and must keep its cooldown.
 # Excluding by prefix rather than naming androidx.lifecycle alone also covers the ignore-rule case above for any coordinate the maven-google registry serves.
 # scripts/test_dependabot_config.sh asserts both halves of this against the real coordinate list in app/build.gradle.kts.
+# Which half a coordinate belongs to is decided by a prefix list in scripts/ci/gradle_coordinates.py, and scripts/ci/test_gradle_coordinates.py asks https://maven.google.com about every declared coordinate and fails on any that list classes differently (issue #914).
+# So a Google-hosted dependency outside that list, com.google.firebase for one, fails that test on the pull request that adds it, which names the coordinate; it then needs an entry in that list and a pattern here.
 #
 # The underlying defect is in dependabot-core, not here.
 # Either of two upstream changes would retire this `exclude`: reading a per-version date (the .pom or .module timestamp) instead of only `<latest>`'s lastUpdated, or treating "date unknown" as "not in cooldown".
