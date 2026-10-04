@@ -45,6 +45,11 @@
 #     e2e-mock-* assembleDebug tasks, testDebugUnitTest.
 #   * build.yml release smoke + release.yml: assembleRelease.
 #   * codeql.yml autobuild: assembleDebug (a subset of the above).
+#   * build.yml android-lint job: :app:lintDebug. Listed below as
+#     :app:lintReportDebug, which does all of its resolving (the Lint classpath and
+#     the lint models of the debug, unit-test and androidTest components) but,
+#     unlike lintDebug, does not fail on a Lint finding. A finding is no reason to
+#     withhold the pins a build needs.
 # The instrumented/E2E tasks (connectedDebugAndroidTest, connectedE2EAndroidTest)
 # add no new external dependencies: the androidTest classpath is the one
 # assembleDebugAndroidTest already resolves, and connectedE2EAndroidTest consumes
@@ -85,7 +90,8 @@ echo "==> Regenerating gradle/verification-metadata.xml (GRADLE_BIN=$GRADLE_BIN,
     assembleDebug assembleRelease \
     assembleDebugAndroidTest \
     :e2e-mock-camera:assembleDebug :e2e-mock-gallery:assembleDebug \
-    testDebugUnitTest
+    testDebugUnitTest \
+    :app:lintReportDebug
 
 echo "==> Done. Review the diff before committing:"
 echo "      git diff gradle/verification-metadata.xml"
