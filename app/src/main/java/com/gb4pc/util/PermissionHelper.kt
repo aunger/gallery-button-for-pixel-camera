@@ -29,14 +29,22 @@ object PermissionHelper {
         packageName: String,
     ): Boolean = context.packageManager.getLaunchIntentForPackage(packageName) != null
 
+    /**
+     * `unsafeCheckOpNoThrow` exists only from API 29, and calling it below that throws
+     * `NoSuchMethodError`. `checkOpNoThrow` is the same check under its pre-29 name (API 29
+     * deprecated it in favor of the new one), so it answers for API 26-28.
+     */
     fun hasUsageStatsPermission(context: Context): Boolean {
         val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
+        val op = AppOpsManager.OPSTR_GET_USAGE_STATS
+        val uid = android.os.Process.myUid()
         val mode =
-            appOps.unsafeCheckOpNoThrow(
-                AppOpsManager.OPSTR_GET_USAGE_STATS,
-                android.os.Process.myUid(),
-                context.packageName,
-            )
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                appOps.unsafeCheckOpNoThrow(op, uid, context.packageName)
+            } else {
+                @Suppress("DEPRECATION")
+                appOps.checkOpNoThrow(op, uid, context.packageName)
+            }
         return mode == AppOpsManager.MODE_ALLOWED
     }
 
