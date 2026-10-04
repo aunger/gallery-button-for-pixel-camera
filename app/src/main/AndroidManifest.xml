@@ -90,13 +90,17 @@
             android:exported="false"
             android:theme="@style/Theme.GB4PC.Transparent" />
 
-        <!-- Secure Filmstrip Viewer Activity -->
+        <!--
+          Secure Filmstrip Viewer Activity. showWhenLocked and turnScreenOn take effect from API 27
+          (hence tools:targetApi); on API 26 the activity sets the equivalent window flags itself.
+        -->
         <activity
             android:name=".viewer.SecureViewerActivity"
             android:exported="false"
             android:showWhenLocked="true"
             android:turnScreenOn="true"
-            android:theme="@style/Theme.GB4PC.Viewer" />
+            android:theme="@style/Theme.GB4PC.Viewer"
+            tools:targetApi="27" />
 
         <!-- Overlay Foreground Service -->
         <service
