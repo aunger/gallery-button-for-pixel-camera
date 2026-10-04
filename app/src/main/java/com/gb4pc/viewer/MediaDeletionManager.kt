@@ -2,10 +2,13 @@ package com.gb4pc.viewer
 
 import android.app.RecoverableSecurityException
 import android.content.ContentResolver
+import android.content.IntentSender
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import androidx.activity.result.IntentSenderRequest
+import androidx.annotation.ChecksSdkIntAtLeast
+import androidx.annotation.RequiresApi
 import com.gb4pc.util.DebugLog
 
 /**
@@ -26,6 +29,11 @@ import com.gb4pc.util.DebugLog
  * Extracted from `SecureViewerActivity` so the version dispatch is testable in
  * isolation and the activity stays focused on UI concerns (snackbar/undo,
  * ViewPager wiring, etc.).
+ *
+ * [apiLevel] stands in for `Build.VERSION.SDK_INT` so plain JVM tests can choose a
+ * branch; production never passes anything but the default. Every branch on it goes
+ * through [isAtLeast], whose annotation tells Android Lint's NewApi check to treat it
+ * as the SDK check it is in production.
  */
 class MediaDeletionManager(
     private val contentResolver: ContentResolver,
@@ -35,13 +43,16 @@ class MediaDeletionManager(
 ) {
     private var pendingUri: Uri? = null
 
+    @ChecksSdkIntAtLeast(parameter = 0)
+    private fun isAtLeast(api: Int): Boolean = apiLevel >= api
+
     /**
      * Attempt to delete [uri]. Returns immediately whether the delete completed
      * synchronously, threw a recoverable exception (in which case a system dialog is
      * launched and the result will arrive via [onDeleteRequestResult]), or failed.
      */
     fun delete(uri: Uri) {
-        if (apiLevel >= Build.VERSION_CODES.R) {
+        if (isAtLeast(Build.VERSION_CODES.R)) {
             requestDeleteApi30Plus(uri)
         } else {
             attemptDeleteApi26To29(uri)
@@ -59,6 +70,7 @@ class MediaDeletionManager(
         // nothing more to do.
     }
 
+    @RequiresApi(Build.VERSION_CODES.R)
     private fun requestDeleteApi30Plus(uri: Uri) {
         try {
             val pendingIntent = MediaStore.createDeleteRequest(contentResolver, listOf(uri))
@@ -79,20 +91,20 @@ class MediaDeletionManager(
                 DebugLog.log("Delete returned 0 rows for: $uri")
                 onFailure()
             }
-        } catch (e: RecoverableSecurityException) {
-            // API 29: request permission via the embedded action intent
-            try {
-                pendingUri = uri
-                launchDeleteRequest(
-                    IntentSenderRequest.Builder(e.userAction.actionIntent.intentSender).build(),
-                )
-            } catch (inner: Exception) {
-                DebugLog.log("Could not launch delete permission UI: ${inner.message}")
+        } catch (e: Exception) {
+            if (e is SecurityException && isAtLeast(Build.VERSION_CODES.Q) && Api29.isRecoverable(e)) {
+                // API 29: request permission via the embedded action intent
+                try {
+                    pendingUri = uri
+                    launchDeleteRequest(IntentSenderRequest.Builder(Api29.userActionSender(e)).build())
+                } catch (inner: Exception) {
+                    DebugLog.log("Could not launch delete permission UI: ${inner.message}")
+                    onFailure()
+                }
+            } else {
+                DebugLog.log("Failed to delete media: ${e.message}")
                 onFailure()
             }
-        } catch (e: Exception) {
-            DebugLog.log("Failed to delete media: ${e.message}")
-            onFailure()
         }
     }
 
@@ -109,5 +121,17 @@ class MediaDeletionManager(
             DebugLog.log("Retry delete failed: ${e.message}")
             onFailure()
         }
+    }
+
+    /**
+     * Every reference to `RecoverableSecurityException`, which API 29 introduced. On API 26-28
+     * the class does not exist, so it is named only here, in code that runs on API 29+, and not
+     * in a `catch` clause of [attemptDeleteApi26To29], which also runs on API 26-28.
+     */
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private object Api29 {
+        fun isRecoverable(e: SecurityException): Boolean = e is RecoverableSecurityException
+
+        fun userActionSender(e: SecurityException): IntentSender = (e as RecoverableSecurityException).userAction.actionIntent.intentSender
     }
 }
