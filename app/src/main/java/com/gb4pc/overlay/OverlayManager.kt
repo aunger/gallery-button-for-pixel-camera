@@ -1,5 +1,6 @@
 package com.gb4pc.overlay
 
+import android.annotation.SuppressLint
 import android.app.KeyguardManager
 import android.content.Context
 import android.content.Intent
@@ -210,6 +211,11 @@ class OverlayManager(
         }
     }
 
+    // Android Lint's AppCompatCustomView check wants AppCompatImageView here, for AppCompat's tint
+    // support. GB4PC does not use AppCompat itself (it is only a transitive dependency), and this
+    // view is created in code for a service's overlay window, with no AppCompat theme or tint
+    // attribute for that support to read.
+    @SuppressLint("AppCompatCustomView")
     private fun createOverlayView(): ImageView {
         // When focusable overlay is enabled we need a custom subclass to handle key and focus
         // events on the root view.

@@ -220,12 +220,7 @@ fun MainSettingsScreen(
                 PermissionBanner(
                     message = stringResource(R.string.settings_battery_warning),
                     onClick = {
-                        context.startActivity(
-                            Intent(
-                                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                                "package:${context.packageName}".toUri(),
-                            ),
-                        )
+                        context.startActivity(PermissionHelper.ignoreBatteryOptimizationsIntent(context))
                     },
                 )
             }

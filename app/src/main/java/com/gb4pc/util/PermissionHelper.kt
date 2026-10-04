@@ -1,5 +1,6 @@
 package com.gb4pc.util
 
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AppOpsManager
 import android.content.Context
@@ -54,6 +55,21 @@ object PermissionHelper {
         val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
         return pm.isIgnoringBatteryOptimizations(context.packageName)
     }
+
+    /**
+     * The system dialog that excludes this app from battery optimization (PM-01 step 4, UI-04).
+     *
+     * Android Lint's BatteryLife check warns that Google Play allows this request only for some
+     * kinds of app. GB4PC asks by design: the overlay service has to stay running to see Pixel
+     * Camera open (SPEC.md section 2.2), and GB4PC ships by sideload and F-Droid, with no Play
+     * requirement gating a release (SPEC.md OV-03).
+     */
+    @SuppressLint("BatteryLife")
+    fun ignoreBatteryOptimizationsIntent(context: Context): Intent =
+        Intent(
+            Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+            "package:${context.packageName}".toUri(),
+        )
 
     fun hasNotificationPermission(context: Context): Boolean =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

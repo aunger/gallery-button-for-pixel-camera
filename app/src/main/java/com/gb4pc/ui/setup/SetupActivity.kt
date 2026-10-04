@@ -153,12 +153,7 @@ class SetupActivity : ComponentActivity() {
             }
 
             SetupStep.BATTERY -> {
-                startActivity(
-                    Intent(
-                        Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                        "package:$packageName".toUri(),
-                    ),
-                )
+                startActivity(PermissionHelper.ignoreBatteryOptimizationsIntent(this))
             }
         }
     }
