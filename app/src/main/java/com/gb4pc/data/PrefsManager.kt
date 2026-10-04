@@ -2,6 +2,7 @@ package com.gb4pc.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.core.content.edit
 import com.gb4pc.Constants
 import org.json.JSONObject
 
@@ -18,23 +19,23 @@ class PrefsManager(
 
     var isServiceEnabled: Boolean
         get() = prefs.getBoolean(Constants.PREF_SERVICE_ENABLED, false)
-        set(value) = prefs.edit().putBoolean(Constants.PREF_SERVICE_ENABLED, value).apply()
+        set(value) = prefs.edit { putBoolean(Constants.PREF_SERVICE_ENABLED, value) }
 
     var galleryPackage: String?
         get() = prefs.getString(Constants.PREF_GALLERY_PACKAGE, null)
-        set(value) = prefs.edit().putString(Constants.PREF_GALLERY_PACKAGE, value).apply()
+        set(value) = prefs.edit { putString(Constants.PREF_GALLERY_PACKAGE, value) }
 
     var isSetupCompleted: Boolean
         get() = prefs.getBoolean(Constants.PREF_SETUP_COMPLETED, false)
-        set(value) = prefs.edit().putBoolean(Constants.PREF_SETUP_COMPLETED, value).apply()
+        set(value) = prefs.edit { putBoolean(Constants.PREF_SETUP_COMPLETED, value) }
 
     var cameraDebounceMs: Long
         get() = prefs.getLong(Constants.PREF_CAMERA_DEBOUNCE_MS, Constants.CAMERA_DEBOUNCE_MS)
-        set(value) = prefs.edit().putLong(Constants.PREF_CAMERA_DEBOUNCE_MS, value).apply()
+        set(value) = prefs.edit { putLong(Constants.PREF_CAMERA_DEBOUNCE_MS, value) }
 
     var focusableOverlay: Boolean
         get() = prefs.getBoolean(Constants.PREF_FOCUSABLE_OVERLAY, false)
-        set(value) = prefs.edit().putBoolean(Constants.PREF_FOCUSABLE_OVERLAY, value).apply()
+        set(value) = prefs.edit { putBoolean(Constants.PREF_FOCUSABLE_OVERLAY, value) }
 
     /**
      * Whether the system permission dialog for [permission] has ever been fired by this app
@@ -54,15 +55,12 @@ class PrefsManager(
      */
     var isPermissionHistorySeeded: Boolean
         get() = prefs.getBoolean(Constants.PREF_PERMISSION_HISTORY_SEEDED, false)
-        set(value) = prefs.edit().putBoolean(Constants.PREF_PERMISSION_HISTORY_SEEDED, value).apply()
+        set(value) = prefs.edit { putBoolean(Constants.PREF_PERMISSION_HISTORY_SEEDED, value) }
 
     fun setRuntimePermissionRequested(
         permission: String,
         requested: Boolean,
-    ) = prefs
-        .edit()
-        .putBoolean(Constants.PREF_PERMISSION_REQUESTED_PREFIX + permission, requested)
-        .apply()
+    ) = prefs.edit { putBoolean(Constants.PREF_PERMISSION_REQUESTED_PREFIX + permission, requested) }
 
     /**
      * Returns the overlay position for the given aspect ratio.
@@ -86,19 +84,13 @@ class PrefsManager(
     ) {
         val positions = loadPositions().toMutableMap()
         positions[aspectRatio] = position
-        prefs
-            .edit()
-            .putString(Constants.PREF_OVERLAY_POSITIONS, positionsToJson(positions))
-            .apply()
+        prefs.edit { putString(Constants.PREF_OVERLAY_POSITIONS, positionsToJson(positions)) }
     }
 
     fun resetOverlayPosition(aspectRatio: String) {
         val positions = loadPositions().toMutableMap()
         positions.remove(aspectRatio)
-        prefs
-            .edit()
-            .putString(Constants.PREF_OVERLAY_POSITIONS, positionsToJson(positions))
-            .apply()
+        prefs.edit { putString(Constants.PREF_OVERLAY_POSITIONS, positionsToJson(positions)) }
     }
 
     private fun loadPositions(): Map<String, OverlayPosition> {

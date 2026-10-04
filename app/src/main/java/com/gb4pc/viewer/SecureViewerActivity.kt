@@ -21,6 +21,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -272,7 +273,7 @@ class SecureViewerActivity : ComponentActivity() {
                     ) {
                         if (event != DISMISS_EVENT_ACTION) {
                             // Actually delete from MediaStore
-                            deletionManager.delete(Uri.parse(media.uri))
+                            deletionManager.delete(media.uri.toUri())
                         }
                     }
                 },
@@ -296,7 +297,7 @@ class SecureViewerActivity : ComponentActivity() {
                         val shareIntent =
                             Intent(Intent.ACTION_SEND).apply {
                                 type = if (media.isVideo) "video/*" else "image/*"
-                                putExtra(Intent.EXTRA_STREAM, Uri.parse(media.uri))
+                                putExtra(Intent.EXTRA_STREAM, media.uri.toUri())
                                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             }
                         startActivity(Intent.createChooser(shareIntent, null))
@@ -351,7 +352,7 @@ class SecureViewerActivity : ComponentActivity() {
             container.removeAllViews()
 
             try {
-                val uri = Uri.parse(item.uri)
+                val uri = item.uri.toUri()
                 if (item.isVideo) {
                     // SF-09: Show video thumbnail with play button overlay
                     val imageView =

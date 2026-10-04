@@ -2,7 +2,6 @@ package com.gb4pc.ui.setup
 
 import android.Manifest
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -19,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import com.gb4pc.R
 import com.gb4pc.data.PrefsManager
 import com.gb4pc.ui.theme.GB4PCTheme
@@ -147,7 +147,7 @@ class SetupActivity : ComponentActivity() {
                 startActivity(
                     Intent(
                         Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse("package:$packageName"),
+                        "package:$packageName".toUri(),
                     ),
                 )
             }
@@ -156,7 +156,7 @@ class SetupActivity : ComponentActivity() {
                 startActivity(
                     Intent(
                         Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                        Uri.parse("package:$packageName"),
+                        "package:$packageName".toUri(),
                     ),
                 )
             }
