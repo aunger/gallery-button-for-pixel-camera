@@ -1,5 +1,6 @@
 package com.gb4pc.service
 
+import android.annotation.SuppressLint
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import com.gb4pc.Constants
@@ -79,12 +80,12 @@ class ForegroundDetector(
         while (events.hasNextEvent()) {
             events.getNextEvent(event)
             totalEvents++
-            // Accept both ACTIVITY_RESUMED (API 29+) and the legacy MOVE_TO_FOREGROUND so that
-            // detection works on all supported Android versions. On API 29+ the system emits
-            // ACTIVITY_RESUMED instead of MOVE_TO_FOREGROUND (Issue #86).
-            val isForegroundEvent =
-                event.eventType == UsageEvents.Event.ACTIVITY_RESUMED ||
-                    event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND
+            // ACTIVITY_RESUMED (API 29+) is MOVE_TO_FOREGROUND renamed, not a new event: both are 1
+            // (Issue #86). The compiler inlines that value, so this one comparison matches the
+            // event on every supported Android version, API 26-28 included, and Lint's InlinedApi
+            // warning about the API 29 name does not apply.
+            @SuppressLint("InlinedApi")
+            val isForegroundEvent = event.eventType == UsageEvents.Event.ACTIVITY_RESUMED
             if (isForegroundEvent) {
                 if (event.packageName == selfPackage) {
                     skippedSelfEvents++

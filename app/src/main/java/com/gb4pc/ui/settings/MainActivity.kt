@@ -3,6 +3,7 @@ package com.gb4pc.ui.settings
 import android.Manifest
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -96,7 +97,11 @@ class MainActivity : ComponentActivity() {
                     galleryPackage = galleryPackage.value,
                     onMediaPermissionClick = { requestRuntimePermission(PermissionHelper.mediaPermission) },
                     onNotificationPermissionClick = {
-                        requestRuntimePermission(Manifest.permission.POST_NOTIFICATIONS)
+                        // The banner never shows below API 33 (hasNotificationPermission is true
+                        // there), and the permission does not exist; same guard as SetupActivity.
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            requestRuntimePermission(Manifest.permission.POST_NOTIFICATIONS)
+                        }
                     },
                 )
             }
