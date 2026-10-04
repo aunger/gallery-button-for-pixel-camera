@@ -145,6 +145,10 @@ android {
                 // phone by device-to-device transfer, which allowBackup="false" does not stop on
                 // some devices from Android 12.
                 "DataExtractionRules",
+                // Deferred to #1237: the foreground cannot double as the themed icon's monochrome
+                // layer, because it tells the gallery mark from the camera only by color, and a
+                // monochrome layer keeps only alpha. The icon needs a monochrome drawable of its own.
+                "MonochromeLauncherIcon",
             )
     }
 
