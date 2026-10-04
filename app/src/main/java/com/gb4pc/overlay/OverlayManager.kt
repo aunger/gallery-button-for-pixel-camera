@@ -17,6 +17,7 @@ import android.view.WindowManager
 import android.widget.ImageView
 import android.widget.Toast
 import androidx.core.content.ContextCompat
+import androidx.core.content.res.ResourcesCompat
 import androidx.core.graphics.drawable.toDrawable
 import androidx.core.net.toUri
 import com.gb4pc.R
@@ -295,17 +296,15 @@ class OverlayManager(
     private fun getRawGalleryIcon(packageName: String?): Drawable {
         if (packageName != null) {
             try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    val appInfo = context.packageManager.getApplicationInfo(packageName, 0)
-                    if (appInfo.icon != 0) {
-                        val pkgResources = context.packageManager.getResourcesForApplication(appInfo)
-                        val rawIcon = pkgResources.getDrawable(appInfo.icon, null)
-                        if (rawIcon is AdaptiveIconDrawable) {
-                            return rawIcon
-                        }
+                val appInfo = context.packageManager.getApplicationInfo(packageName, 0)
+                if (appInfo.icon != 0) {
+                    val pkgResources = context.packageManager.getResourcesForApplication(appInfo)
+                    val rawIcon = ResourcesCompat.getDrawable(pkgResources, appInfo.icon, null)
+                    if (rawIcon is AdaptiveIconDrawable) {
+                        return rawIcon
                     }
                 }
-                // Pre-API 26 or non-adaptive icon: fall back to getApplicationIcon().
+                // Non-adaptive icon: fall back to getApplicationIcon().
                 return context.packageManager.getApplicationIcon(packageName)
             } catch (_: PackageManager.NameNotFoundException) {
                 // Gallery app uninstalled; fall through to warning placeholder (AC-04)
