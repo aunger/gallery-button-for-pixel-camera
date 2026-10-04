@@ -83,7 +83,12 @@ fi
 # Generate into a throwaway Gradle home so the file records the full graph.
 GRADLE_USER_HOME="$(mktemp -d)"
 export GRADLE_USER_HOME
-trap 'rm -rf "$GRADLE_USER_HOME"' EXIT
+# Stop the run's Gradle daemon before deleting its home. The daemon outlives the
+# client, and on one run (#1236), right after a successful generation, `rm -rf`
+# failed with "Directory not empty" under caches/<version>/transforms, which
+# failed the trap and with it the script. `|| true` because a run that failed
+# before Gradle started has no daemon to stop.
+trap '"$GRADLE_BIN" --stop >/dev/null 2>&1 || true; rm -rf "$GRADLE_USER_HOME"' EXIT
 
 echo "==> Regenerating gradle/verification-metadata.xml (GRADLE_BIN=$GRADLE_BIN, GRADLE_USER_HOME=$GRADLE_USER_HOME)"
 "$GRADLE_BIN" --write-verification-metadata sha256 \
