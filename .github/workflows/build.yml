@@ -14,8 +14,8 @@ permissions:
 jobs:
   # Compute whether this event needs the full build, or is a docs-only change that
   # can skip the expensive steps (issue #618). Extracted into its own small upstream
-  # job so both build-and-test and the parallel shell-tests job can gate on the same
-  # result via `needs:`, instead of each recomputing the diff. Needs only a checkout
+  # job so build-and-test and the parallel shell-tests and android-lint jobs can gate on
+  # the same result via `needs:`, instead of each recomputing the diff. Needs only a checkout
   # (fetch-depth 0 so check_non_docs_changes.sh can diff against the base) and git.
   check-diff:
     runs-on: ubuntu-latest
@@ -103,8 +103,9 @@ jobs:
   # lengthening it, and a finding neither waits for nor cuts short the emulator suites. That
   # costs a second JDK and SDK setup and Gradle cache restore.
   #
-  # The two e2e-mock-* modules are not linted. They ship nothing and run only on the CI
-  # emulator, so a call above their minSdk could only fail there, where the E2E suites see it.
+  # The two e2e-mock-* modules are not linted. They ship nothing, and they run only on the CI
+  # emulator, whose API level (35) is also their compileSdk, so no call in them can be missing
+  # on the one device they run on. An emulator below their compileSdk would change that.
   #
   # Same per-step check-diff gating as shell-tests, so a docs-only change still reports green.
   android-lint:

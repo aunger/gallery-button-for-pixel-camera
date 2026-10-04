@@ -86,8 +86,10 @@ export GRADLE_USER_HOME
 # Stop the run's Gradle daemon before deleting its home. The daemon outlives the
 # client, and on one run (#1236), right after a successful generation, `rm -rf`
 # failed with "Directory not empty" under caches/<version>/transforms, which
-# failed the trap and with it the script. `|| true` because a run that failed
-# before Gradle started has no daemon to stop.
+# failed the trap and with it the script. `|| true` because the stop can fail
+# too: if the wrapper never got its distribution into the fresh home, the stop
+# retries that download, silently, and may fail again. A failed stop must not
+# replace the script's own exit status or skip the `rm`.
 trap '"$GRADLE_BIN" --stop >/dev/null 2>&1 || true; rm -rf "$GRADLE_USER_HOME"' EXIT
 
 echo "==> Regenerating gradle/verification-metadata.xml (GRADLE_BIN=$GRADLE_BIN, GRADLE_USER_HOME=$GRADLE_USER_HOME)"
