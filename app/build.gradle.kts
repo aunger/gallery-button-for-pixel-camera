@@ -174,11 +174,13 @@ android {
             all { testTask ->
                 // Hands NewApiLintGuardTest the lint { } settings as Gradle resolved them, so the
                 // test sees what Lint will be given however the block above came to say it
-                // (issue #1239). The lint.xml files Lint reads are inputs too, so adding one
-                // reruns the test.
-                val lintConfigFiles =
-                    listOfNotNull(lint.lintConfig, file("lint.xml"), rootProject.file("lint.xml"))
-                testTask.inputs.files(lintConfigFiles).withPropertyName("lintConfigFiles")
+                // (issue #1239). Lint also reads a lint.xml from any folder between a source file
+                // and the root, so the test walks moduleDir, less its build output, for those.
+                // Every lint.xml it can find is an input, so adding one reruns the test.
+                val lintConfigFiles = listOfNotNull(lint.lintConfig, rootProject.file("lint.xml"))
+                testTask.inputs
+                    .files(lintConfigFiles, fileTree(projectDir) { include("**/lint.xml").exclude("build/**") })
+                    .withPropertyName("lintConfigFiles")
                 mapOf(
                     "disable" to lint.disable.sorted(),
                     "ignore" to lint.ignore.sorted(),
@@ -186,6 +188,7 @@ android {
                     "checkOnly" to lint.checkOnly.sorted(),
                     "baseline" to listOfNotNull(lint.baseline?.path),
                     "configFiles" to lintConfigFiles.map { it.path },
+                    "moduleDir" to listOf(projectDir.path),
                 ).forEach { (name, values) ->
                     testTask.systemProperty("gb4pc.lint.$name", values.joinToString("\n"))
                 }

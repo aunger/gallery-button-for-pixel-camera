@@ -6,6 +6,7 @@ import org.junit.Test
 import org.w3c.dom.Element
 import java.io.File
 import javax.xml.parsers.DocumentBuilderFactory
+import kotlin.io.path.createTempDirectory
 
 /**
  * Regression guard for issue #1239.
@@ -22,12 +23,15 @@ import javax.xml.parsers.DocumentBuilderFactory
  * that wiring cannot quietly turn the guard off.
  *
  * NewApi counts as switched off when any of these holds:
- * - it is in `disable` or `ignore` (AGP 9.1 fills both from either, so one entry reports twice);
+ * - it is in `disable` or `ignore` (in AGP 9.1 `ignore` returns the `disable` set, so one entry
+ *   reports on both lines);
  * - it is in `informational`, which reports it without failing the task;
  * - `checkOnly` is set and leaves it out;
  * - a `baseline` file is configured, whatever it holds today;
- * - the `lintConfig` file, `app/lint.xml`, or a `lint.xml` at the repository root names it, or
- *   names `all`, in an `<issue>` element.
+ * - a `lint.xml` names it, or names `all`, in an `<issue>` element. That is the `lintConfig` file,
+ *   a `lint.xml` at the repository root, or a `lint.xml` anywhere in the module outside its
+ *   `build` output: for each source file, Lint reads the nearest `lint.xml` in the folders between
+ *   it and the root, so one in `src/main` covers every file beneath it.
  *
  * The last rule is stricter than Lint: a `lint.xml` could name NewApi only to keep it an error.
  * Telling those apart means modelling Lint's severity and path rules, and NewApi is an error by
@@ -48,6 +52,16 @@ class NewApiLintGuardTest {
         val baseline: List<String>,
         val configFiles: List<File>,
     )
+
+    /** Every `lint.xml` under [moduleDir], except in its `build` output, which Lint does not analyze. */
+    private fun lintXmlFilesIn(moduleDir: File): List<File> {
+        val buildDir = File(moduleDir, "build")
+        return moduleDir
+            .walkTopDown()
+            .onEnter { it != buildDir }
+            .filter { it.isFile && it.name == "lint.xml" }
+            .toList()
+    }
 
     private fun names(ids: Collection<String>) = ids.flatMap { it.split(',') }.map { it.trim() }
 
@@ -88,6 +102,8 @@ class NewApiLintGuardTest {
         return value.lines().filter { it.isNotBlank() }
     }
 
+    private fun moduleDir() = File(property("moduleDir").single())
+
     private fun resolvedSettings() =
         LintSettings(
             disable = property("disable"),
@@ -95,7 +111,7 @@ class NewApiLintGuardTest {
             informational = property("informational"),
             checkOnly = property("checkOnly"),
             baseline = property("baseline"),
-            configFiles = property("configFiles").map(::File),
+            configFiles = property("configFiles").map(::File) + lintXmlFilesIn(moduleDir()),
         )
 
     @Test
@@ -113,17 +129,21 @@ class NewApiLintGuardTest {
         val resolved = resolvedSettings()
         // The lint { } block disables other checks, so an empty set here means the wiring broke.
         assertTrue("lint.disable arrived empty: $resolved", resolved.disable.isNotEmpty())
-        assertTrue(
-            "configFiles should name app/lint.xml: ${resolved.configFiles}",
-            resolved.configFiles.any { it.name == "lint.xml" && it.parentFile?.name == "app" },
-        )
+        val moduleDir = moduleDir()
+        assertTrue("moduleDir is not this module: $moduleDir", File(moduleDir, "src/main/AndroidManifest.xml").isFile)
 
         val clean = LintSettings(listOf("GradleDependency"), emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
         assertEquals(emptyList<String>(), violations(clean))
         assertEquals(emptyList<String>(), violations(clean.copy(checkOnly = listOf("NewApi", "InlinedApi"))))
 
-        val config = File.createTempFile("lint", ".xml")
+        // A module tree with a nested lint.xml, which counts, and one in build output, which does not.
+        val tree = createTempDirectory("module").toFile()
+        val config = File(tree, "src/main/java/lint.xml").apply { parentFile.mkdirs() }
         try {
+            config.writeText("<lint />")
+            File(tree, "build/intermediates/lint.xml").apply { parentFile.mkdirs() }.writeText("<lint />")
+            assertEquals(listOf(config), lintXmlFilesIn(tree))
+
             config.writeText("""<lint><issue id="InlinedApi,NewApi" severity="ignore" /></lint>""")
             val switchedOff =
                 mapOf(
@@ -144,7 +164,7 @@ class NewApiLintGuardTest {
             config.writeText("""<lint><issue id="InlinedApi" severity="ignore" /></lint>""")
             assertEquals(emptyList<String>(), violations(clean.copy(configFiles = listOf(config))))
         } finally {
-            config.delete()
+            tree.deleteRecursively()
         }
     }
 
