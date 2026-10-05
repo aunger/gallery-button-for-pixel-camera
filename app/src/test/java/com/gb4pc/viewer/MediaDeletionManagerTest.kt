@@ -100,6 +100,36 @@ class MediaDeletionManagerTest {
     }
 
     @Test
+    fun `API 29 SecurityException that is not recoverable invokes onFailure`() {
+        whenever(contentResolver.delete(eq(uri), anyOrNull(), anyOrNull()))
+            .thenThrow(SecurityException("not recoverable"))
+
+        newManager(apiLevel = Build.VERSION_CODES.Q).delete(uri)
+
+        assertEquals(1, failureCount)
+        assertEquals("Only a RecoverableSecurityException carries a system UI to launch", 0, launcherCalls)
+    }
+
+    /**
+     * Below API 29 `RecoverableSecurityException` does not exist, so the recovery path, which names
+     * it, must not run there (issue #985). A device cannot throw one at API 28; the mock stands in
+     * for "a SecurityException the API 29 path would have accepted".
+     */
+    @Test
+    fun `below API 29 the recoverable-exception path does not run`() {
+        val securityException =
+            mock<android.app.RecoverableSecurityException> {
+                on { userAction } doReturn mock()
+            }
+        whenever(contentResolver.delete(eq(uri), anyOrNull(), anyOrNull())).thenThrow(securityException)
+
+        newManager(apiLevel = Build.VERSION_CODES.P).delete(uri)
+
+        assertEquals(1, failureCount)
+        assertEquals(0, launcherCalls)
+    }
+
+    @Test
     fun `onDeleteRequestResult with resultOk=true retries the delete`() {
         val mockRemoteAction: RemoteAction = mock()
         val mockPendingIntent: android.app.PendingIntent =

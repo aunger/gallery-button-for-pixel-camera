@@ -9,6 +9,16 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
+    <!--
+      GB4PC watches camera availability (SPEC.md section 2.1) but never opens a camera itself, so
+      the CAMERA permission is not a hardware requirement. Without this line Google Play would infer
+      android.hardware.camera required="true" from that permission. It has no effect on a sideloaded
+      install.
+    -->
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+
     <!-- Special permissions (granted via system settings) -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
@@ -90,13 +100,17 @@
             android:exported="false"
             android:theme="@style/Theme.GB4PC.Transparent" />
 
-        <!-- Secure Filmstrip Viewer Activity -->
+        <!--
+          Secure Filmstrip Viewer Activity. showWhenLocked and turnScreenOn take effect from API 27
+          (hence tools:targetApi); on API 26 the activity sets the equivalent window flags itself.
+        -->
         <activity
             android:name=".viewer.SecureViewerActivity"
             android:exported="false"
             android:showWhenLocked="true"
             android:turnScreenOn="true"
-            android:theme="@style/Theme.GB4PC.Viewer" />
+            android:theme="@style/Theme.GB4PC.Viewer"
+            tools:targetApi="27" />
 
         <!-- Overlay Foreground Service -->
         <service

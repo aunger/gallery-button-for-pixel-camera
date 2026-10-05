@@ -60,7 +60,6 @@
     <string name="advanced_reset">Reset to Defaults</string>
     <string name="advanced_reset_confirm_title">Reset Position?</string>
     <string name="advanced_reset_confirm_message">This will restore the default overlay position for the current display aspect ratio.</string>
-    <string name="advanced_debug_log">Debug Log</string>
     <string name="advanced_view_log">View Debug Log</string>
 
     <!-- Log Viewer -->
