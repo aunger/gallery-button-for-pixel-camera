@@ -17,8 +17,8 @@ import kotlin.io.path.createTempDirectory
  * later change could switch NewApi off, or absorb its findings into a baseline, and the task
  * would still pass. This test fails instead.
  *
- * It does not read `app/build.gradle.kts` as text. The `unitTests.all { }` block there passes in
- * the settings as Gradle resolved them, as `gb4pc.lint.*` system properties, so every way of
+ * It does not read `app/build.gradle.kts` as text. The `unitTests.all { }` block there passes the
+ * settings in as Gradle resolved them, as `gb4pc.lint.*` system properties, so every way of
  * writing the DSL lands in the same values. A property that is missing fails the test, so removing
  * that wiring cannot quietly turn the guard off.
  *
