@@ -4797,8 +4797,8 @@ def main() -> int:
         "\n=== (ay) #707 latest_check_runs: same-named check runs collapse to the latest each ==="
     )
 
-    # The exact shape from issue #707: one named check ('Administrative merge holds (not failure)')
-    # recurs three times against the same commit as a label was added then
+    # The shape from issue #707, with the merge gate under its current name (it
+    # was 'No blocking labels' then): one named check recurs three times against the same commit as a label was added then
     # removed, leaving a stale middle 'failure' between two 'success' runs. Only
     # the most recent (highest started_at / id) is authoritative.
     GATE_RERUNS_3 = {
@@ -5360,9 +5360,10 @@ def main() -> int:
     #        (mergeable_state=unstable) -> Clear, not a false Blocked ─────────────
     print("\n=== (bf) #748 main(): --pr Blocked/Infra terminal is gated by mergeable_state ===")
 
-    # Reproduces PR #734's false positive: 'enforce-exclusive-labels' (a NON-required
-    # check) fails while both required checks ('build-and-test', the merge gate)
-    # pass. parse_check_result returns 'Blocked' from the raw per-check scan, but the
+    # Reproduces PR #734's false positive: a NON-required check fails while both
+    # required checks ('build-and-test', the merge gate) pass. The non-required
+    # check keeps the name it had then, 'enforce-exclusive-labels'; that job is
+    # now a step inside the merge gate, so no current check fills its role. parse_check_result returns 'Blocked' from the raw per-check scan, but the
     # PR is mergeable, so GitHub reports mergeable_state='unstable'. The monitor must
     # consult mergeable_state and terminate Clear (mergeable_state=unstable) rather
     # than short-circuiting to a spurious Blocked. The per-check summary still lists
