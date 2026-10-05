@@ -166,8 +166,8 @@ def fetch_closing_issue_labels(
 # active orchestration:
 #   - `orchestrate`/`orchestrating` is applied to both when orchestration
 #     starts, and the PR carries `orchestrating` for the whole cycle. Holding
-#     the "No blocking labels" gate red while it does is the label's purpose,
-#     so nothing removes it mid-cycle to open that gate
+#     the "Administrative merge holds (not failure)" gate red while it does is
+#     the label's purpose, so nothing removes it mid-cycle to open that gate
 #     (dev_orchestration.md's "Orchestrator may not"); "Concluding PR
 #     orchestration" clears it from both at the end.
 #   - `changes requested`/`changes done` transitions apply "to the PR if one

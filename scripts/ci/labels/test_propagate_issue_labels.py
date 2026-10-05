@@ -197,7 +197,7 @@ class TestLabelsToPropagate(unittest.TestCase):
     def test_excludes_orchestrating_even_with_no_pr_side_conflict(self):
         # Reproduces the live bug: the PR carries none of {orchestrate,
         # orchestrating}, so the old mutual-exclusion-only guard would have
-        # let this through and re-blocked "No blocking labels".
+        # let this through and re-blocked the merge gate.
         to_add, skipped, excluded = pil.labels_to_propagate([], ["orchestrating"])
         self.assertEqual(to_add, [])
         self.assertEqual(skipped, [])

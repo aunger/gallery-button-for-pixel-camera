@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Fail the merge gate when any open PR at this head commit carries a blocking label.
 
-Backs the "No blocking labels" required status check
-(.github/workflows/block-merge-on-blocking-labels.yml), which enforces
+Backs the "Administrative merge holds (not failure)" required status check
+(.github/workflows/administrative-merge-holds.yml), which enforces
 agents/dev_orchestration.md's "do not merge while process state is
 outstanding" rule.
 
@@ -40,11 +40,17 @@ of this script's sources by construction (see main()), rather than trusting the
 open-PR listing to have caught up with the close, so it is what actually
 retires the verdict that PR earned.
 
-The triggering PR's own labels are read from the event payload as well as from
-the API listing (see main()). Both are snapshots that go stale in opposite
+The triggering PR's own labels are read from PR_LABELS as well as from the
+API listing (see main()). Both are snapshots that go stale in opposite
 directions, so unioning them is what keeps either staleness blocking rather
-than opening, and it also makes this check never weaker about the triggering PR
-than the payload-only check it replaced.
+than opening. The workflow fills PR_LABELS from a direct read of the PR's
+labels taken after its label-enforcement step, not from the event payload,
+because that step can remove a blocking label the payload still names
+(issue #1241).
+
+This script runs out of a checkout pinned to the base branch, because its job
+holds write scopes (see .github/workflows/CLAUDE.md). An edit to it therefore
+does not run on the pull request that makes it.
 
 The price of that is a verdict that can name a label the PR no longer carries,
 since a run whose event has been superseded, or whose listing lagged a label
@@ -75,7 +81,8 @@ Required environment variables:
                         check run is stored against
     PR_NUMBER           github.event.pull_request.number
     PR_STATE            github.event.pull_request.state ("open" or "closed")
-    PR_LABELS           toJson(github.event.pull_request.labels.*.name)
+    PR_LABELS           JSON array of the triggering PR's label names, read
+                        after label enforcement (see the workflow)
 """
 
 import json
@@ -214,13 +221,13 @@ def main() -> int:
 
     # The triggering PR's labels are taken from both sources and unioned rather
     # than either replacing the other, because each source is stale in the
-    # direction the other covers. The payload is fixed at event time, so the
-    # listing is what catches a label applied after this run's event fired,
-    # which a superseded run would otherwise report as a clean commit. The
-    # listing is a separate read, so the payload is what catches a listing that
-    # has not yet caught up with a PR just opened or just labeled. Blocking on
-    # either is also why the verdict is never weaker about the triggering PR
-    # than the payload alone would have made it.
+    # direction the other covers. PR_LABELS is read before this script starts,
+    # so the listing is what catches a label applied after that read, which a
+    # superseded run would otherwise report as a clean commit. The listing is a
+    # separate read, so PR_LABELS is what catches a listing that has not yet
+    # caught up with a PR just opened or just labeled. Blocking on either is
+    # also why the verdict is never weaker about the triggering PR than
+    # PR_LABELS alone would have made it.
     #
     # The union can therefore name a label that is no longer applied: a
     # superseded run landing last, or a listing lagging a removal. That is

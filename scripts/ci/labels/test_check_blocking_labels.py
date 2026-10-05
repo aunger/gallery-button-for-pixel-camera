@@ -17,9 +17,7 @@ sys.path.insert(0, _LABELS_DIR)
 import check_blocking_labels as cbl  # noqa: E402
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(_LABELS_DIR)))
-_WORKFLOW_PATH = os.path.join(
-    _REPO_ROOT, ".github", "workflows", "block-merge-on-blocking-labels.yml"
-)
+_WORKFLOW_PATH = os.path.join(_REPO_ROOT, ".github", "workflows", "administrative-merge-holds.yml")
 
 
 # ---------------------------------------------------------------------------
@@ -320,6 +318,47 @@ class TestWorkflowTriggers(unittest.TestCase):
         applied anywhere and no automatic way out.
         """
         self.assertIn("closed", self._trigger_types())
+
+
+class TestMergedJobWiring(unittest.TestCase):
+    """The gate shares one job with label enforcement (issue #1241)."""
+
+    _GATE_STEP = "Red to hold merge, not a failure"
+    _ENFORCE_STEP = "Enforce mutually exclusive label sets"
+
+    def setUp(self):
+        with open(_WORKFLOW_PATH, encoding="utf-8") as f:
+            workflow = yaml.safe_load(f)
+        (self.job,) = workflow["jobs"].values()
+        self.steps = {step["name"]: (i, step) for i, step in enumerate(self.job["steps"])}
+
+    def test_job_name_is_the_required_check_name(self):
+        self.assertEqual(self.job["name"], "Administrative merge holds (not failure)")
+
+    def test_enforcement_runs_before_the_gate(self):
+        """Enforcement can remove a blocking label, so the gate must see the result."""
+        self.assertLess(self.steps[self._ENFORCE_STEP][0], self.steps[self._GATE_STEP][0])
+
+    def test_enforcement_runs_only_on_labeled(self):
+        self.assertEqual(
+            self.steps[self._ENFORCE_STEP][1]["if"], "github.event.action == 'labeled'"
+        )
+
+    def test_gate_runs_only_on_pull_requests(self):
+        self.assertEqual(
+            self.steps[self._GATE_STEP][1]["if"], "github.event_name == 'pull_request'"
+        )
+
+    def test_gate_does_not_read_labels_from_the_event_payload(self):
+        """The payload predates enforcement, so the gate reads the labels afterwards."""
+        gate = self.steps[self._GATE_STEP][1]
+        self.assertNotIn("PR_LABELS", gate["env"])
+        self.assertIn("/labels", gate["run"])
+        self.assertIn("check_blocking_labels.py", gate["run"])
+
+    def test_no_step_hides_a_failure(self):
+        for _, step in self.steps.values():
+            self.assertNotIn("continue-on-error", step)
 
 
 if __name__ == "__main__":
