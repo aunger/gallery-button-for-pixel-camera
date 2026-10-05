@@ -17,7 +17,7 @@ It drives the pull request toward consensus among the sub-agents and a green res
 - `check-diff`
 
 These are the required checks on `main` (per `GET /repos/{owner}/{repo}/rules/branches/main` on 2026-09-18) less one.
-`No blocking labels` is left off deliberately: it is the merge gate, it is red for the whole of every cycle by design, and no agent may act on it (see "Orchestrator may not").
+`Administrative merge holds (not failure)` is left off deliberately: it is the merge gate, it is red for the whole of every cycle by design, and no agent may act on it (see "Orchestrator may not").
 `ignored_check_regex` in `scripts/ci_monitor/ci_monitor.config.json` leaves it out of the Monitor's verdict too.
 A change that adds or removes a required check updates this list in the same change.
 No automated guard checks the list: `workflow_job_names` in `scripts/lib/workflow_yaml.sh` emits job ids rather than the check names a `name:` override produces, and silently drops some jobs (#956).
@@ -61,7 +61,7 @@ The Orchestrator is not a Reviewer or a Programmer.
 - Read source files (Read, Bash cat/grep, etc.)
 - Read the PR or the issue beyond their titles, labels, and open/closed states
 - Hold a PR-activity subscription or set a timer to re-fetch PR state
-- Remove a label, or take any other step, to turn the `No blocking labels` check green: that would circumvent the one mechanism that keeps an agent from taking the merge onus on.
+- Remove a label, or take any other step, to turn the `Administrative merge holds (not failure)` check green: that would circumvent the one mechanism that keeps an agent from taking the merge onus on.
 - Edit or write files
 - Diagnose bugs or evaluate code
 - Make git commits or push changes
@@ -219,7 +219,7 @@ Verification Agent outcome vocabulary (a dispatched Verification Agent emits one
 Routing on the Verification Agent's signal:
 
 - `Verification passed`: every before-merging item was confirmed automatically.
-  This *before-merging requirements* process is complete. The PR is not mergeable yet: the `No blocking labels` check stays red until "Concluding PR orchestration" removes `orchestrating`.
+  This *before-merging requirements* process is complete. The PR is not mergeable yet: the `Administrative merge holds (not failure)` check stays red until "Concluding PR orchestration" removes `orchestrating`.
   If the PR is a draft, removing that label is not sufficient either: a draft PR cannot merge until someone marks it ready for review, and that is the user's call.
   Apply this transition to the PR:
 
@@ -354,10 +354,10 @@ monitorLoop:
 
 Each row of the summary block is `<name> .... <conclusion>` followed by optional annotations, one row per check-run name, already collapsed to that name's latest run.
 That is how GitHub itself judges a required check.
-The Monitor ends only once every check-run it can see has completed, apart from those its config ignores (`No blocking labels`, here), so a named check's row always carries a conclusion.
+The Monitor ends only once every check-run it can see has completed, apart from those its config ignores (`Administrative merge holds (not failure)`, here), so a named check's row always carries a conclusion.
 
 Read only the rows of the named checks (see "The Orchestrator's goal is consensus and green named checks, not a mergeable branch" above).
-Ignore every other row, including `No blocking labels`, and every annotation the Monitor adds (`[BLOCKING]`, `[ignored]`, the terminal's ` by: ...` portion).
+Ignore every other row, including `Administrative merge holds (not failure)`, and every annotation the Monitor adds (`[BLOCKING]`, `[ignored]`, the terminal's ` by: ...` portion).
 Which checks matter is policy stated in this document, not something the Monitor computes.
 
 Draftness changes what the Orchestrator says, not where it goes: a failed test is a failed test whether or not the PR can merge.
@@ -390,7 +390,7 @@ namedChecks:
 
 `surfaceBeforeMergingRequirements` surfaces outstanding before-merging requirements: unautomated verification steps, and changes outside the repo.
 It is entered once every named check is green, which does not prove the PR is mergeable.
-`No blocking labels` is still red, and a draft cannot merge at all until someone marks it ready.
+`Administrative merge holds (not failure)` is still red, and a draft cannot merge at all until someone marks it ready.
 Neither bears on the requirements `surfaceBeforeMergingRequirements` surfaces, which are about what must be true before a merge, not about whether one is possible today.
 The Orchestrator does not scan the issue or PR itself.
 

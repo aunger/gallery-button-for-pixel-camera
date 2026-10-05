@@ -77,7 +77,7 @@ A page that fails to load fails the whole read, which the poll treats as no data
 ### Same-named check-run collapsing
 
 Before reading the verdict, summary, or run/job targets, the Monitor collapses the `/commits/{sha}/check-runs` payload so that each distinct check-run *name* keeps only its most recent run (issue #707).
-GitHub can attach several check runs with the same name to one commit when a workflow re-runs: for example, each PR-side label add/remove re-triggers `block-merge-on-blocking-labels.yml`, so the `No blocking labels` gate accumulates several entries against the same head commit, and a stale `failure` (from a blocking label that was since removed) can sit between two `success` runs.
+GitHub can attach several check runs with the same name to one commit when a workflow re-runs: for example, each PR-side label add/remove re-triggers `administrative-merge-holds.yml`, so the `Administrative merge holds (not failure)` gate accumulates several entries against the same head commit, and a stale `failure` (from a blocking label that was since removed) can sit between two `success` runs.
 Recency is judged by the run's numeric check-run `id`: GitHub assigns it at creation and a re-run always gets a higher one, so it identifies the latest attempt without relying on `started_at`, which GitHub leaves null until a run actually starts (a freshly-queued re-run would otherwise sort oldest and let a stale completed run win; issue #719).
 The surviving run keeps the position of that name's first appearance so the summary's row order is otherwise unchanged.
 This mirrors GitHub's own `mergeable_state`, which judges a required check by its latest run per name.
@@ -141,7 +141,7 @@ This repo's committed `ci_monitor.config.json` sets:
 - `interesting_step_regex`: `Build and run unit tests|^Run .*E2ETest$` (reproduces the named-step reporting on success; anchored to the `Run <Class>E2ETest` steps specifically, so it does not also match the `Upload <Class>E2ETest monitor feed`/`E2E video` steps, whose names now embed the same class name per issue #600).
 - `deferred_verdict_step_regex`: `^Run .*E2ETest$|^Run instrumented tests$` (the nine deferred-verdict steps in `build.yml`: the eight `Run <Class>E2ETest` steps and `Run instrumented tests`). Narrower than `interesting_step_regex`, which also matches `Build and run unit tests`: that step runs `testDebugUnitTest` under `set -o pipefail`, so its conclusion is an honest verdict and must *not* be annotated.
 - `test_marker_regex`: `##GB4PC_TEST##|##TEST##` (back-compat dual marker, see below).
-- `ignored_check_regex`: `No blocking labels` (the merge gate).
+- `ignored_check_regex`: `^Administrative merge holds \(not failure\)$` (the merge gate; the parentheses are escaped because the value is a regex).
 
 **Back-compat dual marker.**
 The default read marker is `##TEST##`, but this repo's CI still emits `##GB4PC_TEST##` (see `build.yml`), so the committed config matches both (`##GB4PC_TEST##|##TEST##`).

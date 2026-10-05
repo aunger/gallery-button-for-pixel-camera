@@ -73,7 +73,7 @@ Answer an inline comment in a thread (`mcp__github__add_reply_to_pull_request_co
 ### CI checks during the development cycle
 
 Not all CI checks can pass while the development cycle is active, and that is expected.
-Some required checks, such as "No blocking labels", validate the post-cycle state of a PR and fail by design during agentic reviews.
+Some required checks, such as "Administrative merge holds (not failure)", validate the post-cycle state of a PR and fail by design during agentic reviews.
 
 ### Reviewing an Author who declined to open a PR
 

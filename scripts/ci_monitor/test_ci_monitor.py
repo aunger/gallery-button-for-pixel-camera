@@ -270,6 +270,10 @@ REPO_STEP_REGEX = "Build and run unit tests|^Run .*E2ETest$"
 REPO_DEFERRED_REGEX = "^Run .*E2ETest$|^Run instrumented tests$"
 REPO_MARKER_REGEX = "##GB4PC_TEST##|##TEST##"
 REPO_ARTIFACT_REGEX = "^ci-monitor-feed-"
+# The merge gate's check name, and the committed regex that ignores it. The
+# name holds parentheses, so it is not a regex for itself.
+REPO_GATE_NAME = "Administrative merge holds (not failure)"
+REPO_IGNORED_REGEX = r"^Administrative merge holds \(not failure\)$"
 
 
 def check_runs_payload(*pairs):
@@ -3528,13 +3532,17 @@ def main() -> int:
     # ── (ag) #516 parse_check_summary: per-check rows, blocking, ignored ─────
     print("\n=== (ag) #516 parse_check_summary: rows with correct fields ===")
 
-    # Payload with a failing 'No blocking labels' check plus three passing checks.
+    # Payload with a failing merge-gate check plus three passing checks.
     # The ignored_check_regex is passed explicitly to test the function directly.
-    IGNORED_REGEX_AG = "No blocking labels"
+    IGNORED_REGEX_AG = REPO_IGNORED_REGEX
     SUMMARY_PAYLOAD = {
         "total_count": 4,
         "check_runs": [
-            {"name": "No blocking labels", "status": "completed", "conclusion": "failure"},
+            {
+                "name": "Administrative merge holds (not failure)",
+                "status": "completed",
+                "conclusion": "failure",
+            },
             {"name": "Build and run unit tests", "status": "completed", "conclusion": "success"},
             {
                 "name": "Run PixelCameraOverlayE2ETest",
@@ -3564,9 +3572,9 @@ def main() -> int:
     ignored_rows_ag = [r for r in rows_ag if r["ignored"]]
     check(
         len(ignored_rows_ag) == 1
-        and ignored_rows_ag[0]["name"] == "No blocking labels"
+        and ignored_rows_ag[0]["name"] == "Administrative merge holds (not failure)"
         and ignored_rows_ag[0]["conclusion"] == "failure",
-        "exactly one ignored row: 'No blocking labels', still reporting its failure",
+        "exactly one ignored row: the merge gate, still reporting its failure",
         "ignored rows wrong; got %r" % (ignored_rows_ag,),
     )
     # Under the never-match default the same failing check blocks and is not ignored.
@@ -3574,7 +3582,7 @@ def main() -> int:
     blocking_rows_ag_default = [r for r in rows_ag_default if r["blocking"]]
     check(
         len(blocking_rows_ag_default) == 1
-        and blocking_rows_ag_default[0]["name"] == "No blocking labels"
+        and blocking_rows_ag_default[0]["name"] == "Administrative merge holds (not failure)"
         and not any(r["ignored"] for r in rows_ag_default),
         "with the default regex the failing check is blocking and no row is ignored",
         "default-regex rows wrong; got %r" % (rows_ag_default,),
@@ -3654,7 +3662,7 @@ def main() -> int:
     # [BLOCKING], and an ignored row carries [ignored] instead, even when it failed.
     ROWS_AH = [
         {
-            "name": "No blocking labels",
+            "name": "Administrative merge holds (not failure)",
             "conclusion": "failure",
             "blocking": False,
             "ignored": True,
@@ -3680,7 +3688,7 @@ def main() -> int:
     )
     check(
         any(
-            "No blocking labels" in ln
+            "Administrative merge holds (not failure)" in ln
             and "failure" in ln
             and "[ignored]" in ln
             and "[BLOCKING]" not in ln
@@ -3690,7 +3698,11 @@ def main() -> int:
         "ignored row format wrong; got %r" % (lines_ah,),
     )
     check(
-        not any("[ignored]" in ln for ln in lines_ah if "No blocking labels" not in ln),
+        not any(
+            "[ignored]" in ln
+            for ln in lines_ah
+            if "Administrative merge holds (not failure)" not in ln
+        ),
         "rows that are not ignored carry no [ignored]",
         "unexpected [ignored] marker; got %r" % (lines_ah,),
     )
@@ -3741,7 +3753,7 @@ def main() -> int:
 
     # Only an ignored failing row: it is not blocking, so the suffix is empty.
     _row_ignored_ah = {
-        "name": "No blocking labels",
+        "name": "Administrative merge holds (not failure)",
         "conclusion": "failure",
         "blocking": False,
         "ignored": True,
@@ -3846,28 +3858,32 @@ def main() -> int:
         "absent-file fallback wrong; got %r" % cfg_ai_absent.get("ignored_check_regex"),
     )
 
-    # Committed repo config carries 'No blocking labels'.
+    # Committed repo config carries the escaped regex for the merge gate's name.
     _repo_cfg_path_ai = os.path.join(
         os.path.dirname(os.path.abspath(__file__)), "ci_monitor.config.json"
     )
     cfg_ai_repo = ci_monitor.load_config(_repo_cfg_path_ai)
     check(
-        cfg_ai_repo.get("ignored_check_regex") == "No blocking labels",
-        "committed config carries ignored_check_regex = 'No blocking labels'",
+        cfg_ai_repo.get("ignored_check_regex") == REPO_IGNORED_REGEX,
+        "committed config carries ignored_check_regex = REPO_IGNORED_REGEX",
         "committed config wrong; got %r" % cfg_ai_repo.get("ignored_check_regex"),
     )
 
     # ── (aj) #516 end-to-end: an ignored red gate on a non-draft PR ─────────
     print("\n=== (aj) #516 end-to-end: ignored gate hold -> 'Infra (mergeable_state=blocked)' ===")
 
-    # A red 'No blocking labels' gate, ignored by the committed config, beside three
+    # A red merge gate, ignored by the committed config, beside three
     # passing checks. mergeable_state is still "blocked", so the terminal is the bare
     # Infra, preceded by the undiagnosed-drain flag.
     PR_AJ = {"head": {"sha": "513c0de1"}}
     CHECK_BL_GATE_AJ = {
         "total_count": 4,
         "check_runs": [
-            {"name": "No blocking labels", "status": "completed", "conclusion": "failure"},
+            {
+                "name": "Administrative merge holds (not failure)",
+                "status": "completed",
+                "conclusion": "failure",
+            },
             {"name": "Build and run unit tests", "status": "completed", "conclusion": "success"},
             {
                 "name": "Run PixelCameraOverlayE2ETest",
@@ -3940,13 +3956,13 @@ def main() -> int:
     )
     check(
         any(
-            "No blocking labels" in ln
+            "Administrative merge holds (not failure)" in ln
             and "failure" in ln
             and "[ignored]" in ln
             and "[BLOCKING]" not in ln
             for ln in lines_aj
         ),
-        "summary row for 'No blocking labels' shows failure and [ignored], not [BLOCKING]",
+        "summary row for the merge gate shows failure and [ignored], not [BLOCKING]",
         "ignored summary row wrong; output: %r" % out_aj,
     )
     check(
@@ -3978,10 +3994,8 @@ def main() -> int:
     )
     check(rc_aj == 0, "main() returned 0", "main() returned %r" % rc_aj)
 
-    # ── (ak) #516 doc-sync: 'No blocking labels' not hardcoded in ci_monitor.py ──
-    print(
-        "\n=== (ak) #516 doc-sync: 'No blocking labels' lives only in the config, not in ci_monitor.py ==="
-    )
+    # ── (ak) #516 doc-sync: the merge gate's name not hardcoded in ci_monitor.py ──
+    print("\n=== (ak) #516 doc-sync: the gate's name lives only in the config ===")
 
     _MONITOR_SRC_AK = open(
         os.path.join(os.path.dirname(os.path.abspath(__file__)), "ci_monitor.py"),
@@ -3989,9 +4003,9 @@ def main() -> int:
     ).read()
 
     check(
-        "No blocking labels" not in _MONITOR_SRC_AK,
-        "the string 'No blocking labels' does not appear in ci_monitor.py (config-driven only)",
-        "'No blocking labels' hardcoded in ci_monitor.py--must live only in ci_monitor.config.json",
+        REPO_GATE_NAME not in _MONITOR_SRC_AK,
+        "the merge gate's name does not appear in ci_monitor.py (config-driven only)",
+        "the merge gate's name hardcoded in ci_monitor.py--must live only in the config",
     )
 
     # ── (al) #619: importing this module directly has no side effects ─────────────
@@ -4783,7 +4797,7 @@ def main() -> int:
         "\n=== (ay) #707 latest_check_runs: same-named check runs collapse to the latest each ==="
     )
 
-    # The exact shape from issue #707: one named check ('No blocking labels')
+    # The exact shape from issue #707: one named check ('Administrative merge holds (not failure)')
     # recurs three times against the same commit as a label was added then
     # removed, leaving a stale middle 'failure' between two 'success' runs. Only
     # the most recent (highest started_at / id) is authoritative.
@@ -4792,7 +4806,7 @@ def main() -> int:
         "check_runs": [
             {
                 "id": 87686988990,
-                "name": "No blocking labels",
+                "name": "Administrative merge holds (not failure)",
                 "status": "completed",
                 "conclusion": "success",
                 "started_at": "2026-07-16T16:57:43Z",
@@ -4801,7 +4815,7 @@ def main() -> int:
             },
             {
                 "id": 87687158072,
-                "name": "No blocking labels",
+                "name": "Administrative merge holds (not failure)",
                 "status": "completed",
                 "conclusion": "failure",
                 "started_at": "2026-07-16T16:58:25Z",
@@ -4810,7 +4824,7 @@ def main() -> int:
             },
             {
                 "id": 87688242514,
-                "name": "No blocking labels",
+                "name": "Administrative merge holds (not failure)",
                 "status": "completed",
                 "conclusion": "success",
                 "started_at": "2026-07-16T17:02:58Z",
@@ -4845,7 +4859,7 @@ def main() -> int:
         "collapsed payload reads all_passed, matching GitHub's mergeable_state=clean",
         "expected all_passed after collapse; got %r" % ci_monitor.parse_check_result(collapsed_ay),
     )
-    rows_ay = ci_monitor.parse_check_summary(collapsed_ay, "No blocking labels")
+    rows_ay = ci_monitor.parse_check_summary(collapsed_ay, REPO_IGNORED_REGEX)
     check(
         len(rows_ay) == 1 and not rows_ay[0]["blocking"],
         "the collapsed summary shows one non-blocking row for the gate",
@@ -4962,14 +4976,16 @@ def main() -> int:
     )
 
     # End-to-end reproduction of issue #707 in --pr mode: the head commit carries
-    # the three 'No blocking labels' runs (stale failure between two successes),
+    # the three merge-gate runs (stale failure between two successes),
     # and the PR's mergeable_state is 'clean'. The monitor must collapse to the
     # latest success and terminate Clear, not Blocked. Only the latest run (333)
     # is a diagnostic target, so exactly one jobs/artifacts pair is fetched --
     # the stale 111/222 runs are never polled.
     PR_AZ = {"head": {"sha": "707f1xed"}}
     PR_MERGEABLE_AZ = {"mergeable_state": "clean", "merged": False, "state": "open"}
-    JOBS_EMPTY_AZ = {"jobs": [{"id": 333, "name": "No blocking labels", "steps": []}]}
+    JOBS_EMPTY_AZ = {
+        "jobs": [{"id": 333, "name": "Administrative merge holds (not failure)", "steps": []}]
+    }
     ARTS_EMPTY_AZ = {"artifacts": []}
 
     side_effects_az = collections.deque(
@@ -5007,12 +5023,15 @@ def main() -> int:
         "unexpected Blocked line; output: %r" % out_az,
     )
     label_rows_az = [
-        ln for ln in lines_az if "No blocking labels" in ln and ln.startswith("PR#707:")
+        ln
+        for ln in lines_az
+        if "Administrative merge holds (not failure)" in ln and ln.startswith("PR#707:")
     ]
     check(
         len(label_rows_az) == 1,
         "the summary lists the gate check exactly once (stale duplicates collapsed)",
-        "expected 1 'No blocking labels' summary row; got %d: %r" % (len(label_rows_az), out_az),
+        "expected 1 'Administrative merge holds (not failure)' summary row; got %d: %r"
+        % (len(label_rows_az), out_az),
     )
     check(
         not any("[BLOCKING]" in ln for ln in label_rows_az),
@@ -5342,7 +5361,7 @@ def main() -> int:
     print("\n=== (bf) #748 main(): --pr Blocked/Infra terminal is gated by mergeable_state ===")
 
     # Reproduces PR #734's false positive: 'enforce-exclusive-labels' (a NON-required
-    # check) fails while both required checks ('build-and-test', 'No blocking labels')
+    # check) fails while both required checks ('build-and-test', the merge gate)
     # pass. parse_check_result returns 'Blocked' from the raw per-check scan, but the
     # PR is mergeable, so GitHub reports mergeable_state='unstable'. The monitor must
     # consult mergeable_state and terminate Clear (mergeable_state=unstable) rather
@@ -5354,7 +5373,11 @@ def main() -> int:
         "total_count": 3,
         "check_runs": [
             {"name": "build-and-test", "status": "completed", "conclusion": "success"},
-            {"name": "No blocking labels", "status": "completed", "conclusion": "success"},
+            {
+                "name": "Administrative merge holds (not failure)",
+                "status": "completed",
+                "conclusion": "success",
+            },
             {"name": "enforce-exclusive-labels", "status": "completed", "conclusion": "failure"},
         ],
     }
@@ -5538,7 +5561,11 @@ def main() -> int:
         "total_count": 3,
         "check_runs": [
             {"name": "build-and-test", "status": "completed", "conclusion": "success"},
-            {"name": "No blocking labels", "status": "completed", "conclusion": "success"},
+            {
+                "name": "Administrative merge holds (not failure)",
+                "status": "completed",
+                "conclusion": "success",
+            },
             {"name": "enforce-exclusive-labels", "status": "completed", "conclusion": "cancelled"},
         ],
     }
@@ -5614,7 +5641,11 @@ def main() -> int:
         "total_count": 2,
         "check_runs": [
             {"name": "build-and-test", "status": "completed", "conclusion": "success"},
-            {"name": "No blocking labels", "status": "completed", "conclusion": "success"},
+            {
+                "name": "Administrative merge holds (not failure)",
+                "status": "completed",
+                "conclusion": "success",
+            },
         ],
     }
     # Diagnostic check-runs for the drain re-polls: no Actions targets -> fast exit.
@@ -5684,7 +5715,11 @@ def main() -> int:
         "total_count": 2,
         "check_runs": [
             {"name": "build-and-test", "status": "completed", "conclusion": "failure"},
-            {"name": "No blocking labels", "status": "completed", "conclusion": "success"},
+            {
+                "name": "Administrative merge holds (not failure)",
+                "status": "completed",
+                "conclusion": "success",
+            },
         ],
     }
     side_effects_bg2 = collections.deque([PR_DRAFT_BG, CHECK_FAIL_BG, MPR_DRAFT_BG])
@@ -5741,7 +5776,11 @@ def main() -> int:
         "total_count": 2,
         "check_runs": [
             {"name": "build-and-test", "status": "completed", "conclusion": "cancelled"},
-            {"name": "No blocking labels", "status": "completed", "conclusion": "success"},
+            {
+                "name": "Administrative merge holds (not failure)",
+                "status": "completed",
+                "conclusion": "success",
+            },
         ],
     }
     side_effects_bg3 = collections.deque([PR_DRAFT_BG, CHECK_INFRA_BG, MPR_DRAFT_BG])
@@ -5962,7 +6001,11 @@ def main() -> int:
         "total_count": 2,
         "check_runs": [
             {"name": "build-and-test", "status": "completed", "conclusion": "success"},
-            {"name": "No blocking labels", "status": "completed", "conclusion": "failure"},
+            {
+                "name": "Administrative merge holds (not failure)",
+                "status": "completed",
+                "conclusion": "failure",
+            },
         ],
     }
     side_effects_bg8 = collections.deque([PR_DRAFT_BG, CHECK_GATE_FAIL_BG, MPR_DRAFT_BG])
@@ -5988,7 +6031,9 @@ def main() -> int:
     )
     check(
         any(
-            "No blocking labels" in ln and "[ignored]" in ln and "[BLOCKING]" not in ln
+            "Administrative merge holds (not failure)" in ln
+            and "[ignored]" in ln
+            and "[BLOCKING]" not in ln
             for ln in lines_bg8
         ),
         "the per-check summary marks the gate [ignored], not [BLOCKING]",
@@ -6131,7 +6176,11 @@ def main() -> int:
         "total_count": 2,
         "check_runs": [
             {"name": "Build and run unit tests", "status": "completed", "conclusion": "success"},
-            {"name": "No blocking labels", "status": "completed", "conclusion": "success"},
+            {
+                "name": "Administrative merge holds (not failure)",
+                "status": "completed",
+                "conclusion": "success",
+            },
         ],
     }
     # Diagnostic check-runs for the drain polls: no Actions targets, so poll_signals
@@ -6196,7 +6245,7 @@ def main() -> int:
     # ── (bk) without_ignored_checks: ignored checks leave the verdict ───────
     print("\n=== (bk) without_ignored_checks: ignored checks do not count toward the verdict ===")
 
-    GATE_BK = "No blocking labels"
+    GATE_BK = REPO_GATE_NAME
     CHECK_GATE_RED_BK = {
         "total_count": 2,
         "check_runs": [
@@ -6204,7 +6253,7 @@ def main() -> int:
             {"name": GATE_BK, "status": "completed", "conclusion": "failure"},
         ],
     }
-    filtered_bk = ci_monitor.without_ignored_checks(CHECK_GATE_RED_BK, GATE_BK)
+    filtered_bk = ci_monitor.without_ignored_checks(CHECK_GATE_RED_BK, REPO_IGNORED_REGEX)
     check(
         [r["name"] for r in filtered_bk["check_runs"]] == ["build-and-test"],
         "the ignored check is dropped from the verdict payload",
@@ -6247,7 +6296,7 @@ def main() -> int:
         }
         got_raw_bk = ci_monitor.parse_check_result(payload_bk)
         got_bk = ci_monitor.parse_check_result(
-            ci_monitor.without_ignored_checks(payload_bk, GATE_BK)
+            ci_monitor.without_ignored_checks(payload_bk, REPO_IGNORED_REGEX)
         )
         check(
             got_raw_bk == raw_bk and got_bk == "all_passed",
@@ -6263,7 +6312,9 @@ def main() -> int:
         ],
     }
     check(
-        ci_monitor.parse_check_result(ci_monitor.without_ignored_checks(CHECK_BOTH_RED_BK, GATE_BK))
+        ci_monitor.parse_check_result(
+            ci_monitor.without_ignored_checks(CHECK_BOTH_RED_BK, REPO_IGNORED_REGEX)
+        )
         == "Blocked",
         "a failing check that is not ignored still reads Blocked",
         "expected Blocked",
@@ -6276,7 +6327,7 @@ def main() -> int:
     }
     check(
         ci_monitor.parse_check_result(
-            ci_monitor.without_ignored_checks(CHECK_ONLY_GATE_BK, GATE_BK)
+            ci_monitor.without_ignored_checks(CHECK_ONLY_GATE_BK, REPO_IGNORED_REGEX)
         )
         == "all_passed",
         "a payload whose every check is ignored reads all_passed, not Clear",
@@ -6475,7 +6526,7 @@ def main() -> int:
     # ── (bn) #1225 fetch_latest_check_runs reads every page ────────────────────────
     print("\n=== (bn) #1225 fetch_latest_check_runs: every page is read, then collapsed ===")
 
-    GATE_BL = "No blocking labels"
+    GATE_BL = REPO_GATE_NAME
     API_BL = ci_monitor.repo_api(ci_monitor.DEFAULT_REPOSITORY)
     # 100 gate runs fill page 1 (newest first, so the highest ids); the only
     # build-and-test run is the oldest and lands alone on page 2.
@@ -6579,7 +6630,7 @@ def main() -> int:
             rc = ci_monitor.main(["ci_monitor.py", "--once"] + argv)
         return buf.getvalue().splitlines(), rc, urls, sleep
 
-    GATE_BM = "No blocking labels"
+    GATE_BM = REPO_GATE_NAME
     CHECKS_BM = {
         "total_count": 3,
         "check_runs": [

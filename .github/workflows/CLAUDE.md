@@ -97,7 +97,7 @@ The job checks out the base branch, so `main`'s copy of that script is what runs
 Expect the new behavior not to show up on the pull request that introduces it, and do not read that as the change being broken.
 
 This applies to every script a pinned job invokes, not to a fixed list: whatever the jobs named by `scripts/ci/test_privileged_workflow_checkouts.py` execute is subject to it.
-Today that is the entry point of each of the five label and byline workflows plus `build.yml`'s issue-filing and CI-summary scripts.
+Today that is the entry points of the five label and byline workflows (`administrative-merge-holds.yml` has two, `enforce_mutually_exclusive_labels.py` and `check_blocking_labels.py`) plus `build.yml`'s issue-filing and CI-summary scripts.
 It also reaches past the entry points, because they import each other.
 `label_by_files.py` and `propagate_issue_labels.py` both `import enforce_mutually_exclusive_labels` and `import label_by_title`, so an edit to either of those changes the behavior of two more jobs and is equally invisible until merge.
 
