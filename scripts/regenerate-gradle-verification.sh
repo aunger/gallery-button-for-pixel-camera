@@ -45,6 +45,11 @@
 #     e2e-mock-* assembleDebug tasks, testDebugUnitTest.
 #   * build.yml release smoke + release.yml: assembleRelease.
 #   * codeql.yml autobuild: assembleDebug (a subset of the above).
+#   * build.yml android-lint job: :app:lintDebug. Listed below as
+#     :app:lintReportDebug, which does all of its resolving (the Lint classpath and
+#     the lint models of the debug, unit-test and androidTest components) but,
+#     unlike lintDebug, does not fail on a Lint finding. A finding is no reason to
+#     withhold the pins a build needs.
 # The instrumented/E2E tasks (connectedDebugAndroidTest, connectedE2EAndroidTest)
 # add no new external dependencies: the androidTest classpath is the one
 # assembleDebugAndroidTest already resolves, and connectedE2EAndroidTest consumes
@@ -78,14 +83,22 @@ fi
 # Generate into a throwaway Gradle home so the file records the full graph.
 GRADLE_USER_HOME="$(mktemp -d)"
 export GRADLE_USER_HOME
-trap 'rm -rf "$GRADLE_USER_HOME"' EXIT
+# Stop the run's Gradle daemon before deleting its home. The daemon outlives the
+# client, and on one run (#1236), right after a successful generation, `rm -rf`
+# failed with "Directory not empty" under caches/<version>/transforms, which
+# failed the trap and with it the script. `|| true` because the stop can fail
+# too: if the wrapper never got its distribution into the fresh home, the stop
+# retries that download, silently, and may fail again. A failed stop must not
+# replace the script's own exit status or skip the `rm`.
+trap '"$GRADLE_BIN" --stop >/dev/null 2>&1 || true; rm -rf "$GRADLE_USER_HOME"' EXIT
 
 echo "==> Regenerating gradle/verification-metadata.xml (GRADLE_BIN=$GRADLE_BIN, GRADLE_USER_HOME=$GRADLE_USER_HOME)"
 "$GRADLE_BIN" --write-verification-metadata sha256 \
     assembleDebug assembleRelease \
     assembleDebugAndroidTest \
     :e2e-mock-camera:assembleDebug :e2e-mock-gallery:assembleDebug \
-    testDebugUnitTest
+    testDebugUnitTest \
+    :app:lintReportDebug
 
 echo "==> Done. Review the diff before committing:"
 echo "      git diff gradle/verification-metadata.xml"

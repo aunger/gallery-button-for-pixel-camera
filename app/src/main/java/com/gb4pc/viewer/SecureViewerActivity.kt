@@ -12,6 +12,7 @@ import android.os.Bundle
 import android.provider.MediaStore
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
@@ -20,6 +21,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -40,7 +42,7 @@ import kotlinx.coroutines.withContext
 
 /**
  * Secure filmstrip viewer displayed on top of the lock screen (§5).
- * SF-06: Uses setShowWhenLocked and setTurnScreenOn.
+ * SF-06: Uses setShowWhenLocked and setTurnScreenOn (window flags on API 26; see [showOverLockScreen]).
  */
 class SecureViewerActivity : ComponentActivity() {
     private lateinit var viewPager: ViewPager2
@@ -85,8 +87,7 @@ class SecureViewerActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setShowWhenLocked(true)
-        setTurnScreenOn(true)
+        showOverLockScreen()
 
         setupLayout()
 
@@ -100,6 +101,23 @@ class SecureViewerActivity : ComponentActivity() {
                     renderMedia(media)
                 }
             }
+        }
+    }
+
+    /**
+     * SF-06. `setShowWhenLocked` and `setTurnScreenOn` first appear in API 27, and calling either
+     * on API 26 throws `NoSuchMethodError`. The manifest's matching attributes are API 27+ too, so
+     * API 26 gets the window flags those methods replaced.
+     */
+    private fun showOverLockScreen() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        } else {
+            @Suppress("DEPRECATION")
+            window.addFlags(
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON,
+            )
         }
     }
 
@@ -255,7 +273,7 @@ class SecureViewerActivity : ComponentActivity() {
                     ) {
                         if (event != DISMISS_EVENT_ACTION) {
                             // Actually delete from MediaStore
-                            deletionManager.delete(Uri.parse(media.uri))
+                            deletionManager.delete(media.uri.toUri())
                         }
                     }
                 },
@@ -279,7 +297,7 @@ class SecureViewerActivity : ComponentActivity() {
                         val shareIntent =
                             Intent(Intent.ACTION_SEND).apply {
                                 type = if (media.isVideo) "video/*" else "image/*"
-                                putExtra(Intent.EXTRA_STREAM, Uri.parse(media.uri))
+                                putExtra(Intent.EXTRA_STREAM, media.uri.toUri())
                                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             }
                         startActivity(Intent.createChooser(shareIntent, null))
@@ -334,7 +352,7 @@ class SecureViewerActivity : ComponentActivity() {
             container.removeAllViews()
 
             try {
-                val uri = Uri.parse(item.uri)
+                val uri = item.uri.toUri()
                 if (item.isVideo) {
                     // SF-09: Show video thumbnail with play button overlay
                     val imageView =

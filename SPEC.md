@@ -159,6 +159,7 @@ This mirrors the behavior of AOSP's secure camera implementation.
 ### 5.2 Viewer UI
 
 - **SF-06** The viewer is an `Activity` with `setShowWhenLocked(true)` and `setTurnScreenOn(true)`, allowing it to display on top of the lock screen without requiring unlock.
+  Both methods are API 27+, so on API 26 it sets the `FLAG_SHOW_WHEN_LOCKED` and `FLAG_TURN_SCREEN_ON` window flags instead.
 - **SF-07** The viewer displays session photos in a horizontal `ViewPager2`, most recent first (swipe left for older).
 - **SF-08** **Pinch-to-zoom** is supported on individual photos using a gesture-enabled `ImageView` (e.g., a `SubsamplingScaleImageView` or equivalent library that supports large images without OOM).
 - **SF-09** **Videos** are displayed as a still frame (first frame or a representative thumbnail via `MediaMetadataRetriever.getFrameAtTime()`). A play button icon is overlaid on the thumbnail. Tapping a video item shows a toast: "Unlock to play video" (since launching a full video player from the lock screen would bypass security).

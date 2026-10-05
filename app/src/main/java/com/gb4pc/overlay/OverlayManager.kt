@@ -1,12 +1,12 @@
 package com.gb4pc.overlay
 
+import android.annotation.SuppressLint
 import android.app.KeyguardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.PixelFormat
 import android.graphics.drawable.AdaptiveIconDrawable
-import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.LayerDrawable
 import android.os.Build
@@ -18,6 +18,9 @@ import android.view.WindowManager
 import android.widget.ImageView
 import android.widget.Toast
 import androidx.core.content.ContextCompat
+import androidx.core.content.res.ResourcesCompat
+import androidx.core.graphics.drawable.toDrawable
+import androidx.core.net.toUri
 import com.gb4pc.R
 import com.gb4pc.data.AspectRatioUtil
 import com.gb4pc.data.PrefsManager
@@ -158,7 +161,7 @@ class OverlayManager(
 
     fun showLatestPhotoThumbnail(photoUri: String) {
         val targetView = overlayView ?: return
-        val uri = android.net.Uri.parse(photoUri)
+        val uri = photoUri.toUri()
         Thread {
             val bitmap = loadThumbnailBitmap(uri)
             bitmap?.let { bmp ->
@@ -166,7 +169,7 @@ class OverlayManager(
                     // Issue #188: wrap the bitmap in SquircleDrawable so the thumbnail is
                     // clipped to the superellipse squircle shape, just like the gallery icon.
                     targetView.setImageDrawable(
-                        SquircleDrawable(BitmapDrawable(targetView.resources, bmp)),
+                        SquircleDrawable(bmp.toDrawable(targetView.resources)),
                     )
                 }
             }
@@ -208,6 +211,11 @@ class OverlayManager(
         }
     }
 
+    // Android Lint's AppCompatCustomView check wants AppCompatImageView here, for AppCompat's tint
+    // support. GB4PC does not use AppCompat itself (it is only a transitive dependency), and this
+    // view is created in code for a service's overlay window, with no AppCompat theme or tint
+    // attribute for that support to read.
+    @SuppressLint("AppCompatCustomView")
     private fun createOverlayView(): ImageView {
         // When focusable overlay is enabled we need a custom subclass to handle key and focus
         // events on the root view.
@@ -294,17 +302,15 @@ class OverlayManager(
     private fun getRawGalleryIcon(packageName: String?): Drawable {
         if (packageName != null) {
             try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    val appInfo = context.packageManager.getApplicationInfo(packageName, 0)
-                    if (appInfo.icon != 0) {
-                        val pkgResources = context.packageManager.getResourcesForApplication(appInfo)
-                        val rawIcon = pkgResources.getDrawable(appInfo.icon, null)
-                        if (rawIcon is AdaptiveIconDrawable) {
-                            return rawIcon
-                        }
+                val appInfo = context.packageManager.getApplicationInfo(packageName, 0)
+                if (appInfo.icon != 0) {
+                    val pkgResources = context.packageManager.getResourcesForApplication(appInfo)
+                    val rawIcon = ResourcesCompat.getDrawable(pkgResources, appInfo.icon, null)
+                    if (rawIcon is AdaptiveIconDrawable) {
+                        return rawIcon
                     }
                 }
-                // Pre-API 26 or non-adaptive icon: fall back to getApplicationIcon().
+                // Non-adaptive icon: fall back to getApplicationIcon().
                 return context.packageManager.getApplicationIcon(packageName)
             } catch (_: PackageManager.NameNotFoundException) {
                 // Gallery app uninstalled; fall through to warning placeholder (AC-04)

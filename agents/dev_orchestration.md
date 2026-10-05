@@ -12,11 +12,12 @@ Making the branch mergeable is not the Orchestrator's job.
 It drives the pull request toward consensus among the sub-agents and a green result on these **named checks**:
 
 - `build-and-test`
+- `android-lint`
 - `pip-audit`
 - `shell-tests`
 - `check-diff`
 
-These are the required checks on `main` (per `GET /repos/{owner}/{repo}/rules/branches/main` on 2026-09-18) less one.
+These are the required checks on `main` (per `GET /repos/{owner}/{repo}/rules/branches/main` on 2026-09-18, plus `android-lint`, added with #985) less one.
 `Administrative merge holds (not failure)` is left off deliberately: it is the merge gate, it is red for the whole of every cycle by design, and no agent may act on it (see "Orchestrator may not").
 `ignored_check_regex` in `scripts/ci_monitor/ci_monitor.config.json` leaves it out of the Monitor's verdict too.
 A change that adds or removes a required check updates this list in the same change.

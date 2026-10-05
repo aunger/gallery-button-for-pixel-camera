@@ -114,6 +114,44 @@ android {
         buildConfig = true
     }
 
+    // Android Lint, which build.yml's android-lint job runs as `:app:lintDebug` (issue #985).
+    // Its NewApi check is the one guard against a call to an API above minSdk: the compiler
+    // accepts any symbol up to compileSdk. NewApi must never be disabled or baselined.
+    // Every finding fails the build, warnings included, so a new one cannot land unread. A check
+    // that does not apply here is suppressed where it fires, with the reason, or disabled below.
+    lint {
+        abortOnError = true
+        warningsAsErrors = true
+        // A plain-text report alongside the HTML one, at build/reports/lint-results-debug.txt,
+        // which the android-lint job prints on failure: Gradle's own failure message names only
+        // the first finding.
+        textReport = true
+        disable +=
+            setOf(
+                // Version currency is tracked elsewhere: Dependabot (.github/dependabot.yml)
+                // proposes dependency bumps, watch-toolchain-bump.yml watches the toolchain, and
+                // compileSdk moves by decision (#904). Both checks also look the latest versions
+                // up when Lint runs, so their verdict would change with no change to this tree.
+                "GradleDependency",
+                "AndroidGradlePluginVersion",
+                // targetSdk moves when the platform behaviors it opts into are worth taking on, not
+                // when a newer one exists (SPEC.md OV-03, #984).
+                "OldTargetApi",
+                // Both ask for the characters .claude/rules/prose-style.md bans, which
+                // StringResourceProseStyleTest enforces on every string resource (#935).
+                "TypographyDashes",
+                "TypographyEllipsis",
+                // Deferred to #1235: clearing it means deciding whether settings may move to a new
+                // phone by device-to-device transfer, which allowBackup="false" does not stop on
+                // some devices from Android 12.
+                "DataExtractionRules",
+                // Deferred to #1237: the foreground cannot double as the themed icon's monochrome
+                // layer, because it tells the gallery mark from the camera only by color, and a
+                // monochrome layer keeps only alpha. The icon needs a monochrome drawable of its own.
+                "MonochromeLauncherIcon",
+            )
+    }
+
     // Shared pure-JVM test helpers compiled into both test and androidTest source sets.
     // AGP testFixtures does not support Kotlin on application modules (b/139438662).
     // `directories` arrives prepopulated with the source set's defaults (src/<name>/java

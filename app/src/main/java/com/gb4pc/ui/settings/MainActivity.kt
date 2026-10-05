@@ -2,7 +2,7 @@ package com.gb4pc.ui.settings
 
 import android.Manifest
 import android.content.Intent
-import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import com.gb4pc.R
 import com.gb4pc.data.PrefsManager
 import com.gb4pc.service.OverlayService
@@ -96,7 +97,11 @@ class MainActivity : ComponentActivity() {
                     galleryPackage = galleryPackage.value,
                     onMediaPermissionClick = { requestRuntimePermission(PermissionHelper.mediaPermission) },
                     onNotificationPermissionClick = {
-                        requestRuntimePermission(Manifest.permission.POST_NOTIFICATIONS)
+                        // The banner never shows below API 33 (hasNotificationPermission is true
+                        // there), and the permission does not exist; same guard as SetupActivity.
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            requestRuntimePermission(Manifest.permission.POST_NOTIFICATIONS)
+                        }
                     },
                 )
             }
@@ -192,7 +197,7 @@ fun MainSettingsScreen(
                         context.startActivity(
                             Intent(
                                 Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                Uri.parse("package:${context.packageName}"),
+                                "package:${context.packageName}".toUri(),
                             ),
                         )
                     },
@@ -215,12 +220,7 @@ fun MainSettingsScreen(
                 PermissionBanner(
                     message = stringResource(R.string.settings_battery_warning),
                     onClick = {
-                        context.startActivity(
-                            Intent(
-                                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                                Uri.parse("package:${context.packageName}"),
-                            ),
-                        )
+                        context.startActivity(PermissionHelper.ignoreBatteryOptimizationsIntent(context))
                     },
                 )
             }

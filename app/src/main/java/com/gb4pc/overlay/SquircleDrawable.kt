@@ -7,7 +7,6 @@ import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.graphics.drawable.AdaptiveIconDrawable
 import android.graphics.drawable.Drawable
-import android.os.Build
 import kotlin.math.abs
 import kotlin.math.min
 import kotlin.math.pow
@@ -90,7 +89,7 @@ class SquircleDrawable(
             // Draw into the local (0,0) origin after translate.
             val localBounds = Rect(0, 0, b.width(), b.height())
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && inner is AdaptiveIconDrawable) {
+            if (inner is AdaptiveIconDrawable) {
                 // Draw background and foreground layers directly, bypassing
                 // AdaptiveIconDrawable's internal launcher mask.
                 inner.background?.let { bg ->

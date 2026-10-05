@@ -1,14 +1,15 @@
 package com.gb4pc.util
 
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AppOpsManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
+import androidx.core.net.toUri
 import com.gb4pc.Constants
 import com.gb4pc.data.PrefsManager
 
@@ -29,14 +30,22 @@ object PermissionHelper {
         packageName: String,
     ): Boolean = context.packageManager.getLaunchIntentForPackage(packageName) != null
 
+    /**
+     * `unsafeCheckOpNoThrow` exists only from API 29, and calling it below that throws
+     * `NoSuchMethodError`. `checkOpNoThrow` is the same check under its pre-29 name (API 29
+     * deprecated it in favor of the new one), so it answers for API 26-28.
+     */
     fun hasUsageStatsPermission(context: Context): Boolean {
         val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
+        val op = AppOpsManager.OPSTR_GET_USAGE_STATS
+        val uid = android.os.Process.myUid()
         val mode =
-            appOps.unsafeCheckOpNoThrow(
-                AppOpsManager.OPSTR_GET_USAGE_STATS,
-                android.os.Process.myUid(),
-                context.packageName,
-            )
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                appOps.unsafeCheckOpNoThrow(op, uid, context.packageName)
+            } else {
+                @Suppress("DEPRECATION")
+                appOps.checkOpNoThrow(op, uid, context.packageName)
+            }
         return mode == AppOpsManager.MODE_ALLOWED
     }
 
@@ -46,6 +55,21 @@ object PermissionHelper {
         val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
         return pm.isIgnoringBatteryOptimizations(context.packageName)
     }
+
+    /**
+     * The system dialog that excludes this app from battery optimization (PM-01 step 4, UI-04).
+     *
+     * Android Lint's BatteryLife check warns that Google Play allows this request only for some
+     * kinds of app. GB4PC asks by design: the overlay service has to stay running to see Pixel
+     * Camera open (SPEC.md section 2.2), and GB4PC ships by sideload and F-Droid, with no Play
+     * requirement gating a release (SPEC.md OV-03).
+     */
+    @SuppressLint("BatteryLife")
+    fun ignoreBatteryOptimizationsIntent(context: Context): Intent =
+        Intent(
+            Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+            "package:${context.packageName}".toUri(),
+        )
 
     fun hasNotificationPermission(context: Context): Boolean =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -234,7 +258,7 @@ object PermissionHelper {
     fun appDetailsSettingsIntent(context: Context): Intent =
         Intent(
             Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-            Uri.parse("package:${context.packageName}"),
+            "package:${context.packageName}".toUri(),
         )
 }
 
