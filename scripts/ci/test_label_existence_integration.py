@@ -80,7 +80,8 @@ REQUIRED_LABELS: frozenset[str] = (
     | frozenset({TRACKING_ISSUE_LABEL})
     # Labels excluded from GitHub's auto-generated release notes.
     | _release_notes_excluded_labels()
-    # Labels that block a merge via the "No blocking labels" required check.
+    # Labels that block a merge via the "Administrative merge holds (not failure)"
+    # required check.
     # Every current member is also in MUTUALLY_EXCLUSIVE_SETS above, so this
     # adds nothing today; it is named explicitly so that a blocking label
     # added later without an exclusive sibling is still covered.

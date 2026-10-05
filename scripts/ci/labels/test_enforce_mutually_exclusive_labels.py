@@ -5,6 +5,7 @@ import io
 import json
 import os
 import sys
+import tempfile
 import unittest
 import urllib.error
 from contextlib import redirect_stdout
@@ -657,6 +658,8 @@ class TestMain(unittest.TestCase):
                 "GITHUB_REPOSITORY": "owner/repo",
                 "ISSUE_NUMBER": "42",
                 "ADDED_LABEL": "p1",
+                # Keep main() from appending to a real Actions step output.
+                "GITHUB_OUTPUT": "",
             },
         )
         self._env_patch.start()
@@ -852,6 +855,44 @@ class TestMain(unittest.TestCase):
                 result = emxl.main()
 
         self.assertEqual(result, 0)
+
+    # ------------------------------------------------------------------
+    # The `removed` step output read by the merge gate (issue #1241)
+    # ------------------------------------------------------------------
+
+    def _main_with_output(self, side_effect) -> tuple[int, str]:
+        with tempfile.TemporaryDirectory() as tmp:
+            output_path = os.path.join(tmp, "output")
+            open(output_path, "w").close()
+            with patch.dict(os.environ, {"ADDED_LABEL": "p1", "GITHUB_OUTPUT": output_path}):
+                with patch.object(emxl, "gh_api", side_effect=side_effect):
+                    result = emxl.main()
+            with open(output_path, encoding="utf-8") as f:
+                return result, f.read()
+
+    def test_removed_output_names_each_removed_label(self):
+        result, output = self._main_with_output(
+            [self._make_issue_response(["p2", "p3", "ci"]), None, None]
+        )
+        self.assertEqual(result, 0)
+        self.assertEqual(output, 'removed=["p2", "p3"]\n')
+
+    def test_removed_output_includes_a_label_already_gone(self):
+        error = urllib.error.HTTPError(url=None, code=404, msg="Not Found", hdrs=None, fp=None)
+        result, output = self._main_with_output([self._make_issue_response(["p2"]), error])
+        self.assertEqual(result, 0)
+        self.assertEqual(output, 'removed=["p2"]\n')
+
+    def test_no_removed_output_when_a_removal_fails(self):
+        error = urllib.error.HTTPError(url=None, code=500, msg="Server Error", hdrs=None, fp=None)
+        result, output = self._main_with_output([self._make_issue_response(["p2"]), error])
+        self.assertEqual(result, 1)
+        self.assertEqual(output, "")
+
+    def test_no_removed_output_when_nothing_conflicts(self):
+        result, output = self._main_with_output([self._make_issue_response(["ci"])])
+        self.assertEqual(result, 0)
+        self.assertEqual(output, "")
 
     # ------------------------------------------------------------------
     # Prefix group tests

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Fail the merge gate when any open PR at this head commit carries a blocking label.
 
-Backs the "No blocking labels" required status check
-(.github/workflows/block-merge-on-blocking-labels.yml), which enforces
+Backs the "Administrative merge holds (not failure)" required status check
+(.github/workflows/administrative-merge-holds.yml), which enforces
 agents/dev_orchestration.md's "do not merge while process state is
 outstanding" rule.
 
@@ -46,6 +46,21 @@ directions, so unioning them is what keeps either staleness blocking rather
 than opening, and it also makes this check never weaker about the triggering PR
 than the payload-only check it replaced.
 
+One exception narrows the payload, and only by what is known to be gone. The
+workflow runs label enforcement first, in the same job, and enforcement can
+remove a blocking label the payload still names (adding `verified` removes
+`verification needed`). Enforcement removes with GITHUB_TOKEN, which starts no
+new run, so a verdict that kept counting the removed label would stay red
+until some unrelated event. The workflow passes the labels enforcement
+removed as REMOVED_LABELS, and only those are dropped from the payload
+(issue #1241). Every other payload label is still counted, so the check stays
+never weaker about the triggering PR than the payload, apart from labels a
+successful DELETE (or a 404 saying the label was already gone) has removed.
+
+This script runs out of a checkout pinned to the base branch, because its job
+holds write scopes (see .github/workflows/CLAUDE.md). An edit to it therefore
+does not run on the pull request that makes it.
+
 The price of that is a verdict that can name a label the PR no longer carries,
 since a run whose event has been superseded, or whose listing lagged a label
 removal, reports the labels of the moment it read. Re-running the job re-reads
@@ -61,8 +76,8 @@ Usage:
 Exit code:
     0  no open pull request at HEAD_SHA carries a blocking label.
     1  at least one does, or the check could not be evaluated (missing
-       configuration, an unparseable PR_LABELS value, or a GitHub API
-       failure). gh_api retries only a 429, a 5xx, or a network error, so a
+       configuration, an unparseable PR_LABELS or REMOVED_LABELS value, or a
+       GitHub API failure). gh_api retries only a 429, a 5xx, or a network error, so a
        single 403, which is how GitHub answers some rate-limit and
        abuse-detection cases, fails the gate on the first attempt. Failing
        closed is the point: a gate that cannot prove the merge is safe must
@@ -76,6 +91,11 @@ Required environment variables:
     PR_NUMBER           github.event.pull_request.number
     PR_STATE            github.event.pull_request.state ("open" or "closed")
     PR_LABELS           toJson(github.event.pull_request.labels.*.name)
+
+Optional environment variables:
+    REMOVED_LABELS      JSON array of labels the enforcement step removed from
+                        the triggering PR in this run; dropped from PR_LABELS.
+                        Unset or empty means none.
 """
 
 import json
@@ -165,6 +185,7 @@ def main() -> int:
     pr_number_raw = os.environ.get("PR_NUMBER", "")
     pr_state = os.environ.get("PR_STATE", "")
     pr_labels_raw = os.environ.get("PR_LABELS", "")
+    removed_labels_raw = os.environ.get("REMOVED_LABELS", "") or "[]"
 
     # Unlike the repo's other label scripts, missing configuration is fatal
     # rather than a skip: those scripts apply a convenience label, this one
@@ -202,6 +223,18 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
+
+    try:
+        removed = {str(name).lower() for name in json.loads(removed_labels_raw)}
+    except (ValueError, TypeError) as exc:
+        print(
+            f"Error: REMOVED_LABELS is not a JSON array of names ({exc}): {removed_labels_raw!r}",
+            file=sys.stderr,
+        )
+        return 1
+    # Labels enforcement removed earlier in this job are gone, although the
+    # payload, captured before enforcement ran, still names them.
+    event_labels = [name for name in event_labels if name.lower() not in removed]
 
     try:
         open_prs = fetch_open_prs_at_head(repo, token, head_sha)

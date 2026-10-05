@@ -54,7 +54,7 @@ The workflow must run on a real PR; you cannot mock it.
    An empty commit is enough; it changes no file, so the workflow under test still runs from the version on the feature branch.
    Do this before the test PR exists, so it produces no `synchronize` event.
    Check runs are stored against a head commit rather than against a pull request, so two open PRs at the same commit share one set of check runs and overwrite each other's results (issue #833).
-   The PR under test is mid-verification and normally carries `verification needed`, which is exactly the state the "No blocking labels" gate exists to hold, so sharing its head commit is the worst case for that collision.
+   The PR under test is mid-verification and normally carries `verification needed`, which is exactly the state the "Administrative merge holds (not failure)" gate exists to hold, so sharing its head commit is the worst case for that collision.
 4. Push the test branch.
 5. Open a test PR (base: `main`) with a description that names the items under test and states "Do not merge."
    The PR creation event is `opened`, which does not trigger `pull_request: synchronize` or `pull_request: reopened` workflows; that is intentional.
