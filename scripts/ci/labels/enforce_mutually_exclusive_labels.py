@@ -48,6 +48,11 @@ Required environment variables:
     GITHUB_REPOSITORY   Owner/repo  (e.g. "aunger/gallery-button-for-pixel-camera")
     ISSUE_NUMBER        Number of the issue or pull request
     ADDED_LABEL         Name of the label that was just added
+
+Optional environment variables:
+    GITHUB_OUTPUT       Set by Actions. When every removal succeeds, the
+                        removed labels are written there as the step output
+                        `removed` (see write_removed_output).
 """
 
 import json
@@ -354,6 +359,23 @@ def remove_labels(
     return all_succeeded
 
 
+def write_removed_output(removed: list[str]) -> None:
+    """Record *removed* as this step's `removed` output, a JSON array.
+
+    Written only once every removal has succeeded or found the label already
+    gone, so each name in it is known to be off the issue/PR. The merge gate
+    in .github/workflows/administrative-merge-holds.yml runs after this step
+    and drops these names from its event-payload labels, which predate this
+    step (issue #1241). Outside Actions, GITHUB_OUTPUT is unset and nothing is
+    written.
+    """
+    output_path = os.environ.get("GITHUB_OUTPUT", "")
+    if not output_path:
+        return
+    with open(output_path, "a", encoding="utf-8") as f:
+        f.write(f"removed={json.dumps(removed)}\n")
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -423,6 +445,7 @@ def main() -> int:
 
     if not remove_labels(issue_number, to_remove, repo, token):
         return 1
+    write_removed_output(to_remove)
     return 0
 
 

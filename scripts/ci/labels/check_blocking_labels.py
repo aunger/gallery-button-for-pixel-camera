@@ -40,13 +40,22 @@ of this script's sources by construction (see main()), rather than trusting the
 open-PR listing to have caught up with the close, so it is what actually
 retires the verdict that PR earned.
 
-The triggering PR's own labels are read from PR_LABELS as well as from the
-API listing (see main()). Both are snapshots that go stale in opposite
+The triggering PR's own labels are read from the event payload as well as from
+the API listing (see main()). Both are snapshots that go stale in opposite
 directions, so unioning them is what keeps either staleness blocking rather
-than opening. The workflow fills PR_LABELS from a direct read of the PR's
-labels taken after its label-enforcement step, not from the event payload,
-because that step can remove a blocking label the payload still names
-(issue #1241).
+than opening, and it also makes this check never weaker about the triggering PR
+than the payload-only check it replaced.
+
+One exception narrows the payload, and only by what is known to be gone. The
+workflow runs label enforcement first, in the same job, and enforcement can
+remove a blocking label the payload still names (adding `verified` removes
+`verification needed`). Enforcement removes with GITHUB_TOKEN, which starts no
+new run, so a verdict that kept counting the removed label would stay red
+until some unrelated event. The workflow passes the labels enforcement
+removed as REMOVED_LABELS, and only those are dropped from the payload
+(issue #1241). Every other payload label is still counted, so the check stays
+never weaker about the triggering PR than the payload, apart from labels a
+successful DELETE (or a 404 saying the label was already gone) has removed.
 
 This script runs out of a checkout pinned to the base branch, because its job
 holds write scopes (see .github/workflows/CLAUDE.md). An edit to it therefore
@@ -67,8 +76,8 @@ Usage:
 Exit code:
     0  no open pull request at HEAD_SHA carries a blocking label.
     1  at least one does, or the check could not be evaluated (missing
-       configuration, an unparseable PR_LABELS value, or a GitHub API
-       failure). gh_api retries only a 429, a 5xx, or a network error, so a
+       configuration, an unparseable PR_LABELS or REMOVED_LABELS value, or a
+       GitHub API failure). gh_api retries only a 429, a 5xx, or a network error, so a
        single 403, which is how GitHub answers some rate-limit and
        abuse-detection cases, fails the gate on the first attempt. Failing
        closed is the point: a gate that cannot prove the merge is safe must
@@ -81,8 +90,12 @@ Required environment variables:
                         check run is stored against
     PR_NUMBER           github.event.pull_request.number
     PR_STATE            github.event.pull_request.state ("open" or "closed")
-    PR_LABELS           JSON array of the triggering PR's label names, read
-                        after label enforcement (see the workflow)
+    PR_LABELS           toJson(github.event.pull_request.labels.*.name)
+
+Optional environment variables:
+    REMOVED_LABELS      JSON array of labels the enforcement step removed from
+                        the triggering PR in this run; dropped from PR_LABELS.
+                        Unset or empty means none.
 """
 
 import json
@@ -172,6 +185,7 @@ def main() -> int:
     pr_number_raw = os.environ.get("PR_NUMBER", "")
     pr_state = os.environ.get("PR_STATE", "")
     pr_labels_raw = os.environ.get("PR_LABELS", "")
+    removed_labels_raw = os.environ.get("REMOVED_LABELS", "") or "[]"
 
     # Unlike the repo's other label scripts, missing configuration is fatal
     # rather than a skip: those scripts apply a convenience label, this one
@@ -211,6 +225,18 @@ def main() -> int:
         return 1
 
     try:
+        removed = {str(name).lower() for name in json.loads(removed_labels_raw)}
+    except (ValueError, TypeError) as exc:
+        print(
+            f"Error: REMOVED_LABELS is not a JSON array of names ({exc}): {removed_labels_raw!r}",
+            file=sys.stderr,
+        )
+        return 1
+    # Labels enforcement removed earlier in this job are gone, although the
+    # payload, captured before enforcement ran, still names them.
+    event_labels = [name for name in event_labels if name.lower() not in removed]
+
+    try:
         open_prs = fetch_open_prs_at_head(repo, token, head_sha)
     except Exception as exc:  # noqa: BLE001
         print(f"Error listing open pull requests at {head_sha}: {exc}", file=sys.stderr)
@@ -221,13 +247,13 @@ def main() -> int:
 
     # The triggering PR's labels are taken from both sources and unioned rather
     # than either replacing the other, because each source is stale in the
-    # direction the other covers. PR_LABELS is read before this script starts,
-    # so the listing is what catches a label applied after that read, which a
-    # superseded run would otherwise report as a clean commit. The listing is a
-    # separate read, so PR_LABELS is what catches a listing that has not yet
-    # caught up with a PR just opened or just labeled. Blocking on either is
-    # also why the verdict is never weaker about the triggering PR than
-    # PR_LABELS alone would have made it.
+    # direction the other covers. The payload is fixed at event time, so the
+    # listing is what catches a label applied after this run's event fired,
+    # which a superseded run would otherwise report as a clean commit. The
+    # listing is a separate read, so the payload is what catches a listing that
+    # has not yet caught up with a PR just opened or just labeled. Blocking on
+    # either is also why the verdict is never weaker about the triggering PR
+    # than the payload alone would have made it.
     #
     # The union can therefore name a label that is no longer applied: a
     # superseded run landing last, or a listing lagging a removal. That is

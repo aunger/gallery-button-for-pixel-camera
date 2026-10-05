@@ -23,13 +23,18 @@ name: Administrative merge holds
 # `verified` drops `verification needed`, and adding `orchestrate` drops
 # `orchestrating`. A removal made with GITHUB_TOKEN starts no new workflow run,
 # so a verdict computed before it would stand until some later event. That is
-# also why step 2 reads the PR's labels from the API after step 1 rather than
-# from the event payload, which was captured before step 1 ran.
+# also why step 1 reports the labels it removed (its `removed` output), and
+# step 2 drops exactly those from the event-payload labels, which were
+# captured before step 1 ran. Every other payload label still counts, so the
+# label that fired a `labeled` event is never lost to a lagging API read.
 #
 # A red job therefore means one of two things, told apart by the step icons:
 # step 2 red is a deliberate hold; step 1 red is a broken enforcement run,
 # which also holds the merge rather than hiding behind a green job (issue
 # #1241). Step 2 is skipped after a step 1 failure; the job is red either way.
+# One routine way step 1 goes red: on a fork PR, GITHUB_TOKEN is read-only
+# whatever `permissions:` asks for, so a removal there fails with a 403 and
+# the merge is held until a later event re-runs the job.
 # Skipped steps are routine here: step 1 is skipped on every event but
 # `labeled`, and step 2 on every issue event.
 #
@@ -93,6 +98,7 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha || github.sha }}
 
       - name: Enforce mutually exclusive label sets
+        id: enforce
         if: github.event.action == 'labeled'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -105,16 +111,11 @@ jobs:
         if: github.event_name == 'pull_request'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_STATE: ${{ github.event.pull_request.state }}
-        # PR_LABELS is read here, after enforcement, rather than taken from
-        # the event payload (see the header). An issue carries at most 100
-        # labels, so one page of 100 is all of them. A failed read fails the
-        # step, which holds the merge.
-        run: |
-          PR_LABELS="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/labels?per_page=100" --jq '[.[].name]')"
-          export PR_LABELS
-          python3 scripts/ci/labels/check_blocking_labels.py
+          PR_LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
+          # Empty when step 1 was skipped or removed nothing.
+          REMOVED_LABELS: ${{ steps.enforce.outputs.removed }}
+        run: python3 scripts/ci/labels/check_blocking_labels.py
