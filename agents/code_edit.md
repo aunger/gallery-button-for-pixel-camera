@@ -29,7 +29,8 @@
 ## Finish well
 
 - If you are a sub-agent and were given a branch or branch name, commit your changes before you return.
-- Build locally and execute the unit tests. Don't make someone else do it for you or wait for CI.
+- Build locally, execute the unit tests, and run Android Lint (`./gradlew :app:lintDebug`). Don't make someone else do it for you or wait for CI.
+  Lint fails on any warning, and Gradle's failure message names only the first finding; read all of them in `app/build/reports/lint-results-debug.txt`.
 - **Re-verify the prose against the code.** After your last code change of a round, re-read every prose claim it touches (docstrings, code comments, the PR title and description, issue text you wrote) and confirm each is still true of the code *as it now stands*.
   No test checks prose, so a claim the code has outgrown reaches review unless you look for it.
   - Line numbers, counts and quantities, names of files, paths and symbols, and absolutes ("always", "never") rot first.

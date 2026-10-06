@@ -7,6 +7,7 @@ git clone https://github.com/aunger/gallery-button-for-pixel-camera.git
 cd gallery-button-for-pixel-camera
 ./gradlew assembleDebug          # debug APK → app/build/outputs/apk/debug/
 ./gradlew testDebugUnitTest      # unit tests
+./gradlew :app:lintDebug         # Android Lint; all findings in app/build/reports/lint-results-debug.txt
 ./gradlew assembleRelease        # unsigned release APK
 ```
 

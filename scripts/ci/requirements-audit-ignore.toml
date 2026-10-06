@@ -49,8 +49,8 @@
 #
 # semgrep declares `pyjwt[crypto]~=2.13.0` in every release through 1.178.0, so
 # regenerating this lock cannot reach 2.14.0, which fixes most of the advisories
-# below. CVE-2026-101918 is fixed only in 2.15.0, so its entry outlives the rest
-# if semgrep's requirement moves to `~=2.14.0`.
+# below. CVE-2026-101918 and CVE-2026-102275 are fixed only in 2.15.0, so their
+# entries outlive the rest if semgrep's requirement moves to `~=2.14.0`.
 #
 # Every advisory below is a bug in verifying tokens (`jwt.decode`, PyJWK and
 # PyJWKSet key parsing, the HMAC key guard) or in `PyJWKClient` fetching a JWKS.
@@ -241,6 +241,23 @@ semgrep relaxes its `pyjwt[crypto]~=2.13.0` requirement to admit 2.14.0 or later
 or this repo starts running `semgrep mcp`. In the first case, regenerating the lock \
 clears the finding; in the second, the reachability argument no longer holds and \
 the pin has to be forced or semgrep dropped."""
+
+[[ignore."scripts/ci/requirements-semgrep.txt"]]
+id = "CVE-2026-102275"
+package = "pyjwt"
+reason = """
+CVE-2026-102275 / GHSA-x33g-cr3x-6449: importing an OKP private JWK accepts an `x` \
+that does not match the key derived from `d`, so the declared public identity and \
+the operative key can differ. Affects only an application that imports JWKs \
+supplied by an untrusted party and treats `x` as the key's identity. pyjwt's only \
+caller here is the `semgrep mcp` token verifier (see above), and this repo runs \
+only `semgrep scan`."""
+remove_when = """
+semgrep relaxes its `pyjwt[crypto]~=2.13.0` requirement to admit 2.15.0 or later, \
+or this repo starts running `semgrep mcp`. 2.14.0 does not fix this advisory. In the \
+first case, regenerating the lock clears the finding; in the second, the \
+reachability argument no longer holds and the pin has to be forced or semgrep \
+dropped."""
 
 [[ignore."scripts/ci/requirements-semgrep.txt"]]
 id = "CVE-2026-103001"
