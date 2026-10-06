@@ -34,4 +34,4 @@
 # cannot move (see the uv entry in .github/dependabot.yml).
 # Raise the floor again, and regenerate every lock, when packages start dropping
 # 3.11; check first that no install site still runs the version being dropped.
-semgrep==1.178.0
+semgrep==1.179.0
