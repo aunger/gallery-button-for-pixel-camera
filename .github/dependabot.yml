@@ -195,8 +195,8 @@ updates:
   #
   # The updater has a second failure, and it is the one the first run showed (issue #1195).
   # scripts/ci/requirements-semgrep.in pins `semgrep` exactly, and semgrep's own requirements cap what it pulls in.
-  # semgrep 1.178.0 asks for `pyjwt[crypto]~=2.13.0`, `peewee~=3.14`, `wcmatch~=8.3`, `boltons~=21.0`, `click~=8.4.2`, `exceptiongroup~=1.2.0`, `jsonschema~=4.25.1`, `mcp==1.29.0`, `pywin32==311` on Windows, and the opentelemetry `~=1.37.0` and `~=0.58b0` lines, which in turn hold importlib-metadata, protobuf and wrapt back.
-  # The conflicts in the first run's log show the same caps in 1.172.0.
+  # semgrep 1.179.0 asks for `peewee~=3.14`, `wcmatch~=8.3`, `boltons~=21.0`, `click~=8.4.2`, `exceptiongroup~=1.2.0`, `jsonschema~=4.25.1`, `mcp==1.29.0`, `pywin32==311` on Windows, and the opentelemetry `~=1.37.0` and `~=0.58b0` lines, which in turn hold importlib-metadata, protobuf and wrapt back.
+  # The conflicts in the first run's log show the same caps in 1.172.0, along with the `pyjwt[crypto]~=2.13.0` cap that 1.179.0 lifted.
   # A newer release outside a cap has no solution beside that pin, so uv reports `No solution found` for the updater's `-P <package>==<version>` and Dependabot records an update error for the package.
   # That first run, on 2026-09-30, recorded 22 of them and finished red, though it still opened both group pull requests.
   # Nothing in this repository lifts a cap, since the caps are semgrep's own, so each of those packages has an `ignore` rule with a closed range of `versions`.
@@ -291,8 +291,6 @@ updates:
         versions: [">=7, <8"]
       - dependency-name: "pydantic-core"
         versions: [">=2.47, <2.52"]
-      - dependency-name: "pyjwt"
-        versions: [">=2.14, <2.17"]
       - dependency-name: "pywin32"
         versions: [">=312, <314"]
       - dependency-name: "wcmatch"
