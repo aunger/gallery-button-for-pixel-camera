@@ -117,7 +117,7 @@ android {
     // Android Lint, which build.yml's android-lint job runs as `:app:lintDebug` (issue #985).
     // Its NewApi check is the one guard against a call to an API above minSdk: the compiler
     // accepts any symbol up to compileSdk. NewApi must never be disabled or baselined, which
-    // NewApiLintGuardTest enforces (issue #1239).
+    // NewApiLintGuardTest enforces.
     // Every finding fails the build, warnings included, so a new one cannot land unread. A check
     // that does not apply here is suppressed where it fires, with the reason, or disabled below.
     lint {
