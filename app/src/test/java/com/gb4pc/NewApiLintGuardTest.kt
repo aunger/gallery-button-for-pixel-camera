@@ -9,7 +9,7 @@ import javax.xml.parsers.DocumentBuilderFactory
 import kotlin.io.path.createTempDirectory
 
 /**
- * Regression guard for issue #1239.
+ * Regression guard for Android Lint's NewApi check
  *
  * Android Lint's NewApi check is the one guard against a call to an API above `minSdk`: the
  * compiler accepts any symbol up to `compileSdk`, and the E2E emulator runs a single API level.
