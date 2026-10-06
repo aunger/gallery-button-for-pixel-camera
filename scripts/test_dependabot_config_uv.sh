@@ -20,8 +20,11 @@
 # that copy so that it reads the copy's locks.
 #
 # The ranged `ignore` rules (issue #1195) are driven the same way, from the
-# real config with pyjwt's rule (or a new one) rewritten, since the locks they are
-# checked against do not need to change.
+# real config with boltons's rule (or a new one) rewritten, since the locks they are
+# checked against do not need to change. A cap that lifts takes its rule with it,
+# as pyjwt's did in semgrep 1.179.0, so the fixture is a package whose cap has not
+# moved: semgrep has asked for `boltons~=21.0` in every release from 1.50.0 to
+# 1.179.0, while its click cap moved within that span.
 #
 # Always exits 0 on success, non-zero on failure.
 
@@ -62,9 +65,9 @@ with open(source) as handle:
     doc = yaml.safe_load(handle)
 
 
-def pyjwt(entry):
-    """The ranged `ignore` rule for pyjwt, the package #1189 concerned."""
-    return next(rule for rule in entry["ignore"] if rule["dependency-name"] == "pyjwt")
+def boltons(entry):
+    """The ranged `ignore` rule for boltons, which semgrep caps at `~=21.0`."""
+    return next(rule for rule in entry["ignore"] if rule["dependency-name"] == "boltons")
 
 
 updates = doc["updates"]
@@ -93,19 +96,19 @@ elif mutation == "no-groups":
 elif mutation == "stale-ignore":
     entry.setdefault("ignore", []).append({"dependency-name": "requests"})
 elif mutation == "open-ended-range":
-    pyjwt(entry)["versions"] = [">=2.14"]
+    boltons(entry)["versions"] = [">=22"]
 elif mutation == "inverted-range":
-    pyjwt(entry)["versions"] = [">=2.17, <2.14"]
+    boltons(entry)["versions"] = [">=27, <22"]
 elif mutation == "range-covers-lock":
-    pyjwt(entry)["versions"] = [">=2.13, <2.17"]
+    boltons(entry)["versions"] = [">=21, <27"]
 elif mutation == "range-behind-lock":
-    pyjwt(entry)["versions"] = [">=2.0, <2.10"]
+    boltons(entry)["versions"] = [">=19, <21"]
 elif mutation == "range-for-unlocked-package":
     entry["ignore"].append({"dependency-name": "nonesuch", "versions": [">=1, <2"]})
 elif mutation == "range-for-package-in-two-locks":
     entry["ignore"].append({"dependency-name": "requests", "versions": [">=99, <100"]})
 elif mutation == "unmodeled-ignore-rule":
-    entry["ignore"].append({"dependency-name": "pyjwt", "update-types": ["version-update:semver-minor"]})
+    entry["ignore"].append({"dependency-name": "boltons", "update-types": ["version-update:semver-minor"]})
 else:
     sys.exit("unknown mutation " + mutation)
 
@@ -178,10 +181,10 @@ expect_failure direct-pin-ungrouped "a pull request of its own; ungrouped: pyyam
 expect_failure unnormalized-name "not normalized: PyYAML"
 expect_failure no-groups "pull requests its groups and ungrouped packages can want open at once"
 expect_failure stale-ignore "stale: requests"
-expect_failure open-ended-range "not closed: pyjwt '>=2.14'"
-expect_failure inverted-range "not closed: pyjwt '>=2.17, <2.14'"
-expect_failure range-covers-lock "at or below the lock: pyjwt >=2.13, <2.17 (locked 2.13.0)"
-expect_failure range-behind-lock "at or below the lock: pyjwt >=2.0, <2.10 (locked 2.13.0)"
+expect_failure open-ended-range "not closed: boltons '>=22'"
+expect_failure inverted-range "not closed: boltons '>=27, <22'"
+expect_failure range-covers-lock "at or below the lock: boltons >=21, <27 (locked 21.0.0)"
+expect_failure range-behind-lock "at or below the lock: boltons >=19, <21 (locked 21.0.0)"
 expect_failure range-for-unlocked-package "not locked: nonesuch"
 expect_failure range-for-package-in-two-locks "pinned by more than one lock: requests"
 expect_failure unmodeled-ignore-rule "the two shapes the checks here model"
