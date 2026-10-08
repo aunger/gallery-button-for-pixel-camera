@@ -82,6 +82,8 @@ _PLATFORM = re.compile(r"^platforms;android-(\d+)(?:\.\d+)?$")
 _HOOK_KEY = re.compile(r'^\s*\["([^"]+)"\]=')
 _SETUP_ITEM = re.compile(r'^\s*"([^"]+)"\s*$')
 _SHELL_SEPARATORS = frozenset({"&&", "||", "|", ";", "&", "(", ")"})
+# sdkmanager options under which the packages named are not being installed.
+_NOT_AN_INSTALL = frozenset({"--uninstall"})
 
 
 def build_files() -> list[str]:
@@ -148,7 +150,9 @@ def sdkmanager_installs(script: str) -> list[list[str]]:
     Line continuations are joined first, so an invocation split across lines
     is read whole. Options (anything starting with `-`) are dropped, which
     leaves `sdkmanager --licenses` as an invocation naming no packages. An
-    invocation's arguments end at the first shell separator.
+    `sdkmanager --uninstall` invocation removes rather than installs, so it is
+    left out altogether. An invocation's arguments end at the first shell
+    separator.
 
     Raises ValueError when a line naming sdkmanager cannot be tokenized, since
     skipping it would hide exactly the line this guard exists to read.
@@ -165,16 +169,20 @@ def sdkmanager_installs(script: str) -> list[list[str]]:
         except ValueError as e:
             raise ValueError(f"cannot tokenize {line.strip()!r}: {e}") from e
         packages = None
+        options: set[str] = set()
         for token in tokens:
             if packages is None:
                 if os.path.basename(token) == "sdkmanager":
-                    packages = []
+                    packages, options = [], set()
             elif token in _SHELL_SEPARATORS:
-                installs.append(packages)
+                if not options & _NOT_AN_INSTALL:
+                    installs.append(packages)
                 packages = None
-            elif not token.startswith("-"):
+            elif token.startswith("-"):
+                options.add(token.split("=", 1)[0])
+            else:
                 packages.append(token)
-        if packages is not None:
+        if packages is not None and not options & _NOT_AN_INSTALL:
             installs.append(packages)
     return installs
 
@@ -390,6 +398,13 @@ class ParsingTest(unittest.TestCase):
         self.assertEqual(
             [["platform-tools"]], sdkmanager_installs('"$TOOLS/sdkmanager" platform-tools\n')
         )
+
+    def test_sdkmanager_uninstall_is_not_an_install(self):
+        run = (
+            'sdkmanager --uninstall "platforms;android-35" && '
+            'sdkmanager --install "platforms;android-37.0"\n'
+        )
+        self.assertEqual([["platforms;android-37.0"]], sdkmanager_installs(run))
 
     def test_line_without_sdkmanager_is_not_tokenized(self):
         # An unbalanced quote elsewhere in the script is not this guard's business.
