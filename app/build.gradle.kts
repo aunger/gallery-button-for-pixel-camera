@@ -56,7 +56,9 @@ fun buildTrace(ex: Throwable): String {
 
 android {
     namespace = "com.gb4pc"
-    compileSdk = 35
+    // API 37.0, installed as the SDK package platforms;android-37.0. Each site that installs it
+    // (.claude/hooks/session-start.sh and the workflows that run sdkmanager) must name that id.
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.gb4pc"
