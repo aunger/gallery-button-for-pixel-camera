@@ -56,10 +56,9 @@ fun buildTrace(ex: Throwable): String {
 
 android {
     namespace = "com.gb4pc"
-    // API 37.0, installed as the SDK package platforms;android-37.0. That id is pinned in
-    // .claude/hooks/session-start.sh, .claude/setup-environment.sh, the sandbox fixture in
-    // scripts/test_setup_environment.sh, and the sdkmanager steps of regenerate-gradle-toolchain.yml
-    // and dependabot-verification-metadata-regen.yml. Nothing checks them against this pin (#987).
+    // API 37.0, installed as the SDK package platforms;android-37.0. The sites that declare it are
+    // listed in gradle/README.md's "compileSdk -- SDK platform pin" section, and
+    // scripts/ci/test_sdk_package_sites.py checks them against this pin.
     compileSdk = 37
 
     defaultConfig {
