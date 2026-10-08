@@ -18,9 +18,8 @@ can are set in unrelated places:
 The jobs that set up the SDK through item 4 (in `build.yml`, `codeql.yml` and
 `release.yml`) install no platform themselves, so they build against a
 platform no site in this repository declares: the one preinstalled on the
-GitHub-hosted runner image. That image's
-platform set moves with the image, not with this tree, so nothing here can
-check it.
+GitHub-hosted runner image. That image's platform set moves with the image,
+not with this tree, so nothing here can check it.
 
 A missed site fails at build time, but late: only on the job that was missed,
 after it has set up a JDK, an SDK and a Gradle cache, and with an error about a
@@ -56,10 +55,11 @@ Limits: `compileSdk` is read only in the plain `compileSdk = N` form. Any other
 form (`compileSdk { version = release(N) { ... } }`, a variable), and any
 property whose name starts with `compileSdk` (`compileSdkPreview`,
 `compileSdkVersion(N)`), is reported as unreadable rather than skipped, so
-whoever adopts one must teach this guard to read it. A minor `compileSdk` level is not modelled: `android-37.0` satisfies
-`compileSdk = 37`, and so would `android-37.1`. The guard reads no shell script
-other than the two `.claude/` ones, so an `sdkmanager` call in a script under
-`scripts/` is not seen. `scripts/ci/test-support/setup-e2e-emulator.sh` holds
+whoever adopts one must teach this guard to read it. A minor `compileSdk`
+level is not modelled: `android-37.0` satisfies `compileSdk = 37`, and so
+would `android-37.1`. The guard reads no shell script other than the two
+`.claude/` ones, so an `sdkmanager` call in a script under `scripts/` is not
+seen. `scripts/ci/test-support/setup-e2e-emulator.sh` holds
 one, which installs only the emulator, its system image and `platform-tools`.
 """
 
