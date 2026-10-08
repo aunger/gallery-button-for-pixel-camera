@@ -93,7 +93,8 @@ Where `JAVA_TOOL_OPTIONS` does not already set them, the script gives Java two t
 - **The proxy.** `curl` honours both `HTTPS_PROXY` and `https_proxy`, but `sdkmanager` reads only `HTTPS_PROXY`, and Java itself reads neither.
   The script sets `https.proxyHost` and `https.proxyPort` from whichever is set, preferring `HTTPS_PROXY`.
 - **The trust store.** Temurin trusts only its bundled `cacerts`; `curl` trusts the system store, which on this image also holds the environment's own proxy CAs.
-  The script points Java at `/etc/ssl/certs/java/cacerts`, the system store in Java's format and the one sessions' `JAVA_TOOL_OPTIONS` name.
+  The script points Java at `/etc/ssl/certs/java/cacerts`, the system store in Java's format and the one sessions' `JAVA_TOOL_OPTIONS` name, when that file is readable.
+  When it is not, Java keeps its own bundled `cacerts`, and the script logs a `Network:` line saying so.
 
 Settings `JAVA_TOOL_OPTIONS` already carries are kept, apart from `*.google.com` in `nonProxyHosts`, which is stripped as the hook's step 0 does.
 The script logs the proxy variables (host and port, and whether credentials are present, never the credentials) and the Java network options it runs `sdkmanager` with, on lines beginning `Network:`.

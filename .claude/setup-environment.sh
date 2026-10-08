@@ -320,9 +320,15 @@ if [[ "${JAVA_TOOL_OPTIONS:-}" != *-Dhttps.proxyHost=* && -n "$PROXY_URL" ]]; th
     fi
 fi
 
-if [[ "${JAVA_TOOL_OPTIONS:-}" != *-Djavax.net.ssl.trustStore=* && -r "$SYSTEM_JAVA_TRUSTSTORE" ]]; then
-    JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:+$JAVA_TOOL_OPTIONS }-Djavax.net.ssl.trustStore=$SYSTEM_JAVA_TRUSTSTORE"
-    log "Network: Java had no trust store; gave it the system's ($SYSTEM_JAVA_TRUSTSTORE)"
+if [[ "${JAVA_TOOL_OPTIONS:-}" != *-Djavax.net.ssl.trustStore=* ]]; then
+    if [[ -r "$SYSTEM_JAVA_TRUSTSTORE" ]]; then
+        JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:+$JAVA_TOOL_OPTIONS }-Djavax.net.ssl.trustStore=$SYSTEM_JAVA_TRUSTSTORE"
+        log "Network: Java had no trust store; gave it the system's ($SYSTEM_JAVA_TRUSTSTORE)"
+    else
+        # Said outright, because a trust store missing the environment's CAs is
+        # one of the two causes of a Step 3c failure described above.
+        log "Network: Java had no trust store, and the system's ($SYSTEM_JAVA_TRUSTSTORE) is not readable; Java keeps its own bundled cacerts"
+    fi
 fi
 
 if [[ -n "${JAVA_TOOL_OPTIONS:-}" ]]; then

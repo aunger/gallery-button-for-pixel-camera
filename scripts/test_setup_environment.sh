@@ -39,6 +39,8 @@
 #       *.google.com still stripped from nonProxyHosts (behavioral)
 #   (l) a failed sdkmanager install is fatal and prints the underlying causes
 #       (behavioral)
+#   (m) an unreadable system trust store is logged, and Java is given none
+#       (behavioral)
 #
 # What no case here can cover is the network of the real Setup phase: whether its
 # proxy and trust store are the ones (j) hands to Java. Only an environment
@@ -459,6 +461,27 @@ elif grep -q "Caused by: sun.security.validator.ValidatorException" "$CAUSE/out.
 else
     fail "the failure output does not show the underlying cause as expected"
     sed 's/^/    /' "$CAUSE/out.log"
+fi
+
+# (m) when the system trust store cannot be read, Java is given none and the log
+# says so, rather than leaving it to be inferred from a missing trustStore in the
+# options line. The store is an absent path, not a mode-000 file, because these
+# tests may run as root, which reads a mode-000 file regardless.
+NOSTORE="$SANDBOX/nostore"
+make_sandbox "$NOSTORE"
+seed_gradle_cache "$NOSTORE"
+stub_sdkmanager "$NOSTORE"
+if run_setup "$NOSTORE" SYSTEM_JAVA_TRUSTSTORE="$NOSTORE/absent-cacerts"; then
+    if grep -q "system's ($NOSTORE/absent-cacerts) is not readable; Java keeps its own bundled cacerts" "$NOSTORE/out.log" \
+        && [[ "$(stub_jto "$NOSTORE")" != *trustStore* ]]; then
+        pass "an unreadable system trust store is logged, and Java is given none"
+    else
+        fail "an unreadable system trust store was not logged, or Java was given one anyway"
+        sed 's/^/    /' "$NOSTORE/out.log"
+    fi
+else
+    fail "the script failed with an unreadable system trust store"
+    sed 's/^/    /' "$NOSTORE/out.log"
 fi
 
 # (i) the Setup script must never produce gradle/verification-metadata.xml. The
