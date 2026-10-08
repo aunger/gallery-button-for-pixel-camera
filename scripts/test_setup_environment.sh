@@ -224,8 +224,8 @@ make_sandbox() {
     chmod +x "$root/sdk/cmdline-tools/latest/bin/sdkmanager"
     mkdir -p "$root/sdk/licenses"
     : > "$root/sdk/licenses/android-sdk-license"
-    # Each package installs to its id with ';' read as '/', which is also the
-    # path the session-start hook tests for it.
+    # Each package installs to its id with ';' read as '/', which is the path
+    # the Setup script's Step 3c tests to decide the package is present.
     while IFS= read -r pkg; do
         mkdir -p "$root/sdk/${pkg//;//}"
     done <<< "$SETUP_PACKAGES"

@@ -153,8 +153,9 @@ fi
 # compiles and targets SDK 35. The 35.0.0 and 34.0.0 build-tools stay pinned here
 # so a session can still build older revisions of the tree.
 # This list is the source of truth for SDK packages: it must hold a platform for
-# every module's compileSdk, and no workflow's sdkmanager line may install a
-# platform, build-tools or platform-tools package missing from it.
+# every module's compileSdk, and no workflow's sdkmanager call or setup-android
+# packages input may install a platform, build-tools or platform-tools package
+# missing from it.
 # scripts/ci/test_sdk_package_sites.py checks both.
 # ───────────────────────────────────────────────────────────────────────────────
 declare -A SDK_PACKAGES=(

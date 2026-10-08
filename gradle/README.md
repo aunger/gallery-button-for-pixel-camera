@@ -196,22 +196,31 @@ Moving it is not a toolchain bump, and "Performing a toolchain bump" below does 
 It moves no Maven coordinate, so the dependency graph does not shift and `verification-metadata.xml` needs no regeneration; neither the KGP compatibility row nor the CodeQL Kotlin ceiling binds (#986 sets this out).
 
 What it does move is the SDK platform that has to be installed for it.
-That platform is an SDK package, declared apart from the build scripts at every site that provisions the SDK:
+That platform is an SDK package, declared apart from the build scripts.
+Four sites declare it:
 
 - the `SDK_PACKAGES` array in `.claude/hooks/session-start.sh`, which is the source of truth for SDK packages;
 - the `SDK_PACKAGES` array in `.claude/setup-environment.sh`, whose pasted copy has to be refreshed by hand after a change (see `.claude/environment.md`);
 - the `sdkmanager --install` line in `.github/workflows/dependabot-verification-metadata-regen.yml`;
 - the `sdkmanager --install` line in `.github/workflows/regenerate-gradle-toolchain.yml`.
 
+The other jobs that build the app declare no platform at all.
+Each provisions the SDK through `android-actions/setup-android` with `packages: platform-tools` (three jobs in `.github/workflows/build.yml`, one each in `codeql.yml` and `release.yml`), and builds against the platforms preinstalled on the GitHub-hosted runner image.
+The `ubuntu-24.04` image at version 20260927.320.1 lists `android-37.0`, `android-36` and `android-35` among them, which is why #986's move to 37 passed `android-lint` and `analyze-kotlin` without editing those jobs.
+A `compileSdk` move needs no edit there either, as long as the image carries the platform.
+Nothing in this repository can check that, because the image's platform set moves with the image, not with this tree.
+Whether AGP would download a platform the image lacks has not been verified.
+
 Newer platform package ids carry a minor version that `compileSdk` does not.
 `platforms;android-35` has none, but `platforms;android-37` does not exist; the stable API 37 packages include `platforms;android-37.0` and `platforms;android-37.1`.
 So `compileSdk = 37` is satisfied by any `platforms;android-37.N`, and which minor to install is a choice to record, not one the build makes.
 
-`scripts/ci/test_sdk_package_sites.py` fails `build-and-test` when any of those sites installs no platform for some module's `compileSdk`, matching on the major alone.
-It also fails when a workflow's `sdkmanager` line installs a package the session-start hook does not list, in any package family the hook provisions (today `platforms`, `build-tools` and `platform-tools`).
+`scripts/ci/test_sdk_package_sites.py` fails `build-and-test` when any of the four sites installs no platform for some module's `compileSdk`, matching on the major alone.
+It holds every workflow `sdkmanager` call and every `setup-android` `packages` input to the same rule as soon as it names a platform.
+It also fails when either kind of workflow site installs a package the session-start hook does not list, in any package family the hook provisions (today `platforms`, `build-tools` and `platform-tools`).
 The workflows may install a subset of the hook's list, since the `.claude/` pair also carries older build-tools that the workflows do not need.
 `scripts/test_setup_environment.sh` separately holds the two `.claude/` lists equal.
-Between them, a `compileSdk` move that misses a site fails in its own pull request's CI, naming the site, instead of failing later on whichever job was missed.
+Between them, a `compileSdk` move that misses one of the four sites fails in its own pull request's CI, naming the site, instead of failing later on whichever job was missed.
 
 ## CodeQL Kotlin ceiling
 
@@ -314,7 +323,7 @@ A JDK change has a wider blast radius and is not covered here.
 
    Two sites in `.github/workflows/regenerate-gradle-toolchain.yml` are easy to miss.
    Its `env:` block duplicates the Gradle version and both checksums; the workflow runs the build-integrity guard in the same job, so a block that disagrees with `scripts/test_verification_metadata.sh` fails the run loudly, but a bump that leaves **both** of them stale passes instead, and the artifact then reverts the version change.
-   Its `sdkmanager --install` line pins the build-tools and SDK platform separately from the `.claude/` provisioning scripts; `scripts/ci/test_sdk_package_sites.py` fails the build when it names one the session-start hook does not list (see "`compileSdk` -- SDK platform pin" above).
+   Its `sdkmanager --install` line pins the build-tools and SDK platform separately from the `.claude/` provisioning scripts; `scripts/ci/test_sdk_package_sites.py` fails the build when it names one, in a package family the session-start hook provisions, that the hook does not list (see "`compileSdk` -- SDK platform pin" above).
 
    Do not grep-and-replace a version across the tree.
    `gradle/verification-metadata.xml` carries dozens of incidental matches per version and is regenerated wholesale by step 3, so exclude it from any search.
