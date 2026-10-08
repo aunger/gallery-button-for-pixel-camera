@@ -239,17 +239,108 @@ fi
 export JAVA_HOME="$TEMURIN_HOME"
 export PATH="$JAVA_HOME/bin:$PATH"
 
-# The image's JAVA_TOOL_OPTIONS lists *.google.com in nonProxyHosts, so Java tries
-# a direct connection to dl.google.com, which has no direct DNS here. Strip those
-# entries for this script's sdkmanager runs, exactly as the session-start hook
-# does for the session (see its STEP 0).
+# --- Java network settings for sdkmanager -------------------------------------
+#
+# sdkmanager (Step 3c) is a Java program, and Java does not share curl's network
+# configuration, so the curl downloads in Steps 1-3a succeeding says nothing about
+# whether sdkmanager can reach dl.google.com (issue #1273). Three differences
+# matter. Each is closed here only where JAVA_TOOL_OPTIONS has not already settled
+# it, so an environment that configures Java itself, as sessions do, keeps its own
+# values:
+#
+#   - nonProxyHosts. The image's JAVA_TOOL_OPTIONS has listed *.google.com there,
+#     sending Java direct to dl.google.com, which had no direct DNS. Those entries
+#     are stripped, as the session-start hook's STEP 0 does.
+#   - The proxy. curl honours both HTTPS_PROXY and https_proxy; sdkmanager reads
+#     only the upper-case one (cmdline-tools 11076708, measured 2026-10-08), and
+#     Java's https.proxyHost is unset unless JAVA_TOOL_OPTIONS sets it. When it
+#     does not, the proxy curl would use is handed to Java as https.proxyHost and
+#     https.proxyPort.
+#   - The trust store. Temurin trusts only its own bundled cacerts, while curl
+#     trusts the system store, which on this image also holds the CAs of the
+#     environment's own proxies (measured 2026-10-08). A connection through a
+#     proxy that re-signs TLS is then accepted by curl and refused by Java, and
+#     sdkmanager reports that refusal only as "IO exception while downloading
+#     manifest". Java is pointed at the system's Java-format copy of that store,
+#     the one sessions' JAVA_TOOL_OPTIONS name.
+#
+# The proxy URL's credentials, if it has any, are not passed to Java (it sends
+# proxy credentials only through an Authenticator), but whether it has any is
+# logged, so a 407 in Step 3c's failure output can be read for what it is.
+#
+# Overridable only so scripts/test_setup_environment.sh can exercise the script
+# against a sandbox.
+SYSTEM_JAVA_TRUSTSTORE="${SYSTEM_JAVA_TRUSTSTORE:-/etc/ssl/certs/java/cacerts}"
+
+# Prints "<host> <port> <credentials: none|present>" for a proxy URL, or nothing
+# if it names no host. The credentials themselves are never printed.
+proxy_parts() {
+    python3 -c '
+import sys
+from urllib.parse import urlsplit
+
+url = sys.argv[1] if "://" in sys.argv[1] else "http://" + sys.argv[1]
+try:
+    parts = urlsplit(url)
+    port = parts.port or (443 if parts.scheme == "https" else 80)
+except ValueError:
+    sys.exit(0)
+if parts.hostname:
+    credentials = "present" if parts.username or parts.password else "none"
+    print(parts.hostname, port, credentials)
+' "$1"
+}
+
 if echo "${JAVA_TOOL_OPTIONS:-}" | grep -qE '\*\.(google|googleapis)\.com'; then
     JAVA_TOOL_OPTIONS=$(echo "$JAVA_TOOL_OPTIONS" \
         | sed 's/|\*\.googleapis\.com//' \
         | sed 's/|\*\.google\.com//')
-    export JAVA_TOOL_OPTIONS
-    log "Stripped *.google.com from nonProxyHosts for this script"
+    log "Network: stripped *.google.com from Java's nonProxyHosts"
 fi
+
+for proxy_var in HTTPS_PROXY https_proxy; do
+    if [[ -z "${!proxy_var:-}" ]]; then
+        log "Network: $proxy_var unset"
+        continue
+    fi
+    read -r proxy_host proxy_port proxy_credentials <<< "$(proxy_parts "${!proxy_var}")"
+    if [[ -n "$proxy_host" ]]; then
+        log "Network: $proxy_var is $proxy_host:$proxy_port (credentials: $proxy_credentials)"
+    else
+        log "Network: $proxy_var is set but names no host"
+    fi
+done
+
+PROXY_URL="${HTTPS_PROXY:-${https_proxy:-}}"
+if [[ "${JAVA_TOOL_OPTIONS:-}" != *-Dhttps.proxyHost=* && -n "$PROXY_URL" ]]; then
+    read -r proxy_host proxy_port _ <<< "$(proxy_parts "$PROXY_URL")"
+    if [[ -n "$proxy_host" ]]; then
+        JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:+$JAVA_TOOL_OPTIONS }-Dhttps.proxyHost=$proxy_host -Dhttps.proxyPort=$proxy_port"
+        log "Network: Java had no proxy; set it to $proxy_host:$proxy_port"
+    fi
+fi
+
+if [[ "${JAVA_TOOL_OPTIONS:-}" != *-Djavax.net.ssl.trustStore=* ]]; then
+    if [[ -r "$SYSTEM_JAVA_TRUSTSTORE" ]]; then
+        JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:+$JAVA_TOOL_OPTIONS }-Djavax.net.ssl.trustStore=$SYSTEM_JAVA_TRUSTSTORE"
+        log "Network: Java had no trust store; gave it the system's ($SYSTEM_JAVA_TRUSTSTORE)"
+    else
+        # Said outright, because a trust store missing the environment's CAs is
+        # one of the two causes of a Step 3c failure described above.
+        log "Network: Java had no trust store, and the system's ($SYSTEM_JAVA_TRUSTSTORE) is not readable; Java keeps its own bundled cacerts"
+    fi
+fi
+
+if [[ -n "${JAVA_TOOL_OPTIONS:-}" ]]; then
+    export JAVA_TOOL_OPTIONS
+fi
+# Lists only the proxy and trust-store properties, so this line adds nothing else
+# from JAVA_TOOL_OPTIONS to the build log. That is all it avoids: the JVM itself
+# prints the whole value ("Picked up JAVA_TOOL_OPTIONS: ...") on every start, and
+# Step 3c's sdkmanager run writes that to the build log unfiltered.
+JAVA_NETWORK_OPTIONS=$(grep -oE -- '-D(https?\.proxy(Host|Port)|http\.nonProxyHosts|javax\.net\.ssl\.trustStore(Type)?)=[^ ]*' \
+    <<< "${JAVA_TOOL_OPTIONS:-}" | tr '\n' ' ' || true)
+log "Network: Java options for sdkmanager: ${JAVA_NETWORK_OPTIONS:-none}"
 
 # --- STEP 2: Gradle distribution, seeded into the wrapper cache ---------------
 #
@@ -374,7 +465,18 @@ if [[ ${#MISSING_PACKAGES[@]} -gt 0 ]]; then
     log "Step 3c: installing: ${MISSING_PACKAGES[*]}"
     yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 \
         || log "Step 3c: warning: sdkmanager --licenses failed--install may fail if a license is unaccepted"
-    "$SDKMANAGER" "${MISSING_PACKAGES[@]}"
+    if ! "$SDKMANAGER" "${MISSING_PACKAGES[@]}"; then
+        # sdkmanager's own warnings ("IO exception while downloading manifest")
+        # name no cause; with --verbose it prints the exceptions behind them.
+        # Only their top-level lines are kept, de-duplicated in order, so the
+        # build log shows the cause without pages of stack frames.
+        log "ERROR: Step 3c: sdkmanager failed. The causes it reports, from a" >&2
+        log "       --verbose package listing (read with the Network lines above):" >&2
+        "$SDKMANAGER" --list --verbose 2>&1 | tr '\r' '\n' \
+            | grep -v '^[[:space:]]' | grep -E 'Exception|Caused by' \
+            | awk '!seen[$0]++' | head -n 20 | sed 's/^/    /' >&2 || true
+        exit 1
+    fi
     log "Step 3c: done"
 else
     log "Step 3c: all SDK packages present--skip"
