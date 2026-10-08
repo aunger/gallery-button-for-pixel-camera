@@ -32,6 +32,15 @@
 #       (behavioral)
 #   (i) it never writes gradle/verification-metadata.xml, which only the generator
 #       workflow may produce (issue #774)
+#   (j) Java with no network settings is given the environment's proxy and the
+#       system trust store for sdkmanager, without logging proxy credentials
+#       (behavioral; issue #1273)
+#   (k) Java network settings the environment already made are kept, with
+#       *.google.com still stripped from nonProxyHosts (behavioral)
+#
+# What no case here can cover is the network of the real Setup phase: whether its
+# proxy and trust store are the ones (j) hands to Java. Only an environment
+# rebuild exercises that.
 #
 # Always exits 0 on success, non-zero on failure.
 
@@ -247,10 +256,16 @@ seed_gradle_cache() {
 # the network by forgetting one. A case varies any of them by passing NAME=value
 # arguments after the sandbox root; env applies those after these defaults, so
 # they win.
+#
+# The runner's own proxy settings are removed and the system trust store is
+# pointed at an absent file, because the script hands those to sdkmanager: a case
+# must see only the network environment it sets up itself.
 run_setup() {
     local root="$1"
     shift
-    env SESSION_HOME="$root/home" \
+    env -u JAVA_TOOL_OPTIONS -u HTTPS_PROXY -u https_proxy \
+        SYSTEM_JAVA_TRUSTSTORE="$root/absent-cacerts" \
+        SESSION_HOME="$root/home" \
         GRADLE_USER_HOME="$root/home/.gradle" \
         ANDROID_HOME="$root/sdk" \
         TEMURIN_HOME="$root/jdk" \
@@ -343,6 +358,73 @@ if run_setup "$FRESH" && grep -q "Temurin $SETUP_TEMURIN_VERSION present--skip" 
 else
     fail "a fully provisioned sandbox did not skip the JDK"
     sed 's/^/    /' "$FRESH/out.log"
+fi
+
+# Replace the sandbox's no-op sdkmanager with a stub that records the
+# JAVA_TOOL_OPTIONS it was started with (in sdkmanager.jto beside it), and remove
+# one package so that Step 3c runs it.
+stub_sdkmanager() {
+    local root="$1"
+    rm -rf "$root/sdk/platform-tools"
+    cat > "$root/sdk/cmdline-tools/latest/bin/sdkmanager" <<'STUB'
+#!/usr/bin/env bash
+[[ "${1:-}" == --licenses ]] && exit 0
+printf '%s\n' "${JAVA_TOOL_OPTIONS:-}" > "$0.jto"
+STUB
+}
+stub_jto() { cat "$1/sdk/cmdline-tools/latest/bin/sdkmanager.jto" 2>/dev/null; }
+
+# (j) issue #1273: a Setup phase whose Java has no network configuration gets the
+# proxy curl uses, and the system trust store, handed to sdkmanager. Only the
+# lower-case https_proxy is set, which curl honours and sdkmanager alone does not,
+# and its URL carries credentials, which must not reach the build log.
+NET="$SANDBOX/net"
+make_sandbox "$NET"
+seed_gradle_cache "$NET"
+stub_sdkmanager "$NET"
+: > "$NET/cacerts"
+if run_setup "$NET" https_proxy="http://agent:s3cret@proxy.invalid:3128" \
+    SYSTEM_JAVA_TRUSTSTORE="$NET/cacerts"; then
+    NET_JTO=$(stub_jto "$NET")
+    if [ "$NET_JTO" = "-Dhttps.proxyHost=proxy.invalid -Dhttps.proxyPort=3128 -Djavax.net.ssl.trustStore=$NET/cacerts" ]; then
+        pass "Java with no network settings is given the environment's proxy and the system trust store"
+    else
+        fail "sdkmanager ran with JAVA_TOOL_OPTIONS '$NET_JTO'"
+        sed 's/^/    /' "$NET/out.log"
+    fi
+    if grep -q "https_proxy is proxy.invalid:3128 (credentials: present)" "$NET/out.log" \
+        && ! grep -q "s3cret" "$NET/out.log"; then
+        pass "the proxy is logged, and its credentials are not"
+    else
+        fail "the proxy log line is missing, or the credentials leaked into the log"
+        sed 's/^/    /' "$NET/out.log"
+    fi
+else
+    fail "the script failed with a stub sdkmanager and a proxy in https_proxy"
+    sed 's/^/    /' "$NET/out.log"
+fi
+
+# (k) the converse: Java settings the environment already made are kept, not
+# overridden by HTTPS_PROXY or the system store, while *.google.com is still
+# stripped from nonProxyHosts. The expected value is exact, so a duplicated or
+# appended property fails here too.
+KEEP="$SANDBOX/keep"
+make_sandbox "$KEEP"
+seed_gradle_cache "$KEEP"
+stub_sdkmanager "$KEEP"
+: > "$KEEP/cacerts"
+if run_setup "$KEEP" HTTPS_PROXY="http://env.invalid:3128" SYSTEM_JAVA_TRUSTSTORE="$KEEP/cacerts" \
+    JAVA_TOOL_OPTIONS="-Dhttps.proxyHost=java.invalid -Dhttps.proxyPort=8080 -Djavax.net.ssl.trustStore=/session/cacerts -Dhttp.nonProxyHosts=localhost|*.google.com|*.googleapis.com"; then
+    KEEP_JTO=$(stub_jto "$KEEP")
+    if [ "$KEEP_JTO" = "-Dhttps.proxyHost=java.invalid -Dhttps.proxyPort=8080 -Djavax.net.ssl.trustStore=/session/cacerts -Dhttp.nonProxyHosts=localhost" ]; then
+        pass "Java's own proxy and trust store are kept, and *.google.com is stripped"
+    else
+        fail "sdkmanager ran with JAVA_TOOL_OPTIONS '$KEEP_JTO'"
+        sed 's/^/    /' "$KEEP/out.log"
+    fi
+else
+    fail "the script failed with a stub sdkmanager and Java settings of its own"
+    sed 's/^/    /' "$KEEP/out.log"
 fi
 
 # (i) the Setup script must never produce gradle/verification-metadata.xml. The

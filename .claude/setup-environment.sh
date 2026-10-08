@@ -239,17 +239,100 @@ fi
 export JAVA_HOME="$TEMURIN_HOME"
 export PATH="$JAVA_HOME/bin:$PATH"
 
-# The image's JAVA_TOOL_OPTIONS lists *.google.com in nonProxyHosts, so Java tries
-# a direct connection to dl.google.com, which has no direct DNS here. Strip those
-# entries for this script's sdkmanager runs, exactly as the session-start hook
-# does for the session (see its STEP 0).
+# --- Java network settings for sdkmanager -------------------------------------
+#
+# sdkmanager (Step 3c) is a Java program, and Java does not share curl's network
+# configuration, so the curl downloads in Steps 1-3a succeeding says nothing about
+# whether sdkmanager can reach dl.google.com (issue #1273). Three differences
+# matter. Each is closed here only where JAVA_TOOL_OPTIONS has not already settled
+# it, so an environment that configures Java itself, as sessions do, keeps its own
+# values:
+#
+#   - nonProxyHosts. The image's JAVA_TOOL_OPTIONS has listed *.google.com there,
+#     sending Java direct to dl.google.com, which had no direct DNS. Those entries
+#     are stripped, as the session-start hook's STEP 0 does.
+#   - The proxy. curl honours both HTTPS_PROXY and https_proxy; sdkmanager reads
+#     only the upper-case one (cmdline-tools 11076708, measured 2026-10-08), and
+#     Java's https.proxyHost is unset unless JAVA_TOOL_OPTIONS sets it. When it
+#     does not, the proxy curl would use is handed to Java as https.proxyHost and
+#     https.proxyPort.
+#   - The trust store. Temurin trusts only its own bundled cacerts, while curl
+#     trusts the system store, which on this image also holds the CAs of the
+#     environment's own proxies (measured 2026-10-08). A connection through a
+#     proxy that re-signs TLS is then accepted by curl and refused by Java, and
+#     sdkmanager reports that refusal only as "IO exception while downloading
+#     manifest". Java is pointed at the system's Java-format copy of that store,
+#     the one sessions' JAVA_TOOL_OPTIONS name.
+#
+# The proxy URL's credentials, if it has any, are not passed to Java (it sends
+# proxy credentials only through an Authenticator), but whether it has any is
+# logged, so a 407 can be read for what it is.
+#
+# Overridable only so scripts/test_setup_environment.sh can exercise the script
+# against a sandbox.
+SYSTEM_JAVA_TRUSTSTORE="${SYSTEM_JAVA_TRUSTSTORE:-/etc/ssl/certs/java/cacerts}"
+
+# Prints "<host> <port> <credentials: none|present>" for a proxy URL, or nothing
+# if it names no host. The credentials themselves are never printed.
+proxy_parts() {
+    python3 -c '
+import sys
+from urllib.parse import urlsplit
+
+url = sys.argv[1] if "://" in sys.argv[1] else "http://" + sys.argv[1]
+try:
+    parts = urlsplit(url)
+    port = parts.port or (443 if parts.scheme == "https" else 80)
+except ValueError:
+    sys.exit(0)
+if parts.hostname:
+    credentials = "present" if parts.username or parts.password else "none"
+    print(parts.hostname, port, credentials)
+' "$1"
+}
+
 if echo "${JAVA_TOOL_OPTIONS:-}" | grep -qE '\*\.(google|googleapis)\.com'; then
     JAVA_TOOL_OPTIONS=$(echo "$JAVA_TOOL_OPTIONS" \
         | sed 's/|\*\.googleapis\.com//' \
         | sed 's/|\*\.google\.com//')
-    export JAVA_TOOL_OPTIONS
-    log "Stripped *.google.com from nonProxyHosts for this script"
+    log "Network: stripped *.google.com from Java's nonProxyHosts"
 fi
+
+for proxy_var in HTTPS_PROXY https_proxy; do
+    if [[ -z "${!proxy_var:-}" ]]; then
+        log "Network: $proxy_var unset"
+        continue
+    fi
+    read -r proxy_host proxy_port proxy_credentials <<< "$(proxy_parts "${!proxy_var}")"
+    if [[ -n "$proxy_host" ]]; then
+        log "Network: $proxy_var is $proxy_host:$proxy_port (credentials: $proxy_credentials)"
+    else
+        log "Network: $proxy_var is set but names no host"
+    fi
+done
+
+PROXY_URL="${HTTPS_PROXY:-${https_proxy:-}}"
+if [[ "${JAVA_TOOL_OPTIONS:-}" != *-Dhttps.proxyHost=* && -n "$PROXY_URL" ]]; then
+    read -r proxy_host proxy_port _ <<< "$(proxy_parts "$PROXY_URL")"
+    if [[ -n "$proxy_host" ]]; then
+        JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:+$JAVA_TOOL_OPTIONS }-Dhttps.proxyHost=$proxy_host -Dhttps.proxyPort=$proxy_port"
+        log "Network: Java had no proxy; set it to $proxy_host:$proxy_port"
+    fi
+fi
+
+if [[ "${JAVA_TOOL_OPTIONS:-}" != *-Djavax.net.ssl.trustStore=* && -r "$SYSTEM_JAVA_TRUSTSTORE" ]]; then
+    JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:+$JAVA_TOOL_OPTIONS }-Djavax.net.ssl.trustStore=$SYSTEM_JAVA_TRUSTSTORE"
+    log "Network: Java had no trust store; gave it the system's ($SYSTEM_JAVA_TRUSTSTORE)"
+fi
+
+if [[ -n "${JAVA_TOOL_OPTIONS:-}" ]]; then
+    export JAVA_TOOL_OPTIONS
+fi
+# Only the proxy and trust-store properties, so nothing like a proxy password
+# that JAVA_TOOL_OPTIONS might carry reaches the build log.
+JAVA_NETWORK_OPTIONS=$(grep -oE -- '-D(https?\.proxy(Host|Port)|http\.nonProxyHosts|javax\.net\.ssl\.trustStore(Type)?)=[^ ]*' \
+    <<< "${JAVA_TOOL_OPTIONS:-}" | tr '\n' ' ' || true)
+log "Network: Java options for sdkmanager: ${JAVA_NETWORK_OPTIONS:-none}"
 
 # --- STEP 2: Gradle distribution, seeded into the wrapper cache ---------------
 #

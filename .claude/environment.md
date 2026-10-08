@@ -57,7 +57,7 @@ The pasted copy lives in a web form that CI cannot read, so **re-paste it whenev
 A stale copy fails quietly: it seeds the previous distribution, the wrapper ignores it, and sessions silently go back to downloading.
 
 `scripts/test_setup_environment.sh` guards the half CI can see.
-It fails the build when the committed copy drifts from `gradle/wrapper/gradle-wrapper.properties` (version, distribution URL, checksum) or from `.claude/hooks/session-start.sh` (command-line tools URL, `ANDROID_HOME`, SDK package list, license hashes, Temurin path), when the checksum verification stops being fail-closed, when the wrapper cache path stops matching the one the wrapper actually reads, or when a step would skip its work on an image already holding a different version.
+It fails the build when the committed copy drifts from `gradle/wrapper/gradle-wrapper.properties` (version, distribution URL, checksum) or from `.claude/hooks/session-start.sh` (command-line tools URL, `ANDROID_HOME`, SDK package list, license hashes, Temurin path), when the checksum verification stops being fail-closed, when the wrapper cache path stops matching the one the wrapper actually reads, when a step would skip its work on an image already holding a different version, or when `sdkmanager` would run without the proxy and trust store described under "`sdkmanager` in the Setup phase" below.
 `scripts/ci/test_sdk_package_sites.py` adds that the SDK package list holds a platform for every module's `compileSdk`, and that no workflow's `sdkmanager` call or `setup-android` `packages` input installs a platform, build-tools or `platform-tools` package the list lacks; `gradle/README.md` covers it under "`compileSdk` -- SDK platform pin".
 
 ### What it deliberately does not do
@@ -85,6 +85,21 @@ The Gradle pin in particular carries more weight than it looks.
 The wrapper verifies a distribution it downloads against `distributionSha256Sum`, but a distribution it finds already installed is taken as given, and the zip is deleted once unpacked, so nothing is left to re-check.
 Seeding the cache moves that verification from the wrapper into the Setup script, which is why the script's check is fail-closed and why its pin is guarded by `scripts/test_setup_environment.sh`.
 
+### `sdkmanager` in the Setup phase
+
+`sdkmanager` is a Java program, and Java does not share `curl`'s network configuration, so the `curl` downloads of Steps 1 to 3a succeeding does not show that Step 3c can reach `dl.google.com` (#1273).
+Where `JAVA_TOOL_OPTIONS` does not already set them, the script gives Java two things `curl` has:
+
+- **The proxy.** `curl` honours both `HTTPS_PROXY` and `https_proxy`, but `sdkmanager` reads only `HTTPS_PROXY`, and Java itself reads neither.
+  The script sets `https.proxyHost` and `https.proxyPort` from whichever is set, preferring `HTTPS_PROXY`.
+- **The trust store.** Temurin trusts only its bundled `cacerts`; `curl` trusts the system store, which on this image also holds the environment's own proxy CAs.
+  The script points Java at `/etc/ssl/certs/java/cacerts`, the system store in Java's format and the one sessions' `JAVA_TOOL_OPTIONS` name.
+
+Settings `JAVA_TOOL_OPTIONS` already carries are kept, apart from `*.google.com` in `nonProxyHosts`, which is stripped as the hook's step 0 does.
+The script logs the proxy variables (host and port, and whether credentials are present, never the credentials) and the Java network options it runs `sdkmanager` with, on lines beginning `Network:`.
+
+CI checks that the script hands these settings to `sdkmanager`, but cannot check that they are right for the real Setup phase; only an environment rebuild exercises that.
+
 ______________________________________________________________________
 
 ## Environment variables
@@ -105,13 +120,14 @@ ______________________________________________________________________
 
 ## Troubleshooting
 
-| Symptom                                                 | Cause                                               | Fix                                                    |
-| ------------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------ |
-| `UnknownHostException: dl.google.com`                   | `*.google.com` in `nonProxyHosts`, no direct DNS    | Hook §0 fixes this; check `~/.bashrc` for terminal use |
-| `407 Proxy Authentication Required`                     | Java 9+ doesn't auto-register proxy `Authenticator` | Hook §1 writes `~/.gradle/init.d/proxy-auth.gradle`    |
-| `Failed to find package 'platform-tools'`               | sdkmanager can't fetch repo manifest                | Same root cause as above                               |
-| `Failed to install ... licences have not been accepted` | Missing `$ANDROID_HOME/licenses/` files             | Hook §2b writes them; or run `sdkmanager --licenses`   |
-| Build picks up wrong SDK                                | `ANDROID_HOME` unset or wrong                       | Check `local.properties` and `ANDROID_HOME`            |
+| Symptom                                                         | Cause                                               | Fix                                                    |
+| --------------------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------ |
+| `UnknownHostException: dl.google.com`                           | `*.google.com` in `nonProxyHosts`, no direct DNS    | Hook §0 fixes this; check `~/.bashrc` for terminal use |
+| `407 Proxy Authentication Required`                             | Java 9+ doesn't auto-register proxy `Authenticator` | Hook §1 writes `~/.gradle/init.d/proxy-auth.gradle`    |
+| `Failed to find package 'platform-tools'`                       | sdkmanager can't fetch repo manifest                | Same root cause as above                               |
+| Setup script Step 3c: `IO exception while downloading manifest` | Java's proxy or trust store, in the Setup phase     | Read the script's `Network:` lines                     |
+| `Failed to install ... licences have not been accepted`         | Missing `$ANDROID_HOME/licenses/` files             | Hook §2b writes them; or run `sdkmanager --licenses`   |
+| Build picks up wrong SDK                                        | `ANDROID_HOME` unset or wrong                       | Check `local.properties` and `ANDROID_HOME`            |
 
 ______________________________________________________________________
 
