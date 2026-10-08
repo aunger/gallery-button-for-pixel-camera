@@ -43,8 +43,9 @@ environment and runs outside any checkout, so it cannot read one. A drift guard
 is what keeps the copies honest instead.
 
 Limits: `compileSdk` is read only in the plain `compileSdk = N` form. Any other
-form (`compileSdk { version = release(N) { ... } }`, a variable) is reported as
-unreadable rather than skipped, so whoever adopts one must teach this guard to
+form (`compileSdk { version = release(N) { ... } }`, a variable), and any
+property whose name starts with `compileSdk` (`compileSdkPreview`,
+`compileSdkVersion(N)`), is reported as unreadable rather than skipped, so whoever adopts one must teach this guard to
 read it. A minor `compileSdk` level is not modelled: `android-37.0` satisfies
 `compileSdk = 37`, and so would `android-37.1`. The guard reads no shell script
 other than the two `.claude/` ones, so an `sdkmanager` call in a script under
@@ -73,7 +74,10 @@ KNOWN_PLATFORM_WORKFLOWS = (
 )
 
 _COMPILE_SDK = re.compile(r"^\s*compileSdk\s*=\s*(\d+)\s*(?://.*)?$")
-_MENTIONS_COMPILE_SDK = re.compile(r"\bcompileSdk\b")
+# No closing word boundary, so the sibling properties (`compileSdkPreview`,
+# `compileSdkVersion`, `compileSdkExtension`) are examined too, and reported as
+# unreadable rather than passed over.
+_MENTIONS_COMPILE_SDK = re.compile(r"\bcompileSdk")
 _PLATFORM = re.compile(r"^platforms;android-(\d+)(?:\.\d+)?$")
 _HOOK_KEY = re.compile(r'^\s*\["([^"]+)"\]=')
 _SETUP_ITEM = re.compile(r'^\s*"([^"]+)"\s*$')
@@ -90,8 +94,9 @@ def build_files() -> list[str]:
 def read_compile_sdk(text: str) -> tuple[list[int], list[str]]:
     """Return (levels, unreadable lines) for the compileSdk pins in a build script.
 
-    A line that is a comment is ignored. Any other line naming `compileSdk`
-    must be the plain `compileSdk = N` form; one that is not is returned as
+    A line that is a comment is ignored. Any other line naming `compileSdk`,
+    or a property whose name starts with it, must be the plain
+    `compileSdk = N` form; one that is not is returned as
     unreadable, so a form this guard cannot read fails it instead of slipping
     past.
     """
@@ -328,6 +333,18 @@ class ParsingTest(unittest.TestCase):
         self.assertEqual(
             ([], ["compileSdk = sdkLevel"]), read_compile_sdk("compileSdk = sdkLevel\n")
         )
+
+    def test_sibling_compile_sdk_properties_are_unreadable(self):
+        # A module that set its level through one of these would otherwise drop
+        # out of the levels unnoticed.
+        for line in (
+            'compileSdkPreview = "Baklava"',
+            "compileSdkVersion(35)",
+            "compileSdkVersion = 35",
+            "compileSdkExtension = 15",
+        ):
+            with self.subTest(line=line):
+                self.assertEqual(([], [line]), read_compile_sdk("    " + line + "\n"))
 
     def test_hook_array_keys(self):
         text = (
