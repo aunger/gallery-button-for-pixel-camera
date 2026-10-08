@@ -224,10 +224,11 @@ make_sandbox() {
     chmod +x "$root/sdk/cmdline-tools/latest/bin/sdkmanager"
     mkdir -p "$root/sdk/licenses"
     : > "$root/sdk/licenses/android-sdk-license"
-    for pkg in "platforms/android-35" "build-tools/36.0.0" "build-tools/35.0.0" \
-        "build-tools/34.0.0" "platform-tools"; do
-        mkdir -p "$root/sdk/$pkg"
-    done
+    # Each package installs to its id with ';' read as '/', which is also the
+    # path the session-start hook tests for it.
+    while IFS= read -r pkg; do
+        mkdir -p "$root/sdk/${pkg//;//}"
+    done <<< "$SETUP_PACKAGES"
 }
 
 # Plant a distribution where the wrapper itself would put one: the observed
