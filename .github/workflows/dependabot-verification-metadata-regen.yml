@@ -152,6 +152,8 @@ jobs:
         # Matches regenerate-gradle-toolchain.yml: platform-tools is required
         # because app/build.gradle.kts resolves adb via
         # sdkComponents.sdkDirectory + platform-tools/adb.
+        # see: scripts/ci/test_sdk_package_sites.py, which holds this line to
+        # compileSdk and to .claude/hooks/session-start.sh's SDK_PACKAGES.
         run: sdkmanager --install "build-tools;36.0.0" "platforms;android-35" "platform-tools"
 
       - name: Grant execute permission for gradlew
