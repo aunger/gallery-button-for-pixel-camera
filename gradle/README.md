@@ -193,7 +193,7 @@ The JAR value often turns out unchanged, since Gradle republishes it across rele
 Each module sets it in its own build script: `app/build.gradle.kts`, `e2e-mock-camera/build.gradle.kts` and `e2e-mock-gallery/build.gradle.kts`.
 
 Moving it is not a toolchain bump, and "Performing a toolchain bump" below does not cover it.
-It moves no Maven coordinate, so the dependency graph does not shift and `verification-metadata.xml` needs no regeneration; neither the KGP compatibility row nor the CodeQL Kotlin ceiling binds (#986 sets this out).
+It moves no Maven coordinate, so the dependency graph does not shift and `verification-metadata.xml` needs no regeneration; neither the KGP compatibility row nor the CodeQL Kotlin ceiling binds.
 
 What it does move is the SDK platform that has to be installed for it.
 That platform is an SDK package, declared apart from the build scripts.
@@ -206,7 +206,7 @@ Four sites declare it:
 
 The other jobs that build the app declare no platform at all.
 Each provisions the SDK through `android-actions/setup-android` with `packages: platform-tools` (three jobs in `.github/workflows/build.yml`, one each in `codeql.yml` and `release.yml`), and builds against the platforms preinstalled on the GitHub-hosted runner image.
-The `ubuntu-24.04` image at version 20260927.320.1 lists `android-37.0`, `android-36` and `android-35` among them, which is why #986's move to 37 passed `android-lint` and `analyze-kotlin` without editing those jobs.
+The `ubuntu-24.04` image at version 20260927.320.1 lists `android-37.0`, `android-36` and `android-35` among them, which is why #986 (PR #1261)'s move to 37 passed `android-lint` and `analyze-kotlin` without editing those jobs.
 A `compileSdk` move needs no edit there either, as long as the image carries the platform.
 Nothing in this repository can check that, because the image's platform set moves with the image, not with this tree.
 Whether AGP would download a platform the image lacks has not been verified.
