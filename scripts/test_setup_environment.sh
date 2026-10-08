@@ -244,17 +244,19 @@ seed_gradle_cache() {
 }
 
 # Every override the script accepts is set here, so no case can silently depend on
-# the network by forgetting one. The Gradle download URL is the only knob a case
-# needs to vary, so it is the optional argument.
+# the network by forgetting one. A case varies any of them by passing NAME=value
+# arguments after the sandbox root; env applies those after these defaults, so
+# they win.
 run_setup() {
     local root="$1"
-    local gradle_url="${2:-file://$root/absent-gradle.zip}"
-    SESSION_HOME="$root/home" \
+    shift
+    env SESSION_HOME="$root/home" \
         GRADLE_USER_HOME="$root/home/.gradle" \
         ANDROID_HOME="$root/sdk" \
         TEMURIN_HOME="$root/jdk" \
-        GRADLE_DIST_DOWNLOAD_URL="$gradle_url" \
+        GRADLE_DIST_DOWNLOAD_URL="file://$root/absent-gradle.zip" \
         TEMURIN_DOWNLOAD_URL="file://$root/absent-jdk.tar.gz" \
+        "$@" \
         bash "$SETUP" > "$root/out.log" 2>&1
 }
 
@@ -295,7 +297,7 @@ with zipfile.ZipFile(archive, "w") as zf:
     entry.external_attr = 0o755 << 16
     zf.writestr(entry, "#!/bin/sh\necho not gradle\n")
 PY
-if run_setup "$BAD" "file://$BAD/tampered.zip"; then
+if run_setup "$BAD" GRADLE_DIST_DOWNLOAD_URL="file://$BAD/tampered.zip"; then
     fail "a distribution failing the SHA-256 pin was accepted"
 elif grep -q "SHA-256 mismatch" "$BAD/out.log" \
     && [ ! -d "$BAD/home/.gradle/wrapper/dists/gradle-${SETUP_GRADLE_VERSION}-bin/$EXPECTED_DIST_HASH/gradle-${SETUP_GRADLE_VERSION}" ]; then
