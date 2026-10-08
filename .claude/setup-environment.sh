@@ -328,8 +328,10 @@ fi
 if [[ -n "${JAVA_TOOL_OPTIONS:-}" ]]; then
     export JAVA_TOOL_OPTIONS
 fi
-# Only the proxy and trust-store properties, so nothing like a proxy password
-# that JAVA_TOOL_OPTIONS might carry reaches the build log.
+# Lists only the proxy and trust-store properties, so this line adds nothing else
+# from JAVA_TOOL_OPTIONS to the build log. That is all it avoids: the JVM itself
+# prints the whole value ("Picked up JAVA_TOOL_OPTIONS: ...") on every start, and
+# Step 3c's sdkmanager run writes that to the build log unfiltered.
 JAVA_NETWORK_OPTIONS=$(grep -oE -- '-D(https?\.proxy(Host|Port)|http\.nonProxyHosts|javax\.net\.ssl\.trustStore(Type)?)=[^ ]*' \
     <<< "${JAVA_TOOL_OPTIONS:-}" | tr '\n' ' ' || true)
 log "Network: Java options for sdkmanager: ${JAVA_NETWORK_OPTIONS:-none}"
