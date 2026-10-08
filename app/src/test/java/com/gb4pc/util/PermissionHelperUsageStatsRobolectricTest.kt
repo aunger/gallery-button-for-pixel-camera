@@ -20,7 +20,8 @@ import org.robolectric.annotation.Config
  * The API 26 cases are the regression guard. Robolectric runs them against the API 26 framework,
  * which has no `unsafeCheckOpNoThrow`, so a call to it there throws `NoSuchMethodError` exactly as
  * it would on an Android 8.0 device. The cases at the project's default simulated SDK (targetSdk 35)
- * cover the branch that does call it.
+ * cover a framework where `checkOpNoThrow` is deprecated in favor of `unsafeCheckOpNoThrow`, and
+ * check that the call still reads the op's mode there.
  */
 @RunWith(RobolectricTestRunner::class)
 class PermissionHelperUsageStatsRobolectricTest {

@@ -41,7 +41,7 @@ Requirements, and why they exist:
 - **Regenerate on Linux.** The merge-gating CI (`.github/workflows/build.yml`) runs on `ubuntu-latest`, and some artifacts are OS-classified.
   Chief among them is AGP's `aapt2`, recorded here as `aapt2-<version>-linux.jar`.
   A file generated on macOS or Windows records that platform's classifier instead and fails verification on the Linux CI.
-- **Full Android toolchain.** Generation needs JDK 17 and the Android SDK (platform `android-35`, `build-tools;36.0.0`, `platform-tools`), matching the generator workflow.
+- **Full Android toolchain.** Generation needs JDK 17 and the Android SDK (platforms `android-37.0` and `android-35`, `build-tools;36.0.0`, `platform-tools`), matching the generator workflow.
   A JDK-only environment cannot resolve the Android dependency graph, which is why this was split out of the pip-hashing work in issue #699.
 - **Review the diff** (`git diff gradle/verification-metadata.xml`) before committing, then let the complete `build.yml` run (including the instrumented and E2E steps) validate it end to end.
   That full run is the only way to catch a configuration whose dependencies were missed during generation; on a verification failure Gradle names the offending artifact, so re-run the script (it merges into the existing file) and repeat until CI is green.
@@ -213,7 +213,9 @@ Whether AGP would download a platform the image lacks has not been verified.
 
 Newer platform package ids carry a minor version that `compileSdk` does not.
 `platforms;android-35` has none, but `platforms;android-37` does not exist; the stable API 37 packages include `platforms;android-37.0` and `platforms;android-37.1`.
-So `compileSdk = 37` is satisfied by any `platforms;android-37.N`, and which minor to install is a choice to record, not one the build makes.
+`compileSdk = 37` names API 37.0, and only `platforms;android-37.0` satisfies it.
+With `platforms;android-37.1` installed and 37.0 absent, AGP 9.1.1 fails with `Failed to find target with hash string 'android-37.0'`.
+So the minor is set by the pin, not by which package a site installs, and a later minor has to be named in the pin itself.
 
 `scripts/ci/test_sdk_package_sites.py` fails `build-and-test` when any of the four sites installs no platform for some module's `compileSdk`, matching on the major alone.
 It holds every workflow `sdkmanager` call and every `setup-android` `packages` input to the same rule as soon as it names a platform.

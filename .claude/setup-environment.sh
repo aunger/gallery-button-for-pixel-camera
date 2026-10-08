@@ -109,6 +109,7 @@ TEMURIN_HOME="${TEMURIN_HOME:-/opt/java/temurin-17}"
 ANDROID_HOME_DIR="${ANDROID_HOME:-/home/user/android-sdk}"
 CMDLINE_TOOLS_URL="https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
 SDK_PACKAGES=(
+    "platforms;android-37.0"
     "platforms;android-35"
     "build-tools;36.0.0"
     "build-tools;35.0.0"
