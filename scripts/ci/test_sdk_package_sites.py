@@ -12,6 +12,15 @@ can are set in unrelated places:
 3. Every `sdkmanager` invocation in a workflow `run:` step. The ones that
    install a platform are in `dependabot-verification-metadata-regen.yml` and
    `regenerate-gradle-toolchain.yml`; `build.yml`'s installs the E2E emulator.
+4. Every `android-actions/setup-android` step's `packages` input. Today each
+   names `platform-tools` or nothing, so none of them installs a platform.
+
+The jobs that set up the SDK through item 4 (in `build.yml`, `codeql.yml` and
+`release.yml`) install no platform themselves, so they build against a
+platform no site in this repository declares: the one preinstalled on the
+GitHub-hosted runner image. That image's
+platform set moves with the image, not with this tree, so nothing here can
+check it.
 
 A missed site fails at build time, but late: only on the job that was missed,
 after it has set up a JDK, an SDK and a Gradle cache, and with an error about a
@@ -22,8 +31,9 @@ The rules:
 - Every site that installs an SDK platform installs one for each distinct
   `compileSdk` across the modules. Both `.claude/` lists count as installing
   one, so a list that lost its platform altogether is caught too. A workflow
-  invocation that names no `platforms;` package (`build.yml`'s emulator and
-  system-image install) is not a platform install site and is not held to it.
+  site that names no `platforms;` package (`build.yml`'s emulator and
+  system-image install, a `packages: platform-tools` input) is not a platform
+  install site and is not held to it.
 - A platform satisfies `compileSdk = N` when its package is `platforms;android-N`
   or `platforms;android-N.M`, matched on the major alone. Newer packages carry
   a minor version (`platforms;android-37` does not exist), so a string
@@ -45,8 +55,8 @@ is what keeps the copies honest instead.
 Limits: `compileSdk` is read only in the plain `compileSdk = N` form. Any other
 form (`compileSdk { version = release(N) { ... } }`, a variable), and any
 property whose name starts with `compileSdk` (`compileSdkPreview`,
-`compileSdkVersion(N)`), is reported as unreadable rather than skipped, so whoever adopts one must teach this guard to
-read it. A minor `compileSdk` level is not modelled: `android-37.0` satisfies
+`compileSdkVersion(N)`), is reported as unreadable rather than skipped, so
+whoever adopts one must teach this guard to read it. A minor `compileSdk` level is not modelled: `android-37.0` satisfies
 `compileSdk = 37`, and so would `android-37.1`. The guard reads no shell script
 other than the two `.claude/` ones, so an `sdkmanager` call in a script under
 `scripts/` is not seen. `scripts/ci/test-support/setup-e2e-emulator.sh` holds
@@ -60,6 +70,10 @@ import shlex
 import unittest
 
 import yaml
+
+# The other guard over setup-android steps owns how one is recognised; reusing
+# it keeps the two from disagreeing about which steps exist.
+from test_setup_android_packages import PACKAGES_INPUT, setup_android_steps, step_label
 from workflow_files import REPO_ROOT, load_workflow, relative, workflow_paths
 
 HOOK = os.path.join(REPO_ROOT, ".claude", "hooks", "session-start.sh")
@@ -276,13 +290,32 @@ def tree_compile_sdks() -> tuple[dict[str, int], list[str]]:
     return levels, problems
 
 
+def setup_android_installs(workflow: dict):
+    """Yield (step label, packages) per setup-android step's `packages` input.
+
+    A step whose input is missing or not a string is skipped here, because
+    `test_setup_android_packages.py` already fails on it.
+    """
+    for job_name, step in setup_android_steps(workflow):
+        packages = (step.get("with") or {}).get(PACKAGES_INPUT)
+        if isinstance(packages, str):
+            yield step_label(job_name, step), packages.split()
+
+
 def tree_workflow_sites() -> list[tuple[str, list[str]]]:
-    """Return a label and the packages for each sdkmanager call in a workflow."""
-    return [
-        (f"{relative(path)} job {job!r} step {step!r}", packages)
-        for path in workflow_paths()
-        for job, step, packages in workflow_installs(load_workflow(path))
-    ]
+    """Return a label and the packages for each install site in a workflow.
+
+    The sites are every sdkmanager call in a `run:` step and every
+    setup-android step's `packages` input.
+    """
+    sites: list[tuple[str, list[str]]] = []
+    for path in workflow_paths():
+        workflow = load_workflow(path)
+        for job, step, packages in workflow_installs(workflow):
+            sites.append((f"{relative(path)} job {job!r} step {step!r}", packages))
+        for label, packages in setup_android_installs(workflow):
+            sites.append((f"{relative(path)} {label} {PACKAGES_INPUT!r} input", packages))
+    return sites
 
 
 class TreeTest(unittest.TestCase):
@@ -317,6 +350,8 @@ class TreeTest(unittest.TestCase):
         for path in KNOWN_PLATFORM_WORKFLOWS:
             with self.subTest(workflow=path):
                 self.assertIn(path, installing, f"{path} has no sdkmanager call naming a platform")
+        inputs = [label for label, _ in tree_workflow_sites() if label.endswith(" input")]
+        self.assertTrue(inputs, "read no setup-android packages input from any workflow")
 
 
 class ParsingTest(unittest.TestCase):
@@ -431,6 +466,45 @@ class ParsingTest(unittest.TestCase):
             ],
             list(workflow_installs(workflow)),
         )
+
+    SETUP_ANDROID = (
+        "jobs:\n"
+        "  build:\n"
+        "    steps:\n"
+        "      - name: Set up Android SDK\n"
+        "        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd\n"
+        "        with:\n"
+        "          packages: {packages}\n"
+    )
+
+    def _setup_android(self, packages: str):
+        workflow = yaml.safe_load(self.SETUP_ANDROID.format(packages=packages))
+        return list(setup_android_installs(workflow))
+
+    def test_setup_android_packages_input_is_read(self):
+        self.assertEqual(
+            [("job 'build' step 'Set up Android SDK'", ["platform-tools", "platforms;android-35"])],
+            self._setup_android("platform-tools platforms;android-35"),
+        )
+
+    def test_setup_android_empty_packages_input_names_nothing(self):
+        self.assertEqual([("job 'build' step 'Set up Android SDK'", [])], self._setup_android("''"))
+
+    def test_setup_android_valueless_packages_input_is_left_to_the_other_guard(self):
+        self.assertEqual([], self._setup_android(""))
+
+    def test_setup_android_platform_is_held_to_the_rules(self):
+        # The shape that passed both guards before setup-android inputs were read.
+        (label, packages) = self._setup_android("platform-tools platforms;android-34")[0]
+        found = violations(
+            {"app/build.gradle.kts": 35},
+            ["platforms;android-35", "platform-tools"],
+            {},
+            [(label, packages)],
+        )
+        self.assertEqual(2, len(found), found)
+        self.assertIn("installs no platforms;android-35[.M]", found[0])
+        self.assertIn("installs platforms;android-34, which", found[1])
 
 
 class ViolationDetectionTest(unittest.TestCase):
