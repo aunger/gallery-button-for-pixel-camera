@@ -213,7 +213,9 @@ Whether AGP would download a platform the image lacks has not been verified.
 
 Newer platform package ids carry a minor version that `compileSdk` does not.
 `platforms;android-35` has none, but `platforms;android-37` does not exist; the stable API 37 packages include `platforms;android-37.0` and `platforms;android-37.1`.
-So `compileSdk = 37` is satisfied by any `platforms;android-37.N`, and which minor to install is a choice to record, not one the build makes.
+`compileSdk = 37` names API 37.0, and only `platforms;android-37.0` satisfies it.
+With `platforms;android-37.1` installed and 37.0 absent, AGP 9.1.1 fails with `Failed to find target with hash string 'android-37.0'`.
+So the minor is set by the pin, not by which package a site installs, and a later minor has to be named in the pin itself.
 
 `scripts/ci/test_sdk_package_sites.py` fails `build-and-test` when any of the four sites installs no platform for some module's `compileSdk`, matching on the major alone.
 It holds every workflow `sdkmanager` call and every `setup-android` `packages` input to the same rule as soon as it names a platform.
