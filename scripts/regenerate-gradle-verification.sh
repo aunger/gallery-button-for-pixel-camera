@@ -35,9 +35,10 @@
 #     recorded here as aapt2-<ver>-linux.jar). A file generated on macOS or
 #     Windows records that platform's classifier instead and fails verification
 #     on the Linux CI. Regenerate on Linux to match CI.
-#   * A full Android toolchain: JDK 17 and the Android SDK (platform android-35,
-#     build-tools 36.0.0, platform-tools), matching the generator workflow. A
-#     JDK-only box cannot resolve the Android dependency graph.
+#   * A full Android toolchain: JDK 17 and the Android SDK (platforms
+#     android-37.0 and android-35, build-tools 36.0.0, platform-tools), matching
+#     the generator workflow. A JDK-only box cannot resolve the Android
+#     dependency graph.
 #
 # The superset of resolving tasks below covers every configuration the CI
 # workflows resolve:

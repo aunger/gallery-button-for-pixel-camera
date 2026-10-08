@@ -45,7 +45,7 @@ jobs:
         # sdkComponents.sdkDirectory + platform-tools/adb.
         # see: scripts/ci/test_sdk_package_sites.py, which holds this line to
         # compileSdk and to .claude/hooks/session-start.sh's SDK_PACKAGES.
-        run: sdkmanager --install "build-tools;36.0.0" "platforms;android-35" "platform-tools"
+        run: sdkmanager --install "build-tools;36.0.0" "platforms;android-37.0" "platforms;android-35" "platform-tools"
 
       - name: Download and verify standalone Gradle
         run: |

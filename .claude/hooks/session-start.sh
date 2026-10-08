@@ -149,9 +149,12 @@ fi
 
 # ───────────────────────────────────────────────────────────────────────────────
 # STEP 2c: SDK packages (only installs what is missing).
-# build-tools;36.0.0 is the version AGP 9.1.1 requires, even though the project
-# compiles and targets SDK 35. The 35.0.0 and 34.0.0 build-tools stay pinned here
-# so a session can still build older revisions of the tree.
+# platforms;android-37.0 is the platform app/build.gradle.kts compiles against:
+# `compileSdk = 37` names API 37.0, not 37.1 or 37.2. platforms;android-35 stays,
+# because the e2e-mock-* modules still compile against API 35.
+# build-tools;36.0.0 is the version AGP 9.1.1 requires. The 35.0.0 and 34.0.0
+# build-tools stay pinned here so a session can still build older revisions of
+# the tree.
 # This list is the source of truth for SDK packages: it must hold a platform for
 # every module's compileSdk, and no workflow's sdkmanager call or setup-android
 # packages input may install a platform, build-tools or platform-tools package
@@ -159,6 +162,7 @@ fi
 # scripts/ci/test_sdk_package_sites.py checks both.
 # ───────────────────────────────────────────────────────────────────────────────
 declare -A SDK_PACKAGES=(
+    ["platforms;android-37.0"]="$ANDROID_HOME_DIR/platforms/android-37.0"
     ["platforms;android-35"]="$ANDROID_HOME_DIR/platforms/android-35"
     ["build-tools;36.0.0"]="$ANDROID_HOME_DIR/build-tools/36.0.0"
     ["build-tools;35.0.0"]="$ANDROID_HOME_DIR/build-tools/35.0.0"

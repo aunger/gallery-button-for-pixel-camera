@@ -41,7 +41,7 @@ Requirements, and why they exist:
 - **Regenerate on Linux.** The merge-gating CI (`.github/workflows/build.yml`) runs on `ubuntu-latest`, and some artifacts are OS-classified.
   Chief among them is AGP's `aapt2`, recorded here as `aapt2-<version>-linux.jar`.
   A file generated on macOS or Windows records that platform's classifier instead and fails verification on the Linux CI.
-- **Full Android toolchain.** Generation needs JDK 17 and the Android SDK (platform `android-35`, `build-tools;36.0.0`, `platform-tools`), matching the generator workflow.
+- **Full Android toolchain.** Generation needs JDK 17 and the Android SDK (platforms `android-37.0` and `android-35`, `build-tools;36.0.0`, `platform-tools`), matching the generator workflow.
   A JDK-only environment cannot resolve the Android dependency graph, which is why this was split out of the pip-hashing work in issue #699.
 - **Review the diff** (`git diff gradle/verification-metadata.xml`) before committing, then let the complete `build.yml` run (including the instrumented and E2E steps) validate it end to end.
   That full run is the only way to catch a configuration whose dependencies were missed during generation; on a verification failure Gradle names the offending artifact, so re-run the script (it merges into the existing file) and repeat until CI is green.
