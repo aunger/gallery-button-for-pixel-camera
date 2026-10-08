@@ -187,6 +187,32 @@ Also update the same two pins in `.claude/setup-environment.sh`, which seeds tha
 On every Gradle bump, re-read all three constants in `scripts/test_verification_metadata.sh` from their published URLs in one change, as that script's own header instructs (the wrapper-JAR checksum is at `https://services.gradle.org/distributions/gradle-<version>-wrapper.jar.sha256`).
 The JAR value often turns out unchanged, since Gradle republishes it across releases, but you only learn that by fetching it.
 
+## `compileSdk` -- SDK platform pin
+
+`compileSdk` is a pin class of its own, separate from the other pins this file covers.
+Each module sets it in its own build script: `app/build.gradle.kts`, `e2e-mock-camera/build.gradle.kts` and `e2e-mock-gallery/build.gradle.kts`.
+
+Moving it is not a toolchain bump, and "Performing a toolchain bump" below does not cover it.
+It moves no Maven coordinate, so the dependency graph does not shift and `verification-metadata.xml` needs no regeneration; neither the KGP compatibility row nor the CodeQL Kotlin ceiling binds (#986 sets this out).
+
+What it does move is the SDK platform that has to be installed for it.
+That platform is an SDK package, declared apart from the build scripts at every site that provisions the SDK:
+
+- the `SDK_PACKAGES` array in `.claude/hooks/session-start.sh`, which is the source of truth for SDK packages;
+- the `SDK_PACKAGES` array in `.claude/setup-environment.sh`, whose pasted copy has to be refreshed by hand after a change (see `.claude/environment.md`);
+- the `sdkmanager --install` line in `.github/workflows/dependabot-verification-metadata-regen.yml`;
+- the `sdkmanager --install` line in `.github/workflows/regenerate-gradle-toolchain.yml`.
+
+Newer platform package ids carry a minor version that `compileSdk` does not.
+`platforms;android-35` has none, but `platforms;android-37` does not exist; the stable API 37 packages include `platforms;android-37.0` and `platforms;android-37.1`.
+So `compileSdk = 37` is satisfied by any `platforms;android-37.N`, and which minor to install is a choice to record, not one the build makes.
+
+`scripts/ci/test_sdk_package_sites.py` fails `build-and-test` when any of those sites installs no platform for some module's `compileSdk`, matching on the major alone.
+It also fails when a workflow's `sdkmanager` line installs a package the session-start hook does not list, in any package family the hook provisions (today `platforms`, `build-tools` and `platform-tools`).
+The workflows may install a subset of the hook's list, since the `.claude/` pair also carries older build-tools that the workflows do not need.
+`scripts/test_setup_environment.sh` separately holds the two `.claude/` lists equal.
+Between them, a `compileSdk` move that misses a site fails in its own pull request's CI, naming the site, instead of failing later on whichever job was missed.
+
 ## CodeQL Kotlin ceiling
 
 CodeQL extracts Kotlin with its own bundled compiler frontend, which supports a bounded range of Kotlin versions.
@@ -286,9 +312,9 @@ A JDK change has a wider blast radius and is not covered here.
    For a Gradle bump the surrounding pins are the ones named in the distribution-pin section above.
    Beyond those, a handful of version literals sit in prose and script headers that no guard reads: the docs URL and the toolchain requirement near the top of this file, the header of `scripts/regenerate-gradle-verification.sh`, and the AGP comment in `.claude/hooks/session-start.sh`.
 
-   Two sites in `.github/workflows/regenerate-gradle-toolchain.yml` are easy to miss because no section above names them.
+   Two sites in `.github/workflows/regenerate-gradle-toolchain.yml` are easy to miss.
    Its `env:` block duplicates the Gradle version and both checksums; the workflow runs the build-integrity guard in the same job, so a block that disagrees with `scripts/test_verification_metadata.sh` fails the run loudly, but a bump that leaves **both** of them stale passes instead, and the artifact then reverts the version change.
-   Its `sdkmanager --install` line pins the build-tools and SDK platform separately from the `.claude/` provisioning scripts, and nothing cross-checks it against them.
+   Its `sdkmanager --install` line pins the build-tools and SDK platform separately from the `.claude/` provisioning scripts; `scripts/ci/test_sdk_package_sites.py` fails the build when it names one the session-start hook does not list (see "`compileSdk` -- SDK platform pin" above).
 
    Do not grep-and-replace a version across the tree.
    `gradle/verification-metadata.xml` carries dozens of incidental matches per version and is regenerated wholesale by step 3, so exclude it from any search.

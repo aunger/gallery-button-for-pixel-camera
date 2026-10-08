@@ -58,6 +58,7 @@ A stale copy fails quietly: it seeds the previous distribution, the wrapper igno
 
 `scripts/test_setup_environment.sh` guards the half CI can see.
 It fails the build when the committed copy drifts from `gradle/wrapper/gradle-wrapper.properties` (version, distribution URL, checksum) or from `.claude/hooks/session-start.sh` (command-line tools URL, `ANDROID_HOME`, SDK package list, license hashes, Temurin path), when the checksum verification stops being fail-closed, when the wrapper cache path stops matching the one the wrapper actually reads, or when a step would skip its work on an image already holding a different version.
+`scripts/ci/test_sdk_package_sites.py` adds that the SDK package list holds a platform for every module's `compileSdk`, and that no workflow's `sdkmanager` line installs a platform, build-tools or `platform-tools` package the list lacks; `gradle/README.md` covers it under "`compileSdk` -- SDK platform pin".
 
 ### What it deliberately does not do
 
