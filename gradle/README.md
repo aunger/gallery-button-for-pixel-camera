@@ -272,9 +272,9 @@ This covers a Gradle, AGP, KGP, or Compose-plugin bump.
 A JDK change has a wider blast radius and is not covered here.
 
 > [!WARNING]
-> This procedure was reconstructed by reading the repository and #774, not by performing a bump.
-> No step below has been executed end to end.
-> Treat it as a checklist to verify against the current tree, and correct it from what you observe on the first real bump.
+> This procedure was reconstructed by reading the repository and #774.
+> It was first carried out on the AGP 9.1.1 and KGP 2.4.20 bump (#1262), which left Gradle where it was, so the wrapper half of each step is still unexercised against a real version change.
+> Treat it as a checklist to verify against the current tree, and correct it from what you observe.
 
 1. Check the KGP compatibility row above, which binds on every bump this section covers.
    Add the CodeQL Kotlin ceiling check when the bump moves Kotlin, KGP, or the Kotlin compiler, per that section's own scope.
@@ -303,14 +303,27 @@ A JDK change has a wider blast radius and is not covered here.
    It rebuilds `verification-metadata.xml` from scratch and then the wrapper matched set, an order chosen so the wrapper step runs under enforcement of the fresh pins, and uploads them as `gradle-toolchain-regenerated`.
    A **failed** run instead uploads `gradle-toolchain-partial-DO-NOT-COMMIT`, whose metadata Gradle may have written only partly; never amend that one in.
 
+   An agent session's GitHub token can be refused the dispatch: on #1262 both `gh api` and the GitHub MCP server got `403 Resource not accessible by integration`.
+   Ask a human with Actions write access to dispatch it against the pushed branch.
+   A local run of `scripts/regenerate-gradle-verification.sh` is no substitute, for the provenance reason under "Review the diff" above.
+   If you have to open the PR before the artifact exists, open it as a draft and say in it that the metadata is still pending; `build.yml` will fail verification on it until step 4.
+
 4. Review the downloaded artifact, then bring the files into the tree, amend them into the step 2 commit, and force-push.
    #774's Step 5 holds the review recipe, but it is written with 9.5.1 literals throughout, so substitute your own version and checksum rather than running its commands as printed.
    Unpack the tarball somewhere outside the working tree: it carries a review-only `metadata-components.txt` whose path inside the archive is the repository root, and which is not gitignored.
    Keep `gradlew` executable, and confirm `git diff` reports no mode change on it; the tarball format exists because `upload-artifact` strips permissions.
 
+   When Gradle does not move, the four wrapper files come back byte-identical to the committed ones, and `cmp` against the tree is the whole wrapper check.
+   Expect the component-listing diff to drop more than the bump moves: a from-scratch file also loses the older versions that merge-mode regenerations (local runs, and the Dependabot automation above) left behind.
+   Check each dropped coordinate against the current graph rather than taking that explanation on trust.
+
 5. Open the PR and let `build.yml` validate it end to end.
    `codeql.yml`'s `analyze-kotlin` job is what actually tests the ceiling computed in step 1, but on a pull request it runs only when the diff touches `.kt`, `.kts`, or `.java`, so a Gradle-only bump does not exercise it until the post-merge push to `main`.
    #774 Step 6 also asks for one enforcing run against live registries before merge; note that `build.yml`'s cache falls back through a `restore-keys` prefix, so clearing the branch's own entries is not sufficient on its own to force a cold resolve.
+   A bump that edits any `*.gradle.kts` misses the exact cache key, and the prefix then restores a cache saved on `main`, so the PR's own `build.yml` run checks most pins against cached bytes and is not that run.
+   Forcing a cold CI resolve means deleting every `Linux-gradle-` cache entry that both the PR's ref and `main` can restore, which also costs `main`'s next build its cache.
+   A strict build on Linux with an empty `GRADLE_USER_HOME`, over the task list in `scripts/regenerate-gradle-verification.sh` and without `--write-verification-metadata`, makes the same check without touching shared caches.
+   On #1262, agent runs of it from a cloud session were cut off by Maven Central `429 Too Many Requests` responses, so it may need a machine with its own egress.
    On a verification failure at this stage, re-dispatch the generator and re-amend rather than reaching for the local merge-mode remedy, for the reason given under "Review the diff" above.
 
    > [!CAUTION]

@@ -149,7 +149,7 @@ fi
 
 # ───────────────────────────────────────────────────────────────────────────────
 # STEP 2c: SDK packages (only installs what is missing).
-# build-tools;36.0.0 is the version AGP 9.1.0 requires, even though the project
+# build-tools;36.0.0 is the version AGP 9.1.1 requires, even though the project
 # compiles and targets SDK 35. The 35.0.0 and 34.0.0 build-tools stay pinned here
 # so a session can still build older revisions of the tree.
 # ───────────────────────────────────────────────────────────────────────────────
