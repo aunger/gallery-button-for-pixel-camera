@@ -37,6 +37,8 @@
 #       (behavioral; issue #1273)
 #   (k) Java network settings the environment already made are kept, with
 #       *.google.com still stripped from nonProxyHosts (behavioral)
+#   (l) a failed sdkmanager install is fatal and prints the underlying causes
+#       (behavioral)
 #
 # What no case here can cover is the network of the real Setup phase: whether its
 # proxy and trust store are the ones (j) hands to Java. Only an environment
@@ -362,7 +364,10 @@ fi
 
 # Replace the sandbox's no-op sdkmanager with a stub that records the
 # JAVA_TOOL_OPTIONS it was started with (in sdkmanager.jto beside it), and remove
-# one package so that Step 3c runs it.
+# one package so that Step 3c runs it. With STUB_FAIL set, the stub fails the
+# install the way a refused manifest fetch does, and answers --list --verbose with
+# the shape of output real sdkmanager gives for one: top-level exception lines,
+# repeated, with stack frames between them.
 stub_sdkmanager() {
     local root="$1"
     rm -rf "$root/sdk/platform-tools"
@@ -370,6 +375,17 @@ stub_sdkmanager() {
 #!/usr/bin/env bash
 [[ "${1:-}" == --licenses ]] && exit 0
 printf '%s\n' "${JAVA_TOOL_OPTIONS:-}" > "$0.jto"
+[[ -z "${STUB_FAIL:-}" ]] && exit 0
+if [[ "$*" == "--list --verbose" ]]; then
+    echo "Info: IOException: https://dl.google.com/android/repository/addons_list-5.xml"
+    echo "javax.net.ssl.SSLHandshakeException: (certificate_unknown) PKIX path building failed"
+    printf '\tat java.base/sun.security.ssl.Alert.createSSLException(Alert.java:130)\n'
+    echo "Caused by: sun.security.validator.ValidatorException: PKIX path building failed"
+    echo "javax.net.ssl.SSLHandshakeException: (certificate_unknown) PKIX path building failed"
+    exit 0
+fi
+echo "Warning: IO exception while downloading manifest"
+exit 1
 STUB
 }
 stub_jto() { cat "$1/sdk/cmdline-tools/latest/bin/sdkmanager.jto" 2>/dev/null; }
@@ -425,6 +441,24 @@ if run_setup "$KEEP" HTTPS_PROXY="http://env.invalid:3128" SYSTEM_JAVA_TRUSTSTOR
 else
     fail "the script failed with a stub sdkmanager and Java settings of its own"
     sed 's/^/    /' "$KEEP/out.log"
+fi
+
+# (l) a failed install is fatal, and the build log shows the cause sdkmanager's
+# own warnings leave out: each top-level exception line once, without the stack
+# frames.
+CAUSE="$SANDBOX/cause"
+make_sandbox "$CAUSE"
+seed_gradle_cache "$CAUSE"
+stub_sdkmanager "$CAUSE"
+if run_setup "$CAUSE" STUB_FAIL=1; then
+    fail "the script succeeded although sdkmanager failed"
+elif grep -q "Caused by: sun.security.validator.ValidatorException" "$CAUSE/out.log" \
+    && [ "$(grep -c "SSLHandshakeException" "$CAUSE/out.log")" -eq 1 ] \
+    && ! grep -q "createSSLException(Alert" "$CAUSE/out.log"; then
+    pass "a failed install prints each underlying cause once, without stack frames"
+else
+    fail "the failure output does not show the underlying cause as expected"
+    sed 's/^/    /' "$CAUSE/out.log"
 fi
 
 # (i) the Setup script must never produce gradle/verification-metadata.xml. The

@@ -266,7 +266,7 @@ export PATH="$JAVA_HOME/bin:$PATH"
 #
 # The proxy URL's credentials, if it has any, are not passed to Java (it sends
 # proxy credentials only through an Authenticator), but whether it has any is
-# logged, so a 407 can be read for what it is.
+# logged, so a 407 in Step 3c's failure output can be read for what it is.
 #
 # Overridable only so scripts/test_setup_environment.sh can exercise the script
 # against a sandbox.
@@ -457,7 +457,18 @@ if [[ ${#MISSING_PACKAGES[@]} -gt 0 ]]; then
     log "Step 3c: installing: ${MISSING_PACKAGES[*]}"
     yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 \
         || log "Step 3c: warning: sdkmanager --licenses failed--install may fail if a license is unaccepted"
-    "$SDKMANAGER" "${MISSING_PACKAGES[@]}"
+    if ! "$SDKMANAGER" "${MISSING_PACKAGES[@]}"; then
+        # sdkmanager's own warnings ("IO exception while downloading manifest")
+        # name no cause; with --verbose it prints the exceptions behind them.
+        # Only their top-level lines are kept, de-duplicated in order, so the
+        # build log shows the cause without pages of stack frames.
+        log "ERROR: Step 3c: sdkmanager failed. The causes it reports, from a" >&2
+        log "       --verbose package listing (read with the Network lines above):" >&2
+        "$SDKMANAGER" --list --verbose 2>&1 | tr '\r' '\n' \
+            | grep -v '^[[:space:]]' | grep -E 'Exception|Caused by' \
+            | awk '!seen[$0]++' | head -n 20 | sed 's/^/    /' >&2 || true
+        exit 1
+    fi
     log "Step 3c: done"
 else
     log "Step 3c: all SDK packages present--skip"

@@ -97,6 +97,7 @@ Where `JAVA_TOOL_OPTIONS` does not already set them, the script gives Java two t
 
 Settings `JAVA_TOOL_OPTIONS` already carries are kept, apart from `*.google.com` in `nonProxyHosts`, which is stripped as the hook's step 0 does.
 The script logs the proxy variables (host and port, and whether credentials are present, never the credentials) and the Java network options it runs `sdkmanager` with, on lines beginning `Network:`.
+If Step 3c still fails, it prints the exceptions `sdkmanager --list --verbose` reports, which name the cause that `sdkmanager`'s own "IO exception while downloading manifest" leaves out.
 
 CI checks that the script hands these settings to `sdkmanager`, but cannot check that they are right for the real Setup phase; only an environment rebuild exercises that.
 
@@ -125,7 +126,7 @@ ______________________________________________________________________
 | `UnknownHostException: dl.google.com`                           | `*.google.com` in `nonProxyHosts`, no direct DNS    | Hook §0 fixes this; check `~/.bashrc` for terminal use |
 | `407 Proxy Authentication Required`                             | Java 9+ doesn't auto-register proxy `Authenticator` | Hook §1 writes `~/.gradle/init.d/proxy-auth.gradle`    |
 | `Failed to find package 'platform-tools'`                       | sdkmanager can't fetch repo manifest                | Same root cause as above                               |
-| Setup script Step 3c: `IO exception while downloading manifest` | Java's proxy or trust store, in the Setup phase     | Read the script's `Network:` lines                     |
+| Setup script Step 3c: `IO exception while downloading manifest` | Java's proxy or trust store, in the Setup phase     | Read its `Network:` lines and the causes it prints     |
 | `Failed to install ... licences have not been accepted`         | Missing `$ANDROID_HOME/licenses/` files             | Hook §2b writes them; or run `sdkmanager --licenses`   |
 | Build picks up wrong SDK                                        | `ANDROID_HOME` unset or wrong                       | Check `local.properties` and `ANDROID_HOME`            |
 
