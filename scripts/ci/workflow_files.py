@@ -2,11 +2,10 @@
 """Finding and reading this repository's workflow files.
 
 Shared by the guards that assert a rule over every workflow:
-`test_privileged_workflow_checkouts.py`, `test_setup_android_packages.py` and
-`test_bounded_device_waits.py` in this directory, the first two of which each
-carried their own copy until the second was written, and
-`scripts/test_dependabot_config.sh`, which asks which actions the workflows
-use.
+`test_privileged_workflow_checkouts.py`, `test_setup_android_packages.py`,
+`test_bounded_device_waits.py` and `test_sdk_package_sites.py` in this
+directory, and `scripts/test_dependabot_config.sh`, which asks which actions the
+workflows use.
 
 Imported by bare module name, which resolves for the callers in this directory
 because `.github/workflows/build.yml` discovers tests per directory rather than
