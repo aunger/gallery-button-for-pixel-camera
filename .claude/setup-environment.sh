@@ -146,14 +146,16 @@ GRADLE_USER_HOME_DIR="${GRADLE_USER_HOME:-$SESSION_HOME/.gradle}"
 # The environment cache is a snapshot of the filesystem this script leaves, so the
 # file is still there in every session started from that cache.
 #
-# The file holds exactly the lines this script prints itself, and none of the
-# output of the tools it runs. That is deliberate: the JVM prints its whole
-# JAVA_TOOL_OPTIONS ("Picked up JAVA_TOOL_OPTIONS: ...") on every start. In
-# sessions that value carries the proxy's credentials, and nothing yet shows that
-# the Setup phase's does not, so a copy of sdkmanager's output could write a
-# credential into the image every session starts from.
-# The script's own lines never carry one (proxy_parts below reports only whether
-# credentials are present).
+# The file holds exactly the lines log() prints, not the output of the tools this
+# script runs. That is deliberate: the JVM prints its whole JAVA_TOOL_OPTIONS
+# ("Picked up JAVA_TOOL_OPTIONS: ...") on every start. In sessions that value
+# carries the proxy's credentials, and nothing yet shows that the Setup phase's
+# does not, so a copy of sdkmanager's output could write a credential into the
+# image every session starts from. The script's own lines never carry one
+# (proxy_parts below reports only whether credentials are present). The one
+# extract of tool output in the file is on a Step 3c failure: the top-level
+# exception lines of sdkmanager --list --verbose, relayed through log() by a
+# filter that drops the "Picked up" line.
 #
 # Each line is appended before log() returns, so the file is complete when the
 # script exits and the snapshot is taken. It is truncated at the start, so it
@@ -549,9 +551,10 @@ chown -R "$OWNER" "$GRADLE_USER_HOME_DIR" "$ANDROID_HOME_DIR"
 chmod -R a+rX "$TEMURIN_HOME"
 log "Step 4: Gradle home and SDK owned by $OWNER (session home $SESSION_HOME); JDK left read-only"
 
+log "Gradle $GRADLE_VERSION seeded in $GRADLE_USER_HOME_DIR"
 # The environment is cached only when setup finishes within roughly five minutes,
 # so the run time is logged where it can be compared against that. SECONDS counts
 # from this script's start, so it is the script's own run time, not the whole
-# setup phase the limit applies to.
+# setup phase the limit applies to. This is the last line a successful run
+# prints, so it is the last line of the build log.
 log "Complete in ${SECONDS}s. JAVA_HOME=$TEMURIN_HOME ANDROID_HOME=$ANDROID_HOME_DIR"
-log "Gradle $GRADLE_VERSION seeded in $GRADLE_USER_HOME_DIR"

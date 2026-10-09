@@ -54,13 +54,13 @@ Per Anthropic's [environment caching](https://code.claude.com/docs/en/cloud-envi
 
 - The Setup script runs again, to rebuild the environment cache, when the environment's Setup script or allowed network hosts change, and when the cache expires after roughly seven days.
   The cache is a snapshot of the filesystem the script leaves, and new sessions start from it without running the script.
-- A session that already exists does not pick up the change: one restored after being idle does not run the Setup script.
+- A session that already exists picks up the change only if its VM was reclaimed and is rebuilt; one restored after being idle does not run the Setup script.
   Start a new session to apply it.
 
 The same page's [script requirements](https://code.claude.com/docs/en/cloud-environments#script-requirements) set two limits:
 
 - **The script must exit zero.** A non-zero exit stops the session from starting; its output was then shown in place of the session (#1273).
-  This script exits non-zero on purpose when a download fails its pinned checksum or Step 3c cannot install the SDK packages.
+  This script exits non-zero on purpose when it cannot provision correctly: a required command is missing, the session home is not a directory, a download fails or fails its pinned checksum, an archive lacks the expected `bin/java` or `bin/gradle`, or Step 3c cannot install the SDK packages.
 - **It must finish within roughly five minutes**, or the environment is not cached, and new sessions do not start from a snapshot of it.
   The `Complete in <N>s` line of the build log (see "Reading the build log" below) says how long the script itself took.
 
@@ -75,14 +75,14 @@ The environment cache is a snapshot of the filesystem the script leaves, so ever
 
 - The first line names when the run started, in UTC.
 - The rest are the script's `[setup-environment]` lines, in order: the session home it provisioned for, the `Network:` lines, and each step's result.
-- A run that succeeded ends with a `Complete in <N>s` line, then a line naming the Gradle home it seeded.
+- A run that succeeded ends with a `Complete in <N>s` line, so `tail -n 1 /var/log/gb4pc-setup-environment.log` shows whether it did.
   `<N>` is the script's own run time in seconds, to compare with the roughly five minutes within which setup must finish for the environment to be [cached](https://code.claude.com/docs/en/cloud-environments#environment-caching).
   It does not count any setup the platform does around the script.
 
-The file holds only the script's own lines, never the output of the tools it runs.
+The file holds only the lines the script prints through its `log()` function, not the output of the tools it runs.
 That is deliberate: the JVM prints its whole `JAVA_TOOL_OPTIONS` (`Picked up JAVA_TOOL_OPTIONS: ...`) each time `sdkmanager` starts, unfiltered (#1276), and in sessions that value carries the proxy's credentials (see "Environment variables" below).
 Copying the tools' output would risk writing a credential into the image every session starts from, while the script's own lines say only whether a proxy URL has credentials.
-The causes Step 3c prints when `sdkmanager` fails are among the script's own lines, so they are in the file too.
+The one extract of tool output in the file is on a Step 3c failure: the script relays the top-level `Exception` and `Caused by` lines from `sdkmanager --list --verbose` through `log()`, a filter that drops the `Picked up` line.
 
 If the file is absent, either no Setup script ran, the pasted copy predates the log, or the script could not write the file (it then prints a warning and carries on, since a failing script would stop the session from starting).
 To tell those apart from a session, check for the JDK the script installs: `/opt/java/temurin-17/bin/java` exists only when a Setup script installed it.

@@ -51,6 +51,8 @@
 #       too (behavioral)
 #   (q) a build log that cannot be written is warned about and does not fail the
 #       build (behavioral)
+#   (r) a second run replaces the build log rather than appending to it, so the
+#       log holds one run (behavioral)
 #
 # What no case here can cover is the network of the real Setup phase: whether its
 # proxy and trust store are the ones (j) hands to Java. Only an environment
@@ -515,12 +517,34 @@ else
 fi
 
 # The environment is cached only when setup finishes within roughly five
-# minutes, so the Complete line states the run time to compare against that.
-if grep -qE '^\[setup-environment\] Complete in [0-9]+s\. ' "$FRESH/setup.log"; then
-    pass "the build log states the run time on its Complete line"
+# minutes, so the Complete line states the run time to compare against that. It
+# is the log's last line, so `tail -n 1` of the log shows whether a run succeeded.
+if tail -n 1 "$FRESH/setup.log" | grep -qE '^\[setup-environment\] Complete in [0-9]+s\. '; then
+    pass "the build log ends with a Complete line that states the run time"
 else
-    fail "the Complete line does not state the run time"
-    grep 'Complete' "$FRESH/setup.log" | sed 's/^/    /' || true
+    fail "the build log's last line is not a Complete line stating the run time"
+    tail -n 3 "$FRESH/setup.log" | sed 's/^/    /' || true
+fi
+
+# (r) the log holds one run. Whether a rebuild starts from the previous snapshot
+# is not documented, so a log that appended could carry an earlier run's lines,
+# and a check reading it for "Step 3c: done" could be satisfied by a stale run.
+# Two runs into one log must leave one header and one Complete line.
+REPEAT="$SANDBOX/repeat"
+make_sandbox "$REPEAT"
+seed_gradle_cache "$REPEAT"
+if run_setup "$REPEAT" && run_setup "$REPEAT"; then
+    REPEAT_HEADERS=$(grep -c 'Build log of the run started' "$REPEAT/setup.log" || true)
+    REPEAT_COMPLETES=$(grep -c '\[setup-environment\] Complete in ' "$REPEAT/setup.log" || true)
+    if [ "$REPEAT_HEADERS" -eq 1 ] && [ "$REPEAT_COMPLETES" -eq 1 ]; then
+        pass "a second run replaces the build log rather than appending to it"
+    else
+        fail "after two runs the build log has $REPEAT_HEADERS headers and $REPEAT_COMPLETES Complete lines"
+        sed 's/^/    /' "$REPEAT/setup.log"
+    fi
+else
+    fail "the script failed when run twice against one sandbox"
+    sed 's/^/    /' "$REPEAT/out.log"
 fi
 
 # (o) the build log is written into the image every session starts from, so it
