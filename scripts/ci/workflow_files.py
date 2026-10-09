@@ -3,8 +3,7 @@
 
 Shared by the checks that read every workflow: the guards in this directory that
 assert a rule over each one, and scripts elsewhere that ask what the workflows
-use. They are not listed here, because a list goes stale with each new caller;
-`git grep "^from workflow_files import"` finds them.
+use. `git grep "^from workflow_files import"` finds them.
 
 Imported by bare module name, which resolves for the callers in this directory
 because `.github/workflows/build.yml` discovers tests per directory rather than
