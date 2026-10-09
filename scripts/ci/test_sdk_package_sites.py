@@ -34,9 +34,11 @@ The rules:
   system-image install, a `packages: platform-tools` input) is not a platform
   install site and is not held to it.
 - A platform satisfies `compileSdk = N` when its package is `platforms;android-N`
-  or `platforms;android-N.M`, matched on the major alone. Newer packages carry
-  a minor version (`platforms;android-37` does not exist), so a string
-  comparison could not work.
+  or `platforms;android-N.0`. Newer packages carry a minor version
+  (`platforms;android-37` does not exist), so a string comparison could not
+  work. A later minor does not satisfy it: `compileSdk = 37` names API 37.0,
+  and with only `platforms;android-37.1` installed AGP 9.1.1 fails with
+  "Failed to find target with hash string 'android-37.0'".
 - Every package a workflow installs, in a family the hook's list provisions,
   appears in the hook's list. A family is the part of the id before the first
   `;`, so `build-tools;36.0.0` is in the `build-tools` family and
@@ -55,9 +57,9 @@ Limits: `compileSdk` is read only in the plain `compileSdk = N` form. Any other
 form (`compileSdk { version = release(N) { ... } }`, a variable), and any
 property whose name starts with `compileSdk` (`compileSdkPreview`,
 `compileSdkVersion(N)`), is reported as unreadable rather than skipped, so
-whoever adopts one must teach this guard to read it. A minor `compileSdk`
-level is not modelled: `android-37.0` satisfies `compileSdk = 37`, and so
-would `android-37.1`. The guard reads no shell script other than the two
+whoever adopts one must teach this guard to read it. The block form is the
+only one that can name a minor (`minorApiLevel`), so which packages satisfy a
+minor other than 0 is left to whoever teaches it that form. The guard reads no shell script other than the two
 `.claude/` ones, so an `sdkmanager` call in a script under `scripts/` is not
 seen. `scripts/ci/test-support/setup-e2e-emulator.sh` holds
 one, which installs only the emulator, its system image and `platform-tools`.
@@ -92,7 +94,9 @@ _COMPILE_SDK = re.compile(r"^\s*compileSdk\s*=\s*(\d+)\s*(?://.*)?$")
 # `compileSdkVersion`, `compileSdkExtension`) are examined too, and reported as
 # unreadable rather than passed over.
 _MENTIONS_COMPILE_SDK = re.compile(r"\bcompileSdk")
-_PLATFORM = re.compile(r"^platforms;android-(\d+)(?:\.\d+)?$")
+# `platforms;android-N` or `platforms;android-N.0`: the packages that satisfy
+# `compileSdk = N`. A later minor names a different platform.
+_PLATFORM = re.compile(r"^platforms;android-(\d+)(?:\.0)?$")
 _HOOK_KEY = re.compile(r'^\s*\["([^"]+)"\]=')
 _SETUP_ITEM = re.compile(r'^\s*"([^"]+)"\s*$')
 _SHELL_SEPARATORS = frozenset({"&&", "||", "|", ";", "&", "(", ")"})
@@ -214,7 +218,7 @@ def workflow_installs(workflow: dict):
 
 
 def platform_levels(packages) -> set[int]:
-    """Return the API majors of the SDK platforms among `packages`."""
+    """Return each N for which `packages` holds a platform satisfying `compileSdk = N`."""
     return {int(m.group(1)) for m in map(_PLATFORM.match, packages) if m}
 
 
@@ -249,7 +253,7 @@ def violations(
     def check_platforms(where: str, packages: list[str]) -> None:
         missing = sorted(needed - platform_levels(packages))
         if missing:
-            wanted = " and ".join(f"platforms;android-{n}[.M]" for n in missing)
+            wanted = " and ".join(f"platforms;android-{n}[.0]" for n in missing)
             found.append(f"{where} installs no {wanted}, which compileSdk needs ({by_level})")
 
     for where, packages in lists.items():
@@ -503,7 +507,7 @@ class ParsingTest(unittest.TestCase):
             [(label, packages)],
         )
         self.assertEqual(2, len(found), found)
-        self.assertIn("installs no platforms;android-35[.M]", found[0])
+        self.assertIn("installs no platforms;android-35[.0]", found[0])
         self.assertIn("installs platforms;android-34, which", found[1])
 
 
@@ -537,9 +541,9 @@ class ViolationDetectionTest(unittest.TestCase):
         self.assertEqual(3, len(found), found)
         for where in ("hook", "setup", "regen"):
             self.assertTrue(any(m.startswith(where + " ") for m in found), found)
-        self.assertIn("platforms;android-37[.M]", found[0])
+        self.assertIn("platforms;android-37[.0]", found[0])
 
-    def test_platform_minor_satisfies_the_major(self):
+    def test_platform_minor_zero_satisfies_the_level(self):
         hook = ["platforms;android-37.0", "platforms;android-35", "platform-tools"]
         workflow = ["platforms;android-37.0", "platforms;android-35", "platform-tools"]
         found = self._violations(
@@ -548,6 +552,21 @@ class ViolationDetectionTest(unittest.TestCase):
             workflow=workflow,
         )
         self.assertEqual([], found)
+
+    def test_a_later_minor_does_not_satisfy_the_level(self):
+        # AGP 9.1.1 resolves `compileSdk = 37` to the hash string `android-37.0`
+        # and fails when only 37.1 is installed.
+        found = self._violations(
+            compile_sdks={"app/build.gradle.kts": 37},
+            hook=["platforms;android-37.1", "platform-tools"],
+            workflow=["platforms;android-37.1"],
+        )
+        self.assertEqual(3, len(found), found)
+        for where in ("hook", "setup", "regen"):
+            self.assertTrue(
+                any(m.startswith(where + " installs no platforms;android-37[.0]") for m in found),
+                found,
+            )
 
     def test_bare_major_does_not_satisfy_a_different_level(self):
         found = self._violations(compile_sdks={"app/build.gradle.kts": 36})
@@ -561,7 +580,7 @@ class ViolationDetectionTest(unittest.TestCase):
             workflow=["platforms;android-37.0"],
         )
         self.assertEqual(3, len(found), found)
-        self.assertIn("platforms;android-35[.M]", found[0])
+        self.assertIn("platforms;android-35[.0]", found[0])
         self.assertIn("e2e-mock-camera/build.gradle.kts = 35", found[0])
 
     def test_workflow_left_behind_is_reported(self):
