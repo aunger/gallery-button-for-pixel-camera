@@ -9,7 +9,8 @@
 # before any session starts, with its filesystem output cached across sessions.
 # The copy lives here so the pins can be reviewed, diffed, and guarded by CI
 # (scripts/test_setup_environment.sh) instead of existing only inside a web form.
-# See .claude/environment.md for how to install it and when to re-paste it.
+# See .claude/environment.md for how to install it, when to re-paste it, and how
+# to read the log it leaves at /var/log/gb4pc-setup-environment.log.
 #
 # WHAT IT ADDS OVER THE SESSION-START HOOK
 #
@@ -138,7 +139,44 @@ SDK_PACKAGES=(
 SESSION_HOME="${SESSION_HOME:-$HOME}"
 GRADLE_USER_HOME_DIR="${GRADLE_USER_HOME:-$SESSION_HOME/.gradle}"
 
-log() { echo "[setup-environment] $*"; }
+# --- Build log ----------------------------------------------------------------
+#
+# A failed run's output is shown in place of the session, but a successful run's
+# is shown nowhere (issue #1278), so every line log() prints is also written here.
+# The environment cache is a snapshot of the filesystem this script leaves, so the
+# file is still there in every session started from that cache.
+#
+# The file holds exactly the lines log() prints, not the output of the tools this
+# script runs. That is deliberate: the JVM prints its whole JAVA_TOOL_OPTIONS
+# ("Picked up JAVA_TOOL_OPTIONS: ...") on every start. In sessions that value
+# carries the proxy's credentials, and nothing yet shows that the Setup phase's
+# does not, so a copy of sdkmanager's output could write a credential into the
+# image every session starts from. The script's own lines never carry one
+# (proxy_parts below reports only whether credentials are present). The one
+# extract of tool output in the file is on a Step 3c failure: the top-level
+# exception lines of sdkmanager --list --verbose, relayed through log() by a
+# filter that drops the "Picked up" line.
+#
+# Each line is appended before log() returns, so the file is complete when the
+# script exits and the snapshot is taken. It is truncated at the start, so it
+# holds one run. A file that cannot be written leaves the build without a log
+# rather than failing it, since a non-zero exit stops the session from starting.
+# Overridable only so scripts/test_setup_environment.sh can exercise the script
+# against a sandbox.
+SETUP_LOG="${SETUP_LOG:-/var/log/gb4pc-setup-environment.log}"
+if ! { printf '[setup-environment] Build log of the run started %s\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$SETUP_LOG"; } 2>/dev/null; then
+    echo "[setup-environment] warning: cannot write $SETUP_LOG; this build leaves no log file" >&2
+    SETUP_LOG=""
+fi
+
+log() {
+    local line="[setup-environment] $*"
+    echo "$line"
+    if [[ -n "$SETUP_LOG" ]]; then
+        { echo "$line" >> "$SETUP_LOG"; } 2>/dev/null || true
+    fi
+}
 
 # --- Preflight ----------------------------------------------------------------
 MISSING_TOOLS=()
@@ -335,9 +373,10 @@ if [[ -n "${JAVA_TOOL_OPTIONS:-}" ]]; then
     export JAVA_TOOL_OPTIONS
 fi
 # Lists only the proxy and trust-store properties, so this line adds nothing else
-# from JAVA_TOOL_OPTIONS to the build log. That is all it avoids: the JVM itself
-# prints the whole value ("Picked up JAVA_TOOL_OPTIONS: ...") on every start, and
-# Step 3c's sdkmanager run writes that to the build log unfiltered.
+# from JAVA_TOOL_OPTIONS to the script's output. That is all it avoids: the JVM
+# itself prints the whole value ("Picked up JAVA_TOOL_OPTIONS: ...") on every
+# start, and Step 3c's sdkmanager run writes that to the script's output
+# unfiltered. It does not reach $SETUP_LOG, which holds only log() lines.
 JAVA_NETWORK_OPTIONS=$(grep -oE -- '-D(https?\.proxy(Host|Port)|http\.nonProxyHosts|javax\.net\.ssl\.trustStore(Type)?)=[^ ]*' \
     <<< "${JAVA_TOOL_OPTIONS:-}" | tr '\n' ' ' || true)
 log "Network: Java options for sdkmanager: ${JAVA_NETWORK_OPTIONS:-none}"
@@ -470,11 +509,21 @@ if [[ ${#MISSING_PACKAGES[@]} -gt 0 ]]; then
         # name no cause; with --verbose it prints the exceptions behind them.
         # Only their top-level lines are kept, de-duplicated in order, so the
         # build log shows the cause without pages of stack frames.
+        # They go through log() so they reach the build log too; the
+        # exception lines kept here do not include the JVM's "Picked up" echo.
         log "ERROR: Step 3c: sdkmanager failed. The causes it reports, from a" >&2
         log "       --verbose package listing (read with the Network lines above):" >&2
-        "$SDKMANAGER" --list --verbose 2>&1 | tr '\r' '\n' \
+        SDK_CAUSES=$("$SDKMANAGER" --list --verbose 2>&1 | tr '\r' '\n' \
             | grep -v '^[[:space:]]' | grep -E 'Exception|Caused by' \
-            | awk '!seen[$0]++' | head -n 20 | sed 's/^/    /' >&2 || true
+            | awk '!seen[$0]++' | head -n 20 || true)
+        while IFS= read -r cause; do
+            if [[ -n "$cause" ]]; then
+                log "       $cause" >&2
+            fi
+        done <<< "$SDK_CAUSES"
+        if [[ -z "$SDK_CAUSES" ]]; then
+            log "       (none reported)" >&2
+        fi
         exit 1
     fi
     log "Step 3c: done"
@@ -502,5 +551,10 @@ chown -R "$OWNER" "$GRADLE_USER_HOME_DIR" "$ANDROID_HOME_DIR"
 chmod -R a+rX "$TEMURIN_HOME"
 log "Step 4: Gradle home and SDK owned by $OWNER (session home $SESSION_HOME); JDK left read-only"
 
-log "Complete. JAVA_HOME=$TEMURIN_HOME ANDROID_HOME=$ANDROID_HOME_DIR"
 log "Gradle $GRADLE_VERSION seeded in $GRADLE_USER_HOME_DIR"
+# The environment is cached only when setup finishes within roughly five minutes,
+# so the run time is logged where it can be compared against that. SECONDS counts
+# from this script's start, so it is the script's own run time, not the whole
+# setup phase the limit applies to. This is the last line a successful run
+# prints, so it is the last line of the build log.
+log "Complete in ${SECONDS}s. JAVA_HOME=$TEMURIN_HOME ANDROID_HOME=$ANDROID_HOME_DIR"

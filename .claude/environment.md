@@ -43,21 +43,58 @@ What it does instead is state its answer, as the first line of its output:
 ```
 
 So if sessions ever run as a different user, set `SESSION_HOME` in the pasted block.
-Nothing will stop you if you forget; that log line is the only place it shows, which is why it is worth reading after a rebuild.
+Nothing will stop you if you forget; that log line is the only place it shows, which is why it is worth reading in the build log (see "Reading the build log" below) after a rebuild.
 
 ### Installing it
 
-Paste the entire contents of `.claude/setup-environment.sh` into the environment's Setup script field, then rebuild the environment.
-The script is idempotent, so a rebuild over an already provisioned image is fast.
-Each step skips only when the work is already done *at the pinned version*, so a rebuild after a version bump reinstalls rather than reporting a stale install as present.
+Paste the entire contents of `.claude/setup-environment.sh` into the environment's Setup script field and save it, then start a new session in that environment.
+That is what "rebuild the environment" means in this repository; the environment settings have no rebuild control.
+
+Per Anthropic's [environment caching](https://code.claude.com/docs/en/cloud-environments#environment-caching) docs, read on 2026-10-09:
+
+- The Setup script runs again, to rebuild the environment cache, when the environment's Setup script or allowed network hosts change, and when the cache expires after roughly seven days.
+  The cache is a snapshot of the filesystem the script leaves, and new sessions start from it without running the script.
+- A session that already exists picks up the change only if its VM was reclaimed and is rebuilt; one restored after being idle does not run the Setup script.
+  Start a new session to apply it.
+
+The same page's [script requirements](https://code.claude.com/docs/en/cloud-environments#script-requirements) set two limits:
+
+- **The script must exit zero.** A non-zero exit stops the session from starting; its output was then shown in place of the session (#1273).
+  This script exits non-zero on purpose when it cannot provision correctly: a required command is missing, the session home is not a directory, a download fails or fails its pinned checksum, an archive lacks the expected `bin/java` or `bin/gradle`, or Step 3c cannot install the SDK packages.
+- **It must finish within roughly five minutes**, or the environment is not cached, and new sessions do not start from a snapshot of it.
+  The `Complete in <N>s` line of the build log (see "Reading the build log" below) says how long the script itself took.
+
+The script is idempotent: each step skips only when the work is already done *at the pinned version*, so a run over an image that already holds a different version reinstalls rather than reporting a stale install as present.
+Whether a rebuild starts from the previous snapshot or from the base image is not documented; the build log's `--skip` lines show which steps found their work already done.
+
+### Reading the build log
+
+A failed run's output is shown in place of the session, but a successful run's output is shown nowhere (#1278).
+So the script also writes every line it prints itself to `/var/log/gb4pc-setup-environment.log`.
+The environment cache is a snapshot of the filesystem the script leaves, so every session started from that cache has the file; read it from any of them with `cat /var/log/gb4pc-setup-environment.log`.
+
+- The first line names when the run started, in UTC.
+- The rest are the script's `[setup-environment]` lines, in order: the session home it provisioned for, the `Network:` lines, and each step's result.
+- A run that succeeded ends with a `Complete in <N>s` line, so `tail -n 1 /var/log/gb4pc-setup-environment.log` shows whether it did.
+  `<N>` is the script's own run time in seconds, to compare with the roughly five minutes within which setup must finish for the environment to be [cached](https://code.claude.com/docs/en/cloud-environments#environment-caching).
+  It does not count any setup the platform does around the script.
+
+The file holds only the lines the script prints through its `log()` function, not the output of the tools it runs.
+That is deliberate: the JVM prints its whole `JAVA_TOOL_OPTIONS` (`Picked up JAVA_TOOL_OPTIONS: ...`) each time `sdkmanager` starts, unfiltered (#1276), and in sessions that value carries the proxy's credentials (see "Environment variables" below).
+Copying the tools' output would risk writing a credential into the image every session starts from, while the script's own lines say only whether a proxy URL has credentials.
+The one extract of tool output in the file is on a Step 3c failure: the script relays the top-level `Exception` and `Caused by` lines from `sdkmanager --list --verbose` through `log()`, a filter that drops the `Picked up` line.
+
+If the file is absent, either no Setup script ran, the pasted copy predates the log, or the script could not write the file (it then prints a warning and carries on, since a failing script would stop the session from starting).
+To tell those apart from a session, check for the JDK the script installs: `/opt/java/temurin-17/bin/java` exists only when a Setup script installed it.
+The `SessionStart` hook reports the same thing on its Step 0b line, which names `/opt/java/temurin-17` (`Step 0b: JAVA_HOME=/opt/java/temurin-17`) only when it found that JDK, and says `no Setup-script JDK` otherwise.
 
 ### Keeping it in sync
 
-The pasted copy lives in a web form that CI cannot read, so **re-paste it whenever `.claude/setup-environment.sh` changes**, most importantly on a Gradle version bump.
+The pasted copy lives in a web form that CI cannot read, so **re-paste it whenever `.claude/setup-environment.sh` changes**, most importantly on a Gradle version bump, and start a new session to rebuild (see "Installing it").
 A stale copy fails quietly: it seeds the previous distribution, the wrapper ignores it, and sessions silently go back to downloading.
 
 `scripts/test_setup_environment.sh` guards the half CI can see.
-It fails the build when the committed copy drifts from `gradle/wrapper/gradle-wrapper.properties` (version, distribution URL, checksum) or from `.claude/hooks/session-start.sh` (command-line tools URL, `ANDROID_HOME`, SDK package list, license hashes, Temurin path), when the checksum verification stops being fail-closed, when the wrapper cache path stops matching the one the wrapper actually reads, when a step would skip its work on an image already holding a different version, or when `sdkmanager` would run without the proxy and trust store described under "`sdkmanager` in the Setup phase" below.
+It fails the build when the committed copy drifts from `gradle/wrapper/gradle-wrapper.properties` (version, distribution URL, checksum) or from `.claude/hooks/session-start.sh` (command-line tools URL, `ANDROID_HOME`, SDK package list, license hashes, Temurin path), when the checksum verification stops being fail-closed, when the wrapper cache path stops matching the one the wrapper actually reads, when a step would skip its work on an image already holding a different version, when `sdkmanager` would run without the proxy and trust store described under "`sdkmanager` in the Setup phase" below, or when the build log stops holding every line the script prints or starts holding the output of the tools it runs.
 `scripts/ci/test_sdk_package_sites.py` adds that the SDK package list holds a platform for every module's `compileSdk`, and that no workflow's `sdkmanager` call or `setup-android` `packages` input installs a platform, build-tools or `platform-tools` package the list lacks; `gradle/README.md` covers it under "`compileSdk` -- SDK platform pin".
 
 ### What it deliberately does not do
