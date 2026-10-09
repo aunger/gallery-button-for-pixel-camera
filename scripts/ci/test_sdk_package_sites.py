@@ -57,13 +57,14 @@ Limits: `compileSdk` is read only in the plain `compileSdk = N` form. Any other
 form (`compileSdk { version = release(N) { ... } }`, a variable), and any
 property whose name starts with `compileSdk` (`compileSdkPreview`,
 `compileSdkMinor`, `compileSdkVersion(N)`), is reported as unreadable rather
-than skipped, so whoever adopts one must teach this guard to read it. Two of
-these name a minor API level: the block form's `minorApiLevel` and the flat
-`compileSdkMinor`. Which packages satisfy a minor other than 0 is left to
-whoever teaches the guard either one. The guard reads no shell script other
-than the two `.claude/` ones, so an `sdkmanager` call in a script under
-`scripts/` is not seen. `scripts/ci/test-support/setup-e2e-emulator.sh` holds
-one, which installs only the emulator, its system image and `platform-tools`.
+than skipped, so whoever adopts one must teach this guard to read it. Several
+of these forms can name a minor API level (the block form's `minorApiLevel`
+and `compileSdkMinor` among them), so which packages satisfy a minor other
+than 0 is left to whoever teaches the guard such a form. The guard reads no
+shell script other than the two `.claude/` ones, so an `sdkmanager` call in a
+script under `scripts/` is not seen.
+`scripts/ci/test-support/setup-e2e-emulator.sh` holds one, which installs only
+the emulator, its system image and `platform-tools`.
 """
 
 import glob
