@@ -217,7 +217,8 @@ Newer platform package ids carry a minor version that `compileSdk` does not.
 With `platforms;android-37.1` installed and 37.0 absent, AGP 9.1.1 fails with `Failed to find target with hash string 'android-37.0'`.
 So the minor is set by the pin, not by which package a site installs, and a later minor has to be named in the pin itself.
 
-`scripts/ci/test_sdk_package_sites.py` fails `build-and-test` when any of the four sites installs no platform for some module's `compileSdk`, matching on the major alone.
+`scripts/ci/test_sdk_package_sites.py` fails `build-and-test` when any of the four sites installs no platform for some module's `compileSdk`.
+For `compileSdk = N` it accepts `platforms;android-N` or `platforms;android-N.0`, and not a later minor such as `platforms;android-37.1`.
 It holds every workflow `sdkmanager` call and every `setup-android` `packages` input to the same rule as soon as it names a platform.
 It also fails when either kind of workflow site installs a package the session-start hook does not list, in any package family the hook provisions (today `platforms`, `build-tools` and `platform-tools`).
 The workflows may install a subset of the hook's list, since the `.claude/` pair also carries older build-tools that the workflows do not need.
