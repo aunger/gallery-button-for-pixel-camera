@@ -59,7 +59,9 @@ The environment cache is a snapshot of the filesystem the script leaves, so ever
 
 - The first line names when the run started, in UTC.
 - The rest are the script's `[setup-environment]` lines, in order: the session home it provisioned for, the `Network:` lines, and each step's result.
-- A run that succeeded ends with the `Complete` line.
+- A run that succeeded ends with a `Complete in <N>s` line, then a line naming the Gradle home it seeded.
+  `<N>` is the script's own run time in seconds, to compare with the roughly five minutes within which setup must finish for the environment to be [cached](https://code.claude.com/docs/en/cloud-environments#environment-caching).
+  It does not count any setup the platform does around the script.
 
 The file holds only the script's own lines, never the output of the tools it runs.
 That is deliberate: the JVM prints its whole `JAVA_TOOL_OPTIONS` (`Picked up JAVA_TOOL_OPTIONS: ...`) each time `sdkmanager` starts, unfiltered (#1276), and in sessions that value carries the proxy's credentials (see "Environment variables" below).

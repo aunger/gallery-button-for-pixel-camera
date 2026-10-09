@@ -549,5 +549,9 @@ chown -R "$OWNER" "$GRADLE_USER_HOME_DIR" "$ANDROID_HOME_DIR"
 chmod -R a+rX "$TEMURIN_HOME"
 log "Step 4: Gradle home and SDK owned by $OWNER (session home $SESSION_HOME); JDK left read-only"
 
-log "Complete. JAVA_HOME=$TEMURIN_HOME ANDROID_HOME=$ANDROID_HOME_DIR"
+# The environment is cached only when setup finishes within roughly five minutes,
+# so the run time is logged where it can be compared against that. SECONDS counts
+# from this script's start, so it is the script's own run time, not the whole
+# setup phase the limit applies to.
+log "Complete in ${SECONDS}s. JAVA_HOME=$TEMURIN_HOME ANDROID_HOME=$ANDROID_HOME_DIR"
 log "Gradle $GRADLE_VERSION seeded in $GRADLE_USER_HOME_DIR"

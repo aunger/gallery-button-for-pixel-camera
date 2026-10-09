@@ -42,7 +42,8 @@
 #   (m) an unreadable system trust store is logged, and Java is given none
 #       (behavioral)
 #   (n) every line the script prints itself is also written to the build log
-#       file, which a later session can read (behavioral; issue #1278)
+#       file, which a later session can read, ending in a line that states the
+#       run time (behavioral; issue #1278)
 #   (o) the build log holds none of the tools' own output, so the JVM's
 #       "Picked up JAVA_TOOL_OPTIONS" echo and any credential in it stay out of
 #       the cached image (behavioral)
@@ -511,6 +512,15 @@ else
     fail "the build log is missing, lacks its header, or differs from the lines the script printed"
     sed 's/^/    out: /' "$FRESH/out.log"
     sed 's/^/    log: /' "$FRESH/setup.log" 2>/dev/null || true
+fi
+
+# The environment is cached only when setup finishes within roughly five
+# minutes, so the Complete line states the run time to compare against that.
+if grep -qE '^\[setup-environment\] Complete in [0-9]+s\. ' "$FRESH/setup.log"; then
+    pass "the build log states the run time on its Complete line"
+else
+    fail "the Complete line does not state the run time"
+    grep 'Complete' "$FRESH/setup.log" | sed 's/^/    /' || true
 fi
 
 # (o) the build log is written into the image every session starts from, so it
