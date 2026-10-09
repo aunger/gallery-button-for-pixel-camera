@@ -47,9 +47,25 @@ Nothing will stop you if you forget; that log line is the only place it shows, w
 
 ### Installing it
 
-Paste the entire contents of `.claude/setup-environment.sh` into the environment's Setup script field, then rebuild the environment.
-The script is idempotent, so a rebuild over an already provisioned image is fast.
-Each step skips only when the work is already done *at the pinned version*, so a rebuild after a version bump reinstalls rather than reporting a stale install as present.
+Paste the entire contents of `.claude/setup-environment.sh` into the environment's Setup script field and save it, then start a new session in that environment.
+That is what "rebuild the environment" means in this repository; the environment settings have no rebuild control.
+
+Per Anthropic's [environment caching](https://code.claude.com/docs/en/cloud-environments#environment-caching) docs, read on 2026-10-09:
+
+- The Setup script runs again, to rebuild the environment cache, when the environment's Setup script or allowed network hosts change, and when the cache expires after roughly seven days.
+  The cache is a snapshot of the filesystem the script leaves, and new sessions start from it without running the script.
+- A session that already exists does not pick up the change: one restored after being idle does not run the Setup script.
+  Start a new session to apply it.
+
+The same page's [script requirements](https://code.claude.com/docs/en/cloud-environments#script-requirements) set two limits:
+
+- **The script must exit zero.** A non-zero exit stops the session from starting; its output was then shown in place of the session (#1273).
+  This script exits non-zero on purpose when a download fails its pinned checksum or Step 3c cannot install the SDK packages.
+- **It must finish within roughly five minutes**, or the environment is not cached, and new sessions do not start from a snapshot of it.
+  The `Complete in <N>s` line of the build log (see "Reading the build log" below) says how long the script itself took.
+
+The script is idempotent: each step skips only when the work is already done *at the pinned version*, so a run over an image that already holds a different version reinstalls rather than reporting a stale install as present.
+Whether a rebuild starts from the previous snapshot or from the base image is not documented; the build log's `--skip` lines show which steps found their work already done.
 
 ### Reading the build log
 
@@ -74,7 +90,7 @@ The `SessionStart` hook reports the same thing on its Step 0b line, which names 
 
 ### Keeping it in sync
 
-The pasted copy lives in a web form that CI cannot read, so **re-paste it whenever `.claude/setup-environment.sh` changes**, most importantly on a Gradle version bump.
+The pasted copy lives in a web form that CI cannot read, so **re-paste it whenever `.claude/setup-environment.sh` changes**, most importantly on a Gradle version bump, and start a new session to rebuild (see "Installing it").
 A stale copy fails quietly: it seeds the previous distribution, the wrapper ignores it, and sessions silently go back to downloading.
 
 `scripts/test_setup_environment.sh` guards the half CI can see.
