@@ -192,10 +192,30 @@ The JAR value often turns out unchanged, since Gradle republishes it across rele
 `compileSdk` is a pin class of its own, separate from the other pins this file covers.
 Each module sets it in its own build script: `app/build.gradle.kts`, `e2e-mock-camera/build.gradle.kts` and `e2e-mock-gallery/build.gradle.kts`.
 
-Moving it is not a toolchain bump, and "Performing a toolchain bump" below does not cover it.
-It moves no Maven coordinate, so the dependency graph does not shift and `verification-metadata.xml` needs no regeneration; neither the KGP compatibility row nor the CodeQL Kotlin ceiling binds.
+Moving the pin is not itself a toolchain bump, and "Performing a toolchain bump" below does not cover it.
+It moves no Maven coordinate, so the dependency graph does not shift and `verification-metadata.xml` needs no regeneration; neither the KGP compatibility row nor the CodeQL Kotlin ceiling binds on the move.
+It can still need a toolchain bump to land before it, because AGP has a minimum version for each compile API level.
 
-What it does move is the SDK platform that has to be installed for it.
+So check that minimum before moving the pin.
+Look up the new API level in the "Minimum versions of tools for Android API level" table on Google's [About Android Gradle plugin](https://developer.android.com/build/releases/about-agp#api-level-support) page, and compare its minimum AGP with the AGP version in the root `build.gradle.kts`.
+The table keys on the API level including its minor, so look up the level the pin names (see the platform package minors below): `compileSdk = 37` is the row for 37.0.
+
+If the AGP in use is older than that minimum, bump AGP first, in its own pull request by "Performing a toolchain bump" below, and land it before the `compileSdk` move.
+That AGP bump is bound by the KGP compatibility row like any other.
+The move to 37 is the worked example: AGP 9.1.0 was below the 9.1.1 minimum for 37.0, so #1262 (PR #1263) moved AGP to 9.1.1 before #986 (PR #1261) could merge.
+
+Do not wait for the build to report a too-old AGP.
+The build still configures and succeeds, and the only symptom is a warning at configuration time, which nothing in CI fails on:
+
+```text
+This Android Gradle plugin (9.1.0) was tested up to compile SDK version 36.1.
+```
+
+The full message goes on to name `android.suppressUnsupportedCompileSdk`, a `gradle.properties` setting that silences it.
+Setting it hides the symptom and leaves AGP below the minimum, so it is not a remedy.
+The message also links `https://d.android.com/r/tools/api-level-support`, which on 2026-10-09 redirected to the newest AGP release notes, a page without the table; use the link above instead.
+
+What moving the pin does change is the SDK platform that has to be installed for it.
 That platform is an SDK package, declared apart from the build scripts.
 Four sites declare it:
 
