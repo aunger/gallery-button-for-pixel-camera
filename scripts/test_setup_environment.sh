@@ -41,6 +41,15 @@
 #       (behavioral)
 #   (m) an unreadable system trust store is logged, and Java is given none
 #       (behavioral)
+#   (n) every line the script prints itself is also written to the build log
+#       file, which a later session can read (behavioral; issue #1278)
+#   (o) the build log holds none of the tools' own output, so the JVM's
+#       "Picked up JAVA_TOOL_OPTIONS" echo and any credential in it stay out of
+#       the cached image (behavioral)
+#   (p) a failed sdkmanager install leaves its error and causes in the build log
+#       too (behavioral)
+#   (q) a build log that cannot be written is warned about and does not fail the
+#       build (behavioral)
 #
 # What no case here can cover is the network of the real Setup phase: whether its
 # proxy and trust store are the ones (j) hands to Java. Only an environment
@@ -268,6 +277,7 @@ run_setup() {
     local root="$1"
     shift
     env -u JAVA_TOOL_OPTIONS -u HTTPS_PROXY -u https_proxy \
+        SETUP_LOG="$root/setup.log" \
         SYSTEM_JAVA_TRUSTSTORE="$root/absent-cacerts" \
         SESSION_HOME="$root/home" \
         GRADLE_USER_HOME="$root/home/.gradle" \
@@ -366,10 +376,12 @@ fi
 
 # Replace the sandbox's no-op sdkmanager with a stub that records the
 # JAVA_TOOL_OPTIONS it was started with (in sdkmanager.jto beside it), and remove
-# one package so that Step 3c runs it. With STUB_FAIL set, the stub fails the
-# install the way a refused manifest fetch does, and answers --list --verbose with
-# the shape of output real sdkmanager gives for one: top-level exception lines,
-# repeated, with stack frames between them.
+# one package so that Step 3c runs it. Like a real JVM, it echoes a non-empty
+# JAVA_TOOL_OPTIONS to stderr ("Picked up JAVA_TOOL_OPTIONS: ...") on every start.
+# With STUB_FAIL set, the stub fails the install the way a refused manifest fetch
+# does, and answers --list --verbose with the shape of output real sdkmanager
+# gives for one: top-level exception lines, repeated, with stack frames between
+# them.
 stub_sdkmanager() {
     local root="$1"
     rm -rf "$root/sdk/platform-tools"
@@ -377,6 +389,7 @@ stub_sdkmanager() {
 #!/usr/bin/env bash
 [[ "${1:-}" == --licenses ]] && exit 0
 printf '%s\n' "${JAVA_TOOL_OPTIONS:-}" > "$0.jto"
+[[ -n "${JAVA_TOOL_OPTIONS:-}" ]] && echo "Picked up JAVA_TOOL_OPTIONS: $JAVA_TOOL_OPTIONS" >&2
 [[ -z "${STUB_FAIL:-}" ]] && exit 0
 if [[ "$*" == "--list --verbose" ]]; then
     echo "Info: IOException: https://dl.google.com/android/repository/addons_list-5.xml"
@@ -482,6 +495,78 @@ if run_setup "$NOSTORE" SYSTEM_JAVA_TRUSTSTORE="$NOSTORE/absent-cacerts"; then
 else
     fail "the script failed with an unreadable system trust store"
     sed 's/^/    /' "$NOSTORE/out.log"
+fi
+
+# (n) issue #1278: a successful build's output is shown nowhere, so the script's
+# own lines must also be in the build log, which the environment cache keeps for
+# later sessions. The log is exactly those lines, after a header naming when the
+# run started. FRESH is case (h)'s fully provisioned, successful run.
+FRESH_LINES=$(grep -c '^\[setup-environment\]' "$FRESH/out.log" || true)
+if [ -f "$FRESH/setup.log" ] && [ "$FRESH_LINES" -gt 0 ] \
+    && head -n 1 "$FRESH/setup.log" | grep -qE '^\[setup-environment\] Build log of the run started [0-9]{4}-' \
+    && diff <(grep '^\[setup-environment\]' "$FRESH/out.log") <(tail -n +2 "$FRESH/setup.log") > /dev/null \
+    && grep -q '\[setup-environment\] Complete' "$FRESH/setup.log"; then
+    pass "a successful build writes every line it prints to the build log ($FRESH_LINES lines)"
+else
+    fail "the build log is missing, lacks its header, or differs from the lines the script printed"
+    sed 's/^/    out: /' "$FRESH/out.log"
+    sed 's/^/    log: /' "$FRESH/setup.log" 2>/dev/null || true
+fi
+
+# (o) the build log is written into the image every session starts from, so it
+# must not copy the tools' output, where the JVM echoes JAVA_TOOL_OPTIONS whole.
+# Here that value carries a proxy password, and the stub sdkmanager echoes it as a
+# JVM does; the first check proves the echo happened, so the second is not
+# passing vacuously.
+SECRET="$SANDBOX/secret"
+make_sandbox "$SECRET"
+seed_gradle_cache "$SECRET"
+stub_sdkmanager "$SECRET"
+if run_setup "$SECRET" \
+    JAVA_TOOL_OPTIONS="-Dhttps.proxyHost=java.invalid -Dhttps.proxyPort=8080 -Dhttps.proxyPassword=s3cret -Djavax.net.ssl.trustStore=/session/cacerts"; then
+    if ! grep -q "Picked up JAVA_TOOL_OPTIONS: .*s3cret" "$SECRET/out.log"; then
+        fail "the stub sdkmanager did not echo JAVA_TOOL_OPTIONS, so this case tests nothing"
+        sed 's/^/    /' "$SECRET/out.log"
+    elif grep -q "Step 3c: done" "$SECRET/setup.log" \
+        && ! grep -q "s3cret" "$SECRET/setup.log" \
+        && ! grep -q "Picked up" "$SECRET/setup.log"; then
+        pass "the build log leaves out the JVM's JAVA_TOOL_OPTIONS echo and the credential in it"
+    else
+        fail "the build log carries the JVM's echo or the credential, or lacks Step 3c's result"
+        sed 's/^/    /' "$SECRET/setup.log"
+    fi
+else
+    fail "the script failed with a stub sdkmanager and a password in JAVA_TOOL_OPTIONS"
+    sed 's/^/    /' "$SECRET/out.log"
+fi
+
+# (p) a failed install's error and the causes printed for it reach the build log
+# as well. CAUSE is case (l)'s failed run.
+if grep -q "ERROR: Step 3c: sdkmanager failed" "$CAUSE/setup.log" \
+    && grep -q "Caused by: sun.security.validator.ValidatorException" "$CAUSE/setup.log"; then
+    pass "a failed install leaves its error and causes in the build log"
+else
+    fail "the build log of a failed install lacks its error or causes"
+    sed 's/^/    /' "$CAUSE/setup.log" 2>/dev/null || true
+fi
+
+# (q) the log is a diagnostic, and a non-zero exit stops the session from
+# starting, so a log that cannot be written must not fail the build. A path under
+# a missing directory is used rather than a mode-000 file, because these tests may
+# run as root, which writes a mode-000 file regardless.
+NOLOG="$SANDBOX/nolog"
+make_sandbox "$NOLOG"
+seed_gradle_cache "$NOLOG"
+if run_setup "$NOLOG" SETUP_LOG="$NOLOG/absent-dir/setup.log"; then
+    if grep -q "warning: cannot write $NOLOG/absent-dir/setup.log" "$NOLOG/out.log"; then
+        pass "a build log that cannot be written is warned about, and the build still succeeds"
+    else
+        fail "an unwritable build log was not warned about"
+        sed 's/^/    /' "$NOLOG/out.log"
+    fi
+else
+    fail "an unwritable build log failed the build"
+    sed 's/^/    /' "$NOLOG/out.log"
 fi
 
 # (i) the Setup script must never produce gradle/verification-metadata.xml. The
