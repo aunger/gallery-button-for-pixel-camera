@@ -198,7 +198,7 @@ It can still need a toolchain bump to land before it, because AGP has a minimum 
 
 So check that minimum before moving the pin.
 Look up the new API level in the "Minimum versions of tools for Android API level" table on Google's [About Android Gradle plugin](https://developer.android.com/build/releases/about-agp#api-level-support) page, and compare its minimum AGP with the AGP version in the root `build.gradle.kts`.
-Look up the level the pin names, including its minor where the table's row gives one (see the platform package minors below): `compileSdk = 37` is the row for 37.0, while `compileSdk = 35` is the row for 35.
+Use the row for the level the pin names, including its minor where the table's row gives one (see the platform package minors below): `compileSdk = 37` is the row for 37.0, while `compileSdk = 35` is the row for 35.
 
 If the AGP in use is older than that minimum, bump AGP first, in its own pull request by "Performing a toolchain bump" below, and land it before the `compileSdk` move.
 That AGP bump is bound by the KGP compatibility row like any other.
