@@ -1,6 +1,5 @@
 package com.gb4pc.ui.settings
 
-import android.annotation.SuppressLint
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -16,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -46,14 +46,7 @@ class AdvancedSettingsActivity : ComponentActivity() {
 fun AdvancedSettingsScreen(prefsManager: PrefsManager) {
     val context = LocalContext.current
 
-    // Compose UI 1.9's LocalContextResourcesRead check flags this read because a configuration
-    // change does not invalidate a LocalContext read, so the metrics could go stale. They cannot: the
-    // manifest declares no configChanges for this activity, so a configuration change recreates
-    // it, and this screen with it. LocalResources, the check's replacement, is not available to
-    // compile against: activity-compose 1.13.0 brings Compose UI 1.9 at runtime only, and the
-    // compile classpath keeps compose-bom 2024.12.01's ui 1.7.6.
-    @SuppressLint("LocalContextResourcesRead")
-    val display = context.resources.displayMetrics
+    val display = LocalResources.current.displayMetrics
     val aspectRatio = AspectRatioUtil.quantize(display.widthPixels, display.heightPixels)
     val currentPosition = prefsManager.getOverlayPosition(aspectRatio)
 
