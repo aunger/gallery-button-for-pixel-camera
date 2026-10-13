@@ -27,6 +27,8 @@
 #   (p) a script with a shebang but no executable bit blocks the commit, and the
 #       same script marked executable does not; an extensionless script is
 #       covered, while a .py is deferred (#887)
+#   (q) an em dash blocks the commit and fails --check, while the
+#       vendored gradlew is exempt (#964)
 #
 # The lint tools are resolved from $LINT_BIN_DIR (default $HOME/.local/bin),
 # exactly as scripts/lint/lint.sh resolves them; .claude/hooks/session-start.sh
@@ -340,6 +342,23 @@ printf '#!/usr/bin/env python3\nprint(1)\n' > "$REPO/tool.py"
 chmod -x "$REPO/tool.py"
 RC="$(attempt_commit "$REPO")"
 if [[ "$RC" -eq 0 ]]; then pass "non-executable .py -> commit allowed (deferred)"; else fail "non-executable .py should not block yet, rc=$RC"; fi
+
+# ── (q) a character the prose-style rule bans blocks the commit ──────────────
+echo ""
+echo "=== (q) banned prose character blocks ==="
+REPO="$(new_repo)"
+printf '// Debug signing is fine \342\200\224 installed only on emulators.\n' > "$REPO/notes.txt"
+RC="$(attempt_commit "$REPO")"
+if [[ "$RC" -ne 0 ]]; then pass "em dash -> commit blocked"; else fail "em dash should block"; fi
+( cd "$REPO" && "$LINT_SH" --check --only hygiene notes.txt >/dev/null 2>&1 )
+RC=$?
+if [[ "$RC" -ne 0 ]]; then pass "--check flags an em dash"; else fail "--check should flag an em dash"; fi
+# The vendored Gradle wrapper script is exempt.
+REPO="$(new_repo)"
+printf '#!/bin/sh\n#   \302\253case\302\273\n' > "$REPO/gradlew"
+chmod +x "$REPO/gradlew"
+RC="$(attempt_commit "$REPO")"
+if [[ "$RC" -eq 0 ]]; then pass "angle quotes in gradlew -> commit allowed (vendored)"; else fail "gradlew should be exempt, rc=$RC"; fi
 
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""

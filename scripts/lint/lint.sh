@@ -34,7 +34,7 @@
 # `ruff check` (no --fix), `ruff format --check`, `mdformat --check`, and
 # `ktlint` (no --format). The read-only hygiene checks (check-yaml, check-toml,
 # check-json, check-xml, check-merge-conflict, check-added-large-files,
-# check-shebang-scripts-are-executable) are unchanged. The two
+# check-shebang-scripts-are-executable, check_prose_chars.py) are unchanged. The two
 # whitespace fixers (trailing-whitespace-fixer, end-of-file-fixer) have no
 # check-only mode, so they run as usual and their non-zero exit on any change
 # fails the run, without altering the pass/fail contract. On a clean tree check
@@ -196,10 +196,17 @@ declare -a LARGE_FILES_ARGS=()
 #   whose SHA-256 scripts/test_verification_metadata.sh check (g) pins. TEXT
 #   would exclude the jar, but .bat files legitimately need CRLF, so there is no
 #   filter that makes it safe and useful at once.
+#
+# scripts/lint/check_prose_chars.py is first-party and read-only in both modes,
+# like check_md040.py below. It flags the em dashes, ellipses, and smart or
+# angle quotes .claude/rules/prose-style.md bans, in comments, build output, and
+# docs alike (issue #964). It is a hygiene check rather than a markdown one
+# because most of what it guards is not Markdown.
 if want hygiene; then
     if [[ ${#TEXT[@]} -gt 0 ]]; then
         run "$LINT_BIN_DIR/trailing-whitespace-fixer" "${TEXT[@]}"
         run "$LINT_BIN_DIR/end-of-file-fixer" "${TEXT[@]}"
+        run python3 "$SCRIPT_DIR/check_prose_chars.py" "${TEXT[@]}"
     fi
     run "$LINT_BIN_DIR/check-merge-conflict" "${FILES[@]}"
     run "$LINT_BIN_DIR/check-added-large-files" "${LARGE_FILES_ARGS[@]}" "${FILES[@]}"

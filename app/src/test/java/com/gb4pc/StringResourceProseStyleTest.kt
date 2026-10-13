@@ -25,6 +25,11 @@ import java.lang.reflect.Modifier
  * exactly what the app displays: the escape-decoded value of every string this module ships.
  * `android.nonTransitiveRClass=true` (see `gradle.properties`) keeps [R.string] to this module's
  * own resources, so a dependency's copy cannot fail this test.
+ *
+ * `scripts/lint/check_prose_chars.py` applies the same rule to the raw text of every tracked file,
+ * which reaches code comments and build output this test cannot. It bans the same characters; its
+ * unit tests check that the two lists agree. Only this test sees a banned character written as a
+ * `\u` escape in `strings.xml`, since only this test reads the decoded value.
  */
 @RunWith(RobolectricTestRunner::class)
 class StringResourceProseStyleTest {

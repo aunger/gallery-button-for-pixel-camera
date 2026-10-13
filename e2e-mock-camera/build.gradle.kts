@@ -27,7 +27,7 @@ android {
 
     buildTypes {
         debug {
-            // Debug signing is fine — installed only on test emulators.
+            // Debug signing is fine; it is installed only on test emulators.
         }
     }
 
@@ -37,4 +37,4 @@ android {
     }
 }
 
-// No external dependencies needed — Camera2 API is part of the Android framework.
+// No external dependencies needed; the Camera2 API is part of the Android framework.
