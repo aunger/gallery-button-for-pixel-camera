@@ -45,6 +45,9 @@ python3 scripts/ci_monitor/ci_monitor.py --once --pr <PR_NUMBER>
 `--once`, with `--pr`, `--sha` or `--branch`, reads the commit's check-runs once and exits, for a reader that wants them as they stand now rather than wait for CI to finish (issue #1023).
 It prints the summary block, one row per check name at its latest run (see "Same-named check-run collapsing"), then `snapshot <sha> <verdict>`, and exits 0.
 The verdict is the per-check scan of the checks that are not ignored: `in_progress`, `all_passed`, `Blocked by: ...`, `Infra by: ...`, or `no_checks`.
+A check that has already finished `Blocked` or `Infra` outranks one still queued or running, so `in_progress` means no counted check has failed yet, and a `Blocked`/`Infra` verdict can stand above summary rows that are still `in_progress` (issue #1229).
+Between the two, `Infra` outranks `Blocked`, as in the poll loop.
+The poll loop ranks `in_progress` first instead, because it waits for the remaining checks before it reports.
 Under `--pr` it consults no `mergeable_state` and has no `Merged`/`Closed` short-circuit, so it reads a merged PR's head too, and its `Blocked` says a check failed, not that the PR cannot merge.
 It fetches no step or test diagnostics, so the filter flags have no effect.
 When the SHA or the check-runs cannot be fetched, it prints `could not fetch SHA` or `could not fetch check-runs` and exits 1.
