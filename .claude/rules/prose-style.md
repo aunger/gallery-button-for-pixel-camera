@@ -26,6 +26,9 @@ Since this rule refers only to prose, characters chosen for their specific meani
 - Replace ellipses with triple periods.
 - Replace angled, directional, or smart quotes (single quote or double quote) with straight quote characters.
 
+`scripts/lint/check_prose_chars.py` enforces this over every tracked text file, from the pre-commit hook and from the Lint workflow's hygiene job.
+Where code genuinely needs one of these characters, spell it as an escape such as `\u2014`.
+
 ## Do not surround dashes or double-hyphens with spaces
 
 Omit the spaces--like this.
