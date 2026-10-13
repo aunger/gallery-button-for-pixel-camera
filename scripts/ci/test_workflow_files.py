@@ -12,10 +12,12 @@ here while letting a `.yaml` workflow escape every check that reads the workflow
 `load_workflow()` returns `or {}` for a file that parses to nothing, and no workflow here
 is empty, so dropping that arm would fail nothing here while handing its callers a None
 to call `.get()` on.
-`relative()` names a workflow for the failure messages its callers build, and nothing
-asserts on what it returns, so a body of `return path` would fail nothing here while
-spelling those messages as absolute paths of whatever directory the runner checked the
-repository out into.
+`relative()` names a workflow for the failure messages its callers build, and no such
+message is asserted on, so a body of `return path` would fail nothing here while spelling
+those messages as absolute paths of whatever directory the runner checked the repository
+out into.
+A caller that matches the names it returns against workflow paths written down would
+notice, but only for the workflows that caller names.
 Pinning those three decisions is what this file is for.
 
 Neither branch is reachable from the real tree, so the fixtures for those two are built
@@ -126,11 +128,12 @@ class LoadWorkflowTest(unittest.TestCase):
 
 
 class RelativeTest(unittest.TestCase):
-    """`relative()`, which no caller asserts on.
+    """`relative()`, pinned here rather than left to its callers.
 
-    Its callers call it for the name a failure message gives a workflow, and none of them
-    asserts on what comes back, so nothing else in the tree would notice a body of
-    `return path` (issue #1140).
+    Its callers call it for the name a failure message gives a workflow, and no such message
+    is asserted on, so outside this file a body of `return path` is noticed only by a caller
+    that matches the names against workflow paths written down, and only for the workflows
+    that caller names (issue #1140).
 
     `os.path.relpath` opens nothing, so the two roots written down below need not exist;
     the third test runs against the real tree, where the callers reach it.
