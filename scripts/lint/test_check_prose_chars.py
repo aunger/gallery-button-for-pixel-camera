@@ -4,6 +4,7 @@
 import contextlib
 import io
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -51,10 +52,12 @@ class TestFindViolations(unittest.TestCase):
         )
         with open(kotlin, encoding="utf-8") as f:
             source = f.read()
-        for ch in check_prose_chars.BANNED_CHARACTERS:
-            self.assertIn(
-                f"'\\u{ord(ch):04x}'", source, f"U+{ord(ch):04X} missing from the Kotlin guard"
-            )
+        # The keys of its bannedCharacters map, each a Kotlin char literal holding a unicode
+        # escape (backslash, "u", four hex digits). The pattern is split in two so no such
+        # escape appears in this file to be decoded by an editor.
+        key = re.compile(r"'\\" + r"u([0-9a-fA-F]{4})' to ")
+        kotlin_banned = {chr(int(h, 16)) for h in key.findall(source)}
+        self.assertEqual(kotlin_banned, set(check_prose_chars.BANNED_CHARACTERS))
 
     def test_other_non_ascii_text_is_not_flagged(self):
         # Box-drawing rules and accented letters are not what the rule bans.
