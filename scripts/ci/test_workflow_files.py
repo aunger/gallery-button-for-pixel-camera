@@ -3,8 +3,8 @@
 
 The module's ordinary path is already covered: the checks that read every workflow run it
 over the real tree on every CI run, and fail if it finds no workflow there.
-Three of its decisions were covered by nothing: two branches (issue #1132), and
-`relative()` entire (issue #1140).
+Three of its decisions those checks leave uncovered, or cover only in part: two branches
+(issue #1132), and `relative()` (issue #1140).
 
 `WORKFLOW_GLOBS` covers `.github/workflows/*.yaml` as well as `*.yml`, and this
 repository has no `.yaml` workflow, so dropping that half of the tuple would fail nothing
@@ -12,12 +12,12 @@ here while letting a `.yaml` workflow escape every check that reads the workflow
 `load_workflow()` returns `or {}` for a file that parses to nothing, and no workflow here
 is empty, so dropping that arm would fail nothing here while handing its callers a None
 to call `.get()` on.
-`relative()` names a workflow for the failure messages its callers build, and no such
-message is asserted on, so a body of `return path` would fail nothing here while spelling
-those messages as absolute paths of whatever directory the runner checked the repository
-out into.
-A caller that matches the names it returns against workflow paths written down would
-notice, but only for the workflows that caller names.
+`relative()` gives the name its callers' messages and labels use for a file, so a body of
+`return path` would spell those names as absolute paths of whatever directory the runner
+checked the repository out into.
+Outside this file, that is caught only where a caller matches those names against
+workflow paths written down, as one caller in this directory does, and only for the
+workflows that caller names.
 Pinning those three decisions is what this file is for.
 
 Neither branch is reachable from the real tree, so the fixtures for those two are built
@@ -128,12 +128,12 @@ class LoadWorkflowTest(unittest.TestCase):
 
 
 class RelativeTest(unittest.TestCase):
-    """`relative()`, pinned here rather than left to its callers.
+    """`relative()`, pinned here rather than left to its callers (issue #1140).
 
-    Its callers call it for the name a failure message gives a workflow, and no such message
-    is asserted on, so outside this file a body of `return path` is noticed only by a caller
-    that matches the names against workflow paths written down, and only for the workflows
-    that caller names (issue #1140).
+    Its callers call it for the name their messages and labels give a file.
+    One caller in this directory matches those names against workflow paths written down,
+    and so catches a body of `return path`, but only for the workflows it names; no other
+    caller would notice one.
 
     `os.path.relpath` opens nothing, so the two roots written down below need not exist;
     the third test runs against the real tree, where the callers reach it.
