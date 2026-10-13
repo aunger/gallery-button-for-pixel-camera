@@ -84,14 +84,32 @@ fi
 # Generate into a throwaway Gradle home so the file records the full graph.
 GRADLE_USER_HOME="$(mktemp -d)"
 export GRADLE_USER_HOME
-# Stop the run's Gradle daemon before deleting its home. The daemon outlives the
-# client, and on one run (#1236), right after a successful generation, `rm -rf`
-# failed with "Directory not empty" under caches/<version>/transforms, which
-# failed the trap and with it the script. `|| true` because the stop can fail
-# too: if the wrapper never got its distribution into the fresh home, the stop
-# retries that download, silently, and may fail again. A failed stop must not
-# replace the script's own exit status or skip the `rm`.
-trap '"$GRADLE_BIN" --stop >/dev/null 2>&1 || true; rm -rf "$GRADLE_USER_HOME"' EXIT
+
+# Delete the throwaway home on exit, without ever changing the exit status.
+#
+# Under `set -e`, a failing command inside an EXIT trap exits the trap with
+# status 1, replacing the script's own status. So a cleanup failure after a
+# successful generation would discard that good run (#1290).
+#
+# Stop the run's Gradle daemon first. The daemon outlives the client and keeps
+# writing under the home: `rm -rf` has failed with "Directory not empty" under
+# caches/<version>/transforms (#1236) and, even after a stop, under
+# daemon/<version> (#1290), probably because `--stop` can return before the
+# daemon has exited. The stop's `|| true` is there because the stop can fail too: if the
+# wrapper never got its distribution into the fresh home, the stop retries that
+# download, silently, and may fail again.
+#
+# A failed `rm` is retried once after a short wait for the daemon to exit, then
+# reported and left behind. It is a temp directory, so leaving it costs disk
+# space, never correctness.
+cleanup_gradle_user_home() {
+    "$GRADLE_BIN" --stop >/dev/null 2>&1 || true
+    rm -rf "$GRADLE_USER_HOME" 2>/dev/null && return
+    sleep 2
+    rm -rf "$GRADLE_USER_HOME" ||
+        echo "warning: could not delete the temporary GRADLE_USER_HOME $GRADLE_USER_HOME; delete it by hand." >&2
+}
+trap cleanup_gradle_user_home EXIT
 
 echo "==> Regenerating gradle/verification-metadata.xml (GRADLE_BIN=$GRADLE_BIN, GRADLE_USER_HOME=$GRADLE_USER_HOME)"
 "$GRADLE_BIN" --write-verification-metadata sha256 \
