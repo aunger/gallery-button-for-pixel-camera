@@ -1,22 +1,21 @@
 #!/usr/bin/env python3
 """Unit tests for workflow_files.py.
 
-The module's ordinary path is already covered: `test_privileged_workflow_checkouts.py`
-and `test_setup_android_packages.py` both run it over the real tree on every CI run, and
-each asserts that the path list comes back non-empty.
+The module's ordinary path is already covered: the checks that read every workflow run it
+over the real tree on every CI run, and fail if it finds no workflow there.
 Three of its decisions were covered by nothing: two branches (issue #1132), and
 `relative()` entire (issue #1140).
 
 `WORKFLOW_GLOBS` covers `.github/workflows/*.yaml` as well as `*.yml`, and this
 repository has no `.yaml` workflow, so dropping that half of the tuple would fail nothing
-here while letting a `.yaml` workflow escape both guards.
+here while letting a `.yaml` workflow escape every check that reads the workflows.
 `load_workflow()` returns `or {}` for a file that parses to nothing, and no workflow here
-is empty, so dropping that arm would fail nothing here while handing both guards a None
+is empty, so dropping that arm would fail nothing here while handing its callers a None
 to call `.get()` on.
-`relative()` names a workflow for the failure messages its callers build, the two guards
-above and `scripts/test_dependabot_config.sh`, and nothing asserts on what it returns, so a
-body of `return path` would fail nothing here while spelling those messages as absolute
-paths of whatever directory the runner checked the repository out into.
+`relative()` names a workflow for the failure messages its callers build, and nothing
+asserts on what it returns, so a body of `return path` would fail nothing here while
+spelling those messages as absolute paths of whatever directory the runner checked the
+repository out into.
 Pinning those three decisions is what this file is for.
 
 Neither branch is reachable from the real tree, so the fixtures for those two are built
@@ -24,8 +23,8 @@ under a temporary directory instead.
 `workflow_paths()` reads `REPO_ROOT`, which those tests point at that directory;
 `load_workflow()` opens the path it is handed, so it needs no such redirection.
 
-`relative()` is the one decision here the real tree does reach, since both guards call it on
-every workflow they open, so it is pinned over those paths as well, unpatched.
+`relative()` is the one decision here the real tree does reach, since its callers call it
+on the real tree's workflow paths, so it is pinned over those paths as well, unpatched.
 Its other two cases point `REPO_ROOT` at roots that are written down rather than created:
 `relative()` opens nothing, so nothing under them has to exist.
 
@@ -36,7 +35,7 @@ Without the companions, a module that had stopped doing the general thing--a glo
 that had lost `.yml`, a `load_workflow()` that returned `{}` for everything, a
 `relative()` that answered for the fixture alone--would still pass on the arms.
 
-Imported by bare module name, as the two guards beside it are, which resolves because
+Imported by bare module name, as the guards beside it import it, which resolves because
 `.github/workflows/build.yml` discovers tests per directory rather than recursively,
 putting `scripts/ci` on `sys.path`.
 """
@@ -129,9 +128,9 @@ class LoadWorkflowTest(unittest.TestCase):
 class RelativeTest(unittest.TestCase):
     """`relative()`, which no caller asserts on.
 
-    Both guards beside this file and `scripts/test_dependabot_config.sh` call it for the
-    name a failure message gives a workflow, and none of them asserts on what comes back,
-    so nothing else in the tree would notice a body of `return path` (issue #1140).
+    Its callers call it for the name a failure message gives a workflow, and none of them
+    asserts on what comes back, so nothing else in the tree would notice a body of
+    `return path` (issue #1140).
 
     `os.path.relpath` opens nothing, so the two roots written down below need not exist;
     the third test runs against the real tree, where the callers reach it.
