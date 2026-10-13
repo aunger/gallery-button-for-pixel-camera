@@ -45,8 +45,9 @@
 #   * build.yml unit step: assembleDebug, assembleDebugAndroidTest, the two
 #     e2e-mock-* assembleDebug tasks, testDebugUnitTest.
 #   * build.yml dev-build job + release.yml: assembleRelease. Neither runs on a
-#     pull request (dev-build runs on a push to main, release.yml on a v* tag),
-#     so no PR-time CI run resolves the release configuration.
+#     pull request (dev-build runs on a push to main; release.yml on a v* tag or
+#     a manual dispatch, which builds the dispatched ref but also publishes a
+#     GitHub release), so no PR-time CI run resolves the release configuration.
 #   * codeql.yml autobuild: assembleDebug (a subset of the above).
 #   * build.yml android-lint job: :app:lintDebug. Listed below as
 #     :app:lintReportDebug, which does all of its resolving (the Lint classpath and
