@@ -42,10 +42,10 @@ jobs:
           fi
 
   # Run the shell script unit tests (scripts/**/test_*.sh) in their own job (issue #618).
-  # They take about 30 seconds and need only a checkout, bash, and the lint tools,
-  # with no dependency on the JDK/Android SDK setup or the Python steps they used to
-  # sit next to in build-and-test. Running them here lets them execute concurrently
-  # with build-and-test instead of adding to its sequential critical path. Each step
+  # They need a checkout, bash, the pinned Python script dependencies, and the lint
+  # tools, but not the JDK/Android SDK setup of build-and-test, where they used to
+  # run. Running them here lets them execute concurrently with
+  # build-and-test instead of adding to its sequential critical path. Each step
   # is gated on check-diff's needs_full_build so a docs-only change skips them, the
   # same per-step gating build-and-test uses; the job itself still runs (and reports
   # a green result) so it stays consistent with build-and-test on docs-only changes.
