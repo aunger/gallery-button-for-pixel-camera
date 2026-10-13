@@ -85,7 +85,7 @@ The Orchestrator is not a Reviewer or a Programmer.
 - Relay CI Monitor output lines to the user, verbatim
 - Send the user the fixed Orchestrator-to-user lines from "Decision-signal templates" below, quoted exactly; those are the Orchestrator's own words rather than a relay
 - Send the user a composed own-voice status message, where this document instructs a message and no template line covers it, saying only what that instruction asks for and drawing only on what the Orchestrator is permitted to know
-- Provide reminders about which process document(s) to read
+- Provide reminders to misbehaving sub-agents about which process document(s) to read
 
 ## What Authors and Reviewers may and may not do
 
