@@ -133,7 +133,8 @@ Covers:
        main() reports a failing check that only page 2 holds
   (bo) #1023 --once: one collapsed read of a commit's check-runs, ending in a
        `snapshot <sha> <verdict>` line, with no polling, no PID line and no
-       Merged/Closed short-circuit; fetch failures exit 1; --run-id is refused
+       Merged/Closed short-circuit; fetch failures exit 1; --run-id is refused;
+       #1229 a counted check that already failed outranks one still running
 
 No network calls required; no GITHUB_TOKEN needed.
 Run this file directly to execute the suite: exits 0 on success, non-zero on failure.
@@ -6687,6 +6688,52 @@ def main() -> int:
             {"total_count": 1, "check_runs": [{"name": "build-and-test", "status": "queued"}]},
             "in_progress",
             "a queued check reads in_progress, not a wait",
+        ),
+        # #1229: a known failure outranks a check still running.
+        (
+            {
+                "total_count": 2,
+                "check_runs": [
+                    {"name": "build-and-test", "status": "queued"},
+                    {"name": "lint", "status": "completed", "conclusion": "failure"},
+                ],
+            },
+            "Blocked by: lint",
+            "a failed check outranks a queued one",
+        ),
+        (
+            {
+                "total_count": 2,
+                "check_runs": [
+                    {"name": "build-and-test", "status": "in_progress"},
+                    {"name": "lint", "status": "completed", "conclusion": "timed_out"},
+                ],
+            },
+            "Infra by: lint",
+            "an infrastructure conclusion outranks a running check",
+        ),
+        (
+            {
+                "total_count": 3,
+                "check_runs": [
+                    {"name": "build-and-test", "status": "in_progress"},
+                    {"name": "lint", "status": "completed", "conclusion": "failure"},
+                    {"name": "semgrep", "status": "completed", "conclusion": "cancelled"},
+                ],
+            },
+            "Infra by: lint, semgrep",
+            "with a check running, Infra still outranks Blocked",
+        ),
+        (
+            {
+                "total_count": 2,
+                "check_runs": [
+                    {"name": "build-and-test", "status": "queued"},
+                    {"name": GATE_BM, "status": "completed", "conclusion": "failure"},
+                ],
+            },
+            "in_progress",
+            "an ignored failed check does not outrank a queued one",
         ),
         ({"total_count": 0, "check_runs": []}, "no_checks", "no check-runs reads no_checks"),
     ):

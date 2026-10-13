@@ -1001,7 +1001,10 @@ def run_once(mode, args, tag, token, api, ignored_check_regex):
     latest run, from every page of the listing; the last line is
     `snapshot <sha> <verdict>`, where the verdict is the raw per-check scan of
     the checks that are not ignored: in_progress, all_passed, Blocked or Infra
-    (with the shared ` by: ` attribution), or no_checks. No mergeable_state is
+    (with the shared ` by: ` attribution), or no_checks. Unlike the poll loop,
+    a completed Blocked or Infra check outranks one still running, so the
+    verdict is in_progress only while no counted check has failed (issue
+    #1229). No mergeable_state is
     consulted and no step or test diagnostics are fetched.
 
     Returns 0, or 1 when the SHA or the check-runs could not be fetched.
@@ -1013,7 +1016,16 @@ def run_once(mode, args, tag, token, api, ignored_check_regex):
         sys.stdout.flush()
         return 1
     rows = parse_check_summary(check_json, ignored_check_regex)
-    verdict = parse_check_result(without_ignored_checks(check_json, ignored_check_regex))
+    counted = without_ignored_checks(check_json, ignored_check_regex)
+    verdict = parse_check_result(counted)
+    if verdict == "in_progress":
+        # The poll loop ranks in_progress first because it waits for the rest;
+        # a snapshot does not wait, so a check that has already failed
+        # outranks the ones still running (issue #1229).
+        completed = [r for r in counted["check_runs"] if r["status"] == "completed"]
+        settled = parse_check_result({"check_runs": completed, "total_count": len(completed)})
+        if settled in ("Blocked", "Infra"):
+            verdict = settled
     if verdict == "Clear":  # parse_check_result's word for total_count == 0
         verdict = "no_checks"
     elif verdict in ("Blocked", "Infra"):
