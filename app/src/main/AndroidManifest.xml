@@ -43,7 +43,7 @@
     <!-- Runtime permission (API 33+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- Package visibility (API 30+) — not a runtime permission -->
+    <!-- Package visibility (API 30+), not a runtime permission -->
     <queries>
         <package android:name="com.google.android.GoogleCamera" />
         <intent>

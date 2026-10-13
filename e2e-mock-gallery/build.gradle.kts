@@ -26,7 +26,7 @@ android {
 
     buildTypes {
         debug {
-            // Debug signing is fine — installed only on test emulators.
+            // Debug signing is fine; it is installed only on test emulators.
         }
     }
 

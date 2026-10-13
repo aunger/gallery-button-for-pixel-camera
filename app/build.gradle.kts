@@ -16,7 +16,7 @@ plugins {
 // To release: run scripts/tag-release.sh <version> (e.g. 1.2.3).
 // CI extracts the version from the tag and injects it via -PversionName=X.Y.Z.
 // Dev builds (no property) show "dev". versionCode uses yyyyMMdd date locally or
-// github.run_number (via BUILD_NUMBER env var) in CI — monotonically increasing, no collisions.
+// github.run_number (via BUILD_NUMBER env var) in CI (monotonically increasing, no collisions).
 // BUILD_NUMBER must be a valid integer; a malformed value fails the build loudly.
 val envBuildNumber: String? = System.getenv("BUILD_NUMBER")
 val buildNumber: Int =
@@ -77,7 +77,7 @@ android {
 
     // M6: Conditionally configure release signing from environment variables.
     // CI sets KEYSTORE_PATH/KEYSTORE_PASSWORD/KEY_ALIAS/KEY_PASSWORD to sign with a real keystore.
-    // Locally (no env vars) the release APK will be unsigned — never uses the debug keystore.
+    // Locally (no env vars) the release APK will be unsigned; it never uses the debug keystore.
     val keystorePath = System.getenv("KEYSTORE_PATH")
     if (keystorePath != null) {
         signingConfigs {
@@ -373,7 +373,7 @@ tasks.register("connectedE2EAndroidTest") {
         // Grant permissions now that the app UID exists on the device.
         e2eExecOps.exec { commandLine(e2eAdb.get(), "shell", "appops", "set", "com.gb4pc", "SYSTEM_ALERT_WINDOW", "allow") }
         // GET_USAGE_STATS (= PACKAGE_USAGE_STATS on API 29+) lets ForegroundDetector see
-        // which app is in the foreground — without this the overlay never appears.
+        // which app is in the foreground; without this the overlay never appears.
         e2eExecOps.exec { commandLine(e2eAdb.get(), "shell", "appops", "set", "com.gb4pc", "GET_USAGE_STATS", "allow") }
         // POST_NOTIFICATIONS (API 33+ runtime permission, declared in the main manifest) lets
         // OverlayService's postPermissionNotification() actually post anything. Without this
@@ -728,18 +728,18 @@ tasks.register("connectedE2EAndroidTest") {
         }
         // Crash guard: these strings appear in -r output on hard abort/crash.
         if (output.contains("Process crashed") || output.contains("INSTRUMENTATION_ABORTED")) {
-            throw GradleException("E2E instrumentation process crashed — check device logs")
+            throw GradleException("E2E instrumentation process crashed; check device logs")
         }
         // Empty-results guard: if no test cases were parsed the runner never started
-        // (missing APK, ADB disconnect, wrong runner class, etc.) — catch it before
+        // (missing APK, ADB disconnect, wrong runner class, etc.), so catch it before
         // failCount produces a false-green 0/0 result.
         if (cases.isEmpty()) {
-            throw GradleException("E2E: no test results parsed — runner or device failure (check logcat)")
+            throw GradleException("E2E: no test results parsed; runner or device failure (check logcat)")
         }
         // Failure guard: use the parsed result rather than the human-readable summary
         // (which may be absent in -r mode).
         if (failCount > 0) {
-            throw GradleException("E2E tests FAILED ($failCount failure(s)) — see instrument output above")
+            throw GradleException("E2E tests FAILED ($failCount failure(s)); see instrument output above")
         }
     }
 }

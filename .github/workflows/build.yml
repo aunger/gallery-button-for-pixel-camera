@@ -180,7 +180,7 @@ jobs:
   # reactivecircus/android-emulator-runner@v2 because the runner action
   # unconditionally runs `adb shell input keyevent 82` immediately after
   # sys.boot_completed=1, before system services accept binder connections on
-  # the slow API-35 emulator — causing exit code 224 (Broken Pipe) before our
+  # the slow API-35 emulator, causing exit code 224 (Broken Pipe) before our
   # script ever starts. The explicit steps below poll for true service readiness.
   build-and-test:
     needs: [check-diff]
@@ -372,7 +372,7 @@ jobs:
           fi
           echo "=== $(date -u '+%Y-%m-%d %H:%M:%S UTC') === Emulator process alive."
 
-      # Poll for true service readiness — not just sys.boot_completed=1.
+      # Poll for true service readiness, not just sys.boot_completed=1.
       # sys.boot_completed is set while binder threads are still saturated;
       # we wait until `settings` actually responds before issuing any commands.
       - name: Wait for emulator service readiness
@@ -465,7 +465,7 @@ jobs:
           "$ADB" shell settings put global transition_animation_scale 0
           "$ADB" shell settings put global animator_duration_scale 0
 
-      - name: CI pre-flight — MockCameraActivity smoke check
+      - name: CI pre-flight (MockCameraActivity smoke check)
         if: needs.check-diff.outputs.needs_full_build == 'true'
         id: preflight
         run: |
