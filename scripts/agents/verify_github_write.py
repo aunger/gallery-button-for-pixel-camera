@@ -522,9 +522,9 @@ def diff_regions(sent: str, stored: str) -> tuple[list, int]:
         return [Region(offset, sent_middle, stored_middle)], 0
 
     # autojunk=False keeps one region per alteration in prose.  With difflib's
-    # default, once the stored middle reaches 200 characters, any character
-    # making up more than 1% of it is never used to anchor a match, and in prose
-    # that is nearly every letter.  A stretch between two alterations holding no
+    # default, once the stored middle's length n reaches 200, any character
+    # occurring more than n // 100 + 1 times in it is never used to anchor a
+    # match, and in prose that is nearly every letter.  A stretch between two alterations holding no
     # rarer character then cannot be matched, and comes back merged with the
     # alterations on either side as one region, which no longer shows the
     # reader which mentions were dotted.  A few repeated mentions in a

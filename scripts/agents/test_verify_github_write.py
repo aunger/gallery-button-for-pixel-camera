@@ -687,8 +687,9 @@ class TestDiff(unittest.TestCase):
     # A paragraph that mentions the same two accounts repeatedly.  Its differing
     # middle is past the 200 characters at which difflib's autojunk engages, and
     # the repeated names leave some stretches between mentions with no rare
-    # character to anchor a match on.  Distinct names, such as numbered users,
-    # anchor every stretch and do not tell the two settings apart.
+    # character to anchor a match on.  Rarity is measured against the whole
+    # middle, so distinct names are no safeguard either: numbered users share
+    # digits, and 30 of them already tell the two settings apart.
     REPEATED_MENTIONS = (
         "@dependabot rebase was posted twice before the conflict cleared. "
         "Once it had, @dependabot recreate replaced the branch, and @copilot left a review. "
