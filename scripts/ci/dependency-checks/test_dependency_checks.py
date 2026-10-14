@@ -17,7 +17,9 @@ import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import dependency_checks as dc  # noqa: E402
+from workflow_files import REPO_ROOT, load_workflow  # noqa: E402
 
 SHA_A = "a" * 40
 SHA_B = "b" * 40
@@ -513,6 +515,25 @@ class CommandLineTest(unittest.TestCase):
     def test_usage(self):
         self.assertEqual(self.run_main()[0], 2)
         self.assertEqual(self.run_main("analyze", "too", "few")[0], 2)
+
+
+class WorkflowTest(unittest.TestCase):
+    def test_each_check_is_a_job_that_prints_its_own_report(self):
+        # A check's job id is its name in the ruleset, while its comment's
+        # marker and heading and its report file come from CHECKS, so the two
+        # have to name each check alike.
+        workflow = load_workflow(
+            os.path.join(REPO_ROOT, ".github", "workflows", "dependency-version-checks.yml")
+        )
+        jobs = workflow["jobs"]
+        self.assertEqual([job for job in jobs if job != "resolve"], list(dc.CHECKS))
+        for check in dc.CHECKS:
+            reports = [step.get("env", {}).get("REPORT", "") for step in jobs[check]["steps"]]
+            with self.subTest(check=check):
+                self.assertTrue(
+                    any(r.endswith(f"/dependency-version-checks/{check}.md") for r in reports),
+                    reports,
+                )
 
 
 if __name__ == "__main__":
