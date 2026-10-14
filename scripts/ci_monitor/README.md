@@ -144,8 +144,7 @@ This repo's committed `ci_monitor.config.json` sets:
 - `test_marker_regex`: `##GB4PC_TEST##|##TEST##` (back-compat dual marker, see below).
 - `ignored_check_regex`: `^Administrative merge holds \(not failure\)$` (the merge gate; the parentheses are escaped because the value is a regex).
 
-It sets neither `interesting_step_regex` nor `deferred_verdict_step_regex` (issue #1298), so a `step` line reports only a failed step.
-When that changed (issue #1298), no reader in this repository acted on a named step's success line, and each one reached a streaming reader as an event of its own.
+It sets neither `interesting_step_regex` nor `deferred_verdict_step_regex`, so a `step` line reports only a failed step.
 
 **Bringing the named-step lines back.**
 Pass `--config` a copy of the committed file with these two keys added:
