@@ -160,9 +160,7 @@
 # in issue #1196) cannot be moved; the entry's name-only `ignore` rules must name
 # exactly those packages, and none is needed while no lock pins one twice.
 # The same pin cannot move a package past a cap in semgrep's own requirements
-# (issue #1195), and pydantic-core's newer releases resolve only by moving
-# pydantic to a pre-release (PR #1203), so those packages are ignored by version
-# instead: each rule names a package one lock pins (`ignore` applies to every
+# (issue #1195), so those packages are ignored by version instead: each rule names a package one lock pins (`ignore` applies to every
 # lock in the entry, so a package two locks pin is refused) and a closed range
 # of versions, so a forgotten rule expires once the package publishes a version
 # above it. A range must sit above every version its lock pins, since it exists
@@ -1077,9 +1075,8 @@ if check(
         # (issue #1195). The updater's per-package resolution cannot move a
         # package past a cap in semgrep's own requirements, and the range hides
         # exactly the releases that fail so the run log does not record an update
-        # error for each; pydantic-core's range hides the releases only a pydantic
-        # pre-release asks for (PR #1203). Closed, so a rule nobody revisits stops
-        # hiding anything once the package publishes a version above it.
+        # error for each. Closed, so a rule nobody revisits stops hiding anything
+        # once the package publishes a version above it.
         ranged = [
             rule
             for rule in ignore
