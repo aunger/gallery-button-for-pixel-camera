@@ -252,17 +252,39 @@ class PostTest(unittest.TestCase):
         self.assertEqual(
             writes,
             [
-                ("PATCH", f"repos/{REPO}/issues/comments/11"),
                 ("DELETE", f"repos/{REPO}/issues/7/labels/dep%3A%20compose%20misaligned"),
+                ("PATCH", f"repos/{REPO}/issues/comments/11"),
             ],
         )
 
-    def test_failed_comment_write_leaves_labels_alone_and_fails(self):
+    def test_failed_comment_write_adds_no_labels_and_fails(self):
         github = FakeGitHub(fail={("POST", f"repos/{REPO}/issues/7/comments")})
         code, log = self.run_post(github, findings_1145())
         self.assertEqual(code, 1)
         self.assertFalse([p for m, p, _ in github.writes() if "/labels" in p])
-        self.assertIn("Leaving its labels unchanged", log)
+        self.assertIn("Adding no labels", log)
+
+    def test_a_label_whose_removal_failed_stays_recorded_until_removed(self):
+        github = FakeGitHub()
+        self.run_post(github, findings_1145())
+        self.assertIn("dep: pin drift", github.label_names())
+        cleared = findings_1145()
+        cleared["checks"]["dep-pin-drift"]["drifts"] = []
+
+        github.fail = {("DELETE", f"repos/{REPO}/issues/7/labels/dep%3A%20pin%20drift")}
+        code, _ = self.run_post(github, cleared)
+        self.assertEqual(code, 1)
+        self.assertIn("dep: pin drift", github.label_names())
+        drift_comment = post.find_check_comment(github.comments, "dep-pin-drift")
+        self.assertEqual(dc.recorded_labels(drift_comment["body"]), ["dep: pin drift"])
+        self.assertIn(dc._NONE_FOUND["dep-pin-drift"], drift_comment["body"])
+
+        github.fail = set()
+        code, _ = self.run_post(github, cleared)
+        self.assertEqual(code, 0)
+        self.assertNotIn("dep: pin drift", github.label_names())
+        drift_comment = post.find_check_comment(github.comments, "dep-pin-drift")
+        self.assertEqual(dc.recorded_labels(drift_comment["body"]), [])
 
     def test_failed_label_write_fails_after_trying_every_check(self):
         github = FakeGitHub(fail={("POST", f"repos/{REPO}/issues/7/labels")})

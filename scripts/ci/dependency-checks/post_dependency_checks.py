@@ -25,13 +25,16 @@ Per check:
   those it owned before and still calls for (`owned_labels`). A label that was
   already on the pull request when the check first called for it is not
   recorded, so a label someone else applied, such as one a person added by
-  hand, is never removed. The check
-  removes a label only when the previous comment recorded owning it and the
-  new findings no longer call for it.
+  hand, is never removed.
+- The check removes a label only when the previous comment recorded owning it
+  and the new findings no longer call for it.
 - Labels change through the delta endpoints, never a replace-all (#710).
-- The comment is written before the labels, and the labels are left alone
-  when that write fails, so no label is ever applied without a record that
-  lets a later run remove it.
+- The record is never allowed to lose a label the check still has on the pull
+  request, since a later run can remove only what the record names.
+  Removals therefore run before the comment is written, and a label whose
+  removal fails stays in the record for the next run to retry. Additions run
+  after the comment, and not at all when it could not be written, so no label
+  is added without a record.
 
 Environment:
     GITHUB_TOKEN        token with issues: write and pull-requests: write
@@ -125,7 +128,16 @@ def report_check(
     current = {label.get("name") for label in pr.get("labels") or []}
     previous = set(dc.recorded_labels(existing.get("body") or "")) if existing else set()
     previous &= set(dc.CHECK_LABELS[check])
-    body = dc.render_comment(check, findings, owned_labels(wanted, previous, current))
+    ok = True
+
+    still_held = []
+    for label in sorted((previous & current) - set(wanted)):
+        if not emxl.remove_labels(number, [label], repo, token, reason="cleared"):
+            still_held.append(label)
+            ok = False
+
+    owned = owned_labels(wanted, previous, current) + still_held
+    body = dc.render_comment(check, findings, owned)
     try:
         if existing is None:
             emxl.gh_api(
@@ -148,12 +160,10 @@ def report_check(
     except _API_ERRORS as exc:
         print(
             f"::error::Could not write the {check} comment on #{number}: {exc}. "
-            "Leaving its labels unchanged, since the comment is their record.",
+            "Adding no labels, since the comment is their record.",
             file=sys.stderr,
         )
         return False
-
-    ok = True
 
     to_add = [label for label in wanted if label not in current]
     if to_add:
@@ -168,10 +178,6 @@ def report_check(
         except _API_ERRORS as exc:
             print(f"::error::Could not add {to_add} to #{number}: {exc}", file=sys.stderr)
             ok = False
-
-    to_remove = sorted((previous & current) - set(wanted))
-    if to_remove and not emxl.remove_labels(number, to_remove, repo, token, reason="cleared"):
-        ok = False
     return ok
 
 
