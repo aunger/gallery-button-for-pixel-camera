@@ -27,8 +27,8 @@
 #   (p) a script with a shebang but no executable bit blocks the commit, and the
 #       same script marked executable does not; an extensionless script is
 #       covered, while a .py is deferred (#887)
-#   (q) an em dash blocks the commit and fails --check, while the
-#       vendored gradlew is exempt (#964)
+#   (q) an em dash blocks the commit and fails --check, while the same text with
+#       a comma instead commits and the vendored gradlew is exempt (#964)
 #
 # The lint tools are resolved from $LINT_BIN_DIR (default $HOME/.local/bin),
 # exactly as scripts/lint/lint.sh resolves them; .claude/hooks/session-start.sh
@@ -353,6 +353,13 @@ if [[ "$RC" -ne 0 ]]; then pass "em dash -> commit blocked"; else fail "em dash 
 ( cd "$REPO" && "$LINT_SH" --check --only hygiene notes.txt >/dev/null 2>&1 )
 RC=$?
 if [[ "$RC" -ne 0 ]]; then pass "--check flags an em dash"; else fail "--check should flag an em dash"; fi
+# The same notes.txt with the em dash replaced by a comma is not a violation.
+# Without this control, a setup fault that blocked every commit in a scratch repo
+# would still report the em dash as blocked.
+REPO="$(new_repo)"
+printf '// Debug signing is fine, installed only on emulators.\n' > "$REPO/notes.txt"
+RC="$(attempt_commit "$REPO")"
+if [[ "$RC" -eq 0 ]]; then pass "same text without the em dash -> commit allowed"; else fail "em-dash-free notes.txt should commit, rc=$RC"; fi
 # The vendored Gradle wrapper script is exempt.
 REPO="$(new_repo)"
 printf '#!/bin/sh\n#   \302\253case\302\273\n' > "$REPO/gradlew"
