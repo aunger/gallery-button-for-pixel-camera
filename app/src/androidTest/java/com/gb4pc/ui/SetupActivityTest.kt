@@ -36,12 +36,12 @@ class SetupActivityTest {
 
     @Test
     fun setupScreen_showsSetupTitle() {
-        composeRule.onNodeWithText("GB4PC Setup").assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.setup_title)).assertIsDisplayed()
     }
 
     @Test
     fun setupScreen_showsSkipButton() {
-        composeRule.onNodeWithText("Skip").assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.setup_skip)).assertIsDisplayed()
     }
 
     @Test
@@ -76,9 +76,10 @@ class SetupActivityTest {
         // Clicking Skip once per step covers all steps and marks setup complete.
         // If the activity finishes before every click (some permissions already granted)
         // the loop exits early; that is also a valid passing state.
+        val skip = context.getString(R.string.setup_skip)
         repeat(getSetupSteps().size) {
             try {
-                composeRule.onNodeWithText("Skip").performClick()
+                composeRule.onNodeWithText(skip).performClick()
                 composeRule.waitForIdle()
             } catch (_: AssertionError) {
                 // Activity finished; verify setup is actually marked complete
