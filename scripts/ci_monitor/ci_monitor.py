@@ -108,7 +108,8 @@ DEFAULT_TEST_MARKER_REGEX = r"##TEST##"
 # rule repo-agnostic (mirroring `interesting_step_regex`); the project-specific
 # names are supplied via config. Kept distinct from `interesting_step_regex`
 # because not every named-on-success step is deferred-verdict (e.g. this repo's
-# honest `Build and run unit tests` step is surfaced but must not be annotated).
+# honest `Build and run unit tests` step must not be annotated when a config
+# names it).
 DEFAULT_DEFERRED_VERDICT_STEP_REGEX = r"(?!)"
 
 # Match (re.search) against a check-run's `name` to leave it out of the verdict,
