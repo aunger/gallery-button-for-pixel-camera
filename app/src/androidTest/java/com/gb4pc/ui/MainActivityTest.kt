@@ -94,7 +94,8 @@ class MainSettingsScreenTest {
 
     @Test
     fun mainScreen_showsAppName() {
-        composeRule.onNodeWithText("GB4PC").assertIsDisplayed()
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        composeRule.onNodeWithText(context.getString(R.string.app_name)).assertIsDisplayed()
     }
 
     @Test
@@ -106,7 +107,8 @@ class MainSettingsScreenTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val cameraInstalled = PermissionHelper.isPixelCameraInstalled(context)
 
-        val cardNode = composeRule.onNodeWithText("Pixel Camera is not installed", substring = true)
+        val cardNode =
+            composeRule.onNodeWithText(context.getString(R.string.settings_pixel_camera_missing), substring = true)
         if (cameraInstalled) {
             cardNode.assertDoesNotExist()
         } else {

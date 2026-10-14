@@ -9,12 +9,11 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import com.gb4pc.R
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-
-private const val FILTERED_HINT = "Showing photo-related apps"
-private const val SHOW_ALL = "Show all apps"
 
 /**
  * Instrumented tests for PickerActivity.
@@ -26,14 +25,18 @@ class PickerActivityTest {
     @get:Rule
     val composeRule = createAndroidComposeRule<PickerActivity>()
 
+    private val context = InstrumentationRegistry.getInstrumentation().targetContext
+    private val filteredHint = context.getString(R.string.picker_filtered_hint)
+    private val showAll = context.getString(R.string.picker_show_all)
+
     @Test
     fun pickerScreen_showsTitle() {
-        composeRule.onNodeWithText("Choose Gallery App").assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.picker_title)).assertIsDisplayed()
     }
 
     @Test
     fun pickerScreen_showsSearchBar() {
-        composeRule.onNodeWithText("Search apps...").assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.picker_search_hint)).assertIsDisplayed()
     }
 
     @Test
@@ -46,12 +49,12 @@ class PickerActivityTest {
         // makes the switch itself when it finds no photo-related app, and then shows no
         // button; the hint is the list's first item, so it is composed whenever the filter
         // is still on, whatever the button is doing.
-        if (composeRule.onAllNodes(hasText(FILTERED_HINT)).fetchSemanticsNodes().isNotEmpty()) {
-            appList.performScrollToNode(hasText(SHOW_ALL))
-            composeRule.onNodeWithText(SHOW_ALL).performClick()
+        if (composeRule.onAllNodes(hasText(filteredHint)).fetchSemanticsNodes().isNotEmpty()) {
+            appList.performScrollToNode(hasText(showAll))
+            composeRule.onNodeWithText(showAll).performClick()
         }
         // Fail here, rather than as a timeout further down, if the picker is still filtered.
-        composeRule.onNodeWithText(FILTERED_HINT).assertDoesNotExist()
+        composeRule.onNodeWithText(filteredHint).assertDoesNotExist()
 
         // Wait for the async app-list query introduced in issue #8. The unfiltered list has
         // no rows at all until that query lands, and composes its first row as soon as it
