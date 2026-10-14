@@ -112,13 +112,13 @@ def report_file_name(project: str, configuration: str) -> str:
 # Checks and labels
 # ---------------------------------------------------------------------------
 
-DEP_MOVES = "dep-moves"
+DEP_CHANGE = "dep-moves"
 DEP_PIN_DRIFT = "dep-pin-drift"
 DEP_CLASSPATH_MISMATCH = "dep-classpath-mismatch"
 DEP_COMPOSE_ALIGNMENT = "dep-compose-alignment"
 
 CHECKS: tuple[str, ...] = (
-    DEP_MOVES,
+    DEP_CHANGE,
     DEP_PIN_DRIFT,
     DEP_CLASSPATH_MISMATCH,
     DEP_COMPOSE_ALIGNMENT,
@@ -126,7 +126,7 @@ CHECKS: tuple[str, ...] = (
 
 # Not Dependabot's own "dependencies" label, which it applies to every pull
 # request it opens; this one says the resolved graph moved.
-LABEL_MOVES = "dep: change"
+LABEL_CHANGE = "dep: change"
 LABEL_HIDDEN = "dep: hidden change"
 LABEL_PIN_DRIFT = "dep: pin drift"
 LABEL_CLASSPATH_MISMATCH = "dep: classpath mismatch"
@@ -134,7 +134,7 @@ LABEL_COMPOSE_MISALIGNED = "dep: compose misaligned"
 
 # Every label each check may apply, and so the only labels it may remove.
 CHECK_LABELS: dict[str, tuple[str, ...]] = {
-    DEP_MOVES: (LABEL_MOVES, LABEL_HIDDEN),
+    DEP_CHANGE: (LABEL_CHANGE, LABEL_HIDDEN),
     DEP_PIN_DRIFT: (LABEL_PIN_DRIFT,),
     DEP_CLASSPATH_MISMATCH: (LABEL_CLASSPATH_MISMATCH,),
     DEP_COMPOSE_ALIGNMENT: (LABEL_COMPOSE_MISALIGNED,),
@@ -146,7 +146,7 @@ ALL_LABELS: frozenset[str] = frozenset(
 
 # The key each check's rows are stored under in the findings.
 ROWS_KEY: dict[str, str] = {
-    DEP_MOVES: "moves",
+    DEP_CHANGE: "moves",
     DEP_PIN_DRIFT: "drifts",
     DEP_CLASSPATH_MISMATCH: "mismatches",
     DEP_COMPOSE_ALIGNMENT: "misaligned",
@@ -485,7 +485,7 @@ def analyze(
         "base_sha": base_sha,
         "head_sha": head_sha,
         "checks": {
-            DEP_MOVES: {"moves": find_moves(base, head, diff_text)},
+            DEP_CHANGE: {"moves": find_moves(base, head, diff_text)},
             DEP_PIN_DRIFT: {"drifts": find_pin_drift(head)},
             DEP_CLASSPATH_MISMATCH: {"mismatches": find_classpath_mismatches(head)},
             DEP_COMPOSE_ALIGNMENT: {"misaligned": find_compose_misalignment(head)},
@@ -514,7 +514,7 @@ _SHA = re.compile(r"^[0-9a-f]{40}$")
 _MAX_ROWS = 5000
 
 _ROW_FIELDS: dict[str, dict[str, object]] = {
-    DEP_MOVES: {
+    DEP_CHANGE: {
         "library": _LIBRARY,
         "base": [_VERSION],
         "head": [_VERSION],
@@ -612,8 +612,8 @@ def labels_for(check: str, findings: dict) -> list[str]:
     rows = findings["checks"][check][ROWS_KEY[check]]
     if not rows:
         return []
-    if check == DEP_MOVES:
-        wanted = {LABEL_MOVES} | ({LABEL_HIDDEN} if any(r["hidden"] for r in rows) else set())
+    if check == DEP_CHANGE:
+        wanted = {LABEL_CHANGE} | ({LABEL_HIDDEN} if any(r["hidden"] for r in rows) else set())
         return [label for label in CHECK_LABELS[check] if label in wanted]
     return list(CHECK_LABELS[check])
 
@@ -647,21 +647,21 @@ def recorded_labels(body: str) -> list[str]:
 
 
 _TITLES = {
-    DEP_MOVES: "Resolved versions this pull request moves",
+    DEP_CHANGE: "Resolved versions this pull request moves",
     DEP_PIN_DRIFT: "Declared versions that resolve higher",
     DEP_CLASSPATH_MISMATCH: "Libraries the compile and runtime classpaths disagree on",
     DEP_COMPOSE_ALIGNMENT: "Compose artifacts the Compose BOM does not map to their resolved version",
 }
 
 _NONE_FOUND = {
-    DEP_MOVES: "No library resolves to a different version at the head than at the base.",
+    DEP_CHANGE: "No library resolves to a different version at the head than at the base.",
     DEP_PIN_DRIFT: "Every version declared explicitly is the version that resolves.",
     DEP_CLASSPATH_MISMATCH: "Each variant's compile and runtime classpaths agree.",
     DEP_COMPOSE_ALIGNMENT: "Every Compose artifact resolves to the version the Compose BOM maps.",
 }
 
 _EXPLANATION = {
-    DEP_MOVES: (
+    DEP_CHANGE: (
         "Every library whose resolved version differs between the base and the head, "
         "including one that appears or disappears.\n"
         "A move is **hidden** when its coordinate is on no changed line of a build file "
@@ -695,7 +695,7 @@ def _configs(configs: list[str]) -> str:
 
 
 def _table(check: str, rows: list[dict]) -> tuple[str, list[str]]:
-    if check == DEP_MOVES:
+    if check == DEP_CHANGE:
         header = (
             "| Library | Base | Head | Hidden | Configurations |\n| --- | --- | --- | --- | --- |"
         )
