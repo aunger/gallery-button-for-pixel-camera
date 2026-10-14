@@ -135,6 +135,11 @@ Covers:
        `snapshot <sha> <verdict>` line, with no polling, no PID line and no
        Merged/Closed short-circuit; fetch failures exit 1; --run-id is refused;
        #1229 a counted check that already failed outranks one still running
+  (bp) #1298 main(): the committed config prints no line for a named step's
+       success, and the unprinted line does not reset the heartbeat timer
+  (bq) #1298 main(): a named step that lists only during the drain prints
+       nothing under the committed config, so the undiagnosed-drain flag
+       precedes the bare Blocked terminal
 
 No network calls required; no GITHUB_TOKEN needed.
 Run this file directly to execute the suite: exits 0 on success, non-zero on failure.
@@ -266,11 +271,15 @@ PASS_ONLY_NDJSON = [
     '##GB4PC_TEST## {"suite":"com.gb4pc.e2e.GalleryButtonVisualE2ETest","name":"test3b","outcome":"PASS","ms":110,"msg":"","trace":""}',
 ]
 
+# The step regexes that name build.yml's test steps. The committed config no
+# longer sets them, so main() prints a step line only for a failed step (issue
+# #1298). The parser-direct tests pass them explicitly, and named_step_config()
+# writes them into a config for the main() tests that need a named step's line.
+REPO_STEP_REGEX = "Build and run unit tests|^Run .*E2ETest$"
+REPO_DEFERRED_REGEX = "^Run .*E2ETest$|^Run instrumented tests$"
 # This repo's committed config values (scripts/ci_monitor/ci_monitor.config.json).
 # The parser-direct tests pass these explicitly so they exercise the same regexes
 # main() loads from the config file (issue #500).
-REPO_STEP_REGEX = "Build and run unit tests|^Run .*E2ETest$"
-REPO_DEFERRED_REGEX = "^Run .*E2ETest$|^Run instrumented tests$"
 REPO_MARKER_REGEX = "##GB4PC_TEST##|##TEST##"
 REPO_ARTIFACT_REGEX = "^ci-monitor-feed-"
 # The merge gate's check name, and the committed regex that ignores it. The
@@ -347,7 +356,7 @@ MPR_BLOCKED = {"merged": False, "state": "open", "mergeable_state": "blocked"}
 
 
 def main() -> int:
-    """Run every check (a) through (bm) and print PASS/FAIL for each.
+    """Run every check (a) through (bq) and print PASS/FAIL for each.
 
     Returns 1 if any check failed, 0 otherwise.
     Only runs when this file is executed directly; see the __main__ guard below.
@@ -3221,7 +3230,9 @@ def main() -> int:
         "bad-regex fallback wrong; got %r" % cfg_badre,
     )
 
-    # The committed repo config carries this repo's values, including the dual marker.
+    # The committed repo config carries this repo's values, including the dual
+    # marker, and leaves both step regexes at their never-match defaults, so a
+    # step line reports only a failed step (issue #1298).
     _repo_cfg_path = os.path.join(
         os.path.dirname(os.path.abspath(__file__)), "ci_monitor.config.json"
     )
@@ -3229,9 +3240,11 @@ def main() -> int:
     check(
         cfg_repo["test_marker_regex"] == REPO_MARKER_REGEX
         and cfg_repo["artifact_name_regex"] == REPO_ARTIFACT_REGEX
-        and cfg_repo["interesting_step_regex"] == REPO_STEP_REGEX
-        and cfg_repo["deferred_verdict_step_regex"] == REPO_DEFERRED_REGEX,
-        "the committed ci_monitor.config.json carries this repo's regexes (incl. dual marker)",
+        and cfg_repo["interesting_step_regex"] == ci_monitor.DEFAULT_INTERESTING_STEP_REGEX
+        and cfg_repo["deferred_verdict_step_regex"]
+        == ci_monitor.DEFAULT_DEFERRED_VERDICT_STEP_REGEX,
+        "the committed ci_monitor.config.json carries this repo's regexes (incl. dual marker)"
+        " and names no steps",
         "committed repo config wrong; got %r" % cfg_repo,
     )
 
@@ -6817,6 +6830,148 @@ def main() -> int:
         code_bm == 2 and "--once" in err_bm.getvalue(),
         "--once with --run-id is a usage error",
         "exit %r; stderr %r" % (code_bm, err_bm.getvalue()),
+    )
+
+    # ── (bp) #1298 committed config: an unprinted step does not reset the timer ─
+    print(
+        "\n=== (bp) #1298 main(): a named step's success prints nothing under the committed config ==="
+    )
+
+    # (j)'s fixtures, with the named step completing on poll 11 (t=300 s), the
+    # first poll more than 120 s after the poll-6 heartbeat (t=150 s). Printed,
+    # the step line resets the timer and poll 11 has no heartbeat; unprinted, it
+    # must not, so poll 11 has one. Run once with the committed config and once
+    # with the steps named, so the heartbeat count tells the two apart.
+    def run_bp(extra_argv):
+        req_bp = collections.deque()
+        for n in range(1, 14):
+            req_bp.append(PR_J)
+            req_bp.append(CHECK_BL_WITH_RUN_J if n == 13 else CHECK_IP_WITH_RUN_J)
+            req_bp.append(JOBS_STEP7 if n == 11 else JOBS_EMPTY)
+            req_bp.append(ARTS_EMPTY)
+        req_bp.append(MPR_BLOCKED)
+        for _ in range(3):  # DRAIN_MAX_ATTEMPTS drain attempts
+            req_bp.append(DIAG_CHECK_J)
+            req_bp.append(JOBS_STEP7)
+            req_bp.append(ARTS_EMPTY)
+        clock_bp = {"t": 0.0}
+
+        def fake_sleep_bp(secs):
+            clock_bp["t"] += secs
+
+        buf_bp = io.StringIO()
+        with (
+            unittest.mock.patch.object(
+                ci_monitor, "_request", side_effect=lambda url, token, raw=False: req_bp.popleft()
+            ),
+            unittest.mock.patch.object(ci_monitor.time, "time", side_effect=lambda: clock_bp["t"]),
+            unittest.mock.patch.object(ci_monitor.time, "sleep", side_effect=fake_sleep_bp),
+            unittest.mock.patch("sys.stdout", new=buf_bp),
+        ):
+            rc_bp = ci_monitor.main(["ci_monitor.py", "--pr", "285"] + extra_argv)
+        return buf_bp.getvalue().splitlines(), rc_bp, len(req_bp)
+
+    lines_bp, rc_bp, left_bp = run_bp([])
+    check(
+        not any(ln.startswith("PR#285: step ") for ln in lines_bp),
+        "the committed config prints no step line for a named step's success",
+        "unexpected step line; lines: %r" % lines_bp,
+    )
+    check(
+        lines_bp.count(ip_line) == 2,
+        "the unprinted step line does not reset the timer: 2 heartbeats",
+        "in_progress count != 2; lines: %r" % lines_bp,
+    )
+    check(
+        lines_bp[-1] == blocked_line_j and rc_bp == 0 and left_bp == 0,
+        "the run ends on the Blocked terminal with every mocked request consumed",
+        "terminal, rc or requests wrong; rc %r, %d left; lines: %r" % (rc_bp, left_bp, lines_bp),
+    )
+    with named_step_config() as cfg_bp:
+        lines_bp2, rc_bp2, left_bp2 = run_bp(["--config", cfg_bp])
+    check(
+        lines_bp2.count(step_line_j) == 1 and lines_bp2.count(ip_line) == 1,
+        "with the steps named, the printed step line resets the timer: 1 heartbeat",
+        "step or in_progress count wrong; lines: %r" % lines_bp2,
+    )
+    check(
+        rc_bp2 == 0 and left_bp2 == 0,
+        "the named-step run consumed every mocked request",
+        "rc %r, %d requests left" % (rc_bp2, left_bp2),
+    )
+
+    # ── (bq) #1298 committed config: a step listed only in the drain is no signal ─
+    print("\n=== (bq) #1298 main(): a named step listed only during the drain flags the drain ===")
+
+    # Every check passed but mergeable_state is behind, so the bare Blocked terminal
+    # follows a drain (as in (bj)). The named step first lists during the drain.
+    # Under the committed config it prints nothing, so the drain found no new
+    # signal and the undiagnosed-drain flag precedes the terminal; with the steps
+    # named, its line is the new signal and the flag is suppressed.
+    PR_BQ = {"head": {"sha": "1298d4a1"}}
+    DIAG_BQ = check_runs_payload(("1298", None))
+    CHECK_ALL_PASS_BQ = {
+        "total_count": 2,
+        "check_runs": [
+            {"name": "build-and-test", "status": "completed", "conclusion": "success"},
+        ]
+        + DIAG_BQ["check_runs"],
+    }
+    terminal_bq = "PR#1298: Blocked (mergeable_state=behind)"
+    flag_bq = "PR#1298: drain poll found no new diagnostic signals"
+    step_bq = 'PR#1298: step "Build and run unit tests" -> success'
+
+    def run_bq(extra_argv):
+        req_bq = collections.deque(
+            [
+                PR_BQ,
+                CHECK_ALL_PASS_BQ,  # verdict check-runs (reused by poll_signals)
+                JOBS_EMPTY,  # the step has not listed yet
+                ARTS_EMPTY,
+                {"merged": False, "state": "open", "mergeable_state": "behind"},
+            ]
+        )
+        for _ in range(3):  # DRAIN_MAX_ATTEMPTS drain attempts
+            req_bq.append(DIAG_BQ)
+            req_bq.append(JOBS_STEP7)  # the named step lists during the drain
+            req_bq.append(ARTS_EMPTY)
+        buf_bq = io.StringIO()
+        with (
+            unittest.mock.patch.object(
+                ci_monitor, "_request", side_effect=lambda url, token, raw=False: req_bq.popleft()
+            ),
+            unittest.mock.patch.object(ci_monitor.time, "time", return_value=12980.0),
+            unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None),
+            unittest.mock.patch("sys.stdout", new=buf_bq),
+        ):
+            rc_bq = ci_monitor.main(["ci_monitor.py", "--pr", "1298"] + extra_argv)
+        return buf_bq.getvalue().splitlines(), rc_bq, len(req_bq)
+
+    lines_bq, rc_bq, left_bq = run_bq([])
+    check(
+        step_bq not in lines_bq
+        and flag_bq in lines_bq
+        and lines_bq[-1] == terminal_bq
+        and lines_bq.index(flag_bq) < lines_bq.index(terminal_bq),
+        "the committed config: no step line, and the drain flag precedes the bare Blocked",
+        "lines: %r" % lines_bq,
+    )
+    check(
+        rc_bq == 0 and left_bq == 0,
+        "the committed-config run consumed every mocked request",
+        "rc %r, %d requests left" % (rc_bq, left_bq),
+    )
+    with named_step_config() as cfg_bq:
+        lines_bq2, rc_bq2, left_bq2 = run_bq(["--config", cfg_bq])
+    check(
+        step_bq in lines_bq2 and flag_bq not in lines_bq2 and lines_bq2[-1] == terminal_bq,
+        "with the steps named, the drain prints the step line and no flag",
+        "lines: %r" % lines_bq2,
+    )
+    check(
+        rc_bq2 == 0 and left_bq2 == 0,
+        "the named-step run consumed every mocked request",
+        "rc %r, %d requests left" % (rc_bq2, left_bq2),
     )
 
     # ── Summary ────────────────────────────────────────────────────────────────────
