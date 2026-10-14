@@ -35,6 +35,14 @@ on:
 permissions:
   contents: read
 
+# One report at a time per pull request head. Two runs for the same head (a
+# re-run finishing close to the original) could otherwise both find no comment
+# and both post one. Queued rather than cancelled: each run's findings are for
+# the same commit, so the later one simply finds the comment the earlier wrote.
+concurrency:
+  group: dependency-version-checks-report-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
 jobs:
   report:
     if: >-
