@@ -26,7 +26,11 @@ def http_error(code: int) -> urllib.error.HTTPError:
 
 
 class FakeGitHub:
-    """Records every call and answers from a list of comments and one pull request."""
+    """One pull request's comments and labels, kept as the calls change them.
+
+    Every call is recorded. State persists across runs, so a later run reads
+    the comment an earlier run wrote, as it would on GitHub.
+    """
 
     def __init__(self, labels=(), comments=(), fail=()):
         self.pr = {"number": 7, "head": {"sha": HEAD}, "labels": [{"name": n} for n in labels]}
@@ -40,12 +44,23 @@ class FakeGitHub:
             if method == fail_method and path.startswith(prefix):
                 raise http_error(500)
         if method == "GET" and "/comments?" in path:
-            return self.comments if path.endswith("page=1") else []
-        if method == "DELETE":
+            return [dict(c) for c in self.comments] if path.endswith("page=1") else []
+        if method == "POST" and path.endswith("/comments"):
+            self.comments.append(bot_comment(100 + len(self.comments), body["body"]))
+        elif method == "PATCH":
+            comment_id = int(path.rsplit("/", 1)[1])
+            next(c for c in self.comments if c["id"] == comment_id)["body"] = body["body"]
+        elif method == "POST" and path.endswith("/labels"):
+            self.pr["labels"] += [{"name": n} for n in body["labels"]]
+        elif method == "DELETE":
             name = urllib.parse.unquote(path.rsplit("/", 1)[1])
-            if name not in {label["name"] for label in self.pr["labels"]}:
+            if name not in self.label_names():
                 raise http_error(404)
+            self.pr["labels"] = [x for x in self.pr["labels"] if x["name"] != name]
         return None
+
+    def label_names(self):
+        return {label["name"] for label in self.pr["labels"]}
 
     def fetch_open_pull_requests(self, repo, token):
         return [self.pr, {"number": 8, "head": {"sha": "d" * 40}, "labels": []}]
@@ -101,7 +116,7 @@ class PostTest(unittest.TestCase):
         self.assertEqual(
             added,
             [
-                ["dependencies", "dep: hidden change"],
+                ["dep: change", "dep: hidden change"],
                 ["dep: pin drift"],
                 ["dep: compose misaligned"],
             ],
@@ -110,13 +125,13 @@ class PostTest(unittest.TestCase):
             self.assertEqual(f.read(), "status=checked\n")
 
     def test_labels_already_present_are_not_added_again(self):
-        github = FakeGitHub(labels=["dependencies", "dep: hidden change"])
+        github = FakeGitHub(labels=["dep: change", "dep: hidden change"])
         self.run_post(github, findings_1145())
         added = [b["labels"] for m, p, b in github.writes() if p.endswith("/labels")]
-        self.assertNotIn(["dependencies", "dep: hidden change"], added)
+        self.assertNotIn(["dep: change", "dep: hidden change"], added)
 
     def test_cleared_finding_edits_the_comment_and_removes_its_recorded_label(self):
-        previous = dc.render_comment("dep-pin-drift", findings_1145())
+        previous = dc.render_comment("dep-pin-drift", findings_1145(), ["dep: pin drift"])
         github = FakeGitHub(labels=["dep: pin drift"], comments=[bot_comment(11, previous)])
         findings = findings_1145()
         findings["checks"]["dep-pin-drift"]["drifts"] = []
@@ -131,29 +146,63 @@ class PostTest(unittest.TestCase):
         )
 
     def test_a_label_this_check_never_recorded_is_never_removed(self):
-        # Dependabot labels its own pull requests "dependencies"; a dep-moves
+        # Someone labeled the pull request "dep: change" by hand; a dep-moves
         # comment that never applied it must not take it away.
         findings = findings_1145()
         findings["checks"]["dep-moves"]["moves"] = []
-        previous = dc.render_comment("dep-moves", findings)
-        github = FakeGitHub(labels=["dependencies"], comments=[bot_comment(11, previous)])
+        previous = dc.render_comment("dep-moves", findings, [])
+        github = FakeGitHub(labels=["dep: change"], comments=[bot_comment(11, previous)])
         self.run_post(github, findings)
         self.assertFalse([p for m, p, _ in github.writes() if m == "DELETE"])
 
-    def test_a_recorded_label_is_removed_even_if_dependabot_also_applied_it(self):
-        previous = dc.render_comment("dep-moves", findings_1145())
-        github = FakeGitHub(
-            labels=["dependencies", "dep: hidden change"], comments=[bot_comment(11, previous)]
+    def test_a_label_present_before_the_check_wanted_it_survives_a_later_clear(self):
+        # Someone labels a pull request `dep: change` by hand before the first
+        # run, which finds moves and adds only `dep: hidden change`; once the
+        # moves clear, `dep: change` must stay, since the check never added it.
+        github = FakeGitHub(labels=["dep: change"])
+        self.run_post(github, findings_1145())
+        self.assertEqual(
+            github.label_names(),
+            {"dep: change", "dep: hidden change", "dep: pin drift", "dep: compose misaligned"},
         )
-        findings = findings_1145()
-        findings["checks"]["dep-moves"]["moves"] = []
-        self.run_post(github, findings)
-        removed = sorted(p.rsplit("/", 1)[1] for m, p, _ in github.writes() if m == "DELETE")
-        self.assertEqual(removed, ["dep%3A%20hidden%20change", "dependencies"])
+        moves_comment = post.find_check_comment(github.comments, "dep-moves")
+        self.assertEqual(dc.recorded_labels(moves_comment["body"]), ["dep: hidden change"])
+
+        cleared = findings_1145()
+        cleared["checks"]["dep-moves"]["moves"] = []
+        self.run_post(github, cleared)
+        self.assertIn("dep: change", github.label_names())
+        self.assertNotIn("dep: hidden change", github.label_names())
+
+        self.run_post(github, dc.skipped_findings())
+        self.assertEqual(github.label_names(), {"dep: change"})
+
+    def test_a_label_the_check_added_stays_owned_until_cleared(self):
+        github = FakeGitHub()
+        self.run_post(github, findings_1145())
+        self.run_post(github, findings_1145())
+        moves_comment = post.find_check_comment(github.comments, "dep-moves")
+        self.assertEqual(
+            dc.recorded_labels(moves_comment["body"]), ["dep: change", "dep: hidden change"]
+        )
+        cleared = findings_1145()
+        cleared["checks"]["dep-moves"]["moves"] = []
+        self.run_post(github, cleared)
+        self.assertNotIn("dep: change", github.label_names())
+        self.assertNotIn("dep: hidden change", github.label_names())
+        self.assertEqual(len(github.comments), len(dc.CHECKS))
+
+    def test_owned_labels(self):
+        wanted = ["dep: change", "dep: hidden change"]
+        self.assertEqual(post.owned_labels(wanted, set(), set()), wanted)
+        self.assertEqual(post.owned_labels(wanted, set(), {"dep: change"}), ["dep: hidden change"])
+        self.assertEqual(post.owned_labels(wanted, {"dep: change"}, {"dep: change"}), wanted)
+        self.assertEqual(post.owned_labels([], {"dep: change"}, {"dep: change"}), [])
 
     def test_only_its_own_labels_are_removed_whatever_the_record_says(self):
         forged = (
-            dc.comment_marker("dep-pin-drift") + '\n<!-- applied-labels: ["orchestrating"] -->\n'
+            dc.comment_marker("dep-pin-drift")
+            + '\n<!-- labels-added-by-this-check: ["orchestrating"] -->\n'
         )
         github = FakeGitHub(labels=["orchestrating"], comments=[bot_comment(11, forged)])
         findings = findings_1145()
@@ -176,22 +225,25 @@ class PostTest(unittest.TestCase):
     def test_unchanged_comment_is_not_rewritten(self):
         findings = findings_1145()
         comments = [
-            bot_comment(20 + i, dc.render_comment(c, findings)) for i, c in enumerate(dc.CHECKS)
+            bot_comment(20 + i, dc.render_comment(c, findings, dc.labels_for(c, findings)))
+            for i, c in enumerate(dc.CHECKS)
         ]
-        labels = ["dependencies", "dep: hidden change", "dep: pin drift", "dep: compose misaligned"]
+        labels = ["dep: change", "dep: hidden change", "dep: pin drift", "dep: compose misaligned"]
         github = FakeGitHub(labels=labels, comments=comments)
         self.assertEqual(self.run_post(github, findings)[0], 0)
         self.assertEqual(github.writes(), [])
 
     def test_skipped_run_writes_nothing_on_a_pull_request_never_reported(self):
-        github = FakeGitHub(labels=["dependencies"])
+        github = FakeGitHub(labels=["dep: change"])
         self.assertEqual(self.run_post(github, dc.skipped_findings())[0], 0)
         self.assertEqual(github.writes(), [])
         with open(self.output, encoding="utf-8") as f:
             self.assertEqual(f.read(), "status=skipped\n")
 
     def test_skipped_run_clears_an_earlier_report(self):
-        previous = dc.render_comment("dep-compose-alignment", findings_1145())
+        previous = dc.render_comment(
+            "dep-compose-alignment", findings_1145(), ["dep: compose misaligned"]
+        )
         github = FakeGitHub(
             labels=["dep: compose misaligned"], comments=[bot_comment(11, previous)]
         )

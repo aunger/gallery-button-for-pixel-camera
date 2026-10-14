@@ -336,7 +336,7 @@ class LabelsAndCommentsTest(unittest.TestCase):
     def test_labels(self):
         findings = findings_1145()
         self.assertEqual(
-            dc.labels_for("dep-moves", findings), ["dependencies", "dep: hidden change"]
+            dc.labels_for("dep-moves", findings), ["dep: change", "dep: hidden change"]
         )
         self.assertEqual(dc.labels_for("dep-pin-drift", findings), ["dep: pin drift"])
         self.assertEqual(dc.labels_for("dep-classpath-mismatch", findings), [])
@@ -345,7 +345,7 @@ class LabelsAndCommentsTest(unittest.TestCase):
         )
         self.assertEqual(dc.labels_for("dep-moves", dc.skipped_findings()), [])
 
-    def test_explained_moves_label_dependencies_only(self):
+    def test_explained_moves_label_dep_change_only(self):
         findings = dc.analyze(graph(BASE_TREE), graph(BASE_TREE), "", SHA_A, SHA_B)
         findings["checks"]["dep-moves"]["moves"] = [
             {
@@ -356,13 +356,13 @@ class LabelsAndCommentsTest(unittest.TestCase):
                 "hidden": False,
             }
         ]
-        self.assertEqual(dc.labels_for("dep-moves", findings), ["dependencies"])
+        self.assertEqual(dc.labels_for("dep-moves", findings), ["dep: change"])
 
     def test_all_labels(self):
         self.assertEqual(
             dc.ALL_LABELS,
             {
-                "dependencies",
+                "dep: change",
                 "dep: hidden change",
                 "dep: pin drift",
                 "dep: classpath mismatch",
@@ -370,32 +370,39 @@ class LabelsAndCommentsTest(unittest.TestCase):
             },
         )
 
-    def test_comment_starts_with_marker_and_records_its_labels(self):
+    def test_comment_starts_with_marker_and_records_the_owned_labels(self):
         findings = findings_1145()
         for check in dc.CHECKS:
-            body = dc.render_comment(check, findings)
+            body = dc.render_comment(check, findings, ["dep: pin drift"])
             self.assertEqual(body.split("\n", 1)[0], dc.comment_marker(check))
-            self.assertEqual(dc.recorded_labels(body), dc.labels_for(check, findings))
+            self.assertEqual(dc.recorded_labels(body), ["dep: pin drift"])
+        # The record is what the caller says the check owns, not what the
+        # findings call for: a label someone else applied is never recorded.
+        self.assertEqual(dc.recorded_labels(dc.render_comment("dep-moves", findings, [])), [])
         moves = dc.render_comment("dep-moves", findings)
         self.assertIn(
             "| `org.jetbrains.kotlinx:kotlinx-serialization-core` | absent | `1.7.3` | **yes** |",
             moves,
         )
-        self.assertIn("Labels applied: `dependencies`, `dep: hidden change`.\n\n| Library", moves)
+        self.assertIn(
+            "Labels these findings call for: `dep: change`, `dep: hidden change`.\n\n| Library",
+            moves,
+        )
+        self.assertNotIn("labels-added-by-this-check", moves)
         self.assertIn(
             dc._NONE_FOUND["dep-classpath-mismatch"],
             dc.render_comment("dep-classpath-mismatch", findings),
         )
 
     def test_skipped_comment(self):
-        body = dc.render_comment("dep-pin-drift", dc.skipped_findings())
+        body = dc.render_comment("dep-pin-drift", dc.skipped_findings(), [])
         self.assertIn("no longer changes a build file", body)
         self.assertEqual(dc.recorded_labels(body), [])
 
     def test_recorded_labels_tolerates_garbage(self):
         self.assertEqual(dc.recorded_labels("no record"), [])
-        self.assertEqual(dc.recorded_labels("<!-- applied-labels: [oops -->"), [])
-        self.assertEqual(dc.recorded_labels('<!-- applied-labels: ["a", 1] -->'), ["a"])
+        self.assertEqual(dc.recorded_labels("<!-- labels-added-by-this-check: [oops -->"), [])
+        self.assertEqual(dc.recorded_labels('<!-- labels-added-by-this-check: ["a", 1] -->'), ["a"])
 
     def test_long_comment_is_cut_and_summary_is_not(self):
         findings = findings_1145()

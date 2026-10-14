@@ -172,12 +172,12 @@ Adding `workflow_dispatch` (#878) is the intended fix for that dead end.
 A build file names some versions and Gradle resolves others.
 `.github/workflows/dependency-version-checks.yml` reports the gap on every pull request that changes a `*.gradle.kts` file or a version catalog, so that a bump whose diff names one coordinate cannot move a library family unseen (#1145 moved every `androidx.lifecycle` artifact by bumping `core-ktx`).
 
-| Check (job)              | Reports                                                                       | Label                                                                        |
-| ------------------------ | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `dep-moves`              | every library whose resolved version differs between base and head            | `dependencies`, and `dep: hidden change` for a move no changed line explains |
-| `dep-pin-drift`          | every coordinate declared with an explicit version that resolves higher       | `dep: pin drift`                                                             |
-| `dep-classpath-mismatch` | per variant, libraries the compile and runtime classpaths resolve differently | `dep: classpath mismatch`                                                    |
-| `dep-compose-alignment`  | Compose artifacts that resolve off the version the Compose BOM maps           | `dep: compose misaligned`                                                    |
+| Check (job)              | Reports                                                                       | Label                                                                       |
+| ------------------------ | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `dep-moves`              | every library whose resolved version differs between base and head            | `dep: change`, and `dep: hidden change` for a move no changed line explains |
+| `dep-pin-drift`          | every coordinate declared with an explicit version that resolves higher       | `dep: pin drift`                                                            |
+| `dep-classpath-mismatch` | per variant, libraries the compile and runtime classpaths resolve differently | `dep: classpath mismatch`                                                   |
+| `dep-compose-alignment`  | Compose artifacts that resolve off the version the Compose BOM maps           | `dep: compose misaligned`                                                   |
 
 A finding is never a failure: the check succeeds, and the report half comments and labels.
 A check fails only when it could not look, because Gradle could not resolve or a report could not be parsed.
@@ -188,7 +188,9 @@ The configurations read, and the rule for a hidden move, are in `scripts/ci/depe
 The workflow's header covers the trigger and the split into a read-only `pull_request` half and a `workflow_run` half (`dependency-version-checks-report.yml`) that writes the comments and labels, for the same reason as the Dependabot pair above.
 That half also posts a "Dependency version checks: report" commit status on the pull request's head, which is where a failure to write a comment or label shows: the required checks have concluded by then.
 
-A check removes a label only when its own previous comment recorded applying it, so the `dependencies` label Dependabot puts on its own pull requests stays unless `dep-moves` applied it too.
+A check removes only a label it added itself, which its comment records.
+A label already on the pull request when the check first called for it, such as one a person applied by hand, is never recorded and never removed.
+`dep-moves` uses `dep: change` rather than Dependabot's own `dependencies` label, which Dependabot applies to every pull request it opens.
 
 ## `wrapper/gradle-wrapper.properties` -- distribution pin
 

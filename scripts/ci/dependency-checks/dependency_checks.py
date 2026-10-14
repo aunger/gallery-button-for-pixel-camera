@@ -71,8 +71,12 @@ from functools import cmp_to_key
 # The buildscript classpath (AGP, KGP) is not read: it builds the app rather
 # than shipping in it, and gradle/README.md covers those pins.
 #
-# A pull request that removes one of these projects or variants has to drop it
-# here too, or Gradle cannot report it on the head side and the checks fail.
+# Both sides are read with the merge's copy of this list, so every entry has to
+# exist on both. A pull request that removes one of these projects or variants
+# has to drop it here too, or Gradle cannot report it on the head side; one that
+# adds an entry for a project or variant it also introduces fails on the base
+# side, which lacks it. Either way the checks fail on that pull request, so add
+# an entry in a pull request after the one that introduces what it names.
 CONFIGURATIONS: tuple[tuple[str, str], ...] = (
     (":app", "debugCompileClasspath"),
     (":app", "debugRuntimeClasspath"),
@@ -120,7 +124,9 @@ CHECKS: tuple[str, ...] = (
     DEP_COMPOSE_ALIGNMENT,
 )
 
-LABEL_MOVES = "dependencies"
+# Not Dependabot's own "dependencies" label, which it applies to every pull
+# request it opens; this one says the resolved graph moved.
+LABEL_MOVES = "dep: change"
 LABEL_HIDDEN = "dep: hidden change"
 LABEL_PIN_DRIFT = "dep: pin drift"
 LABEL_CLASSPATH_MISMATCH = "dep: classpath mismatch"
@@ -617,12 +623,17 @@ def comment_marker(check: str) -> str:
     return f"<!-- dependency-version-check: {check} -->"
 
 
-_LABELS_LINE_PREFIX = "<!-- applied-labels: "
-_LABELS_LINE_RE = re.compile(r"^<!-- applied-labels: (\[.*\]) -->$", re.M)
+# The hidden line in a check's comment that records the labels the check
+# owns: the ones it added and still holds. A label already on the pull request
+# when the check first called for it was added by someone else, such as a
+# person applying it by hand, and is never recorded, so the check never
+# removes it. post_dependency_checks.owned_labels decides the set.
+_LABELS_LINE_PREFIX = "<!-- labels-added-by-this-check: "
+_LABELS_LINE_RE = re.compile(r"^<!-- labels-added-by-this-check: (\[.*\]) -->$", re.M)
 
 
 def recorded_labels(body: str) -> list[str]:
-    """Return the labels a previous comment records having applied, or []."""
+    """Return the labels a previous comment records this check as owning, or []."""
     match = _LABELS_LINE_RE.search(body)
     if not match:
         return []
@@ -716,19 +727,25 @@ def _table(check: str, rows: list[dict]) -> tuple[str, list[str]]:
     return header, lines
 
 
-def render_comment(check: str, findings: dict, max_length: int | None = MAX_COMMENT_LENGTH) -> str:
-    """Return *check*'s report for *findings*, recording the labels it calls for.
+def render_comment(
+    check: str,
+    findings: dict,
+    owned: list[str] | None = None,
+    max_length: int | None = MAX_COMMENT_LENGTH,
+) -> str:
+    """Return *check*'s report for *findings*.
 
+    *owned* is the record of the labels this check holds once the comment is
+    written; a comment carries it on a hidden line, and a job summary, which
+    passes None, carries none.
     Rows past *max_length* characters are cut, with a note saying how many;
     pass None for a job summary, which has no such cap.
     """
     labels = labels_for(check, findings)
-    parts = [
-        comment_marker(check),
-        f"{_LABELS_LINE_PREFIX}{json.dumps(labels)} -->",
-        f"### `{check}`: {_TITLES[check]}",
-        "",
-    ]
+    parts = [comment_marker(check)]
+    if owned is not None:
+        parts.append(f"{_LABELS_LINE_PREFIX}{json.dumps(owned)} -->")
+    parts += [f"### `{check}`: {_TITLES[check]}", ""]
     if findings["status"] != STATUS_CHECKED:
         parts.append(
             "This pull request no longer changes a build file, so there is nothing to compare."
@@ -747,7 +764,7 @@ def render_comment(check: str, findings: dict, max_length: int | None = MAX_COMM
 
     parts.append(_EXPLANATION[check])
     parts.append("")
-    parts.append("Labels applied: " + ", ".join(f"`{label}`" for label in labels) + ".")
+    parts.append("Labels these findings call for: " + ", ".join(f"`{x}`" for x in labels) + ".")
     parts.append("")
     header, lines = _table(check, rows)
     body = "\n".join(parts) + "\n" + header + "\n"
@@ -802,7 +819,7 @@ def main(argv: list[str]) -> int:
             findings = load_findings(args[0])
             for check in CHECKS:
                 with open(f"{args[1]}/{check}.md", "w", encoding="utf-8") as f:
-                    f.write(render_comment(check, findings, max_length=None))
+                    f.write(render_comment(check, findings, owned=None, max_length=None))
             return 0
     except (ReportError, FindingsError) as exc:
         print(f"::error::{exc}", file=sys.stderr)

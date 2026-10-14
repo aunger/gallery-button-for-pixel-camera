@@ -20,11 +20,14 @@ Per check:
   check's marker. It is created, or edited in place when its text changes.
   When the pull request no longer changes a build file, an existing comment
   is updated to say so, and a pull request that never had one gets none.
-- The comment records the labels it calls for. The check adds those, and
-  removes a label only when the previous comment recorded applying it and the
-  new findings no longer call for it. So a label someone else applied, such
-  as the `dependencies` label Dependabot puts on its own pull requests, is
-  never removed unless this check applied it too.
+- The check adds each label its findings call for that the pull request
+  lacks. The comment records the labels the check owns: those it adds, and
+  those it owned before and still calls for (`owned_labels`). A label that was
+  already on the pull request when the check first called for it is not
+  recorded, so a label someone else applied, such as one a person added by
+  hand, is never removed. The check
+  removes a label only when the previous comment recorded owning it and the
+  new findings no longer call for it.
 - Labels change through the delta endpoints, never a replace-all (#710).
 - The comment is written before the labels, and the labels are left alone
   when that write fails, so no label is ever applied without a record that
@@ -98,6 +101,17 @@ def find_check_comment(comments: list[dict], check: str) -> dict | None:
     return None
 
 
+def owned_labels(wanted: list[str], previous: set[str], current: set[str]) -> list[str]:
+    """Return the labels a check owns after this run, in *wanted*'s order.
+
+    *wanted* is what the findings call for, *previous* what the check owned
+    before, and *current* what the pull request carries now. A wanted label
+    the pull request lacks is one this run adds, so the check owns it. A
+    wanted label already present is the check's only if it owned it before.
+    """
+    return [label for label in wanted if label in previous or label not in current]
+
+
 def report_check(
     repo: str, token: str, pr: dict, comments: list[dict], check: str, findings: dict
 ) -> bool:
@@ -107,7 +121,11 @@ def report_check(
     if findings["status"] != dc.STATUS_CHECKED and existing is None:
         return True
 
-    body = dc.render_comment(check, findings)
+    wanted = dc.labels_for(check, findings)
+    current = {label.get("name") for label in pr.get("labels") or []}
+    previous = set(dc.recorded_labels(existing.get("body") or "")) if existing else set()
+    previous &= set(dc.CHECK_LABELS[check])
+    body = dc.render_comment(check, findings, owned_labels(wanted, previous, current))
     try:
         if existing is None:
             emxl.gh_api(
@@ -135,9 +153,6 @@ def report_check(
         )
         return False
 
-    wanted = dc.labels_for(check, findings)
-    current = {label.get("name") for label in pr.get("labels") or []}
-    previous = set(dc.recorded_labels(existing.get("body") or "")) if existing else set()
     ok = True
 
     to_add = [label for label in wanted if label not in current]
@@ -154,7 +169,7 @@ def report_check(
             print(f"::error::Could not add {to_add} to #{number}: {exc}", file=sys.stderr)
             ok = False
 
-    to_remove = sorted((previous & set(dc.CHECK_LABELS[check]) & current) - set(wanted))
+    to_remove = sorted((previous & current) - set(wanted))
     if to_remove and not emxl.remove_labels(number, to_remove, repo, token, reason="cleared"):
         ok = False
     return ok
