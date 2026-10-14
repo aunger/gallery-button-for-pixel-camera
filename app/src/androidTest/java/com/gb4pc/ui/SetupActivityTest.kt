@@ -27,10 +27,11 @@ class SetupActivityTest {
     @get:Rule
     val composeRule = createAndroidComposeRule<SetupActivity>()
 
+    private val context = InstrumentationRegistry.getInstrumentation().targetContext
+
     @After
     fun tearDown() {
-        PrefsManager(InstrumentationRegistry.getInstrumentation().targetContext)
-            .isSetupCompleted = false
+        PrefsManager(context).isSetupCompleted = false
     }
 
     @Test
@@ -50,7 +51,6 @@ class SetupActivityTest {
         // Overlay Permission", "Exclude from Battery Optimization"); not all
         // of them say "Grant". Whichever step is shown first, its button
         // should be present.
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
         val possibleButtonTexts =
             listOf(
                 R.string.setup_notification_button,
@@ -76,7 +76,6 @@ class SetupActivityTest {
         // Clicking Skip once per step covers all steps and marks setup complete.
         // If the activity finishes before every click (some permissions already granted)
         // the loop exits early; that is also a valid passing state.
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
         repeat(getSetupSteps().size) {
             try {
                 composeRule.onNodeWithText("Skip").performClick()
