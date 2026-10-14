@@ -142,6 +142,7 @@ Importing it as a module (for example, to reuse check_runs_payload()) runs no ch
 """
 
 import collections
+import contextlib
 import io
 import json
 import os
@@ -149,6 +150,7 @@ import re
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import unittest.mock
@@ -275,6 +277,30 @@ REPO_ARTIFACT_REGEX = "^ci-monitor-feed-"
 # name holds parentheses, so it is not a regex for itself.
 REPO_GATE_NAME = "Administrative merge holds (not failure)"
 REPO_IGNORED_REGEX = r"^Administrative merge holds \(not failure\)$"
+REPO_CONFIG_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "ci_monitor.config.json"
+)
+
+
+@contextlib.contextmanager
+def named_step_config():
+    """Yield the path of a config that names build.yml's test steps.
+
+    The file is a copy of the committed config with both step regexes set to
+    REPO_STEP_REGEX and REPO_DEFERRED_REGEX, so its other keys stay in force.
+    It is removed on exit.
+    """
+    with open(REPO_CONFIG_PATH, encoding="utf-8") as fh:
+        cfg = json.load(fh)
+    cfg["interesting_step_regex"] = REPO_STEP_REGEX
+    cfg["deferred_verdict_step_regex"] = REPO_DEFERRED_REGEX
+    fd, path = tempfile.mkstemp(suffix=".json")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(cfg, fh)
+        yield path
+    finally:
+        os.remove(path)
 
 
 def check_runs_payload(*pairs):
@@ -759,14 +785,17 @@ def main() -> int:
     def fake_sleep_j(secs):
         clock["t"] += secs
 
+    # The named step's success line is the emission under test, so this run names
+    # the steps itself rather than rely on the committed config.
     buf_j = io.StringIO()
     with (
+        named_step_config() as cfg_j,
         unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_j),
         unittest.mock.patch.object(ci_monitor.time, "time", side_effect=fake_time_j),
         unittest.mock.patch.object(ci_monitor.time, "sleep", side_effect=fake_sleep_j),
         unittest.mock.patch("sys.stdout", new=buf_j),
     ):
-        rc_j = ci_monitor.main(["ci_monitor.py", "--pr", "285"])
+        rc_j = ci_monitor.main(["ci_monitor.py", "--pr", "285", "--config", cfg_j])
 
     out_j = buf_j.getvalue()
     lines_j = out_j.splitlines()
@@ -1697,15 +1726,17 @@ def main() -> int:
         # time.time() advances past WINDOW_Q and the wall-clock gate is exercised.
         _REAL_SLEEP(SLEEP_Q)
 
+    # The step delta needs a config that names the step, so this run supplies one.
     buf_q = io.StringIO()
     with (
+        named_step_config() as cfg_q,
         unittest.mock.patch.object(ci_monitor, "SILENCE_SECONDS", WINDOW_Q),
         unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_q),
         unittest.mock.patch.object(ci_monitor.time, "sleep", side_effect=real_sleep_q),
         unittest.mock.patch("sys.stdout", new=buf_q),
     ):
         # time.time() is intentionally NOT patched: the real clock gates the heartbeat.
-        rc_q = ci_monitor.main(["ci_monitor.py", "--pr", "259"])
+        rc_q = ci_monitor.main(["ci_monitor.py", "--pr", "259", "--config", cfg_q])
 
     out_q = buf_q.getvalue()
     lines_q = out_q.splitlines()
@@ -3496,14 +3527,17 @@ def main() -> int:
     def fake_request_af(url, token, raw=False):
         return side_effects_af.popleft()
 
+    # The named steps' success lines show which jobs were tracked, so this run
+    # names the steps itself rather than rely on the committed config.
     buf_af = io.StringIO()
     with (
+        named_step_config() as cfg_af,
         unittest.mock.patch.object(ci_monitor, "_request", side_effect=fake_request_af),
         unittest.mock.patch.object(ci_monitor.time, "time", return_value=7000.0),
         unittest.mock.patch.object(ci_monitor.time, "sleep", return_value=None),
         unittest.mock.patch("sys.stdout", new=buf_af),
     ):
-        rc_af = ci_monitor.main(["ci_monitor.py", "--pr", "500"])
+        rc_af = ci_monitor.main(["ci_monitor.py", "--pr", "500", "--config", cfg_af])
 
     out_af = buf_af.getvalue()
     lines_af = out_af.splitlines()
