@@ -146,11 +146,11 @@ class PostTest(unittest.TestCase):
         )
 
     def test_a_label_this_check_never_recorded_is_never_removed(self):
-        # Someone labeled the pull request "dep: change" by hand; a dep-moves
+        # Someone labeled the pull request "dep: change" by hand; a dep-change
         # comment that never applied it must not take it away.
         findings = findings_1145()
-        findings["checks"]["dep-moves"]["moves"] = []
-        previous = dc.render_comment("dep-moves", findings, [])
+        findings["checks"]["dep-change"]["moves"] = []
+        previous = dc.render_comment("dep-change", findings, [])
         github = FakeGitHub(labels=["dep: change"], comments=[bot_comment(11, previous)])
         self.run_post(github, findings)
         self.assertFalse([p for m, p, _ in github.writes() if m == "DELETE"])
@@ -165,11 +165,11 @@ class PostTest(unittest.TestCase):
             github.label_names(),
             {"dep: change", "dep: hidden change", "dep: pin drift", "dep: compose misaligned"},
         )
-        moves_comment = post.find_check_comment(github.comments, "dep-moves")
+        moves_comment = post.find_check_comment(github.comments, "dep-change")
         self.assertEqual(dc.recorded_labels(moves_comment["body"]), ["dep: hidden change"])
 
         cleared = findings_1145()
-        cleared["checks"]["dep-moves"]["moves"] = []
+        cleared["checks"]["dep-change"]["moves"] = []
         self.run_post(github, cleared)
         self.assertIn("dep: change", github.label_names())
         self.assertNotIn("dep: hidden change", github.label_names())
@@ -181,12 +181,12 @@ class PostTest(unittest.TestCase):
         github = FakeGitHub()
         self.run_post(github, findings_1145())
         self.run_post(github, findings_1145())
-        moves_comment = post.find_check_comment(github.comments, "dep-moves")
+        moves_comment = post.find_check_comment(github.comments, "dep-change")
         self.assertEqual(
             dc.recorded_labels(moves_comment["body"]), ["dep: change", "dep: hidden change"]
         )
         cleared = findings_1145()
-        cleared["checks"]["dep-moves"]["moves"] = []
+        cleared["checks"]["dep-change"]["moves"] = []
         self.run_post(github, cleared)
         self.assertNotIn("dep: change", github.label_names())
         self.assertNotIn("dep: hidden change", github.label_names())

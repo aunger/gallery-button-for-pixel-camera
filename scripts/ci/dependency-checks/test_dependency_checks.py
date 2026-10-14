@@ -303,10 +303,10 @@ class FindingsTest(unittest.TestCase):
 
     def test_rejects_values_outside_the_patterns(self):
         for path, value in (
-            (("dep-moves", "moves", 0, "library"), "a:b|<img src=x>"),
+            (("dep-change", "moves", 0, "library"), "a:b|<img src=x>"),
             (("dep-pin-drift", "drifts", 0, "declared"), "1.0`"),
-            (("dep-moves", "moves", 0, "hidden"), "yes"),
-            (("dep-moves", "moves", 0, "configurations"), [":app:x\n"]),
+            (("dep-change", "moves", 0, "hidden"), "yes"),
+            (("dep-change", "moves", 0, "configurations"), [":app:x\n"]),
         ):
             findings = json.loads(json.dumps(findings_1145()))
             target = findings["checks"]
@@ -324,8 +324,8 @@ class FindingsTest(unittest.TestCase):
             {**good, "status": "other"},
             {**good, "extra": 1},
             {**good, "head_sha": "HEAD"},
-            {**good, "checks": {k: v for k, v in good["checks"].items() if k != "dep-moves"}},
-            {**good, "checks": {**good["checks"], "dep-moves": {"moves": [{"library": "a:b"}]}}},
+            {**good, "checks": {k: v for k, v in good["checks"].items() if k != "dep-change"}},
+            {**good, "checks": {**good["checks"], "dep-change": {"moves": [{"library": "a:b"}]}}},
             {"schema": 1, "status": "skipped", "checks": {}},
         ):
             with self.subTest(bad=str(bad)[:60]), self.assertRaises(dc.FindingsError):
@@ -336,18 +336,18 @@ class LabelsAndCommentsTest(unittest.TestCase):
     def test_labels(self):
         findings = findings_1145()
         self.assertEqual(
-            dc.labels_for("dep-moves", findings), ["dep: change", "dep: hidden change"]
+            dc.labels_for("dep-change", findings), ["dep: change", "dep: hidden change"]
         )
         self.assertEqual(dc.labels_for("dep-pin-drift", findings), ["dep: pin drift"])
         self.assertEqual(dc.labels_for("dep-classpath-mismatch", findings), [])
         self.assertEqual(
             dc.labels_for("dep-compose-alignment", findings), ["dep: compose misaligned"]
         )
-        self.assertEqual(dc.labels_for("dep-moves", dc.skipped_findings()), [])
+        self.assertEqual(dc.labels_for("dep-change", dc.skipped_findings()), [])
 
     def test_explained_moves_label_dep_change_only(self):
         findings = dc.analyze(graph(BASE_TREE), graph(BASE_TREE), "", SHA_A, SHA_B)
-        findings["checks"]["dep-moves"]["moves"] = [
+        findings["checks"]["dep-change"]["moves"] = [
             {
                 "library": "a:b",
                 "base": ["1"],
@@ -356,7 +356,7 @@ class LabelsAndCommentsTest(unittest.TestCase):
                 "hidden": False,
             }
         ]
-        self.assertEqual(dc.labels_for("dep-moves", findings), ["dep: change"])
+        self.assertEqual(dc.labels_for("dep-change", findings), ["dep: change"])
 
     def test_all_labels(self):
         self.assertEqual(
@@ -378,8 +378,8 @@ class LabelsAndCommentsTest(unittest.TestCase):
             self.assertEqual(dc.recorded_labels(body), ["dep: pin drift"])
         # The record is what the caller says the check owns, not what the
         # findings call for: a label someone else applied is never recorded.
-        self.assertEqual(dc.recorded_labels(dc.render_comment("dep-moves", findings, [])), [])
-        moves = dc.render_comment("dep-moves", findings)
+        self.assertEqual(dc.recorded_labels(dc.render_comment("dep-change", findings, [])), [])
+        moves = dc.render_comment("dep-change", findings)
         self.assertIn(
             "| `org.jetbrains.kotlinx:kotlinx-serialization-core` | absent | `1.7.3` | **yes** |",
             moves,

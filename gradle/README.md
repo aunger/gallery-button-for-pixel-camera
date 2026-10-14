@@ -174,7 +174,7 @@ A build file names some versions and Gradle resolves others.
 
 | Check (job)              | Reports                                                                       | Label                                                                       |
 | ------------------------ | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `dep-moves`              | every library whose resolved version differs between base and head            | `dep: change`, and `dep: hidden change` for a move no changed line explains |
+| `dep-change`             | every library whose resolved version differs between base and head            | `dep: change`, and `dep: hidden change` for a move no changed line explains |
 | `dep-pin-drift`          | every coordinate declared with an explicit version that resolves higher       | `dep: pin drift`                                                            |
 | `dep-classpath-mismatch` | per variant, libraries the compile and runtime classpaths resolve differently | `dep: classpath mismatch`                                                   |
 | `dep-compose-alignment`  | Compose artifacts that resolve off the version the Compose BOM maps           | `dep: compose misaligned`                                                   |
@@ -190,7 +190,7 @@ That half also posts a "Dependency version checks: report" commit status on the 
 
 A check removes only a label it added itself, which its comment records.
 A label already on the pull request when the check first called for it, such as one a person applied by hand, is never recorded and never removed.
-`dep-moves` uses `dep: change` rather than Dependabot's own `dependencies` label, which Dependabot applies to every pull request it opens.
+`dep-change` uses `dep: change` rather than Dependabot's own `dependencies` label, which Dependabot applies to every pull request it opens.
 
 ## `wrapper/gradle-wrapper.properties` -- distribution pin
 

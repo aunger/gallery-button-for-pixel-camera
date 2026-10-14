@@ -16,7 +16,7 @@ It drives the pull request toward consensus among the sub-agents and a green res
 - `pip-audit`
 - `shell-tests`
 - `check-diff`
-- `dep-moves`
+- `dep-change`
 - `dep-pin-drift`
 - `dep-classpath-mismatch`
 - `dep-compose-alignment`

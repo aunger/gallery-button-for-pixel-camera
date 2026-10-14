@@ -7,7 +7,7 @@ name: Dependency version checks
 # every androidx.lifecycle artifact by bumping core-ktx).
 # scripts/ci/dependency-checks/dependency_checks.py defines the four checks:
 #
-#   dep-moves               resolved versions that differ between base and head
+#   dep-change              resolved versions that differ between base and head
 #   dep-pin-drift           declared versions that resolve higher
 #   dep-classpath-mismatch  compile and runtime classpaths that disagree
 #   dep-compose-alignment   Compose artifacts off the Compose BOM's mapping
@@ -157,7 +157,7 @@ jobs:
   # them run, and fail, after `resolve` fails; with the default they would be
   # skipped, which a required check reads as green. They skip only when
   # `resolve` itself said no build file changed.
-  dep-moves:
+  dep-change:
     needs: [resolve]
     if: ${{ !cancelled() && needs.resolve.outputs.build_files_changed != 'false' }}
     runs-on: ubuntu-latest
@@ -177,7 +177,7 @@ jobs:
           path: ${{ runner.temp }}/dependency-version-checks
       - name: Report what this check found
         env:
-          REPORT: ${{ runner.temp }}/dependency-version-checks/dep-moves.md
+          REPORT: ${{ runner.temp }}/dependency-version-checks/dep-change.md
         run: |
           cat "$REPORT" >> "$GITHUB_STEP_SUMMARY"
           cat "$REPORT"

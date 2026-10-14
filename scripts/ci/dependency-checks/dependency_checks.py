@@ -8,7 +8,7 @@ its title nor its diff mentions.
 This module reads Gradle's `dependencies` report for the pull request's base
 and head and turns the two into four findings, one per check:
 
-- `dep-moves`: every library whose resolved version differs between base and
+- `dep-change`: every library whose resolved version differs between base and
   head, a library that appears or disappears included.
   A move is *hidden* when its coordinate is on no changed line of a build file
   and it is not a member of a BOM or platform whose own declaration line
@@ -112,7 +112,7 @@ def report_file_name(project: str, configuration: str) -> str:
 # Checks and labels
 # ---------------------------------------------------------------------------
 
-DEP_CHANGE = "dep-moves"
+DEP_CHANGE = "dep-change"
 DEP_PIN_DRIFT = "dep-pin-drift"
 DEP_CLASSPATH_MISMATCH = "dep-classpath-mismatch"
 DEP_COMPOSE_ALIGNMENT = "dep-compose-alignment"
