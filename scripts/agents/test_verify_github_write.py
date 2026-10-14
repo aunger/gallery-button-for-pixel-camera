@@ -684,6 +684,46 @@ class TestDiff(unittest.TestCase):
         self.assertEqual(len(regions), vgw.MAX_REGIONS_PER_FIELD)
         self.assertEqual(omitted, 20 - vgw.MAX_REGIONS_PER_FIELD)
 
+    # A paragraph that mentions the same two accounts repeatedly.  Its differing
+    # middle is past the 200 characters at which difflib's autojunk engages, and
+    # the repeated names leave some stretches between mentions with no rare
+    # character to anchor a match on.  Rarity is measured against the whole
+    # middle, so distinct names are no safeguard either: numbered users share
+    # digits, and 30 of them already tell the two settings apart.
+    REPEATED_MENTIONS = (
+        "@dependabot rebase was posted twice before the conflict cleared. "
+        "Once it had, @dependabot recreate replaced the branch, and @copilot left a review. "
+        "A later @dependabot rebase undid the manual fix, so @copilot reviewed it again. "
+        "Ask @dependabot to ignore this major version, and @copilot to stop reviewing it."
+    )
+
+    def _dotted_mention_regions(self):
+        sent = self.REPEATED_MENTIONS
+        regions, _ = vgw.diff_regions(sent, sent.replace("@", "@" + MIDDLE_DOT))
+        return regions
+
+    def test_dotted_mentions_in_a_paragraph_are_itemized_one_dot_per_region(self):
+        # The shape, not a count, is what is asserted: whether the two settings
+        # diverge, and by how many regions, varies with the fixture, while every
+        # region being a lone inserted dot holds wherever autojunk is off.
+        regions = self._dotted_mention_regions()
+        self.assertTrue(regions)
+        for region in regions:
+            self.assertEqual((region.sent, region.stored), ("", MIDDLE_DOT))
+
+    def test_the_repeated_mentions_fixture_tells_autojunk_apart(self):
+        # Guards the test above against a fixture that has stopped exercising
+        # the setting: with difflib's default restored, at least one region has
+        # to come back as something other than a lone dot.
+        original = vgw.difflib.SequenceMatcher
+
+        def with_default_autojunk(*args, autojunk=True, **kwargs):
+            return original(*args, **kwargs)
+
+        with patch.object(vgw.difflib, "SequenceMatcher", with_default_autojunk):
+            regions = self._dotted_mention_regions()
+        self.assertTrue(any((region.sent, region.stored) != ("", MIDDLE_DOT) for region in regions))
+
     def test_a_wholesale_rewrite_is_reported_coarsely(self):
         sent = "a" * (vgw.MAX_FINE_DIFF_CHARS + 10)
         stored = "b" * (vgw.MAX_FINE_DIFF_CHARS + 10)
