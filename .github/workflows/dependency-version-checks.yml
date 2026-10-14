@@ -1,0 +1,258 @@
+name: Dependency version checks
+
+# Four report-only checks on what a pull request does to the resolved
+# dependency graph (issue #1284). A build file names some versions and Gradle
+# resolves others, so a Dependabot pull request whose diff bumps one coordinate
+# can move a whole library family its title and diff never mention (#1145 moved
+# every androidx.lifecycle artifact by bumping core-ktx).
+# scripts/ci/dependency-checks/dependency_checks.py defines the four checks:
+#
+#   dep-moves               resolved versions that differ between base and head
+#   dep-pin-drift           declared versions that resolve higher
+#   dep-classpath-mismatch  compile and runtime classpaths that disagree
+#   dep-compose-alignment   Compose artifacts off the Compose BOM's mapping
+#
+# Each is a job here, and each is meant to be a required check. A check that
+# finds something still succeeds: a finding is reported, as a comment and a
+# label, and is never a failure. A check that could not look fails: Gradle
+# could not resolve, or a report could not be parsed. A required check that
+# passed without looking would read exactly like one that found nothing.
+#
+# Trigger. Every pull request runs this workflow, and the `resolve` job decides
+# whether it has anything to do: only a change to a *.gradle.kts file or a
+# version catalog can move resolution, since every version here is exact. With
+# no such change the four checks skip, which a required check accepts. A
+# workflow-level `paths:` filter would instead leave them missing, which blocks
+# the merge. gradle/verification-metadata.xml is deliberately not a trigger: it
+# records what resolution produced rather than steering it.
+#
+# Two workflows, as for the Dependabot verification-metadata pair (gradle/README.md,
+# "Automated regeneration for Dependabot PRs"). This one runs the pull request's
+# build, so it holds `contents: read` and nothing else, which is also all GitHub
+# gives a Dependabot or fork pull request's run. It writes nothing to the pull
+# request: it uploads its findings as an artifact. The comments and labels are
+# written by dependency-version-checks-report.yml, which runs on workflow_run
+# from main and validates the findings as data before rendering anything from
+# them. That half needs no pull-request-author gate: it writes only the four
+# checks' own comments, rendered by main's code, and only their own five
+# labels, onto the pull request whose head the run was for.
+#
+# The checks resolve once, in `resolve`, and share its reports: the registries
+# rate-limit large resolutions, and resolving four times would make a required
+# check four times as likely to fail on one.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    # Two sides of seven configurations; a cold cache dominates. Never inherit
+    # GitHub's 360-minute default (issue #611).
+    timeout-minutes: 45
+    outputs:
+      build_files_changed: ${{ steps.diff.outputs.changed }}
+    steps:
+      - name: Check out the merge of the pull request into its base
+        # The merge commit's first parent is the base, so comparing the two
+        # isolates this pull request's change even when its branch is behind.
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+
+      - name: Find the build-file changes
+        id: diff
+        env:
+          WORK: ${{ runner.temp }}/dependency-version-checks
+        run: |
+          set -euo pipefail
+          mkdir -p "$WORK"
+          git diff -U0 HEAD^1 HEAD -- ':(glob)**/*.gradle.kts' ':(glob)**/*.versions.toml' \
+            > "$WORK/build-files.diff"
+          if [ -s "$WORK/build-files.diff" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Build files changed:"
+            git diff --name-only HEAD^1 HEAD -- ':(glob)**/*.gradle.kts' ':(glob)**/*.versions.toml'
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No build file changed, so resolution cannot have moved; the four checks skip."
+            # The report half still runs, to clear a comment and labels left
+            # by an earlier push that did change a build file.
+            python3 scripts/ci/dependency-checks/dependency_checks.py skipped "$WORK/findings.json"
+          fi
+
+      - name: Set up JDK 17
+        if: steps.diff.outputs.changed == 'true'
+        uses: actions/setup-java@v6
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Android SDK
+        if: steps.diff.outputs.changed == 'true'
+        # see: scripts/ci/test_setup_android_packages.py
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+        with:
+          packages: platform-tools
+
+      - name: Restore Gradle packages
+        # Restore only, under build-and-test's key, as android-lint does: a cache
+        # saved from a dependency report alone would lack what the build needs.
+        # A pull request that edits a build file misses the exact key and gets
+        # main's cache by prefix, which still saves most of the downloads.
+        if: steps.diff.outputs.changed == 'true'
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Check out the base beside the merge
+        if: steps.diff.outputs.changed == 'true'
+        run: git worktree add --detach "$RUNNER_TEMP/base" HEAD^1
+
+      - name: Report the head's dependencies
+        if: steps.diff.outputs.changed == 'true'
+        run: >-
+          bash scripts/ci/dependency-checks/collect_dependency_reports.sh
+          . "$RUNNER_TEMP/dependency-version-checks/reports/head"
+
+      - name: Report the base's dependencies
+        # The merge's copy of the collector runs against the base's tree, so
+        # both sides are read by the same configuration list.
+        if: steps.diff.outputs.changed == 'true'
+        run: >-
+          bash scripts/ci/dependency-checks/collect_dependency_reports.sh
+          "$RUNNER_TEMP/base" "$RUNNER_TEMP/dependency-version-checks/reports/base"
+
+      - name: Compare the two sides
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          WORK: ${{ runner.temp }}/dependency-version-checks
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/dependency-checks/dependency_checks.py analyze \
+            "$WORK/reports/base" "$WORK/reports/head" "$WORK/build-files.diff" \
+            "$(git rev-parse HEAD^1)" "$(git rev-parse HEAD)" "$WORK/findings.json"
+          python3 scripts/ci/dependency-checks/dependency_checks.py summaries \
+            "$WORK/findings.json" "$WORK"
+
+      - name: Upload the findings
+        uses: actions/upload-artifact@v7
+        with:
+          name: dependency-version-checks
+          path: ${{ runner.temp }}/dependency-version-checks
+          retention-days: 7
+
+  # The four checks. Each prints the report `resolve` rendered for it, and fails
+  # when `resolve` did not finish, so a check never passes without having
+  # looked. `!cancelled()` rather than the default `success()` is what lets
+  # them run, and fail, after `resolve` fails; with the default they would be
+  # skipped, which a required check reads as green. They skip only when
+  # `resolve` itself said no build file changed.
+  dep-moves:
+    needs: [resolve]
+    if: ${{ !cancelled() && needs.resolve.outputs.build_files_changed != 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Confirm the dependency reports were produced
+        if: needs.resolve.result != 'success'
+        env:
+          RESOLVE_RESULT: ${{ needs.resolve.result }}
+        run: |
+          echo "::error::The resolve job ended '$RESOLVE_RESULT', so this check could not look; its log says why."
+          exit 1
+      - name: Download the findings
+        uses: actions/download-artifact@v8
+        with:
+          name: dependency-version-checks
+          path: ${{ runner.temp }}/dependency-version-checks
+      - name: Report what this check found
+        env:
+          REPORT: ${{ runner.temp }}/dependency-version-checks/dep-moves.md
+        run: |
+          cat "$REPORT" >> "$GITHUB_STEP_SUMMARY"
+          cat "$REPORT"
+
+  dep-pin-drift:
+    needs: [resolve]
+    if: ${{ !cancelled() && needs.resolve.outputs.build_files_changed != 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Confirm the dependency reports were produced
+        if: needs.resolve.result != 'success'
+        env:
+          RESOLVE_RESULT: ${{ needs.resolve.result }}
+        run: |
+          echo "::error::The resolve job ended '$RESOLVE_RESULT', so this check could not look; its log says why."
+          exit 1
+      - name: Download the findings
+        uses: actions/download-artifact@v8
+        with:
+          name: dependency-version-checks
+          path: ${{ runner.temp }}/dependency-version-checks
+      - name: Report what this check found
+        env:
+          REPORT: ${{ runner.temp }}/dependency-version-checks/dep-pin-drift.md
+        run: |
+          cat "$REPORT" >> "$GITHUB_STEP_SUMMARY"
+          cat "$REPORT"
+
+  dep-classpath-mismatch:
+    needs: [resolve]
+    if: ${{ !cancelled() && needs.resolve.outputs.build_files_changed != 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Confirm the dependency reports were produced
+        if: needs.resolve.result != 'success'
+        env:
+          RESOLVE_RESULT: ${{ needs.resolve.result }}
+        run: |
+          echo "::error::The resolve job ended '$RESOLVE_RESULT', so this check could not look; its log says why."
+          exit 1
+      - name: Download the findings
+        uses: actions/download-artifact@v8
+        with:
+          name: dependency-version-checks
+          path: ${{ runner.temp }}/dependency-version-checks
+      - name: Report what this check found
+        env:
+          REPORT: ${{ runner.temp }}/dependency-version-checks/dep-classpath-mismatch.md
+        run: |
+          cat "$REPORT" >> "$GITHUB_STEP_SUMMARY"
+          cat "$REPORT"
+
+  dep-compose-alignment:
+    needs: [resolve]
+    if: ${{ !cancelled() && needs.resolve.outputs.build_files_changed != 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Confirm the dependency reports were produced
+        if: needs.resolve.result != 'success'
+        env:
+          RESOLVE_RESULT: ${{ needs.resolve.result }}
+        run: |
+          echo "::error::The resolve job ended '$RESOLVE_RESULT', so this check could not look; its log says why."
+          exit 1
+      - name: Download the findings
+        uses: actions/download-artifact@v8
+        with:
+          name: dependency-version-checks
+          path: ${{ runner.temp }}/dependency-version-checks
+      - name: Report what this check found
+        env:
+          REPORT: ${{ runner.temp }}/dependency-version-checks/dep-compose-alignment.md
+        run: |
+          cat "$REPORT" >> "$GITHUB_STEP_SUMMARY"
+          cat "$REPORT"

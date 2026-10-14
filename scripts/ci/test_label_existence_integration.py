@@ -15,6 +15,7 @@ Sources:
   scripts/ci/prs-and-issues/file_test_failure_issues.py:          LABELS constant
   scripts/ci/prs-and-issues/archive_stale_test_failures.py:       LABEL_TEST_FAILURE_ARCHIVE constant
   scripts/ci/prs-and-issues/watch_toolchain_bump.py:              TRACKING_ISSUE_LABEL constant
+  scripts/ci/dependency-checks/dependency_checks.py:              ALL_LABELS constant
   .github/release.yml:                          changelog.exclude.labels
 """
 
@@ -27,14 +28,16 @@ import urllib.request
 
 import yaml
 
-# The three source scripts now live in two different sibling directories
-# (the labels concern and the prs-and-issues concern); make both importable.
+# The source scripts live in sibling directories, one per concern; make each
+# importable.
 _CI_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(_CI_DIR, "labels"))
 sys.path.insert(0, os.path.join(_CI_DIR, "prs-and-issues"))
+sys.path.insert(0, os.path.join(_CI_DIR, "dependency-checks"))
 
 from archive_stale_test_failures import LABEL_TEST_FAILURE_ARCHIVE  # noqa: E402
 from check_blocking_labels import BLOCKING_LABELS  # noqa: E402
+from dependency_checks import ALL_LABELS as _DEPENDENCY_CHECK_LABELS  # noqa: E402
 from enforce_mutually_exclusive_labels import MUTUALLY_EXCLUSIVE_SETS  # noqa: E402
 from file_test_failure_issues import LABELS as _TEST_FAILURE_LABELS  # noqa: E402
 from watch_toolchain_bump import TRACKING_ISSUE_LABEL  # noqa: E402
@@ -78,6 +81,8 @@ REQUIRED_LABELS: frozenset[str] = (
     # Label the toolchain watcher applies to its tracking issue, and identifies it by: without
     # it, the watcher cannot find its own issue and would file a fresh one every week.
     | frozenset({TRACKING_ISSUE_LABEL})
+    # Labels the dependency version checks apply and remove (issue #1284).
+    | _DEPENDENCY_CHECK_LABELS
     # Labels excluded from GitHub's auto-generated release notes.
     | _release_notes_excluded_labels()
     # Labels that block a merge via the "Administrative merge holds (not failure)"

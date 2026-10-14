@@ -1,0 +1,119 @@
+name: Report dependency version checks
+
+# The write half of dependency-version-checks.yml; read that file's header
+# first for what the four checks do and why the work is split in two
+# (issue #1284).
+#
+# This workflow runs on workflow_run, so what executes is always this reviewed
+# file and main's scripts, never anything from the pull request: workflow_run
+# workflows run from the default branch. It checks out main, downloads the
+# findings the pull request's run uploaded, and runs
+# scripts/ci/dependency-checks/post_dependency_checks.py, which validates them
+# as data before rendering a comment from them, and writes the four checks'
+# comments and labels onto the pull request whose head that run was for. See
+# that script's docstring for how it finds the pull request and decides which
+# labels to add and remove.
+#
+# A run of the pull request's workflow that failed is not reported here. Its
+# four checks have already failed on the pull request, and there are no
+# findings to write.
+#
+# The last step mirrors this job's outcome onto the pull request's head as a
+# commit status named "Dependency version checks: report", as
+# dependabot-verification-metadata-push.yml does (issue #877): a workflow_run
+# job's own check run attaches to main, where the pull request never shows it.
+# The four required checks conclude before this workflow starts, so a failure
+# to write a comment or a label cannot fail them; this status is where it
+# shows. It is posted whenever the job fails, and on success only when the
+# checks ran, so a pull request that changed no build file gets no status.
+
+on:
+  workflow_run:
+    workflows: ["Dependency version checks"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    if: >-
+      github.event.workflow_run.event == 'pull_request'
+      && github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # The download below reads the pull request run's artifact, a different
+      # run than this one, which needs actions: read
+      # (scripts/test_cross_run_artifact_permissions.sh).
+      actions: read
+      # Comments and labels on the pull request.
+      issues: write
+      pull-requests: write
+      # The commit status in the last step.
+      statuses: write
+    steps:
+      - name: Check out main
+        # A workflow_run event checks out the default branch by default, which
+        # is the point: these scripts are main's, never the pull request's.
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts/ci
+
+      - name: Download the findings
+        uses: actions/download-artifact@v8
+        with:
+          name: dependency-version-checks
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+          path: ${{ runner.temp }}/dependency-version-checks
+
+      - name: Write the comments and labels
+        id: post
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          FINDINGS: ${{ runner.temp }}/dependency-version-checks/findings.json
+        run: python3 scripts/ci/dependency-checks/post_dependency_checks.py
+
+      - name: Report this job's outcome onto the pull request
+        if: >-
+          always()
+          && (job.status != 'success' || steps.post.outputs.status == 'checked')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          JOB_STATUS: ${{ job.status }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          if [ "$JOB_STATUS" = "success" ]; then
+            STATE="success"
+            DESCRIPTION="The dependency version checks' comments and labels are up to date"
+          else
+            STATE="failure"
+            DESCRIPTION="Could not write the dependency version checks' comments or labels (job $JOB_STATUS)"
+          fi
+          BODY="$RUNNER_TEMP/commit-status.json"
+          RESPONSE="$RUNNER_TEMP/commit-status-response.json"
+          jq -n --arg state "$STATE" --arg description "${DESCRIPTION:0:140}" \
+            --arg target_url "$RUN_URL" \
+            '{state: $state, description: $description, target_url: $target_url,
+              context: "Dependency version checks: report"}' > "$BODY"
+          CODE="$(curl -s -o "$RESPONSE" -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            --data-binary @"$BODY" "https://api.github.com/repos/$REPO/statuses/$HEAD_SHA")"
+          case "$CODE" in
+            2*) echo "Reported $STATE on $HEAD_SHA: $DESCRIPTION" ;;
+            404 | 422)
+              echo "::warning::$HEAD_SHA is no longer reachable (HTTP $CODE), so the '$STATE' status was not posted."
+              ;;
+            *)
+              echo "::error::Posting the '$STATE' status on $HEAD_SHA returned HTTP $CODE: $(head -c 500 "$RESPONSE")"
+              exit 1
+              ;;
+          esac
