@@ -1,0 +1,235 @@
+#!/usr/bin/env python3
+"""Write the dependency version checks' comments and labels onto a pull request (issue #1284).
+
+The write half of the split described in
+`.github/workflows/dependency-version-checks.yml`'s header: it runs from
+`dependency-version-checks-report.yml`, on `workflow_run`, so the code here is
+always the reviewed copy on main.
+What it reads from the pull request's run is the findings file, which
+`dependency_checks.load_findings` validates before anything is rendered.
+
+Which pull request: every open one whose head is HEAD_SHA, the commit the
+checks ran for.
+None is found when the pull request has closed, or when a newer push has moved
+its head, in which case the newer push's run reports instead and this one
+writes nothing rather than overwrite it with stale findings.
+
+Per check:
+
+- Its comment is the one github-actions[bot] wrote whose first line is the
+  check's marker. It is created, or edited in place when its text changes.
+  When the pull request no longer changes a build file, an existing comment
+  is updated to say so, and a pull request that never had one gets none.
+- The check adds each label its findings call for that the pull request
+  lacks. The comment records the labels the check owns: those it adds, and
+  those it owned before and still calls for (`owned_labels`). A label that was
+  already on the pull request when the check first called for it is not
+  recorded, so a label someone else applied, such as one a person added by
+  hand, is never removed.
+- The check removes a label only when the previous comment recorded owning it
+  and the new findings no longer call for it.
+- Labels change through the delta endpoints, never a replace-all (#710).
+- The record is never allowed to lose a label the check still has on the pull
+  request, since a later run can remove only what the record names.
+  Removals therefore run before the comment is written, and a label whose
+  removal fails stays in the record for the next run to retry. Additions run
+  after the comment, and not at all when it could not be written, so no label
+  is added without a record.
+
+Environment:
+    GITHUB_TOKEN        token with issues: write and pull-requests: write
+    GITHUB_REPOSITORY   "owner/repo"
+    HEAD_SHA            the pull request head the checks ran for
+    FINDINGS            path of the findings file
+    GITHUB_OUTPUT       optional; receives "status=checked" or "status=skipped"
+                        once the findings validate
+
+Exit code: 0 when every write succeeded or there was nothing to write, 1 when
+the findings are invalid or any GitHub call failed.
+"""
+
+import os
+import sys
+import urllib.error
+
+_CI_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(_CI_DIR, "labels"))
+
+import dependency_checks as dc  # noqa: E402
+import enforce_mutually_exclusive_labels as emxl  # noqa: E402
+
+BOT_LOGIN = "github-actions[bot]"
+
+COMMENTS_PER_PAGE = 100
+
+_API_ERRORS = (urllib.error.HTTPError, urllib.error.URLError)
+
+
+def pulls_with_head(repo: str, token: str, head_sha: str) -> list[dict]:
+    """Return every open pull request whose head commit is *head_sha*."""
+    return [
+        pr
+        for pr in emxl.fetch_open_pull_requests(repo, token)
+        if (pr.get("head") or {}).get("sha") == head_sha
+    ]
+
+
+def list_comments(repo: str, token: str, number: int) -> list[dict]:
+    """Return every issue comment on pull request *number*, following pagination."""
+    comments: list[dict] = []
+    page = 1
+    while True:
+        batch = emxl.gh_api(
+            f"repos/{repo}/issues/{number}/comments?per_page={COMMENTS_PER_PAGE}&page={page}",
+            token=token,
+        )
+        if not batch:
+            break
+        comments.extend(batch)
+        if len(batch) < COMMENTS_PER_PAGE:
+            break
+        page += 1
+    return comments
+
+
+def find_check_comment(comments: list[dict], check: str) -> dict | None:
+    """Return the comment this automation wrote for *check*, or None."""
+    marker = dc.comment_marker(check)
+    for comment in comments:
+        body = comment.get("body") or ""
+        if (comment.get("user") or {}).get("login") == BOT_LOGIN and (
+            body.split("\n", 1)[0] == marker
+        ):
+            return comment
+    return None
+
+
+def owned_labels(wanted: list[str], previous: set[str], current: set[str]) -> list[str]:
+    """Return the labels a check owns after this run, in *wanted*'s order.
+
+    *wanted* is what the findings call for, *previous* what the check owned
+    before, and *current* what the pull request carries now. A wanted label
+    the pull request lacks is one this run adds, so the check owns it. A
+    wanted label already present is the check's only if it owned it before.
+    """
+    return [label for label in wanted if label in previous or label not in current]
+
+
+def report_check(
+    repo: str, token: str, pr: dict, comments: list[dict], check: str, findings: dict
+) -> bool:
+    """Bring *check*'s comment and labels on *pr* up to date; return False on any failure."""
+    number = pr["number"]
+    existing = find_check_comment(comments, check)
+    if findings["status"] != dc.STATUS_CHECKED and existing is None:
+        return True
+
+    wanted = dc.labels_for(check, findings)
+    current = {label.get("name") for label in pr.get("labels") or []}
+    previous = set(dc.recorded_labels(existing.get("body") or "")) if existing else set()
+    previous &= set(dc.CHECK_LABELS[check])
+    ok = True
+
+    still_held = []
+    for label in sorted((previous & current) - set(wanted)):
+        if not emxl.remove_labels(number, [label], repo, token, reason="cleared"):
+            still_held.append(label)
+            ok = False
+
+    owned = owned_labels(wanted, previous, current) + still_held
+    body = dc.render_comment(check, findings, owned)
+    try:
+        if existing is None:
+            emxl.gh_api(
+                f"repos/{repo}/issues/{number}/comments",
+                token=token,
+                method="POST",
+                body={"body": body},
+            )
+            print(f"Posted the {check} comment on #{number}.")
+        elif existing.get("body") != body:
+            emxl.gh_api(
+                f"repos/{repo}/issues/comments/{existing['id']}",
+                token=token,
+                method="PATCH",
+                body={"body": body},
+            )
+            print(f"Updated the {check} comment on #{number}.")
+        else:
+            print(f"The {check} comment on #{number} is already current.")
+    except _API_ERRORS as exc:
+        print(
+            f"::error::Could not write the {check} comment on #{number}: {exc}. "
+            "Adding no labels, since the comment is their record.",
+            file=sys.stderr,
+        )
+        return False
+
+    to_add = [label for label in wanted if label not in current]
+    if to_add:
+        try:
+            emxl.gh_api(
+                f"repos/{repo}/issues/{number}/labels",
+                token=token,
+                method="POST",
+                body={"labels": to_add},
+            )
+            print(f"Added {to_add} to #{number}.")
+        except _API_ERRORS as exc:
+            print(f"::error::Could not add {to_add} to #{number}: {exc}", file=sys.stderr)
+            ok = False
+    return ok
+
+
+def main() -> int:
+    token = os.environ.get("GITHUB_TOKEN", "")
+    repo = os.environ.get("GITHUB_REPOSITORY", "")
+    head_sha = os.environ.get("HEAD_SHA", "")
+    findings_path = os.environ.get("FINDINGS", "")
+    if not (token and repo and head_sha and findings_path):
+        print(
+            "::error::GITHUB_TOKEN, GITHUB_REPOSITORY, HEAD_SHA and FINDINGS are all required.",
+            file=sys.stderr,
+        )
+        return 1
+
+    try:
+        findings = dc.load_findings(findings_path)
+    except dc.FindingsError as exc:
+        print(f"::error::The findings are not usable: {exc}", file=sys.stderr)
+        return 1
+    output = os.environ.get("GITHUB_OUTPUT")
+    if output:
+        with open(output, "a", encoding="utf-8") as f:
+            f.write(f"status={findings['status']}\n")
+
+    try:
+        pulls = pulls_with_head(repo, token, head_sha)
+    except _API_ERRORS as exc:
+        print(f"::error::Could not list the open pull requests: {exc}", file=sys.stderr)
+        return 1
+    if not pulls:
+        print(
+            f"No open pull request has {head_sha} as its head: it has closed, or a newer "
+            "push moved it and that push's run reports instead. Nothing to write."
+        )
+        return 0
+
+    ok = True
+    for pr in pulls:
+        try:
+            comments = list_comments(repo, token, pr["number"])
+        except _API_ERRORS as exc:
+            print(
+                f"::error::Could not list the comments on #{pr['number']}: {exc}",
+                file=sys.stderr,
+            )
+            ok = False
+            continue
+        for check in dc.CHECKS:
+            ok = report_check(repo, token, pr, comments, check, findings) and ok
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

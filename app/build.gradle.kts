@@ -235,6 +235,8 @@ android {
     }
 }
 
+// A pull request that changes this file gets the dependency version checks' report; see
+// "Dependency version checks" in gradle/README.md.
 dependencies {
     // AndroidX Core
     implementation("androidx.core:core-ktx:1.19.1")

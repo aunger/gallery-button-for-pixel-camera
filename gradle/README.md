@@ -167,6 +167,31 @@ Adding `workflow_dispatch` (#878) is the intended fix for that dead end.
 > Prefer the routes that do not depend on a mention at all: re-run the regen workflow run, or ask a human to post the command and say plainly why you cannot.
 > Content committed through git is never affected; only text posted through the API is.
 
+## Dependency version checks (issue #1284)
+
+A build file names some versions and Gradle resolves others.
+`.github/workflows/dependency-version-checks.yml` reports the gap on every pull request that changes a `*.gradle.kts` file or a version catalog, so that a bump whose diff names one coordinate cannot move a library family unseen (#1145 moved every `androidx.lifecycle` artifact by bumping `core-ktx`).
+
+| Check (job)              | Reports                                                                       | Label                                                                       |
+| ------------------------ | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `dep-change`             | every library whose resolved version differs between base and head            | `dep: change`, and `dep: hidden change` for a move no changed line explains |
+| `dep-pin-drift`          | every coordinate declared with an explicit version that resolves higher       | `dep: pin drift`                                                            |
+| `dep-classpath-mismatch` | per variant, libraries the compile and runtime classpaths resolve differently | `dep: classpath mismatch`                                                   |
+| `dep-compose-alignment`  | Compose artifacts that resolve off the version the Compose BOM maps           | `dep: compose misaligned`                                                   |
+
+A finding is never a failure: the check succeeds, and the report half comments and labels.
+A check fails only when it could not look, because Gradle could not resolve or a report could not be parsed.
+The four are meant to be required checks; on a pull request that changes no build file they skip, which a required check accepts.
+
+They resolve with dependency verification off, since they only read versions, so a Dependabot pull request still waiting for the regeneration above is reported rather than failing to resolve.
+The configurations read, and the rule for a hidden move, are in `scripts/ci/dependency-checks/dependency_checks.py`.
+The workflow's header covers the trigger and the split into a read-only `pull_request` half and a `workflow_run` half (`dependency-version-checks-report.yml`) that writes the comments and labels, for the same reason as the Dependabot pair above.
+That half also posts a "Dependency version checks: report" commit status on the pull request's head, which is where a failure to write a comment or label shows: the required checks have concluded by then.
+
+A check removes only a label it added itself, which its comment records.
+A label already on the pull request when the check first called for it, such as one a person applied by hand, is never recorded and never removed.
+`dep-change` uses `dep: change` rather than Dependabot's own `dependencies` label, which Dependabot applies to every pull request it opens.
+
 ## `wrapper/gradle-wrapper.properties` -- distribution pin
 
 `distributionSha256Sum` pins the Gradle 9.5.1 distribution (`gradle-9.5.1-bin.zip`) to its published SHA-256.

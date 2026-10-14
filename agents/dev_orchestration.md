@@ -16,8 +16,13 @@ It drives the pull request toward consensus among the sub-agents and a green res
 - `pip-audit`
 - `shell-tests`
 - `check-diff`
+- `dep-change`
+- `dep-pin-drift`
+- `dep-classpath-mismatch`
+- `dep-compose-alignment`
 
-These are the required checks on `main` (per `GET /repos/{owner}/{repo}/rules/branches/main` on 2026-09-18, plus `android-lint`, added with #985) less one.
+These are the required checks on `main` (per `GET /repos/{owner}/{repo}/rules/branches/main` on 2026-09-18, plus `android-lint`, added with #985) less one, together with the four `dep-*` checks of `.github/workflows/dependency-version-checks.yml` (#1284), which the owner adds to the ruleset once #1284 merges.
+The four `dep-*` checks skip on a pull request that changes no build file, and a finding never fails them; they fail only when they could not look.
 `Administrative merge holds (not failure)` is left off deliberately: it is the merge gate, it is red for the whole of every cycle by design, and no agent may act on it (see "Orchestrator may not").
 `ignored_check_regex` in `scripts/ci_monitor/ci_monitor.config.json` leaves it out of the Monitor's verdict too.
 A change that adds or removes a required check updates this list in the same change.
