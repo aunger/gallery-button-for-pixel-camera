@@ -315,8 +315,14 @@ git -C "$REPO" commit -q -m "seed" --no-verify >/dev/null 2>&1
 ( cd "$REPO" && "$LINT_SH" --check --only hygiene --all >/dev/null 2>&1 )
 RC_ALL=$?
 if [[ "$RC_ALL" -ne 0 ]]; then pass "--all flags a tracked 600 KB file"; else fail "--all should flag a tracked 600 KB file"; fi
-# The same tree without big.txt passes the same invocation. RC_HOOK below does
-# not control RC_ALL: it drops both --check and --all.
+# The hook path lints only the files it is handed, without --enforce-all, so a
+# pre-existing large file it was not given must not be flagged.
+( cd "$REPO" && "$LINT_SH" --only hygiene small.py >/dev/null 2>&1 )
+RC_HOOK=$?
+if [[ "$RC_HOOK" -eq 0 ]]; then pass "file-list path ignores an unlisted large file"; else fail "file-list path should not flag an unlisted large file, rc=$RC_HOOK"; fi
+# The same tree without big.txt passes the same invocation as RC_ALL. RC_HOOK
+# above does not control RC_ALL: it drops both --check and --all. This runs last
+# because it replaces $REPO, and RC_HOOK needs the repo that tracks big.txt.
 REPO="$(new_repo)"
 printf 'x = 1\n' > "$REPO/small.py"
 git -C "$REPO" add -A
@@ -324,11 +330,6 @@ git -C "$REPO" commit -q -m "seed" --no-verify >/dev/null 2>&1
 ( cd "$REPO" && "$LINT_SH" --check --only hygiene --all >/dev/null 2>&1 )
 RC=$?
 if [[ "$RC" -eq 0 ]]; then pass "--all passes a tree without the 600 KB file"; else fail "--all should pass a tree without the 600 KB file, rc=$RC"; fi
-# The hook path lints only the files it is handed, without --enforce-all, so a
-# pre-existing large file it was not given must not be flagged.
-( cd "$REPO" && "$LINT_SH" --only hygiene small.py >/dev/null 2>&1 )
-RC_HOOK=$?
-if [[ "$RC_HOOK" -eq 0 ]]; then pass "file-list path ignores an unlisted large file"; else fail "file-list path should not flag an unlisted large file, rc=$RC_HOOK"; fi
 
 # ── (m) unlabeled fenced code block (MD040) blocks the commit ───────────────
 echo ""
