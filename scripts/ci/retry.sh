@@ -11,6 +11,7 @@
 #   scripts/ci/retry.sh <attempts> <delay-seconds> <command> [<arg>...]
 #     attempts       how many times to run the command at most (1 or more)
 #     delay-seconds  how long to sleep between attempts (0 or more)
+#   Both are decimal integers written without leading zeros.
 #
 # Runs <command> with its arguments unchanged until it exits 0 or has run
 # <attempts> times. Exits 0 on the first success; otherwise exits with the
@@ -29,8 +30,9 @@ usage() {
 attempts="$1"
 delay="$2"
 shift 2
-[[ "$attempts" =~ ^[0-9]+$ && "$attempts" -ge 1 ]] || usage
-[[ "$delay" =~ ^[0-9]+$ ]] || usage
+# No leading zeros: bash arithmetic would read `010` as octal 8.
+[[ "$attempts" =~ ^[1-9][0-9]*$ ]] || usage
+[[ "$delay" =~ ^(0|[1-9][0-9]*)$ ]] || usage
 
 for ((attempt = 1; ; attempt++)); do
   "$@"

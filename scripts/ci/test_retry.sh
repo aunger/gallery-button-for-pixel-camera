@@ -13,7 +13,8 @@
 #       after the last attempt, one ::error
 #   (d) Arguments reach the command unchanged, including spaces and `;`
 #   (e) One attempt -> a failure is not retried
-#   (f) Usage errors -> exit 2 and the command never runs
+#   (f) Usage errors, leading zeros among them -> exit 2 and the command
+#       never runs
 #
 # Always exits 0 on success, non-zero on failure.
 
@@ -118,7 +119,8 @@ expect_eq "sleeps" "" "$SLEEPS"
 # ── (f) Usage errors ─────────────────────────────────────────────────────────
 echo ""
 echo "=== (f) usage errors ==="
-for args in "3 30" "0 30 fake_cmd" "x 30 fake_cmd" "3 -1 fake_cmd" "3 1.5 fake_cmd"; do
+for args in "3 30" "0 30 fake_cmd" "x 30 fake_cmd" "3 -1 fake_cmd" "3 1.5 fake_cmd" \
+  "010 30 fake_cmd" "08 30 fake_cmd" "3 010 fake_cmd"; do
   # shellcheck disable=SC2086 # word splitting is the point
   run_retry 1 1 $args
   expect_eq "'$args' exits 2" 2 "$RC"
