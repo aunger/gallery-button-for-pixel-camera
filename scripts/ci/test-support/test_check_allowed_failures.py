@@ -233,7 +233,7 @@ class MainExitCodeTests(unittest.TestCase):
             self.assertIn("com.example.BazTest#testE", out)
 
     def test_missing_directory_is_skipped_not_fatal(self):
-        code, out = self._run(["/no/such/dir", "--suite-label", "Unit Tests"])
+        code, _out = self._run(["/no/such/dir", "--suite-label", "Unit Tests"])
         self.assertEqual(code, 0)
 
     def test_failure_outcome_without_test_failure_is_an_infra_failure(self):

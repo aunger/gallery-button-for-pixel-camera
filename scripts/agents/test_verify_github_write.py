@@ -489,8 +489,10 @@ def pr_958_reason_one(owner_repo_link=markdown_link) -> str:
         [
             "### 1. The dispatcher excludes the window by type",
             "",
-            "Every file below was read on android.googlesource.com at the"
-            " `android15-release` branch, which is this AVD's API 35.",
+            (
+                "Every file below was read on android.googlesource.com at the"
+                " `android15-release` branch, which is this AVD's API 35."
+            ),
             "",
             "- `DisplayPolicy.enablePointerLocation()` adds the readout with"
             " `lp.type = TYPE_SECURE_SYSTEM_OVERLAY`, in "

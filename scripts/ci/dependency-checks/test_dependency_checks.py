@@ -18,6 +18,8 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import itertools
+
 import dependency_checks as dc
 from workflow_files import REPO_ROOT, load_workflow
 
@@ -96,7 +98,7 @@ class CompareVersionsTest(unittest.TestCase):
     def test_orders(self):
         ascending = ["1.0.0-alpha01", "1.0.0-alpha02", "1.0.0-beta01", "1.0.0-rc01", "1.0.0"]
         ascending += ["1.0.0.1", "1.0.1", "1.2", "1.10", "2.0.0"]
-        for lower, higher in zip(ascending, ascending[1:]):
+        for lower, higher in itertools.pairwise(ascending):
             with self.subTest(lower=lower, higher=higher):
                 self.assertEqual(dc.compare_versions(lower, higher), -1)
                 self.assertEqual(dc.compare_versions(higher, lower), 1)

@@ -79,25 +79,25 @@ class TestFetchAllIssues(unittest.TestCase):
 class TestBuildReport(unittest.TestCase):
     def test_matched_and_missing_label_goes_to_add(self):
         items = [_issue(1, "Fix the CI pipeline", [])]
-        add, match, miss, to_apply = blt.build_report(items)
+        add, _match, _miss, to_apply = blt.build_report(items)
         self.assertEqual(add["ci"], [1])
         self.assertEqual(to_apply[1], ["ci"])
 
     def test_matched_and_present_label_goes_to_match(self):
         items = [_issue(2, "Fix the CI pipeline", ["ci"])]
-        add, match, miss, to_apply = blt.build_report(items)
+        _add, match, _miss, to_apply = blt.build_report(items)
         self.assertEqual(match["ci"], [2])
         self.assertNotIn(2, to_apply)
 
     def test_tracked_label_present_but_unmatched_goes_to_miss(self):
         items = [_issue(3, "Bump the version number", ["agents"])]
-        add, match, miss, to_apply = blt.build_report(items)
+        _add, _match, miss, to_apply = blt.build_report(items)
         self.assertEqual(miss["agents"], [3])
         self.assertNotIn(3, to_apply)
 
     def test_untracked_label_present_but_unmatched_is_ignored(self):
         items = [_issue(4, "Bump the version number", ["bug"])]
-        add, match, miss, to_apply = blt.build_report(items)
+        add, match, miss, _to_apply = blt.build_report(items)
         self.assertEqual(add, {})
         self.assertEqual(match, {})
         self.assertEqual(miss, {})
@@ -107,14 +107,14 @@ class TestBuildReport(unittest.TestCase):
         # "miss": that category would then contain every "product"-labeled
         # issue/PR on every run, forever, drowning out genuine rule drift.
         items = [_issue(6, "Bump the version number", ["product"])]
-        add, match, miss, to_apply = blt.build_report(items)
+        add, match, miss, _to_apply = blt.build_report(items)
         self.assertEqual(add, {})
         self.assertEqual(match, {})
         self.assertEqual(miss, {})
 
     def test_ci_present_but_title_no_longer_matches_goes_to_miss(self):
         items = [_issue(5, "Bump the version number", ["ci"])]
-        add, match, miss, to_apply = blt.build_report(items)
+        _add, _match, miss, _to_apply = blt.build_report(items)
         self.assertEqual(miss["ci"], [5])
 
     def test_multiple_items_accumulate_per_label(self):
@@ -122,12 +122,12 @@ class TestBuildReport(unittest.TestCase):
             _issue(1, "Fix the CI pipeline", []),
             _issue(2, "Automate the release", []),
         ]
-        add, match, miss, to_apply = blt.build_report(items)
+        add, _match, _miss, _to_apply = blt.build_report(items)
         self.assertEqual(sorted(add["ci"]), [1, 2])
 
     def test_multi_label_title_produces_multiple_to_apply_entries(self):
         items = [_issue(1, "Add CiWatcher agent and fix Reviewer CI-polling loop", [])]
-        add, match, miss, to_apply = blt.build_report(items)
+        _add, _match, _miss, to_apply = blt.build_report(items)
         self.assertIn("ci", to_apply[1])
         self.assertIn("agents", to_apply[1])
 
@@ -137,7 +137,7 @@ class TestBuildReport(unittest.TestCase):
         # -f would otherwise reapply exactly what the if-and-only-if rule in
         # label_by_files.py forbids.
         items = [_pull_request(1, "Tighten guidance for agents", [])]
-        add, match, miss, to_apply = blt.build_report(items)
+        add, _match, _miss, to_apply = blt.build_report(items)
         self.assertNotIn("agents", add)
         self.assertNotIn(1, to_apply)
 
@@ -145,18 +145,18 @@ class TestBuildReport(unittest.TestCase):
         # Reporting it would put every `agents`-labeled PR in "miss" on every
         # run: the permanent noise TRACKED_LABELS exists to avoid.
         items = [_pull_request(2, "Bump the version number", ["agents"])]
-        add, match, miss, to_apply = blt.build_report(items)
+        _add, _match, miss, _to_apply = blt.build_report(items)
         self.assertEqual(miss, {})
 
     def test_pull_request_still_reports_labels_the_title_rule_owns(self):
         items = [_pull_request(3, "Bump the version number", ["ci", "agents"])]
-        add, match, miss, to_apply = blt.build_report(items)
+        _add, _match, miss, _to_apply = blt.build_report(items)
         self.assertEqual(miss["ci"], [3])
         self.assertNotIn("agents", miss)
 
     def test_issue_without_a_pull_request_key_is_unchanged(self):
         items = [_issue(4, "Tighten guidance for agents", [])]
-        add, match, miss, to_apply = blt.build_report(items)
+        add, _match, _miss, to_apply = blt.build_report(items)
         self.assertEqual(add["agents"], [4])
         self.assertEqual(to_apply[4], ["agents"])
 
@@ -295,25 +295,25 @@ class TestParseSkipMatches(unittest.TestCase):
         self.assertEqual(labels, frozenset({"ci", "agents"}))
 
     def test_whitespace_around_labels_is_stripped(self):
-        include_match, labels = blt.parse_skip_matches("ci, agents , automated tests")
+        _include_match, labels = blt.parse_skip_matches("ci, agents , automated tests")
         self.assertEqual(labels, frozenset({"ci", "agents", "automated tests"}))
 
     def test_trailing_comma_does_not_add_empty_label(self):
-        include_match, labels = blt.parse_skip_matches("ci,")
+        _include_match, labels = blt.parse_skip_matches("ci,")
         self.assertEqual(labels, frozenset({"ci"}))
 
     def test_double_quoted_labels_are_unquoted(self):
         # A shell only strips one layer of quoting, e.g.
         # --skip-matches='"ci","agents"' leaves the inner quotes literal.
-        include_match, labels = blt.parse_skip_matches('"ci","agents"')
+        _include_match, labels = blt.parse_skip_matches('"ci","agents"')
         self.assertEqual(labels, frozenset({"ci", "agents"}))
 
     def test_single_quoted_labels_are_unquoted(self):
-        include_match, labels = blt.parse_skip_matches("'ci','agents'")
+        _include_match, labels = blt.parse_skip_matches("'ci','agents'")
         self.assertEqual(labels, frozenset({"ci", "agents"}))
 
     def test_quotes_and_whitespace_together_are_stripped(self):
-        include_match, labels = blt.parse_skip_matches("\"ci\", agents , 'automated tests'")
+        _include_match, labels = blt.parse_skip_matches("\"ci\", agents , 'automated tests'")
         self.assertEqual(labels, frozenset({"ci", "agents", "automated tests"}))
 
 

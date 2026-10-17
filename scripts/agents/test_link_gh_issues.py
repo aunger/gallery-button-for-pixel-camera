@@ -911,7 +911,7 @@ class TestOneParent(unittest.TestCase):
     def test_the_parent_is_read_once_and_then_followed(self):
         """Two moves of one issue in a call: the second must see the first."""
         fake = self.child_of_17()
-        code, out, err = run(
+        code, _out, err = run(
             ["add", OWNER, REPO, "42", "--child-of", "19", "--child-of", "17", "--replace-parent"],
             fake,
         )

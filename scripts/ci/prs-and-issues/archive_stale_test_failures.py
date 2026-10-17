@@ -91,7 +91,7 @@ def fetch_stale_issues(repo: str, token: str, cutoff: datetime.datetime) -> list
 
     stale = []
     for issue in issues:
-        updated_at = datetime.datetime.fromisoformat(issue["updated_at"].replace("Z", "+00:00"))
+        updated_at = datetime.datetime.fromisoformat(issue["updated_at"])
         if updated_at < cutoff:
             stale.append(issue)
     return stale

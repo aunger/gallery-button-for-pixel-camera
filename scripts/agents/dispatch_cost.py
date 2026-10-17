@@ -602,7 +602,7 @@ def call_rows(session: Session, multipliers: Multipliers, fraction: float) -> li
 
 
 def thousands(value: float) -> str:
-    return f"{int(round(value)):,}"
+    return f"{round(value):,}"
 
 
 def percent(value: float) -> str:

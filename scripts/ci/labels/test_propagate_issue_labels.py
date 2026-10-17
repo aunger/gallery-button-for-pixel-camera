@@ -212,7 +212,7 @@ class TestLabelsToPropagate(unittest.TestCase):
                 self.assertEqual(excluded, [label])
 
     def test_process_state_exclusion_is_case_insensitive(self):
-        to_add, skipped, excluded = pil.labels_to_propagate([], ["Orchestrating"])
+        to_add, _skipped, excluded = pil.labels_to_propagate([], ["Orchestrating"])
         self.assertEqual(to_add, [])
         self.assertEqual(excluded, ["Orchestrating"])
 
@@ -223,7 +223,9 @@ class TestLabelsToPropagate(unittest.TestCase):
         self.assertEqual(excluded, ["orchestrating"])
 
     def test_process_state_label_deduplicated_across_issues(self):
-        to_add, skipped, excluded = pil.labels_to_propagate([], ["orchestrating", "orchestrating"])
+        _to_add, _skipped, excluded = pil.labels_to_propagate(
+            [], ["orchestrating", "orchestrating"]
+        )
         self.assertEqual(excluded, ["orchestrating"])
 
     # -- FILE_DETERMINED_LABELS exclusion (issue #785) -----------------------
@@ -237,12 +239,12 @@ class TestLabelsToPropagate(unittest.TestCase):
     def test_excludes_agents_even_when_the_pr_already_carries_it(self):
         # Ordered ahead of the already-present check, matching how
         # PROCESS_STATE_LABELS is handled today.
-        to_add, skipped, excluded = pil.labels_to_propagate(["agents"], ["agents"])
+        to_add, _skipped, excluded = pil.labels_to_propagate(["agents"], ["agents"])
         self.assertEqual(to_add, [])
         self.assertEqual(excluded, ["agents"])
 
     def test_file_determined_exclusion_is_case_insensitive(self):
-        to_add, skipped, excluded = pil.labels_to_propagate([], ["Agents"])
+        to_add, _skipped, excluded = pil.labels_to_propagate([], ["Agents"])
         self.assertEqual(to_add, [])
         self.assertEqual(excluded, ["Agents"])
 

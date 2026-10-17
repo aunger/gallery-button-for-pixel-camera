@@ -766,8 +766,7 @@ def extract_ndjson_lines(zip_bytes):
         for info in zf.namelist():
             if info.endswith(".ndjson"):
                 with zf.open(info) as fh:
-                    for line in io.TextIOWrapper(fh, encoding="utf-8", errors="replace"):
-                        yield line
+                    yield from io.TextIOWrapper(fh, encoding="utf-8", errors="replace")
 
 
 # HTTP (stdlib urllib)-----------------------------------------------------------

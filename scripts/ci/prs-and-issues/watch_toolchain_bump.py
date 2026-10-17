@@ -788,10 +788,12 @@ def render_comment(state: dict, prior: dict | None) -> str:
         sections += [*verdict, ""]
 
     sections += [
-        "**Next step**: re-read the KGP compatibility table on "
-        "[Configure a Gradle project](https://kotlinlang.org/docs/gradle-configure-project.html) "
-        'by hand, then follow "Performing a toolchain bump" in `gradle/README.md`. '
-        "This watcher deliberately does not scrape that table, and it does not bump anything.",
+        (
+            "**Next step**: re-read the KGP compatibility table on "
+            "[Configure a Gradle project](https://kotlinlang.org/docs/gradle-configure-project.html) "
+            'by hand, then follow "Performing a toolchain bump" in `gradle/README.md`. '
+            "This watcher deliberately does not scrape that table, and it does not bump anything."
+        ),
         "",
         render_state_block(state),
     ]

@@ -5539,9 +5539,7 @@ def main() -> int:
         "expected the still-computing heartbeat line; output: %r" % out_bf2,
     )
     check(
-        not any(
-            ln.startswith("PR#748: Blocked") or ln.startswith("PR#748: Infra") for ln in lines_bf2
-        ),
+        not any(ln.startswith(("PR#748: Blocked", "PR#748: Infra")) for ln in lines_bf2),
         "the still-computing heartbeat does NOT begin with a Blocked/Infra terminal keyword",
         "a still-computing line looks like a terminal; output: %r" % out_bf2,
     )
@@ -5588,9 +5586,7 @@ def main() -> int:
     out_bf2b = buf_bf2b.getvalue()
     lines_bf2b = out_bf2b.splitlines()
     check(
-        not any(
-            ln.startswith("PR#748: Blocked") or ln.startswith("PR#748: Infra") for ln in lines_bf2b
-        )
+        not any(ln.startswith(("PR#748: Blocked", "PR#748: Infra")) for ln in lines_bf2b)
         and lines_bf2b[-1] == "PR#748: Clear (mergeable_state=clean)",
         "a mergeable non-clean/unstable state (has_hooks) keeps polling, not a false block",
         "has_hooks did not keep polling to Clear; output: %r" % out_bf2b,
@@ -5732,10 +5728,7 @@ def main() -> int:
     )
     check(
         not any(
-            ln.startswith("PR#968: Clear")
-            or ln.startswith("PR#968: Blocked")
-            or ln.startswith("PR#968: Infra")
-            for ln in lines_bg
+            ln.startswith(("PR#968: Clear", "PR#968: Blocked", "PR#968: Infra")) for ln in lines_bg
         ),
         "Draft on hold is its own terminal, neither Clear nor Blocked/Infra",
         "unexpected Clear/Blocked/Infra terminal; output: %r" % out_bg,
@@ -5795,9 +5788,7 @@ def main() -> int:
         "expected 'Draft on hold by: build-and-test (mergeable_state=draft)'; output: %r" % out_bg2,
     )
     check(
-        not any(
-            ln.startswith("PR#968: Blocked") or ln.startswith("PR#968: Infra") for ln in lines_bg2
-        ),
+        not any(ln.startswith(("PR#968: Blocked", "PR#968: Infra")) for ln in lines_bg2),
         "no Blocked/Infra merge-block claim off a draft PR's masked mergeable_state",
         "unexpected Blocked/Infra terminal; output: %r" % out_bg2,
     )
@@ -6792,7 +6783,7 @@ def main() -> int:
             "output: %r; rc %r" % (lines_bm2, rc_bm2),
         )
 
-    lines_bm3, rc_bm3, urls_bm3, _ = once_bm(
+    lines_bm3, _rc_bm3, urls_bm3, _ = once_bm(
         ["--branch", "main"], CHECKS_BM, commit={"sha": "cafef00d"}
     )
     check(

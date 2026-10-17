@@ -211,17 +211,17 @@ class TestMakeIssueBody(unittest.TestCase):
         self._tmpdir.cleanup()
 
     def _make_body(self, **kwargs):
-        defaults = dict(
-            failure=self.failure,
-            directory=self.tmpdir,
-            timestamp=_FIXED_TS,
-            sha=_FIXED_SHA,
-            github_server_url="https://github.com",
-            github_repository="aunger/gallery-button-for-pixel-camera",
-            github_run_id="12345",
-            workflow_run_branch="main",
-            pr_url="",
-        )
+        defaults = {
+            "failure": self.failure,
+            "directory": self.tmpdir,
+            "timestamp": _FIXED_TS,
+            "sha": _FIXED_SHA,
+            "github_server_url": "https://github.com",
+            "github_repository": "aunger/gallery-button-for-pixel-camera",
+            "github_run_id": "12345",
+            "workflow_run_branch": "main",
+            "pr_url": "",
+        }
         defaults.update(kwargs)
         return ftfi.make_issue_body(**defaults)
 
@@ -356,12 +356,12 @@ class TestMakeSummaryBody(unittest.TestCase):
         )
 
     def _make_summary(self, **kwargs):
-        defaults = dict(
-            failure=self.failure,
-            github_server_url="https://github.com",
-            github_repository="aunger/gallery-button-for-pixel-camera",
-            workflow_run_branch="main",
-        )
+        defaults = {
+            "failure": self.failure,
+            "github_server_url": "https://github.com",
+            "github_repository": "aunger/gallery-button-for-pixel-camera",
+            "workflow_run_branch": "main",
+        }
         defaults.update(kwargs)
         return ftfi.make_summary_body(**defaults)
 

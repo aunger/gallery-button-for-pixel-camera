@@ -121,7 +121,7 @@ def find_label_applied_at(
             event_label = (event.get("label") or {}).get("name", "")
             if event_label.lower() != wanted:
                 continue
-            created_at = datetime.datetime.fromisoformat(event["created_at"].replace("Z", "+00:00"))
+            created_at = datetime.datetime.fromisoformat(event["created_at"])
             if latest is None or created_at > latest:
                 latest = created_at
         if len(batch) < 100:

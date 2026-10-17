@@ -637,7 +637,7 @@ class TestDegradesOneTranscriptAtATime(ProjectFixture):
     def test_the_skip_also_reaches_stderr(self):
         self.orchestrator([record("msg_a", "2026-09-06T09:00:00.000Z")])
         self.orchestrator([non_call_record("2026-09-06T09:00:00.000Z")], session=self.OTHER)
-        code, out, err = self.run_main()
+        code, _out, err = self.run_main()
         self.assertEqual(code, 0)
         self.assertIn("skipped", err)
         self.assertIn(self.OTHER, err)

@@ -656,8 +656,10 @@ def build_report(
                 classes.append(region.classification)
 
     lines = [
-        f"GitHub write altered in storage: {tool_name} wrote {target.description}, "
-        "and the stored text is not the text that was sent.",
+        (
+            f"GitHub write altered in storage: {tool_name} wrote {target.description}, "
+            "and the stored text is not the text that was sent."
+        ),
         f"  object: {target.api_url}",
     ]
     if html_url:
