@@ -19,7 +19,7 @@ _CUTOFF = _NOW - timedelta(days=21)  # 2026-05-04T04:00:00+00:00
 
 
 class InjectedError(Exception):
-    """An unexpected failure: no exception type narrower than Exception covers it."""
+    """A failure raised by a mock, so a test can tell it from any other exception."""
 
 
 def _make_issue(

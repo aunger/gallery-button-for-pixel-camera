@@ -23,7 +23,7 @@ _RUNG_30 = "snooze 30 days"
 
 
 class InjectedError(Exception):
-    """An unexpected failure: no exception type narrower than Exception covers it."""
+    """A failure raised by a mock, so a test can tell it from any other exception."""
 
 
 def _make_issue(number: int, labels: list[str], state: str = "closed", is_pr: bool = False) -> dict:
