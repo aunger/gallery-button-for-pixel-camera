@@ -10,6 +10,7 @@ occurrence after the first.
 
 import contextlib
 import io
+import itertools
 import json
 import os
 import sys
@@ -18,8 +19,6 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import itertools
-
 import dependency_checks as dc
 from workflow_files import REPO_ROOT, load_workflow
 

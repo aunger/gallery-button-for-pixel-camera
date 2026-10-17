@@ -22,6 +22,10 @@ _NOW = datetime(2026, 8, 10, 5, 0, 0, tzinfo=UTC)
 _RUNG_30 = "snooze 30 days"
 
 
+class InjectedError(Exception):
+    """An unexpected failure: no exception type narrower than Exception covers it."""
+
+
 def _make_issue(number: int, labels: list[str], state: str = "closed", is_pr: bool = False) -> dict:
     issue = {
         "number": number,
@@ -296,7 +300,7 @@ class TestWakeIssue(unittest.TestCase):
 
         def gh_api_side_effect(path, token, method="GET", body=None):
             if method == "POST":
-                raise Exception("comment API down")
+                raise InjectedError("comment API down")
             return issue if method == "GET" else None
 
         with patch.object(wsi.emxl, "gh_api", side_effect=gh_api_side_effect):
@@ -432,7 +436,7 @@ class TestMain(unittest.TestCase):
 
         def fetch_side_effect(repo, token, label):
             if label == "snooze 30 days":
-                raise Exception("network error")
+                raise InjectedError("network error")
             return [issue] if label == "snooze 90 days" else []
 
         with patch.object(wsi, "fetch_issues_with_label", side_effect=fetch_side_effect):
@@ -476,7 +480,7 @@ class TestMain(unittest.TestCase):
     def test_continues_after_fetch_error_for_one_label(self):
         def fetch_side_effect(repo, token, label):
             if label == "snooze 30 days":
-                raise Exception("network error")
+                raise InjectedError("network error")
             return []
 
         with patch.object(wsi, "fetch_issues_with_label", side_effect=fetch_side_effect):

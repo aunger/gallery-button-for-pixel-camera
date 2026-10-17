@@ -3404,10 +3404,11 @@ def main() -> int:
         "\n=== (ae) #500 doc-sync: ci_monitor.py has no legacy hardcoded workflow/job/marker literals ==="
     )
 
-    _MONITOR_SRC = open(
+    with open(
         os.path.join(os.path.dirname(os.path.abspath(__file__)), "ci_monitor.py"),
         encoding="utf-8",
-    ).read()
+    ) as _monitor_fh:
+        _MONITOR_SRC = _monitor_fh.read()
 
     # Strip docstrings/comments would be heavy; instead assert the load-bearing
     # legacy literals do not appear as code. These are gone entirely from the source
@@ -4044,10 +4045,11 @@ def main() -> int:
     # ── (ak) #516 doc-sync: the merge gate's name not hardcoded in ci_monitor.py ──
     print("\n=== (ak) #516 doc-sync: the gate's name lives only in the config ===")
 
-    _MONITOR_SRC_AK = open(
+    with open(
         os.path.join(os.path.dirname(os.path.abspath(__file__)), "ci_monitor.py"),
         encoding="utf-8",
-    ).read()
+    ) as _monitor_fh_ak:
+        _MONITOR_SRC_AK = _monitor_fh_ak.read()
 
     check(
         REPO_GATE_NAME not in _MONITOR_SRC_AK,
@@ -4066,6 +4068,7 @@ def main() -> int:
     _plain_import_al = subprocess.run(
         [sys.executable, "-c", "import test_ci_monitor"],
         cwd=_SCRIPTS_DIR_AL,
+        check=False,
         capture_output=True,
         text=True,
         timeout=10,
@@ -4086,6 +4089,7 @@ def main() -> int:
             "import test_ci_monitor as m; print(hasattr(m, 'check_runs_payload'))",
         ],
         cwd=_SCRIPTS_DIR_AL,
+        check=False,
         capture_output=True,
         text=True,
         timeout=10,

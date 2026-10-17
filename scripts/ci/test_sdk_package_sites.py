@@ -72,6 +72,7 @@ import os
 import re
 import shlex
 import unittest
+from typing import ClassVar
 
 import yaml
 
@@ -518,13 +519,13 @@ class ViolationDetectionTest(unittest.TestCase):
     """The rules themselves: without these, a guard that had stopped detecting
     anything would still report a clean tree."""
 
-    HOOK_LIST = [
+    HOOK_LIST: ClassVar[list[str]] = [
         "platforms;android-35",
         "build-tools;36.0.0",
         "build-tools;35.0.0",
         "platform-tools",
     ]
-    WORKFLOW = ["build-tools;36.0.0", "platforms;android-35", "platform-tools"]
+    WORKFLOW: ClassVar[list[str]] = ["build-tools;36.0.0", "platforms;android-35", "platform-tools"]
 
     def _violations(self, compile_sdks=None, hook=None, workflow=None, setup=None):
         hook = self.HOOK_LIST if hook is None else hook

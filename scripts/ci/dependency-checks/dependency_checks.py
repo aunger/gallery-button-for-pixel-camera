@@ -386,9 +386,9 @@ def find_moves(
                 explained |= constraint_members(roots, platform).keys()
 
     changes: dict[str, dict] = {}
-    for config in head:
+    for config, head_roots in head.items():
         before = resolved_versions(base[config])
-        after = resolved_versions(head[config])
+        after = resolved_versions(head_roots)
         for library in sorted(before.keys() | after.keys()):
             if before.get(library) == after.get(library):
                 continue

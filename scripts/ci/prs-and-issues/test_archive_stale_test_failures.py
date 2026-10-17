@@ -18,6 +18,10 @@ _NOW = datetime(2026, 5, 25, 4, 0, 0, tzinfo=UTC)
 _CUTOFF = _NOW - timedelta(days=21)  # 2026-05-04T04:00:00+00:00
 
 
+class InjectedError(Exception):
+    """An unexpected failure: no exception type narrower than Exception covers it."""
+
+
 def _make_issue(
     number: int, title: str, updated_at: datetime, labels: list[str], state: str = "open"
 ) -> dict:
@@ -359,7 +363,7 @@ class TestMain(unittest.TestCase):
         def fake_archive(issue, repo, token):
             archive_calls.append(issue["number"])
             if issue["number"] == 20:
-                raise Exception("transient error")
+                raise InjectedError("transient error")
 
         with patch.object(astf, "fetch_stale_issues", return_value=issues):
             with patch.object(astf, "archive_issue", side_effect=fake_archive):
