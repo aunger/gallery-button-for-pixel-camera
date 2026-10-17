@@ -154,10 +154,10 @@ class TestMain(unittest.TestCase):
         )
         self.assertEqual(code, 1)
         self.assertNotIn("ERROR", output.upper())
-        self.assertIn("Remove the label once the blocking condition is resolved.", output)
+        self.assertIn("Remove each label once its blocking condition is resolved.", output)
         self.assertIn(
             "If a label named above is already gone, the reading this run used predates"
-            " its removal. A re-run replays this run's event payload, so it can name the"
+            " that label's removal. A re-run replays this run's event payload, so it can name the"
             " same label again; a new event, such as a label change or a push, reads the"
             " labels afresh.",
             output,
