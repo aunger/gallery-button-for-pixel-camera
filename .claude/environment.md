@@ -200,17 +200,17 @@ Regeneration is also how a transitive security fix reaches a lock, and the plain
 `scripts/lint/lint.sh` is the single source of truth for "run the linters".
 It takes an explicit file list (the git hook passes the staged set) or `--all` to lint the whole tree.
 
-| Check                       | Files             | Behavior                                      |
-| --------------------------- | ----------------- | --------------------------------------------- |
-| `trailing-whitespace-fixer` | text              | removes trailing spaces                       |
-| `end-of-file-fixer`         | text              | ensures files end with a newline              |
-| `check-yaml`                | `*.yaml`, `*.yml` | validates YAML syntax                         |
-| `check-toml`                | `*.toml`          | validates TOML syntax                         |
-| `check-merge-conflict`      | all               | blocks accidental conflict markers            |
-| `check-added-large-files`   | staged            | blocks large file commits                     |
-| `ruff`                      | `*.py`            | lint + auto-fix (E, F rules), then format     |
-| `mdformat`                  | `*.md`            | format; `--wrap keep --number`; auto-corrects |
-| `ktlint`                    | `*.kt`, `*.kts`   | format; auto-corrects in place                |
+| Check                       | Files             | Behavior                                            |
+| --------------------------- | ----------------- | --------------------------------------------------- |
+| `trailing-whitespace-fixer` | text              | removes trailing spaces                             |
+| `end-of-file-fixer`         | text              | ensures files end with a newline                    |
+| `check-yaml`                | `*.yaml`, `*.yml` | validates YAML syntax                               |
+| `check-toml`                | `*.toml`          | validates TOML syntax                               |
+| `check-merge-conflict`      | all               | blocks accidental conflict markers                  |
+| `check-added-large-files`   | staged            | blocks large file commits                           |
+| `ruff`                      | `*.py`            | lint + auto-fix (rules in `ruff.toml`), then format |
+| `mdformat`                  | `*.md`            | format; `--wrap keep --number`; auto-corrects       |
+| `ktlint`                    | `*.kt`, `*.kts`   | format; auto-corrects in place                      |
 
 When a hook modifies a file, the agent did not cause that change--
 stage the modified files and commit again.
