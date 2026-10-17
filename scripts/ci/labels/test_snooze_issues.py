@@ -16,7 +16,7 @@ import snooze_issues as si  # noqa: E402
 
 
 class TestSnoozeIssue(unittest.TestCase):
-    def test_closes_open_issue(self):
+    def test_closes_open_issue_as_not_planned(self):
         with patch.object(
             si.emxl,
             "gh_api",
@@ -28,7 +28,10 @@ class TestSnoozeIssue(unittest.TestCase):
         self.assertEqual(mock_api.call_count, 2)
         patch_call = mock_api.call_args_list[1]
         self.assertEqual(patch_call[1]["method"], "PATCH")
-        self.assertEqual(patch_call[1]["body"], {"state": "closed"})
+        self.assertEqual(
+            patch_call[1]["body"],
+            {"state": "closed", "state_reason": "not_planned"},
+        )
         self.assertIn("5", patch_call[0][0])
 
     def test_already_closed_is_a_noop(self):
