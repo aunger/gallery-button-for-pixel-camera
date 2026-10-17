@@ -24,7 +24,7 @@ run.
 
 Two consequences of that scoping are deliberate:
 
-  - A PR can be blocked by a sibling PR's label. The failure output names the
+  - A PR can be blocked by a sibling PR's label. The hold output names the
     offending PR number and label, so the log says whose label it is. Blocking
     is the safe direction: the alternative is a gate that silently opens.
   - Base branch is not consulted. A PR onto a non-`main` base sharing this head
@@ -163,7 +163,7 @@ def label_names(pull_request: dict) -> list[str]:
 def blocked_prs(candidates: dict[int, list[str]]) -> list[tuple[int, list[str]]]:
     """Return (pr number, blocking labels) for each candidate that carries one.
 
-    Ordered by PR number so the failure output is stable.
+    Ordered by PR number so the hold output is stable.
     """
     blocked = []
     for number in sorted(candidates):
@@ -293,8 +293,15 @@ def main() -> int:
         blamed = (
             "This PR" if number == pr_number else f"PR #{number}, which shares this head commit,"
         )
-        print(f"ERROR: {blamed} has a blocking label: {', '.join(labels)}")
+        print(
+            f"On hold: {blamed} carried a blocking label when this run read its labels:"
+            f" {', '.join(labels)}"
+        )
     print("Remove the label once the blocking condition is resolved.")
+    print(
+        "If a label named above is already gone, this run read it before it was removed;"
+        " re-run this job to read the labels again."
+    )
     return 1
 
 

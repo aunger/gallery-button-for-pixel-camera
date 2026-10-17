@@ -28,6 +28,14 @@ _SHA = "43a3ce7" + "0" * 33
 _OTHER_SHA = "b" * 40
 
 
+# The start of the line main() prints for each PR that holds the merge.
+_HELD_THIS_PR = "On hold: This PR carried a blocking label when this run read its labels: "
+_HELD_SIBLING_808 = (
+    "On hold: PR #808, which shares this head commit, carried a blocking label"
+    " when this run read its labels: "
+)
+
+
 def _pr(number: int, labels: list[str], head_sha: str = _SHA) -> dict:
     """Build the subset of a GitHub pull request object this script reads."""
     return {
@@ -130,7 +138,26 @@ class TestMain(unittest.TestCase):
             [[_pr(808, ["verification needed"])]],
         )
         self.assertEqual(code, 1)
-        self.assertIn("ERROR: This PR has a blocking label: verification needed", output)
+        self.assertIn(_HELD_THIS_PR + "verification needed", output)
+
+    def test_a_hold_is_not_reported_as_an_error_and_names_re_running_as_the_remedy(self):
+        """Issue #966: a hold is the gate working, and its verdict can outlive its labels.
+
+        The labels named are those this run read, so a reader who finds one
+        already gone is told that re-running the job is what clears it.
+        """
+        code, output = _run_main(
+            _env(pr_labels=["verification needed"]),
+            [[_pr(808, ["verification needed"])]],
+        )
+        self.assertEqual(code, 1)
+        self.assertNotIn("ERROR", output.upper())
+        self.assertIn("Remove the label once the blocking condition is resolved.", output)
+        self.assertIn(
+            "If a label named above is already gone, this run read it before it was removed;"
+            " re-run this job to read the labels again.",
+            output,
+        )
 
     def test_fails_when_a_sibling_pr_at_the_same_commit_is_blocked(self):
         """Issue #833: a clean test PR must not answer the gate for a blocked sibling.
@@ -144,11 +171,7 @@ class TestMain(unittest.TestCase):
             [[_pr(808, ["verification needed"]), _pr(832, [])]],
         )
         self.assertEqual(code, 1)
-        self.assertIn(
-            "ERROR: PR #808, which shares this head commit, has a blocking label:"
-            " verification needed",
-            output,
-        )
+        self.assertIn(_HELD_SIBLING_808 + "verification needed", output)
 
     def test_a_blocked_pr_at_a_different_commit_does_not_block(self):
         code, output = _run_main(
@@ -164,11 +187,8 @@ class TestMain(unittest.TestCase):
             [[_pr(808, ["orchestrating"]), _pr(832, ["changes done"])]],
         )
         self.assertEqual(code, 1)
-        self.assertIn("ERROR: This PR has a blocking label: changes done", output)
-        self.assertIn(
-            "ERROR: PR #808, which shares this head commit, has a blocking label: orchestrating",
-            output,
-        )
+        self.assertIn(_HELD_THIS_PR + "changes done", output)
+        self.assertIn(_HELD_SIBLING_808 + "orchestrating", output)
 
     def test_a_closed_triggering_pr_does_not_block_its_open_sibling(self):
         """A closed PR cannot merge, so labeling it must not block a sibling.
@@ -213,16 +233,13 @@ class TestMain(unittest.TestCase):
             [[_pr(808, ["orchestrating"])]],
         )
         self.assertEqual(code, 1)
-        self.assertIn(
-            "ERROR: PR #808, which shares this head commit, has a blocking label: orchestrating",
-            output,
-        )
+        self.assertIn(_HELD_SIBLING_808 + "orchestrating", output)
 
     def test_payload_labels_block_even_if_the_listing_is_stale(self):
         """The verdict is never weaker about the triggering PR than the payload."""
         code, output = _run_main(_env(pr_labels=["changes requested"]), [[]])
         self.assertEqual(code, 1)
-        self.assertIn("ERROR: This PR has a blocking label: changes requested", output)
+        self.assertIn(_HELD_THIS_PR + "changes requested", output)
 
     def test_listing_labels_block_even_if_the_payload_is_stale(self):
         """A label applied after the event fired still blocks the same PR.
@@ -235,7 +252,7 @@ class TestMain(unittest.TestCase):
         """
         code, output = _run_main(_env(pr_labels=[]), [[_pr(808, ["orchestrating"])]])
         self.assertEqual(code, 1)
-        self.assertIn("ERROR: This PR has a blocking label: orchestrating", output)
+        self.assertIn(_HELD_THIS_PR + "orchestrating", output)
 
     def test_lists_the_prs_at_the_commit(self):
         _, output = _run_main(
@@ -341,7 +358,7 @@ class TestRemovedLabels(unittest.TestCase):
         env["REMOVED_LABELS"] = json.dumps(["verification needed"])
         code, output = _run_main(env, [[_pr(808, [])]])
         self.assertEqual(code, 1)
-        self.assertIn("ERROR: This PR has a blocking label: changes requested", output)
+        self.assertIn(_HELD_THIS_PR + "changes requested", output)
 
     def test_the_listing_still_blocks_a_removed_label_it_carries(self):
         env = _env(pr_labels=["verification needed"])
