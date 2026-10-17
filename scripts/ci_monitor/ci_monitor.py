@@ -315,7 +315,7 @@ def parse_fails(
             continue
         try:
             m = json.loads(raw[marker.end() :].strip())
-        except Exception:
+        except json.JSONDecodeError:
             continue
         outcome = m.get("outcome", "")
         if outcome not in outcome_filters:

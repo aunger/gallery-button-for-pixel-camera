@@ -11,6 +11,7 @@ Covers:
   (d) Signal 1 step parser: deduplication across two iterations (same step not re-emitted)
   (e) Signal 2 artifact parser: FAIL with multi-line trace is emitted with indented trace
   (f) Signal 2 artifact parser: all-PASS artifact emits nothing
+  (f2) Signal 2 artifact parser: a marker with a truncated JSON payload is skipped
   (g) Signal 2 artifact parser: deduplication by suite#name across two calls
   (h) Mocked HTTP: _request returns parsed JSON without touching the network
   (i) main(): failing unit test signals (step failure + FAIL) emit once before terminal
@@ -480,6 +481,19 @@ def main() -> int:
         out_f == [],
         "all-PASS artifact produces no output",
         "all-PASS artifact unexpectedly produced output: %r" % out_f,
+    )
+
+    # ── (f2) A marker whose payload is not JSON is skipped ─────────────────────────
+    print("\n=== (f2) Signal 2: a marker with a truncated JSON payload is skipped ===")
+    out_f2 = ci_monitor.parse_fails(
+        ['##GB4PC_TEST## {"suite":"S","name":"cut","outcome":"FAIL"'] + FAIL_NDJSON,
+        set(),
+        test_marker_regex=REPO_MARKER_REGEX,
+    )
+    check(
+        out_f2 == ci_monitor.parse_fails(FAIL_NDJSON, set(), test_marker_regex=REPO_MARKER_REGEX),
+        "the truncated marker is skipped and the markers after it are still read",
+        "a truncated marker changed the output: %r" % out_f2,
     )
 
     # ── (g) Deduplication by suite#name across two calls ───────────────────────────
