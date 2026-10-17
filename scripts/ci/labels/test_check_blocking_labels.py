@@ -194,6 +194,18 @@ class TestMain(unittest.TestCase):
         self.assertIn(_HELD_THIS_PR + "changes done", output)
         self.assertIn(_HELD_SIBLING_808 + "orchestrating", output)
 
+    def test_several_blocking_labels_on_one_pr_are_reported_in_the_plural(self):
+        code, output = _run_main(
+            _env(pr_labels=["orchestrating", "changes done"]),
+            [[_pr(808, ["orchestrating", "changes done"])]],
+        )
+        self.assertEqual(code, 1)
+        self.assertIn(
+            "On hold: This PR carried blocking labels when this run read its labels:"
+            " changes done, orchestrating",
+            output,
+        )
+
     def test_a_closed_triggering_pr_does_not_block_its_open_sibling(self):
         """A closed PR cannot merge, so labeling it must not block a sibling.
 

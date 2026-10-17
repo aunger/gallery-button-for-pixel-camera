@@ -296,8 +296,9 @@ def main() -> int:
         blamed = (
             "This PR" if number == pr_number else f"PR #{number}, which shares this head commit,"
         )
+        carried = "a blocking label" if len(labels) == 1 else "blocking labels"
         print(
-            f"On hold: {blamed} carried a blocking label when this run read its labels:"
+            f"On hold: {blamed} carried {carried} when this run read its labels:"
             f" {', '.join(labels)}"
         )
     print("Remove the label once the blocking condition is resolved.")
