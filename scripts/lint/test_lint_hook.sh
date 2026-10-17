@@ -12,23 +12,29 @@
 #   (d) a format-dirty .md blocks the commit
 #   (e) a format-dirty .kt blocks the commit (skipped when ktlint is absent)
 #   (f) invalid YAML blocks the commit
+#       (b) to (f) each also commit the same fixture with the violation removed
 #   (g) lint.sh --all runs over the whole tree
 #   (h) --check passes on a clean tree
-#   (i) --check fails on a lint-dirty .py, format-dirty .md, and .kt (.kt gated
-#       on ktlint availability)
+#   (i) --check fails on a lint-dirty .py, format-dirty .md, and .kt, and
+#       passes each with the violation removed (.kt gated on ktlint
+#       availability)
 #   (j) --check leaves the working tree unmodified
-#   (k) --only runs only the named tool family
-#   (l) a tracked file over 500 KB fails --all (--enforce-all), while the
-#       file-list (hook) path leaves an unlisted large file alone
+#   (k) --only runs only the named tool family, and that family passes the
+#       same file once it is clean
+#   (l) a tracked file over 500 KB fails --all (--enforce-all) and the same
+#       tree without it passes, while the file-list (hook) path leaves an
+#       unlisted large file alone
 #   (m) an .md with an unlabeled fenced code block (MD040) blocks the commit,
-#       even though mdformat itself has nothing to fix
+#       even though mdformat itself has nothing to fix, while the same fence
+#       with a language commits
 #   (n) invalid JSON blocks the commit, valid JSON does not
 #   (o) invalid XML blocks the commit, valid XML does not
 #   (p) a script with a shebang but no executable bit blocks the commit, and the
 #       same script marked executable does not; an extensionless script is
 #       covered, while a .py is deferred (#887)
 #   (q) an em dash blocks the commit and fails --check, while the same text with
-#       a comma instead commits and the vendored gradlew is exempt (#964)
+#       a comma instead commits and passes --check, and the vendored gradlew is
+#       exempt (#964)
 #
 # The lint tools are resolved from $LINT_BIN_DIR (default $HOME/.local/bin),
 # exactly as scripts/lint/lint.sh resolves them; .claude/hooks/session-start.sh
@@ -124,6 +130,13 @@ printf 'line with trailing space   \n' > "$REPO/ws.txt"
 RC="$(attempt_commit "$REPO")"
 if [[ "$RC" -ne 0 ]]; then pass "trailing whitespace -> commit blocked"; else fail "trailing whitespace should block"; fi
 if ! grep -q ' $' "$REPO/ws.txt"; then pass "trailing whitespace was fixed in place"; else fail "trailing whitespace not fixed"; fi
+# The same ws.txt without the trailing spaces is not a violation. Without this
+# control, a fault in a later hygiene step that blocked every commit would still
+# report the trailing whitespace as blocked.
+REPO="$(new_repo)"
+printf 'line with trailing space\n' > "$REPO/ws.txt"
+RC="$(attempt_commit "$REPO")"
+if [[ "$RC" -eq 0 ]]; then pass "same text without trailing whitespace -> commit allowed"; else fail "same text without trailing whitespace should commit, rc=$RC"; fi
 
 # ── (c) lint/format-dirty .py blocks the commit ──────────────────────────────
 echo ""
@@ -132,6 +145,12 @@ REPO="$(new_repo)"
 printf 'import os\nx=1\n' > "$REPO/bad.py"   # unused import (ruff F401) + spacing
 RC="$(attempt_commit "$REPO")"
 if [[ "$RC" -ne 0 ]]; then pass "dirty .py -> commit blocked"; else fail "dirty .py should block"; fi
+# The same bad.py without the unused import and with the spacing fixed is not a
+# violation.
+REPO="$(new_repo)"
+printf 'x = 1\n' > "$REPO/bad.py"
+RC="$(attempt_commit "$REPO")"
+if [[ "$RC" -eq 0 ]]; then pass "clean .py -> commit allowed"; else fail "clean .py should commit, rc=$RC"; fi
 
 # ── (d) format-dirty .md blocks the commit ───────────────────────────────────
 echo ""
@@ -140,6 +159,11 @@ REPO="$(new_repo)"
 printf '#    Title\n\n\n\nsome   text\n' > "$REPO/doc.md"
 RC="$(attempt_commit "$REPO")"
 if [[ "$RC" -ne 0 ]]; then pass "dirty .md -> commit blocked"; else fail "dirty .md should block"; fi
+# The same doc.md, formatted, is not a violation.
+REPO="$(new_repo)"
+printf '# Title\n\nsome text\n' > "$REPO/doc.md"
+RC="$(attempt_commit "$REPO")"
+if [[ "$RC" -eq 0 ]]; then pass "clean .md -> commit allowed"; else fail "clean .md should commit, rc=$RC"; fi
 
 # ── (e) format-dirty .kt blocks the commit ───────────────────────────────────
 echo ""
@@ -149,6 +173,11 @@ if [[ $KTLINT_AVAILABLE -eq 1 ]]; then
     printf 'fun main( ){println( "hi" )}\n' > "$REPO/Main.kt"
     RC="$(attempt_commit "$REPO")"
     if [[ "$RC" -ne 0 ]]; then pass "dirty .kt -> commit blocked"; else fail "dirty .kt should block"; fi
+    # The same Main.kt, formatted, is not a violation.
+    REPO="$(new_repo)"
+    printf 'fun main() {\n    println("hi")\n}\n' > "$REPO/Main.kt"
+    RC="$(attempt_commit "$REPO")"
+    if [[ "$RC" -eq 0 ]]; then pass "clean .kt -> commit allowed"; else fail "clean .kt should commit, rc=$RC"; fi
 else
     echo "  SKIP: ktlint not available under \$LINT_BIN_DIR ($LINT_BIN_DIR)"
 fi
@@ -160,6 +189,12 @@ REPO="$(new_repo)"
 printf 'key: value\n  bad: : indentation\n:::\n' > "$REPO/broken.yaml"
 RC="$(attempt_commit "$REPO")"
 if [[ "$RC" -ne 0 ]]; then pass "invalid YAML -> commit blocked"; else fail "invalid YAML should block"; fi
+# The same broken.yaml with its indentation and stray colons fixed is not a
+# violation.
+REPO="$(new_repo)"
+printf 'key: value\nbad: indentation\n' > "$REPO/broken.yaml"
+RC="$(attempt_commit "$REPO")"
+if [[ "$RC" -eq 0 ]]; then pass "valid YAML -> commit allowed"; else fail "valid YAML should commit, rc=$RC"; fi
 
 # ── (g) lint.sh --all runs over the whole tree ───────────────────────────────
 echo ""
@@ -194,12 +229,26 @@ printf 'import os\nx=1\n' > "$REPO/bad.py"   # unused import (ruff F401) + spaci
 RC=$?
 if [[ "$RC" -ne 0 ]]; then pass "--check flags a lint-dirty .py"; else fail "--check should flag a lint-dirty .py"; fi
 if grep -q 'import os' "$REPO/bad.py"; then pass "--check did not fix bad.py"; else fail "--check must not fix bad.py"; fi
+# The same bad.py without the unused import and with the spacing fixed is not a
+# violation. Without this control, a fault that fails every --check run (a
+# missing tool, a bad flag) would still report the dirty .py as flagged.
+REPO="$(new_repo)"
+printf 'x = 1\n' > "$REPO/bad.py"
+( cd "$REPO" && "$LINT_SH" --check --only python bad.py >/dev/null 2>&1 )
+RC=$?
+if [[ "$RC" -eq 0 ]]; then pass "--check passes a lint-clean .py"; else fail "--check should pass a lint-clean .py, rc=$RC"; fi
 
 REPO="$(new_repo)"
 printf '#    Title\n\n\n\nsome   text\n' > "$REPO/doc.md"
 ( cd "$REPO" && "$LINT_SH" --check --only markdown doc.md >/dev/null 2>&1 )
 RC=$?
 if [[ "$RC" -ne 0 ]]; then pass "--check flags a format-dirty .md"; else fail "--check should flag a format-dirty .md"; fi
+# The same doc.md, formatted, is not a violation.
+REPO="$(new_repo)"
+printf '# Title\n\nsome text\n' > "$REPO/doc.md"
+( cd "$REPO" && "$LINT_SH" --check --only markdown doc.md >/dev/null 2>&1 )
+RC=$?
+if [[ "$RC" -eq 0 ]]; then pass "--check passes a format-clean .md"; else fail "--check should pass a format-clean .md, rc=$RC"; fi
 
 if [[ $KTLINT_AVAILABLE -eq 1 ]]; then
     REPO="$(new_repo)"
@@ -207,6 +256,12 @@ if [[ $KTLINT_AVAILABLE -eq 1 ]]; then
     ( cd "$REPO" && "$LINT_SH" --check --only kotlin Main.kt >/dev/null 2>&1 )
     RC=$?
     if [[ "$RC" -ne 0 ]]; then pass "--check flags a format-dirty .kt"; else fail "--check should flag a format-dirty .kt"; fi
+    # The same Main.kt, formatted, is not a violation.
+    REPO="$(new_repo)"
+    printf 'fun main() {\n    println("hi")\n}\n' > "$REPO/Main.kt"
+    ( cd "$REPO" && "$LINT_SH" --check --only kotlin Main.kt >/dev/null 2>&1 )
+    RC=$?
+    if [[ "$RC" -eq 0 ]]; then pass "--check passes a format-clean .kt"; else fail "--check should pass a format-clean .kt, rc=$RC"; fi
 else
     echo "  SKIP: ktlint not available under \$LINT_BIN_DIR ($LINT_BIN_DIR)"
 fi
@@ -236,6 +291,13 @@ RC_PY=$?
 RC_MD=$?
 if [[ "$RC_PY" -eq 0 ]]; then pass "--only python ignores a dirty .md"; else fail "--only python should ignore a dirty .md, rc=$RC_PY"; fi
 if [[ "$RC_MD" -ne 0 ]]; then pass "--only markdown flags a dirty .md"; else fail "--only markdown should flag a dirty .md"; fi
+# The same only.md, formatted, passes the markdown family. RC_PY above does not
+# control RC_MD: it runs the python family, which a missing mdformat leaves at 0.
+REPO="$(new_repo)"
+printf '# Title\n\nsome text\n' > "$REPO/only.md"
+( cd "$REPO" && "$LINT_SH" --check --only markdown only.md >/dev/null 2>&1 )
+RC=$?
+if [[ "$RC" -eq 0 ]]; then pass "--only markdown passes a clean .md"; else fail "--only markdown should pass a clean .md, rc=$RC"; fi
 
 # ── (l) large file fails --all, hook path unaffected ─────────────────────────
 echo ""
@@ -258,6 +320,16 @@ if [[ "$RC_ALL" -ne 0 ]]; then pass "--all flags a tracked 600 KB file"; else fa
 ( cd "$REPO" && "$LINT_SH" --only hygiene small.py >/dev/null 2>&1 )
 RC_HOOK=$?
 if [[ "$RC_HOOK" -eq 0 ]]; then pass "file-list path ignores an unlisted large file"; else fail "file-list path should not flag an unlisted large file, rc=$RC_HOOK"; fi
+# The same tree without big.txt passes the same invocation as RC_ALL. RC_HOOK
+# above does not control RC_ALL: it drops both --check and --all. This runs last
+# because it replaces $REPO, and RC_HOOK needs the repo that tracks big.txt.
+REPO="$(new_repo)"
+printf 'x = 1\n' > "$REPO/small.py"
+git -C "$REPO" add -A
+git -C "$REPO" commit -q -m "seed" --no-verify >/dev/null 2>&1
+( cd "$REPO" && "$LINT_SH" --check --only hygiene --all >/dev/null 2>&1 )
+RC=$?
+if [[ "$RC" -eq 0 ]]; then pass "--all passes a tree without the 600 KB file"; else fail "--all should pass a tree without the 600 KB file, rc=$RC"; fi
 
 # ── (m) unlabeled fenced code block (MD040) blocks the commit ───────────────
 echo ""
@@ -266,6 +338,12 @@ REPO="$(new_repo)"
 printf '# Title\n\n```\nno language here\n```\n' > "$REPO/md040.md"
 RC="$(attempt_commit "$REPO")"
 if [[ "$RC" -ne 0 ]]; then pass "MD040 (unlabeled fence) -> commit blocked"; else fail "MD040 (unlabeled fence) should block"; fi
+# The same md040.md with the fence labeled is not a violation. The labeled-fence
+# sub-case below runs --check, so it does not control the commit path.
+REPO="$(new_repo)"
+printf '# Title\n\n```text\nno language here\n```\n' > "$REPO/md040.md"
+RC="$(attempt_commit "$REPO")"
+if [[ "$RC" -eq 0 ]]; then pass "labeled fence -> commit allowed"; else fail "labeled fence should commit, rc=$RC"; fi
 # mdformat has no fix for a missing language, so --check should flag it too,
 # and leave the fixture untouched (nothing to auto-fix).
 REPO="$(new_repo)"
@@ -360,6 +438,9 @@ REPO="$(new_repo)"
 printf '// Debug signing is fine, installed only on emulators.\n' > "$REPO/notes.txt"
 RC="$(attempt_commit "$REPO")"
 if [[ "$RC" -eq 0 ]]; then pass "same text without the em dash -> commit allowed"; else fail "em-dash-free notes.txt should commit, rc=$RC"; fi
+( cd "$REPO" && "$LINT_SH" --check --only hygiene notes.txt >/dev/null 2>&1 )
+RC=$?
+if [[ "$RC" -eq 0 ]]; then pass "--check passes the same text without the em dash"; else fail "--check should pass the same text without the em dash, rc=$RC"; fi
 # The vendored Gradle wrapper script is exempt.
 REPO="$(new_repo)"
 printf '#!/bin/sh\n#   \302\253case\302\273\n' > "$REPO/gradlew"
