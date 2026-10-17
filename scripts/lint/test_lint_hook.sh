@@ -12,6 +12,7 @@
 #   (d) a format-dirty .md blocks the commit
 #   (e) a format-dirty .kt blocks the commit (skipped when ktlint is absent)
 #   (f) invalid YAML blocks the commit
+#       (b) to (f) each also commit the same fixture with the violation removed
 #   (g) lint.sh --all runs over the whole tree
 #   (h) --check passes on a clean tree
 #   (i) --check fails on a lint-dirty .py, format-dirty .md, and .kt, and
@@ -24,7 +25,8 @@
 #       tree without it passes, while the file-list (hook) path leaves an
 #       unlisted large file alone
 #   (m) an .md with an unlabeled fenced code block (MD040) blocks the commit,
-#       even though mdformat itself has nothing to fix
+#       even though mdformat itself has nothing to fix, while the same fence
+#       with a language commits
 #   (n) invalid JSON blocks the commit, valid JSON does not
 #   (o) invalid XML blocks the commit, valid XML does not
 #   (p) a script with a shebang but no executable bit blocks the commit, and the
@@ -128,6 +130,13 @@ printf 'line with trailing space   \n' > "$REPO/ws.txt"
 RC="$(attempt_commit "$REPO")"
 if [[ "$RC" -ne 0 ]]; then pass "trailing whitespace -> commit blocked"; else fail "trailing whitespace should block"; fi
 if ! grep -q ' $' "$REPO/ws.txt"; then pass "trailing whitespace was fixed in place"; else fail "trailing whitespace not fixed"; fi
+# The same ws.txt without the trailing spaces is not a violation. Without this
+# control, a fault in a later hygiene step that blocked every commit would still
+# report the trailing whitespace as blocked.
+REPO="$(new_repo)"
+printf 'line with trailing space\n' > "$REPO/ws.txt"
+RC="$(attempt_commit "$REPO")"
+if [[ "$RC" -eq 0 ]]; then pass "same text without trailing whitespace -> commit allowed"; else fail "same text without trailing whitespace should commit, rc=$RC"; fi
 
 # ── (c) lint/format-dirty .py blocks the commit ──────────────────────────────
 echo ""
@@ -136,6 +145,12 @@ REPO="$(new_repo)"
 printf 'import os\nx=1\n' > "$REPO/bad.py"   # unused import (ruff F401) + spacing
 RC="$(attempt_commit "$REPO")"
 if [[ "$RC" -ne 0 ]]; then pass "dirty .py -> commit blocked"; else fail "dirty .py should block"; fi
+# The same bad.py without the unused import and with the spacing fixed is not a
+# violation.
+REPO="$(new_repo)"
+printf 'x = 1\n' > "$REPO/bad.py"
+RC="$(attempt_commit "$REPO")"
+if [[ "$RC" -eq 0 ]]; then pass "clean .py -> commit allowed"; else fail "clean .py should commit, rc=$RC"; fi
 
 # ── (d) format-dirty .md blocks the commit ───────────────────────────────────
 echo ""
@@ -144,6 +159,11 @@ REPO="$(new_repo)"
 printf '#    Title\n\n\n\nsome   text\n' > "$REPO/doc.md"
 RC="$(attempt_commit "$REPO")"
 if [[ "$RC" -ne 0 ]]; then pass "dirty .md -> commit blocked"; else fail "dirty .md should block"; fi
+# The same doc.md, formatted, is not a violation.
+REPO="$(new_repo)"
+printf '# Title\n\nsome text\n' > "$REPO/doc.md"
+RC="$(attempt_commit "$REPO")"
+if [[ "$RC" -eq 0 ]]; then pass "clean .md -> commit allowed"; else fail "clean .md should commit, rc=$RC"; fi
 
 # ── (e) format-dirty .kt blocks the commit ───────────────────────────────────
 echo ""
@@ -153,6 +173,11 @@ if [[ $KTLINT_AVAILABLE -eq 1 ]]; then
     printf 'fun main( ){println( "hi" )}\n' > "$REPO/Main.kt"
     RC="$(attempt_commit "$REPO")"
     if [[ "$RC" -ne 0 ]]; then pass "dirty .kt -> commit blocked"; else fail "dirty .kt should block"; fi
+    # The same Main.kt, formatted, is not a violation.
+    REPO="$(new_repo)"
+    printf 'fun main() {\n    println("hi")\n}\n' > "$REPO/Main.kt"
+    RC="$(attempt_commit "$REPO")"
+    if [[ "$RC" -eq 0 ]]; then pass "clean .kt -> commit allowed"; else fail "clean .kt should commit, rc=$RC"; fi
 else
     echo "  SKIP: ktlint not available under \$LINT_BIN_DIR ($LINT_BIN_DIR)"
 fi
@@ -164,6 +189,12 @@ REPO="$(new_repo)"
 printf 'key: value\n  bad: : indentation\n:::\n' > "$REPO/broken.yaml"
 RC="$(attempt_commit "$REPO")"
 if [[ "$RC" -ne 0 ]]; then pass "invalid YAML -> commit blocked"; else fail "invalid YAML should block"; fi
+# The same broken.yaml with its indentation and stray colons fixed is not a
+# violation.
+REPO="$(new_repo)"
+printf 'key: value\nbad: indentation\n' > "$REPO/broken.yaml"
+RC="$(attempt_commit "$REPO")"
+if [[ "$RC" -eq 0 ]]; then pass "valid YAML -> commit allowed"; else fail "valid YAML should commit, rc=$RC"; fi
 
 # ── (g) lint.sh --all runs over the whole tree ───────────────────────────────
 echo ""
@@ -306,6 +337,12 @@ REPO="$(new_repo)"
 printf '# Title\n\n```\nno language here\n```\n' > "$REPO/md040.md"
 RC="$(attempt_commit "$REPO")"
 if [[ "$RC" -ne 0 ]]; then pass "MD040 (unlabeled fence) -> commit blocked"; else fail "MD040 (unlabeled fence) should block"; fi
+# The same md040.md with the fence labeled is not a violation. The labeled-fence
+# sub-case below runs --check, so it does not control the commit path.
+REPO="$(new_repo)"
+printf '# Title\n\n```text\nno language here\n```\n' > "$REPO/md040.md"
+RC="$(attempt_commit "$REPO")"
+if [[ "$RC" -eq 0 ]]; then pass "labeled fence -> commit allowed"; else fail "labeled fence should commit, rc=$RC"; fi
 # mdformat has no fix for a missing language, so --check should flag it too,
 # and leave the fixture untouched (nothing to auto-fix).
 REPO="$(new_repo)"
