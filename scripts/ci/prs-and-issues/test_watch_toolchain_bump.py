@@ -16,9 +16,8 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(__file__))
-import watch_toolchain_bump as wtb  # noqa: E402
-from file_test_failure_issues import IssueLookup  # noqa: E402
-
+import watch_toolchain_bump as wtb
+from file_test_failure_issues import IssueLookup
 
 # ---------------------------------------------------------------------------
 # Fixtures

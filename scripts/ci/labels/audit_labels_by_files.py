@@ -61,7 +61,8 @@ import os
 import sys
 import urllib.error
 from collections import defaultdict
-from typing import Callable, NamedTuple
+from collections.abc import Callable
+from typing import NamedTuple
 
 import backfill_labels_by_title
 import enforce_mutually_exclusive_labels as emxl

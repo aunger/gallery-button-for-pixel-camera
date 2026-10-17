@@ -9,8 +9,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(__file__))
-import strip_session_bylines as ssb  # noqa: E402
-
+import strip_session_bylines as ssb
 
 # ---------------------------------------------------------------------------
 # strip_bylines--pure text transformation
@@ -302,9 +301,10 @@ class TestHandlePullRequestReview(unittest.TestCase):
 
 class TestMain(unittest.TestCase):
     def _write_payload(self, payload: dict) -> str:
-        fh = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8")
-        json.dump(payload, fh)
-        fh.close()
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False, encoding="utf-8"
+        ) as fh:
+            json.dump(payload, fh)
         return fh.name
 
     def _env(self, **overrides):

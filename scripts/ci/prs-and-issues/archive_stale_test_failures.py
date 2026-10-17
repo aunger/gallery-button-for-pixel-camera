@@ -30,9 +30,8 @@ import datetime
 import json
 import os
 import sys
-import urllib.request
 import urllib.error
-
+import urllib.request
 
 # ---------------------------------------------------------------------------
 # Label name constants
@@ -92,7 +91,7 @@ def fetch_stale_issues(repo: str, token: str, cutoff: datetime.datetime) -> list
 
     stale = []
     for issue in issues:
-        updated_at = datetime.datetime.fromisoformat(issue["updated_at"].replace("Z", "+00:00"))
+        updated_at = datetime.datetime.fromisoformat(issue["updated_at"])
         if updated_at < cutoff:
             stale.append(issue)
     return stale
@@ -131,7 +130,7 @@ def main() -> int:
         print("Warning: GITHUB_REPOSITORY not set; skipping archival.", file=sys.stderr)
         return 0
 
-    cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=stale_days)
+    cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=stale_days)
 
     try:
         stale = fetch_stale_issues(repo, token, cutoff)

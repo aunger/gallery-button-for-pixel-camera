@@ -45,7 +45,6 @@ import os
 import sys
 
 import requests
-
 from github_headers import github_headers
 from session_bylines import strip_bylines
 

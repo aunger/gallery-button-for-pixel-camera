@@ -13,9 +13,9 @@ import urllib.parse
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import dependency_checks as dc  # noqa: E402
-import post_dependency_checks as post  # noqa: E402
-from test_dependency_checks import findings_1145  # noqa: E402
+import dependency_checks as dc
+import post_dependency_checks as post
+from test_dependency_checks import findings_1145
 
 REPO = "owner/repo"
 HEAD = "c" * 40

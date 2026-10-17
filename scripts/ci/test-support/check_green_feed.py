@@ -24,7 +24,6 @@ import sys
 import time
 import zlib
 
-
 # Target color: #00C853
 TARGET_R = 0
 TARGET_G = 200
@@ -169,6 +168,7 @@ def _window_has_anr(adb: str) -> bool | None:
     try:
         window_dump = subprocess.run(
             [adb, "shell", "dumpsys", "window"],
+            check=False,
             capture_output=True,
             text=True,
             timeout=10,
@@ -267,6 +267,7 @@ def _dump_first_failure_diagnostics(
     try:
         window_result = subprocess.run(
             [adb, "shell", "dumpsys", "window"],
+            check=False,
             capture_output=True,
             text=True,
             timeout=10,
@@ -291,6 +292,7 @@ def _dump_first_failure_diagnostics(
     try:
         logcat_result = subprocess.run(
             [adb, "shell", "logcat", "-d", "-t", "100", "ActivityManager:E", "*:S"],
+            check=False,
             capture_output=True,
             text=True,
             timeout=15,
@@ -432,15 +434,15 @@ def main() -> int:
             capture_output=True,
             text=True,
         )
-        if swipe_result.returncode != 0 or "Can't find service" in swipe_result.stderr:
-            if input_service_ok:
-                # Only log/sleep here if we haven't already done so for the wakeup.
-                print(
-                    f"WARNING: input service unavailable during swipe "
-                    f"(attempt {attempt}); sleeping extra {RETRY_DELAY_SECONDS}s for recovery.",
-                    file=sys.stderr,
-                )
-                time.sleep(RETRY_DELAY_SECONDS)
+        swipe_failed = swipe_result.returncode != 0 or "Can't find service" in swipe_result.stderr
+        # Only log/sleep here if we haven't already done so for the wakeup.
+        if swipe_failed and input_service_ok:
+            print(
+                f"WARNING: input service unavailable during swipe "
+                f"(attempt {attempt}); sleeping extra {RETRY_DELAY_SECONDS}s for recovery.",
+                file=sys.stderr,
+            )
+            time.sleep(RETRY_DELAY_SECONDS)
         # Wait for any swipe animation to settle before capturing the screen.
         time.sleep(RETRY_DELAY_SECONDS)
         # Per-retry ANR check: if the Pixel Launcher ANR dialog appeared after

@@ -25,7 +25,7 @@ import urllib.request
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(__file__))
-import link_gh_issues as lgi  # noqa: E402
+import link_gh_issues as lgi
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
@@ -911,7 +911,7 @@ class TestOneParent(unittest.TestCase):
     def test_the_parent_is_read_once_and_then_followed(self):
         """Two moves of one issue in a call: the second must see the first."""
         fake = self.child_of_17()
-        code, out, err = run(
+        code, _out, err = run(
             ["add", OWNER, REPO, "42", "--child-of", "19", "--child-of", "17", "--replace-parent"],
             fake,
         )
@@ -1257,7 +1257,7 @@ class TestRelations(unittest.TestCase):
 class TestStandardLibraryOnly(unittest.TestCase):
     """The docstring promises standard library only; nothing enforced it."""
 
-    ALLOWED_NON_STDLIB = {"github_headers"}
+    ALLOWED_NON_STDLIB = frozenset({"github_headers"})
 
     def test_no_third_party_imports(self):
         module_path = os.path.join(os.path.dirname(__file__), "link_gh_issues.py")

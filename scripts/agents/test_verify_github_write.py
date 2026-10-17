@@ -18,13 +18,13 @@ import os
 import re
 import stat
 import sys
-import urllib.error
 import tempfile
 import unittest
+import urllib.error
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(__file__))
-import verify_github_write as vgw  # noqa: E402
+import verify_github_write as vgw
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 MIDDLE_DOT = "·"
@@ -489,8 +489,10 @@ def pr_958_reason_one(owner_repo_link=markdown_link) -> str:
         [
             "### 1. The dispatcher excludes the window by type",
             "",
-            "Every file below was read on android.googlesource.com at the"
-            " `android15-release` branch, which is this AVD's API 35.",
+            (
+                "Every file below was read on android.googlesource.com at the"
+                " `android15-release` branch, which is this AVD's API 35."
+            ),
             "",
             "- `DisplayPolicy.enablePointerLocation()` adds the readout with"
             " `lp.type = TYPE_SECURE_SYSTEM_OVERLAY`, in "
@@ -754,7 +756,7 @@ class TestEscape(unittest.TestCase):
         self.assertNotIn(MIDDLE_DOT, escaped)
 
     def test_invisible_character_is_made_visible(self):
-        escaped = vgw.escape("a​b")
+        escaped = vgw.escape("a\u200bb")
         self.assertIn("\\u200b", escaped)
 
     def test_newline_and_tab_are_escaped(self):
@@ -1088,7 +1090,7 @@ class TestMain(unittest.TestCase):
 class TestStandardLibraryOnly(unittest.TestCase):
     """A hook that fails on a missing dependency is a hook that stops checking."""
 
-    ALLOWED_NON_STDLIB = {"github_headers", "session_bylines"}
+    ALLOWED_NON_STDLIB = frozenset({"github_headers", "session_bylines"})
 
     def test_no_third_party_imports(self):
         module_path = os.path.join(os.path.dirname(__file__), "verify_github_write.py")

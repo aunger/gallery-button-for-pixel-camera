@@ -9,8 +9,7 @@ import urllib.error
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(__file__))
-import label_by_title as lpt  # noqa: E402
-
+import label_by_title as lpt
 
 # ---------------------------------------------------------------------------
 # gh_api tests
