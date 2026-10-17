@@ -67,10 +67,11 @@ listing lagged a label removal, reports the labels of the moment it read. A new
 event (a label change, a push) reads both sources afresh and clears it.
 Re-running the stale run clears only the listing case: a re-run replays the
 original event, so PR_LABELS still holds the payload it was first given.
-Over-blocking is the safe direction, so this is the trade taken deliberately. Note that no agent reads this log: the Orchestrator
-does not route on this check at all (it is left off the named checks in
-agents/dev_orchestration.md), so it never diagnoses which label the gate
-reported, or whose. A human reads it.
+Over-blocking is the safe direction, so this is the trade taken deliberately.
+Note that no agent reads this log: the Orchestrator does not route on this
+check at all (it is left off the named checks in agents/dev_orchestration.md),
+so it never diagnoses which label the gate reported, or whose. A human reads
+it.
 
 Usage:
     python3 scripts/ci/labels/check_blocking_labels.py
