@@ -138,7 +138,7 @@ import glob
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 READ_MULTIPLIER = 0.1
 WRITE_5M_MULTIPLIER = 1.25
@@ -259,7 +259,7 @@ def parse_timestamp(value, path: str, lineno: int) -> datetime:
         parsed = datetime.fromisoformat(text)
     except ValueError:
         fail(path, lineno, "`timestamp` is not an ISO 8601 instant: %r" % value)
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
 def read_int(mapping: dict, key: str, path: str, lineno: int, owner: str) -> int:
@@ -602,7 +602,7 @@ def call_rows(session: Session, multipliers: Multipliers, fraction: float) -> li
 
 
 def thousands(value: float) -> str:
-    return "{:,}".format(int(round(value)))
+    return f"{int(round(value)):,}"
 
 
 def percent(value: float) -> str:
@@ -879,7 +879,7 @@ def main(argv: list | None = None) -> int:
         write_1h=args.write_1h_multiplier,
         output=args.output_multiplier,
     )
-    snapshot = datetime.now(timezone.utc)
+    snapshot = datetime.now(UTC)
     try:
         project_dir = find_project(args.projects_root, args.project)
         sessions, missing, unreadable = load_sessions(

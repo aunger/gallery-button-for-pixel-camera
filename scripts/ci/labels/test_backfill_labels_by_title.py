@@ -9,7 +9,7 @@ import urllib.error
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(__file__))
-import backfill_labels_by_title as blt  # noqa: E402
+import backfill_labels_by_title as blt
 
 
 def _issue(number: int, title: str, labels: list[str]) -> dict:

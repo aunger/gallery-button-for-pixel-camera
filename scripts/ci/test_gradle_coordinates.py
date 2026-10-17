@@ -24,7 +24,6 @@ import urllib.error
 from concurrent.futures import ThreadPoolExecutor
 
 import yaml
-
 from gradle_coordinates import (
     GOOGLE_MAVEN_COORDINATE_PREFIXES,
     covered_directories,

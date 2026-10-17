@@ -25,7 +25,7 @@ import urllib.request
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(__file__))
-import link_gh_issues as lgi  # noqa: E402
+import link_gh_issues as lgi
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 

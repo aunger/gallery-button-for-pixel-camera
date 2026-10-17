@@ -24,7 +24,6 @@ import sys
 import time
 import zlib
 
-
 # Target color: #00C853
 TARGET_R = 0
 TARGET_G = 200

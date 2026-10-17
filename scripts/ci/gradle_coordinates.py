@@ -65,12 +65,12 @@ GOOGLE_MAVEN_URL = "https://maven.google.com"
 # grouping or the pull request limit is configured correctly.
 DECLARATION_RE = re.compile(
     r'^[ \t]*(\w+)\s*\(\s*(?:platform\s*\(\s*)?"([A-Za-z][\w.-]*):([\w.-]+):([^"\s]+)"',
-    re.M,
+    re.MULTILINE,
 )
 
 # The top-level `dependencies { ... }` block, up to the first line that is a
 # closing brace in column 0.
-DEPENDENCIES_BLOCK_RE = re.compile(r"^dependencies\s*\{\s*$(.*?)^\}\s*$", re.M | re.S)
+DEPENDENCIES_BLOCK_RE = re.compile(r"^dependencies\s*\{\s*$(.*?)^\}\s*$", re.MULTILINE | re.DOTALL)
 
 GRADLE_MANIFESTS = ("build.gradle.kts", "build.gradle")
 

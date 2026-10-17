@@ -107,7 +107,7 @@ sys.path.insert(
     0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "ci", "prs-and-issues")
 )
 
-from github_headers import github_headers  # noqa: E402
+from github_headers import github_headers
 
 API_ROOT = "https://api.github.com"
 

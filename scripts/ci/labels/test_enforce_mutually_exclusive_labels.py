@@ -12,7 +12,7 @@ from contextlib import redirect_stdout
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(__file__))
-import enforce_mutually_exclusive_labels as emxl  # noqa: E402
+import enforce_mutually_exclusive_labels as emxl
 
 
 def _http_error(code: int) -> urllib.error.HTTPError:

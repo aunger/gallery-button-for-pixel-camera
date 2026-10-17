@@ -18,13 +18,13 @@ import os
 import re
 import stat
 import sys
-import urllib.error
 import tempfile
 import unittest
+import urllib.error
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(__file__))
-import verify_github_write as vgw  # noqa: E402
+import verify_github_write as vgw
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 MIDDLE_DOT = "·"
@@ -754,7 +754,7 @@ class TestEscape(unittest.TestCase):
         self.assertNotIn(MIDDLE_DOT, escaped)
 
     def test_invisible_character_is_made_visible(self):
-        escaped = vgw.escape("a​b")
+        escaped = vgw.escape("a\u200bb")
         self.assertIn("\\u200b", escaped)
 
     def test_newline_and_tab_are_escaped(self):

@@ -17,7 +17,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(__file__))
-import audit_requirements as ar  # noqa: E402
+import audit_requirements as ar
 
 
 def fake_runner(vulns_by_package: dict[str, list[dict]]):

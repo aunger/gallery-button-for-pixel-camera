@@ -232,7 +232,7 @@ def main() -> int:
         print("Warning: GITHUB_REPOSITORY not set; skipping wake check.", file=sys.stderr)
         return 0
 
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.UTC)
     woken = 0
 
     for snooze_days in emxl.SNOOZE_LADDER_DAYS:

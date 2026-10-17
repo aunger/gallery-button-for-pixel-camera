@@ -7,8 +7,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(__file__))
-import reconcile_issue_labels as ril  # noqa: E402
-
+import reconcile_issue_labels as ril
 
 # ---------------------------------------------------------------------------
 # fetch_open_pr_numbers tests

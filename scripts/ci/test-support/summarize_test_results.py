@@ -23,10 +23,10 @@ Exit code is always 0 (display only; failures are surfaced by earlier steps).
 
 import os
 import sys
-import defusedxml.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import defusedxml.ElementTree as ET
 
 # ---------------------------------------------------------------------------
 # Data model

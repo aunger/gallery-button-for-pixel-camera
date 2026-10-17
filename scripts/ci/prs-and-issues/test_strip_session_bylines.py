@@ -9,8 +9,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(__file__))
-import strip_session_bylines as ssb  # noqa: E402
-
+import strip_session_bylines as ssb
 
 # ---------------------------------------------------------------------------
 # strip_bylines--pure text transformation

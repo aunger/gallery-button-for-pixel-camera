@@ -164,7 +164,7 @@ import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import ci_monitor  # noqa: E402
+import ci_monitor
 
 PASS = 0
 FAIL = 0
@@ -1057,7 +1057,6 @@ def main() -> int:
     def req_allfail(url, token, raw=False):
         fail_calls["n"] += 1
         ci_monitor._request.last_error = err
-        return None
 
     with (
         unittest.mock.patch.object(ci_monitor, "_request", side_effect=req_allfail),
@@ -1988,7 +1987,7 @@ def main() -> int:
     )
 
     # _parse_outcome_filters: defaults (no flags)
-    import argparse as _argparse  # noqa: E402
+    import argparse as _argparse
 
     def _make_args(**kw):
         """Build a namespace with the six flag attributes, defaulting to 'not supplied'."""
@@ -3145,7 +3144,7 @@ def main() -> int:
         "\n=== (ac) #500 load_config: defaults, absence, invalid JSON, partial keys, bad regex ==="
     )
 
-    import tempfile  # noqa: E402
+    import tempfile
 
     _DEFAULTS = {
         "artifact_name_regex": ci_monitor.DEFAULT_ARTIFACT_NAME_REGEX,
@@ -3882,7 +3881,7 @@ def main() -> int:
     # ── (ai) #516 load_config: ignored_check_regex key ────────────────────────
     print("\n=== (ai) #516 load_config: ignored_check_regex defaults and repo config ===")
 
-    import tempfile as _tempfile  # noqa: E402 (already imported in ac, re-using module)
+    import tempfile as _tempfile
 
     # Default: key absent in file -> DEFAULT_IGNORED_CHECK_REGEX (never-match).
     _p_ai_partial = _tempfile.mkstemp(suffix=".json")[1]
@@ -4192,7 +4191,7 @@ def main() -> int:
     # finding on this PR: a truthiness check misroutes a literal empty-string
     # value for the flag actually used (e.g. `--sha ""`) to the next mode in
     # the chain, since "" is falsy but still means --sha was supplied.
-    import argparse as _argparse_ao  # noqa: E402
+    import argparse as _argparse_ao
 
     def _mode_args(**kw):
         defaults = {"pr": None, "sha": None, "run_id": None, "branch": None}

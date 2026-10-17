@@ -18,8 +18,8 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import dependency_checks as dc  # noqa: E402
-from workflow_files import REPO_ROOT, load_workflow  # noqa: E402
+import dependency_checks as dc
+from workflow_files import REPO_ROOT, load_workflow
 
 SHA_A = "a" * 40
 SHA_B = "b" * 40

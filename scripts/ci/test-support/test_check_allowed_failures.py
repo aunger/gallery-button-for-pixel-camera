@@ -11,8 +11,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(__file__))
-import check_allowed_failures as caf  # noqa: E402
-
+import check_allowed_failures as caf
 
 # ---------------------------------------------------------------------------
 # Helpers

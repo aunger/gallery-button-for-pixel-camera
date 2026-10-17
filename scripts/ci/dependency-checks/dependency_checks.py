@@ -629,7 +629,7 @@ def comment_marker(check: str) -> str:
 # person applying it by hand, and is never recorded, so the check never
 # removes it. post_dependency_checks.owned_labels decides the set.
 _LABELS_LINE_PREFIX = "<!-- labels-added-by-this-check: "
-_LABELS_LINE_RE = re.compile(r"^<!-- labels-added-by-this-check: (\[.*\]) -->$", re.M)
+_LABELS_LINE_RE = re.compile(r"^<!-- labels-added-by-this-check: (\[.*\]) -->$", re.MULTILINE)
 
 
 def recorded_labels(body: str) -> list[str]:

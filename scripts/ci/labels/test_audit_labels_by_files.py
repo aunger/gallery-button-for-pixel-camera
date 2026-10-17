@@ -11,7 +11,7 @@ from contextlib import redirect_stdout
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(__file__))
-import audit_labels_by_files as alf  # noqa: E402
+import audit_labels_by_files as alf
 
 
 def _pull(number: int, labels: list[str], merged: bool = True) -> dict:

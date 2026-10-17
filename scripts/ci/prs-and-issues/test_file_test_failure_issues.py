@@ -6,13 +6,12 @@ import sys
 import tempfile
 import textwrap
 import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(__file__))
-import file_test_failure_issues as ftfi  # noqa: E402
-
+import file_test_failure_issues as ftfi
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -77,7 +76,7 @@ MIXED_XML = """\
     </testsuites>
 """
 
-_FIXED_TS = datetime(2026, 5, 25, 6, 29, 0, tzinfo=timezone.utc)
+_FIXED_TS = datetime(2026, 5, 25, 6, 29, 0, tzinfo=UTC)
 _FIXED_SHA = "a1b2c3d4e5f6789"
 
 

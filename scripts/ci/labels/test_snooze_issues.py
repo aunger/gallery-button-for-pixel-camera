@@ -7,8 +7,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(__file__))
-import snooze_issues as si  # noqa: E402
-
+import snooze_issues as si
 
 # ---------------------------------------------------------------------------
 # snooze_issue tests

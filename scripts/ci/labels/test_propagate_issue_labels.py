@@ -9,7 +9,7 @@ import urllib.error
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(__file__))
-import propagate_issue_labels as pil  # noqa: E402
+import propagate_issue_labels as pil
 
 
 def _closing_issues_payload(issues: list[tuple[int, str, list[str]]]) -> dict:

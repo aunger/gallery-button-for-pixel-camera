@@ -6,18 +6,17 @@ import os
 import sys
 import unittest
 from contextlib import redirect_stdout
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(__file__))
-import wake_snoozed_issues as wsi  # noqa: E402
-
+import wake_snoozed_issues as wsi
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-_NOW = datetime(2026, 8, 10, 5, 0, 0, tzinfo=timezone.utc)
+_NOW = datetime(2026, 8, 10, 5, 0, 0, tzinfo=UTC)
 
 # The 30-day rung's label, as main() hands it to find_label_applied_at().
 _RUNG_30 = "snooze 30 days"
@@ -339,7 +338,7 @@ class TestMain(unittest.TestCase):
     def test_wakes_issue_past_its_snooze(self):
         """applied_at 31 days before real "now" clears the 30-day snooze."""
         issue = _make_issue(1, ["snooze 30 days"])
-        applied_at = datetime.now(timezone.utc) - timedelta(days=31)
+        applied_at = datetime.now(UTC) - timedelta(days=31)
 
         def fetch_side_effect(repo, token, label):
             return [issue] if label == "snooze 30 days" else []
@@ -381,7 +380,7 @@ class TestMain(unittest.TestCase):
 
     def test_each_rung_waits_out_its_own_day_count(self):
         """Four days in, a 3-day snooze has elapsed and a 7-day one has not."""
-        applied_at = datetime.now(timezone.utc) - timedelta(days=4)
+        applied_at = datetime.now(UTC) - timedelta(days=4)
 
         def fetch_side_effect(repo, token, label):
             if label == "snooze 3 days":
@@ -429,7 +428,7 @@ class TestMain(unittest.TestCase):
 
     def test_fetch_error_for_one_rung_does_not_skip_the_others(self):
         issue = _make_issue(1, ["snooze 90 days"])
-        applied_at = datetime.now(timezone.utc) - timedelta(days=91)
+        applied_at = datetime.now(UTC) - timedelta(days=91)
 
         def fetch_side_effect(repo, token, label):
             if label == "snooze 30 days":
@@ -447,7 +446,7 @@ class TestMain(unittest.TestCase):
     def test_leaves_issue_within_snooze_period(self):
         """applied_at 5 days before real "now" has not yet cleared the 30-day snooze."""
         issue = _make_issue(1, ["snooze 30 days"])
-        applied_at = datetime.now(timezone.utc) - timedelta(days=5)
+        applied_at = datetime.now(UTC) - timedelta(days=5)
 
         def fetch_side_effect(repo, token, label):
             return [issue] if label == "snooze 30 days" else []
@@ -511,7 +510,7 @@ class TestMain(unittest.TestCase):
         """wake_issue() returning False (snooze label already gone by the time it
         re-fetched, e.g. an escalation) must not inflate the woken count."""
         issue = _make_issue(1, ["snooze 30 days"])
-        applied_at = datetime.now(timezone.utc) - timedelta(days=31)
+        applied_at = datetime.now(UTC) - timedelta(days=31)
 
         def fetch_side_effect(repo, token, label):
             return [issue] if label == "snooze 30 days" else []

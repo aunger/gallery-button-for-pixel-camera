@@ -4,18 +4,17 @@
 import os
 import sys
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(__file__))
-import archive_stale_test_failures as astf  # noqa: E402
-
+import archive_stale_test_failures as astf
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-_NOW = datetime(2026, 5, 25, 4, 0, 0, tzinfo=timezone.utc)
+_NOW = datetime(2026, 5, 25, 4, 0, 0, tzinfo=UTC)
 _CUTOFF = _NOW - timedelta(days=21)  # 2026-05-04T04:00:00+00:00
 
 
@@ -298,12 +297,12 @@ class TestMain(unittest.TestCase):
 
         self.assertEqual(len(captured_cutoff), 1)
         # cutoff should be approximately now - 5 days
-        expected = datetime.now(timezone.utc) - timedelta(days=5)
+        expected = datetime.now(UTC) - timedelta(days=5)
         diff = abs((captured_cutoff[0] - expected).total_seconds())
         self.assertLess(diff, 5)  # within 5 seconds
 
     def test_archives_stale_issues(self):
-        stale_ts = datetime.now(timezone.utc) - timedelta(days=30)
+        stale_ts = datetime.now(UTC) - timedelta(days=30)
         stale_issue = _make_issue(10, "Stale", stale_ts, ["test-failure"])
 
         with patch.object(astf, "fetch_stale_issues", return_value=[stale_issue]):
@@ -319,7 +318,7 @@ class TestMain(unittest.TestCase):
         self.assertEqual(result, 0)
 
     def test_exit_0_when_archive_raises(self):
-        stale_ts = datetime.now(timezone.utc) - timedelta(days=30)
+        stale_ts = datetime.now(UTC) - timedelta(days=30)
         stale_issue = _make_issue(11, "Stale", stale_ts, ["test-failure"])
 
         with patch.object(astf, "fetch_stale_issues", return_value=[stale_issue]):
@@ -338,7 +337,7 @@ class TestMain(unittest.TestCase):
 
     def test_archives_stale_closed_issue(self):
         """A closed, stale, test-failure issue returned by fetch_stale_issues is archived."""
-        stale_ts = datetime.now(timezone.utc) - timedelta(days=30)
+        stale_ts = datetime.now(UTC) - timedelta(days=30)
         closed_issue = _make_issue(12, "Closed stale", stale_ts, ["test-failure"], state="closed")
 
         with patch.object(astf, "fetch_stale_issues", return_value=[closed_issue]):
@@ -350,7 +349,7 @@ class TestMain(unittest.TestCase):
 
     def test_continues_after_single_archive_failure(self):
         """An error on one issue does not prevent processing subsequent issues."""
-        stale_ts = datetime.now(timezone.utc) - timedelta(days=30)
+        stale_ts = datetime.now(UTC) - timedelta(days=30)
         issues = [
             _make_issue(20, "First", stale_ts, ["test-failure"]),
             _make_issue(21, "Second", stale_ts, ["test-failure"]),
