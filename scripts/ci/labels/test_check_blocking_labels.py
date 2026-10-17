@@ -140,11 +140,13 @@ class TestMain(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn(_HELD_THIS_PR + "verification needed", output)
 
-    def test_a_hold_is_not_reported_as_an_error_and_names_re_running_as_the_remedy(self):
+    def test_a_hold_is_not_reported_as_an_error_and_names_a_new_event_as_the_remedy(self):
         """Issue #966: a hold is the gate working, and its verdict can outlive its labels.
 
         The labels named are those this run read, so a reader who finds one
-        already gone is told that re-running the job is what clears it.
+        already gone is told what clears it. Re-running the stale run is not
+        enough when the stale label came from the event payload, because a
+        re-run replays that payload; a new event reads both sources afresh.
         """
         code, output = _run_main(
             _env(pr_labels=["verification needed"]),
@@ -154,8 +156,10 @@ class TestMain(unittest.TestCase):
         self.assertNotIn("ERROR", output.upper())
         self.assertIn("Remove the label once the blocking condition is resolved.", output)
         self.assertIn(
-            "If a label named above is already gone, this run read it before it was removed;"
-            " re-run this job to read the labels again.",
+            "If a label named above is already gone, the reading this run used predates"
+            " its removal. A re-run replays this run's event payload, so it can name the"
+            " same label again; a new event, such as a label change or a push, reads the"
+            " labels afresh.",
             output,
         )
 

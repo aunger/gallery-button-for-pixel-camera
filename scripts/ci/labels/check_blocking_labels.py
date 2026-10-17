@@ -61,11 +61,13 @@ This script runs out of a checkout pinned to the base branch, because its job
 holds write scopes (see .github/workflows/CLAUDE.md). An edit to it therefore
 does not run on the pull request that makes it.
 
-The price of that is a verdict that can name a label the PR no longer carries,
-since a run whose event has been superseded, or whose listing lagged a label
-removal, reports the labels of the moment it read. Re-running the job re-reads
-both sources and clears it. Over-blocking is the safe direction, so this is the
-trade taken deliberately. Note that no agent reads this log: the Orchestrator
+The price of unioning the two sources is a verdict that can name a label the
+PR no longer carries, since a run whose event has been superseded, or whose
+listing lagged a label removal, reports the labels of the moment it read. A new
+event (a label change, a push) reads both sources afresh and clears it.
+Re-running the stale run clears only the listing case: a re-run replays the
+original event, so PR_LABELS still holds the payload it was first given.
+Over-blocking is the safe direction, so this is the trade taken deliberately. Note that no agent reads this log: the Orchestrator
 does not route on this check at all (it is left off the named checks in
 agents/dev_orchestration.md), so it never diagnoses which label the gate
 reported, or whose. A human reads it.
@@ -257,7 +259,8 @@ def main() -> int:
     #
     # The union can therefore name a label that is no longer applied: a
     # superseded run landing last, or a listing lagging a removal. That is
-    # over-blocking, it is cleared by re-running the job, and it is the safe
+    # over-blocking, it is cleared by a new event (a re-run replays the stale
+    # payload, so it clears only the listing case), and it is the safe
     # direction; the alternative is a gate that opens on a stale reading.
     #
     # A closed triggering PR is the mirror case, and gets the opposite
@@ -299,8 +302,10 @@ def main() -> int:
         )
     print("Remove the label once the blocking condition is resolved.")
     print(
-        "If a label named above is already gone, this run read it before it was removed;"
-        " re-run this job to read the labels again."
+        "If a label named above is already gone, the reading this run used predates"
+        " its removal. A re-run replays this run's event payload, so it can name the"
+        " same label again; a new event, such as a label change or a push, reads the"
+        " labels afresh."
     )
     return 1
 
