@@ -68,7 +68,9 @@ name: Administrative merge holds
 #     this event the failing run a since-closed PR earned would remain the most
 #     recent run on the commit and would keep its siblings blocked with no
 #     blocking label applied anywhere and no automatic way out. Recovery would
-#     mean re-running the job by hand, toggling a label, or pushing a commit.
+#     mean toggling a label or pushing a commit. Re-running the failing run by
+#     hand would not always do: a re-run replays its original event, so a run
+#     the closed PR's own event fired would read that PR as open again.
 #
 # The `issues` trigger serves step 1 only.
 
