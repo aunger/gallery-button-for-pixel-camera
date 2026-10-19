@@ -48,4 +48,4 @@
 id = "GHSA-84m7-p3x7-pcfv"
 package = "mcp"
 reason = "The advisory (CVE-2026-59951) is unbounded session growth in the MCP Python SDK's Streamable HTTP server. CI only runs `semgrep scan` (.github/workflows/semgrep.yml), which never starts an MCP server, so no endpoint is reachable. The fix (mcp 1.30.0) cannot be locked: the newest semgrep release, 1.181.0, requires mcp==1.29.0 exactly."
-remove_when = "A semgrep release no longer pins mcp==1.29.0 (or pins mcp>=1.30.0), so the lock can take the fix."
+remove_when = "A semgrep release no longer pins mcp==1.29.0, so the lock can take the fix."
