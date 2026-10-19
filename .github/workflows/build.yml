@@ -286,8 +286,7 @@ jobs:
       - name: Install emulator, system image, and create AVD
         if: needs.check-diff.outputs.needs_full_build == 'true'
         run: |
-          # The system image is a download of about 1.7 GB, fetched afresh on every run,
-          # and one copy arriving corrupt failed the job before any code ran (issue #1251).
+          # The system image is a download of about 1.7 GB, fetched afresh on every run.
           # sdkmanager has no retry option, so retry.sh runs the install again.
           bash scripts/ci/retry.sh 3 30 sdkmanager --install \
             "emulator" \
