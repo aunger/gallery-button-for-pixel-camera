@@ -13,8 +13,7 @@ from unittest.mock import MagicMock, patch
 
 # Allow importing the script as a module.
 sys.path.insert(0, os.path.dirname(__file__))
-import check_green_feed as cgf  # noqa: E402
-
+import check_green_feed as cgf
 
 # ---------------------------------------------------------------------------
 # Helpers

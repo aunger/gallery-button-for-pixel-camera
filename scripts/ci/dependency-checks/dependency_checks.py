@@ -386,9 +386,9 @@ def find_moves(
                 explained |= constraint_members(roots, platform).keys()
 
     changes: dict[str, dict] = {}
-    for config in head:
+    for config, head_roots in head.items():
         before = resolved_versions(base[config])
-        after = resolved_versions(head[config])
+        after = resolved_versions(head_roots)
         for library in sorted(before.keys() | after.keys()):
             if before.get(library) == after.get(library):
                 continue
@@ -629,7 +629,7 @@ def comment_marker(check: str) -> str:
 # person applying it by hand, and is never recorded, so the check never
 # removes it. post_dependency_checks.owned_labels decides the set.
 _LABELS_LINE_PREFIX = "<!-- labels-added-by-this-check: "
-_LABELS_LINE_RE = re.compile(r"^<!-- labels-added-by-this-check: (\[.*\]) -->$", re.M)
+_LABELS_LINE_RE = re.compile(r"^<!-- labels-added-by-this-check: (\[.*\]) -->$", re.MULTILINE)
 
 
 def recorded_labels(body: str) -> list[str]:

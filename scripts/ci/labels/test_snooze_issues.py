@@ -7,7 +7,11 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(__file__))
-import snooze_issues as si  # noqa: E402
+import snooze_issues as si
+
+
+class InjectedError(Exception):
+    """A failure raised by a mock, so a test can tell it from any other exception."""
 
 
 # ---------------------------------------------------------------------------
@@ -52,17 +56,17 @@ class TestSnoozeIssue(unittest.TestCase):
                 si.snooze_issue(5, "snooze 30 days", "owner/repo", "tok")
 
     def test_raises_when_fetch_fails(self):
-        with patch.object(si.emxl, "gh_api", side_effect=Exception("network error")):
-            with self.assertRaises(Exception):
+        with patch.object(si.emxl, "gh_api", side_effect=InjectedError("network error")):
+            with self.assertRaises(InjectedError):
                 si.snooze_issue(5, "snooze 30 days", "owner/repo", "tok")
 
     def test_raises_when_patch_fails(self):
         with patch.object(
             si.emxl,
             "gh_api",
-            side_effect=[{"number": 5, "state": "open"}, Exception("boom")],
+            side_effect=[{"number": 5, "state": "open"}, InjectedError("boom")],
         ):
-            with self.assertRaises(Exception):
+            with self.assertRaises(InjectedError):
                 si.snooze_issue(5, "snooze 30 days", "owner/repo", "tok")
 
 

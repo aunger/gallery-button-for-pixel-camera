@@ -6,13 +6,12 @@ import sys
 import tempfile
 import textwrap
 import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(__file__))
-import file_test_failure_issues as ftfi  # noqa: E402
-
+import file_test_failure_issues as ftfi
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -77,7 +76,7 @@ MIXED_XML = """\
     </testsuites>
 """
 
-_FIXED_TS = datetime(2026, 5, 25, 6, 29, 0, tzinfo=timezone.utc)
+_FIXED_TS = datetime(2026, 5, 25, 6, 29, 0, tzinfo=UTC)
 _FIXED_SHA = "a1b2c3d4e5f6789"
 
 
@@ -212,17 +211,17 @@ class TestMakeIssueBody(unittest.TestCase):
         self._tmpdir.cleanup()
 
     def _make_body(self, **kwargs):
-        defaults = dict(
-            failure=self.failure,
-            directory=self.tmpdir,
-            timestamp=_FIXED_TS,
-            sha=_FIXED_SHA,
-            github_server_url="https://github.com",
-            github_repository="aunger/gallery-button-for-pixel-camera",
-            github_run_id="12345",
-            workflow_run_branch="main",
-            pr_url="",
-        )
+        defaults = {
+            "failure": self.failure,
+            "directory": self.tmpdir,
+            "timestamp": _FIXED_TS,
+            "sha": _FIXED_SHA,
+            "github_server_url": "https://github.com",
+            "github_repository": "aunger/gallery-button-for-pixel-camera",
+            "github_run_id": "12345",
+            "workflow_run_branch": "main",
+            "pr_url": "",
+        }
         defaults.update(kwargs)
         return ftfi.make_issue_body(**defaults)
 
@@ -357,12 +356,12 @@ class TestMakeSummaryBody(unittest.TestCase):
         )
 
     def _make_summary(self, **kwargs):
-        defaults = dict(
-            failure=self.failure,
-            github_server_url="https://github.com",
-            github_repository="aunger/gallery-button-for-pixel-camera",
-            workflow_run_branch="main",
-        )
+        defaults = {
+            "failure": self.failure,
+            "github_server_url": "https://github.com",
+            "github_repository": "aunger/gallery-button-for-pixel-camera",
+            "workflow_run_branch": "main",
+        }
         defaults.update(kwargs)
         return ftfi.make_summary_body(**defaults)
 

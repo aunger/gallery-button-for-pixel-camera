@@ -11,6 +11,7 @@ Covers:
   (d) Signal 1 step parser: deduplication across two iterations (same step not re-emitted)
   (e) Signal 2 artifact parser: FAIL with multi-line trace is emitted with indented trace
   (f) Signal 2 artifact parser: all-PASS artifact emits nothing
+  (f2) Signal 2 artifact parser: a marker with a truncated JSON payload is skipped
   (g) Signal 2 artifact parser: deduplication by suite#name across two calls
   (h) Mocked HTTP: _request returns parsed JSON without touching the network
   (i) main(): failing unit test signals (step failure + FAIL) emit once before terminal
@@ -164,7 +165,7 @@ import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import ci_monitor  # noqa: E402
+import ci_monitor
 
 PASS = 0
 FAIL = 0
@@ -480,6 +481,19 @@ def main() -> int:
         out_f == [],
         "all-PASS artifact produces no output",
         "all-PASS artifact unexpectedly produced output: %r" % out_f,
+    )
+
+    # ── (f2) A marker whose payload is not JSON is skipped ─────────────────────────
+    print("\n=== (f2) Signal 2: a marker with a truncated JSON payload is skipped ===")
+    out_f2 = ci_monitor.parse_fails(
+        ['##GB4PC_TEST## {"suite":"S","name":"cut","outcome":"FAIL"'] + FAIL_NDJSON,
+        set(),
+        test_marker_regex=REPO_MARKER_REGEX,
+    )
+    check(
+        out_f2 == ci_monitor.parse_fails(FAIL_NDJSON, set(), test_marker_regex=REPO_MARKER_REGEX),
+        "the truncated marker is skipped and the markers after it are still read",
+        "a truncated marker changed the output: %r" % out_f2,
     )
 
     # ── (g) Deduplication by suite#name across two calls ───────────────────────────
@@ -1057,7 +1071,6 @@ def main() -> int:
     def req_allfail(url, token, raw=False):
         fail_calls["n"] += 1
         ci_monitor._request.last_error = err
-        return None
 
     with (
         unittest.mock.patch.object(ci_monitor, "_request", side_effect=req_allfail),
@@ -1988,7 +2001,7 @@ def main() -> int:
     )
 
     # _parse_outcome_filters: defaults (no flags)
-    import argparse as _argparse  # noqa: E402
+    import argparse as _argparse
 
     def _make_args(**kw):
         """Build a namespace with the six flag attributes, defaulting to 'not supplied'."""
@@ -3145,7 +3158,7 @@ def main() -> int:
         "\n=== (ac) #500 load_config: defaults, absence, invalid JSON, partial keys, bad regex ==="
     )
 
-    import tempfile  # noqa: E402
+    import tempfile
 
     _DEFAULTS = {
         "artifact_name_regex": ci_monitor.DEFAULT_ARTIFACT_NAME_REGEX,
@@ -3405,10 +3418,11 @@ def main() -> int:
         "\n=== (ae) #500 doc-sync: ci_monitor.py has no legacy hardcoded workflow/job/marker literals ==="
     )
 
-    _MONITOR_SRC = open(
+    with open(
         os.path.join(os.path.dirname(os.path.abspath(__file__)), "ci_monitor.py"),
         encoding="utf-8",
-    ).read()
+    ) as _monitor_fh:
+        _MONITOR_SRC = _monitor_fh.read()
 
     # Strip docstrings/comments would be heavy; instead assert the load-bearing
     # legacy literals do not appear as code. These are gone entirely from the source
@@ -3882,7 +3896,7 @@ def main() -> int:
     # ── (ai) #516 load_config: ignored_check_regex key ────────────────────────
     print("\n=== (ai) #516 load_config: ignored_check_regex defaults and repo config ===")
 
-    import tempfile as _tempfile  # noqa: E402 (already imported in ac, re-using module)
+    import tempfile as _tempfile
 
     # Default: key absent in file -> DEFAULT_IGNORED_CHECK_REGEX (never-match).
     _p_ai_partial = _tempfile.mkstemp(suffix=".json")[1]
@@ -4045,10 +4059,11 @@ def main() -> int:
     # ── (ak) #516 doc-sync: the merge gate's name not hardcoded in ci_monitor.py ──
     print("\n=== (ak) #516 doc-sync: the gate's name lives only in the config ===")
 
-    _MONITOR_SRC_AK = open(
+    with open(
         os.path.join(os.path.dirname(os.path.abspath(__file__)), "ci_monitor.py"),
         encoding="utf-8",
-    ).read()
+    ) as _monitor_fh_ak:
+        _MONITOR_SRC_AK = _monitor_fh_ak.read()
 
     check(
         REPO_GATE_NAME not in _MONITOR_SRC_AK,
@@ -4067,6 +4082,7 @@ def main() -> int:
     _plain_import_al = subprocess.run(
         [sys.executable, "-c", "import test_ci_monitor"],
         cwd=_SCRIPTS_DIR_AL,
+        check=False,
         capture_output=True,
         text=True,
         timeout=10,
@@ -4087,6 +4103,7 @@ def main() -> int:
             "import test_ci_monitor as m; print(hasattr(m, 'check_runs_payload'))",
         ],
         cwd=_SCRIPTS_DIR_AL,
+        check=False,
         capture_output=True,
         text=True,
         timeout=10,
@@ -4192,7 +4209,7 @@ def main() -> int:
     # finding on this PR: a truthiness check misroutes a literal empty-string
     # value for the flag actually used (e.g. `--sha ""`) to the next mode in
     # the chain, since "" is falsy but still means --sha was supplied.
-    import argparse as _argparse_ao  # noqa: E402
+    import argparse as _argparse_ao
 
     def _mode_args(**kw):
         defaults = {"pr": None, "sha": None, "run_id": None, "branch": None}
@@ -5540,9 +5557,7 @@ def main() -> int:
         "expected the still-computing heartbeat line; output: %r" % out_bf2,
     )
     check(
-        not any(
-            ln.startswith("PR#748: Blocked") or ln.startswith("PR#748: Infra") for ln in lines_bf2
-        ),
+        not any(ln.startswith(("PR#748: Blocked", "PR#748: Infra")) for ln in lines_bf2),
         "the still-computing heartbeat does NOT begin with a Blocked/Infra terminal keyword",
         "a still-computing line looks like a terminal; output: %r" % out_bf2,
     )
@@ -5589,9 +5604,7 @@ def main() -> int:
     out_bf2b = buf_bf2b.getvalue()
     lines_bf2b = out_bf2b.splitlines()
     check(
-        not any(
-            ln.startswith("PR#748: Blocked") or ln.startswith("PR#748: Infra") for ln in lines_bf2b
-        )
+        not any(ln.startswith(("PR#748: Blocked", "PR#748: Infra")) for ln in lines_bf2b)
         and lines_bf2b[-1] == "PR#748: Clear (mergeable_state=clean)",
         "a mergeable non-clean/unstable state (has_hooks) keeps polling, not a false block",
         "has_hooks did not keep polling to Clear; output: %r" % out_bf2b,
@@ -5733,10 +5746,7 @@ def main() -> int:
     )
     check(
         not any(
-            ln.startswith("PR#968: Clear")
-            or ln.startswith("PR#968: Blocked")
-            or ln.startswith("PR#968: Infra")
-            for ln in lines_bg
+            ln.startswith(("PR#968: Clear", "PR#968: Blocked", "PR#968: Infra")) for ln in lines_bg
         ),
         "Draft on hold is its own terminal, neither Clear nor Blocked/Infra",
         "unexpected Clear/Blocked/Infra terminal; output: %r" % out_bg,
@@ -5796,9 +5806,7 @@ def main() -> int:
         "expected 'Draft on hold by: build-and-test (mergeable_state=draft)'; output: %r" % out_bg2,
     )
     check(
-        not any(
-            ln.startswith("PR#968: Blocked") or ln.startswith("PR#968: Infra") for ln in lines_bg2
-        ),
+        not any(ln.startswith(("PR#968: Blocked", "PR#968: Infra")) for ln in lines_bg2),
         "no Blocked/Infra merge-block claim off a draft PR's masked mergeable_state",
         "unexpected Blocked/Infra terminal; output: %r" % out_bg2,
     )
@@ -6793,7 +6801,7 @@ def main() -> int:
             "output: %r; rc %r" % (lines_bm2, rc_bm2),
         )
 
-    lines_bm3, rc_bm3, urls_bm3, _ = once_bm(
+    lines_bm3, _rc_bm3, urls_bm3, _ = once_bm(
         ["--branch", "main"], CHECKS_BM, commit={"sha": "cafef00d"}
     )
     check(

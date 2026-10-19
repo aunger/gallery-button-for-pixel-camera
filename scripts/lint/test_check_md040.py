@@ -7,7 +7,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(__file__))
-import check_md040  # noqa: E402
+import check_md040
 
 
 def _write(tmpdir: str, name: str, content: str) -> str:

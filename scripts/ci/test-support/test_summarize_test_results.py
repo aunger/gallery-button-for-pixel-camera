@@ -11,8 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(__file__))
-import summarize_test_results as srt  # noqa: E402
-
+import summarize_test_results as srt
 
 # ---------------------------------------------------------------------------
 # Helpers

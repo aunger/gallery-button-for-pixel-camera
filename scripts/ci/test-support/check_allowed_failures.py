@@ -39,10 +39,10 @@ Exit codes:
 
 import re
 import sys
-import defusedxml.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 
+import defusedxml.ElementTree as ET
 
 # An inline comment is a `#` that follows whitespace (or starts the line).
 # A bare `#` glued to the preceding token is the class/method separator

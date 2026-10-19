@@ -50,7 +50,6 @@ import sys
 from typing import NamedTuple
 
 import requests
-
 from github_headers import github_headers
 
 MARKER = "<!-- gb4pc-ci-summary-link -->"

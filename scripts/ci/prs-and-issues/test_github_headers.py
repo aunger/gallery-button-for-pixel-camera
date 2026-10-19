@@ -6,7 +6,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(__file__))
-import github_headers as gh  # noqa: E402
+import github_headers as gh
 
 
 class TestGithubHeaders(unittest.TestCase):

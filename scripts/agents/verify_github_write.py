@@ -77,8 +77,8 @@ sys.path.insert(
     0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "ci", "prs-and-issues")
 )
 
-from github_headers import github_headers  # noqa: E402
-from session_bylines import strip_bylines  # noqa: E402
+from github_headers import github_headers
+from session_bylines import strip_bylines
 
 API_ROOT = "https://api.github.com"
 
@@ -429,13 +429,13 @@ def fetch_stored(api_url: str, opener=urllib.request.urlopen) -> object:
     except urllib.error.HTTPError as exc:
         if exc.code != 404:
             raise _unverifiable(api_url, exc) from exc
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise _unverifiable(api_url, exc) from exc
 
     time.sleep(RETRY_DELAY_SECONDS)
     try:
         return _get_json(api_url, headers, opener)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise _unverifiable(api_url, exc) from exc
 
 
@@ -656,8 +656,10 @@ def build_report(
                 classes.append(region.classification)
 
     lines = [
-        f"GitHub write altered in storage: {tool_name} wrote {target.description}, "
-        "and the stored text is not the text that was sent.",
+        (
+            f"GitHub write altered in storage: {tool_name} wrote {target.description}, "
+            "and the stored text is not the text that was sent."
+        ),
         f"  object: {target.api_url}",
     ]
     if html_url:

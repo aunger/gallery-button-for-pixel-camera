@@ -97,7 +97,6 @@ from file_test_failure_issues import (
 )
 from github_headers import github_headers
 
-
 # ---------------------------------------------------------------------------
 # Tracking issue
 # ---------------------------------------------------------------------------
@@ -230,13 +229,13 @@ def fetch_text(url: str) -> str:
     """
     try:
         resp = requests.get(url, timeout=30)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise TransientFetchError(f"GET {url} failed: {exc}") from exc
     if resp.status_code == 404:
         raise FormatError(f"GET {url} returned 404; upstream moved or renamed this document")
     try:
         resp.raise_for_status()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise TransientFetchError(f"GET {url} failed: {exc}") from exc
     return resp.text
 
@@ -248,7 +247,7 @@ def query_osv(coordinate: str, version: str) -> list[str]:
         resp = requests.post(OSV_QUERY_URL, json=payload, timeout=30)
         resp.raise_for_status()
         data = resp.json()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise TransientFetchError(f"OSV query for {coordinate}@{version} failed: {exc}") from exc
     if not isinstance(data, dict):
         raise FormatError(f"OSV returned a {type(data).__name__}, not an object")
@@ -789,10 +788,12 @@ def render_comment(state: dict, prior: dict | None) -> str:
         sections += [*verdict, ""]
 
     sections += [
-        "**Next step**: re-read the KGP compatibility table on "
-        "[Configure a Gradle project](https://kotlinlang.org/docs/gradle-configure-project.html) "
-        'by hand, then follow "Performing a toolchain bump" in `gradle/README.md`. '
-        "This watcher deliberately does not scrape that table, and it does not bump anything.",
+        (
+            "**Next step**: re-read the KGP compatibility table on "
+            "[Configure a Gradle project](https://kotlinlang.org/docs/gradle-configure-project.html) "
+            'by hand, then follow "Performing a toolchain bump" in `gradle/README.md`. '
+            "This watcher deliberately does not scrape that table, and it does not bump anything."
+        ),
         "",
         render_state_block(state),
     ]

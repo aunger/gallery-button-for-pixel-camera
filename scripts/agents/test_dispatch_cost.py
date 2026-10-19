@@ -28,7 +28,9 @@ import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(__file__))
-import dispatch_cost as dc  # noqa: E402
+from datetime import UTC
+
+import dispatch_cost as dc
 
 SESSION = "11111111-2222-3333-4444-555555555555"
 
@@ -347,9 +349,9 @@ class TestRewrites(ProjectFixture):
 
 class TestLiveSessions(ProjectFixture):
     def test_a_session_whose_last_record_is_recent_is_marked_live(self):
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         recent = (now - timedelta(seconds=5)).isoformat().replace("+00:00", "Z")
         stale = (now - timedelta(seconds=4000)).isoformat().replace("+00:00", "Z")
         self.orchestrator([record("msg_a", recent)])
@@ -359,11 +361,9 @@ class TestLiveSessions(ProjectFixture):
         self.assertFalse(by_label["aaaa"]["live"])
 
     def test_the_snapshot_time_and_the_live_sessions_are_printed(self):
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
-        recent = (
-            (datetime.now(timezone.utc) - timedelta(seconds=5)).isoformat().replace("+00:00", "Z")
-        )
+        recent = (datetime.now(UTC) - timedelta(seconds=5)).isoformat().replace("+00:00", "Z")
         self.orchestrator([record("msg_a", recent)])
         code, out, err = self.run_main()
         self.assertEqual(code, 0, err)
@@ -372,11 +372,9 @@ class TestLiveSessions(ProjectFixture):
         self.assertIn(SESSION + "*", out)
 
     def test_the_live_window_is_overridable(self):
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
-        ago = (
-            (datetime.now(timezone.utc) - timedelta(seconds=600)).isoformat().replace("+00:00", "Z")
-        )
+        ago = (datetime.now(UTC) - timedelta(seconds=600)).isoformat().replace("+00:00", "Z")
         self.orchestrator([record("msg_a", ago)])
         self.assertFalse(self.run_json()["sessions"][0]["live"])
         self.assertTrue(self.run_json("--live-window", "900")["sessions"][0]["live"])
@@ -639,7 +637,7 @@ class TestDegradesOneTranscriptAtATime(ProjectFixture):
     def test_the_skip_also_reaches_stderr(self):
         self.orchestrator([record("msg_a", "2026-09-06T09:00:00.000Z")])
         self.orchestrator([non_call_record("2026-09-06T09:00:00.000Z")], session=self.OTHER)
-        code, out, err = self.run_main()
+        code, _out, err = self.run_main()
         self.assertEqual(code, 0)
         self.assertIn("skipped", err)
         self.assertIn(self.OTHER, err)

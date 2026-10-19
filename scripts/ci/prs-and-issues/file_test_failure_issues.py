@@ -25,15 +25,14 @@ Optional environment variables (populated automatically by GitHub Actions):
 
 import os
 import sys
-import defusedxml.ElementTree as ET
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import NamedTuple
+
+import defusedxml.ElementTree as ET
 import requests
-
 from github_headers import github_headers
-
 
 # ---------------------------------------------------------------------------
 # Data model
@@ -564,7 +563,7 @@ def main(argv: list[str] | None = None) -> int:
         print("Warning: GITHUB_REPOSITORY not set; skipping issue filing.", file=sys.stderr)
         return 0
 
-    timestamp = datetime.now(tz=timezone.utc)
+    timestamp = datetime.now(tz=UTC)
 
     for directory, label in pairs:
         artifact_name = _artifact_name_for_label(label)

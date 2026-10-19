@@ -266,9 +266,12 @@ def labels_to_propagate(
         if label_set is not None and emxl.labels_to_remove(label, staged, label_set):
             conflict = True
         prefix = emxl.find_conflicting_prefix(label)
-        if not conflict and prefix is not None:
-            if emxl.labels_to_remove_by_prefix(label, staged, prefix):
-                conflict = True
+        if (
+            not conflict
+            and prefix is not None
+            and emxl.labels_to_remove_by_prefix(label, staged, prefix)
+        ):
+            conflict = True
 
         if conflict:
             skipped.append(label)
