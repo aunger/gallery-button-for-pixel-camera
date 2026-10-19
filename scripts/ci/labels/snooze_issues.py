@@ -8,6 +8,10 @@ human snoozes such an issue: this script closes it so it stops reading as
 open, dispatchable work, and scripts/ci/labels/wake_snoozed_issues.py
 reopens it once the label's day count has elapsed.
 
+The issue is closed with state_reason "not_planned" rather than GitHub's
+default, "completed": a snoozed issue is deferred, not done, and "completed"
+would show it as resolved in the issue list and in search until it wakes.
+
 enforce_mutually_exclusive_labels.py already keeps at most one snooze label on
 an issue at a time (SNOOZE_LABELS is one of its MUTUALLY_EXCLUSIVE_SETS), so
 this script only has to react to the label that was just added; it does not
@@ -64,7 +68,7 @@ def snooze_issue(issue_number: int, snooze_label: str, repo: str, token: str) ->
         f"repos/{repo}/issues/{issue_number}",
         token=token,
         method="PATCH",
-        body={"state": "closed"},
+        body={"state": "closed", "state_reason": "not_planned"},
     )
     print(f"Closed #{issue_number} for its '{snooze_label}' snooze.")
     return True
