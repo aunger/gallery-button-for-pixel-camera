@@ -2,11 +2,6 @@
 # retry.sh: run a command, and run it again while it fails, up to a fixed
 # number of attempts.
 #
-# Issue #1251: build-and-test failed before any code ran because one download
-# of the E2E emulator's system image arrived corrupt, and the
-# `sdkmanager --install` that fetched it had no second attempt. sdkmanager has
-# no retry option of its own, so the call is wrapped instead.
-#
 # Usage:
 #   scripts/ci/retry.sh <attempts> <delay-seconds> <command> [<arg>...]
 #     attempts       how many times to run the command at most (1 or more)
