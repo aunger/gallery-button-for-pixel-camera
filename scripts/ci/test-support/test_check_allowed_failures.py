@@ -304,7 +304,7 @@ class ParseArgsTests(unittest.TestCase):
         self.assertEqual(cm.exception.code, 2)
 
     def test_parses_allowlist_and_specs(self):
-        allowlist, specs = caf.parse_args(
+        options, specs = caf.parse_args(
             [
                 "--allowlist",
                 "a.txt",
@@ -316,7 +316,7 @@ class ParseArgsTests(unittest.TestCase):
                 "E2E Tests",
             ]
         )
-        self.assertEqual(allowlist, Path("a.txt"))
+        self.assertEqual(options.allowlist, Path("a.txt"))
         self.assertEqual(
             specs,
             [

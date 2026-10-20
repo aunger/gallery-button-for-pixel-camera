@@ -67,6 +67,13 @@ class FailedTest:
 
 
 @dataclass(frozen=True)
+class GateOptions:
+    """The options that precede the suite specs on the command line."""
+
+    allowlist: Path | None = None
+
+
+@dataclass(frozen=True)
 class SuiteSpec:
     """One test suite to inspect: where its results live and how its step fared."""
 
@@ -160,8 +167,13 @@ _USAGE = (
 )
 
 
-def parse_args(argv: list[str]) -> tuple[Path | None, list[SuiteSpec]]:
-    """Parse argv into (allowlist_path, [SuiteSpec, ...]).
+# The options that may precede the suite specs, each taking one path, mapped to
+# the GateOptions field it sets.
+_LEADING_OPTIONS = {"--allowlist": "allowlist"}
+
+
+def parse_args(argv: list[str]) -> tuple[GateOptions, list[SuiteSpec]]:
+    """Parse argv into (GateOptions, [SuiteSpec, ...]).
 
     Each suite is ``<dir> --suite-label <name>`` with an optional trailing
     ``--outcome <value>``. Raises SystemExit(2) on bad input (matching the
@@ -173,13 +185,14 @@ def parse_args(argv: list[str]) -> tuple[Path | None, list[SuiteSpec]]:
         raise SystemExit(0)
 
     tokens = list(argv)
-    allowlist_path: Path | None = None
-    if tokens and tokens[0] == "--allowlist":
+    leading: dict[str, Path] = {}
+    while tokens and tokens[0] in _LEADING_OPTIONS:
         if len(tokens) < 2:
-            print(f"error: --allowlist requires a path\n{_USAGE}", file=sys.stderr)
+            print(f"error: {tokens[0]} requires a path\n{_USAGE}", file=sys.stderr)
             raise SystemExit(2)
-        allowlist_path = Path(tokens[1])
+        leading[_LEADING_OPTIONS[tokens[0]]] = Path(tokens[1])
         tokens = tokens[2:]
+    options = GateOptions(**leading)
 
     specs: list[SuiteSpec] = []
     i = 0
@@ -214,7 +227,7 @@ def parse_args(argv: list[str]) -> tuple[Path | None, list[SuiteSpec]]:
         )
         raise SystemExit(2)
 
-    return allowlist_path, specs
+    return options, specs
 
 
 # ---------------------------------------------------------------------------
@@ -226,8 +239,8 @@ def main(argv: list[str] | None = None) -> int:
     if argv is None:
         argv = sys.argv[1:]
 
-    allowlist_path, specs = parse_args(argv)
-    allowlist = load_allowlist(allowlist_path)
+    options, specs = parse_args(argv)
+    allowlist = load_allowlist(options.allowlist)
 
     all_failures: list[FailedTest] = []
     infra_failures: list[str] = []
