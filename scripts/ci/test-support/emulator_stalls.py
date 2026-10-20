@@ -16,6 +16,20 @@ progress when the record was written or, when none is, the next test to start.
 ``check_allowed_failures.py`` reports those tests' failures as infrastructure
 failures, and the issue filer files no ticket for them.
 
+"In progress" means started, not yet finished, and still alive, and the
+recording shows a test alive only by a later line from it.
+A test whose process dies (a crash, a kill, or the force-stop on the E2E task's
+timeout path) writes no ``finished:`` line, so it looks started-and-unfinished
+until the next ``started:`` line.
+A record written in that window is therefore held until the test it fell in
+writes another TestRunner line.
+If the next test starts first, the record goes to that test instead.
+When the earlier test died before the record, which is the case this guards,
+the earlier test keeps its ticket.
+When it died after the record, which a stall that hangs it into the timeout
+would do, it also keeps its ticket; that case cannot be told apart from the
+first without process-death records, and filing a ticket is the safer error.
+
 The window is one test because that is all the evidence supports.
 In run 39037527808 the Pixel Launcher dialog shows in test4a's screenshots, and
 the next test, test5a, passed, though it checks the green coverage the dialog's
@@ -73,26 +87,34 @@ def find_stalls(lines: Iterable[str]) -> dict[str, str]:
     """Map ``class#method`` of each test a qualifying ANR covers to that ANR's record."""
     stalls: dict[str, str] = {}
     running: str | None = None  # the test started and not yet finished
-    pending: str | None = None  # a record written while no test was running
+    held: str | None = None  # a record written during `running`, until it writes again
+    pending: str | None = None  # a record for the next test to start
     for line in lines:
         anr = _ANR.search(line)
         if anr and is_stall_process(anr["process"]):
             if running is None:
                 pending = pending or line.strip()
             else:
-                stalls.setdefault(running, line.strip())
+                held = held or line.strip()
             continue
         test = _TEST.search(line)
         if not test:
             continue
         name = f"{test['cls']}#{test['method']}"
         if test["event"] == "started":
+            # `running` wrote nothing after the held record, so it had died.
+            pending = pending or held
+            held = None
             running = name
             if pending is not None:
                 stalls.setdefault(name, pending)
                 pending = None
-        elif test["event"] == "finished" and running == name:
-            running = None
+        elif name == running:
+            if held is not None:
+                stalls.setdefault(name, held)
+                held = None
+            if test["event"] == "finished":
+                running = None
     return stalls
 
 

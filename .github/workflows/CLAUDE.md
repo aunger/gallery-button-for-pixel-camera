@@ -38,6 +38,7 @@ When a system or launcher process stops responding, its "isn't responding" dialo
 
 - The `Start emulator-stall logcat recorder` step streams ActivityManager errors and TestRunner lines to `results/stall-logcat.txt` from before the E2E setup until the emulator is killed.
 - `scripts/ci/test-support/emulator_stalls.py` takes each ANR there in the system server, SystemUI, or a launcher, and names the one test it covers: the test in progress when the record was written or, if none was, the next to start.
+  A test that writes no TestRunner line after the record is taken to have died before it, and the record goes to the next test.
   One test, because in run 39037527808 the test after the one the launcher dialog appeared in passed; the module's docstring has the detail.
   An ANR in one of this repository's own packages, such as the mock camera, never qualifies.
 - The gate writes the failed tests it names to `results/stall-failures.txt`, which the `emulator-stall-classification` artifact carries to the `file-issues` job; that job's script skips them, through the `STALL_FAILURES_FILE` environment variable.

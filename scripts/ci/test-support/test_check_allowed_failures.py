@@ -335,7 +335,9 @@ class EmulatorStallTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             directory = Path(d)
             _write(directory, "TEST-fail.xml", FAILING_XML)
-            code, out, listed = self._run(directory, [BAR_TEST_D_STARTED, LAUNCHER_ANR])
+            code, out, listed = self._run(
+                directory, [BAR_TEST_D_STARTED, LAUNCHER_ANR, BAR_TEST_D_FINISHED]
+            )
         self.assertEqual(code, 1)
         self.assertIn("emulator stall", out)
         self.assertIn(LAUNCHER_ANR, out)
@@ -346,7 +348,9 @@ class EmulatorStallTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             directory = Path(d)
             _write(directory, "TEST-fail.xml", FAILING_XML)
-            code, out, listed = self._run(directory, [BAR_TEST_D_STARTED, MOCK_CAMERA_ANR])
+            code, out, listed = self._run(
+                directory, [BAR_TEST_D_STARTED, MOCK_CAMERA_ANR, BAR_TEST_D_FINISHED]
+            )
         self.assertEqual(code, 1)
         self.assertIn("Blocking test failures", out)
         self.assertNotIn("emulator stall", out)
@@ -393,7 +397,10 @@ class EmulatorStallTests(unittest.TestCase):
             _write(directory, "TEST-fail.xml", FAILING_XML)
             allow = _write(directory, "allow.txt", "com.example.BarTest#testD\n")
             code, out, listed = self._run(
-                directory, [BAR_TEST_D_STARTED, LAUNCHER_ANR], "--allowlist", str(allow)
+                directory,
+                [BAR_TEST_D_STARTED, LAUNCHER_ANR, BAR_TEST_D_FINISHED],
+                "--allowlist",
+                str(allow),
             )
         self.assertEqual(code, 0)
         self.assertIn("allowlisted", out)
@@ -404,7 +411,9 @@ class EmulatorStallTests(unittest.TestCase):
             directory = Path(d)
             _write(directory, "TEST-fail.xml", FAILING_XML)
             _write(directory, "TEST-error.xml", ERROR_XML)
-            code, out, listed = self._run(directory, [BAR_TEST_D_STARTED, LAUNCHER_ANR])
+            code, out, listed = self._run(
+                directory, [BAR_TEST_D_STARTED, LAUNCHER_ANR, BAR_TEST_D_FINISHED]
+            )
         self.assertEqual(code, 1)
         self.assertIn("Blocking test failures", out)
         self.assertIn("com.example.BazTest#testE", out)

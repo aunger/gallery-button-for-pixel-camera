@@ -107,6 +107,25 @@ class FindStallsTests(unittest.TestCase):
         ]
         self.assertEqual(set(es.find_stalls(lines)), {"com.gb4pc.ui.MainSettingsScreenTest#b"})
 
+    def test_record_after_a_test_that_died_covers_the_next_test(self):
+        # Review of PR #1337: a test whose process dies writes no `finished:` line.
+        # A record written after it (the next step's install, the #194 trigger)
+        # belongs to the next test, and the dead test keeps its ticket.
+        lines = [
+            _runner("started", "crashes"),
+            LAUNCHER_ANR,
+            "10-17 13:46:20.000  5799  5815 I TestRunner: run started: 3 tests",
+            _runner("started", "next"),
+            _runner("finished", "next"),
+        ]
+        self.assertEqual(
+            es.find_stalls(lines), {"com.gb4pc.ui.MainSettingsScreenTest#next": LAUNCHER_ANR}
+        )
+
+    def test_record_held_for_a_test_that_writes_nothing_more_covers_nothing(self):
+        lines = [_runner("started", "a"), LAUNCHER_ANR]
+        self.assertEqual(es.find_stalls(lines), {})
+
     def test_record_after_the_last_test_covers_nothing(self):
         lines = [_runner("started", "a"), _runner("failed", "a"), _runner("finished", "a")]
         self.assertEqual(es.find_stalls([*lines, LAUNCHER_ANR]), {})
@@ -206,7 +225,10 @@ class RecordedRunTests(unittest.TestCase):
 
     def test_launcher_anr_before_the_first_test_covers_only_the_first_test(self):
         lines = self._with_launcher_anr_at("started: ", "13:45:40.000")
-        self.assertEqual(len(es.find_stalls(lines)), 1)
+        self.assertEqual(
+            set(es.find_stalls(lines)),
+            {"com.gb4pc.ui.MainActivityRedirectTest#whenSetupNotCompleted_launchesSetupActivity"},
+        )
 
 
 class ReadStallsTests(unittest.TestCase):
