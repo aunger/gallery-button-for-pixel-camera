@@ -22,6 +22,8 @@ separates a class from a method is preserved.
 Usage:
     python3 scripts/ci/test-support/check_allowed_failures.py \\
         --allowlist .github/allowed-test-failures.txt \\
+        --logcat results/stall-logcat.txt \\
+        --stall-list results/stall-failures.txt \\
         path/to/unit-results          --suite-label "Unit Tests" \\
         path/to/instrumented-results  --suite-label "Instrumented Tests" --outcome failure \\
         path/to/e2e-results           --suite-label "E2E Tests"        --outcome success
@@ -32,9 +34,18 @@ the step that produced those results.  When a step's outcome is ``failure`` but
 it yielded no blocking test failure, the gate treats that as an infrastructure
 failure and fails the build--this is what ``continue-on-error`` used to hide.
 
+``--logcat`` names the CI's logcat recording of the instrumented and E2E steps.
+A failed test that the recording shows running after a system or launcher ANR
+(see ``emulator_stalls.py``, issue #1334) is reported as an infrastructure
+failure from an emulator stall, not as a test failure, unless it is allowlisted.
+``--stall-list`` names a file to write those tests to, one ``class#method`` per
+line, allowlisted ones included; the issue filer files no ticket for them.
+The build still fails on such a failure, so a stalled run needs a re-run.
+
 Exit codes:
     0  no failures, or every failure is allowlisted
     1  at least one non-allowlisted test failed, or an infrastructure failure
+       (including a test failure an emulator stall explains)
 """
 
 import re
@@ -43,6 +54,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import defusedxml.ElementTree as ET
+from emulator_stalls import read_stall_evidence
 
 # An inline comment is a `#` that follows whitespace (or starts the line).
 # A bare `#` glued to the preceding token is the class/method separator
@@ -71,6 +83,8 @@ class GateOptions:
     """The options that precede the suite specs on the command line."""
 
     allowlist: Path | None = None
+    logcat: Path | None = None
+    stall_list: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -162,6 +176,7 @@ def parse_failures(directory: Path, suite_label: str) -> list[FailedTest]:
 
 _USAGE = (
     "usage: check_allowed_failures.py [--allowlist <file>] "
+    "[--logcat <file>] [--stall-list <file>] "
     "<dir> --suite-label <name> [--outcome <value>] "
     "[<dir> --suite-label <name> [--outcome <value>] ...]"
 )
@@ -169,7 +184,11 @@ _USAGE = (
 
 # The options that may precede the suite specs, each taking one path, mapped to
 # the GateOptions field it sets.
-_LEADING_OPTIONS = {"--allowlist": "allowlist"}
+_LEADING_OPTIONS = {
+    "--allowlist": "allowlist",
+    "--logcat": "logcat",
+    "--stall-list": "stall_list",
+}
 
 
 def parse_args(argv: list[str]) -> tuple[GateOptions, list[SuiteSpec]]:
@@ -265,8 +284,18 @@ def main(argv: list[str] | None = None) -> int:
         if spec.outcome == "failure" and not suite_failures:
             infra_failures.append(spec.label)
 
+    evidence = read_stall_evidence(options.logcat) if options.logcat else None
+    stalled_tests = evidence.stalled_tests if evidence else frozenset()
+    stalled = [f for f in all_failures if f.qualified in stalled_tests]
+    if options.stall_list:
+        options.stall_list.parent.mkdir(parents=True, exist_ok=True)
+        options.stall_list.write_text(
+            "".join(f"{f.qualified}\n" for f in stalled), encoding="utf-8"
+        )
+
     allowed = [f for f in all_failures if is_allowed(f, allowlist)]
-    blocked = [f for f in all_failures if not is_allowed(f, allowlist)]
+    stall_failures = [f for f in stalled if not is_allowed(f, allowlist)]
+    blocked = [f for f in all_failures if not is_allowed(f, allowlist) and f not in stalled]
 
     if allowed:
         print("Allowed (red-to-green) test failures:")
@@ -283,10 +312,17 @@ def main(argv: list[str] | None = None) -> int:
         for label in infra_failures:
             print(f"  - [{label}] step failed without a corresponding test failure")
 
-    if blocked or infra_failures:
+    if stall_failures and evidence:
+        print("Infrastructure failures from an emulator stall (no ticket is filed):")
+        print(f"  first system or launcher ANR: {evidence.anr_record}")
+        for f in stall_failures:
+            print(f"  - [{f.suite_label}] {f.qualified}")
+
+    if blocked or infra_failures or stall_failures:
+        stall_note = f" ({len(stall_failures)} from an emulator stall)" if stall_failures else ""
         print(
             f"\n{len(blocked)} blocking test failure(s); "
-            f"{len(infra_failures)} infrastructure failure(s); "
+            f"{len(infra_failures) + len(stall_failures)} infrastructure failure(s){stall_note}; "
             f"{len(allowed)} allowlisted failure(s).",
             file=sys.stderr,
         )
