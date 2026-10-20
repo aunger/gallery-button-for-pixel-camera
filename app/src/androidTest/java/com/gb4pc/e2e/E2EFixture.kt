@@ -844,7 +844,9 @@ class E2EFixture(
      *
      * Issue #1335: the flag can also flip while the launcher is still on screen, and launcher
      * dock icons contain pixels matching [Rgb.BLUE]. Requiring the green feed in the same frame
-     * proves the camera is on screen, so a matching pixel belongs to the overlay.
+     * proves the camera is on screen, so a matching pixel belongs to the overlay. The default
+     * [timeoutMs] therefore also covers the camera's display time, which was about 2.8 s in the
+     * slow run that issue records.
      *
      * @param color           The [Rgb] color to poll for.
      * @param minFeedCoverage Minimum fraction of the screen the [Rgb.GREEN] feed must cover.
@@ -854,7 +856,7 @@ class E2EFixture(
     fun captureScreenUntilColorVisibleOverCameraFeed(
         color: Rgb,
         minFeedCoverage: Float = 0.50f,
-        timeoutMs: Long = 5_000L,
+        timeoutMs: Long = 8_000L,
         intervalMs: Long = 200L,
     ): Bitmap =
         captureScreenUntil(timeoutMs, intervalMs) {
