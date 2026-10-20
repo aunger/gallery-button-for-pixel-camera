@@ -466,6 +466,11 @@ class ParseArgsTests(unittest.TestCase):
         )
         self.assertEqual(specs, [caf.SuiteSpec(Path("dir1"), "E2E Tests", "")])
 
+    def test_repeated_leading_option_is_rejected(self):
+        with self.assertRaises(SystemExit) as cm:
+            caf.parse_args(["--allowlist", "a", "--allowlist", "b", "d", "--suite-label", "X"])
+        self.assertEqual(cm.exception.code, 2)
+
     def test_logcat_requires_value(self):
         with self.assertRaises(SystemExit) as cm:
             caf.parse_args(["--logcat"])

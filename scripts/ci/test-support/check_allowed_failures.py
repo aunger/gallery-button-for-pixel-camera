@@ -210,6 +210,9 @@ def parse_args(argv: list[str]) -> tuple[GateOptions, list[SuiteSpec]]:
         if len(tokens) < 2:
             print(f"error: {tokens[0]} requires a path\n{_USAGE}", file=sys.stderr)
             raise SystemExit(2)
+        if _LEADING_OPTIONS[tokens[0]] in leading:
+            print(f"error: {tokens[0]} given more than once\n{_USAGE}", file=sys.stderr)
+            raise SystemExit(2)
         leading[_LEADING_OPTIONS[tokens[0]]] = Path(tokens[1])
         tokens = tokens[2:]
     options = GateOptions(**leading)
