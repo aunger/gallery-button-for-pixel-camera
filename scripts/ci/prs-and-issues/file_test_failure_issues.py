@@ -598,6 +598,7 @@ def main(argv: list[str] | None = None) -> int:
             continue
 
         failures = []
+        skipped = 0
         for failure in parse_failures(directory, label, artifact_name):
             if f"{failure.class_name}#{failure.method_name}" in stall_failures:
                 print(
@@ -605,8 +606,12 @@ def main(argv: list[str] | None = None) -> int:
                     "found an emulator stall explains this failure",
                     file=sys.stderr,
                 )
+                skipped += 1
             else:
                 failures.append(failure)
+        if skipped and not failures:
+            print(f"Note: no failure left to file in {directory}", file=sys.stderr)
+            continue
         if not failures:
             print(f"Note: no test failures found in {directory}", file=sys.stderr)
             continue
