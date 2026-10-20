@@ -524,11 +524,12 @@ jobs:
 
       - name: Start emulator-stall logcat recorder
         # Issue #1334: a system or launcher ANR raises an "isn't responding" dialog that takes
-        # focus from every test that runs under it. The gate reads this recording to report
-        # those tests' failures as infrastructure failures (scripts/ci/test-support/
-        # emulator_stalls.py), and the file-issues job files no ticket for them.
+        # focus from the test running under it. The gate reads this recording to report that
+        # test's failure as an infrastructure failure (scripts/ci/test-support/
+        # emulator_stalls.py), and the file-issues job files no ticket for it.
         # It starts here, after the pre-flight, whose own launcher ANR dismiss_anr.sh handles,
-        # and before the setup step's install, the trigger #194 traced that ANR to. It keeps only
+        # and before the setup step's install, the trigger #194 traced that ANR to; an ANR
+        # written while no test runs covers the next test to start. It keeps only
         # ActivityManager errors, where ANR records go, and TestRunner lines, which name each
         # test as it starts and ends. A stream, unlike the per-step `logcat -d` dumps below,
         # loses no lines when the device's ring buffer wraps. It runs until "Kill emulator"
@@ -1516,7 +1517,7 @@ jobs:
       # infrastructure failure and still fails the build. --logcat reports a failure an
       # emulator stall explains as an infrastructure failure too (issue #1334), and
       # --stall-list writes those tests out for the file-issues job. This runs last,
-      # but for the upload of that list, so it cannot suppress artifact upload, the
+      # except for the upload of that list, so it cannot suppress artifact upload, the
       # summary, or issue filing.
       - name: Gate on test failures
         if: always() && needs.check-diff.outputs.needs_full_build == 'true'

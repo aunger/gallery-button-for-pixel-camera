@@ -299,8 +299,11 @@ MOCK_CAMERA_ANR = (
     "10-17 13:47:41.900   558  5485 E ActivityManager: ANR in com.google.android.GoogleCamera "
     "(com.google.android.GoogleCamera/com.gb4pc.mockcamera.MockCameraActivity)"
 )
-BAR_TEST_D_FAILED = (
-    "10-17 13:46:10.000  4982  4998 E TestRunner: failed: testD(com.example.BarTest)"
+BAR_TEST_D_STARTED = (
+    "10-17 13:46:00.000  4982  4998 I TestRunner: started: testD(com.example.BarTest)"
+)
+BAR_TEST_D_FINISHED = (
+    "10-17 13:46:10.000  4982  4998 I TestRunner: finished: testD(com.example.BarTest)"
 )
 
 
@@ -332,7 +335,7 @@ class EmulatorStallTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             directory = Path(d)
             _write(directory, "TEST-fail.xml", FAILING_XML)
-            code, out, listed = self._run(directory, [LAUNCHER_ANR, BAR_TEST_D_FAILED])
+            code, out, listed = self._run(directory, [BAR_TEST_D_STARTED, LAUNCHER_ANR])
         self.assertEqual(code, 1)
         self.assertIn("emulator stall", out)
         self.assertIn(LAUNCHER_ANR, out)
@@ -343,7 +346,7 @@ class EmulatorStallTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             directory = Path(d)
             _write(directory, "TEST-fail.xml", FAILING_XML)
-            code, out, listed = self._run(directory, [MOCK_CAMERA_ANR, BAR_TEST_D_FAILED])
+            code, out, listed = self._run(directory, [BAR_TEST_D_STARTED, MOCK_CAMERA_ANR])
         self.assertEqual(code, 1)
         self.assertIn("Blocking test failures", out)
         self.assertNotIn("emulator stall", out)
@@ -353,7 +356,9 @@ class EmulatorStallTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             directory = Path(d)
             _write(directory, "TEST-fail.xml", FAILING_XML)
-            code, out, listed = self._run(directory, [BAR_TEST_D_FAILED, LAUNCHER_ANR])
+            code, out, listed = self._run(
+                directory, [BAR_TEST_D_STARTED, BAR_TEST_D_FINISHED, LAUNCHER_ANR]
+            )
         self.assertEqual(code, 1)
         self.assertIn("Blocking test failures", out)
         self.assertEqual(listed, "")
@@ -388,7 +393,7 @@ class EmulatorStallTests(unittest.TestCase):
             _write(directory, "TEST-fail.xml", FAILING_XML)
             allow = _write(directory, "allow.txt", "com.example.BarTest#testD\n")
             code, out, listed = self._run(
-                directory, [LAUNCHER_ANR, BAR_TEST_D_FAILED], "--allowlist", str(allow)
+                directory, [BAR_TEST_D_STARTED, LAUNCHER_ANR], "--allowlist", str(allow)
             )
         self.assertEqual(code, 0)
         self.assertIn("allowlisted", out)
@@ -399,7 +404,7 @@ class EmulatorStallTests(unittest.TestCase):
             directory = Path(d)
             _write(directory, "TEST-fail.xml", FAILING_XML)
             _write(directory, "TEST-error.xml", ERROR_XML)
-            code, out, listed = self._run(directory, [LAUNCHER_ANR, BAR_TEST_D_FAILED])
+            code, out, listed = self._run(directory, [BAR_TEST_D_STARTED, LAUNCHER_ANR])
         self.assertEqual(code, 1)
         self.assertIn("Blocking test failures", out)
         self.assertIn("com.example.BazTest#testE", out)

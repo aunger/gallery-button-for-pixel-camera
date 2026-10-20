@@ -6,17 +6,22 @@ responding" dialog over whatever test is running.
 The dialog takes window focus and dims the screen, so tests fail with no fault
 in the app: Espresso reports ``RootViewWithoutFocusException``, and the
 green-feed checks read 0% coverage.
-Nothing in the instrumented or E2E steps dismisses the dialog, so it stays up
-for every test that follows.
 
-The CI workflow records logcat through those steps, keeping only ActivityManager
-errors and TestRunner lines (the "Start emulator-stall logcat recorder" step in
-``.github/workflows/build.yml``).
-This module reads that recording, finds the first ANR record whose process is a
-system or launcher process, and names every test the recording shows running
-after it.
+The CI workflow records logcat through the instrumented and E2E steps, keeping
+only ActivityManager errors and TestRunner lines (the "Start emulator-stall
+logcat recorder" step in ``.github/workflows/build.yml``).
+This module reads that recording and, for each ANR record whose process is a
+system or launcher process, names the one test that record covers: the test in
+progress when the record was written or, when none is, the next test to start.
 ``check_allowed_failures.py`` reports those tests' failures as infrastructure
 failures, and the issue filer files no ticket for them.
+
+The window is one test because that is all the evidence supports.
+In run 39037527808 the Pixel Launcher dialog shows in test4a's screenshots, and
+the next test, test5a, passed, though it checks the green coverage the dialog's
+dim breaks (``fixtures/emulator_stalls/run-39037527808-stall.txt``).
+So the dialog does not reliably outlast the test it appears in, and a wider
+window would withhold tickets from failures the stall did not cause.
 
 Only the processes in ``STALL_PROCESSES`` qualify:
 
@@ -27,15 +32,12 @@ Only the processes in ``STALL_PROCESSES`` qualify:
 - Other system apps are left out because an ANR in a background app normally
   raises no dialog, so its record says nothing about what was on screen.
 
-A failure in a test that ended before the first qualifying record is not
-counted, and neither is any failure when the recording is missing or holds no
-qualifying record.
-Both fall back to treating the failure as a test failure.
+A failure in any other test stays a test failure, as does every failure when
+the recording is missing or holds no qualifying record.
 """
 
 import re
 from collections.abc import Iterable
-from dataclasses import dataclass
 from pathlib import Path
 
 # Process names, as an ActivityManager "ANR in" record gives them, whose ANR
@@ -57,17 +59,9 @@ _ANR = re.compile(r"\bActivityManager\s*: ANR in (?P<process>\S+)")
 # AndroidJUnitRunner writes `started:`, `failed:` and `finished:` lines naming
 # each test, and `run started:` lines that this does not match.
 _TEST = re.compile(
-    r"\bTestRunner\s*: (?:started|failed|finished): (?P<method>.+)\((?P<cls>[^()]+)\)\s*$"
+    r"\bTestRunner\s*: (?P<event>started|failed|finished): "
+    r"(?P<method>.+)\((?P<cls>[^()]+)\)\s*$"
 )
-
-
-@dataclass(frozen=True)
-class StallEvidence:
-    """The first qualifying ANR record, and the tests that ran after it."""
-
-    anr_record: str
-    # ``class#method`` of every test named by a TestRunner line after the record.
-    stalled_tests: frozenset[str]
 
 
 def is_stall_process(process: str) -> bool:
@@ -75,27 +69,36 @@ def is_stall_process(process: str) -> bool:
     return process.split(":", 1)[0] in STALL_PROCESSES
 
 
-def find_stall(lines: Iterable[str]) -> StallEvidence | None:
-    """Return the stall evidence in a logcat recording, or None if it holds none."""
-    anr_record: str | None = None
-    stalled: set[str] = set()
+def find_stalls(lines: Iterable[str]) -> dict[str, str]:
+    """Map ``class#method`` of each test a qualifying ANR covers to that ANR's record."""
+    stalls: dict[str, str] = {}
+    running: str | None = None  # the test started and not yet finished
+    pending: str | None = None  # a record written while no test was running
     for line in lines:
-        if anr_record is None:
-            anr = _ANR.search(line)
-            if anr and is_stall_process(anr["process"]):
-                anr_record = line.strip()
+        anr = _ANR.search(line)
+        if anr and is_stall_process(anr["process"]):
+            if running is None:
+                pending = pending or line.strip()
+            else:
+                stalls.setdefault(running, line.strip())
             continue
         test = _TEST.search(line)
-        if test:
-            stalled.add(f"{test['cls']}#{test['method']}")
-    if anr_record is None:
-        return None
-    return StallEvidence(anr_record=anr_record, stalled_tests=frozenset(stalled))
+        if not test:
+            continue
+        name = f"{test['cls']}#{test['method']}"
+        if test["event"] == "started":
+            running = name
+            if pending is not None:
+                stalls.setdefault(name, pending)
+                pending = None
+        elif test["event"] == "finished" and running == name:
+            running = None
+    return stalls
 
 
-def read_stall_evidence(path: Path) -> StallEvidence | None:
-    """Read the recording at *path*; None when it is missing or holds no stall."""
+def read_stalls(path: Path) -> dict[str, str]:
+    """Read the recording at *path*; empty when it is missing or holds no stall."""
     if not path.is_file():
-        return None
+        return {}
     with path.open(encoding="utf-8", errors="replace") as recording:
-        return find_stall(recording)
+        return find_stalls(recording)

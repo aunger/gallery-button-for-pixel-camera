@@ -59,18 +59,18 @@ class IsStallProcessTests(unittest.TestCase):
         self.assertFalse(es.is_stall_process("com.android.systemuix"))
 
 
-class FindStallTests(unittest.TestCase):
+class FindStallsTests(unittest.TestCase):
     def test_no_anr_means_no_stall(self):
         lines = [_runner("started", "a"), _runner("failed", "a"), _runner("finished", "a")]
-        self.assertIsNone(es.find_stall(lines))
+        self.assertEqual(es.find_stalls(lines), {})
 
     def test_mock_camera_anr_alone_is_not_a_stall(self):
         # The guard from issue #1334: a GB4PC overlay window that took focus would
         # produce this same record, so it must not reclassify anything.
-        lines = [MOCK_CAMERA_ANR, _runner("started", "a"), _runner("failed", "a")]
-        self.assertIsNone(es.find_stall(lines))
+        lines = [_runner("started", "a"), MOCK_CAMERA_ANR, _runner("failed", "a")]
+        self.assertEqual(es.find_stalls(lines), {})
 
-    def test_names_tests_running_after_a_launcher_anr(self):
+    def test_covers_only_the_test_in_progress(self):
         lines = [
             _runner("started", "before"),
             _runner("finished", "before"),
@@ -79,32 +79,57 @@ class FindStallTests(unittest.TestCase):
             ANR_DETAIL,
             _runner("failed", "during"),
             _runner("finished", "during"),
-            _runner("started", "after", cls="com.gb4pc.e2e.GalleryButtonVisualE2ETest"),
-            _runner("finished", "after", cls="com.gb4pc.e2e.GalleryButtonVisualE2ETest"),
+            _runner("started", "after"),
+            _runner("failed", "after"),
+            _runner("finished", "after"),
         ]
-        evidence = es.find_stall(lines)
-        self.assertIsNotNone(evidence)
-        self.assertEqual(evidence.anr_record, LAUNCHER_ANR)
         self.assertEqual(
-            evidence.stalled_tests,
+            es.find_stalls(lines), {"com.gb4pc.ui.MainSettingsScreenTest#during": LAUNCHER_ANR}
+        )
+
+    def test_record_between_failed_and_finished_still_covers_that_test(self):
+        lines = [_runner("started", "a"), _runner("failed", "a"), LAUNCHER_ANR]
+        lines += [_runner("finished", "a"), _runner("started", "b")]
+        self.assertEqual(set(es.find_stalls(lines)), {"com.gb4pc.ui.MainSettingsScreenTest#a"})
+
+    def test_record_while_no_test_runs_covers_only_the_next_test(self):
+        # An install between test steps (the #194 trigger) writes its ANR record
+        # while no test runs; its dialog can only land on the next one.
+        lines = [
+            _runner("started", "a"),
+            _runner("finished", "a"),
+            LAUNCHER_ANR,
+            _runner("started", "b"),
+            _runner("failed", "b"),
+            _runner("finished", "b"),
+            _runner("started", "c"),
+            _runner("failed", "c"),
+        ]
+        self.assertEqual(set(es.find_stalls(lines)), {"com.gb4pc.ui.MainSettingsScreenTest#b"})
+
+    def test_record_after_the_last_test_covers_nothing(self):
+        lines = [_runner("started", "a"), _runner("failed", "a"), _runner("finished", "a")]
+        self.assertEqual(es.find_stalls([*lines, LAUNCHER_ANR]), {})
+
+    def test_each_qualifying_record_covers_its_own_test(self):
+        second = LAUNCHER_ANR.replace("13:46:05.120", "13:48:00.000")
+        lines = [
+            _runner("started", "a"),
+            LAUNCHER_ANR,
+            _runner("finished", "a"),
+            _runner("started", "b"),
+            _runner("finished", "b"),
+            _runner("started", "c"),
+            second,
+            _runner("finished", "c"),
+        ]
+        self.assertEqual(
+            es.find_stalls(lines),
             {
-                "com.gb4pc.ui.MainSettingsScreenTest#during",
-                "com.gb4pc.e2e.GalleryButtonVisualE2ETest#after",
+                "com.gb4pc.ui.MainSettingsScreenTest#a": LAUNCHER_ANR,
+                "com.gb4pc.ui.MainSettingsScreenTest#c": second,
             },
         )
-
-    def test_test_that_ended_before_the_anr_is_not_named(self):
-        lines = [_runner("started", "a"), _runner("failed", "a"), _runner("finished", "a")]
-        evidence = es.find_stall([*lines, LAUNCHER_ANR])
-        self.assertIsNotNone(evidence)
-        self.assertEqual(evidence.stalled_tests, frozenset())
-
-    def test_first_qualifying_record_is_kept_after_a_non_qualifying_one(self):
-        evidence = es.find_stall(
-            [MOCK_CAMERA_ANR, _runner("started", "a"), LAUNCHER_ANR, _runner("finished", "a")]
-        )
-        self.assertEqual(evidence.anr_record, LAUNCHER_ANR)
-        self.assertEqual(evidence.stalled_tests, {"com.gb4pc.ui.MainSettingsScreenTest#a"})
 
     def test_run_summary_lines_are_not_tests(self):
         lines = [
@@ -112,14 +137,11 @@ class FindStallTests(unittest.TestCase):
             "10-17 13:46:10.000  4982  4998 I TestRunner: run started: 4 tests",
             "10-17 13:46:50.000  4982  4998 I TestRunner: run finished: 4 tests, 1 failed, 0 ignored",
         ]
-        self.assertEqual(es.find_stall(lines).stalled_tests, frozenset())
+        self.assertEqual(es.find_stalls(lines), {})
 
     def test_parameterized_method_name_is_kept_whole(self):
-        lines = [LAUNCHER_ANR, _runner("failed", "check[1: dark](x)", cls="com.example.FooTest")]
-        self.assertEqual(
-            es.find_stall(lines).stalled_tests,
-            {"com.example.FooTest#check[1: dark](x)"},
-        )
+        lines = [LAUNCHER_ANR, _runner("started", "check[1: dark](x)", cls="com.example.FooTest")]
+        self.assertEqual(set(es.find_stalls(lines)), {"com.example.FooTest#check[1: dark](x)"})
 
 
 FIXTURES = Path(__file__).parent / "fixtures" / "emulator_stalls"
@@ -141,6 +163,12 @@ class RecordedRunTests(unittest.TestCase):
     def _lines(self, name: str) -> list[str]:
         return (FIXTURES / name).read_text(encoding="utf-8").splitlines()
 
+    def _with_launcher_anr_at(self, needle: str, timestamp: str) -> list[str]:
+        lines = self._lines("run-39037527808-stall.txt")
+        at = next(i for i, line in enumerate(lines) if needle in line)
+        lines.insert(at, LAUNCHER_ANR.replace("13:46:05.120", timestamp))
+        return lines
+
     def test_stall_fixture_holds_every_failure_of_the_stall_run(self):
         failed = {
             f"{m['cls']}#{m['method']}"
@@ -149,49 +177,52 @@ class RecordedRunTests(unittest.TestCase):
         }
         self.assertEqual(failed, STALL_RUN_FAILURES)
 
+    def test_test5a_passed_after_the_launcher_dialog_showed_in_test4a(self):
+        # The evidence for a one-test window: test5a checks the green coverage the
+        # dialog's dim breaks, starts right after test4a, and has no `failed:` line.
+        lines = self._lines("run-39037527808-stall.txt")
+        test5a = [line for line in lines if "test5a_secureCameraLockedPopulatedGallery" in line]
+        self.assertEqual(
+            [es._TEST.search(line)["event"] for line in test5a], ["started", "finished"]
+        )
+
     def test_stall_run_as_kept_holds_no_qualifying_anr(self):
         # Seven ANR records, every one in the mock camera or the mock gallery: the
         # guard leaves all six failures to be filed as test failures.
         lines = self._lines("run-39037527808-stall.txt")
         self.assertEqual(sum("ActivityManager: ANR in" in line for line in lines), 7)
-        self.assertIsNone(es.find_stall(lines))
+        self.assertEqual(es.find_stalls(lines), {})
 
     def test_passing_run_holds_no_qualifying_anr(self):
-        self.assertIsNone(es.find_stall(self._lines("run-39273048305-passing.txt")))
+        self.assertEqual(es.find_stalls(self._lines("run-39273048305-passing.txt")), {})
 
-    def test_launcher_anr_before_test4a_covers_only_test4a_of_the_failures(self):
-        # The launcher dialog first shows in test4a's screenshots, so its ANR record
-        # was written before then; where it fell is not in the kept logs. Placed
-        # after test3a ended, a recording would cover test4a alone of the six
-        # failures, because the other five ended earlier.
-        lines = self._lines("run-39037527808-stall.txt")
-        at = next(
-            i
-            for i, line in enumerate(lines)
-            if "started: test4a_secureCameraLockedEmptyGalleryNoGreen" in line
-        )
-        lines.insert(at, LAUNCHER_ANR.replace("13:46:05.120", "13:50:16.255"))
-        evidence = es.find_stall(lines)
+    def test_launcher_anr_during_test4a_covers_test4a_and_not_test5a(self):
+        # Where the launcher record fell is not in the kept logs; test4a's
+        # screenshots show its dialog, so place it in test4a.
+        lines = self._with_launcher_anr_at("failed: test4a_secureCamera", "13:50:30.000")
         self.assertEqual(
-            evidence.stalled_tests & STALL_RUN_FAILURES,
-            {f"{GALLERY}#test4a_secureCameraLockedEmptyGalleryNoGreen"},
+            set(es.find_stalls(lines)), {f"{GALLERY}#test4a_secureCameraLockedEmptyGalleryNoGreen"}
         )
 
+    def test_launcher_anr_before_the_first_test_covers_only_the_first_test(self):
+        lines = self._with_launcher_anr_at("started: ", "13:45:40.000")
+        self.assertEqual(len(es.find_stalls(lines)), 1)
 
-class ReadStallEvidenceTests(unittest.TestCase):
+
+class ReadStallsTests(unittest.TestCase):
     def test_missing_recording_is_no_stall(self):
-        self.assertIsNone(es.read_stall_evidence(Path("/no/such/recording.txt")))
+        self.assertEqual(es.read_stalls(Path("/no/such/recording.txt")), {})
 
     def test_reads_a_recording_file(self):
         with tempfile.TemporaryDirectory() as d:
             path = Path(d) / "stall-logcat.txt"
             path.write_text(
-                "\n".join(["--------- beginning of system", LAUNCHER_ANR, _runner("failed", "a")])
+                "\n".join(["--------- beginning of system", LAUNCHER_ANR, _runner("started", "a")])
                 + "\n",
                 encoding="utf-8",
             )
-            evidence = es.read_stall_evidence(path)
-        self.assertEqual(evidence.stalled_tests, {"com.gb4pc.ui.MainSettingsScreenTest#a"})
+            stalls = es.read_stalls(path)
+        self.assertEqual(stalls, {"com.gb4pc.ui.MainSettingsScreenTest#a": LAUNCHER_ANR})
 
 
 if __name__ == "__main__":

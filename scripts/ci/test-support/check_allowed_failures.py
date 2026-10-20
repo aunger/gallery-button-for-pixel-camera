@@ -35,8 +35,9 @@ it yielded no blocking test failure, the gate treats that as an infrastructure
 failure and fails the build--this is what ``continue-on-error`` used to hide.
 
 ``--logcat`` names the CI's logcat recording of the instrumented and E2E steps.
-A failed test that the recording shows running after a system or launcher ANR
-(see ``emulator_stalls.py``, issue #1334) is reported as an infrastructure
+A failed test that a system or launcher ANR covers, the test in progress when
+the ANR record was written or, if none was, the next to start (see
+``emulator_stalls.py``, issue #1334), is reported as an infrastructure
 failure from an emulator stall, not as a test failure, unless it is allowlisted.
 ``--stall-list`` names a file to write those tests to, one ``class#method`` per
 line, allowlisted ones included; the issue filer files no ticket for them.
@@ -54,7 +55,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import defusedxml.ElementTree as ET
-from emulator_stalls import read_stall_evidence
+from emulator_stalls import read_stalls
 
 # An inline comment is a `#` that follows whitespace (or starts the line).
 # A bare `#` glued to the preceding token is the class/method separator
@@ -284,9 +285,8 @@ def main(argv: list[str] | None = None) -> int:
         if spec.outcome == "failure" and not suite_failures:
             infra_failures.append(spec.label)
 
-    evidence = read_stall_evidence(options.logcat) if options.logcat else None
-    stalled_tests = evidence.stalled_tests if evidence else frozenset()
-    stalled = [f for f in all_failures if f.qualified in stalled_tests]
+    stalls = read_stalls(options.logcat) if options.logcat else {}
+    stalled = [f for f in all_failures if f.qualified in stalls]
     if options.stall_list:
         options.stall_list.parent.mkdir(parents=True, exist_ok=True)
         options.stall_list.write_text(
@@ -312,11 +312,11 @@ def main(argv: list[str] | None = None) -> int:
         for label in infra_failures:
             print(f"  - [{label}] step failed without a corresponding test failure")
 
-    if stall_failures and evidence:
+    if stall_failures:
         print("Infrastructure failures from an emulator stall (no ticket is filed):")
-        print(f"  first system or launcher ANR: {evidence.anr_record}")
         for f in stall_failures:
             print(f"  - [{f.suite_label}] {f.qualified}")
+            print(f"      system or launcher ANR: {stalls[f.qualified]}")
 
     if blocked or infra_failures or stall_failures:
         stall_note = f" ({len(stall_failures)} from an emulator stall)" if stall_failures else ""

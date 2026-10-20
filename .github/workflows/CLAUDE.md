@@ -29,19 +29,20 @@ The allowlist does that narrowly:
    - Each test step's recorded outcome is passed via `--outcome`.
      A step that reported `failure` without writing any failing test result is treated as an infrastructure failure and still fails the build.
    - `--logcat` passes the emulator-stall recording (see below).
-     A failed test that ran after a system or launcher ANR is reported as an infrastructure failure from an emulator stall, and still fails the build.
+     A failed test that a system or launcher ANR covers is reported as an infrastructure failure from an emulator stall, and still fails the build.
 4. **Issue filing** (`file-issues` job) continues to file and re-open issues for failed tests, except those the gate attributed to an emulator stall.
 
 ### Emulator-stall failures
 
-When a system or launcher process stops responding, its "isn't responding" dialog takes focus from every test that runs under it, and those tests fail with no fault in the app (issue #1334).
+When a system or launcher process stops responding, its "isn't responding" dialog takes focus from the test running under it, and that test can fail with no fault in the app (issue #1334).
 
 - The `Start emulator-stall logcat recorder` step streams ActivityManager errors and TestRunner lines to `results/stall-logcat.txt` from before the E2E setup until the emulator is killed.
-- `scripts/ci/test-support/emulator_stalls.py` finds the first ANR there in the system server, SystemUI, or a launcher, and names every test the recording shows running after it.
+- `scripts/ci/test-support/emulator_stalls.py` takes each ANR there in the system server, SystemUI, or a launcher, and names the one test it covers: the test in progress when the record was written or, if none was, the next to start.
+  One test, because in run 39037527808 the test after the one the launcher dialog appeared in passed; the module's docstring has the detail.
   An ANR in one of this repository's own packages, such as the mock camera, never qualifies.
 - The gate writes the failed tests it names to `results/stall-failures.txt`, which the `emulator-stall-classification` artifact carries to the `file-issues` job; that job's script skips them, through the `STALL_FAILURES_FILE` environment variable.
-- A failure in a test that ended before the first qualifying ANR stays a test failure.
-  That covers a `RootViewWithoutFocusException` with no ANR before it, as in the two instrumented failures of run 39037527808; whether to count those is an open question on #1334.
+- Every other failure stays a test failure.
+  That includes a `RootViewWithoutFocusException` with no ANR during it, as in the two instrumented failures of run 39037527808; whether to count those is an open question on #1334.
 
 ### Allowing a test to fail temporarily
 
