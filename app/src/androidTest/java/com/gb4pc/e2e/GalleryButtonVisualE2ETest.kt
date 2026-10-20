@@ -133,10 +133,11 @@ class GalleryButtonVisualE2ETest {
         fixture.seedGalleryPrefs(MOCK_GALLERY_PACKAGE)
         fixture.clearCameraRoll()
         fixture.launchPixelCamera()
-        // Wait for the overlay to activate, then poll until BLUE actually appears on screen
-        // (Issue #556: the active flag can flip true before the frame is composited).
+        // Wait for the overlay to activate, then poll until BLUE appears over the camera feed
+        // (Issue #556: the active flag can flip true before the frame is composited; issue
+        // #1335: launcher dock icons also match BLUE until the camera is on screen).
         fixture.waitForOverlayActive()
-        val screen = fixture.captureScreenUntilColorVisible(Rgb.BLUE)
+        val screen = fixture.captureScreenUntilColorVisibleOverCameraFeed(Rgb.BLUE)
         val blue = ColorMatch.mask(screen, Rgb.BLUE)
         Screenshot.saveForArtifact(screen, "1a-screen.png")
         Screenshot.saveForArtifact(maskToBitmap(blue), "1a-blue-mask.png")
@@ -177,9 +178,10 @@ class GalleryButtonVisualE2ETest {
         fixture.seedGalleryPrefs(MOCK_GALLERY_PACKAGE)
         fixture.clearCameraRoll()
         fixture.launchPixelCamera()
-        // Wait for the overlay to activate, then poll until BLUE actually appears (Issue #556).
+        // Wait for the overlay to activate, then poll until BLUE appears over the camera feed
+        // (Issues #556 and #1335).
         fixture.waitForOverlayActive()
-        val screen = fixture.captureScreenUntilColorVisible(Rgb.BLUE)
+        val screen = fixture.captureScreenUntilColorVisibleOverCameraFeed(Rgb.BLUE)
         val blue = ColorMatch.mask(screen, Rgb.BLUE)
         Screenshot.saveForArtifact(screen, "1b-screen.png")
         Screenshot.saveForArtifact(maskToBitmap(blue), "1b-blue-mask.png")
@@ -200,10 +202,11 @@ class GalleryButtonVisualE2ETest {
         fixture.seedGalleryPrefs(MOCK_GALLERY_PACKAGE)
         fixture.clearCameraRoll()
         fixture.launchPixelCamera()
-        // Wait for the overlay to activate, then poll until BLUE actually appears (Issue #556).
+        // Wait for the overlay to activate, then poll until BLUE appears over the camera feed
+        // (Issues #556 and #1335).
         // YELLOW is part of the same overlay icon draw, so BLUE is a reliable proxy for it too.
         fixture.waitForOverlayActive()
-        val screen = fixture.captureScreenUntilColorVisible(Rgb.BLUE)
+        val screen = fixture.captureScreenUntilColorVisibleOverCameraFeed(Rgb.BLUE)
         val outer =
             ColorMatch.union(
                 ColorMatch.mask(screen, Rgb.BLUE),

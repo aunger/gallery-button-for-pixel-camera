@@ -833,23 +833,34 @@ class E2EFixture(
     }
 
     /**
-     * Polls screenshots until at least one pixel matches [color], or [timeoutMs] elapses, and
-     * returns the screenshot it last captured -- so the caller asserts against the exact same
+     * Polls screenshots until one frame shows both the mock camera's green feed, over at least
+     * [minFeedCoverage] of the screen, and at least one pixel matching [color], or [timeoutMs]
+     * elapses. Returns the screenshot it last captured, so the caller asserts against the exact
      * image that proved (or failed to prove) the color's presence, not a separately-captured one.
      *
      * Issue #556: [waitForOverlayActive] only observes [OverlayService.isOverlayActive], which
      * can flip true before the corresponding frame is composited (a cold-started activity
      * briefly shows the splash frame first), so callers poll for pixel evidence instead.
      *
-     * @param color      The [Rgb] color to poll for.
-     * @param timeoutMs  Maximum wait time in milliseconds.
-     * @param intervalMs Sleep between successive capture attempts.
+     * Issue #1335: the flag can also flip while the launcher is still on screen, and launcher
+     * dock icons contain pixels matching [Rgb.BLUE]. Requiring the green feed in the same frame
+     * proves the camera is on screen, so a matching pixel belongs to the overlay.
+     *
+     * @param color           The [Rgb] color to poll for.
+     * @param minFeedCoverage Minimum fraction of the screen the [Rgb.GREEN] feed must cover.
+     * @param timeoutMs       Maximum wait time in milliseconds.
+     * @param intervalMs      Sleep between successive capture attempts.
      */
-    fun captureScreenUntilColorVisible(
+    fun captureScreenUntilColorVisibleOverCameraFeed(
         color: Rgb,
+        minFeedCoverage: Float = 0.50f,
         timeoutMs: Long = 5_000L,
         intervalMs: Long = 200L,
-    ): Bitmap = captureScreenUntil(timeoutMs, intervalMs) { ColorMatch.mask(it, color).pixelCount > 0 }
+    ): Bitmap =
+        captureScreenUntil(timeoutMs, intervalMs) {
+            ColorMatch.coverageFraction(ColorMatch.mask(it, Rgb.GREEN)) >= minFeedCoverage &&
+                ColorMatch.mask(it, color).pixelCount > 0
+        }
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
