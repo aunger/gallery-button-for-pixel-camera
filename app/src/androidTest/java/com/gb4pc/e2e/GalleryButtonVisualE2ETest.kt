@@ -7,6 +7,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.gb4pc.data.AspectRatioUtil
 import com.gb4pc.data.PrefsManager
+import com.gb4pc.e2e.E2EFixture.Companion.CAMERA_FEED_MIN_COVERAGE
+import com.gb4pc.e2e.E2EFixture.Companion.greenCoverage
 import com.gb4pc.e2e.visual.BinaryMask
 import com.gb4pc.e2e.visual.ColorMatch
 import com.gb4pc.e2e.visual.Rgb
@@ -235,10 +237,10 @@ class GalleryButtonVisualE2ETest {
 
         // Precondition: the green camera feed must be on screen before the tap, or the
         // no-green assertion below would pass vacuously.
-        val s1 = fixture.captureScreenUntil { greenCoverage(it) >= 0.50f }
+        val s1 = fixture.captureScreenUntil { greenCoverage(it) >= CAMERA_FEED_MIN_COVERAGE }
         Screenshot.saveForArtifact(s1, "2a-s1.png")
         val preTapCoverage = greenCoverage(s1)
-        if (preTapCoverage < 0.50f) {
+        if (preTapCoverage < CAMERA_FEED_MIN_COVERAGE) {
             fail(
                 "test2a_emptyGalleryNoGreenAfterTap: pre-tap GREEN coverage is " +
                     "${preTapCoverage * 100f}%--expected >= 50%. The green camera feed is not " +
@@ -410,10 +412,10 @@ class GalleryButtonVisualE2ETest {
 
         // Precondition: the green secure-camera feed must be on screen before the tap, or the
         // no-green assertion below would pass vacuously.
-        val s1 = fixture.captureScreenUntil { greenCoverage(it) >= 0.50f }
+        val s1 = fixture.captureScreenUntil { greenCoverage(it) >= CAMERA_FEED_MIN_COVERAGE }
         Screenshot.saveForArtifact(s1, "4a-s1.png")
         val preTapCoverage = greenCoverage(s1)
-        if (preTapCoverage < 0.50f) {
+        if (preTapCoverage < CAMERA_FEED_MIN_COVERAGE) {
             fail(
                 "test4a_secureCameraLockedEmptyGalleryNoGreen: pre-tap GREEN coverage is " +
                     "${preTapCoverage * 100f}%--expected >= 50%. The green secure-camera feed " +
@@ -581,9 +583,6 @@ class GalleryButtonVisualE2ETest {
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
-
-    /** Full-screen GREEN coverage fraction of [screen]. */
-    private fun greenCoverage(screen: Bitmap): Float = ColorMatch.coverageFraction(ColorMatch.mask(screen, Rgb.GREEN))
 
     /**
      * Fails [testName], reporting every post-tap [reasons] entry that held, joined into a single

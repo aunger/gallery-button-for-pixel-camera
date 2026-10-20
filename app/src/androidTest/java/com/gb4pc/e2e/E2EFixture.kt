@@ -98,6 +98,12 @@ class E2EFixture(
 
         /** Overall budget for [dismissSecureKeyguard]'s verify-and-retry loop. */
         private const val DISMISS_KEYGUARD_TIMEOUT_MS = 10_000L
+
+        /** Minimum full-screen [Rgb.GREEN] coverage that shows the mock camera's feed is on screen. */
+        const val CAMERA_FEED_MIN_COVERAGE = 0.50f
+
+        /** Full-screen [Rgb.GREEN] coverage fraction of [screen]. */
+        fun greenCoverage(screen: Bitmap): Float = ColorMatch.coverageFraction(ColorMatch.mask(screen, Rgb.GREEN))
     }
 
     /**
@@ -855,12 +861,12 @@ class E2EFixture(
      */
     fun captureScreenUntilColorVisibleOverCameraFeed(
         color: Rgb,
-        minFeedCoverage: Float = 0.50f,
+        minFeedCoverage: Float = CAMERA_FEED_MIN_COVERAGE,
         timeoutMs: Long = 8_000L,
         intervalMs: Long = 200L,
     ): Bitmap =
         captureScreenUntil(timeoutMs, intervalMs) {
-            ColorMatch.coverageFraction(ColorMatch.mask(it, Rgb.GREEN)) >= minFeedCoverage &&
+            greenCoverage(it) >= minFeedCoverage &&
                 ColorMatch.mask(it, color).pixelCount > 0
         }
 
