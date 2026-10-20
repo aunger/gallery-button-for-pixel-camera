@@ -122,6 +122,62 @@ class FindStallTests(unittest.TestCase):
         )
 
 
+FIXTURES = Path(__file__).parent / "fixtures" / "emulator_stalls"
+GALLERY = "com.gb4pc.e2e.GalleryButtonVisualE2ETest"
+SETTINGS = "com.gb4pc.ui.MainSettingsScreenTest"
+STALL_RUN_FAILURES = {
+    f"{SETTINGS}#mainScreen_tappingMediaMissingBanner_whenPermanentlyDenied_opensAppDetailsSettings",
+    f"{SETTINGS}#mainScreen_tappingNotificationBanner_whenPermanentlyDenied_opensAppDetailsSettings",
+    f"{GALLERY}#test0_smokeGreenFeedVisible",
+    f"{GALLERY}#test2a_emptyGalleryNoGreenAfterTap",
+    f"{GALLERY}#test3a_populatedGalleryShowsGreenAfterTap",
+    f"{GALLERY}#test4a_secureCameraLockedEmptyGalleryNoGreen",
+}
+
+
+class RecordedRunTests(unittest.TestCase):
+    """Real excerpts from CI runs, saved before their artifacts expired (issue #1334)."""
+
+    def _lines(self, name: str) -> list[str]:
+        return (FIXTURES / name).read_text(encoding="utf-8").splitlines()
+
+    def test_stall_fixture_holds_every_failure_of_the_stall_run(self):
+        failed = {
+            f"{m['cls']}#{m['method']}"
+            for line in self._lines("run-39037527808-stall.txt")
+            if "TestRunner: failed:" in line and (m := es._TEST.search(line))
+        }
+        self.assertEqual(failed, STALL_RUN_FAILURES)
+
+    def test_stall_run_as_kept_holds_no_qualifying_anr(self):
+        # Seven ANR records, every one in the mock camera or the mock gallery: the
+        # guard leaves all six failures to be filed as test failures.
+        lines = self._lines("run-39037527808-stall.txt")
+        self.assertEqual(sum("ActivityManager: ANR in" in line for line in lines), 7)
+        self.assertIsNone(es.find_stall(lines))
+
+    def test_passing_run_holds_no_qualifying_anr(self):
+        self.assertIsNone(es.find_stall(self._lines("run-39273048305-passing.txt")))
+
+    def test_launcher_anr_before_test4a_covers_only_test4a_of_the_failures(self):
+        # The launcher dialog first shows in test4a's screenshots, so its ANR record
+        # was written before then; where it fell is not in the kept logs. Placed
+        # after test3a ended, a recording would cover test4a alone of the six
+        # failures, because the other five ended earlier.
+        lines = self._lines("run-39037527808-stall.txt")
+        at = next(
+            i
+            for i, line in enumerate(lines)
+            if "started: test4a_secureCameraLockedEmptyGalleryNoGreen" in line
+        )
+        lines.insert(at, LAUNCHER_ANR.replace("13:46:05.120", "13:50:16.255"))
+        evidence = es.find_stall(lines)
+        self.assertEqual(
+            evidence.stalled_tests & STALL_RUN_FAILURES,
+            {f"{GALLERY}#test4a_secureCameraLockedEmptyGalleryNoGreen"},
+        )
+
+
 class ReadStallEvidenceTests(unittest.TestCase):
     def test_missing_recording_is_no_stall(self):
         self.assertIsNone(es.read_stall_evidence(Path("/no/such/recording.txt")))
