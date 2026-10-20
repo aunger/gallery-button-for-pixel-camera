@@ -522,6 +522,26 @@ jobs:
           path: preflight.png
           retention-days: 14
 
+      - name: Start emulator-stall logcat recorder
+        # Issue #1334: a system or launcher ANR raises an "isn't responding" dialog that takes
+        # focus from every test that runs under it. The gate reads this recording to report
+        # those tests' failures as infrastructure failures (scripts/ci/test-support/
+        # emulator_stalls.py), and the file-issues job files no ticket for them.
+        # It starts here, after the pre-flight, whose own launcher ANR dismiss_anr.sh handles,
+        # and before the setup step's install, the trigger #194 traced that ANR to. It keeps only
+        # ActivityManager errors, where ANR records go, and TestRunner lines, which name each
+        # test as it starts and ends. A stream, unlike the per-step `logcat -d` dumps below,
+        # loses no lines when the device's ring buffer wraps. It runs until "Kill emulator"
+        # ends it; if adb drops it earlier, later failures are simply not classified.
+        if: needs.check-diff.outputs.needs_full_build == 'true'
+        run: |
+          ADB="$ANDROID_HOME/platform-tools/adb"
+          mkdir -p results
+          SINCE=$("$ADB" shell "date '+%m-%d %H:%M:%S.000'" | tr -d '\r')
+          nohup "$ADB" logcat -v threadtime -T "$SINCE" ActivityManager:E TestRunner:I '*:S' \
+            > results/stall-logcat.txt 2>&1 < /dev/null &
+          echo "==> Recording ActivityManager errors and TestRunner lines since $SINCE (PID $!)"
+
       - name: Run E2E emulator setup
         if: needs.check-diff.outputs.needs_full_build == 'true'
         run: |
@@ -1493,13 +1513,18 @@ jobs:
       # (a temporary red-to-green allowlist). The --outcome flags carry each test
       # step's real exit status, so a step that broke without writing a failing
       # test result (e.g. the `date` breakage in #307) is reported as an
-      # infrastructure failure and still fails the build. This runs last so it
-      # cannot suppress artifact upload, the summary, or issue filing.
+      # infrastructure failure and still fails the build. --logcat reports a failure an
+      # emulator stall explains as an infrastructure failure too (issue #1334), and
+      # --stall-list writes those tests out for the file-issues job. This runs last,
+      # but for the upload of that list, so it cannot suppress artifact upload, the
+      # summary, or issue filing.
       - name: Gate on test failures
         if: always() && needs.check-diff.outputs.needs_full_build == 'true'
         run: |
           python3 scripts/ci/test-support/check_allowed_failures.py \
             --allowlist .github/allowed-test-failures.txt \
+            --logcat results/stall-logcat.txt \
+            --stall-list results/stall-failures.txt \
             app/build/test-results/testDebugUnitTest \
               --suite-label "Unit Tests" \
             app/build/outputs/androidTest-results/instrumented \
@@ -1508,6 +1533,19 @@ jobs:
             app/build/outputs/androidTest-results/e2e \
               --suite-label "E2E Tests" \
               --outcome "${{ (steps.run_overlay_e2e.outputs.outcome == 'failure' || steps.run_gallery_e2e.outputs.outcome == 'failure' || steps.run_permissions_granted_e2e.outputs.outcome == 'failure' || steps.run_permissions_denied_e2e.outputs.outcome == 'failure' || steps.run_setup_activity_granted_e2e.outputs.outcome == 'failure' || steps.run_setup_activity_denied_e2e.outputs.outcome == 'failure' || steps.run_setup_activity_permission_dialog_e2e.outputs.outcome == 'failure' || steps.run_partial_access_photo_picker_e2e.outputs.outcome == 'failure') && 'failure' || 'success' }}"
+
+      - name: Upload emulator-stall classification
+        # The recording the gate read, and the tests it found an emulator stall explains
+        # (issue #1334). The file-issues job files no ticket for a test in stall-failures.txt.
+        if: always() && needs.check-diff.outputs.needs_full_build == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: emulator-stall-classification
+          path: |
+            results/stall-logcat.txt
+            results/stall-failures.txt
+          retention-days: 14
+          if-no-files-found: ignore
 
   file-issues:
     needs: [build-and-test]
