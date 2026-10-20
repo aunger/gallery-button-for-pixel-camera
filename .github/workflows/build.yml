@@ -1584,6 +1584,13 @@ jobs:
           path: downloaded-artifacts/instrumented-test-results
         continue-on-error: true
 
+      - name: Download emulator-stall classification
+        uses: actions/download-artifact@v8
+        with:
+          name: emulator-stall-classification
+          path: downloaded-artifacts/emulator-stall-classification
+        continue-on-error: true
+
       - name: Install Python script dependencies
         # --require-hashes refuses any artifact whose SHA-256 is not in the
         # generated lock scripts/requirements.txt (issue #723; see
@@ -1600,6 +1607,10 @@ jobs:
           WORKFLOW_RUN_SHA: ${{ github.sha }}
           WORKFLOW_RUN_BRANCH: ${{ github.head_ref || github.ref_name }}
           WORKFLOW_RUN_PR_URL: ${{ github.event.pull_request.html_url }}
+          # Tests the gate found an emulator stall explains (issue #1334). An environment
+          # variable rather than a flag, so the base branch's copy of the script, which this
+          # pinned checkout runs on a pull request, ignores it instead of failing on it.
+          STALL_FAILURES_FILE: downloaded-artifacts/emulator-stall-classification/stall-failures.txt
         run: |
           python3 scripts/ci/prs-and-issues/file_test_failure_issues.py \
             downloaded-artifacts/unit-test-results \
