@@ -143,6 +143,7 @@ class GalleryButtonVisualE2ETest {
         val blue = ColorMatch.mask(screen, Rgb.BLUE)
         Screenshot.saveForArtifact(screen, "1a-screen.png")
         Screenshot.saveForArtifact(maskToBitmap(blue), "1a-blue-mask.png")
+        requireCameraFeed("test1a_overlayShowsBlueAtConfiguredPosition", screen, "1a-screen.png")
 
         val (displayWidth, displayHeight) = fixture.displaySize()
         val aspectRatio = AspectRatioUtil.quantize(displayWidth, displayHeight)
@@ -187,6 +188,7 @@ class GalleryButtonVisualE2ETest {
         val blue = ColorMatch.mask(screen, Rgb.BLUE)
         Screenshot.saveForArtifact(screen, "1b-screen.png")
         Screenshot.saveForArtifact(maskToBitmap(blue), "1b-blue-mask.png")
+        requireCameraFeed("test1b_overlayBlueIsSquare", screen, "1b-screen.png")
 
         val croppedBlue = ColorMatch.crop(blue)
         ShapeMatcher.requireShape(croppedBlue.toMaskData(), Shape.SQUARE)
@@ -216,6 +218,7 @@ class GalleryButtonVisualE2ETest {
             )
         Screenshot.saveForArtifact(screen, "1c-screen.png")
         Screenshot.saveForArtifact(maskToBitmap(outer), "1c-outer-mask.png")
+        requireCameraFeed("test1c_overlayOuterIsSquircle", screen, "1c-screen.png")
 
         ShapeMatcher.requireShape(ColorMatch.crop(outer).toMaskData(), Shape.SQUIRCLE)
     }
@@ -583,6 +586,31 @@ class GalleryButtonVisualE2ETest {
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
+
+    /**
+     * Fails [testName] when [screen] does not show the mock camera's green feed, which means
+     * [E2EFixture.captureScreenUntilColorVisibleOverCameraFeed] timed out before the camera was on
+     * screen.
+     *
+     * Without this check, test1a, test1b and test1c would go on to measure whatever BLUE was on
+     * screen, such as the launcher's dock icons, and report it as an overlay position or shape
+     * failure (issue #1335).
+     */
+    private fun requireCameraFeed(
+        testName: String,
+        screen: Bitmap,
+        artifactName: String,
+    ) {
+        val coverage = greenCoverage(screen)
+        if (coverage < CAMERA_FEED_MIN_COVERAGE) {
+            fail(
+                "$testName: GREEN coverage is ${coverage * 100f}%--expected >= " +
+                    "${CAMERA_FEED_MIN_COVERAGE * 100f}%. The mock camera feed was not on screen " +
+                    "when the wait for BLUE over it timed out, so the overlay cannot be measured. " +
+                    "Check the $artifactName artifact.",
+            )
+        }
+    }
 
     /**
      * Fails [testName], reporting every post-tap [reasons] entry that held, joined into a single
