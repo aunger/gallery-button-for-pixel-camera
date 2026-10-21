@@ -30,13 +30,24 @@ target-version = "py311"
 #   S110 S112      they fire only on handlers that BLE001 or E722 already flag.
 #   TRY004         these scripts raise RuntimeError, by contract, when an API
 #                  response has the wrong shape.
+#
+# Left unselected after the audit in #1340:
+#   S603           it fires on every subprocess call whose argv is not all
+#                  literals, so once each site is judged safe only a suppression
+#                  would silence it. Audited with ruff 0.17.1 at cf14957: every
+#                  call site passes an argv list without shell=True, built from
+#                  literals and trusted paths (sys.executable, a path the script
+#                  derives from __file__ or creates in a TemporaryDirectory, and
+#                  check_green_feed.py's --adb, which build.yml sets to the SDK's
+#                  adb). S602, S604, S605 and S607 are selected, and catch the
+#                  shell-injection forms.
 select = [
     "E4", "E7", "E9", "F",
     "YTT101", "YTT102", "YTT103", "YTT201", "YTT202", "YTT203", "YTT204", "YTT301", "YTT302",
     "YTT303",
     "ASYNC100", "ASYNC105", "ASYNC115", "ASYNC116", "ASYNC210", "ASYNC220", "ASYNC221", "ASYNC222",
     "ASYNC230", "ASYNC251",
-    "S102",
+    "S102", "S602", "S604", "S605", "S607",
     "BLE001",
     "B002", "B003", "B004", "B005", "B006", "B008", "B009", "B010", "B012", "B013", "B014", "B015",
     "B016", "B017", "B018", "B019", "B020", "B021", "B022", "B023", "B025", "B026", "B029", "B030",
