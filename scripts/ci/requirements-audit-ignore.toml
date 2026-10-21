@@ -29,7 +29,7 @@
 #
 # Two rules make the list self-cleaning rather than a place things go to die:
 #
-# 1. An entry is scoped to one lock. A finding that is unreachable in the
+# 1. An entry is scoped to one lock. A finding that is unreachable in one
 #    lock is not automatically unreachable in another, so the same ID has to be
 #    justified again to be ignored again.
 # 2. An entry that stops matching a reported finding FAILS the audit. That

@@ -27,9 +27,9 @@ A stale ignore entry fails the build
     Without this, an ignore list only ever grows and rots into noise.  The
     ``click`` case in issue #788 was exactly this shape: semgrep (since
     removed from this repo) quietly relaxed its ``click~=8.1.8`` cap, and
-    nothing was watching, so a fixable HIGH was recorded as unfixable.  Suppressing findings with
-    ``--ignore-vuln`` would make this check impossible, which is why the
-    filtering happens here instead.
+    nothing was watching, so a fixable HIGH was recorded as unfixable.
+    Suppressing findings with ``--ignore-vuln`` would make this check
+    impossible, which is why the filtering happens here instead.
 
 Why the locks are not handed to ``pip-audit`` directly
     The locks are generated with ``uv pip compile --universal``, so they are a

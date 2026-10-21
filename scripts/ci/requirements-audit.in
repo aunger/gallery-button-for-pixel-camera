@@ -49,4 +49,7 @@ pip-audit==2.10.1
 # `; python_full_version < '3.13'`, a marker Dependabot's uv parser drops, so
 # Dependabot would never propose a bump to it. An unconditional pin locks it
 # without the marker. Keep it in the python-direct group in .github/dependabot.yml.
+# Drop this pin, and its entries in dependabot.yml, once nothing else in the
+# lock requires typing-extensions; otherwise it keeps an unused package locked
+# and bumped.
 typing-extensions==4.16.0
