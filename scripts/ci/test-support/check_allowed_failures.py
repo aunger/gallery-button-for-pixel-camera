@@ -34,14 +34,10 @@ the step that produced those results.  When a step's outcome is ``failure`` but
 it yielded no blocking test failure, the gate treats that as an infrastructure
 failure and fails the build--this is what ``continue-on-error`` used to hide.
 
-``--logcat`` names the CI's logcat recording of the instrumented and E2E steps.
-A failed test that a system or launcher ANR covers, the test in progress when
-the ANR record was written or, if none was, the next to start (see
-``emulator_stalls.py``, issue #1334), is reported as an infrastructure
-failure from an emulator stall, not as a test failure, unless it is allowlisted.
-``--stall-list`` names a file to write those tests to, one ``class#method`` per
-line, allowlisted ones included; the issue filer files no ticket for them.
-The build still fails on such a failure, so a stalled run needs a re-run.
+``--logcat`` names the emulator-stall recording; a non-allowlisted failure that
+``emulator_stalls.py`` attributes to a stall is an infrastructure failure
+(issue #1334). ``--stall-list`` writes those tests, allowlisted ones included,
+one ``class#method`` per line, for the issue filer to skip.
 
 Exit codes:
     0  no failures, or every failure is allowlisted

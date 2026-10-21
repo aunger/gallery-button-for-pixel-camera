@@ -1,10 +1,5 @@
-# Run 39037527808 (2026-10-17), the emulator stall issue #1334 reports.
-# The ActivityManager error lines and TestRunner test events, merged and sorted by time,
-# from the instrumented step's per-test logcats (instrumented-test-results artifact) and
-# the E2E steps' filtered logcat dumps in the build-and-test job log.
-# Those dumps drop ActivityManager lines that name no GB4PC package, so a launcher ANR
-# record, if one was written, is not here, and the gallery step's dump lost its start to
-# the device's ring buffer. Lines sharing a timestamp are in sorted, not logged, order.
+# Run 39037527808: ActivityManager errors and TestRunner events, from per-test and
+# per-step logcats. Those drop non-GB4PC ActivityManager lines; same-time lines are sorted.
 10-17 13:45:59.436  3994  4049 I TestRunner: started: whenSetupNotCompleted_launchesSetupActivity(com.gb4pc.ui.MainActivityRedirectTest)
 10-17 13:46:02.595  3994  4049 I TestRunner: finished: whenSetupNotCompleted_launchesSetupActivity(com.gb4pc.ui.MainActivityRedirectTest)
 10-17 13:46:03.863  3994  4049 I TestRunner: started: mainScreen_showsAppName(com.gb4pc.ui.MainSettingsScreenTest)

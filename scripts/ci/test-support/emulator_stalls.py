@@ -1,53 +1,16 @@
 #!/usr/bin/env python3
 """Find the test failures an emulator stall explains (issue #1334).
 
-When a system or launcher process stops responding, Android raises an "isn't
-responding" dialog over whatever test is running.
-The dialog takes window focus and dims the screen, so tests fail with no fault
-in the app: Espresso reports ``RootViewWithoutFocusException``, and the
-green-feed checks read 0% coverage.
+A system or launcher ANR raises a dialog that takes focus from the running test.
+Reading the CI's logcat recording (ActivityManager errors and TestRunner lines),
+this maps each ANR in a ``STALL_PROCESSES`` process to one test: the test in
+progress, or the next to start if none is.
 
-The CI workflow records logcat through the instrumented and E2E steps, keeping
-only ActivityManager errors and TestRunner lines (the "Start emulator-stall
-logcat recorder" step in ``.github/workflows/build.yml``).
-This module reads that recording and, for each ANR record whose process is a
-system or launcher process, names the one test that record covers: the test in
-progress when the record was written or, when none is, the next test to start.
-``check_allowed_failures.py`` reports those tests' failures as infrastructure
-failures, and the issue filer files no ticket for them.
-
-"In progress" means started, not yet finished, and still alive, and the
-recording shows a test alive only by a later line from it.
-A test whose process dies (a crash, a kill, or the force-stop on the E2E task's
-timeout path) writes no ``finished:`` line, so it looks started-and-unfinished
-until the next ``started:`` line.
-A record written in that window is therefore held until the test it fell in
-writes another TestRunner line.
-If the next test starts first, the record goes to that test instead.
-When the earlier test died before the record, which is the case this guards,
-the earlier test keeps its ticket.
-When it died after the record, which a stall that hangs it into the timeout
-would do, it also keeps its ticket; that case cannot be told apart from the
-first without process-death records, and filing a ticket is the safer error.
-
-The window is one test because that is all the evidence supports.
-In run 39037527808 the Pixel Launcher dialog shows in test4a's screenshots, and
-the next test, test5a, passed, though it checks the green coverage the dialog's
-dim breaks (``fixtures/emulator_stalls/run-39037527808-stall.txt``).
-So the dialog does not reliably outlast the test it appears in, and a wider
-window would withhold tickets from failures the stall did not cause.
-
-Only the processes in ``STALL_PROCESSES`` qualify:
-
-- An ANR in one of this repository's own packages never does.
-  The mock camera's "Application does not have a focused window" ANR is also
-  what a GB4PC overlay window that took focus would produce, so counting it
-  could pass off a real overlay bug as a stall.
-- Other system apps are left out because an ANR in a background app normally
-  raises no dialog, so its record says nothing about what was on screen.
-
-A failure in any other test stays a test failure, as does every failure when
-the recording is missing or holds no qualifying record.
+- One test: the dialog does not reliably outlast the test it appears in.
+- A test that writes nothing after the ANR is taken as dead, and the ANR goes to
+  the next test, so a crashed test keeps its ticket.
+- Own-package ANRs never count: a focused GB4PC overlay produces the same record.
+- Other system apps are left out: a background ANR normally shows no dialog.
 """
 
 import re

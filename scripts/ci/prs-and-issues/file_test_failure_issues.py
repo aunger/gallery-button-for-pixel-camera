@@ -21,9 +21,8 @@ Optional environment variables (populated automatically by GitHub Actions):
     GITHUB_SERVER_URL   Default: https://github.com
     GITHUB_RUN_ID       Workflow run ID (for CI run link)
     WORKFLOW_RUN_SHA    Commit SHA of the triggering workflow run
-    STALL_FAILURES_FILE File listing tests, one ``class#method`` per line, that
-                        the CI gate found an emulator stall explains (issue
-                        #1334); no issue is filed or updated for them
+    STALL_FAILURES_FILE Tests (``class#method`` per line) to skip as emulator-stall
+                        failures (issue #1334)
 """
 
 import os
@@ -110,11 +109,7 @@ def parse_failures(directory: Path, suite_label: str, artifact_name: str) -> lis
 
 
 def load_stall_failures(path: str) -> set[str]:
-    """Return the ``class#method`` names listed in the gate's stall file at *path*.
-
-    An empty *path* or a missing file means no test is excluded, so a run whose
-    gate wrote no list files every failure, as it did before issue #1334.
-    """
+    """Return the ``class#method`` names in the gate's stall file; empty if absent."""
     if not path or not Path(path).is_file():
         return set()
     lines = Path(path).read_text(encoding="utf-8").splitlines()

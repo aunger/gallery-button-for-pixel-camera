@@ -1,6 +1,4 @@
-# Run 39273048305 (2026-10-19, main), a passing run.
-# The ActivityManager error lines and TestRunner test events, merged and sorted by time,
-# from the instrumented step's per-test logcats and the E2E steps' filtered logcat dumps.
+# Run 39273048305 (passing): ActivityManager errors and TestRunner events.
 10-19 14:59:06.875  4190  4216 I TestRunner: started: whenSetupNotCompleted_launchesSetupActivity(com.gb4pc.ui.MainActivityRedirectTest)
 10-19 14:59:09.823  4190  4216 I TestRunner: finished: whenSetupNotCompleted_launchesSetupActivity(com.gb4pc.ui.MainActivityRedirectTest)
 10-19 14:59:11.051  4190  4216 I TestRunner: started: mainScreen_showsAppName(com.gb4pc.ui.MainSettingsScreenTest)

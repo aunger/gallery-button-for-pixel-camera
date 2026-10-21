@@ -10,9 +10,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(__file__))
 import emulator_stalls as es
 
-# Lines in the shape the CI recorder writes (`adb logcat -v threadtime`). The
-# mock-camera ANR is copied from run 39037527808; the launcher ANR has the same
-# shape with the Pixel Launcher's process name.
+# Recorder-shaped lines; the mock-camera ANR is real (run 39037527808).
 MOCK_CAMERA_ANR = (
     "10-17 13:47:41.900   558  5485 E ActivityManager: ANR in com.google.android.GoogleCamera "
     "(com.google.android.GoogleCamera/com.gb4pc.mockcamera.MockCameraActivity)"
@@ -65,8 +63,7 @@ class FindStallsTests(unittest.TestCase):
         self.assertEqual(es.find_stalls(lines), {})
 
     def test_mock_camera_anr_alone_is_not_a_stall(self):
-        # The guard from issue #1334: a GB4PC overlay window that took focus would
-        # produce this same record, so it must not reclassify anything.
+        # A focused GB4PC overlay would produce this same record.
         lines = [_runner("started", "a"), MOCK_CAMERA_ANR, _runner("failed", "a")]
         self.assertEqual(es.find_stalls(lines), {})
 
@@ -93,8 +90,7 @@ class FindStallsTests(unittest.TestCase):
         self.assertEqual(set(es.find_stalls(lines)), {"com.gb4pc.ui.MainSettingsScreenTest#a"})
 
     def test_record_while_no_test_runs_covers_only_the_next_test(self):
-        # An install between test steps (the #194 trigger) writes its ANR record
-        # while no test runs; its dialog can only land on the next one.
+        # e.g. an install between test steps (the #194 trigger).
         lines = [
             _runner("started", "a"),
             _runner("finished", "a"),
@@ -108,9 +104,7 @@ class FindStallsTests(unittest.TestCase):
         self.assertEqual(set(es.find_stalls(lines)), {"com.gb4pc.ui.MainSettingsScreenTest#b"})
 
     def test_record_after_a_test_that_died_covers_the_next_test(self):
-        # Review of PR #1337: a test whose process dies writes no `finished:` line.
-        # A record written after it (the next step's install, the #194 trigger)
-        # belongs to the next test, and the dead test keeps its ticket.
+        # A dead test writes no `finished:` line; it keeps its ticket.
         lines = [
             _runner("started", "crashes"),
             LAUNCHER_ANR,
@@ -197,8 +191,7 @@ class RecordedRunTests(unittest.TestCase):
         self.assertEqual(failed, STALL_RUN_FAILURES)
 
     def test_test5a_passed_after_the_launcher_dialog_showed_in_test4a(self):
-        # The evidence for a one-test window: test5a checks the green coverage the
-        # dialog's dim breaks, starts right after test4a, and has no `failed:` line.
+        # Grounds for the one-test window: test5a needs green coverage and passed.
         lines = self._lines("run-39037527808-stall.txt")
         test5a = [line for line in lines if "test5a_secureCameraLockedPopulatedGallery" in line]
         self.assertEqual(
@@ -206,8 +199,7 @@ class RecordedRunTests(unittest.TestCase):
         )
 
     def test_stall_run_as_kept_holds_no_qualifying_anr(self):
-        # Seven ANR records, every one in the mock camera or the mock gallery: the
-        # guard leaves all six failures to be filed as test failures.
+        # All seven ANRs are in mock packages, so all six failures stay filed.
         lines = self._lines("run-39037527808-stall.txt")
         self.assertEqual(sum("ActivityManager: ANR in" in line for line in lines), 7)
         self.assertEqual(es.find_stalls(lines), {})
@@ -216,8 +208,7 @@ class RecordedRunTests(unittest.TestCase):
         self.assertEqual(es.find_stalls(self._lines("run-39273048305-passing.txt")), {})
 
     def test_launcher_anr_during_test4a_covers_test4a_and_not_test5a(self):
-        # Where the launcher record fell is not in the kept logs; test4a's
-        # screenshots show its dialog, so place it in test4a.
+        # test4a's screenshots show the launcher dialog.
         lines = self._with_launcher_anr_at("failed: test4a_secureCamera", "13:50:30.000")
         self.assertEqual(
             set(es.find_stalls(lines)), {f"{GALLERY}#test4a_secureCameraLockedEmptyGalleryNoGreen"}

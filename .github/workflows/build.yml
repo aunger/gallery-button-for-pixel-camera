@@ -523,17 +523,9 @@ jobs:
           retention-days: 14
 
       - name: Start emulator-stall logcat recorder
-        # Issue #1334: a system or launcher ANR raises an "isn't responding" dialog that takes
-        # focus from the test running under it. The gate reads this recording to report that
-        # test's failure as an infrastructure failure (scripts/ci/test-support/
-        # emulator_stalls.py), and the file-issues job files no ticket for it.
-        # It starts here, after the pre-flight, whose own launcher ANR dismiss_anr.sh handles,
-        # and before the setup step's install, the trigger #194 traced that ANR to; an ANR
-        # written while no test runs covers the next test to start. It keeps only
-        # ActivityManager errors, where ANR records go, and TestRunner lines, which name each
-        # test as it starts and ends. A stream, unlike the per-step `logcat -d` dumps below,
-        # loses no lines when the device's ring buffer wraps. It runs until "Kill emulator"
-        # ends it; if adb drops it earlier, later failures are simply not classified.
+        # Issue #1334: records ANRs and test boundaries for the gate (emulator_stalls.py).
+        # Starts after the pre-flight, before the setup step's install (the #194 ANR trigger).
+        # A stream, unlike `logcat -d`, survives the ring buffer wrapping. Ends at "Kill emulator".
         if: needs.check-diff.outputs.needs_full_build == 'true'
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
@@ -1514,11 +1506,10 @@ jobs:
       # (a temporary red-to-green allowlist). The --outcome flags carry each test
       # step's real exit status, so a step that broke without writing a failing
       # test result (e.g. the `date` breakage in #307) is reported as an
-      # infrastructure failure and still fails the build. --logcat reports a failure an
-      # emulator stall explains as an infrastructure failure too (issue #1334), and
-      # --stall-list writes those tests out for the file-issues job. This runs last,
-      # except for the upload of that list, so it cannot suppress artifact upload, the
-      # summary, or issue filing.
+      # infrastructure failure and still fails the build. --logcat and --stall-list
+      # handle emulator-stall failures (issue #1334). This runs last, except for the
+      # upload of that list, so it cannot suppress artifact upload, the summary, or
+      # issue filing.
       - name: Gate on test failures
         if: always() && needs.check-diff.outputs.needs_full_build == 'true'
         run: |
@@ -1536,8 +1527,7 @@ jobs:
               --outcome "${{ (steps.run_overlay_e2e.outputs.outcome == 'failure' || steps.run_gallery_e2e.outputs.outcome == 'failure' || steps.run_permissions_granted_e2e.outputs.outcome == 'failure' || steps.run_permissions_denied_e2e.outputs.outcome == 'failure' || steps.run_setup_activity_granted_e2e.outputs.outcome == 'failure' || steps.run_setup_activity_denied_e2e.outputs.outcome == 'failure' || steps.run_setup_activity_permission_dialog_e2e.outputs.outcome == 'failure' || steps.run_partial_access_photo_picker_e2e.outputs.outcome == 'failure') && 'failure' || 'success' }}"
 
       - name: Upload emulator-stall classification
-        # The recording the gate read, and the tests it found an emulator stall explains
-        # (issue #1334). The file-issues job files no ticket for a test in stall-failures.txt.
+        # Issue #1334: file-issues files no ticket for a test in stall-failures.txt.
         if: always() && needs.check-diff.outputs.needs_full_build == 'true'
         uses: actions/upload-artifact@v7
         with:
@@ -1608,9 +1598,7 @@ jobs:
           WORKFLOW_RUN_SHA: ${{ github.sha }}
           WORKFLOW_RUN_BRANCH: ${{ github.head_ref || github.ref_name }}
           WORKFLOW_RUN_PR_URL: ${{ github.event.pull_request.html_url }}
-          # Tests the gate found an emulator stall explains (issue #1334). An environment
-          # variable rather than a flag, so the base branch's copy of the script, which this
-          # pinned checkout runs on a pull request, ignores it instead of failing on it.
+          # Issue #1334. An env var, not a flag, so the base branch's script ignores it.
           STALL_FAILURES_FILE: downloaded-artifacts/emulator-stall-classification/stall-failures.txt
         run: |
           python3 scripts/ci/prs-and-issues/file_test_failure_issues.py \

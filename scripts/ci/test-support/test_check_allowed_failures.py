@@ -390,8 +390,7 @@ class EmulatorStallTests(unittest.TestCase):
             self.assertEqual(stall_list.read_text(encoding="utf-8"), "")
 
     def test_allowlisted_stall_failure_passes_but_is_still_listed(self):
-        # The allowlist still decides the exit code; the stall list still keeps the
-        # filer from ticketing a failure the stall explains.
+        # The allowlist decides the exit code; the stall list still skips the ticket.
         with tempfile.TemporaryDirectory() as d:
             directory = Path(d)
             _write(directory, "TEST-fail.xml", FAILING_XML)
