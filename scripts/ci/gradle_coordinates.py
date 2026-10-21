@@ -179,9 +179,8 @@ def google_maven_artifacts(group, timeout=30):
     raises the XML parser's error.
     """
     try:
-        # The URL is built from GOOGLE_MAVEN_URL; the file:// risk does not apply.
         url = group_index_url(group)
-        with urllib.request.urlopen(url, timeout=timeout) as response:  # nosemgrep
+        with urllib.request.urlopen(url, timeout=timeout) as response:
             return parse_group_index(response.read())
     except urllib.error.HTTPError as err:
         if err.code == 404:
