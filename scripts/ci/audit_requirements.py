@@ -17,25 +17,25 @@ Per-lock ignore entries with a recorded rationale
     repo's usage, so the gate would be red on arrival.  ``pip-audit`` has its
     own ``--ignore-vuln ID``, which is not usable here: it suppresses the
     finding before it is reported, and it is global rather than per-lock.  A
-    finding that is unreachable in the semgrep lock is not automatically
-    unreachable in the script-runtime lock.
+    finding that is unreachable in one lock is not automatically unreachable
+    in another.
 
 A stale ignore entry fails the build
     This is the property that actually matters.  When an ignored ID stops being
     reported, the entry has become stale, usually because an upstream cap
     lifted or the package was dropped, and that is the moment to revisit it.
     Without this, an ignore list only ever grows and rots into noise.  The
-    ``click`` case in issue #788 was exactly this shape: semgrep quietly
-    relaxed its ``click~=8.1.8`` cap, and nothing was watching, so a fixable
-    HIGH was recorded as unfixable.  Suppressing findings with
+    ``click`` case in issue #788 was exactly this shape: semgrep (since
+    removed from this repo) quietly relaxed its ``click~=8.1.8`` cap, and
+    nothing was watching, so a fixable HIGH was recorded as unfixable.  Suppressing findings with
     ``--ignore-vuln`` would make this check impossible, which is why the
     filtering happens here instead.
 
 Why the locks are not handed to ``pip-audit`` directly
     The locks are generated with ``uv pip compile --universal``, so they are a
     superset covering every interpreter and platform the install sites use, and
-    some entries are marker-gated (``pywin32 ; sys_platform == 'win32'``,
-    ``typing-extensions==4.16.0 ; python_full_version < '3.13'``, and similar).
+    some entries can be marker-gated (``pywin32 ; sys_platform == 'win32'``,
+    ``somepkg==1.0 ; python_full_version < '3.13'``, and similar).
     ``pip-audit -r <lock>`` evaluates those markers against the interpreter it
     happens to run under and silently skips the rest, so pywin32, for one, is
     never audited on a Linux runner.  Instead this script re-derives the pin
@@ -52,7 +52,7 @@ without anyone having to remember to register it here.
 
 Ignore file format (TOML; see scripts/ci/requirements-audit-ignore.toml)::
 
-    [[ignore."scripts/ci/requirements-semgrep.txt"]]
+    [[ignore."scripts/requirements.txt"]]
     id = "PYSEC-0000-1"
     package = "somepkg"
     reason = "why this finding is tolerated"

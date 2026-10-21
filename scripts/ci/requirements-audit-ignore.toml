@@ -30,22 +30,16 @@
 # Two rules make the list self-cleaning rather than a place things go to die:
 #
 # 1. An entry is scoped to one lock. A finding that is unreachable in the
-#    semgrep lock is not automatically unreachable in the script-runtime lock,
-#    so the same ID has to be justified again to be ignored again.
+#    lock is not automatically unreachable in another, so the same ID has to be
+#    justified again to be ignored again.
 # 2. An entry that stops matching a reported finding FAILS the audit. That
 #    usually means an upstream cap lifted or the package was dropped, which is
 #    exactly when the reasoning below deserves re-reading rather than quiet
-#    deletion. Issue #788's `click` case is the cautionary tale: semgrep
-#    relaxed its `click~=8.1.8` cap and nothing was watching, so a fixable HIGH
-#    was written off as unfixable for two weeks.
+#    deletion. Issue #788's `click` case is the cautionary tale: semgrep (since
+#    removed from this repo) relaxed its `click~=8.1.8` cap and nothing was
+#    watching, so a fixable HIGH was written off as unfixable for two weeks.
 #
 # This list is not the Dependabot dismissal list and is not kept in sync with
 # it. pip-audit reports from PyPI/OSV/PYSEC and GitHub alerts from its own
 # advisory database; their coverage differs (again per #788: OSV and PYSEC
 # carried CVE-2026-7246 against click 8.1.8 while GitHub did not alert on it).
-
-[[ignore."scripts/ci/requirements-semgrep.txt"]]
-id = "GHSA-84m7-p3x7-pcfv"
-package = "mcp"
-reason = "The advisory (CVE-2026-59951) is unbounded session growth in the MCP Python SDK's Streamable HTTP server. CI only runs `semgrep scan` (.github/workflows/semgrep.yml), which never starts an MCP server, so no endpoint is reachable. The fix (mcp 1.30.0) cannot be locked: the newest semgrep release, 1.181.0, requires mcp==1.29.0 exactly."
-remove_when = "A semgrep release no longer pins mcp==1.29.0, so the lock can take the fix."

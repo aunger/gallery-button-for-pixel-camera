@@ -8,14 +8,13 @@
 # because that lock is installed on every developer session by
 # .claude/hooks/session-start.sh and in four separate CI job steps, none of which
 # need pip-audit's fairly large closure (cyclonedx-python-lib, rich, requests,
-# CacheControl, ...). One CI tool, one lock, matching requirements-semgrep.in.
+# CacheControl, ...). One CI tool, one lock.
 #
 # This lock is deliberately CI-only, so the session-start hook does not install
-# it and scripts/install-pinned-requirements.sh never sees it (issue #806). That
-# is the same standing as the semgrep engine's lock: a session is not expected to
-# run either tool, so neither is provisioned per session. Section (h) of
-# scripts/test_install_pinned_requirements.sh compares only build.yml against the
-# hook for that reason.
+# it and scripts/install-pinned-requirements.sh never sees it (issue #806). A
+# session is not expected to run pip-audit, so it is not provisioned per
+# session. Section (h) of scripts/test_install_pinned_requirements.sh compares
+# only build.yml against the hook for that reason.
 #
 # The lock generated from this file is itself audited by
 # scripts/ci/audit_requirements.py, which discovers every scripts/**/requirements*.txt,
@@ -44,3 +43,10 @@
 # Raise the floor again, and regenerate every lock, when packages start dropping
 # 3.11; check first that no install site still runs the version being dropped.
 pip-audit==2.10.1
+
+# typing-extensions is pinned here, though only cyclonedx-python-lib needs it and
+# only below Python 3.13. Without this line the lock carries it as
+# `; python_full_version < '3.13'`, a marker Dependabot's uv parser drops, so
+# Dependabot would never propose a bump to it. An unconditional pin locks it
+# without the marker. Keep it in the python-direct group in .github/dependabot.yml.
+typing-extensions==4.16.0

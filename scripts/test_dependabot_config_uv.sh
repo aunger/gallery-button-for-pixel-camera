@@ -19,13 +19,6 @@
 # of the repository in which one lock does, the script under test being run from
 # that copy so that it reads the copy's locks.
 #
-# The ranged `ignore` rules (issue #1195) are driven the same way, from the
-# real config with boltons's rule (or a new one) rewritten, since the locks they are
-# checked against do not need to change. A cap that lifts takes its rule with it,
-# as pyjwt's did in semgrep 1.179.0, so the fixture is a package whose cap has not
-# moved: semgrep has asked for `boltons~=21.0` in every release from 1.50.0 to
-# 1.179.0, while its click cap moved within that span.
-#
 # Always exits 0 on success, non-zero on failure.
 
 set -uo pipefail
@@ -65,11 +58,6 @@ with open(source) as handle:
     doc = yaml.safe_load(handle)
 
 
-def boltons(entry):
-    """The ranged `ignore` rule for boltons, which semgrep caps at `~=21.0`."""
-    return next(rule for rule in entry["ignore"] if rule["dependency-name"] == "boltons")
-
-
 updates = doc["updates"]
 index = next(i for i, e in enumerate(updates) if e.get("package-ecosystem") == "uv")
 entry = updates[index]
@@ -95,20 +83,10 @@ elif mutation == "no-groups":
     del entry["groups"]
 elif mutation == "stale-ignore":
     entry.setdefault("ignore", []).append({"dependency-name": "requests"})
-elif mutation == "open-ended-range":
-    boltons(entry)["versions"] = [">=22"]
-elif mutation == "inverted-range":
-    boltons(entry)["versions"] = [">=27, <22"]
-elif mutation == "range-covers-lock":
-    boltons(entry)["versions"] = [">=21, <27"]
-elif mutation == "range-behind-lock":
-    boltons(entry)["versions"] = [">=19, <21"]
-elif mutation == "range-for-unlocked-package":
-    entry["ignore"].append({"dependency-name": "nonesuch", "versions": [">=1, <2"]})
-elif mutation == "range-for-package-in-two-locks":
-    entry["ignore"].append({"dependency-name": "requests", "versions": [">=99, <100"]})
 elif mutation == "unmodeled-ignore-rule":
-    entry["ignore"].append({"dependency-name": "boltons", "update-types": ["version-update:semver-minor"]})
+    entry.setdefault("ignore", []).append(
+        {"dependency-name": "requests", "update-types": ["version-update:semver-minor"]}
+    )
 else:
     sys.exit("unknown mutation " + mutation)
 
@@ -181,13 +159,7 @@ expect_failure direct-pin-ungrouped "a pull request of its own; ungrouped: pyyam
 expect_failure unnormalized-name "not normalized: PyYAML"
 expect_failure no-groups "pull requests its groups and ungrouped packages can want open at once"
 expect_failure stale-ignore "stale: requests"
-expect_failure open-ended-range "not closed: boltons '>=22'"
-expect_failure inverted-range "not closed: boltons '>=27, <22'"
-expect_failure range-covers-lock "at or below the lock: boltons >=21, <27 (locked 21.0.0)"
-expect_failure range-behind-lock "at or below the lock: boltons >=19, <21 (locked 21.0.0)"
-expect_failure range-for-unlocked-package "not locked: nonesuch"
-expect_failure range-for-package-in-two-locks "pinned by more than one lock: requests"
-expect_failure unmodeled-ignore-rule "the two shapes the checks here model"
+expect_failure unmodeled-ignore-rule "the one shape the checks here model"
 
 # A lock that pins a package at two versions needs that package in `ignore`.
 if root="$(make_forked_repo forked-package-not-ignored unignored)"; then
