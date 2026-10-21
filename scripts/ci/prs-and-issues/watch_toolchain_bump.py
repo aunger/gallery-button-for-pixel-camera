@@ -518,11 +518,13 @@ def collect_state(repo_root: Path) -> dict:
             # Deliberately not caught in main(), so this is the one way the module docstring's
             # "exit code is always 0" contract can be broken: a collision is a bug in this
             # script, and a crashing scheduled Action is louder than a degraded comment (#858).
-            assert key not in advisories, (
-                f"duplicate coordinate@version key {key!r} in toolchain_advisories: two entries "
-                "in COORDINATES_BY_PIN resolved to the same key, so one would silently overwrite "
-                "the other's advisory result"
-            )
+            # Raised explicitly rather than with `assert`, which `python -O` would skip (#1341).
+            if key in advisories:
+                raise AssertionError(
+                    f"duplicate coordinate@version key {key!r} in toolchain_advisories: two "
+                    "entries in COORDINATES_BY_PIN resolved to the same key, so one would "
+                    "silently overwrite the other's advisory result"
+                )
             advisories[key] = _collect(errors, query_osv, coordinate, version)
 
     return {
