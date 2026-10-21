@@ -859,7 +859,7 @@ class E2EFixture(
      * @param timeoutMs       Maximum wait time in milliseconds.
      * @param intervalMs      Sleep between successive capture attempts.
      */
-    fun captureScreenUntilColorVisibleOverCameraFeed(
+    fun captureScreenUntilColorVisibleWithCameraFeed(
         color: Rgb,
         minFeedCoverage: Float = CAMERA_FEED_MIN_COVERAGE,
         timeoutMs: Long = 8_000L,

@@ -135,11 +135,11 @@ class GalleryButtonVisualE2ETest {
         fixture.seedGalleryPrefs(MOCK_GALLERY_PACKAGE)
         fixture.clearCameraRoll()
         fixture.launchPixelCamera()
-        // Wait for the overlay to activate, then poll until BLUE appears over the camera feed
+        // Wait for the overlay to activate, then poll until BLUE appears with the camera feed
         // (Issue #556: the active flag can flip true before the frame is composited; issue
         // #1335: launcher dock icons also match BLUE until the camera is on screen).
         fixture.waitForOverlayActive()
-        val screen = fixture.captureScreenUntilColorVisibleOverCameraFeed(Rgb.BLUE)
+        val screen = fixture.captureScreenUntilColorVisibleWithCameraFeed(Rgb.BLUE)
         val blue = ColorMatch.mask(screen, Rgb.BLUE)
         Screenshot.saveForArtifact(screen, "1a-screen.png")
         Screenshot.saveForArtifact(maskToBitmap(blue), "1a-blue-mask.png")
@@ -181,10 +181,10 @@ class GalleryButtonVisualE2ETest {
         fixture.seedGalleryPrefs(MOCK_GALLERY_PACKAGE)
         fixture.clearCameraRoll()
         fixture.launchPixelCamera()
-        // Wait for the overlay to activate, then poll until BLUE appears over the camera feed
+        // Wait for the overlay to activate, then poll until BLUE appears with the camera feed
         // (Issues #556 and #1335).
         fixture.waitForOverlayActive()
-        val screen = fixture.captureScreenUntilColorVisibleOverCameraFeed(Rgb.BLUE)
+        val screen = fixture.captureScreenUntilColorVisibleWithCameraFeed(Rgb.BLUE)
         val blue = ColorMatch.mask(screen, Rgb.BLUE)
         Screenshot.saveForArtifact(screen, "1b-screen.png")
         Screenshot.saveForArtifact(maskToBitmap(blue), "1b-blue-mask.png")
@@ -206,11 +206,11 @@ class GalleryButtonVisualE2ETest {
         fixture.seedGalleryPrefs(MOCK_GALLERY_PACKAGE)
         fixture.clearCameraRoll()
         fixture.launchPixelCamera()
-        // Wait for the overlay to activate, then poll until BLUE appears over the camera feed
+        // Wait for the overlay to activate, then poll until BLUE appears with the camera feed
         // (Issues #556 and #1335).
         // YELLOW is part of the same overlay icon draw, so BLUE is a reliable proxy for it too.
         fixture.waitForOverlayActive()
-        val screen = fixture.captureScreenUntilColorVisibleOverCameraFeed(Rgb.BLUE)
+        val screen = fixture.captureScreenUntilColorVisibleWithCameraFeed(Rgb.BLUE)
         val outer =
             ColorMatch.union(
                 ColorMatch.mask(screen, Rgb.BLUE),
@@ -589,7 +589,7 @@ class GalleryButtonVisualE2ETest {
 
     /**
      * Fails [testName] when [screen] does not show the mock camera's green feed, which means
-     * [E2EFixture.captureScreenUntilColorVisibleOverCameraFeed] timed out before the camera was on
+     * [E2EFixture.captureScreenUntilColorVisibleWithCameraFeed] timed out before the camera was on
      * screen.
      *
      * Without this check, test1a, test1b and test1c would go on to measure whatever BLUE was on
@@ -606,7 +606,7 @@ class GalleryButtonVisualE2ETest {
             fail(
                 "$testName: GREEN coverage is ${coverage * 100f}%--expected >= " +
                     "${CAMERA_FEED_MIN_COVERAGE * 100f}%. The mock camera feed was not on screen " +
-                    "when the wait for BLUE over it timed out, so the overlay cannot be measured. " +
+                    "when the wait for BLUE with the feed timed out, so the overlay cannot be measured. " +
                     "Check the $artifactName artifact.",
             )
         }
