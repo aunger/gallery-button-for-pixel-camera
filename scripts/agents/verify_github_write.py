@@ -78,6 +78,7 @@ sys.path.insert(
 )
 
 from github_headers import github_headers
+from https_only import https_request
 from session_bylines import strip_bylines
 
 API_ROOT = "https://api.github.com"
@@ -392,7 +393,7 @@ def _fetch_headers() -> dict:
 
 def _get_json(api_url: str, headers: dict, opener) -> object:
     """GET *api_url* and return the decoded body.  Exceptions propagate."""
-    request = urllib.request.Request(api_url, headers=headers)
+    request = https_request(api_url, headers=headers)
     with opener(request, timeout=FETCH_TIMEOUT_SECONDS) as response:
         return json.loads(response.read().decode("utf-8"))
 
