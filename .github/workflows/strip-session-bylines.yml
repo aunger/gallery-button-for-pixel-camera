@@ -37,7 +37,6 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.base.sha || github.sha }}
-          # The script and the modules it imports all live in this directory.
           sparse-checkout: scripts/ci/prs-and-issues
 
       - name: Strip session-URL bylines
