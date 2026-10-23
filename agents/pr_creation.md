@@ -23,6 +23,8 @@ The title is permanent: it becomes the commit subject, for the reason under "The
 
 Include the #XYZ issue number of the issue that this PR addresses. If the PR completes the issue, write "Fixes #XYZ". Explain how the changes fix the issue.
 
+Post and edit the title and description through the GitHub MCP server's tools, not `curl` or `gh api`, for the reason the "Mechanics" section of `agents/writing.md` gives.
+
 ### The description is the commit message
 
 Merging builds the commit out of the pull request itself: the title becomes the commit subject, with `" (#N)"` appended, and the description becomes the commit body, changed only by the wrapping of long lines.
