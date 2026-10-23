@@ -18,9 +18,12 @@
 #   - At most one top-level `permissions:` key, at column 0. Its position
 #     relative to `jobs:` does not matter.
 #   - Job names that are plain scalars, matched literally, not as patterns.
-#     A job header may put blanks between the name and its colon and may
-#     carry a trailing `# comment`; anything else after the colon makes the
-#     line a key with a value rather than a job header.
+#     A job header may carry a trailing `# comment`; anything else after the
+#     colon makes the line a key with a value rather than a job header.
+#
+# Any key these helpers look for (`jobs:`, `permissions:`, a job header,
+# `actions:` in a permissions block) may put blanks between its name and its
+# colon, as YAML allows.
 #
 # A file that breaks an assumption fails loudly (a block comes back empty, and
 # the caller reports its own check as failed) rather than passing vacuously.
@@ -53,9 +56,11 @@ _WORKFLOW_YAML_AWK='
     # trailing comment is not a value, so `detect:  # reads the other run`
     # names `detect` rather than naming nothing, and blanks between the key
     # and its colon are not part of the key, so `detect :` names `detect`.
-    # Getting either wrong is the one way this library could go quiet instead
-    # of loud: a job nobody asks for by name that no reader can see is simply
-    # not audited (issues #920 and #956).
+    # Getting either wrong makes this library go quiet instead of loud: a job
+    # nobody asks for by name that no reader can see is simply not audited
+    # (issues #920 and #956). Missing a key one level down does the same; a
+    # job whose own `permissions :` block goes unread is judged by the
+    # workflow-level grant it does not inherit (issue #1365).
     function job_name_of(line,   name) {
         if (line !~ /^[ \t]*[^ \t#:]+[ \t]*:[ \t]*(#.*)?$/) return ""
         name = line
@@ -71,15 +76,16 @@ _WORKFLOW_YAML_AWK='
 #   permissions:            and    permissions: write-all
 #     actions: read
 #
-# come back as the key's content. The block ends at the first non-blank,
-# non-comment line indented no deeper than the key itself.
+# come back as the key's content, and so does `permissions :`. The block ends
+# at the first non-blank, non-comment line indented no deeper than the key
+# itself.
 yaml_sub_block() {
     awk -v key="$1" "$_WORKFLOW_YAML_AWK"'
-        !found && $0 ~ "^ *" key ":" {
+        !found && $0 ~ "^ *" key "[ \t]*:" {
             found = 1
             key_indent = indent_of($0)
             rest = $0
-            sub("^ *" key ":", "", rest)
+            sub("^ *" key "[ \t]*:", "", rest)
             gsub(/^[ \t]+|[ \t]+$/, "", rest)
             if (rest != "" && substr(rest, 1, 1) != "#") print rest
             next
@@ -130,10 +136,10 @@ workflow_job_block() {
 # instead of looking like it has no block at all.
 workflow_permissions() {
     awk '
-        /^permissions:/ {
+        /^permissions[ \t]*:/ {
             found = 1
             rest = $0
-            sub(/^permissions:/, "", rest)
+            sub(/^permissions[ \t]*:/, "", rest)
             gsub(/^[ \t]+|[ \t]+$/, "", rest)
             if (rest != "" && substr(rest, 1, 1) != "#") print rest
             next
@@ -159,7 +165,7 @@ workflow_job_permissions() { workflow_job_block "$1" "$2" | yaml_sub_block permi
 permissions_grant_actions_read() {
     local normalized
     normalized="$(printf '%s\n' "$1" | tr '{},' '\n\n\n')"
-    grep -Eq '^[ \t]*(actions:[ \t]*(read|write)|read-all|write-all)[ \t]*$' <<<"$normalized"
+    grep -Eq '^[ \t]*(actions[ \t]*:[ \t]*(read|write)|read-all|write-all)[ \t]*$' <<<"$normalized"
 }
 
 # Whether $1 (a captured block) has a line matching the ERE $2. Plain grep on a
