@@ -243,6 +243,21 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
 YAML
 
+# The same silent drop, spelled with a space before the colon rather than a
+# comment after it (issue #956). `detect :` is the key `detect` in YAML.
+cat > "$TMP/bad-space-before-colon.yml" <<'YAML'
+permissions:
+  contents: read
+
+jobs:
+  detect :
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          run-id: ${{ github.event.workflow_run.id }}
+YAML
+
 # Grant present at the job level, absent at the workflow level: allowed.
 cat > "$TMP/good-job.yml" <<'YAML'
 permissions:
@@ -320,6 +335,7 @@ expect_verdict bad bad-download.yml
 expect_verdict bad bad-api.yml
 expect_verdict bad bad-job-override.yml
 expect_verdict bad bad-inline-comment.yml
+expect_verdict bad bad-space-before-colon.yml
 expect_verdict ok good-job.yml
 expect_verdict ok good-flow-mapping.yml
 expect_verdict ok good-permissions-after-jobs.yml
