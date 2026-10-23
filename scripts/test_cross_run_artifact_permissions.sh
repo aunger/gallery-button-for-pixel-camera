@@ -5,9 +5,7 @@
 # actions/download-artifact reaches another run's artifacts through the Actions
 # API (that is what `run-id:` selects), and its docs require an `actions: read`
 # token for that case. A job's own run needs no such grant, so a workflow can
-# add a cross-run download and declare nothing, which is what the issue #364
-# launch-retry detector workflow did until issue #860 (the workflow itself was
-# retired under issue #1371) and what
+# add a cross-run download and declare nothing, which is what
 # .github/workflows/dependabot-verification-metadata-push.yml did until issue
 # #842's review (PR #859).
 #
