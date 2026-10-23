@@ -293,10 +293,16 @@ def main() -> int:
         print("OK: No blocking labels are present.")
         return 0
 
+    # Each PR is named by number, the triggering one included: the run is
+    # stored on the commit, so a sibling's merge box can show this log, and
+    # "this PR" would read as that sibling (issue #1331).
     for number, labels in blocked:
-        blamed = (
-            "This PR" if number == pr_number else f"PR #{number}, which shares this head commit,"
+        relation = (
+            "whose event started this run"
+            if number == pr_number
+            else "which shares this head commit"
         )
+        blamed = f"PR #{number}, {relation},"
         carried = "a blocking label" if len(labels) == 1 else "blocking labels"
         print(
             f"On hold: {blamed} carried {carried} when this run read its labels:"
