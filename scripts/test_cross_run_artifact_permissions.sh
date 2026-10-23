@@ -6,13 +6,12 @@
 # API (that is what `run-id:` selects), and its docs require an `actions: read`
 # token for that case. A job's own run needs no such grant, so a workflow can
 # add a cross-run download and declare nothing, which is what
-# .github/workflows/detect-launch-retry.yml did until issue #860 and what
 # .github/workflows/dependabot-verification-metadata-push.yml did until issue
 # #842's review (PR #859).
 #
 # Neither turned out to be broken in practice: this repository is public, and
-# the pre-fix run 32352974182 shows detect-launch-retry.yml downloading its
-# artifact and scanning it with `actions` implicitly none. That undocumented
+# the pre-fix run 32352974182 shows that detector downloading its artifact and
+# scanning it with `actions` implicitly none. That undocumented
 # allowance is the entire reason the omission is worth guarding rather than
 # shrugging at. It is not ours to rely on, it stops applying if this repository
 # ever goes private, and it stops without a red run: such downloads carry
@@ -144,8 +143,9 @@ fi
 # ── (b) the known readers are still seen ─────────────────────────────────────
 # If a refactor renames a job, moves the read, or breaks an assumption the
 # helpers make about workflow layout, (a) would quietly go back to checking
-# nothing. These two jobs are the reason this file exists; they must stay
-# visible to it.
+# nothing. These are known cross-run artifact readers; they must stay
+# visible to it. Two are listed so that retiring one workflow does not leave
+# the list empty and (a) free to go vacuous unnoticed.
 echo ""
 echo "=== (b) the known artifact-reading jobs are still detected ==="
 while IFS=" " read -r known_wf known_job; do
@@ -160,8 +160,8 @@ while IFS=" " read -r known_wf known_job; do
         fail "$known_wf job '$known_job' is no longer recognized as reading run artifacts; either the workflow changed shape or the detector stopped working, and in the latter case check (a) is now vacuous"
     fi
 done <<'KNOWN'
-detect-launch-retry.yml detect
 dependabot-verification-metadata-push.yml push
+dependency-version-checks-report.yml report
 KNOWN
 
 # ── (c) the detector itself, against fixtures ────────────────────────────────
@@ -171,7 +171,7 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 # A cross-run download under a workflow-level block with no actions: read:
-# detect-launch-retry.yml's shape before issue #860.
+# the issue #364 launch-retry detector's shape before issue #860.
 cat > "$TMP/bad-download.yml" <<'YAML'
 on:
   workflow_run:
