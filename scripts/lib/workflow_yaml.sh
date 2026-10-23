@@ -56,9 +56,11 @@ _WORKFLOW_YAML_AWK='
     # trailing comment is not a value, so `detect:  # reads the other run`
     # names `detect` rather than naming nothing, and blanks between the key
     # and its colon are not part of the key, so `detect :` names `detect`.
-    # Getting either wrong is the one way this library could go quiet instead
-    # of loud: a job nobody asks for by name that no reader can see is simply
-    # not audited (issues #920 and #956).
+    # Getting either wrong makes this library go quiet instead of loud: a job
+    # nobody asks for by name that no reader can see is simply not audited
+    # (issues #920 and #956). Missing a key one level down does the same; a
+    # job whose own `permissions :` block goes unread is judged by the
+    # workflow-level grant it does not inherit (issue #1365).
     function job_name_of(line,   name) {
         if (line !~ /^[ \t]*[^ \t#:]+[ \t]*:[ \t]*(#.*)?$/) return ""
         name = line
