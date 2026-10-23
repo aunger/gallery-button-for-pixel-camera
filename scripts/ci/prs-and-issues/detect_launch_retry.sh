@@ -53,6 +53,19 @@ fi
 # matches any of these).
 RETRY_PATTERN='am start attempt ([2-9]|[0-9]{2,})/|overlay active on attempt ([2-9]|[0-9]{2,})|overlay still inactive after|first-launch teardown race'
 
+# Percent-encode the characters a workflow command's message may not carry raw.
+# The runner decodes %25, %0D and %0A back to %, CR and LF, so without this a
+# logcat line holding a percent sign would reach the annotation altered, and a
+# stray CR (adb can emit CRLF line endings) would reach the runner unencoded.
+# '%' goes first so the escapes the later two add are not themselves re-escaped.
+escape_workflow_message() {
+  local s="$1"
+  s="${s//'%'/%25}"
+  s="${s//$'\r'/%0D}"
+  s="${s//$'\n'/%0A}"
+  printf '%s' "$s"
+}
+
 input() {
   if [[ -n "${1:-}" ]]; then
     cat -- "$1"
@@ -72,7 +85,7 @@ if [[ -n "$MATCHES" ]]; then
   if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
     # Emit a ::warning annotation so the signal appears in the run summary.
     summary="$(echo "$MATCHES" | tr '\n' ' ')"
-    echo "::warning title=issue #233 launch retry observed::$summary"
+    echo "::warning title=issue #233 launch retry observed::$(escape_workflow_message "$summary")"
 
     # Open or reopen issue #364 and post a comment linking to this run, so the
     # event is not buried under subsequent builds. Failures here are non-fatal:

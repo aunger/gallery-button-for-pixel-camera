@@ -4,7 +4,7 @@
 # The detection/exit-code tests (a)-(g) run without GITHUB_ACTIONS=true, so the
 # issue-filing and ::warning path is not exercised by them.
 #
-# The notification tests (h)-(m) DO exercise that GITHUB_ACTIONS-gated path. They
+# The notification tests (h)-(n) DO exercise that GITHUB_ACTIONS-gated path. They
 # run the script with GITHUB_ACTIONS=true but with a fake `curl` on PATH instead
 # of the real one, so no live GitHub token or network is needed. The fake curl
 # serves a canned issue-state response for the GET, records the PATCH (reopen),
@@ -28,6 +28,8 @@
 #   (k) Logcat with quotes, backslashes, tabs -> valid, correctly escaped JSON (Bug 2)
 #   (l) No GITHUB_RUN_ID -> shorter comment body, still valid JSON
 #   (m) GITHUB_ACTIONS cleared -> no curl is invoked at all
+#   (n) Logcat with a percent sign and a CR -> both percent-encoded in the
+#       ::warning annotation, which decodes back to the logcat text (issue #949)
 #
 # Always exits 0 on success, non-zero on failure.
 
@@ -40,7 +42,7 @@ set -uo pipefail
 # Clearing these here means the detection tests (a)-(g) never reach the
 # issue-filing path, and every test asserts the script's GITHUB_ACTIONS-gated
 # behavior on its own terms rather than by accident of what CI happens to set.
-# The notification tests (h)-(l) set the variables they need explicitly in
+# The notification tests (h)-(l) and (n) set the variables they need explicitly in
 # run_notify, and (m) clears them again for its own invocation, so this global
 # reset does not weaken any of them.
 unset GITHUB_ACTIONS GITHUB_TOKEN GITHUB_REPOSITORY
@@ -63,7 +65,7 @@ run_file() {
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-# ── Fake curl, used by the notification tests (h)-(m) ─────────────────────────
+# ── Fake curl, used by the notification tests (h)-(n)─────────────────────────
 # Stands in for the real curl on PATH. It distinguishes the three calls the
 # script makes by their method/URL:
 #   - GET  issues/364           -> prints a canned issue JSON whose "state" is
@@ -106,9 +108,11 @@ chmod +x "$FAKE_BIN/curl"
 # Run DETECT against the live notification path with the fake curl on PATH.
 # Args: <logcat-file> <issue-state: open|closed> [run-id]
 # Resets the curl log and post-body file, sets RC to the script's exit code, and
-# leaves $CURL_LOG / $POST_BODY_FILE for the caller to inspect.
+# leaves $CURL_LOG, $POST_BODY_FILE and $NOTIFY_OUT (the script's stdout, which
+# carries the ::warning annotation) for the caller to inspect.
 CURL_LOG="$TMP/curl.log"
 POST_BODY_FILE="$TMP/post-body.json"
+NOTIFY_OUT="$TMP/notify.out"
 run_notify() {
   : > "$CURL_LOG"
   rm -f "$POST_BODY_FILE"
@@ -121,7 +125,7 @@ run_notify() {
     GITHUB_SERVER_URL=https://github.com \
     GITHUB_RUN_ID="$run_id" \
     FAKE_ISSUE_STATE="$state" \
-    bash "$DETECT" "$logcat" > /dev/null 2>&1
+    bash "$DETECT" "$logcat" > "$NOTIFY_OUT" 2> /dev/null
   RC=$?
 }
 
@@ -326,6 +330,31 @@ if [[ -s "$CURL_LOG" ]]; then
   fail "curl was invoked even though GITHUB_ACTIONS was cleared: $(cat "$CURL_LOG")"
 else
   pass "no curl invoked when GITHUB_ACTIONS is cleared"
+fi
+
+# ── (n) percent sign and CR -> percent-encoded in the ::warning annotation ────
+echo ""
+echo "=== (n) percent sign and CR -> percent-encoded in the ::warning annotation ==="
+# A CRLF-terminated logcat line carrying a literal percent sign, and an escape
+# look-alike that the runner must not decode into a newline.
+printf '%s\r\n' 'GB4PC_E2E: am start attempt 2/3 at 100% load, literal %0A' > "$TMP/n.txt"
+run_notify "$TMP/n.txt" open 12345
+WARNING="$(grep '^::warning ' "$NOTIFY_OUT")"
+EXPECTED='::warning title=issue #233 launch retry observed::GB4PC_E2E: am start attempt 2/3 at 100%25 load, literal %250A%0D '
+if [[ "$WARNING" == "$EXPECTED" ]]; then
+  pass "percent sign and CR are percent-encoded in the annotation"
+else
+  fail "expected annotation '$EXPECTED', got '$WARNING'"
+fi
+# Decoding %0D, %0A and then %25, as the runner does, recovers the logcat text.
+DECODED="${WARNING#*::*::}"
+DECODED="${DECODED//'%0D'/$'\r'}"
+DECODED="${DECODED//'%0A'/$'\n'}"
+DECODED="${DECODED//'%25'/%}"
+if [[ "$DECODED" == $'GB4PC_E2E: am start attempt 2/3 at 100% load, literal %0A\r ' ]]; then
+  pass "annotation message decodes back to the logcat text"
+else
+  fail "annotation message did not round-trip: '$DECODED'"
 fi
 
 # ── Summary ──────────────────────────────────────────────────────────────────
