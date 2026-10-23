@@ -44,4 +44,4 @@ Do not resolve them by guess.
 See `.claude/rules/prose-style.md`.
 
 Post and edit through the GitHub MCP server's tools, not `curl` or `gh api`, wherever it has a tool for the write.
-`.claude/hooks/post-tool-use-github-readback.sh` checks the stored text of MCP writes only.
+`.claude/hooks/post-tool-use-github-readback.sh` checks the stored text of MCP writes only, so an alteration of text sent any other way goes unreported.
