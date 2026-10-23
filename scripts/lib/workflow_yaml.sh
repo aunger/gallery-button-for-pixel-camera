@@ -18,9 +18,11 @@
 #   - At most one top-level `permissions:` key, at column 0. Its position
 #     relative to `jobs:` does not matter.
 #   - Job names that are plain scalars, matched literally, not as patterns.
-#     A job header may put blanks between the name and its colon and may
-#     carry a trailing `# comment`; anything else after the colon makes the
-#     line a key with a value rather than a job header.
+#     A job header may carry a trailing `# comment`; anything else after the
+#     colon makes the line a key with a value rather than a job header.
+#
+# Any key these helpers look for (`jobs:`, `permissions:`, a job header) may
+# put blanks between its name and its colon, as YAML allows.
 #
 # A file that breaks an assumption fails loudly (a block comes back empty, and
 # the caller reports its own check as failed) rather than passing vacuously.
@@ -71,15 +73,16 @@ _WORKFLOW_YAML_AWK='
 #   permissions:            and    permissions: write-all
 #     actions: read
 #
-# come back as the key's content. The block ends at the first non-blank,
-# non-comment line indented no deeper than the key itself.
+# come back as the key's content, and so does `permissions :`. The block ends
+# at the first non-blank, non-comment line indented no deeper than the key
+# itself.
 yaml_sub_block() {
     awk -v key="$1" "$_WORKFLOW_YAML_AWK"'
-        !found && $0 ~ "^ *" key ":" {
+        !found && $0 ~ "^ *" key "[ \t]*:" {
             found = 1
             key_indent = indent_of($0)
             rest = $0
-            sub("^ *" key ":", "", rest)
+            sub("^ *" key "[ \t]*:", "", rest)
             gsub(/^[ \t]+|[ \t]+$/, "", rest)
             if (rest != "" && substr(rest, 1, 1) != "#") print rest
             next
@@ -130,10 +133,10 @@ workflow_job_block() {
 # instead of looking like it has no block at all.
 workflow_permissions() {
     awk '
-        /^permissions:/ {
+        /^permissions[ \t]*:/ {
             found = 1
             rest = $0
-            sub(/^permissions:/, "", rest)
+            sub(/^permissions[ \t]*:/, "", rest)
             gsub(/^[ \t]+|[ \t]+$/, "", rest)
             if (rest != "" && substr(rest, 1, 1) != "#") print rest
             next

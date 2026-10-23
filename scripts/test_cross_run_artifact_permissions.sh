@@ -258,6 +258,39 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
 YAML
 
+# A space before the colon of a job's own `permissions` key (issue #1365).
+# Missing that block makes the job look like it inherits the workflow-level
+# grant, which it does not have: a false PASS, not a loud failure.
+cat > "$TMP/bad-job-permissions-space-before-colon.yml" <<'YAML'
+permissions:
+  actions: read
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    permissions :
+      issues: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          run-id: ${{ github.event.workflow_run.id }}
+YAML
+
+# A space before the colon of `jobs` (issue #1365). Missing it empties the
+# whole jobs section, so no job in the file is audited.
+cat > "$TMP/bad-jobs-space-before-colon.yml" <<'YAML'
+permissions:
+  contents: read
+
+jobs :
+  detect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          run-id: ${{ github.event.workflow_run.id }}
+YAML
+
 # Grant present at the job level, absent at the workflow level: allowed.
 cat > "$TMP/good-job.yml" <<'YAML'
 permissions:
@@ -304,6 +337,21 @@ permissions:
   actions: read
 YAML
 
+# A space before the colon of the top-level `permissions` key (issue #1365)
+# is still the workflow's grant.
+cat > "$TMP/good-workflow-permissions-space-before-colon.yml" <<'YAML'
+permissions :
+  actions: read
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          run-id: ${{ github.event.workflow_run.id }}
+YAML
+
 # A same-run download needs no grant, and a run id mentioned by an unrelated
 # step in the same job must not make one look cross-run.
 cat > "$TMP/good-same-run.yml" <<'YAML'
@@ -336,9 +384,12 @@ expect_verdict bad bad-api.yml
 expect_verdict bad bad-job-override.yml
 expect_verdict bad bad-inline-comment.yml
 expect_verdict bad bad-space-before-colon.yml
+expect_verdict bad bad-job-permissions-space-before-colon.yml
+expect_verdict bad bad-jobs-space-before-colon.yml
 expect_verdict ok good-job.yml
 expect_verdict ok good-flow-mapping.yml
 expect_verdict ok good-permissions-after-jobs.yml
+expect_verdict ok good-workflow-permissions-space-before-colon.yml
 
 # The same-run fixture must produce no verdict at all: nothing to judge.
 if [ -z "$(audit_workflow "$TMP/good-same-run.yml")" ]; then
