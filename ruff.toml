@@ -8,8 +8,9 @@ target-version = "py311"
 [lint]
 # Chosen explicitly (#1202), so a ruff bump does not change which rules run, short
 # of a new rule under one of the four prefixes: ruff 0.15's default set ("E4",
-# "E7", "E9", "F") plus ruff 0.17.0's default set, less the rules below. 17 of the
-# 0.15 rules are not in ruff 0.17.0's default; they stay selected here.
+# "E7", "E9", "F") plus ruff 0.17.0's default set, less the rejected rules below,
+# plus the rules listed below as selected beyond the defaults. 17 of the 0.15
+# rules are not in ruff 0.17.0's default; they stay selected here.
 #
 # When a ruff bump removes a listed rule, every ruff run, `ruff format` included,
 # stops with "Rule `X` was removed and cannot be selected", so the bump PR's
@@ -30,13 +31,32 @@ target-version = "py311"
 #   S110 S112      they fire only on handlers that BLE001 or E722 already flag.
 #   TRY004         these scripts raise RuntimeError, by contract, when an API
 #                  response has the wrong shape.
+#
+# Selected beyond the defaults, in #1340:
+#   S602 S604 S605 a subprocess, other call or os function that runs a command
+#                  through a shell.
+#   S607           a process started from a bare executable name, which PATH
+#                  decides.
+#
+# Not a default, and left unselected after the audit in #1340:
+#   S603           it fires on a subprocess call whose argv is not a list of
+#                  literals (sys.executable aside), so once each site is judged
+#                  safe only a suppression would silence it. Audited with ruff
+#                  0.17.1 at cf14957: every call site passes an argv list without
+#                  shell=True, built from literals and trusted paths
+#                  (sys.executable, a path the script derives from __file__ or
+#                  creates in a TemporaryDirectory, and check_green_feed.py's
+#                  --adb, which build.yml sets to the SDK's adb).
+#
+# The other S rules, S606 (os.exec* and os.spawn*, S603's counterpart) and S609
+# (shell wildcard injection) among them, are left to #1341.
 select = [
     "E4", "E7", "E9", "F",
     "YTT101", "YTT102", "YTT103", "YTT201", "YTT202", "YTT203", "YTT204", "YTT301", "YTT302",
     "YTT303",
     "ASYNC100", "ASYNC105", "ASYNC115", "ASYNC116", "ASYNC210", "ASYNC220", "ASYNC221", "ASYNC222",
     "ASYNC230", "ASYNC251",
-    "S102",
+    "S102", "S602", "S604", "S605", "S607",
     "BLE001",
     "B002", "B003", "B004", "B005", "B006", "B008", "B009", "B010", "B012", "B013", "B014", "B015",
     "B016", "B017", "B018", "B019", "B020", "B021", "B022", "B023", "B025", "B026", "B029", "B030",
