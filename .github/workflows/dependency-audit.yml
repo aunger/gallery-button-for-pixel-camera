@@ -16,7 +16,7 @@ name: Dependency audit
 # one would also run ruff, mdformat, ktlint and the hygiene checks weekly
 # against pinned tools and an unchanged tree, where they are a guaranteed
 # no-op. Security scanning with a weekly cron already lives in its own
-# workflow here (semgrep.yml); this follows that shape.
+# workflow here (codeql.yml); this follows that shape.
 #
 # The PR and push triggers still carry most of the value: they catch a lock
 # that arrives with a known-vulnerable pin, on the PR that introduces it. The
@@ -29,7 +29,7 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    # Weekly on Monday at 09:00 UTC, an hour after semgrep.yml, to catch
+    # Weekly on Monday at 09:00 UTC, an hour after codeql.yml, to catch
     # advisories published against a lock no PR has touched.
     - cron: '0 9 * * 1'
   workflow_dispatch:

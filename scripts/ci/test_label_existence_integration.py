@@ -114,8 +114,7 @@ def _fetch_repo_label_names(token: str, repo: str) -> set[str]:
         req.add_header("Authorization", f"Bearer {token}")
         req.add_header("Accept", "application/vnd.github+json")
         req.add_header("X-GitHub-Api-Version", "2022-11-28")
-        # URL is built from the GitHub API constant; the file:// risk does not apply.
-        with urllib.request.urlopen(req) as resp:  # nosemgrep
+        with urllib.request.urlopen(req) as resp:
             batch = json.loads(resp.read())
         if not batch:
             break

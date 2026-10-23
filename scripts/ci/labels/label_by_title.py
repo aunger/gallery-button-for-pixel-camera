@@ -161,8 +161,7 @@ def gh_api(path: str, token: str, method: str = "GET", body: object = None) -> o
         req.add_header("Content-Type", "application/json")
     else:
         data = None
-    # URL is built from a GitHub API constant; the file:// risk does not apply.
-    with urllib.request.urlopen(req, data) as r:  # nosemgrep
+    with urllib.request.urlopen(req, data) as r:
         response_body = r.read()
         return json.loads(response_body) if response_body else None
 

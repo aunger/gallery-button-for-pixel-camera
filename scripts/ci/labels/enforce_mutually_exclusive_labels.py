@@ -202,8 +202,7 @@ def gh_api(
     backoff = INITIAL_BACKOFF_SECONDS
     for attempt in range(1, max_attempts + 1):
         try:
-            # URL is built from a GitHub API constant; the file:// risk does not apply.
-            with urllib.request.urlopen(req, data) as r:  # nosemgrep
+            with urllib.request.urlopen(req, data) as r:
                 response_body = r.read()
                 return json.loads(response_body) if response_body else None
         except (urllib.error.HTTPError, urllib.error.URLError) as exc:

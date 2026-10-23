@@ -108,8 +108,7 @@ def graphql_query(query: str, variables: dict, token: str) -> dict:
     req.add_header("Authorization", f"Bearer {token}")
     req.add_header("Accept", "application/vnd.github+json")
     req.add_header("Content-Type", "application/json")
-    # URL is a fixed GitHub API constant; the file:// risk does not apply.
-    with urllib.request.urlopen(req) as r:  # nosemgrep
+    with urllib.request.urlopen(req) as r:
         payload = json.loads(r.read())
     if payload.get("errors"):
         raise RuntimeError(f"GraphQL errors: {payload['errors']}")
