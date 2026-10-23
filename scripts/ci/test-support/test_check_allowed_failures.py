@@ -292,6 +292,133 @@ class MainExitCodeTests(unittest.TestCase):
             self.assertEqual(code, 0)
 
 
+LAUNCHER_ANR = (
+    "10-17 13:46:05.120   558  5100 E ActivityManager: ANR in com.google.android.apps.nexuslauncher"
+)
+MOCK_CAMERA_ANR = (
+    "10-17 13:47:41.900   558  5485 E ActivityManager: ANR in com.google.android.GoogleCamera "
+    "(com.google.android.GoogleCamera/com.gb4pc.mockcamera.MockCameraActivity)"
+)
+BAR_TEST_D_STARTED = (
+    "10-17 13:46:00.000  4982  4998 I TestRunner: started: testD(com.example.BarTest)"
+)
+BAR_TEST_D_FINISHED = (
+    "10-17 13:46:10.000  4982  4998 I TestRunner: finished: testD(com.example.BarTest)"
+)
+
+
+class EmulatorStallTests(unittest.TestCase):
+    """Issue #1334: failures an emulator stall explains are infrastructure failures."""
+
+    def _run(self, directory: Path, recording: list[str], *extra: str):
+        logcat = _write(directory, "stall-logcat.txt", "\n".join(recording) + "\n")
+        stall_list = directory / "out" / "stall-failures.txt"
+        argv = [
+            *extra,
+            "--logcat",
+            str(logcat),
+            "--stall-list",
+            str(stall_list),
+            str(directory),
+            "--suite-label",
+            "E2E Tests",
+            "--outcome",
+            "failure",
+        ]
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            code = caf.main(argv)
+        listed = stall_list.read_text(encoding="utf-8") if stall_list.exists() else None
+        return code, buf.getvalue(), listed
+
+    def test_failure_after_launcher_anr_is_a_stall_failure(self):
+        with tempfile.TemporaryDirectory() as d:
+            directory = Path(d)
+            _write(directory, "TEST-fail.xml", FAILING_XML)
+            code, out, listed = self._run(
+                directory, [BAR_TEST_D_STARTED, LAUNCHER_ANR, BAR_TEST_D_FINISHED]
+            )
+        self.assertEqual(code, 1)
+        self.assertIn("emulator stall", out)
+        self.assertIn(LAUNCHER_ANR, out)
+        self.assertNotIn("Blocking test failures", out)
+        self.assertEqual(listed, "com.example.BarTest#testD\n")
+
+    def test_failure_after_mock_camera_anr_stays_a_test_failure(self):
+        with tempfile.TemporaryDirectory() as d:
+            directory = Path(d)
+            _write(directory, "TEST-fail.xml", FAILING_XML)
+            code, out, listed = self._run(
+                directory, [BAR_TEST_D_STARTED, MOCK_CAMERA_ANR, BAR_TEST_D_FINISHED]
+            )
+        self.assertEqual(code, 1)
+        self.assertIn("Blocking test failures", out)
+        self.assertNotIn("emulator stall", out)
+        self.assertEqual(listed, "")
+
+    def test_failure_before_launcher_anr_stays_a_test_failure(self):
+        with tempfile.TemporaryDirectory() as d:
+            directory = Path(d)
+            _write(directory, "TEST-fail.xml", FAILING_XML)
+            code, out, listed = self._run(
+                directory, [BAR_TEST_D_STARTED, BAR_TEST_D_FINISHED, LAUNCHER_ANR]
+            )
+        self.assertEqual(code, 1)
+        self.assertIn("Blocking test failures", out)
+        self.assertEqual(listed, "")
+
+    def test_missing_recording_classifies_nothing(self):
+        with tempfile.TemporaryDirectory() as d:
+            directory = Path(d)
+            _write(directory, "TEST-fail.xml", FAILING_XML)
+            stall_list = directory / "stall-failures.txt"
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                code = caf.main(
+                    [
+                        "--logcat",
+                        str(directory / "absent.txt"),
+                        "--stall-list",
+                        str(stall_list),
+                        str(directory),
+                        "--suite-label",
+                        "E2E Tests",
+                    ]
+                )
+            self.assertEqual(code, 1)
+            self.assertIn("Blocking test failures", buf.getvalue())
+            self.assertEqual(stall_list.read_text(encoding="utf-8"), "")
+
+    def test_allowlisted_stall_failure_passes_but_is_still_listed(self):
+        # The allowlist decides the exit code; the stall list still skips the ticket.
+        with tempfile.TemporaryDirectory() as d:
+            directory = Path(d)
+            _write(directory, "TEST-fail.xml", FAILING_XML)
+            allow = _write(directory, "allow.txt", "com.example.BarTest#testD\n")
+            code, out, listed = self._run(
+                directory,
+                [BAR_TEST_D_STARTED, LAUNCHER_ANR, BAR_TEST_D_FINISHED],
+                "--allowlist",
+                str(allow),
+            )
+        self.assertEqual(code, 0)
+        self.assertIn("allowlisted", out)
+        self.assertEqual(listed, "com.example.BarTest#testD\n")
+
+    def test_other_failures_still_block_alongside_a_stall(self):
+        with tempfile.TemporaryDirectory() as d:
+            directory = Path(d)
+            _write(directory, "TEST-fail.xml", FAILING_XML)
+            _write(directory, "TEST-error.xml", ERROR_XML)
+            code, out, listed = self._run(
+                directory, [BAR_TEST_D_STARTED, LAUNCHER_ANR, BAR_TEST_D_FINISHED]
+            )
+        self.assertEqual(code, 1)
+        self.assertIn("Blocking test failures", out)
+        self.assertIn("com.example.BazTest#testE", out)
+        self.assertEqual(listed, "com.example.BarTest#testD\n")
+
+
 class ParseArgsTests(unittest.TestCase):
     def test_requires_suite_label(self):
         with self.assertRaises(SystemExit) as cm:
@@ -304,7 +431,7 @@ class ParseArgsTests(unittest.TestCase):
         self.assertEqual(cm.exception.code, 2)
 
     def test_parses_allowlist_and_specs(self):
-        allowlist, specs = caf.parse_args(
+        options, specs = caf.parse_args(
             [
                 "--allowlist",
                 "a.txt",
@@ -316,7 +443,7 @@ class ParseArgsTests(unittest.TestCase):
                 "E2E Tests",
             ]
         )
-        self.assertEqual(allowlist, Path("a.txt"))
+        self.assertEqual(options.allowlist, Path("a.txt"))
         self.assertEqual(
             specs,
             [
@@ -324,6 +451,38 @@ class ParseArgsTests(unittest.TestCase):
                 caf.SuiteSpec(Path("dir2"), "E2E Tests", ""),
             ],
         )
+
+    def test_parses_logcat_and_stall_list_in_any_order(self):
+        options, specs = caf.parse_args(
+            [
+                "--stall-list",
+                "out.txt",
+                "--allowlist",
+                "a.txt",
+                "--logcat",
+                "rec.txt",
+                "dir1",
+                "--suite-label",
+                "E2E Tests",
+            ]
+        )
+        self.assertEqual(
+            options,
+            caf.GateOptions(
+                allowlist=Path("a.txt"), logcat=Path("rec.txt"), stall_list=Path("out.txt")
+            ),
+        )
+        self.assertEqual(specs, [caf.SuiteSpec(Path("dir1"), "E2E Tests", "")])
+
+    def test_repeated_leading_option_is_rejected(self):
+        with self.assertRaises(SystemExit) as cm:
+            caf.parse_args(["--allowlist", "a", "--allowlist", "b", "d", "--suite-label", "X"])
+        self.assertEqual(cm.exception.code, 2)
+
+    def test_logcat_requires_value(self):
+        with self.assertRaises(SystemExit) as cm:
+            caf.parse_args(["--logcat"])
+        self.assertEqual(cm.exception.code, 2)
 
     def test_parses_outcome(self):
         _, specs = caf.parse_args(

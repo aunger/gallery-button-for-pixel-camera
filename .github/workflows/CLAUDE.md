@@ -28,7 +28,17 @@ The allowlist does that narrowly:
    - Any failing test fails the build, unless that test is named in `.github/allowed-test-failures.txt`.
    - Each test step's recorded outcome is passed via `--outcome`.
      A step that reported `failure` without writing any failing test result is treated as an infrastructure failure and still fails the build.
-4. **Issue filing** (`file-issues` job) continues to file and re-open issues for failed tests.
+   - `--logcat` reports failures an emulator stall explains as infrastructure failures (see below).
+4. **Issue filing** (`file-issues` job) files and re-opens issues for failed tests, except emulator-stall failures.
+
+### Emulator-stall failures
+
+A system or launcher ANR raises a dialog that can fail the test running under it (issue #1334).
+
+- `Start emulator-stall logcat recorder` streams ActivityManager errors and TestRunner lines to `results/stall-logcat.txt`.
+- `scripts/ci/test-support/emulator_stalls.py` maps each ANR in the system server, SystemUI, or a launcher to one test: the test in progress, or the next to start.
+  ANRs in this repository's own packages never count.
+- The gate writes those tests to `results/stall-failures.txt`; `file-issues` reads it through `STALL_FAILURES_FILE` and files no ticket for them.
 
 ### Allowing a test to fail temporarily
 
@@ -50,6 +60,7 @@ An empty allowlist means no failure is tolerated, which is the steady state.
 - `.github/workflows/build.yml`: the CI configuration, including the `Gate on test failures` step.
 - `.github/allowed-test-failures.txt`: the red-to-green allowlist.
 - `scripts/ci/test-support/check_allowed_failures.py`: the gate script (unit-tested in `scripts/ci/test-support/test_check_allowed_failures.py`).
+- `scripts/ci/test-support/emulator_stalls.py`: finds emulator-stall failures (unit-tested in `scripts/ci/test-support/test_emulator_stalls.py`).
 - `scripts/ci/prs-and-issues/file_test_failure_issues.py`: auto-files issues for failed tests.
 - `.github/workflows/archive-stale-test-failures.yml`: archives test failure issues when tests pass.
 

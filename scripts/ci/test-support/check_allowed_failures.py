@@ -22,6 +22,8 @@ separates a class from a method is preserved.
 Usage:
     python3 scripts/ci/test-support/check_allowed_failures.py \\
         --allowlist .github/allowed-test-failures.txt \\
+        --logcat results/stall-logcat.txt \\
+        --stall-list results/stall-failures.txt \\
         path/to/unit-results          --suite-label "Unit Tests" \\
         path/to/instrumented-results  --suite-label "Instrumented Tests" --outcome failure \\
         path/to/e2e-results           --suite-label "E2E Tests"        --outcome success
@@ -32,9 +34,15 @@ the step that produced those results.  When a step's outcome is ``failure`` but
 it yielded no blocking test failure, the gate treats that as an infrastructure
 failure and fails the build--this is what ``continue-on-error`` used to hide.
 
+``--logcat`` names the emulator-stall recording; a non-allowlisted failure that
+``emulator_stalls.py`` attributes to a stall is an infrastructure failure
+(issue #1334). ``--stall-list`` writes those tests, allowlisted ones included,
+one ``class#method`` per line, for the issue filer to skip.
+
 Exit codes:
     0  no failures, or every failure is allowlisted
     1  at least one non-allowlisted test failed, or an infrastructure failure
+       (including a test failure an emulator stall explains)
 """
 
 import re
@@ -43,6 +51,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import defusedxml.ElementTree as ET
+from emulator_stalls import read_stalls
 
 # An inline comment is a `#` that follows whitespace (or starts the line).
 # A bare `#` glued to the preceding token is the class/method separator
@@ -64,6 +73,15 @@ class FailedTest:
     @property
     def qualified(self) -> str:
         return f"{self.class_name}#{self.method_name}"
+
+
+@dataclass(frozen=True)
+class GateOptions:
+    """The options that precede the suite specs on the command line."""
+
+    allowlist: Path | None = None
+    logcat: Path | None = None
+    stall_list: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -155,13 +173,23 @@ def parse_failures(directory: Path, suite_label: str) -> list[FailedTest]:
 
 _USAGE = (
     "usage: check_allowed_failures.py [--allowlist <file>] "
+    "[--logcat <file>] [--stall-list <file>] "
     "<dir> --suite-label <name> [--outcome <value>] "
     "[<dir> --suite-label <name> [--outcome <value>] ...]"
 )
 
 
-def parse_args(argv: list[str]) -> tuple[Path | None, list[SuiteSpec]]:
-    """Parse argv into (allowlist_path, [SuiteSpec, ...]).
+# The options that may precede the suite specs, each taking one path, mapped to
+# the GateOptions field it sets.
+_LEADING_OPTIONS = {
+    "--allowlist": "allowlist",
+    "--logcat": "logcat",
+    "--stall-list": "stall_list",
+}
+
+
+def parse_args(argv: list[str]) -> tuple[GateOptions, list[SuiteSpec]]:
+    """Parse argv into (GateOptions, [SuiteSpec, ...]).
 
     Each suite is ``<dir> --suite-label <name>`` with an optional trailing
     ``--outcome <value>``. Raises SystemExit(2) on bad input (matching the
@@ -173,13 +201,17 @@ def parse_args(argv: list[str]) -> tuple[Path | None, list[SuiteSpec]]:
         raise SystemExit(0)
 
     tokens = list(argv)
-    allowlist_path: Path | None = None
-    if tokens and tokens[0] == "--allowlist":
+    leading: dict[str, Path] = {}
+    while tokens and tokens[0] in _LEADING_OPTIONS:
         if len(tokens) < 2:
-            print(f"error: --allowlist requires a path\n{_USAGE}", file=sys.stderr)
+            print(f"error: {tokens[0]} requires a path\n{_USAGE}", file=sys.stderr)
             raise SystemExit(2)
-        allowlist_path = Path(tokens[1])
+        if _LEADING_OPTIONS[tokens[0]] in leading:
+            print(f"error: {tokens[0]} given more than once\n{_USAGE}", file=sys.stderr)
+            raise SystemExit(2)
+        leading[_LEADING_OPTIONS[tokens[0]]] = Path(tokens[1])
         tokens = tokens[2:]
+    options = GateOptions(**leading)
 
     specs: list[SuiteSpec] = []
     i = 0
@@ -214,7 +246,7 @@ def parse_args(argv: list[str]) -> tuple[Path | None, list[SuiteSpec]]:
         )
         raise SystemExit(2)
 
-    return allowlist_path, specs
+    return options, specs
 
 
 # ---------------------------------------------------------------------------
@@ -226,8 +258,8 @@ def main(argv: list[str] | None = None) -> int:
     if argv is None:
         argv = sys.argv[1:]
 
-    allowlist_path, specs = parse_args(argv)
-    allowlist = load_allowlist(allowlist_path)
+    options, specs = parse_args(argv)
+    allowlist = load_allowlist(options.allowlist)
 
     all_failures: list[FailedTest] = []
     infra_failures: list[str] = []
@@ -252,8 +284,17 @@ def main(argv: list[str] | None = None) -> int:
         if spec.outcome == "failure" and not suite_failures:
             infra_failures.append(spec.label)
 
+    stalls = read_stalls(options.logcat) if options.logcat else {}
+    stalled = [f for f in all_failures if f.qualified in stalls]
+    if options.stall_list:
+        options.stall_list.parent.mkdir(parents=True, exist_ok=True)
+        options.stall_list.write_text(
+            "".join(f"{f.qualified}\n" for f in stalled), encoding="utf-8"
+        )
+
     allowed = [f for f in all_failures if is_allowed(f, allowlist)]
-    blocked = [f for f in all_failures if not is_allowed(f, allowlist)]
+    stall_failures = [f for f in stalled if not is_allowed(f, allowlist)]
+    blocked = [f for f in all_failures if not is_allowed(f, allowlist) and f not in stalled]
 
     if allowed:
         print("Allowed (red-to-green) test failures:")
@@ -270,10 +311,17 @@ def main(argv: list[str] | None = None) -> int:
         for label in infra_failures:
             print(f"  - [{label}] step failed without a corresponding test failure")
 
-    if blocked or infra_failures:
+    if stall_failures:
+        print("Infrastructure failures from an emulator stall (no ticket is filed):")
+        for f in stall_failures:
+            print(f"  - [{f.suite_label}] {f.qualified}")
+            print(f"      system or launcher ANR: {stalls[f.qualified]}")
+
+    if blocked or infra_failures or stall_failures:
+        stall_note = f" ({len(stall_failures)} from an emulator stall)" if stall_failures else ""
         print(
             f"\n{len(blocked)} blocking test failure(s); "
-            f"{len(infra_failures)} infrastructure failure(s); "
+            f"{len(infra_failures) + len(stall_failures)} infrastructure failure(s){stall_note}; "
             f"{len(allowed)} allowlisted failure(s).",
             file=sys.stderr,
         )

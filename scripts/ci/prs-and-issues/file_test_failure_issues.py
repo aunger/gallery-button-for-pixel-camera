@@ -21,6 +21,8 @@ Optional environment variables (populated automatically by GitHub Actions):
     GITHUB_SERVER_URL   Default: https://github.com
     GITHUB_RUN_ID       Workflow run ID (for CI run link)
     WORKFLOW_RUN_SHA    Commit SHA of the triggering workflow run
+    STALL_FAILURES_FILE Tests (``class#method`` per line) to skip as emulator-stall
+                        failures (issue #1334)
 """
 
 import os
@@ -104,6 +106,14 @@ def parse_failures(directory: Path, suite_label: str, artifact_name: str) -> lis
                 )
 
     return failures
+
+
+def load_stall_failures(path: str) -> set[str]:
+    """Return the ``class#method`` names in the gate's stall file; empty if absent."""
+    if not path or not Path(path).is_file():
+        return set()
+    lines = Path(path).read_text(encoding="utf-8").splitlines()
+    return {line.strip() for line in lines if line.strip()}
 
 
 # ---------------------------------------------------------------------------
@@ -555,6 +565,7 @@ def main(argv: list[str] | None = None) -> int:
     sha = os.environ.get("WORKFLOW_RUN_SHA", "")
     workflow_run_branch = os.environ.get("WORKFLOW_RUN_BRANCH", "")
     pr_url = os.environ.get("WORKFLOW_RUN_PR_URL", "")
+    stall_failures = load_stall_failures(os.environ.get("STALL_FAILURES_FILE", ""))
 
     if not token:
         print("Warning: GITHUB_TOKEN not set; skipping issue filing.", file=sys.stderr)
@@ -581,7 +592,21 @@ def main(argv: list[str] | None = None) -> int:
             )
             continue
 
-        failures = parse_failures(directory, label, artifact_name)
+        failures = []
+        skipped = 0
+        for failure in parse_failures(directory, label, artifact_name):
+            if f"{failure.class_name}#{failure.method_name}" in stall_failures:
+                print(
+                    f"  Skipping {failure.class_name}.{failure.method_name}: the gate "
+                    "found an emulator stall explains this failure",
+                    file=sys.stderr,
+                )
+                skipped += 1
+            else:
+                failures.append(failure)
+        if skipped and not failures:
+            print(f"Note: no failure left to file in {directory}", file=sys.stderr)
+            continue
         if not failures:
             print(f"Note: no test failures found in {directory}", file=sys.stderr)
             continue

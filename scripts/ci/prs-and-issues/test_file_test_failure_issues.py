@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Unit tests for file_test_failure_issues.py."""
 
+import io
 import os
 import sys
 import tempfile
 import textwrap
 import unittest
+from contextlib import redirect_stderr
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -814,6 +816,58 @@ class TestMain(unittest.TestCase):
             )
         self.assertEqual(result, 0)
         self.assertEqual(mock_process.call_count, 2)
+
+    @patch("file_test_failure_issues.process_failure")
+    def test_skips_failures_the_gate_attributed_to_an_emulator_stall(self, mock_process):
+        """Issue #1334: no ticket for a test listed in STALL_FAILURES_FILE."""
+        with tempfile.TemporaryDirectory() as listdir:
+            stall_list = Path(listdir) / "stall-failures.txt"
+            stall_list.write_text("com.example.BarTest#testD\n", encoding="utf-8")
+            _write_xml(self.tmpdir, "TEST-bar.xml", FAILING_XML)
+            _write_xml(self.tmpdir, "TEST-baz.xml", ERROR_XML)
+            with patch.dict(os.environ, {"STALL_FAILURES_FILE": str(stall_list)}):
+                result = ftfi.main([str(self.tmpdir), "--suite-label", "E2E Tests"])
+        self.assertEqual(result, 0)
+        filed = [call.kwargs["failure"].method_name for call in mock_process.call_args_list]
+        self.assertEqual(filed, ["testE"])
+
+    @patch("file_test_failure_issues.process_failure")
+    def test_all_failures_skipped_is_not_reported_as_no_failures(self, mock_process):
+        with tempfile.TemporaryDirectory() as listdir:
+            stall_list = Path(listdir) / "stall-failures.txt"
+            stall_list.write_text("com.example.BarTest#testD\n", encoding="utf-8")
+            _write_xml(self.tmpdir, "TEST-bar.xml", FAILING_XML)
+            err = io.StringIO()
+            with (
+                patch.dict(os.environ, {"STALL_FAILURES_FILE": str(stall_list)}),
+                redirect_stderr(err),
+            ):
+                ftfi.main([str(self.tmpdir), "--suite-label", "E2E Tests"])
+        mock_process.assert_not_called()
+        self.assertIn("no failure left to file", err.getvalue())
+        self.assertNotIn("no test failures found", err.getvalue())
+
+    @patch("file_test_failure_issues.process_failure")
+    def test_missing_stall_file_files_every_failure(self, mock_process):
+        _write_xml(self.tmpdir, "TEST-bar.xml", FAILING_XML)
+        missing = str(self.tmpdir / "absent.txt")
+        with patch.dict(os.environ, {"STALL_FAILURES_FILE": missing}):
+            ftfi.main([str(self.tmpdir), "--suite-label", "E2E Tests"])
+        self.assertEqual(mock_process.call_count, 1)
+
+
+class TestLoadStallFailures(unittest.TestCase):
+    def test_empty_path_excludes_nothing(self):
+        self.assertEqual(ftfi.load_stall_failures(""), set())
+
+    def test_reads_names_and_ignores_blank_lines(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "stall-failures.txt"
+            path.write_text("com.example.BarTest#testD\n\n  com.example.BazTest#testE  \n")
+            self.assertEqual(
+                ftfi.load_stall_failures(str(path)),
+                {"com.example.BarTest#testD", "com.example.BazTest#testE"},
+            )
 
 
 # ---------------------------------------------------------------------------
