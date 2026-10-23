@@ -30,8 +30,8 @@ import datetime
 import json
 import os
 import sys
-import urllib.error
-import urllib.request
+
+from https_only import urlopen_https
 
 # ---------------------------------------------------------------------------
 # Label name constants
@@ -53,16 +53,17 @@ def gh_api(path: str, token: str, method: str = "GET", body: object = None) -> o
     failure so callers can handle errors explicitly.
     """
     url = f"https://api.github.com/{path}"
-    req = urllib.request.Request(url, method=method)
-    req.add_header("Authorization", f"Bearer {token}")
-    req.add_header("Accept", "application/vnd.github+json")
-    req.add_header("X-GitHub-Api-Version", "2022-11-28")
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
     if body is not None:
         data = json.dumps(body).encode()
-        req.add_header("Content-Type", "application/json")
+        headers["Content-Type"] = "application/json"
     else:
         data = None
-    with urllib.request.urlopen(req, data) as r:
+    with urlopen_https(url, data, headers=headers, method=method) as r:
         return json.loads(r.read())
 
 

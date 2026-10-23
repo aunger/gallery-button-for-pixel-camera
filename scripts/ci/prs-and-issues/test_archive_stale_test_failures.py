@@ -41,7 +41,7 @@ def _make_issue(
 
 
 class TestGhApi(unittest.TestCase):
-    @patch("archive_stale_test_failures.urllib.request.urlopen")
+    @patch("urllib.request.urlopen")
     def test_get_request_sets_correct_headers(self, mock_urlopen):
         mock_cm = MagicMock()
         mock_cm.__enter__ = MagicMock(return_value=mock_cm)
@@ -56,7 +56,7 @@ class TestGhApi(unittest.TestCase):
         self.assertEqual(req.get_header("Accept"), "application/vnd.github+json")
         self.assertEqual(req.get_header("X-github-api-version"), "2022-11-28")
 
-    @patch("archive_stale_test_failures.urllib.request.urlopen")
+    @patch("urllib.request.urlopen")
     def test_patch_request_sends_json_body(self, mock_urlopen):
         mock_cm = MagicMock()
         mock_cm.__enter__ = MagicMock(return_value=mock_cm)
@@ -75,7 +75,7 @@ class TestGhApi(unittest.TestCase):
         self.assertEqual(req.method, "PATCH")
         self.assertIsNotNone(data)
 
-    @patch("archive_stale_test_failures.urllib.request.urlopen")
+    @patch("urllib.request.urlopen")
     def test_returns_parsed_json(self, mock_urlopen):
         mock_cm = MagicMock()
         mock_cm.__enter__ = MagicMock(return_value=mock_cm)

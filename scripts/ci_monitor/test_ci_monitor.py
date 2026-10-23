@@ -141,6 +141,8 @@ Covers:
   (bq) #1298 main(): a named step that lists only during the drain prints
        nothing under the committed config, so the undiagnosed-drain flag
        precedes the bare Blocked terminal
+  (br) #1341 _request: a URL whose scheme is not https raises ValueError, on
+       both the JSON and the raw path, before anything is opened
 
 No network calls required; no GITHUB_TOKEN needed.
 Run this file directly to execute the suite: exits 0 on success, non-zero on failure.
@@ -6981,6 +6983,32 @@ def main() -> int:
         "the named-step run consumed every mocked request",
         "rc %r, %d requests left" % (rc_bq2, left_bq2),
     )
+
+    # ── (br) #1341 _request refuses any scheme but https ──────────────────────────
+    print("\n=== (br) #1341 _request refuses any scheme but https ===")
+
+    for url_br in (
+        "file:///etc/passwd",
+        "http://api.github.com/repos/o/r",
+        "ftp://example.com/x",
+        "api.github.com/repos/o/r",
+    ):
+        for raw_br in (False, True):
+            with (
+                unittest.mock.patch.object(ci_monitor._RAW_OPENER, "open") as opener_br,
+                unittest.mock.patch.object(ci_monitor.urllib.request, "urlopen") as urlopen_br,
+            ):
+                try:
+                    ci_monitor._request(url_br, "tok", raw=raw_br)
+                    refused_br = False
+                except ValueError:
+                    refused_br = True
+            check(
+                refused_br and not opener_br.called and not urlopen_br.called,
+                "_request(%r, raw=%s) raises ValueError and opens nothing" % (url_br, raw_br),
+                "_request(%r, raw=%s): refused=%s, opener called=%s, urlopen called=%s"
+                % (url_br, raw_br, refused_br, opener_br.called, urlopen_br.called),
+            )
 
     # ── Summary ────────────────────────────────────────────────────────────────────
     print("\nResults: %d passed, %d failed." % (PASS, FAIL))

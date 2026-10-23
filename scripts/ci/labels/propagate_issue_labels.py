@@ -63,10 +63,12 @@ import json
 import os
 import sys
 import urllib.error
-import urllib.request
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "prs-and-issues"))
 
 import enforce_mutually_exclusive_labels as emxl
 import label_by_title
+from https_only import urlopen_https
 
 # ---------------------------------------------------------------------------
 # GraphQL
@@ -104,11 +106,12 @@ def graphql_query(query: str, variables: dict, token: str) -> dict:
     """
     url = "https://api.github.com/graphql"
     body = json.dumps({"query": query, "variables": variables}).encode()
-    req = urllib.request.Request(url, method="POST", data=body)
-    req.add_header("Authorization", f"Bearer {token}")
-    req.add_header("Accept", "application/vnd.github+json")
-    req.add_header("Content-Type", "application/json")
-    with urllib.request.urlopen(req) as r:
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "Content-Type": "application/json",
+    }
+    with urlopen_https(url, body, headers=headers, method="POST") as r:
         payload = json.loads(r.read())
     if payload.get("errors"):
         raise RuntimeError(f"GraphQL errors: {payload['errors']}")
