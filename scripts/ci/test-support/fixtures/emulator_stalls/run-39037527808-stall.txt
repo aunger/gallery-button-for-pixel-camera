@@ -1,5 +1,7 @@
-# Run 39037527808: ActivityManager errors and TestRunner events, from per-test and
-# per-step logcats. Those drop non-GB4PC ActivityManager lines; same-time lines are sorted.
+# Run 39037527808: ActivityManager errors and TestRunner events, from the instrumented
+# step's unfiltered per-test logcats and the E2E steps' logcat dumps. The dumps drop
+# non-GB4PC ActivityManager lines, and the gallery step's dump lost its start to the ring
+# buffer. Same-time lines are sorted.
 10-17 13:45:59.436  3994  4049 I TestRunner: started: whenSetupNotCompleted_launchesSetupActivity(com.gb4pc.ui.MainActivityRedirectTest)
 10-17 13:46:02.595  3994  4049 I TestRunner: finished: whenSetupNotCompleted_launchesSetupActivity(com.gb4pc.ui.MainActivityRedirectTest)
 10-17 13:46:03.863  3994  4049 I TestRunner: started: mainScreen_showsAppName(com.gb4pc.ui.MainSettingsScreenTest)
