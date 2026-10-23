@@ -7,7 +7,7 @@
 # token for that case. A job's own run needs no such grant, so a workflow can
 # add a cross-run download and declare nothing, which is what the issue #364
 # launch-retry detector workflow did until issue #860 (the workflow itself was
-# retired by issue #1371) and what
+# retired under issue #1371) and what
 # .github/workflows/dependabot-verification-metadata-push.yml did until issue
 # #842's review (PR #859).
 #
@@ -145,9 +145,9 @@ fi
 # ── (b) the known readers are still seen ─────────────────────────────────────
 # If a refactor renames a job, moves the read, or breaks an assumption the
 # helpers make about workflow layout, (a) would quietly go back to checking
-# nothing. These jobs are the cross-run artifact readers in the workflows
-# today; they must stay visible to it. Two are listed so that retiring one
-# workflow does not leave the list empty and (a) free to go vacuous unnoticed.
+# nothing. These are known cross-run artifact readers; they must stay
+# visible to it. Two are listed so that retiring one workflow does not leave
+# the list empty and (a) free to go vacuous unnoticed.
 echo ""
 echo "=== (b) the known artifact-reading jobs are still detected ==="
 while IFS=" " read -r known_wf known_job; do
