@@ -4,7 +4,7 @@
 # The detection/exit-code tests (a)-(g) run without GITHUB_ACTIONS=true, so the
 # issue-filing and ::warning path is not exercised by them.
 #
-# The notification tests (h)-(n) DO exercise that GITHUB_ACTIONS-gated path. They
+# The notification tests (h)-(o) DO exercise that GITHUB_ACTIONS-gated path. They
 # run the script with GITHUB_ACTIONS=true but with a fake `curl` on PATH instead
 # of the real one, so no live GitHub token or network is needed. The fake curl
 # serves a canned issue-state response for the GET, records the PATCH (reopen),
@@ -30,6 +30,8 @@
 #   (m) GITHUB_ACTIONS cleared -> no curl is invoked at all
 #   (n) Logcat with a percent sign and a CR -> both percent-encoded in the
 #       ::warning annotation, which decodes back to the logcat text (issue #949)
+#   (o) Logcat lines shaped like workflow commands -> echoed inside a
+#       ::stop-commands:: fence, so the runner acts on none of them (issue #1363)
 #
 # Always exits 0 on success, non-zero on failure.
 
@@ -42,7 +44,7 @@ set -uo pipefail
 # Clearing these here means the detection tests (a)-(g) never reach the
 # issue-filing path, and every test asserts the script's GITHUB_ACTIONS-gated
 # behavior on its own terms rather than by accident of what CI happens to set.
-# The notification tests (h)-(l) and (n) set the variables they need explicitly in
+# The notification tests (h)-(l), (n) and (o) set the variables they need explicitly in
 # run_notify, and (m) clears them again for its own invocation, so this global
 # reset does not weaken any of them.
 unset GITHUB_ACTIONS GITHUB_TOKEN GITHUB_REPOSITORY
@@ -65,7 +67,7 @@ run_file() {
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-# ── Fake curl, used by the notification tests (h)-(n)─────────────────────────
+# ── Fake curl, used by the notification tests (h)-(o)─────────────────────────
 # Stands in for the real curl on PATH. It distinguishes the three calls the
 # script makes by their method/URL:
 #   - GET  issues/364           -> prints a canned issue JSON whose "state" is
@@ -355,6 +357,50 @@ if [[ "$DECODED" == $'GB4PC_E2E: am start attempt 2/3 at 100% load, literal %0A\
   pass "annotation message decodes back to the logcat text"
 else
   fail "annotation message did not round-trip: '$DECODED'"
+fi
+
+# ── (o) logcat lines shaped like workflow commands -> not parsed as commands ──
+echo ""
+echo "=== (o) logcat lines shaped like workflow commands -> not parsed as commands ==="
+# One matching line in each form the runner parses: "::cmd::" after leading
+# whitespace, and the legacy "##[cmd]" anywhere in the line.
+printf '%s\n' \
+  '::error::injected am start attempt 2/3' \
+  'GB4PC_E2E: am start attempt 3/3 ##[error]injected' > "$TMP/o.txt"
+run_notify "$TMP/o.txt" open 12345
+# Replay the script's stdout through the runner's stop/resume rules
+# (ActionCommandManager.TryProcessCommand in actions/runner): while stopped, the
+# runner acts only on a command named by the token, which the script emits as
+# "::<token>::". Every other line that either command form would match outside
+# the fence is recorded in COMMANDS.
+STOPPED=0
+TOKEN=""
+COMMANDS=()
+while IFS= read -r out_line; do
+  trimmed="${out_line#"${out_line%%[![:space:]]*}"}"
+  if [[ "$STOPPED" -eq 1 ]]; then
+    if [[ "$trimmed" == "::${TOKEN}::" ]]; then STOPPED=0; fi
+  elif [[ "$trimmed" == ::stop-commands::* ]]; then
+    TOKEN="${trimmed#::stop-commands::}"
+    STOPPED=1
+  elif [[ "$trimmed" == ::* || "$out_line" == *'##['* ]]; then
+    COMMANDS+=("$out_line")
+  fi
+done < "$NOTIFY_OUT"
+if [[ "$TOKEN" =~ ^[0-9a-f]{32}$ ]]; then
+  pass "echoed lines are fenced by ::stop-commands:: with a 128-bit hex token"
+else
+  fail "expected a 32-hex-digit stop token, got '$TOKEN'; output: $(cat "$NOTIFY_OUT")"
+fi
+if [[ "$STOPPED" -eq 0 ]]; then
+  pass "command processing is resumed after the echoed lines"
+else
+  fail "command processing was never resumed; output: $(cat "$NOTIFY_OUT")"
+fi
+if [[ "${#COMMANDS[@]}" -eq 1 && "${COMMANDS[0]}" == '::warning '* ]]; then
+  pass "the ::warning annotation is the only command the runner would act on"
+else
+  fail "expected only the ::warning annotation as a command, got: $(printf '[%s] ' "${COMMANDS[@]}")"
 fi
 
 # ── Summary ──────────────────────────────────────────────────────────────────

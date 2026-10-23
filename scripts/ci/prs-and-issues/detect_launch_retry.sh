@@ -16,7 +16,8 @@
 # scans the captured logcat for that signal so the run flags itself.
 #
 # Reads the overlay logcat from the file named by $1 (or stdin if no argument), and:
-#   - prints any matching lines, prefixed, to stdout;
+#   - prints any matching lines, prefixed, to stdout, between a ::stop-commands::
+#     line and its resume line so the runner does not parse them as commands;
 #   - when run under GITHUB_ACTIONS with GITHUB_TOKEN set:
 #       * emits a ::warning annotation so the signal appears in the run summary, and
 #       * opens or reopens issue #364 with a comment linking to this run, so the
@@ -78,9 +79,19 @@ MATCHES="$(input "${1:-}" | grep -E "$RETRY_PATTERN" || true)"
 
 if [[ -n "$MATCHES" ]]; then
   echo "DETECT_LAUNCH_RETRY: issue #233 launch-retry signal present (the watch item in issue #364 has a run to inspect):"
+  # The runner reads workflow commands from a step's stdout, and logcat text is
+  # not this repository's to control. It takes a line as a command if the line
+  # starts with "::" once leading whitespace is trimmed, or if it holds "##[cmd]"
+  # anywhere (the legacy form, found with IndexOf). A non-whitespace prefix would
+  # defeat the first but not the second, so the echoed lines go between
+  # ::stop-commands:: and its resume line instead. The token is drawn fresh here,
+  # after the logcat was captured, so no logcat line can carry it.
+  STOP_TOKEN="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+  echo "::stop-commands::${STOP_TOKEN}"
   while IFS= read -r line; do
     echo "  $line"
   done <<< "$MATCHES"
+  echo "::${STOP_TOKEN}::"
 
   if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
     # Emit a ::warning annotation so the signal appears in the run summary.
