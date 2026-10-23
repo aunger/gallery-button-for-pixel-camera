@@ -18,8 +18,9 @@
 #   - At most one top-level `permissions:` key, at column 0. Its position
 #     relative to `jobs:` does not matter.
 #   - Job names that are plain scalars, matched literally, not as patterns.
-#     A job header may carry a trailing `# comment`; anything else after the
-#     colon makes the line a key with a value rather than a job header.
+#     A job header may put blanks between the name and its colon and may
+#     carry a trailing `# comment`; anything else after the colon makes the
+#     line a key with a value rather than a job header.
 #
 # A file that breaks an assumption fails loudly (a block comes back empty, and
 # the caller reports its own check as failed) rather than passing vacuously.
@@ -50,14 +51,16 @@ _WORKFLOW_YAML_AWK='
     # The job that a line of the `jobs:` mapping declares, or "" if the line
     # declares none. A job header is a key with no value of its own; a
     # trailing comment is not a value, so `detect:  # reads the other run`
-    # names `detect` rather than naming nothing. Getting that wrong is the one
-    # way this library could go quiet instead of loud: a job nobody asks for
-    # by name that no reader can see is simply not audited (issue #920).
+    # names `detect` rather than naming nothing, and blanks between the key
+    # and its colon are not part of the key, so `detect :` names `detect`.
+    # Getting either wrong is the one way this library could go quiet instead
+    # of loud: a job nobody asks for by name that no reader can see is simply
+    # not audited (issues #920 and #956).
     function job_name_of(line,   name) {
-        if (line !~ /^[ \t]*[^ \t#:]+:[ \t]*(#.*)?$/) return ""
+        if (line !~ /^[ \t]*[^ \t#:]+[ \t]*:[ \t]*(#.*)?$/) return ""
         name = line
         sub(/^[ \t]+/, "", name)
-        sub(/:[ \t]*(#.*)?$/, "", name)
+        sub(/[ \t]*:[ \t]*(#.*)?$/, "", name)
         return name
     }
 '
