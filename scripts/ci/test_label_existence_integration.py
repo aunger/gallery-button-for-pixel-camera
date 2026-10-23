@@ -109,13 +109,16 @@ def _fetch_repo_label_names(token: str, repo: str) -> set[str]:
     """
     names: set[str] = set()
     for page in range(1, 11):
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+        # ruff's S310 accepts this urlopen because its Request is built in the
+        # call from a URL that starts with a literal https://. It would flag a
+        # Request passed in through a variable.
         url = f"https://api.github.com/repos/{repo}/labels?per_page=100&page={page}"
-        req = urllib.request.Request(url)
-        req.add_header("Authorization", f"Bearer {token}")
-        req.add_header("Accept", "application/vnd.github+json")
-        req.add_header("X-GitHub-Api-Version", "2022-11-28")
-        # URL is built from the GitHub API constant; the file:// risk does not apply.
-        with urllib.request.urlopen(req) as resp:  # nosemgrep
+        with urllib.request.urlopen(urllib.request.Request(url, headers=headers)) as resp:
             batch = json.loads(resp.read())
         if not batch:
             break

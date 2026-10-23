@@ -151,7 +151,7 @@
 # updater finds what to recompile and how it reproduces the lock as it was
 # made. No `pip` entry may reach them, because pip-compile would re-resolve
 # them for one interpreter. The entry must allow indirect dependencies, or the
-# lock-only packages, where #1189's pyjwt advisory was, are never proposed.
+# lock-only packages, where #1189's advisory was, are never proposed.
 # Every locked package must be grouped, no group may take both a `.in` pin and
 # a package only the locks name, and the limit must cover the groups.
 # The updater pins with `-P NAME==VERSION`, which uv applies to every fork of a
@@ -159,13 +159,7 @@
 # complementary markers (rpds-py was, until the locks' Python floor rose to 3.11
 # in issue #1196) cannot be moved; the entry's name-only `ignore` rules must name
 # exactly those packages, and none is needed while no lock pins one twice.
-# The same pin cannot move a package past a cap in semgrep's own requirements
-# (issue #1195), so those packages are ignored by version instead: each rule names a package one lock pins (`ignore` applies to every
-# lock in the entry, so a package two locks pin is refused) and a closed range
-# of versions, so a forgotten rule expires once the package publishes a version
-# above it. A range must sit above every version its lock pins, since it exists
-# to hide releases the lock has not reached; a lock that reaches one leaves it
-# stale, and the check names it.
+# Every `ignore` rule must be a package name alone; the checks model no other shape.
 # And every locked package must have an entry Dependabot's uv parser keeps,
 # since it drops one whose marker contains "<" without the substring
 # `python_version`.
@@ -847,7 +841,7 @@ def lock_pins(path):
 
 
 # A pin line with its environment marker, if it has one:
-# `typing-extensions==4.16.0 ; python_full_version < '3.13' \`.
+# `somepkg==1.0 ; python_full_version < '3.13' \`.
 PIN_WITH_MARKER_RE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)==([^\s;\\]+)\s*(?:;\s*(.*?))?\s*\\?\s*$")
 
 
@@ -877,60 +871,6 @@ def parser_keeps(marker):
     if "python_version" in marker:
         return False
     return "<" not in marker
-
-
-# A version as far as the locks and the `ignore` ranges spell one: a release
-# number, an optional pre-release (`0.58b0`), an optional `.postN`. Anything
-# else is not ordered here, and a check that meets one says so.
-VERSION_RE = re.compile(r"^(\d+(?:\.\d+)*)(?:(a|b|rc)(\d+))?(?:\.post(\d+))?$")
-PRE_RELEASE_RANK = {"a": -3, "b": -2, "rc": -1}
-
-
-def version_key(text):
-    """Order a version as PEP 440 does, or return None when it is spelled some other way."""
-    match = VERSION_RE.match(text)
-    if not match:
-        return None
-    release = [int(part) for part in match.group(1).split(".")]
-    while len(release) > 1 and release[-1] == 0:
-        release.pop()
-    return (tuple(release), PRE_RELEASE_RANK.get(match.group(2), 0), int(match.group(3) or 0), int(match.group(4) or 0))
-
-
-# One bound of a range: `>=2.14`, `<2.17`.
-BOUND_RE = re.compile(r"^(>=|>|<=|<)\s*(\S+)$")
-
-
-def closed_range(text):
-    """Split `>=2.14, <2.17` into ((op, version), (op, version)), or return None.
-
-    A closed range has exactly one lower bound and one upper bound, comma
-    separated, the form Dependabot's uv requirement parser reads. Anything else
-    (an open end, an `==`, a `~=`, a bound it cannot order) is not one.
-    """
-    if not isinstance(text, str):
-        return None
-    clauses = [clause.strip() for clause in text.split(",")]
-    if len(clauses) != 2:
-        return None
-    bounds = [BOUND_RE.match(clause) for clause in clauses]
-    if not all(bounds):
-        return None
-    lower, upper = ((m.group(1), m.group(2)) for m in bounds)
-    if lower[0] not in (">", ">=") or upper[0] not in ("<", "<="):
-        return None
-    if version_key(lower[1]) is None or version_key(upper[1]) is None:
-        return None
-    if version_key(lower[1]) >= version_key(upper[1]):
-        return None
-    return lower, upper
-
-
-def satisfies_bound(version, bound):
-    """Whether `version` satisfies one (op, version) bound; both must be orderable."""
-    op, limit = bound
-    have, want = version_key(version), version_key(limit)
-    return {">=": have >= want, ">": have > want, "<=": have <= want, "<": have < want}[op]
 
 
 # The flags the uv updater reads back out of a lock to regenerate it as it was
@@ -1030,7 +970,7 @@ if check(
             isinstance(allow, list)
             and any(isinstance(rule, dict) and rule == {"dependency-type": "all"} for rule in allow),
             "%s allows dependency-type all, without which a version update skips every package the `.in` files do "
-            "not pin, pyjwt among them (issues #1189, #1191)" % label,
+            "not pin (issues #1189, #1191)" % label,
         )
 
         # A package a lock pins at more than one version (under complementary
@@ -1071,92 +1011,15 @@ if check(
             "fork does%s (issue #1191)" % (label, ("; stale: " + ", ".join(stale)) if stale else ""),
         )
 
-        # The rest of `ignore`: a package named with a closed range of versions
-        # (issue #1195). The updater's per-package resolution cannot move a
-        # package past a cap in semgrep's own requirements, and the range hides
-        # exactly the releases that fail so the run log does not record an update
-        # error for each. Closed, so a rule nobody revisits stops hiding anything
-        # once the package publishes a version above it.
-        ranged = [
-            rule
-            for rule in ignore
-            if isinstance(rule, dict) and set(rule) == {"dependency-name", "versions"}
-        ]
+        # The rest of `ignore`: every rule is a package name alone, the one
+        # shape the checks above model.
         other_rules = [
-            rule
-            for rule in ignore
-            if not isinstance(rule, dict)
-            or set(rule) not in ({"dependency-name"}, {"dependency-name", "versions"})
+            rule for rule in ignore if not isinstance(rule, dict) or set(rule) != {"dependency-name"}
         ]
         check(
             not other_rules,
-            "%s writes each `ignore` rule as a package name alone or as a package name with `versions`, the two "
-            "shapes the checks here model%s (issue #1195)"
-            % (label, ("; found: " + ", ".join(repr(rule) for rule in other_rules)) if other_rules else ""),
-        )
-
-        locked_versions = {}
-        for lock in covered:
-            for name, version, _marker in lock_entries(os.path.join(repo_root, lock)):
-                locked_versions.setdefault(name, set()).add(version)
-
-        unlocked = sorted(
-            normalize(str(rule["dependency-name"]))
-            for rule in ranged
-            if normalize(str(rule["dependency-name"])) not in locked_versions
-        )
-        check(
-            not unlocked,
-            "%s gives a range of versions only for packages a lock pins, so a rule goes once its package does%s "
-            "(issue #1195)" % (label, ("; not locked: " + ", ".join(unlocked)) if unlocked else ""),
-        )
-
-        pinned_by = {}
-        for lock in covered:
-            for name in {name for name, _version, _marker in lock_entries(os.path.join(repo_root, lock))}:
-                pinned_by.setdefault(name, []).append(lock)
-        shared = sorted(
-            "%s (%s)" % (normalize(str(rule["dependency-name"])), ", ".join(pinned_by[normalize(str(rule["dependency-name"]))]))
-            for rule in ranged
-            if len(pinned_by.get(normalize(str(rule["dependency-name"])), ())) > 1
-        )
-        check(
-            not shared,
-            "%s gives a range of versions only for packages one lock pins, since `ignore` applies to every lock "
-            "in the entry and each range is sized against the one lock whose resolution it concerns%s (issue #1195)"
-            % (label, ("; pinned by more than one lock: " + ", ".join(shared)) if shared else ""),
-        )
-
-        open_ended = []
-        below_lock = []
-        for rule in ranged:
-            name = normalize(str(rule["dependency-name"]))
-            versions = rule["versions"]
-            if not isinstance(versions, list) or not versions:
-                open_ended.append("%s (versions is not a list of ranges)" % name)
-                continue
-            for text in versions:
-                parsed = closed_range(text)
-                if parsed is None:
-                    open_ended.append("%s %r" % (name, text))
-                    continue
-                for version in sorted(locked_versions.get(name, ())):
-                    if version_key(version) is None:
-                        below_lock.append("%s (locked %s cannot be ordered)" % (name, version))
-                    elif satisfies_bound(version, parsed[0]):
-                        below_lock.append("%s %s (locked %s)" % (name, text, version))
-        check(
-            not open_ended,
-            "%s closes every range of ignored versions, one lower bound and one upper bound (for example "
-            "'>=2.14, <2.17'), so a rule nobody revisits expires once the package publishes a version above it "
-            "instead of hiding its updates for good%s (issue #1195)"
-            % (label, ("; not closed: " + ", ".join(open_ended)) if open_ended else ""),
-        )
-        check(
-            not below_lock,
-            "%s starts every range above each version its lock pins, so it hides only releases the lock has not "
-            "reached and a range the lock has caught up with is named as stale%s (issue #1195)"
-            % (label, ("; at or below the lock: " + ", ".join(below_lock)) if below_lock else ""),
+            "%s writes each `ignore` rule as a package name alone, the one shape the checks here model%s "
+            "(issue #1191)" % (label, ("; found: " + ", ".join(repr(rule) for rule in other_rules)) if other_rules else ""),
         )
 
         invisible = sorted(locked - visible - ignored)

@@ -1090,7 +1090,7 @@ class TestMain(unittest.TestCase):
 class TestStandardLibraryOnly(unittest.TestCase):
     """A hook that fails on a missing dependency is a hook that stops checking."""
 
-    ALLOWED_NON_STDLIB = frozenset({"github_headers", "session_bylines"})
+    ALLOWED_NON_STDLIB = frozenset({"github_headers", "https_only", "session_bylines"})
 
     def test_no_third_party_imports(self):
         module_path = os.path.join(os.path.dirname(__file__), "verify_github_write.py")
