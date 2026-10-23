@@ -9,7 +9,6 @@
 - If carrying out the before-merging steps from a Verification Planner report on a PR (as a Verification Agent), read `./agents/pr_verify.md`.
 - If a sub-agent that is delegating work to nested sub-agents via the Agent tool, read `./agents/subagent_delegation.md`.
 - If reading a PR's or commit's check-runs, run `python3 scripts/ci_monitor/ci_monitor.py --once --pr <N>` (or `--sha <SHA>`) rather than listing them by hand, and see "One read, no polling" in `scripts/ci_monitor/README.md`.
-- If writing text to GitHub (an issue or pull request title or body, a comment, a review, or a reply), use the GitHub MCP server's tools rather than `curl` or `gh api` wherever it has one for the write (on 2026-10-23 it had none for editing a submitted review body or an existing inline review comment): `.claude/hooks/post-tool-use-github-readback.sh` checks the stored text of MCP writes only, so over `curl` or `gh api` a silent alteration of the stored text goes unreported (`normalize` in `scripts/agents/verify_github_write.py` lists the differences the hook ignores, session bylines among them).
 - If bumping the Gradle, AGP, KGP, or Compose-plugin version, or working on a Dependabot PR or the `gradle/verification-metadata.xml` regeneration workflows, read `./gradle/README.md`.
 
 ## Scratchpad files
