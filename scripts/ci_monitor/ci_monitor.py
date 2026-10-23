@@ -873,12 +873,11 @@ def _request(url, token, raw=False):
     req.add_header("Authorization", "Bearer %s" % token)
     req.add_header("Accept", "application/vnd.github+json")
     try:
-        # URL is built from a GitHub API constant; the file:// risk does not apply.
         if raw:
-            with _RAW_OPENER.open(req) as resp:  # nosemgrep
+            with _RAW_OPENER.open(req) as resp:
                 data = resp.read()
         else:
-            with urllib.request.urlopen(req) as resp:  # nosemgrep
+            with urllib.request.urlopen(req) as resp:
                 data = resp.read()
     except (urllib.error.URLError, OSError) as e:
         _request.last_error = e
