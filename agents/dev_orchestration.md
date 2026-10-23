@@ -26,7 +26,7 @@ The four `dep-*` checks skip on a pull request that changes no build file, and a
 `Administrative merge holds (not failure)` is left off deliberately: it is the merge gate, it is red for the whole of every cycle by design, and no agent may act on it (see "Orchestrator may not").
 `ignored_check_regex` in `scripts/ci_monitor/ci_monitor.config.json` leaves it out of the Monitor's verdict too.
 A change that adds or removes a required check updates this list in the same change.
-No automated guard checks the list: `workflow_job_names` in `scripts/lib/workflow_yaml.sh` emits job ids rather than the check names a `name:` override produces, and silently drops some jobs (#956).
+No automated guard checks the list: `workflow_job_names` in `scripts/lib/workflow_yaml.sh` emits job ids rather than the check names a `name:` override produces.
 
 A named check is green when its conclusion is `success`, `neutral`, or `skipped`, the conclusions GitHub accepts for a required check.
 
