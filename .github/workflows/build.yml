@@ -1426,12 +1426,23 @@ jobs:
         # FailureScreenshotRule, which writes a screenshot and a window-hierarchy dump into the
         # same on-device directory, and without pulling them a failure in the system photo picker
         # leaves nothing behind showing what was actually on screen.
+        #
+        # The pull tolerates a missing directory, so this step succeeding says nothing about
+        # whether a screenshot came back. `has_png` says that, so that "OCR on E2E screenshots"
+        # can skip installing Tesseract when a failure left no PNG behind (issue #1351).
+        # scripts/ci/test_e2e_screenshot_steps.py runs this block against a fake adb.
         if: always() && needs.check-diff.outputs.needs_full_build == 'true' && (steps.run_overlay_e2e.outputs.outcome == 'failure' || steps.run_gallery_e2e.outputs.outcome == 'failure' || steps.run_partial_access_photo_picker_e2e.outputs.outcome == 'failure')
         run: |
           ADB="$ANDROID_HOME/platform-tools/adb"
           mkdir -p /tmp/e2e-screenshots
           "$ADB" pull /sdcard/Android/data/com.gb4pc/files/screenshots/ \
             /tmp/e2e-screenshots/ || echo "No screenshots to pull (directory may not exist)"
+          if [[ -n "$(find /tmp/e2e-screenshots -type f -name '*.png' -print -quit)" ]]; then
+            echo "has_png=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No PNG among the pulled files; OCR will be skipped."
+            echo "has_png=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Kill emulator
         if: always() && needs.check-diff.outputs.needs_full_build == 'true'
@@ -1473,7 +1484,7 @@ jobs:
           retention-days: 14
 
       - name: OCR on E2E screenshots
-        if: always() && steps.pull_e2e_screenshots.outcome == 'success'
+        if: always() && steps.pull_e2e_screenshots.outputs.has_png == 'true'
         run: |
           sudo apt-get install -y tesseract-ocr > /dev/null 2>&1
           chmod +x scripts/ci/test-support/ocr_screenshots.sh
