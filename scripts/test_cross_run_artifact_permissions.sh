@@ -352,6 +352,23 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
 YAML
 
+# A space before the colon of the `actions` grant itself (issue #1365) is
+# still the grant.
+cat > "$TMP/good-actions-space-before-colon.yml" <<'YAML'
+permissions:
+  contents: read
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    permissions:
+      actions : read
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          run-id: ${{ github.event.workflow_run.id }}
+YAML
+
 # A same-run download needs no grant, and a run id mentioned by an unrelated
 # step in the same job must not make one look cross-run.
 cat > "$TMP/good-same-run.yml" <<'YAML'
@@ -390,6 +407,7 @@ expect_verdict ok good-job.yml
 expect_verdict ok good-flow-mapping.yml
 expect_verdict ok good-permissions-after-jobs.yml
 expect_verdict ok good-workflow-permissions-space-before-colon.yml
+expect_verdict ok good-actions-space-before-colon.yml
 
 # The same-run fixture must produce no verdict at all: nothing to judge.
 if [ -z "$(audit_workflow "$TMP/good-same-run.yml")" ]; then

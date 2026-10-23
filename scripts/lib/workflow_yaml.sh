@@ -21,8 +21,9 @@
 #     A job header may carry a trailing `# comment`; anything else after the
 #     colon makes the line a key with a value rather than a job header.
 #
-# Any key these helpers look for (`jobs:`, `permissions:`, a job header) may
-# put blanks between its name and its colon, as YAML allows.
+# Any key these helpers look for (`jobs:`, `permissions:`, a job header,
+# `actions:` in a permissions block) may put blanks between its name and its
+# colon, as YAML allows.
 #
 # A file that breaks an assumption fails loudly (a block comes back empty, and
 # the caller reports its own check as failed) rather than passing vacuously.
@@ -162,7 +163,7 @@ workflow_job_permissions() { workflow_job_block "$1" "$2" | yaml_sub_block permi
 permissions_grant_actions_read() {
     local normalized
     normalized="$(printf '%s\n' "$1" | tr '{},' '\n\n\n')"
-    grep -Eq '^[ \t]*(actions:[ \t]*(read|write)|read-all|write-all)[ \t]*$' <<<"$normalized"
+    grep -Eq '^[ \t]*(actions[ \t]*:[ \t]*(read|write)|read-all|write-all)[ \t]*$' <<<"$normalized"
 }
 
 # Whether $1 (a captured block) has a line matching the ERE $2. Plain grep on a
