@@ -144,17 +144,25 @@ class PullStepReportsPngTest(unittest.TestCase):
 
 
 class StepConditionsTest(unittest.TestCase):
-    """What the OCR and upload steps run on."""
+    """What the OCR and upload steps run on.
+
+    Each whole condition is compared, not searched: a dropped `always() && `
+    would let Actions' implicit `success()` skip the step after any earlier
+    failure in the job, and a substring check would also accept a widened
+    condition such as `... || <anything>`.
+    """
 
     def test_ocr_runs_only_when_a_png_was_pulled(self):
-        condition = _named_step(OCR_STEP_NAME)["if"]
-        self.assertIn(f"steps.{PULL_STEP_ID}.outputs.has_png == 'true'", condition)
-        self.assertNotIn(".outcome", condition)
+        self.assertEqual(
+            _named_step(OCR_STEP_NAME)["if"],
+            f"always() && steps.{PULL_STEP_ID}.outputs.has_png == 'true'",
+        )
 
     def test_upload_still_runs_on_pull_success(self):
-        condition = _named_step(UPLOAD_STEP_NAME)["if"]
-        self.assertIn(f"steps.{PULL_STEP_ID}.outcome == 'success'", condition)
-        self.assertNotIn("has_png", condition)
+        self.assertEqual(
+            _named_step(UPLOAD_STEP_NAME)["if"],
+            f"always() && steps.{PULL_STEP_ID}.outcome == 'success'",
+        )
 
 
 if __name__ == "__main__":
