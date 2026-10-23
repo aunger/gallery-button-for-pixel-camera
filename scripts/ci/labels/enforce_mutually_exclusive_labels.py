@@ -62,6 +62,10 @@ import time
 import urllib.error
 import urllib.request
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "prs-and-issues"))
+
+from https_only import urlopen_https
+
 # ---------------------------------------------------------------------------
 # Mutually exclusive label sets
 # ---------------------------------------------------------------------------
@@ -189,21 +193,21 @@ def gh_api(
     transient and is never retried here).
     """
     url = f"https://api.github.com/{path}"
-    req = urllib.request.Request(url, method=method)
-    req.add_header("Authorization", f"Bearer {token}")
-    req.add_header("Accept", "application/vnd.github+json")
-    req.add_header("X-GitHub-Api-Version", "2022-11-28")
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
     if body is not None:
         data = json.dumps(body).encode()
-        req.add_header("Content-Type", "application/json")
+        headers["Content-Type"] = "application/json"
     else:
         data = None
 
     backoff = INITIAL_BACKOFF_SECONDS
     for attempt in range(1, max_attempts + 1):
         try:
-            # URL is built from a GitHub API constant; the file:// risk does not apply.
-            with urllib.request.urlopen(req, data) as r:  # nosemgrep
+            with urlopen_https(url, data, headers=headers, method=method) as r:
                 response_body = r.read()
                 return json.loads(response_body) if response_body else None
         except (urllib.error.HTTPError, urllib.error.URLError) as exc:

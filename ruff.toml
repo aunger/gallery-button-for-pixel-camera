@@ -8,8 +8,9 @@ target-version = "py311"
 [lint]
 # Chosen explicitly (#1202), so a ruff bump does not change which rules run, short
 # of a new rule under one of the four prefixes: ruff 0.15's default set ("E4",
-# "E7", "E9", "F") plus ruff 0.17.0's default set, less the rules below. 17 of the
-# 0.15 rules are not in ruff 0.17.0's default; they stay selected here.
+# "E7", "E9", "F") plus ruff 0.17.0's default set, less the rejected rules below,
+# plus the rules listed below as selected beyond the defaults. 17 of the 0.15
+# rules are not in ruff 0.17.0's default; they stay selected here.
 #
 # When a ruff bump removes a listed rule, every ruff run, `ruff format` included,
 # stops with "Rule `X` was removed and cannot be selected", so the bump PR's
@@ -30,13 +31,53 @@ target-version = "py311"
 #   S110 S112      they fire only on handlers that BLE001 or E722 already flag.
 #   TRY004         these scripts raise RuntimeError, by contract, when an API
 #                  response has the wrong shape.
+#
+# Selected beyond the defaults, in #1340:
+#   S602 S604 S605 a subprocess, other call or os function that runs a command
+#                  through a shell.
+#   S607           a process started from a bare executable name, which PATH
+#                  decides.
+#
+# Not a default, and left unselected after the audit in #1340:
+#   S603           it fires on a subprocess call whose argv is not a list of
+#                  literals (sys.executable aside), so once each site is judged
+#                  safe only a suppression would silence it. Audited with ruff
+#                  0.17.1 at cf14957: every call site passes an argv list without
+#                  shell=True, built from literals and trusted paths
+#                  (sys.executable, a path the script derives from __file__ or
+#                  creates in a TemporaryDirectory, and check_green_feed.py's
+#                  --adb, which build.yml sets to the SDK's adb).
+#
+# Selected beyond the defaults, in #1341: every other S rule that is stable in
+# ruff 0.17.1. Measured with ruff 0.17.1 at 5e4aa7f, these reported nothing
+# except:
+#   S101           one assert, now an explicit raise.
+#   S310           nine urlopen and Request calls in scripts, and two in tests,
+#                  whose URL is not a literal https one. The scripts' calls go
+#                  through scripts/ci/prs-and-issues/https_only.py, which
+#                  refuses any other scheme; ci_monitor.py carries its own copy
+#                  of the check, so it stays a single file. The test calls use
+#                  the helper or a literal https URL.
+#   S106 S107 S108 in tests only: string arguments whose names suggest a
+#                  password (token="tok", include_pass=...) and a fixed /tmp
+#                  path. per-file-ignores below exempts test files from them.
+#
+# Not selected, in #1341:
+#   S320 S410      removed from ruff, so selecting either stops every ruff run.
+#   S401 to S409, S411 to S413, S415
+#                  preview rules in ruff 0.17.1. This file does not enable
+#                  preview, so ruff would skip them with a warning.
 select = [
     "E4", "E7", "E9", "F",
     "YTT101", "YTT102", "YTT103", "YTT201", "YTT202", "YTT203", "YTT204", "YTT301", "YTT302",
     "YTT303",
     "ASYNC100", "ASYNC105", "ASYNC115", "ASYNC116", "ASYNC210", "ASYNC220", "ASYNC221", "ASYNC222",
     "ASYNC230", "ASYNC251",
-    "S102",
+    "S101", "S102", "S103", "S104", "S105", "S106", "S107", "S108", "S113", "S201", "S202", "S301",
+    "S302", "S303", "S304", "S305", "S306", "S307", "S308", "S310", "S311", "S312", "S313", "S314",
+    "S315", "S316", "S317", "S318", "S319", "S321", "S323", "S324", "S501", "S502", "S503", "S504",
+    "S505", "S506", "S507", "S508", "S509", "S601", "S602", "S604", "S605", "S606", "S607", "S608",
+    "S609", "S610", "S611", "S612", "S701", "S702", "S704",
     "BLE001",
     "B002", "B003", "B004", "B005", "B006", "B008", "B009", "B010", "B012", "B013", "B014", "B015",
     "B016", "B017", "B018", "B019", "B020", "B021", "B022", "B023", "B025", "B026", "B029", "B030",
@@ -96,3 +137,8 @@ select = [
     "RUF053", "RUF057", "RUF058", "RUF059", "RUF063", "RUF068", "RUF100", "RUF101", "RUF200",
     "TRY002", "TRY201", "TRY203", "TRY401",
 ]
+
+[lint.per-file-ignores]
+# Tests pass made-up values such as token="tok" and fixed paths such as
+# /tmp/event.json, which are not secrets or real temporary files (#1341).
+"**/test_*.py" = ["S106", "S107", "S108"]

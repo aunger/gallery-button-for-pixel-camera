@@ -66,7 +66,7 @@ class TestGraphqlQuery(unittest.TestCase):
         response = self._make_response(json.dumps(payload).encode())
         captured = {}
 
-        def fake_urlopen(req):
+        def fake_urlopen(req, *_args, **_kwargs):
             captured["request"] = req
             return response
 

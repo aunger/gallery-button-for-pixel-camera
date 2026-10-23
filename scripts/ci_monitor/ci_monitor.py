@@ -854,6 +854,20 @@ class _StripAuthOnCrossHostRedirect(urllib.request.HTTPRedirectHandler):
 _RAW_OPENER = urllib.request.build_opener(_StripAuthOnCrossHostRedirect)
 
 
+def _after_https_scheme(url):
+    """Return `url` without its `https://` prefix, refusing any other scheme.
+
+    `urllib.request` opens `file:` and `ftp:` URLs as readily as `https:` ones,
+    and `raw=True` opens an artifact URL taken from an API response. This is a
+    copy of the check in scripts/ci/prs-and-issues/https_only.py, kept here so
+    the script stays a single file that can be copied into another repository.
+    """
+    scheme, separator, rest = url.partition("://")
+    if not separator or scheme.lower() != "https" or not rest:
+        raise ValueError("refusing to open %r: only https URLs are allowed" % url)
+    return rest
+
+
 def _request(url, token, raw=False):
     """Perform an authenticated GET. Returns parsed JSON (or raw bytes if raw).
 
@@ -867,18 +881,20 @@ def _request(url, token, raw=False):
     cross-host redirect (see `_StripAuthOnCrossHostRedirect`); the JSON API
     path never redirects off `api.github.com`, so it keeps the plain
     `urllib.request.urlopen` call.
+
+    Raises ValueError, before opening anything, for a URL that is not https.
+    Each Request is built in the call that opens it, from a URL that starts
+    with a literal "https://", because that is what ruff's S310 accepts.
     """
     _request.last_error = None
-    req = urllib.request.Request(url)
-    req.add_header("Authorization", "Bearer %s" % token)
-    req.add_header("Accept", "application/vnd.github+json")
+    https_url = "https://" + _after_https_scheme(url)
+    headers = {"Authorization": "Bearer %s" % token, "Accept": "application/vnd.github+json"}
     try:
-        # URL is built from a GitHub API constant; the file:// risk does not apply.
         if raw:
-            with _RAW_OPENER.open(req) as resp:  # nosemgrep
+            with _RAW_OPENER.open(urllib.request.Request(https_url, headers=headers)) as resp:
                 data = resp.read()
         else:
-            with urllib.request.urlopen(req) as resp:  # nosemgrep
+            with urllib.request.urlopen(urllib.request.Request(https_url, headers=headers)) as resp:
                 data = resp.read()
     except (urllib.error.URLError, OSError) as e:
         _request.last_error = e

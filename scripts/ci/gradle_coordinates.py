@@ -12,8 +12,12 @@ never fetches one, needs nothing beyond PyYAML.
 import glob
 import os
 import re
+import sys
 import urllib.error
-import urllib.request
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "prs-and-issues"))
+
+from https_only import urlopen_https
 
 # Each entry is matched against the start of "group:artifact", because an
 # artifact name says nothing about the host:
@@ -179,9 +183,8 @@ def google_maven_artifacts(group, timeout=30):
     raises the XML parser's error.
     """
     try:
-        # The URL is built from GOOGLE_MAVEN_URL; the file:// risk does not apply.
         url = group_index_url(group)
-        with urllib.request.urlopen(url, timeout=timeout) as response:  # nosemgrep
+        with urlopen_https(url, timeout=timeout) as response:
             return parse_group_index(response.read())
     except urllib.error.HTTPError as err:
         if err.code == 404:

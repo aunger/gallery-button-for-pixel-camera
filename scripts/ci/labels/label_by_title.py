@@ -38,7 +38,10 @@ import os
 import re
 import sys
 import urllib.error
-import urllib.request
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "prs-and-issues"))
+
+from https_only import urlopen_https
 
 # ---------------------------------------------------------------------------
 # Label rules
@@ -152,17 +155,17 @@ def gh_api(path: str, token: str, method: str = "GET", body: object = None) -> o
     failure so callers can handle errors explicitly.
     """
     url = f"https://api.github.com/{path}"
-    req = urllib.request.Request(url, method=method)
-    req.add_header("Authorization", f"Bearer {token}")
-    req.add_header("Accept", "application/vnd.github+json")
-    req.add_header("X-GitHub-Api-Version", "2022-11-28")
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
     if body is not None:
         data = json.dumps(body).encode()
-        req.add_header("Content-Type", "application/json")
+        headers["Content-Type"] = "application/json"
     else:
         data = None
-    # URL is built from a GitHub API constant; the file:// risk does not apply.
-    with urllib.request.urlopen(req, data) as r:  # nosemgrep
+    with urlopen_https(url, data, headers=headers, method=method) as r:
         response_body = r.read()
         return json.loads(response_body) if response_body else None
 

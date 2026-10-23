@@ -60,9 +60,9 @@ The rule enforced here
     `security-events`, must pin the `ref:` of every `actions/checkout` step to
     a ref the pull request does not control.
 
-`security-events: write` is the one exemption, because codeql.yml and
-semgrep.yml exist precisely to analyze the pull request's code and have to
-check out the merge ref to do it.
+`security-events: write` is the one exemption, because codeql.yml exists
+precisely to analyze the pull request's code and has to check out the merge
+ref to do it.
 `dependabot-verification-metadata-regen.yml` also checks out
 `pull_request.head.sha` on purpose and needs no exemption: it holds
 `contents: read` only, which is the correct shape for running untrusted code.
@@ -293,8 +293,8 @@ jobs:
                 self.assertIn(scope, found[0])
 
     def test_security_events_write_is_exempt(self):
-        # codeql.yml and semgrep.yml exist to analyze the pull request's code
-        # and must check out the merge ref to do it.
+        # codeql.yml exists to analyze the pull request's code and must check
+        # out the merge ref to do it.
         analyzer = self._with_permissions(
             "permissions:\n  contents: read\n  security-events: write"
         )

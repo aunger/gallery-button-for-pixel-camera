@@ -1068,7 +1068,7 @@ class TestRedirect(unittest.TestCase):
         response and a write would report success having written nothing.
         """
         self.assertTrue(any(isinstance(h, lgi._NoRedirect) for h in lgi._OPENER.handlers))
-        request = urllib.request.Request(f"{lgi.API_ROOT}/repos/o/r/issues/1")
+        request = lgi.https_request(f"{lgi.API_ROOT}/repos/o/r/issues/1")
         with self.assertRaises(urllib.error.HTTPError) as caught:
             lgi._OPENER.error(
                 "http",
@@ -1257,7 +1257,7 @@ class TestRelations(unittest.TestCase):
 class TestStandardLibraryOnly(unittest.TestCase):
     """The docstring promises standard library only; nothing enforced it."""
 
-    ALLOWED_NON_STDLIB = frozenset({"github_headers"})
+    ALLOWED_NON_STDLIB = frozenset({"github_headers", "https_only"})
 
     def test_no_third_party_imports(self):
         module_path = os.path.join(os.path.dirname(__file__), "link_gh_issues.py")

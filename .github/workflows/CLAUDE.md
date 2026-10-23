@@ -79,7 +79,7 @@ Today that is inert: GitHub hands a fork's `pull_request` run a read-only `GITHU
 It stops being inert if "Send write tokens to workflows from fork pull requests" is ever enabled.
 The jobs holding write scopes here act only through the API, on titles, labels, comment bodies and downloaded artifacts, so none of them needs pull request file contents.
 
-`security-events: write` is the one exemption, because codeql.yml and semgrep.yml exist to analyze the pull request's code and must check out the merge ref to do it.
+`security-events: write` is the one exemption, because codeql.yml exists to analyze the pull request's code and must check out the merge ref to do it.
 Every other write scope counts, including `contents: write`, which over pull-request-controlled code is a full compromise.
 
 The `|| github.sha` half covers the events that carry no pull request context (`issues`, `issue_comment`, `push`, `workflow_dispatch`).

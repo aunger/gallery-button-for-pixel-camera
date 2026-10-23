@@ -108,6 +108,7 @@ sys.path.insert(
 )
 
 from github_headers import github_headers
+from https_only import https_request
 
 API_ROOT = "https://api.github.com"
 
@@ -323,12 +324,9 @@ def api(method: str, path: str, token: str, body: dict | None = None) -> tuple[i
 
     attempts = 2 if method in IDEMPOTENT_METHODS else 1
     for attempt in range(attempts):
-        request = urllib.request.Request(url, data=data, headers=headers, method=method)
+        request = https_request(url, data=data, headers=headers, method=method)
         try:
-            # URL is built from the API_ROOT constant; the file:// risk does not apply.
-            with _OPENER.open(  # nosemgrep
-                request, timeout=REQUEST_TIMEOUT_SECONDS
-            ) as response:
+            with _OPENER.open(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
                 raw = response.read().decode("utf-8", "replace")
                 return response.status, _parse(raw, response.status)
         except urllib.error.HTTPError as error:
