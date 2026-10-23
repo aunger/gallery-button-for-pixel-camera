@@ -29,7 +29,15 @@ _OTHER_SHA = "b" * 40
 
 
 # The start of the line main() prints for each PR that holds the merge.
-_HELD_THIS_PR = "On hold: This PR carried a blocking label when this run read its labels: "
+def _held_trigger(number: int) -> str:
+    """The hold line's prefix for the PR whose event fired the run."""
+    return (
+        f"On hold: PR #{number}, whose event started this run, carried a blocking label"
+        " when this run read its labels: "
+    )
+
+
+_HELD_TRIGGER_808 = _held_trigger(808)
 _HELD_SIBLING_808 = (
     "On hold: PR #808, which shares this head commit, carried a blocking label"
     " when this run read its labels: "
@@ -138,7 +146,7 @@ class TestMain(unittest.TestCase):
             [[_pr(808, ["verification needed"])]],
         )
         self.assertEqual(code, 1)
-        self.assertIn(_HELD_THIS_PR + "verification needed", output)
+        self.assertIn(_HELD_TRIGGER_808 + "verification needed", output)
 
     def test_a_hold_is_not_reported_as_an_error_and_names_a_new_event_as_the_remedy(self):
         """Issue #966: a hold is the gate working, and its verdict can outlive its labels.
@@ -177,6 +185,20 @@ class TestMain(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn(_HELD_SIBLING_808 + "verification needed", output)
 
+    def test_the_triggering_pr_is_named_by_number_for_a_sibling_reading_the_log(self):
+        """Issue #1331: the run is stored on the commit, so #832's merge box can show it.
+
+        #808's event fired this run. A line saying "This PR" would read, from
+        #832, as a claim about #832, which carries no blocking label.
+        """
+        code, output = _run_main(
+            _env(pr_number=808, pr_labels=["verification needed"]),
+            [[_pr(808, ["verification needed"]), _pr(832, [])]],
+        )
+        self.assertEqual(code, 1)
+        self.assertIn(_HELD_TRIGGER_808 + "verification needed", output)
+        self.assertNotIn("This PR", output)
+
     def test_a_blocked_pr_at_a_different_commit_does_not_block(self):
         code, output = _run_main(
             _env(pr_labels=[]),
@@ -191,7 +213,7 @@ class TestMain(unittest.TestCase):
             [[_pr(808, ["orchestrating"]), _pr(832, ["changes done"])]],
         )
         self.assertEqual(code, 1)
-        self.assertIn(_HELD_THIS_PR + "changes done", output)
+        self.assertIn(_held_trigger(832) + "changes done", output)
         self.assertIn(_HELD_SIBLING_808 + "orchestrating", output)
 
     def test_several_blocking_labels_on_one_pr_are_reported_in_the_plural(self):
@@ -201,8 +223,8 @@ class TestMain(unittest.TestCase):
         )
         self.assertEqual(code, 1)
         self.assertIn(
-            "On hold: This PR carried blocking labels when this run read its labels:"
-            " changes done, orchestrating",
+            "On hold: PR #808, whose event started this run, carried blocking labels"
+            " when this run read its labels: changes done, orchestrating",
             output,
         )
 
@@ -255,7 +277,7 @@ class TestMain(unittest.TestCase):
         """The verdict is never weaker about the triggering PR than the payload."""
         code, output = _run_main(_env(pr_labels=["changes requested"]), [[]])
         self.assertEqual(code, 1)
-        self.assertIn(_HELD_THIS_PR + "changes requested", output)
+        self.assertIn(_HELD_TRIGGER_808 + "changes requested", output)
 
     def test_listing_labels_block_even_if_the_payload_is_stale(self):
         """A label applied after the event fired still blocks the same PR.
@@ -268,7 +290,7 @@ class TestMain(unittest.TestCase):
         """
         code, output = _run_main(_env(pr_labels=[]), [[_pr(808, ["orchestrating"])]])
         self.assertEqual(code, 1)
-        self.assertIn(_HELD_THIS_PR + "orchestrating", output)
+        self.assertIn(_HELD_TRIGGER_808 + "orchestrating", output)
 
     def test_lists_the_prs_at_the_commit(self):
         _, output = _run_main(
@@ -374,7 +396,7 @@ class TestRemovedLabels(unittest.TestCase):
         env["REMOVED_LABELS"] = json.dumps(["verification needed"])
         code, output = _run_main(env, [[_pr(808, [])]])
         self.assertEqual(code, 1)
-        self.assertIn(_HELD_THIS_PR + "changes requested", output)
+        self.assertIn(_HELD_TRIGGER_808 + "changes requested", output)
 
     def test_the_listing_still_blocks_a_removed_label_it_carries(self):
         env = _env(pr_labels=["verification needed"])
