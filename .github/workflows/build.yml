@@ -653,8 +653,7 @@ jobs:
           # the two apart. Dumping it only in the failure branch discarded that
           # evidence on every passing run, so always tee it to a file and upload it.
           echo "=== LOGCAT (since test start) ==="
-          "$ADB" logcat -d -T "$LOGCAT_SINCE" | \
-            bash scripts/ci/test-support/filter_logcat.sh | tee results/e2e-overlay-logcat.txt
+          bash scripts/ci/test-support/dump_logcat.sh "$ADB" "$LOGCAT_SINCE" results/e2e-overlay-logcat.txt
 
       - name: Pull PixelCameraOverlayE2ETest video on failure
         # Only pull and upload the recording when the overlay E2E suite failed (issue #520).
@@ -717,8 +716,7 @@ jobs:
           else
             echo "outcome=failure" >> "$GITHUB_OUTPUT"
             echo "=== LOGCAT (since test start) ==="
-            "$ADB" logcat -d -T "$LOGCAT_SINCE" | \
-              bash scripts/ci/test-support/filter_logcat.sh
+            bash scripts/ci/test-support/dump_logcat.sh "$ADB" "$LOGCAT_SINCE"
           fi
           # Stop screenrecord cleanly so the moov atom is written and the MP4 is playable.
           echo "  stopping screenrecord (gallery suite)"
@@ -801,8 +799,7 @@ jobs:
           else
             echo "outcome=failure" >> "$GITHUB_OUTPUT"
             echo "=== LOGCAT (since test start) ==="
-            "$ADB" logcat -d -T "$LOGCAT_SINCE" | \
-              bash scripts/ci/test-support/filter_logcat.sh
+            bash scripts/ci/test-support/dump_logcat.sh "$ADB" "$LOGCAT_SINCE"
           fi
           # Stop screenrecord cleanly so the moov atom is written and the MP4 is playable.
           echo "  stopping screenrecord (permissions-granted suite)"
@@ -875,8 +872,7 @@ jobs:
           else
             echo "outcome=failure" >> "$GITHUB_OUTPUT"
             echo "=== LOGCAT (since test start) ==="
-            "$ADB" logcat -d -T "$LOGCAT_SINCE" | \
-              bash scripts/ci/test-support/filter_logcat.sh
+            bash scripts/ci/test-support/dump_logcat.sh "$ADB" "$LOGCAT_SINCE"
           fi
           # Stop screenrecord cleanly so the moov atom is written and the MP4 is playable.
           echo "  stopping screenrecord (permissions-denied suite)"
@@ -960,8 +956,7 @@ jobs:
           else
             echo "outcome=failure" >> "$GITHUB_OUTPUT"
             echo "=== LOGCAT (since test start) ==="
-            "$ADB" logcat -d -T "$LOGCAT_SINCE" | \
-              bash scripts/ci/test-support/filter_logcat.sh
+            bash scripts/ci/test-support/dump_logcat.sh "$ADB" "$LOGCAT_SINCE"
           fi
           # Stop screenrecord cleanly so the moov atom is written and the MP4 is playable.
           echo "  stopping screenrecord (setup-activity-granted suite)"
@@ -1031,8 +1026,7 @@ jobs:
           else
             echo "outcome=failure" >> "$GITHUB_OUTPUT"
             echo "=== LOGCAT (since test start) ==="
-            "$ADB" logcat -d -T "$LOGCAT_SINCE" | \
-              bash scripts/ci/test-support/filter_logcat.sh
+            bash scripts/ci/test-support/dump_logcat.sh "$ADB" "$LOGCAT_SINCE"
           fi
           # Stop screenrecord cleanly so the moov atom is written and the MP4 is playable.
           echo "  stopping screenrecord (setup-activity-denied suite)"
@@ -1157,7 +1151,7 @@ jobs:
               # a genuine test failure, not a process restart. Fail the build.
               echo "outcome=failure" >> "$GITHUB_OUTPUT"
               echo "=== LOGCAT (since test start) ==="
-              "$ADB" logcat -d -T "$LOGCAT_SINCE" | bash scripts/ci/test-support/filter_logcat.sh
+              bash scripts/ci/test-support/dump_logcat.sh "$ADB" "$LOGCAT_SINCE"
             elif echo "$GRANT_LINE" | grep -q 'granted=true'; then
               # No terminal marker was emitted, so the instrumentation was torn down before it
               # could report--consistent with the media grant restarting com.gb4pc mid-test--
@@ -1169,7 +1163,7 @@ jobs:
               echo "         com.gb4pc process (pid before='${PID_BEFORE:-<none>}',"
               echo "         after='${PID_AFTER:-<none>}'), but READ_MEDIA_IMAGES is now granted."
               echo "=== LOGCAT (since test start) ==="
-              "$ADB" logcat -d -T "$LOGCAT_SINCE" | bash scripts/ci/test-support/filter_logcat.sh
+              bash scripts/ci/test-support/dump_logcat.sh "$ADB" "$LOGCAT_SINCE"
 
               # A confirmed grant alone does not establish that setup progress survived the
               # restart: an unrelated regression that happens to crash com.gb4pc right after
@@ -1254,7 +1248,7 @@ jobs:
               # real failure (e.g. the dialog never appeared, or the grant did not land).
               echo "outcome=failure" >> "$GITHUB_OUTPUT"
               echo "=== LOGCAT (since test start) ==="
-              "$ADB" logcat -d -T "$LOGCAT_SINCE" | bash scripts/ci/test-support/filter_logcat.sh
+              bash scripts/ci/test-support/dump_logcat.sh "$ADB" "$LOGCAT_SINCE"
             fi
           fi
           # The grant-poll retry loop's diagnostic (issue #581) logs via the GB4PC_E2E tag only
@@ -1376,7 +1370,7 @@ jobs:
               echo "         permission before the test can pass."
             fi
             echo "=== LOGCAT (since test start) ==="
-            "$ADB" logcat -d -T "$LOGCAT_SINCE" | bash scripts/ci/test-support/filter_logcat.sh
+            bash scripts/ci/test-support/dump_logcat.sh "$ADB" "$LOGCAT_SINCE"
           fi
 
       - name: Restore media permission state after PartialAccessPhotoPickerE2ETest
