@@ -30,15 +30,16 @@ jobs:
     if: github.actor != 'github-actions[bot]'
 
     steps:
-      # TRUSTED_REF is a ref the pull request does not control: this job holds
-      # write scopes and runs a script it downloads (issue #882).
-      # The fallback covers this workflow's non-pull-request events. Rule,
+      # TRUSTED_REF is the default branch, which a pull request does not
+      # control: this job holds write scopes and runs a script it downloads
+      # (issue #882). The pull request's base is not used, because a stacked
+      # pull request's base is another pull request's head branch. Rule,
       # rationale and limits: scripts/ci/test_privileged_workflow_checkouts.py,
       # which inspects only actions/checkout steps and so does not check this.
       - name: Strip session-URL bylines
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TRUSTED_REF: ${{ github.event.pull_request.base.sha || github.sha }}
+          TRUSTED_REF: ${{ github.event.repository.default_branch }}
         run: |
           mkdir -p "$RUNNER_TEMP/strip"
           curl -fsS --parallel --retry 2 \
