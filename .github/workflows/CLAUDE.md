@@ -116,3 +116,13 @@ Relatedly, a pull request that renames or moves one of these scripts *and* updat
 Land the rename separately, or accept one red job on it.
 
 `scripts/ci/test_privileged_workflow_checkouts.py` enforces the rule over every workflow, and its docstring carries the full rationale and the guard's own limits (among them that it only inspects `actions/checkout` steps, so `gh pr checkout` or a bare `git fetch` would slip past).
+
+### A job that downloads its script instead
+
+`strip-session-bylines.yml` has no `actions/checkout` step.
+It downloads `strip_session_bylines.py` and the modules that script imports from `raw.githubusercontent.com`, and `TRUSTED_REF` is the repository's default branch for every event.
+The pull request's base is not used, because a stacked pull request's base is another pull request's head branch, so the base would let a pull request choose the script its own job runs.
+The checkout guard above does not see this job, so `scripts/ci/test_strip_session_bylines_workflow.py` pins it: no checkout step, the `TRUSTED_REF` value, no `${{ }}` expression in the script, and a download list that matches the script's imports.
+
+The cost described above applies here too, and more simply: the script that runs is always the default branch's, so an edit to it is invisible to the pull request that makes it.
+A new import in `strip_session_bylines.py` has to be added to the download list in the same pull request, and the guard fails until it is.
