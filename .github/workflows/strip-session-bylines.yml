@@ -33,9 +33,10 @@ jobs:
       # TRUSTED_REF is the default branch, which a pull request does not
       # control: this job holds write scopes and runs a script it downloads
       # (issue #882). The pull request's base is not used, because a stacked
-      # pull request's base is another pull request's head branch. Rule,
-      # rationale and limits: scripts/ci/test_privileged_workflow_checkouts.py,
-      # which inspects only actions/checkout steps and so does not check this.
+      # pull request's base is another pull request's head branch. The rule
+      # is scripts/ci/test_privileged_workflow_checkouts.py's; it inspects
+      # only actions/checkout steps, so this job is pinned by
+      # scripts/ci/test_strip_session_bylines_workflow.py.
       - name: Strip session-URL bylines
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
