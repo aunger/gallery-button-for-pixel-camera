@@ -30,18 +30,18 @@ jobs:
     if: github.actor != 'github-actions[bot]'
 
     steps:
-      # Pinned to a ref the pull request does not control: this job holds
-      # write scopes and runs a script out of this checkout (issue #882).
+      # TRUSTED_REF is a ref the pull request does not control: this job holds
+      # write scopes and runs a script it downloads (issue #882).
       # The fallback covers this workflow's non-pull-request events. Rule,
-      # rationale and limits: scripts/ci/test_privileged_workflow_checkouts.py.
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event.pull_request.base.sha || github.sha }}
-
+      # rationale and limits: scripts/ci/test_privileged_workflow_checkouts.py,
+      # which inspects only actions/checkout steps and so does not check this.
       - name: Strip session-URL bylines
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_EVENT_NAME: ${{ github.event_name }}
-          GITHUB_EVENT_PATH: ${{ github.event_path }}
-        run: python3 scripts/ci/prs-and-issues/strip_session_bylines.py
+          TRUSTED_REF: ${{ github.event.pull_request.base.sha || github.sha }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/strip"
+          curl -fsS --parallel --retry 2 \
+            --output-dir "$RUNNER_TEMP/strip" \
+            -O "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$TRUSTED_REF/scripts/ci/prs-and-issues/{strip_session_bylines,github_headers,session_bylines}.py"
+          python3 "$RUNNER_TEMP/strip/strip_session_bylines.py"
