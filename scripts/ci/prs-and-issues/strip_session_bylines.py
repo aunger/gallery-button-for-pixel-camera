@@ -27,10 +27,12 @@ which handles five event types:
   - pull_request_review_comment [created, edited]: PR diff-line comments
   - pull_request_review [submitted]:               PR review body
 
-Usage (from the workflow shell step):
-    python3 scripts/ci/prs-and-issues/strip_session_bylines.py
+Usage (from the workflow shell step, which downloads this script and the
+modules it imports into one directory):
+    python3 "$RUNNER_TEMP/strip/strip_session_bylines.py"
 
-Environment variables (set by the workflow):
+Environment variables (GITHUB_TOKEN is set by the workflow; the runner sets
+the other three):
     GITHUB_TOKEN          GitHub token with issues:write and pull-requests:write.
     GITHUB_REPOSITORY     "owner/repo".
     GITHUB_EVENT_NAME     One of: issues, issue_comment, pull_request,
