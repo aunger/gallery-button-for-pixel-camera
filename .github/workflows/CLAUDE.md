@@ -122,7 +122,7 @@ Land the rename separately, or accept one red job on it.
 `strip-session-bylines.yml` has no `actions/checkout` step.
 It downloads `strip_session_bylines.py` and the modules that script imports from `raw.githubusercontent.com`, by the same commit the checkout-based jobs above pin: `TRUSTED_REF` is `${{ github.event.pull_request.base.sha || github.sha }}`.
 A commit rather than a branch name means the files always come from one commit; the raw CDN caches each file for a few minutes, so after a push a branch name could serve them from different commits.
-The checkout guard above does not see this job, so `scripts/ci/test_strip_session_bylines_workflow.py` pins it: no checkout step, a `TRUSTED_REF` from that guard's `ACCEPTED_REFS`, no `${{ }}` expression in the script, and a download list that matches the script's imports.
+The checkout guard above does not see this job, so `scripts/ci/test_strip_session_bylines_workflow.py` pins it: no checkout step, a single `run:` step whose `TRUSTED_REF` is one of that guard's `ACCEPTED_REFS`, and a script with no `${{ }}` expression, no assignment to `TRUSTED_REF` or `GITHUB_REPOSITORY`, and exactly one `https://` URL, which points at `scripts/ci/prs-and-issues/` under `$GITHUB_REPOSITORY/$TRUSTED_REF` and names the modules the script imports.
 
 The cost described above applies here too: on a pull request's events the files come from its base commit, so an edit to the script is invisible to the pull request that makes it.
 A new import in `strip_session_bylines.py` has to be added to the download list in the same pull request, and the guard fails until it is.

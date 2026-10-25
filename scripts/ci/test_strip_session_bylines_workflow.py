@@ -19,18 +19,24 @@ minutes, so after a push the files could come from different commits.
 What this pins, for the job `strip-bylines`:
 
 - It has no `actions/checkout` step.
-- Exactly one step downloads from `raw.githubusercontent.com`, and its
-  `TRUSTED_REF` is one of the checkout guard's ACCEPTED_REFS.
-- The step's script contains no `${{ }}` expression.
+- Exactly one step has a `run:` script, and its `TRUSTED_REF` is one of the
+  checkout guard's ACCEPTED_REFS.
+- The script contains no `${{ }}` expression.
   A context value spliced into shell text is a script injection; values reach
   it through `env:` instead.
-- The URL is `$GITHUB_REPOSITORY/$TRUSTED_REF/scripts/ci/prs-and-issues/`.
+- The script assigns neither `TRUSTED_REF` nor `GITHUB_REPOSITORY`, plainly or
+  through `export` and the like, so the URL is built from the values the step
+  was given.
+- The script contains exactly one `https://` URL, and it starts with
+  `https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$TRUSTED_REF/scripts/ci/prs-and-issues/`.
 - The downloaded files are exactly `strip_session_bylines.py` and the local
   modules it imports, directly or through each other.
   A module added to the script without being added to the download list would
   fail the job with an ImportError that only a real event shows.
 
-What it does not pin: the workflow file itself comes from the pull request's
+What it does not pin: a variable can be set without an `=` (`read`,
+`printf -v`), and the script is matched as text, not parsed as shell.
+More fundamentally, the workflow file itself comes from the pull request's
 merge ref on `pull_request` events, so a pull request can edit this job and
 this guard together.
 That edit would appear in the workflow diff, which is all the pin ever bought;
@@ -52,6 +58,11 @@ SCRIPT_DIR = "scripts/ci/prs-and-issues"
 ENTRY_POINT = "strip_session_bylines"
 JOB = "strip-bylines"
 DOWNLOAD_HOST = "raw.githubusercontent.com"
+URL = re.compile(r"""https://[^\s"']+""")
+# A shell assignment to a variable the URL is built from, bare or after a
+# builtin such as `export`. The lookbehind keeps an expansion such as
+# `$TRUSTED_REF` or `${TRUSTED_REF}` from matching.
+REASSIGNMENT = re.compile(r"(?<![\w${])(TRUSTED_REF|GITHUB_REPOSITORY)\+?=")
 
 
 def local_modules(entry: str, directory: str) -> set[str]:
@@ -95,13 +106,11 @@ def problems(workflow: dict, directory: str) -> list[str]:
     if checkout_refs(job):
         found.append(f"job {JOB!r} checks out the repository; it must download instead")
 
-    downloads = [s for s in steps if isinstance(s.get("run"), str) and DOWNLOAD_HOST in s["run"]]
-    if len(downloads) != 1:
-        return found + [
-            f"expected exactly one step downloading from {DOWNLOAD_HOST}, found {len(downloads)}"
-        ]
-    step = downloads[0]
-    run = step["run"]
+    run_steps = [s for s in steps if "run" in s]
+    if len(run_steps) != 1:
+        return found + [f"expected exactly one step with a run: script, found {len(run_steps)}"]
+    step = run_steps[0]
+    run = step["run"] if isinstance(step["run"], str) else ""
 
     ref = (step.get("env") or {}).get("TRUSTED_REF")
     if not isinstance(ref, str) or ref.strip() not in ACCEPTED_REFS:
@@ -110,12 +119,22 @@ def problems(workflow: dict, directory: str) -> list[str]:
         found.append(
             "the download step's script contains a ${{ }} expression; pass values through env:"
         )
+    for name in sorted(set(REASSIGNMENT.findall(run))):
+        found.append(
+            f"the download step's script assigns {name}; the URL must use the step's value"
+        )
 
+    urls = URL.findall(run)
+    if len(urls) != 1:
+        return found + [
+            f"expected exactly one https:// URL in the download step's script, found {len(urls)}"
+        ]
+    url = urls[0]
     prefix = f"https://{DOWNLOAD_HOST}/$GITHUB_REPOSITORY/$TRUSTED_REF/{SCRIPT_DIR}/"
-    if prefix not in run:
+    if not url.startswith(prefix):
         found.append(f"the download URL does not start with {prefix}")
 
-    glob = re.search(r"\{([^}]*)\}\.py", run)
+    glob = re.search(r"\{([^}]*)\}\.py$", url)
     downloaded = set(glob.group(1).split(",")) if glob else set()
     needed = local_modules(ENTRY_POINT, os.path.join(directory, *SCRIPT_DIR.split("/")))
     if downloaded != needed:
@@ -198,7 +217,45 @@ class ProblemDetectionTest(unittest.TestCase):
             "$GITHUB_REPOSITORY/$TRUSTED_REF", "$GITHUB_REPOSITORY/refs/pull/1/head"
         )
         self.assertEqual(1, len(found), found)
-        self.assertIn("URL", found[0])
+        self.assertIn("start with", found[0])
+
+    def test_the_prefix_later_in_the_url_is_reported(self):
+        found = self._problems(
+            '"https://raw.githubusercontent.com/',
+            '"https://example.com/?https://raw.githubusercontent.com/',
+        )
+        self.assertEqual(1, len(found), found)
+        self.assertIn("start with", found[0])
+
+    def test_a_second_url_is_reported(self):
+        found = self._problems(
+            "          python3 ",
+            '          curl -fsS -o "$RUNNER_TEMP/strip/github_headers.py" https://example.com/x.py\n'
+            "          python3 ",
+        )
+        self.assertEqual(1, len(found), found)
+        self.assertIn("exactly one https:// URL", found[0])
+
+    def test_a_second_run_step_is_reported(self):
+        found = self._problems(
+            "      - name: Strip session-URL bylines\n",
+            "      - run: echo hi\n      - name: Strip session-URL bylines\n",
+        )
+        self.assertEqual(1, len(found), found)
+        self.assertIn("run:", found[0])
+
+    def test_a_reassignment_in_the_script_is_reported(self):
+        for line, name in (
+            ("TRUSTED_REF=main", "TRUSTED_REF"),
+            ("export TRUSTED_REF=main", "TRUSTED_REF"),
+            ("GITHUB_REPOSITORY=someone/else", "GITHUB_REPOSITORY"),
+            ("export GITHUB_REPOSITORY=someone/else", "GITHUB_REPOSITORY"),
+            ("declare -x TRUSTED_REF+=x", "TRUSTED_REF"),
+        ):
+            with self.subTest(line=line):
+                found = self._problems("mkdir -p", line + "\n          mkdir -p")
+                self.assertEqual(1, len(found), found)
+                self.assertIn(name, found[0])
 
     def test_a_missing_module_is_reported(self):
         found = self._problems(
@@ -219,9 +276,18 @@ class ProblemDetectionTest(unittest.TestCase):
         found = problems({"jobs": {}}, REPO_ROOT)
         self.assertEqual(1, len(found), found)
 
-    def test_no_download_step_is_reported(self):
-        found = problems({"jobs": {JOB: {"steps": [{"run": "true"}]}}}, REPO_ROOT)
+    def test_no_run_step_is_reported(self):
+        found = problems(
+            {"jobs": {JOB: {"steps": [{"uses": "actions/setup-python@v6"}]}}}, REPO_ROOT
+        )
         self.assertEqual(1, len(found), found)
+        self.assertIn("run:", found[0])
+
+    def test_no_download_step_is_reported(self):
+        step = {"run": "true", "env": {"TRUSTED_REF": min(ACCEPTED_REFS)}}
+        found = problems({"jobs": {JOB: {"steps": [step]}}}, REPO_ROOT)
+        self.assertEqual(1, len(found), found)
+        self.assertIn("exactly one https:// URL", found[0])
 
 
 class LocalModulesTest(unittest.TestCase):
