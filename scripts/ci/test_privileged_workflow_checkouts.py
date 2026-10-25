@@ -7,10 +7,14 @@ script out of that checkout, in a job declaring `issues: write` and
 `pull-requests: write` (issue #882).
 Two jobs in build.yml, `file-issues` and `link-pr-to-ci-summary`, had the same
 shape.
-Each now pins `ref:` to the base branch.
+The label workflows' checkouts and those two jobs' now pin `ref:` to the base
+branch.
 This guard keeps that from being undone by a later edit that quietly restores
 the default checkout, which would break nothing visible and would pass every
 other check in the tree.
+The byline workflow, strip-session-bylines.yml, no longer checks out the
+repository at all: it downloads its script from the same base commit, and
+`test_strip_session_bylines_workflow.py` guards that job instead of this file.
 
 What this achieves, and what it does not
 ----------------------------------------
