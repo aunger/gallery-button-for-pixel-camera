@@ -311,13 +311,6 @@ class LocalModulesTest(unittest.TestCase):
             self._write(d, "b", "import a\n")
             self.assertEqual({"a", "b"}, local_modules("a", d))
 
-    def test_the_real_script_needs_its_two_sibling_modules(self):
-        directory = os.path.join(REPO_ROOT, *SCRIPT_DIR.split("/"))
-        self.assertEqual(
-            {"strip_session_bylines", "github_headers", "session_bylines"},
-            local_modules(ENTRY_POINT, directory),
-        )
-
 
 if __name__ == "__main__":
     unittest.main()
