@@ -126,3 +126,7 @@ The checkout guard above does not see this job, so `scripts/ci/test_strip_sessio
 
 The cost described above applies here too: on a pull request's events the files come from its base commit, so an edit to the script is invisible to the pull request that makes it.
 A new import in `strip_session_bylines.py` has to be added to the download list in the same pull request, and the guard fails until it is.
+
+As with the renames above, a pull request that adds, removes or renames a module of the strip script fails its own strip-bylines job on its `pull_request`, `pull_request_review` and `pull_request_review_comment` events until it merges.
+The workflow file comes from the merge ref and names the new list, while the files come from the base commit: an added or renamed module is not there to download, and a removed one is still imported by the base commit's script.
+Comments on it are `issue_comment` events, which run the default branch's workflow against the default branch's files, and are unaffected.
