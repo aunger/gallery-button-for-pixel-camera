@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Guard: the strip-bylines job downloads its script from the default branch.
+"""Guard: the strip-bylines job downloads its script from a pinned commit.
 
 `.github/workflows/strip-session-bylines.yml` holds `issues: write` and
 `pull-requests: write`, and runs on pull request events.
@@ -10,16 +10,17 @@ with `curl`, and runs the result.
 `test_privileged_workflow_checkouts.py` inspects only `actions/checkout` steps,
 so it says nothing about this job.
 Without this guard, an edit that pointed the download at the pull request's
-base or head would pass every other check in the tree.
-The base is not a safe source either: for a stacked pull request it is another
-pull request's head branch, and the pull request under review would show no
-change to the script it was running.
+head would pass every other check in the tree.
+The job fetches its files by the same commit the checkout-based jobs pin, one
+of that guard's ACCEPTED_REFS, so all of them come from one commit.
+A branch name would not: raw.githubusercontent.com caches each file for a few
+minutes, so after a push the files could come from different commits.
 
 What this pins, for the job `strip-bylines`:
 
 - It has no `actions/checkout` step.
 - Exactly one step downloads from `raw.githubusercontent.com`, and its
-  `TRUSTED_REF` is `${{ github.event.repository.default_branch }}`.
+  `TRUSTED_REF` is one of the checkout guard's ACCEPTED_REFS.
 - The step's script contains no `${{ }}` expression.
   A context value spliced into shell text is a script injection; values reach
   it through `env:` instead.
@@ -43,15 +44,14 @@ import tempfile
 import unittest
 
 import yaml
+from test_privileged_workflow_checkouts import ACCEPTED_REFS, checkout_refs
 from workflow_files import REPO_ROOT, load_workflow
 
 WORKFLOW = os.path.join(REPO_ROOT, ".github", "workflows", "strip-session-bylines.yml")
 SCRIPT_DIR = "scripts/ci/prs-and-issues"
 ENTRY_POINT = "strip_session_bylines"
 JOB = "strip-bylines"
-TRUSTED_REF = "${{ github.event.repository.default_branch }}"
 DOWNLOAD_HOST = "raw.githubusercontent.com"
-CHECKOUT_ACTION = "actions/checkout"
 
 
 def local_modules(entry: str, directory: str) -> set[str]:
@@ -92,10 +92,8 @@ def problems(workflow: dict, directory: str) -> list[str]:
     steps = job.get("steps") or []
 
     found: list[str] = []
-    for step in steps:
-        uses = step.get("uses")
-        if isinstance(uses, str) and uses.split("@", 1)[0] == CHECKOUT_ACTION:
-            found.append(f"job {JOB!r} checks out the repository; it must download instead")
+    if checkout_refs(job):
+        found.append(f"job {JOB!r} checks out the repository; it must download instead")
 
     downloads = [s for s in steps if isinstance(s.get("run"), str) and DOWNLOAD_HOST in s["run"]]
     if len(downloads) != 1:
@@ -106,8 +104,8 @@ def problems(workflow: dict, directory: str) -> list[str]:
     run = step["run"]
 
     ref = (step.get("env") or {}).get("TRUSTED_REF")
-    if not isinstance(ref, str) or ref.strip() != TRUSTED_REF:
-        found.append(f"TRUSTED_REF is {ref!r}; it must be {TRUSTED_REF!r}")
+    if not isinstance(ref, str) or ref.strip() not in ACCEPTED_REFS:
+        found.append(f"TRUSTED_REF is {ref!r}; it must be one of {sorted(ACCEPTED_REFS)}")
     if "${{" in run:
         found.append(
             "the download step's script contains a ${{ }} expression; pass values through env:"
@@ -138,7 +136,7 @@ def problems(workflow: dict, directory: str) -> list[str]:
 class StripBylinesWorkflowTest(unittest.TestCase):
     """The real workflow obeys the pin."""
 
-    def test_job_downloads_from_the_default_branch(self):
+    def test_job_downloads_from_a_pinned_commit(self):
         found = problems(load_workflow(WORKFLOW), REPO_ROOT)
         self.assertEqual([], found, "; ".join(found))
 
@@ -153,25 +151,34 @@ class ProblemDetectionTest(unittest.TestCase):
     def setUp(self):
         with open(WORKFLOW, encoding="utf-8") as f:
             self.text = f.read()
+        self.ref = (
+            "TRUSTED_REF: " + load_workflow(WORKFLOW)["jobs"][JOB]["steps"][0]["env"]["TRUSTED_REF"]
+        )
 
     def _problems(self, old: str, new: str) -> list[str]:
         self.assertIn(old, self.text, "the edit would not change the workflow")
         return problems(yaml.safe_load(self.text.replace(old, new, 1)), REPO_ROOT)
 
-    def test_pull_request_base_is_reported(self):
+    def test_every_accepted_base_commit_form_passes(self):
+        for ref in sorted(ACCEPTED_REFS):
+            with self.subTest(ref=ref):
+                self.assertEqual([], self._problems(self.ref, "TRUSTED_REF: " + ref))
+
+    def test_the_default_branch_is_reported(self):
         found = self._problems(
-            TRUSTED_REF, "${{ github.event.pull_request.base.sha || github.sha }}"
+            self.ref, "TRUSTED_REF: ${{ github.event.repository.default_branch }}"
         )
         self.assertEqual(1, len(found), found)
         self.assertIn("TRUSTED_REF", found[0])
 
     def test_pull_request_head_is_reported(self):
-        found = self._problems(TRUSTED_REF, "${{ github.event.pull_request.head.sha }}")
+        found = self._problems(self.ref, "TRUSTED_REF: ${{ github.event.pull_request.head.sha }}")
         self.assertEqual(1, len(found), found)
 
     def test_a_branch_name_is_reported(self):
-        found = self._problems(TRUSTED_REF, "main")
+        found = self._problems(self.ref, "TRUSTED_REF: main")
         self.assertEqual(1, len(found), found)
+        self.assertIn("TRUSTED_REF", found[0])
 
     def test_a_checkout_step_is_reported(self):
         found = self._problems(

@@ -30,17 +30,18 @@ jobs:
     if: github.actor != 'github-actions[bot]'
 
     steps:
-      # TRUSTED_REF is the default branch, which a pull request does not
-      # control: this job holds write scopes and runs a script it downloads
-      # (issue #882). The pull request's base is not used, because a stacked
-      # pull request's base is another pull request's head branch. The rule
-      # is scripts/ci/test_privileged_workflow_checkouts.py's; it inspects
-      # only actions/checkout steps, so this job is pinned by
+      # TRUSTED_REF is the commit the checkout-based jobs pin, which the pull
+      # request does not control: this job holds write scopes and runs a
+      # script it downloads (issue #882). The fallback covers this workflow's
+      # non-pull-request events. A commit rather than a branch name keeps
+      # the three files from one commit. The rule is
+      # scripts/ci/test_privileged_workflow_checkouts.py's; it inspects only
+      # actions/checkout steps, so this job is pinned by
       # scripts/ci/test_strip_session_bylines_workflow.py.
       - name: Strip session-URL bylines
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TRUSTED_REF: ${{ github.event.repository.default_branch }}
+          TRUSTED_REF: ${{ github.event.pull_request.base.sha || github.sha }}
         run: |
           mkdir -p "$RUNNER_TEMP/strip"
           curl -fsS --parallel --retry 2 \

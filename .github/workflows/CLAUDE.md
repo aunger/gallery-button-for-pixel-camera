@@ -120,9 +120,9 @@ Land the rename separately, or accept one red job on it.
 ### A job that downloads its script instead
 
 `strip-session-bylines.yml` has no `actions/checkout` step.
-It downloads `strip_session_bylines.py` and the modules that script imports from `raw.githubusercontent.com`, and `TRUSTED_REF` is the repository's default branch for every event.
-The pull request's base is not used, because a stacked pull request's base is another pull request's head branch, so the base would let a pull request choose the script its own job runs.
-The checkout guard above does not see this job, so `scripts/ci/test_strip_session_bylines_workflow.py` pins it: no checkout step, the `TRUSTED_REF` value, no `${{ }}` expression in the script, and a download list that matches the script's imports.
+It downloads `strip_session_bylines.py` and the modules that script imports from `raw.githubusercontent.com`, by the same commit the checkout-based jobs above pin: `TRUSTED_REF` is `${{ github.event.pull_request.base.sha || github.sha }}`.
+A commit rather than a branch name means the files always come from one commit; the raw CDN caches each file for a few minutes, so after a push a branch name could serve them from different commits.
+The checkout guard above does not see this job, so `scripts/ci/test_strip_session_bylines_workflow.py` pins it: no checkout step, a `TRUSTED_REF` from that guard's `ACCEPTED_REFS`, no `${{ }}` expression in the script, and a download list that matches the script's imports.
 
-The cost described above applies here too, and more simply: the script that runs is always the default branch's, so an edit to it is invisible to the pull request that makes it.
+The cost described above applies here too: on a pull request's events the files come from its base commit, so an edit to the script is invisible to the pull request that makes it.
 A new import in `strip_session_bylines.py` has to be added to the download list in the same pull request, and the guard fails until it is.
