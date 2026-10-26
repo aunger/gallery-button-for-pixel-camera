@@ -18,8 +18,11 @@ along with it so no orphaned "---" is left behind.
 If the content is unchanged after stripping, the caller should skip the
 PATCH call.
 
-This module is invoked by the strip-session-bylines GitHub Actions workflow,
-which handles five event types:
+The strip-session-bylines GitHub Actions workflow runs a copy of this module,
+with github_headers.py and session_bylines.py ahead of it, which
+generate_strip_bylines_workflow.py writes into the workflow file.
+Rerun that generator after editing any of the three.
+The workflow handles five event types:
 
   - issues [opened, edited]:                       issue body
   - issue_comment [created, edited]:               comments on issues and PRs
@@ -27,10 +30,10 @@ which handles five event types:
   - pull_request_review_comment [created, edited]: PR diff-line comments
   - pull_request_review [submitted]:               PR review body
 
-Usage (from the workflow shell step):
+Usage (run locally; the workflow runs its generated copy):
     python3 scripts/ci/prs-and-issues/strip_session_bylines.py
 
-Environment variables (set by the workflow):
+Environment variables (the workflow sets GITHUB_TOKEN; the runner sets the rest):
     GITHUB_TOKEN          GitHub token with issues:write and pull-requests:write.
     GITHUB_REPOSITORY     "owner/repo".
     GITHUB_EVENT_NAME     One of: issues, issue_comment, pull_request,

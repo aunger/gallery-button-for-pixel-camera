@@ -108,7 +108,7 @@ The job checks out the base branch, so `main`'s copy of that script is what runs
 Expect the new behavior not to show up on the pull request that introduces it, and do not read that as the change being broken.
 
 This applies to every script a pinned job invokes, not to a fixed list: whatever the jobs named by `scripts/ci/test_privileged_workflow_checkouts.py` execute is subject to it.
-Today that is the entry points of the five label and byline workflows (`administrative-merge-holds.yml` has two, `enforce_mutually_exclusive_labels.py` and `check_blocking_labels.py`) plus `build.yml`'s issue-filing and CI-summary scripts.
+Today that is the entry points of the four label workflows (`administrative-merge-holds.yml` has two, `enforce_mutually_exclusive_labels.py` and `check_blocking_labels.py`) plus `build.yml`'s issue-filing and CI-summary scripts.
 It also reaches past the entry points, because they import each other.
 `label_by_files.py` and `propagate_issue_labels.py` both `import enforce_mutually_exclusive_labels` and `import label_by_title`, so an edit to either of those changes the behavior of two more jobs and is equally invisible until merge.
 
@@ -116,3 +116,11 @@ Relatedly, a pull request that renames or moves one of these scripts *and* updat
 Land the rename separately, or accept one red job on it.
 
 `scripts/ci/test_privileged_workflow_checkouts.py` enforces the rule over every workflow, and its docstring carries the full rationale and the guard's own limits (among them that it only inspects `actions/checkout` steps, so `gh pr checkout` or a bare `git fetch` would slip past).
+
+### A job that runs its script from the workflow file
+
+`strip-session-bylines.yml` has no checkout step.
+Its script runs from the workflow file itself, between `# generated code begins here` and `# generated code ends here`, so the job runs only code the workflow file holds.
+`scripts/ci/prs-and-issues/generate_strip_bylines_workflow.py` writes that region from `github_headers.py`, `session_bylines.py` and `strip_session_bylines.py`.
+Rerun it after editing any of them; `test_generate_strip_bylines_workflow.py` fails while the region is out of date.
+Unlike the checkout-pinned jobs above, a pull request that changes the script runs its own copy on its own `pull_request` and review events.

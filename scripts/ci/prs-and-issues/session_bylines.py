@@ -12,6 +12,9 @@ caller runs inside a Claude Code hook, where a missing third-party package
 would turn a check into a crash.
 
 This module has no `main`; it is imported, not run directly.
+A copy of this module also runs inside
+.github/workflows/strip-session-bylines.yml; rerun
+generate_strip_bylines_workflow.py after editing it.
 """
 
 import re
