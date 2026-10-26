@@ -8,6 +8,8 @@ script out of that checkout, in a job declaring `issues: write` and
 Two jobs in build.yml, `file-issues` and `link-pr-to-ci-summary`, had the same
 shape.
 Each now pins `ref:` to the base branch.
+`strip-session-bylines.yml` has since dropped its checkout and runs its script
+from the workflow file itself.
 This guard keeps that from being undone by a later edit that quietly restores
 the default checkout, which would break nothing visible and would pass every
 other check in the tree.
