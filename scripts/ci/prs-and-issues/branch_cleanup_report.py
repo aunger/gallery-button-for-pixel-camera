@@ -28,7 +28,7 @@ merged pull request carried.
 
 A branch goes under "Keep", whatever the evidence above, when it is the default branch, when
 GitHub reports it protected, when it is the head or base of an open pull request, or when its
-name matches a `--keep` pattern (`fnmatch` syntax, e.g. `test/*`).
+name matches a `--keep` pattern (`fnmatch` syntax, e.g. `release/*`).
 
 A branch that would be deleted, but whose tip commit is newer than `--grace-days`, goes under
 "Review" as `recent` instead.
@@ -67,9 +67,9 @@ Pass `--no-fetch` to reuse what an earlier run fetched.
 
 Usage:
     python3 scripts/ci/prs-and-issues/branch_cleanup_report.py report [--checklist]
-        [--keep 'test/*']
+        [--keep PATTERN]
     python3 scripts/ci/prs-and-issues/branch_cleanup_report.py delete --environment NAME
-        [--keep 'test/*']
+        [--keep PATTERN]
 
 Environment variables:
     GITHUB_REPOSITORY   Owner/repo, unless --repo is given
