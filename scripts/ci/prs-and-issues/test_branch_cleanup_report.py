@@ -9,6 +9,7 @@ carries, and an unmerged branch, fetched into a shallow clone.
 """
 
 import datetime
+import io
 import json
 import os
 import sys
@@ -451,6 +452,16 @@ class TestDeleteCommand(unittest.TestCase):
         with patch("sys.stdout"):
             bcr.main(self.argv(self.choices))
         self.assertIn("- `ok`: not deleted, stale info", self.gh_api.call_args.args[3]["body"])
+
+    def test_each_result_is_logged_as_it_happens(self):
+        self.run_approved.return_value = True
+        logged = []
+        self.delete_branch.side_effect = lambda *args: logged.append(sys.stderr.getvalue())
+        with patch("sys.stdout"), patch("sys.stderr", new_callable=io.StringIO) as stderr:
+            bcr.main(self.argv(self.choices))
+        # `main` sorts first, so its result is already logged when `ok` is deleted.
+        self.assertEqual(["- `main`: not deleted, not offered on the checklist\n"], logged)
+        self.assertTrue(stderr.getvalue().endswith("- `ok`: deleted\n"))
 
 
 class TestReportCommand(unittest.TestCase):

@@ -19,7 +19,9 @@ on:
     - cron: '23 5 * * 1'   # Mondays at 05:23 UTC
   workflow_dispatch:
 
-# A new run rewrites the checklist, so it cancels a run still waiting for approval.
+# A new run rewrites the checklist, so it cancels a run still waiting for approval. It cancels
+# a delete job already running too; that job logs each deletion as it makes it, so the job log
+# still records what a cancelled run deleted.
 concurrency:
   group: branch-cleanup
   cancel-in-progress: true

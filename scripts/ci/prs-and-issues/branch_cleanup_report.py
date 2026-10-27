@@ -567,6 +567,8 @@ def delete(args: argparse.Namespace, token: str) -> int:
         if skip is None:
             skip = delete_branch(args.git_dir, args.remote, name, choices[name]["sha"])
         lines.append(f"- `{name}`: {'deleted' if skip is None else f'not deleted, {skip}'}")
+        # The job log streams as it goes, so it keeps this even if the run is cancelled.
+        print(lines[-1], file=sys.stderr, flush=True)
     summary = "\n".join([f"Run {args.run_id}: {len(plan)} branches ticked.", "", *lines]) + "\n"
     # Printed first, so the job summary records the deletions even if the comment fails.
     print(summary, end="")
