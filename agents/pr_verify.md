@@ -109,7 +109,7 @@ Once every item has been processed and the summary comment is posted, emit exact
 ## Cleanup
 
 If a test PR was used, close it (`mcp__github__update_pull_request` with `state: "closed"`).
-Do not delete any test branch; the closed PR preserves the run history as evidence.
+Do not delete the test branch; deleting branches is outside this role.
 
 ## Boundaries
 
