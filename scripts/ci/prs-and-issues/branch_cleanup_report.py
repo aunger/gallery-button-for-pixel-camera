@@ -4,8 +4,8 @@
 `report` prints a Markdown report and deletes nothing.
 With `--checklist` it also writes the report to a tracking issue as a checklist: every Delete
 branch ticked, every Review branch unticked, Keep branches left out.
-With `--choices-output` it appends the branches it offered on that checklist, with their tips,
-to a file of `key=value` lines such as `$GITHUB_OUTPUT`.
+With `--choices-output` it appends the branches it offered on that checklist, with their tips
+and sections, to a file of `key=value` lines such as `$GITHUB_OUTPUT`.
 `delete` deletes the branches ticked on that issue, out of the ones `report` offered, and is
 meant to run only after a person has approved it; see "Deleting" below.
 .github/workflows/branch-cleanup-report.yml runs both weekly.
@@ -55,6 +55,9 @@ It then sorts every branch afresh, and deletes a ticked branch only when all of 
   Anyone who can edit the issue can add a line to it, so the issue only says which offered
   branches were picked; `--choices` comes from the report job's output, which no one edits.
 - No rule above keeps it now.
+- It still sorts under "Delete", if `report` offered it there.
+  A branch ticked because `report` found it safe to delete is spared once that evidence is gone,
+  as when the branch it shared a tip with was since deleted or force-pushed.
 - Its tip is still the commit `report` offered.
 
 Each deletion is a `git push --force-with-lease` against that commit, so a branch pushed to
@@ -67,9 +70,9 @@ Pass `--no-fetch` to reuse what an earlier run fetched.
 
 Usage:
     python3 scripts/ci/prs-and-issues/branch_cleanup_report.py report [--checklist]
-        [--keep PATTERN]
+        [--choices-output PATH] [--keep PATTERN]
     python3 scripts/ci/prs-and-issues/branch_cleanup_report.py delete --environment NAME
-        [--keep PATTERN]
+        --choices JSON [--keep PATTERN]
 
 Environment variables:
     GITHUB_REPOSITORY   Owner/repo, unless --repo is given
@@ -452,18 +455,22 @@ def ticked(body: str) -> set[str]:
     return found
 
 
-def offered(verdicts: list[Verdict]) -> dict[str, str]:
-    """Return the branches a checklist of *verdicts* offers, each with its tip."""
-    return {v.branch.name: v.branch.sha for v in verdicts if v.section != KEEP}
+def offered(verdicts: list[Verdict]) -> dict[str, dict[str, str]]:
+    """Return the branches a checklist of *verdicts* offers, each with its tip and section."""
+    return {
+        v.branch.name: {"sha": v.branch.sha, "section": v.section}
+        for v in verdicts
+        if v.section != KEEP
+    }
 
 
 def plan_deletions(
-    chosen: set[str], choices: dict[str, str], verdicts: list[Verdict]
+    chosen: set[str], choices: dict[str, dict[str, str]], verdicts: list[Verdict]
 ) -> dict[str, str | None]:
     """Map each chosen branch to why it must not be deleted now, or to None if it may be.
 
-    *choices* is what the checklist offered, by branch, with the tip it saw; *verdicts* is the
-    branches as they stand now.
+    *choices* is what the checklist offered, by branch, with the tip and section it saw;
+    *verdicts* is the branches as they stand now.
     """
     current = {v.branch.name: v for v in verdicts}
     plan: dict[str, str | None] = {}
@@ -475,8 +482,10 @@ def plan_deletions(
             plan[name] = "no longer exists"
         elif v.section == KEEP:
             plan[name] = f"kept: {v.reason}"
-        elif v.branch.sha != choices[name]:
+        elif v.branch.sha != choices[name]["sha"]:
             plan[name] = "tip moved since the checklist was written"
+        elif choices[name]["section"] == DELETE and v.section != DELETE:
+            plan[name] = f"no longer under {DELETE}: {v.reason}"
         else:
             plan[name] = None
     return plan
@@ -532,6 +541,11 @@ def report(args: argparse.Namespace, token: str) -> int:
 
 
 def delete(args: argparse.Namespace, token: str) -> int:
+    try:
+        choices = json.loads(args.choices)
+    except json.JSONDecodeError:
+        print("error: --choices is not the JSON `report --choices-output` wrote", file=sys.stderr)
+        return 1
     if not args.run_id:
         print("error: --run-id or GITHUB_RUN_ID is required", file=sys.stderr)
         return 1
@@ -547,19 +561,19 @@ def delete(args: argparse.Namespace, token: str) -> int:
         print("No open checklist issue; nothing to delete.")
         return 0
     _, _, verdicts = gather(args, token)
-    choices = json.loads(args.choices)
     plan = plan_deletions(ticked(issue.get("body") or ""), choices, verdicts)
     lines = []
     for name, skip in plan.items():
         if skip is None:
-            skip = delete_branch(args.git_dir, args.remote, name, choices[name])
+            skip = delete_branch(args.git_dir, args.remote, name, choices[name]["sha"])
         lines.append(f"- `{name}`: {'deleted' if skip is None else f'not deleted, {skip}'}")
     summary = "\n".join([f"Run {args.run_id}: {len(plan)} branches ticked.", "", *lines]) + "\n"
+    # Printed first, so the job summary records the deletions even if the comment fails.
+    print(summary, end="")
     if plan:
         gh_api(
             f"repos/{args.repo}/issues/{issue['number']}/comments", token, "POST", {"body": summary}
         )
-    print(summary, end="")
     return 0
 
 

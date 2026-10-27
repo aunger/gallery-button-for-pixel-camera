@@ -301,25 +301,46 @@ class TestChecklist(unittest.TestCase):
         self.assertEqual(set(), bcr.ticked("- [x] [extra](https://example.com)\n- [x] extra"))
 
     def test_offers_every_branch_not_kept(self):
-        self.assertEqual({"done": SHA_A, "odd-->name": SHA_B}, bcr.offered(self.verdicts()))
+        self.assertEqual(
+            {
+                "done": {"sha": SHA_A, "section": bcr.DELETE},
+                "odd-->name": {"sha": SHA_B, "section": bcr.REVIEW},
+            },
+            bcr.offered(self.verdicts()),
+        )
 
 
 class TestPlanDeletions(unittest.TestCase):
     def test_each_reason_to_spare_a_ticked_branch(self):
         verdicts = [
             bcr.Verdict(branch("ok", SHA_A), bcr.REVIEW, "unmerged commits"),
+            bcr.Verdict(branch("still-safe", SHA_A), bcr.DELETE, "in default branch"),
             bcr.Verdict(branch("moved", SHA_B), bcr.DELETE, "in default branch"),
             bcr.Verdict(branch("now-open", SHA_A), bcr.KEEP, "head of open #9"),
             bcr.Verdict(branch("inserted", SHA_A), bcr.DELETE, "in default branch"),
+            bcr.Verdict(branch("holder-gone", SHA_A), bcr.REVIEW, "unmerged commits"),
         ]
-        choices = {"ok": SHA_A, "moved": SHA_A, "now-open": SHA_A, "gone": SHA_A}
+
+        def offer(section: str) -> dict[str, str]:
+            return {"sha": SHA_A, "section": section}
+
+        choices = {
+            "ok": offer(bcr.REVIEW),
+            "still-safe": offer(bcr.DELETE),
+            "moved": offer(bcr.DELETE),
+            "now-open": offer(bcr.DELETE),
+            "gone": offer(bcr.DELETE),
+            "holder-gone": offer(bcr.DELETE),
+        }
         self.assertEqual(
             {
                 "gone": "no longer exists",
+                "holder-gone": "no longer under Delete: unmerged commits",
                 "inserted": "not offered on the checklist",
                 "moved": "tip moved since the checklist was written",
                 "now-open": "kept: head of open #9",
                 "ok": None,
+                "still-safe": None,
             },
             bcr.plan_deletions(set(choices) | {"inserted"}, choices, verdicts),
         )
@@ -376,7 +397,7 @@ class TestIssueApi(unittest.TestCase):
 
 
 class TestDeleteCommand(unittest.TestCase):
-    def argv(self, choices: dict[str, str]) -> list[str]:
+    def argv(self, choices: dict[str, dict[str, str]]) -> list[str]:
         return [
             "delete",
             *("--repo", REPO, "--environment", "branch-deletion", "--run-id", "42"),
@@ -406,6 +427,13 @@ class TestDeleteCommand(unittest.TestCase):
             self.assertEqual(1, bcr.main(self.argv(self.choices)))
         self.delete_branch.assert_not_called()
         self.gh_api.assert_not_called()
+
+    def test_unreadable_choices_deletes_nothing(self):
+        self.run_approved.return_value = True
+        with patch("sys.stderr"):
+            self.assertEqual(1, bcr.main([*self.argv(self.choices)[:-1], ""]))
+        self.run_approved.assert_not_called()
+        self.delete_branch.assert_not_called()
 
     def test_approved_run_deletes_ticked_branches_and_reports_on_the_issue(self):
         self.run_approved.return_value = True
@@ -443,7 +471,9 @@ class TestReportCommand(unittest.TestCase):
                 lines = f.read().splitlines()
         self.assertEqual("earlier=1", lines[0])
         key, value = lines[1].split("=", 1)
-        self.assertEqual(("choices", {"ok": SHA_A}), (key, json.loads(value)))
+        self.assertEqual(
+            ("choices", {"ok": {"sha": SHA_A, "section": bcr.DELETE}}), (key, json.loads(value))
+        )
 
 
 class TestDeleteBranch(unittest.TestCase):
