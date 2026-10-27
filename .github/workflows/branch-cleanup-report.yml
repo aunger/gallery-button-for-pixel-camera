@@ -2,13 +2,17 @@ name: Branch Cleanup Report
 
 # The report job sorts every branch into Delete, Review and Keep, writes that to the job
 # summary, and writes a checklist of the Delete and Review branches to a tracking issue.
-# The delete job then waits for approval in the branch-deletion environment, and deletes the
-# branches ticked on the issue at the moment it is approved.
+# The delete job then waits for approval in the branch-deletion environment. Once approved, it
+# sorts every branch again and deletes the ones ticked on the issue at that moment, out of the
+# ones the report job offered. It takes that offer from the report job's output, not from the
+# issue, so a line someone adds to the issue deletes nothing.
 # The rules, and the checks delete makes before deleting anything, are in the docstring of
 # scripts/ci/prs-and-issues/branch_cleanup_report.py.
 #
 # The branch-deletion environment needs required reviewers (Settings > Environments). Without
 # them the delete job starts unapproved, and the script refuses to delete anything.
+# Limit its deployment branches to main too: a manual run can use the copy of this workflow
+# on any branch, and only main's copy has been reviewed.
 
 on:
   schedule:
@@ -31,6 +35,8 @@ jobs:
   report:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      choices: ${{ steps.report.outputs.choices }}
     permissions:
       contents: read
       issues: write
@@ -40,11 +46,12 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Write report and checklist
+        id: report
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: >-
           python3 scripts/ci/prs-and-issues/branch_cleanup_report.py report --checklist
-          --keep "$KEEP_PATTERN" >> "$GITHUB_STEP_SUMMARY"
+          --choices-output "$GITHUB_OUTPUT" --keep "$KEEP_PATTERN" >> "$GITHUB_STEP_SUMMARY"
 
   delete:
     needs: report
@@ -63,6 +70,8 @@ jobs:
       - name: Delete ticked branches
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CHOICES: ${{ needs.report.outputs.choices }}
         run: >-
           python3 scripts/ci/prs-and-issues/branch_cleanup_report.py delete
-          --environment branch-deletion --keep "$KEEP_PATTERN" >> "$GITHUB_STEP_SUMMARY"
+          --environment branch-deletion --choices "$CHOICES" --keep "$KEEP_PATTERN"
+          >> "$GITHUB_STEP_SUMMARY"

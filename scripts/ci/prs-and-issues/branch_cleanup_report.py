@@ -4,8 +4,10 @@
 `report` prints a Markdown report and deletes nothing.
 With `--checklist` it also writes the report to a tracking issue as a checklist: every Delete
 branch ticked, every Review branch unticked, Keep branches left out.
-`delete` deletes the branches ticked on that issue, and is meant to run only after a person
-has approved it; see "Deleting" below.
+With `--choices-output` it appends the branches it offered on that checklist, with their tips,
+to a file of `key=value` lines such as `$GITHUB_OUTPUT`.
+`delete` deletes the branches ticked on that issue, out of the ones `report` offered, and is
+meant to run only after a person has approved it; see "Deleting" below.
 .github/workflows/branch-cleanup-report.yml runs both weekly.
 
 A branch goes under "Delete" only on mechanical evidence that deleting it loses no commit:
@@ -47,8 +49,14 @@ approval for the environment named by `--environment`.
 GitHub creates an environment named in a workflow, without protection rules, the first time a
 job runs in it; until someone adds required reviewers, that job runs unapproved, and this
 check is what stops it from deleting.
-It then sorts the branches afresh and deletes a ticked branch only when it is still not kept by
-any rule above, and its tip is still the commit the checklist recorded.
+It then sorts every branch afresh, and deletes a ticked branch only when all of these hold:
+
+- `report` offered it, as `--choices` says.
+  Anyone who can edit the issue can add a line to it, so the issue only says which offered
+  branches were picked; `--choices` comes from the report job's output, which no one edits.
+- No rule above keeps it now.
+- Its tip is still the commit `report` offered.
+
 Each deletion is a `git push --force-with-lease` against that commit, so a branch pushed to
 after the check is left alone too.
 
@@ -104,11 +112,9 @@ TITLE = "Branch cleanup checklist"
 MARKER = "<!-- branch-cleanup-checklist -->"
 CHECKLIST_AUTHOR = "github-actions[bot]"
 ISSUE_BODY_LIMIT = 65536
-# A checklist item records its branch (percent-encoded, so no name can end the comment) and
-# the tip the report saw, in a comment GitHub does not render.
-ITEM = re.compile(
-    r"^- \[(?P<mark>[ xX])\] .*<!-- branch=(?P<name>\S+) sha=(?P<sha>[0-9a-f]{40}) -->$"
-)
+# A checklist item records its branch, percent-encoded so no name can end the comment, in a
+# comment GitHub does not render.
+ITEM = re.compile(r"^- \[(?P<mark>[ xX])\] .*<!-- branch=(?P<name>\S+) -->$")
 
 
 @dataclass(frozen=True)
@@ -418,7 +424,7 @@ def render_checklist(verdicts: list[Verdict], *, repo: str, run_url: str) -> str
         f"Tick the branches to delete and untick the ones to keep, then approve {approve}.",
         (
             "After approval it deletes each ticked branch that no keep rule protects by then "
-            "and whose tip is still the commit this list recorded."
+            "and whose tip has not moved since this list was written."
         ),
         "The next scheduled run rewrites this list and cancels a run still awaiting approval.",
         "",
@@ -430,33 +436,46 @@ def render_checklist(verdicts: list[Verdict], *, repo: str, run_url: str) -> str
         mark = "x" if section == DELETE else " "
         lines += [
             f"- [{mark}] {branch_link(repo, v.branch.name)}: {v.reason} "
-            f"<!-- branch={urllib.parse.quote(v.branch.name, safe='/')} sha={v.branch.sha} -->"
+            f"<!-- branch={urllib.parse.quote(v.branch.name, safe='/')} -->"
             for v in rows
         ]
     return "\n".join(lines) + "\n"
 
 
-def ticked(body: str) -> dict[str, str]:
-    """Return each ticked branch on the checklist *body*, with the tip the list recorded."""
-    found = {}
+def ticked(body: str) -> set[str]:
+    """Return the branches ticked on the checklist *body*."""
+    found = set()
     for line in body.splitlines():
         m = ITEM.match(line.strip())
         if m and m["mark"] in "xX":
-            found[urllib.parse.unquote(m["name"])] = m["sha"]
+            found.add(urllib.parse.unquote(m["name"]))
     return found
 
 
-def plan_deletions(chosen: dict[str, str], verdicts: list[Verdict]) -> dict[str, str | None]:
-    """Map each chosen branch to why it must not be deleted now, or to None if it may be."""
+def offered(verdicts: list[Verdict]) -> dict[str, str]:
+    """Return the branches a checklist of *verdicts* offers, each with its tip."""
+    return {v.branch.name: v.branch.sha for v in verdicts if v.section != KEEP}
+
+
+def plan_deletions(
+    chosen: set[str], choices: dict[str, str], verdicts: list[Verdict]
+) -> dict[str, str | None]:
+    """Map each chosen branch to why it must not be deleted now, or to None if it may be.
+
+    *choices* is what the checklist offered, by branch, with the tip it saw; *verdicts* is the
+    branches as they stand now.
+    """
     current = {v.branch.name: v for v in verdicts}
     plan: dict[str, str | None] = {}
-    for name, sha in sorted(chosen.items()):
+    for name in sorted(chosen):
         v = current.get(name)
-        if v is None:
+        if name not in choices:
+            plan[name] = "not offered on the checklist"
+        elif v is None:
             plan[name] = "no longer exists"
         elif v.section == KEEP:
             plan[name] = f"kept: {v.reason}"
-        elif v.branch.sha != sha:
+        elif v.branch.sha != choices[name]:
             plan[name] = "tip moved since the checklist was written"
         else:
             plan[name] = None
@@ -505,6 +524,9 @@ def report(args: argparse.Namespace, token: str) -> int:
         body = render_checklist(verdicts, repo=args.repo, run_url=run_url)
         issue = write_checklist_issue(args.repo, token, body)
         out = f"Checklist: [#{issue['number']}]({issue['html_url']})\n\n{out}"
+    if args.choices_output:
+        with open(args.choices_output, "a", encoding="utf-8") as f:
+            f.write(f"choices={json.dumps(offered(verdicts))}\n")
     print(out, end="")
     return 0
 
@@ -525,12 +547,12 @@ def delete(args: argparse.Namespace, token: str) -> int:
         print("No open checklist issue; nothing to delete.")
         return 0
     _, _, verdicts = gather(args, token)
-    chosen = ticked(issue.get("body") or "")
-    plan = plan_deletions(chosen, verdicts)
+    choices = json.loads(args.choices)
+    plan = plan_deletions(ticked(issue.get("body") or ""), choices, verdicts)
     lines = []
     for name, skip in plan.items():
         if skip is None:
-            skip = delete_branch(args.git_dir, args.remote, name, chosen[name])
+            skip = delete_branch(args.git_dir, args.remote, name, choices[name])
         lines.append(f"- `{name}`: {'deleted' if skip is None else f'not deleted, {skip}'}")
     summary = "\n".join([f"Run {args.run_id}: {len(plan)} branches ticked.", "", *lines]) + "\n"
     if plan:
@@ -554,8 +576,12 @@ def main(argv: list[str] | None = None) -> int:
     commands = parser.add_subparsers(dest="command", required=True)
     report_parser = commands.add_parser("report", parents=[common])
     report_parser.add_argument("--checklist", action="store_true")
+    report_parser.add_argument("--choices-output", metavar="PATH")
     delete_parser = commands.add_parser("delete", parents=[common])
     delete_parser.add_argument("--environment", required=True)
+    delete_parser.add_argument(
+        "--choices", required=True, help="the JSON `report --choices-output` wrote"
+    )
     args = parser.parse_args(argv)
     if not args.repo:
         parser.error("--repo or GITHUB_REPOSITORY is required")
