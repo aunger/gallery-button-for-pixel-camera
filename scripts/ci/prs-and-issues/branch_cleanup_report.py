@@ -31,14 +31,16 @@ GitHub reports it protected, when it is the head or base of an open pull request
 name matches a `--keep` pattern (`fnmatch` syntax, e.g. `release/*`).
 
 A branch that would be deleted, but whose tip commit is newer than `--grace-days`, goes under
-"Review" as `recent` instead.
+"Review" as `recent` instead, and one whose tip is the default branch's own tip goes under
+"Review" as `at the default branch's tip`.
 A branch created from the default branch for new work has its tip in the default branch until
-its first push, and this keeps it from being listed for deletion in that window.
+its first push, and these two rules keep it from being listed for deletion in that window.
 
 Limits:
 
 - Git does not record when a branch was created, so the tip's committer date stands in for it.
-  A branch created today from an old commit counts as old.
+  A branch created today from a commit older than the grace period, other than the default
+  branch's tip, counts as old.
 - `merged in #N` trusts the pull request as merged: a commit on the branch that the same pull
   request later reverted counts as merged.
 
@@ -49,6 +51,9 @@ approval for the environment named by `--environment`.
 GitHub creates an environment named in a workflow, without protection rules, the first time a
 job runs in it; until someone adds required reviewers, that job runs unapproved, and this
 check is what stops it from deleting.
+It also refuses to run as a re-run attempt (`--run-attempt` other than 1): the run's recorded
+approvals do not say which attempt they were given for, so a new run, with a new approval, is
+the only way to try again.
 It then sorts every branch afresh, and deletes a ticked branch only when all of these hold:
 
 - `report` offered it, as `--choices` says.
@@ -59,6 +64,8 @@ It then sorts every branch afresh, and deletes a ticked branch only when all of 
   A branch ticked because `report` found it safe to delete is spared once that evidence is gone,
   as when the branch it shared a tip with was since deleted or force-pushed.
 - Its tip is still the commit `report` offered.
+- Its tip is not about to be lost: a branch under Delete because another branch holds the same
+  tip is spared when that other branch is being deleted in the same run.
 
 Each deletion is a `git push --force-with-lease` against that commit, so a branch pushed to
 after the check is left alone too.
@@ -80,6 +87,7 @@ Environment variables:
                         `--checklist` needs issues: write, and `delete` also needs actions: read
                         and a git remote it can push to
     GITHUB_RUN_ID       The run `delete` checks for approval, unless --run-id is given
+    GITHUB_RUN_ATTEMPT  The attempt of that run, unless --run-attempt is given
     GITHUB_SERVER_URL   With GITHUB_RUN_ID, links the checklist to the run awaiting approval
 """
 
@@ -140,6 +148,8 @@ class Verdict:
     branch: Branch
     section: str
     reason: str
+    # For a `same tip as X` verdict, X: the branch whose presence makes this one deletable.
+    holder: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -258,8 +268,6 @@ def find_checklist_issue(repo: str, token: str) -> dict | None:
 
 def write_checklist_issue(repo: str, token: str, body: str) -> dict:
     """Replace the tracking issue's body with *body*, opening the issue if there is none."""
-    if len(body) > ISSUE_BODY_LIMIT:
-        raise RuntimeError(f"checklist is {len(body)} characters, over GitHub's limit")
     issue = find_checklist_issue(repo, token)
     if issue is None:
         return gh_api(f"repos/{repo}/issues", token, "POST", {"title": TITLE, "body": body})
@@ -310,7 +318,8 @@ def keep_reason(
         return "protected"
     for pr in open_pulls:
         head_repo = (pr["head"].get("repo") or {}).get("full_name")
-        if pr["head"]["ref"] == branch.name and head_repo == repo:
+        # GitHub treats repository names as case-insensitive, so compare them that way.
+        if pr["head"]["ref"] == branch.name and (head_repo or "").casefold() == repo.casefold():
             return f"head of open #{pr['number']}"
         if pr["base"]["ref"] == branch.name:
             return f"base of open #{pr['number']}"
@@ -335,6 +344,7 @@ def classify(
 ) -> list[Verdict]:
     """Sort *branches* into the report's sections; see the module docstring for the rules."""
     open_pulls = [pr for pr in pulls if pr["state"] == "open"]
+    default_sha = next((b.sha for b in branches if b.name == default), None)
     verdicts: dict[str, Verdict] = {}
     for branch in branches:
         reason = keep_reason(branch, default, protected, open_pulls, repo, keep_patterns)
@@ -343,7 +353,9 @@ def classify(
             continue
         where = reach_of(branch.sha)
         landed = sorted(where.pulls & merged)
-        if where.in_default:
+        if branch.sha == default_sha:
+            verdicts[branch.name] = Verdict(branch, REVIEW, "at the default branch's tip")
+        elif where.in_default:
             verdicts[branch.name] = Verdict(branch, DELETE, "in default branch")
         elif landed:
             verdicts[branch.name] = Verdict(branch, DELETE, f"merged in #{landed[0]}")
@@ -356,15 +368,15 @@ def classify(
         if v.section == KEEP:
             holder.setdefault(v.branch.sha, v.branch.name)
     for v in sorted(verdicts.values(), key=lambda v: v.branch.name):
-        if v.section != REVIEW:
+        if v.section != REVIEW or v.branch.sha == default_sha:
             continue
         other = holder.setdefault(v.branch.sha, v.branch.name)
         if other != v.branch.name:
-            verdicts[v.branch.name] = Verdict(v.branch, DELETE, f"same tip as `{other}`")
+            verdicts[v.branch.name] = Verdict(v.branch, DELETE, f"same tip as `{other}`", other)
 
     for name, v in verdicts.items():
         if v.section == DELETE and now - v.branch.committed < grace:
-            verdicts[name] = Verdict(v.branch, REVIEW, f"recent; otherwise {v.reason}")
+            verdicts[name] = Verdict(v.branch, REVIEW, f"recent; otherwise {v.reason}", v.holder)
     return [verdicts[b.name] for b in branches]
 
 
@@ -418,31 +430,49 @@ def render(verdicts: list[Verdict], *, repo: str, default: str, pulls: list[dict
     return "\n".join(lines) + "\n"
 
 
-def render_checklist(verdicts: list[Verdict], *, repo: str, run_url: str) -> str:
-    """Return the tracking issue's body: Delete branches ticked, Review branches unticked."""
+def render_checklist(
+    verdicts: list[Verdict], *, repo: str, run_url: str, limit: int = ISSUE_BODY_LIMIT
+) -> tuple[str, list[Verdict]]:
+    """Return the tracking issue's body and the verdicts it lists.
+
+    Delete branches are ticked and Review branches unticked. When the body would exceed
+    *limit* characters, Review branches are left off its end, and it says how many.
+    """
     approve = f"[the run awaiting approval]({run_url})" if run_url else "the run awaiting approval"
     kept = sum(v.section == KEEP for v in verdicts)
-    lines = [
+    head = [
         MARKER,
         f"Tick the branches to delete and untick the ones to keep, then approve {approve}.",
         (
-            "After approval it deletes each ticked branch that no keep rule protects by then "
-            "and whose tip has not moved since this list was written."
+            "After approval it deletes each ticked branch, except one that a keep rule protects "
+            "by then, whose tip has moved since this list was written, whose evidence for "
+            "Delete is gone, or whose tip would be lost with it."
         ),
         "The next scheduled run rewrites this list and cancels a run still awaiting approval.",
         "",
         f"{kept} branches kept by rule are not listed; the run's job summary has the full report.",
     ]
-    for section, blurb in SECTIONS[:2]:
-        rows = [v for v in verdicts if v.section == section]
-        lines += ["", f"## {section} ({len(rows)})", "", blurb, ""]
-        mark = "x" if section == DELETE else " "
-        lines += [
-            f"- [{mark}] {branch_link(repo, v.branch.name)}: {v.reason} "
-            f"<!-- branch={urllib.parse.quote(v.branch.name, safe='/')} -->"
-            for v in rows
-        ]
-    return "\n".join(lines) + "\n"
+    rows = {section: [v for v in verdicts if v.section == section] for section, _ in SECTIONS[:2]}
+    listed = dict(rows)
+    while True:
+        lines = list(head)
+        for section, blurb in SECTIONS[:2]:
+            lines += ["", f"## {section} ({len(rows[section])})", "", blurb, ""]
+            mark = "x" if section == DELETE else " "
+            lines += [
+                f"- [{mark}] {branch_link(repo, v.branch.name)}: {v.reason} "
+                f"<!-- branch={urllib.parse.quote(v.branch.name, safe='/')} -->"
+                for v in listed[section]
+            ]
+            left_off = len(rows[section]) - len(listed[section])
+            if left_off:
+                lines.append(f"- {left_off} more did not fit here; the job summary lists them.")
+        body = "\n".join(lines) + "\n"
+        if len(body) <= limit:
+            return body, listed[DELETE] + listed[REVIEW]
+        if not listed[REVIEW]:
+            raise RuntimeError(f"checklist is {len(body)} characters, over GitHub's limit")
+        listed[REVIEW] = listed[REVIEW][:-1]
 
 
 def ticked(body: str) -> set[str]:
@@ -455,11 +485,11 @@ def ticked(body: str) -> set[str]:
     return found
 
 
-def offered(verdicts: list[Verdict]) -> dict[str, dict[str, str]]:
-    """Return the branches a checklist of *verdicts* offers, each with its tip and section."""
+def offered(listed: list[Verdict]) -> dict[str, dict[str, str]]:
+    """Return the branches a checklist listing *listed* offers, each with its tip and section."""
     return {
         v.branch.name: {"sha": v.branch.sha, "section": v.section}
-        for v in verdicts
+        for v in listed
         if v.section != KEEP
     }
 
@@ -488,6 +518,12 @@ def plan_deletions(
             plan[name] = f"no longer under {DELETE}: {v.reason}"
         else:
             plan[name] = None
+    # A branch deletable only because another holds its tip loses that tip if the other
+    # branch goes in the same run. The holder is never itself such a branch, so one pass does.
+    for name, skip in plan.items():
+        holder = current[name].holder if skip is None else None
+        if holder is not None and plan.get(holder, "") is None:
+            plan[name] = f"its tip's other holder `{holder}` is being deleted too"
     return plan
 
 
@@ -525,18 +561,19 @@ def gather(args: argparse.Namespace, token: str) -> tuple[str, list[dict], list[
 
 def report(args: argparse.Namespace, token: str) -> int:
     default, pulls, verdicts = gather(args, token)
-    out = render(verdicts, repo=args.repo, default=default, pulls=pulls)
+    # Printed before the checklist is written, so the report survives a failure to write it.
+    print(render(verdicts, repo=args.repo, default=default, pulls=pulls), end="")
+    listed = [v for v in verdicts if v.section != KEEP]
     if args.checklist:
         run_url = ""
         if args.run_id and os.environ.get("GITHUB_SERVER_URL"):
             run_url = f"{os.environ['GITHUB_SERVER_URL']}/{args.repo}/actions/runs/{args.run_id}"
-        body = render_checklist(verdicts, repo=args.repo, run_url=run_url)
+        body, listed = render_checklist(verdicts, repo=args.repo, run_url=run_url)
         issue = write_checklist_issue(args.repo, token, body)
-        out = f"Checklist: [#{issue['number']}]({issue['html_url']})\n\n{out}"
+        print(f"\nChecklist: [#{issue['number']}]({issue['html_url']})")
     if args.choices_output:
         with open(args.choices_output, "a", encoding="utf-8") as f:
-            f.write(f"choices={json.dumps(offered(verdicts))}\n")
-    print(out, end="")
+            f.write(f"choices={json.dumps(offered(listed))}\n")
     return 0
 
 
@@ -548,6 +585,13 @@ def delete(args: argparse.Namespace, token: str) -> int:
         return 1
     if not args.run_id:
         print("error: --run-id or GITHUB_RUN_ID is required", file=sys.stderr)
+        return 1
+    if args.run_attempt != "1":
+        print(
+            f"error: this is attempt {args.run_attempt} of run {args.run_id}; the run's approvals "
+            "do not say which attempt they were for, so start a new run instead",
+            file=sys.stderr,
+        )
         return 1
     if not run_approved(args.repo, token, args.run_id, args.environment):
         print(
@@ -588,6 +632,7 @@ def main(argv: list[str] | None = None) -> int:
     common.add_argument("--grace-days", type=int, default=14)
     common.add_argument("--no-fetch", action="store_true")
     common.add_argument("--run-id", default=os.environ.get("GITHUB_RUN_ID", ""))
+    common.add_argument("--run-attempt", default=os.environ.get("GITHUB_RUN_ATTEMPT", "1"))
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     commands = parser.add_subparsers(dest="command", required=True)
     report_parser = commands.add_parser("report", parents=[common])
