@@ -1,0 +1,68 @@
+name: Branch Cleanup Report
+
+# The report job sorts every branch into Delete, Review and Keep, writes that to the job
+# summary, and writes a checklist of the Delete and Review branches to a tracking issue.
+# The delete job then waits for approval in the branch-deletion environment, and deletes the
+# branches ticked on the issue at the moment it is approved.
+# The rules, and the checks delete makes before deleting anything, are in the docstring of
+# scripts/ci/prs-and-issues/branch_cleanup_report.py.
+#
+# The branch-deletion environment needs required reviewers (Settings > Environments). Without
+# them the delete job starts unapproved, and the script refuses to delete anything.
+
+on:
+  schedule:
+    - cron: '23 5 * * 1'   # Mondays at 05:23 UTC
+  workflow_dispatch:
+
+# A new run rewrites the checklist, so it cancels a run still waiting for approval.
+concurrency:
+  group: branch-cleanup
+  cancel-in-progress: true
+
+permissions: {}
+
+env:
+  # agents/pr_verify.md: "Do not delete any test branch; the closed PR preserves the run
+  # history as evidence."
+  KEEP_PATTERN: 'test/*'
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Write report and checklist
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >-
+          python3 scripts/ci/prs-and-issues/branch_cleanup_report.py report --checklist
+          --keep "$KEEP_PATTERN" >> "$GITHUB_STEP_SUMMARY"
+
+  delete:
+    needs: report
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: branch-deletion
+    permissions:
+      actions: read
+      contents: write
+      issues: write
+      pull-requests: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Delete ticked branches
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >-
+          python3 scripts/ci/prs-and-issues/branch_cleanup_report.py delete
+          --environment branch-deletion --keep "$KEEP_PATTERN" >> "$GITHUB_STEP_SUMMARY"
