@@ -3,7 +3,7 @@
 
 `report` prints a Markdown report and deletes nothing.
 Under "Delete" it also prints the branch names alone in a block, to copy into an approval
-comment.
+comment, and under "Review" the same in a collapsed `<details>` element.
 With `--choices-output` it appends the branches it offered (every branch not kept), with their
 tips and sections, to a file of `key=value` lines such as `$GITHUB_OUTPUT`.
 `delete` deletes the branches a person names in the comment they approved the run with, out of
@@ -426,9 +426,19 @@ def render(verdicts: list[Verdict], *, repo: str, default: str, pulls: list[dict
             f"| {pr_states(v.branch.name)} |"
             for v in rows
         ]
+        names = [v.branch.name for v in rows]
         if section == DELETE:
             lines += ["", "To delete them, approve the run with a comment naming them:", ""]
-            lines += fenced([v.branch.name for v in rows])
+            lines += fenced(names)
+        elif section == REVIEW:
+            # GitHub renders Markdown inside <details> only after a blank line.
+            lines += [
+                "",
+                "<details>",
+                "<summary>Names to copy (these hold unmerged commits; pick from them rather than pasting all)</summary>",
+                "",
+            ]
+            lines += [*fenced(names), "", "</details>"]
     return "\n".join(lines) + "\n"
 
 

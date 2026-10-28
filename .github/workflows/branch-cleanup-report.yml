@@ -1,7 +1,8 @@
 name: Branch Cleanup Report
 
 # The report job sorts every branch into Delete, Review and Keep, and writes that to the job
-# summary, ending the Delete section with the names alone, ready to copy.
+# summary, ending the Delete section with the names alone, ready to copy, and the Review
+# section with the same in a collapsed block.
 # The delete job then waits for approval in the branch-deletion environment. To delete
 # branches, approve it with a comment naming them one per line; the copied block works as it is,
 # and a comment with any other line deletes nothing. It sorts every branch again and deletes
