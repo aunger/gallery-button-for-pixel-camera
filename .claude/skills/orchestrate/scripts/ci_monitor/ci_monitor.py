@@ -6,23 +6,23 @@ Each stdout line is consumed as a task-notification event, so output is the
 interface: terminal outcome lines end the loop, while informational lines
 (in_progress heartbeat, per-step deltas, per-test FAILs) keep it alive.
 
-See scripts/ci_monitor/README.md for full usage instructions, including the
+See .claude/skills/orchestrate/scripts/ci_monitor/README.md for full usage instructions, including the
 command-line arguments (--repo, --config, and the per-outcome filter flags)
 and the outcome vocabulary.
 
 Usage:
-    python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER> [flags]
-    python3 scripts/ci_monitor/ci_monitor.py --sha <SHA> [flags]
-    python3 scripts/ci_monitor/ci_monitor.py --run-id <RUN_ID> [flags]
-    python3 scripts/ci_monitor/ci_monitor.py --branch <BRANCH> [flags]
-    python3 scripts/ci_monitor/ci_monitor.py --once (--pr <N> | --sha <SHA> | --branch <BRANCH>)
+    python3 .claude/skills/orchestrate/scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER> [flags]
+    python3 .claude/skills/orchestrate/scripts/ci_monitor/ci_monitor.py --sha <SHA> [flags]
+    python3 .claude/skills/orchestrate/scripts/ci_monitor/ci_monitor.py --run-id <RUN_ID> [flags]
+    python3 .claude/skills/orchestrate/scripts/ci_monitor/ci_monitor.py --branch <BRANCH> [flags]
+    python3 .claude/skills/orchestrate/scripts/ci_monitor/ci_monitor.py --once (--pr <N> | --sha <SHA> | --branch <BRANCH>)
 
 Exactly one of --pr/--sha/--run-id/--branch is required. --once prints one
 read of the commit's check-runs, collapsed to the latest run per name, and
 exits without polling. --sha, --run-id, and --branch have no PR to consult,
 so their `Clear` terminal fires directly off
 an all-passed check verdict--no `mergeable_state` gating (that concept is
---pr-only). See scripts/ci_monitor/README.md for the per-mode output prefixes
+--pr-only). See .claude/skills/orchestrate/scripts/ci_monitor/README.md for the per-mode output prefixes
 (PR#/SHA#/RUN#/BRANCH#).
 
 Environment:
@@ -75,7 +75,7 @@ def _repository_arg(value):
 
 
 # Configurable behavior (issue #500). Each tunable is a regex with an in-code
-# default; the committed scripts/ci_monitor/ci_monitor.config.json overrides the
+# default; the committed .claude/skills/orchestrate/scripts/ci_monitor/ci_monitor.config.json overrides the
 # defaults with this repo's specifics. load_config() reads that file, or the one
 # --config names, falling back to these defaults when the file is absent,
 # unreadable, invalid, or missing a key, so the resilient poll loop never aborts

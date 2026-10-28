@@ -17,7 +17,7 @@ variable.
 `https_request` is for a caller that keeps its own opener (to refuse or
 rewrite redirects); `urlopen_https` is for one that uses `urlopen` itself.
 
-`scripts/ci_monitor/ci_monitor.py` carries its own copy of the check, so that it
+`.claude/skills/orchestrate/scripts/ci_monitor/ci_monitor.py` carries its own copy of the check, so that it
 stays a single file that can be copied into another repository.
 
 This module has no `main`; it is imported, not run directly.

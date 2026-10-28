@@ -14,11 +14,11 @@
 #   - POST   /issues/{n}/labels          adds labels, leaving existing ones alone
 #   - DELETE /issues/{n}/labels/{name}   removes one label, leaving others alone
 #
-# Follows the pattern of scripts/agents/delete_gh_comment.sh (issue #658): a plain
+# Follows the pattern of .claude/skills/orchestrate/scripts/delete_gh_comment.sh (issue #658): a plain
 # REST call via curl, for environments with no `gh` CLI.
 #
 # Usage:
-#   scripts/agents/update_gh_labels.sh <owner> <repo> <issue_or_pr_number> [--add LABEL]... [--remove LABEL]...
+#   .claude/skills/orchestrate/scripts/update_gh_labels.sh <owner> <repo> <issue_or_pr_number> [--add LABEL]... [--remove LABEL]...
 #
 # At least one --add or --remove is required. A label must not appear in both.
 # Removing a label that is not currently on the issue/PR is treated as
@@ -27,7 +27,7 @@
 #
 # Example (the dev_orchestration.md "Remove: orchestrate / Add: orchestrating"
 # transition, in one delta call instead of a read-then-replace):
-#   scripts/agents/update_gh_labels.sh aunger gallery-button-for-pixel-camera 710 \
+#   .claude/skills/orchestrate/scripts/update_gh_labels.sh aunger gallery-button-for-pixel-camera 710 \
 #     --remove orchestrate --add orchestrating
 #
 # Required environment variables:

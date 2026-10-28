@@ -51,12 +51,16 @@ class TestLabelsForPath(unittest.TestCase):
             frozenset({"automated tests", "ci"}),
         )
 
-    def test_lint_and_ci_monitor_scripts_are_not_ci(self):
-        # Pins the deliberate exclusions from CI_PATH_PREFIXES: lint.sh is a
-        # local pre-commit tool as much as a CI step, and ci_monitor is the
-        # Orchestrator's tool rather than repo CI.
-        for path in ("scripts/lint/lint.sh", "scripts/ci_monitor/ci_monitor.py"):
-            self.assertEqual(lbf.labels_for_path(path), frozenset(), msg=path)
+    def test_lint_script_is_not_ci(self):
+        # Pins the deliberate exclusion from CI_PATH_PREFIXES: lint.sh is a
+        # local pre-commit tool as much as a CI step.
+        self.assertEqual(lbf.labels_for_path("scripts/lint/lint.sh"), frozenset())
+
+    def test_ci_monitor_is_agents_not_ci(self):
+        # The CI Monitor is the Orchestrator's tool rather than repo CI; it
+        # lives with the orchestrate plugin under .claude/, the agents set.
+        path = ".claude/skills/orchestrate/scripts/ci_monitor/ci_monitor.py"
+        self.assertEqual(lbf.labels_for_path(path), frozenset({"agents"}))
 
     def test_unclassified_paths_give_empty_set(self):
         for path in (
@@ -80,16 +84,17 @@ class TestLabelsForPath(unittest.TestCase):
             "CLAUDE.md",
             "agents/code_edit.md",
             "agents/pr_participation.md",
-            "scripts/agents/update_gh_labels.sh",
+            "scripts/agents/verify_github_write.py",
             ".claude/rules/prose-style.md",
             ".claude/settings.json",
-            "scripts/ci_monitor/CLAUDE.md",
+            ".claude/skills/orchestrate/scripts/update_gh_labels.sh",
+            ".claude/skills/orchestrate/scripts/ci_monitor/CLAUDE.md",
         ):
             self.assertEqual(lbf.labels_for_path(path), frozenset({"agents"}), msg=path)
 
     def test_agents_test_script_gives_agents_and_automated_tests(self):
         self.assertEqual(
-            lbf.labels_for_path("scripts/agents/test_update_gh_labels.sh"),
+            lbf.labels_for_path(".claude/skills/orchestrate/scripts/test_update_gh_labels.sh"),
             frozenset({"agents", "automated tests"}),
         )
 
@@ -290,7 +295,10 @@ class TestLabelsToRemove(unittest.TestCase):
 
     def test_pr_753_regression_fixture(self):
         # #753: a ci_monitor change carrying `agents` that touches no path in
-        # the owner's agents set, so the label goes and nothing is added.
+        # the owner's agents set, so the label goes and nothing is added. The
+        # paths are the ones the Monitor had at the time; it has since moved
+        # under .claude/, inside that set, and the fixture keeps the old paths
+        # because it pins the classifier's behavior, not the tree.
         paths = [
             "scripts/ci_monitor/README.md",
             "scripts/ci_monitor/ci_monitor.py",

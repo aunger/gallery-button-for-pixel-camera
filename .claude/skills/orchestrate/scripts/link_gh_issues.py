@@ -6,8 +6,8 @@ write them: the GitHub MCP server has `sub_issue_write` for hierarchy and nothin
 for `/dependencies/blocked_by`. This script writes the native link, so it shows in
 the issue sidebar and answers the `-is:blocked` search filters.
 
-Follows `scripts/agents/update_gh_labels.sh` (issue #710) and
-`scripts/agents/delete_gh_comment.sh` (issue #658): a plain REST call for
+Follows `.claude/skills/orchestrate/scripts/update_gh_labels.sh` (issue #710) and
+`.claude/skills/orchestrate/scripts/delete_gh_comment.sh` (issue #658): a plain REST call for
 environments with no `gh` CLI, standard library only.
 
 Relations
@@ -60,14 +60,14 @@ Set "closes" with a closing keyword in the pull request description. Set
 Usage
 -----
 
-    scripts/agents/link_gh_issues.py show <owner> <repo> <issue> [--json]
+    .claude/skills/orchestrate/scripts/link_gh_issues.py show <owner> <repo> <issue> [--json]
 
-    scripts/agents/link_gh_issues.py add <owner> <repo> <issue> \
+    .claude/skills/orchestrate/scripts/link_gh_issues.py add <owner> <repo> <issue> \
         [--blocked-by REF]... [--blocks REF]... \
         [--parent-of REF]... [--child-of REF]... \
         [--replace-parent] [--dry-run]
 
-    scripts/agents/link_gh_issues.py remove <owner> <repo> <issue> \
+    .claude/skills/orchestrate/scripts/link_gh_issues.py remove <owner> <repo> <issue> \
         [--blocked-by REF]... ... [--dry-run]
 
 REF may be given as `123`, `#123`, `owner/repo#123`, or a github.com issue URL.
@@ -77,12 +77,12 @@ refused rather than looked up on github.com.
 
 Example, recording that issue #42 is waiting on #17 and #19 in one call:
 
-    scripts/agents/link_gh_issues.py add aunger gallery-button-for-pixel-camera 42 \
+    .claude/skills/orchestrate/scripts/link_gh_issues.py add aunger gallery-button-for-pixel-camera 42 \
         --blocked-by 17 --blocked-by 19
 
 Adding a link that is already present, or removing one that is already absent, is
 reported and treated as success: the goal state is what matters, matching
-`scripts/agents/update_gh_labels.sh`.
+`.claude/skills/orchestrate/scripts/update_gh_labels.sh`.
 
 Exit codes:
     0   every requested link reached its goal state
@@ -103,14 +103,45 @@ import time
 import urllib.error
 import urllib.request
 
-sys.path.insert(
-    0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "ci", "prs-and-issues")
-)
-
-from github_headers import github_headers
-from https_only import https_request
-
 API_ROOT = "https://api.github.com"
+
+
+def github_headers(token: str) -> dict[str, str]:
+    """Return the standard header set for an authenticated GitHub REST API call."""
+    return {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+
+def _after_https_scheme(url: str) -> str:
+    """Return *url* without its `https://` prefix, refusing any other scheme.
+
+    `urllib.request` opens `file:` and `ftp:` URLs as readily as `https:` ones,
+    and the URLs here are built from caller arguments and API responses. The
+    literal `"https://"` that `https_request` prepends is what ruff's S310
+    recognizes as safe. This is a copy of the check in the host repository's
+    `scripts/ci/prs-and-issues/https_only.py`, kept here so the script stays
+    a single file that the orchestrate plugin can carry into another repository.
+    """
+    scheme, separator, rest = url.partition("://")
+    if not separator or scheme.lower() != "https" or not rest:
+        raise ValueError(f"refusing to open {url!r}: only https URLs are allowed")
+    return rest
+
+
+def https_request(
+    url: str,
+    *,
+    data: bytes | None = None,
+    headers: dict[str, str] | None = None,
+    method: str | None = None,
+) -> urllib.request.Request:
+    """Return a `Request` for *url*, or raise ValueError if it is not https."""
+    return urllib.request.Request(
+        f"https://{_after_https_scheme(url)}", data=data, headers=headers or {}, method=method
+    )
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):

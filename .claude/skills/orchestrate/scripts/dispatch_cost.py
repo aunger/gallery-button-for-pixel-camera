@@ -9,13 +9,13 @@ cycle that #1011 is about. A cycle's cost can be measured while it runs and not
 afterwards, which is the argument for a checked-in script rather than an ad-hoc
 one: the data is gone by the time anyone thinks to ask.
 
-Follows `scripts/agents/link_gh_issues.py` (issue #1000) and
-`scripts/agents/update_gh_labels.sh` (issue #710): standard library only, no
+Follows `.claude/skills/orchestrate/scripts/link_gh_issues.py` (issue #1000) and
+`.claude/skills/orchestrate/scripts/update_gh_labels.sh` (issue #710): standard library only, no
 `gh` CLI.
 
 No annotation here is parameterised: a container is the bare `list`, `dict` or
 `tuple`, or one of those `| None`. The file takes no `collections.abc` import
-(#1078). Both rules are checked by `scripts/agents/test_dispatch_cost.py`.
+(#1078). Both rules are checked by `.claude/skills/orchestrate/scripts/test_dispatch_cost.py`.
 
 Layout read
 -----------
@@ -121,10 +121,10 @@ the report is partial without reading stderr.
 Usage
 -----
 
-    scripts/agents/dispatch_cost.py
-    scripts/agents/dispatch_cost.py --calls
-    scripts/agents/dispatch_cost.py --session 36ae78d3-dea1-56af-b5c6-5cc3d62970a2
-    scripts/agents/dispatch_cost.py --json
+    .claude/skills/orchestrate/scripts/dispatch_cost.py
+    .claude/skills/orchestrate/scripts/dispatch_cost.py --calls
+    .claude/skills/orchestrate/scripts/dispatch_cost.py --session 36ae78d3-dea1-56af-b5c6-5cc3d62970a2
+    .claude/skills/orchestrate/scripts/dispatch_cost.py --json
 
 Exit codes:
     0   a breakdown was printed, and any transcript set aside is named in it

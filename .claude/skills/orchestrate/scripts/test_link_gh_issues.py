@@ -27,8 +27,6 @@ from unittest.mock import patch
 sys.path.insert(0, os.path.dirname(__file__))
 import link_gh_issues as lgi
 
-REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-
 OWNER = "aunger"
 REPO = "gallery-button-for-pixel-camera"
 
@@ -1228,7 +1226,7 @@ class TestRelations(unittest.TestCase):
         self.assertTrue(lgi.members_path("sub-issue", holder).endswith("/sub_issues"))
 
     def test_script_is_executable(self):
-        path = os.path.join(REPO_ROOT, "scripts", "agents", "link_gh_issues.py")
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "link_gh_issues.py")
         self.assertTrue(os.stat(path).st_mode & stat.S_IXUSR)
 
     def test_docstring_records_which_relations_are_not_handled(self):
@@ -1257,7 +1255,7 @@ class TestRelations(unittest.TestCase):
 class TestStandardLibraryOnly(unittest.TestCase):
     """The docstring promises standard library only; nothing enforced it."""
 
-    ALLOWED_NON_STDLIB = frozenset({"github_headers", "https_only"})
+    ALLOWED_NON_STDLIB = frozenset()
 
     def test_no_third_party_imports(self):
         module_path = os.path.join(os.path.dirname(__file__), "link_gh_issues.py")

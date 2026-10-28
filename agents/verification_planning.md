@@ -81,9 +81,9 @@ Symmetry is not evidence.
    c. Record the new issue as a **blocker**, using GitHub's issue-dependencies feature.
    GitHub takes issues only on both sides of the link, so the issue this PR resolves stands in for the PR: the new issue blocks that issue.
    What the item holds up is still this PR, so the stand-in changes where the link is recorded, not what it records.
-   Write the link with `scripts/agents/link_gh_issues.py`, which resolves each issue number to the database id the endpoint wants and sends the request itself.
+   Write the link with `.claude/skills/orchestrate/scripts/link_gh_issues.py`, which resolves each issue number to the database id the endpoint wants and sends the request itself.
    Call it rather than the endpoint directly: the script sends the `Content-Type` header the agent proxy requires, and it takes the token from the environment rather than naming it in the command, which the sandbox guard around a worktree-isolated agent refuses to run.
-   `scripts/agents/link_gh_issues.py add {owner} {repo} {parent issue number} --blocked-by {new issue number}`,
+   `.claude/skills/orchestrate/scripts/link_gh_issues.py add {owner} {repo} {parent issue number} --blocked-by {new issue number}`,
    where `{parent issue number}` is the issue this PR resolves and `{new issue number}` is the issue filed for this item by sub-steps 3a and 3b, or for an already-covered item the issue recorded in step 2.
    If this PR resolves no issue, there is nothing to link: state the blocking relationship in plain text as below, and skip sub-step 3d.
    A link already in place is reported and counts as success, so running this over an already-covered item is safe.
@@ -91,7 +91,7 @@ Symmetry is not evidence.
    d. Make the new issue a **sub-issue** of that same issue, using GitHub's sub-issues feature.
    Sub-issue links take issues only as well, so the stand-in in sub-step 3c applies here too.
    Call the script again, with the other relation:
-   `scripts/agents/link_gh_issues.py add {owner} {repo} {parent issue number} --parent-of {new issue number}`
+   `.claude/skills/orchestrate/scripts/link_gh_issues.py add {owner} {repo} {parent issue number} --parent-of {new issue number}`
    If the call does not succeed, skip this link without failing.
    Do not pass `--replace-parent` to force a link the script refused: it would move the issue out of the parent it already has.
 
@@ -100,7 +100,7 @@ Symmetry is not evidence.
    a. Title the issue simply `{task title}`, without referencing the current PR.
    b. In the issue description, include a URL to the source comment or description, and state clearly that this issue does **not** block PR #{number} (for example, "This is a follow-on item and does not block merging PR #{number}.").
    c. If the follow-on cannot be started until this work lands, record it as blocked by **the issue this PR resolves**, with the script sub-step 3c uses:
-   `scripts/agents/link_gh_issues.py add {owner} {repo} {follow-on issue number} --blocked-by {parent issue number}`
+   `.claude/skills/orchestrate/scripts/link_gh_issues.py add {owner} {repo} {follow-on issue number} --blocked-by {parent issue number}`
    GitHub dependency links don't allow a PR on either side, so the issue stands in for it.
    Otherwise, or if this PR resolves no issue, leave the issue unlinked.
    Never block the PR or its issue by a follow-on.

@@ -3,7 +3,7 @@
 `ci_monitor.py` polls CI for a pull request, a bare commit, a specific Actions run, or a branch head, and streams a terminal outcome plus per-test signals.
 Each stdout line is the interface: terminal lines (`Clear`/`Blocked`/`Infra`, plus the `--pr`-only `Draft on hold`/`Merged`/`Closed`) end the loop, while informational lines (`in_progress` heartbeat, per-step deltas, per-test `FAIL`/`SKIP`/`PASS`) keep it alive.
 
-For how the Orchestrator uses this script as part of the development cycle (the Monitor loop, routing decisions, and the Verification Planner dispatch), see [`agents/dev_orchestration.md`](../../agents/dev_orchestration.md).
+For how the Orchestrator uses this script as part of the development cycle (the Monitor loop, routing decisions, and the Verification Planner dispatch), see [`agents/dev_orchestration.md`](../../../../../agents/dev_orchestration.md).
 
 ## The Monitor knows nothing about this repository
 
@@ -21,10 +21,10 @@ Two known exceptions remain:
 Run it from the repo root, passing **exactly one** identifier:
 
 ```bash
-python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER> [--repo OWNER/REPO] [--config PATH] [filter flags]
-python3 scripts/ci_monitor/ci_monitor.py --sha <SHA> [--repo OWNER/REPO] [--config PATH] [filter flags]
-python3 scripts/ci_monitor/ci_monitor.py --run-id <RUN_ID> [--repo OWNER/REPO] [--config PATH] [filter flags]
-python3 scripts/ci_monitor/ci_monitor.py --branch <BRANCH> [--repo OWNER/REPO] [--config PATH] [filter flags]
+python3 .claude/skills/orchestrate/scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER> [--repo OWNER/REPO] [--config PATH] [filter flags]
+python3 .claude/skills/orchestrate/scripts/ci_monitor/ci_monitor.py --sha <SHA> [--repo OWNER/REPO] [--config PATH] [filter flags]
+python3 .claude/skills/orchestrate/scripts/ci_monitor/ci_monitor.py --run-id <RUN_ID> [--repo OWNER/REPO] [--config PATH] [filter flags]
+python3 .claude/skills/orchestrate/scripts/ci_monitor/ci_monitor.py --branch <BRANCH> [--repo OWNER/REPO] [--config PATH] [filter flags]
 ```
 
 | Flag                | Tracks                                                                                       | Output prefix          |
@@ -39,7 +39,7 @@ Supplying zero or more than one of these flags is a usage error (argparse exits 
 ### One read, no polling (`--once`)
 
 ```bash
-python3 scripts/ci_monitor/ci_monitor.py --once --pr <PR_NUMBER>
+python3 .claude/skills/orchestrate/scripts/ci_monitor/ci_monitor.py --once --pr <PR_NUMBER>
 ```
 
 `--once`, with `--pr`, `--sha` or `--branch`, reads the commit's check-runs once and exits, for a reader that wants them as they stand now rather than wait for CI to finish (issue #1023).
@@ -118,7 +118,7 @@ The three outcomes keep their distinct labels in output: `--include-pass` never 
 **Task-relevance validation.** To verify that a task-relevant test actually ran and passed (rather than being silently skipped), supply `--include-pass` with a regex matching the test(s) of interest:
 
 ```bash
-python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER> --include-pass 'MyFeatureTest'
+python3 .claude/skills/orchestrate/scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER> --include-pass 'MyFeatureTest'
 ```
 
 This emits a `PASS` line when the matching test passes and a `SKIP` line if it was skipped (which would be a false-validation trap: the code path was never exercised).

@@ -41,7 +41,8 @@ jobs:
             echo "needs_full_build=$(scripts/ci/check_non_docs_changes.sh "origin/$BASE_REF")" >> $GITHUB_OUTPUT
           fi
 
-  # Run the shell script unit tests (scripts/**/test_*.sh) in their own job (issue #618).
+  # Run the shell script unit tests (scripts/**/test_*.sh, plus those of the orchestrate
+  # plugin's scripts under .claude/skills/orchestrate/scripts/) in their own job (issue #618).
   # They need a checkout, bash, the pinned Python script dependencies, and the lint
   # tools, but not the JDK/Android SDK setup of build-and-test, where they used to
   # run. Running them here lets them execute concurrently with
@@ -91,7 +92,7 @@ jobs:
           while IFS= read -r test_script; do
             echo "==> Running $test_script"
             bash "$test_script"
-          done < <(find scripts -name 'test_*.sh' -type f | sort)
+          done < <(find scripts .claude/skills/orchestrate/scripts -name 'test_*.sh' -type f | sort)
 
   # Android Lint over the app's debug variant (issue #985). Its NewApi check is the one guard
   # against a call to an API above minSdk, since the compiler accepts any symbol up to
@@ -238,17 +239,17 @@ jobs:
             echo "==> Discovering tests in $dir"
             python3 -m unittest discover -s "$dir" -p "test_*.py" -v && rc=0 || rc=$?
             # Python 3.12+ exits 5 for "no tests were collected" instead of 0.
-            # scripts/ci_monitor itself hits this legitimately: its only test_*.py is
+            # The orchestrate plugin's ci_monitor directory hits this legitimately: its only test_*.py is
             # test_ci_monitor.py, which defines no unittest.TestCase tests (see
             # below). Tolerate 5; any other nonzero code is a real failure.
             if [[ $rc -ne 0 && $rc -ne 5 ]]; then
               exit "$rc"
             fi
-          done < <(find scripts -name "test_*.py" -printf '%h\n' | sort -u)
+          done < <(find scripts .claude/skills/orchestrate/scripts -name "test_*.py" -printf '%h\n' | sort -u)
           # test_ci_monitor.py is a procedural check()-based suite, not built from
           # unittest.TestCase classes, so `unittest discover` imports it but runs
           # none of its checks (issue #619). Run it directly too.
-          python3 scripts/ci_monitor/test_ci_monitor.py
+          python3 .claude/skills/orchestrate/scripts/ci_monitor/test_ci_monitor.py
 
       - name: Set up JDK 17
         if: needs.check-diff.outputs.needs_full_build == 'true'

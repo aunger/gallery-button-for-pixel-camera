@@ -24,7 +24,7 @@ It drives the pull request toward consensus among the sub-agents and a green res
 These are the required checks on `main` (per `GET /repos/{owner}/{repo}/rules/branches/main` on 2026-09-18, plus `android-lint`, added with #985) less one, together with the four `dep-*` checks of `.github/workflows/dependency-version-checks.yml` (#1284), which the owner adds to the ruleset once #1284 merges.
 The four `dep-*` checks skip on a pull request that changes no build file, and a finding never fails them; they fail only when they could not look.
 `Administrative merge holds (not failure)` is left off deliberately: it is the merge gate, it is red for the whole of every cycle by design, and no agent may act on it (see "Orchestrator may not").
-`ignored_check_regex` in `scripts/ci_monitor/ci_monitor.config.json` leaves it out of the Monitor's verdict too.
+`ignored_check_regex` in `.claude/skills/orchestrate/scripts/ci_monitor/ci_monitor.config.json` leaves it out of the Monitor's verdict too.
 A change that adds or removes a required check updates this list in the same change.
 No automated guard checks the list: `workflow_job_names` in `scripts/lib/workflow_yaml.sh` emits job ids rather than the check names a `name:` override produces.
 
@@ -52,7 +52,7 @@ These rules are absolute:
    If two sub-agents need to communicate, they leave each other GitHub comments.
 4. The Orchestrator reads only the titles, labels, and open/closed states of the issue and of the PR (it fetches no diff, description, comments, mergeability, or check-run results).
    The Orchestrator does not read source files.
-   Its only window into CI is the CI Monitor (`scripts/ci_monitor/ci_monitor.py`): no PR-activity subscription, no job log, no fetching PR state on a wake or a timer.
+   Its only window into CI is the CI Monitor (`.claude/skills/orchestrate/scripts/ci_monitor/ci_monitor.py`): no PR-activity subscription, no job log, no fetching PR state on a wake or a timer.
    Reading the per-check rows the Monitor emits is permitted, and they are its CI decision input; fetching check-run state from GitHub is not.
    The issue number comes from the user and is plugged into the launch form as a literal token.
 5. Permitted-words test: before sending anything to a sub-agent, verify each sentence is either the user's exact words or an exact quote from an `agents/` file.
@@ -109,21 +109,21 @@ The Orchestrator is not a Reviewer or a Programmer.
 
 ## Applying label transitions
 
-Apply every "Remove label" / "Add label" transition table in this document with `scripts/agents/update_gh_labels.sh`, not `mcp__github__issue_write`.
+Apply every "Remove label" / "Add label" transition table in this document with `.claude/skills/orchestrate/scripts/update_gh_labels.sh`, not `mcp__github__issue_write`.
 That MCP tool's `labels` field is a replacement set: it overwrites the issue's or PR's entire label list, so it silently discards any label another agent, a workflow, or a human applied since you last read the labels (issue #710).
-`scripts/agents/update_gh_labels.sh` instead calls GitHub's delta label endpoints, adding and removing only the specific labels you name, so a transition never touches any label outside its own row.
+`.claude/skills/orchestrate/scripts/update_gh_labels.sh` instead calls GitHub's delta label endpoints, adding and removing only the specific labels you name, so a transition never touches any label outside its own row.
 
 Run one call per transition row, passing every "Remove label" entry as a `--remove` flag and every "Add label" entry as a `--add` flag.
 For example, the "Starting to orchestrate a PR" transition below becomes:
 
 ```text
-scripts/agents/update_gh_labels.sh {owner} {repo} {issue-or-PR number} --remove orchestrate --add orchestrating
+.claude/skills/orchestrate/scripts/update_gh_labels.sh {owner} {repo} {issue-or-PR number} --remove orchestrate --add orchestrating
 ```
 
 Run it once per artifact a transition's note tells you to apply to (issue, PR, or both).
 See the script's own `--help` text for full usage and the required `GITHUB_TOKEN` environment variable.
 
-If `scripts/agents/update_gh_labels.sh` exits non-zero, the transition did not fully apply--do not treat it as done.
+If `.claude/skills/orchestrate/scripts/update_gh_labels.sh` exits non-zero, the transition did not fully apply--do not treat it as done.
 Retry the same call once, since a non-2xx GitHub response can be transient.
 If it still fails, fall back to `mcp__github__issue_write` for this one transition rather than escalating: read the current labels (`issue_read` with `method: "get_labels"`), apply this transition's Remove/Add columns to that list locally, and write the resulting set.
 Do not stop the automated cycle or escalate to the user over a label transition alone; the replace-all race this document otherwise avoids is an acceptable one-off cost here, and getting the work finished matters more than a label.
@@ -321,7 +321,7 @@ The PR routing below is split by labelled block: each block has its rationale in
 
 PR routing (Monitor loop):
 
-To launch the Monitor is to issue a Monitor tool call running `python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER>` from the repo root (`run_in_background: true`, `timeout_ms: 1800000`), and to record the task ID it returns for use in `silentVanish` recovery.
+To launch the Monitor is to issue a Monitor tool call running `python3 .claude/skills/orchestrate/scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER>` from the repo root (`run_in_background: true`, `timeout_ms: 1800000`), and to record the task ID it returns for use in `silentVanish` recovery.
 Launching also clears the `silentVanish` re-launch flag, since the invocation a launch creates is not a recovery re-launch.
 `silentVanish` is the one site that sets the flag, and says so where it launches.
 
@@ -465,7 +465,7 @@ silentVanish:
 
 ### Monitor script
 
-The poll loop lives in [`scripts/ci_monitor/ci_monitor.py`](../scripts/ci_monitor/ci_monitor.py), passing the PR number via `--pr`, as the `command` for the `Monitor` tool call. For the command syntax, per-test outcome filters, and the full outcome vocabulary, see [`scripts/ci_monitor/README.md`](../scripts/ci_monitor/README.md).
+The poll loop lives in [`.claude/skills/orchestrate/scripts/ci_monitor/ci_monitor.py`](../.claude/skills/orchestrate/scripts/ci_monitor/ci_monitor.py), passing the PR number via `--pr`, as the `command` for the `Monitor` tool call. For the command syntax, per-test outcome filters, and the full outcome vocabulary, see [`.claude/skills/orchestrate/scripts/ci_monitor/README.md`](../.claude/skills/orchestrate/scripts/ci_monitor/README.md).
 
 Orchestrator-specific notes:
 

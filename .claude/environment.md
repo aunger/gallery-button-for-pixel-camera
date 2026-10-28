@@ -286,8 +286,8 @@ endpoints.
 
 **Re-verified 2026-07 (issue #710 / PR #717):** `POST /issues/{n}/labels` (add) and
 `DELETE /issues/{n}/labels/{name}` (remove) both succeed with `GITHUB_TOKEN`. A
-round trip on issue #710's own `P3` label (`scripts/agents/update_gh_labels.sh ... --remove P3`, then `--add P3`) was confirmed by a follow-up `get_labels` read after each
-call. `scripts/agents/update_gh_labels.sh` (issue #710) relies on this, and is the
+round trip on issue #710's own `P3` label (`.claude/skills/orchestrate/scripts/update_gh_labels.sh ... --remove P3`, then `--add P3`) was confirmed by a follow-up `get_labels` read after each
+call. `.claude/skills/orchestrate/scripts/update_gh_labels.sh` (issue #710) relies on this, and is the
 supported way to add or remove specific labels without the replace-all behavior of
 `mcp__github__issue_write` (see "Applying label transitions" in
 `dev_orchestration.md`).

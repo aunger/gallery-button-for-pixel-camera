@@ -280,7 +280,7 @@ PASS_ONLY_NDJSON = [
 # writes them into a config for the main() tests that need a named step's line.
 REPO_STEP_REGEX = "Build and run unit tests|^Run .*E2ETest$"
 REPO_DEFERRED_REGEX = "^Run .*E2ETest$|^Run instrumented tests$"
-# This repo's committed config values (scripts/ci_monitor/ci_monitor.config.json).
+# This repo's committed config values (.claude/skills/orchestrate/scripts/ci_monitor/ci_monitor.config.json).
 # The parser-direct tests pass these explicitly so they exercise the same regexes
 # main() loads from the config file (issue #500).
 REPO_MARKER_REGEX = "##GB4PC_TEST##|##TEST##"

@@ -71,7 +71,7 @@ To trigger a `reopened` event, close and reopen the test PR via the API.
 ### Monitor workflow runs
 
 After each push, poll for the new run.
-Use the CI Monitor for this; its usage and outcome vocabulary are documented in [`scripts/ci_monitor/README.md`](../scripts/ci_monitor/README.md).
+Use the CI Monitor for this; its usage and outcome vocabulary are documented in [`.claude/skills/orchestrate/scripts/ci_monitor/README.md`](../.claude/skills/orchestrate/scripts/ci_monitor/README.md).
 
 Use `mcp__github__get_job_logs` with `return_content: true` to retrieve the step output and confirm the expected log lines appear.
 Use `mcp__github__pull_request_read` to confirm the resulting state on the PR after each run.
