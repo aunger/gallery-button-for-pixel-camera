@@ -14,20 +14,20 @@
 #   - POST   /issues/{n}/labels          adds labels, leaving existing ones alone
 #   - DELETE /issues/{n}/labels/{name}   removes one label, leaving others alone
 #
-# Follows the pattern of .claude/skills/orchestrate/scripts/delete_gh_comment.sh (issue #658): a plain
+# Follows the pattern of delete_gh_comment.sh beside it (issue #658): a plain
 # REST call via curl, for environments with no `gh` CLI.
 #
 # Usage:
-#   .claude/skills/orchestrate/scripts/update_gh_labels.sh <owner> <repo> <issue_or_pr_number> [--add LABEL]... [--remove LABEL]...
+#   update_gh_labels.sh <owner> <repo> <issue_or_pr_number> [--add LABEL]... [--remove LABEL]...
 #
 # At least one --add or --remove is required. A label must not appear in both.
 # Removing a label that is not currently on the issue/PR is treated as
 # success (the goal state, "label absent," is already met), matching the
 # idempotent behavior of scripts/ci/labels/enforce_mutually_exclusive_labels.py.
 #
-# Example (the dev_orchestration.md "Remove: orchestrate / Add: orchestrating"
-# transition, in one delta call instead of a read-then-replace):
-#   .claude/skills/orchestrate/scripts/update_gh_labels.sh aunger gallery-button-for-pixel-camera 710 \
+# Example (the Orchestrator's "Remove: orchestrate / Add: orchestrating"
+# transition from SKILL.md, in one delta call instead of a read-then-replace):
+#   ${CLAUDE_PLUGIN_ROOT}/scripts/update_gh_labels.sh aunger gallery-button-for-pixel-camera 710 \
 #     --remove orchestrate --add orchestrating
 #
 # Required environment variables:

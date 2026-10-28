@@ -1,28 +1,29 @@
 #!/usr/bin/env python3
 """ci_monitor.py: Poll a PR's CI and stream a terminal outcome plus per-test signals.
 
-Invoked by the Orchestrator's Monitor tool call (see agents/dev_orchestration.md).
+Invoked by the Orchestrator's Monitor tool call (see the orchestrate plugin's
+reference/ci-monitor-loop.md).
 Each stdout line is consumed as a task-notification event, so output is the
 interface: terminal outcome lines end the loop, while informational lines
 (in_progress heartbeat, per-step deltas, per-test FAILs) keep it alive.
 
-See .claude/skills/orchestrate/scripts/ci_monitor/README.md for full usage instructions, including the
+See README.md next to this script for full usage instructions, including the
 command-line arguments (--repo, --config, and the per-outcome filter flags)
 and the outcome vocabulary.
 
 Usage:
-    python3 .claude/skills/orchestrate/scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER> [flags]
-    python3 .claude/skills/orchestrate/scripts/ci_monitor/ci_monitor.py --sha <SHA> [flags]
-    python3 .claude/skills/orchestrate/scripts/ci_monitor/ci_monitor.py --run-id <RUN_ID> [flags]
-    python3 .claude/skills/orchestrate/scripts/ci_monitor/ci_monitor.py --branch <BRANCH> [flags]
-    python3 .claude/skills/orchestrate/scripts/ci_monitor/ci_monitor.py --once (--pr <N> | --sha <SHA> | --branch <BRANCH>)
+    python3 ci_monitor.py --pr <PR_NUMBER> [flags]
+    python3 ci_monitor.py --sha <SHA> [flags]
+    python3 ci_monitor.py --run-id <RUN_ID> [flags]
+    python3 ci_monitor.py --branch <BRANCH> [flags]
+    python3 ci_monitor.py --once (--pr <N> | --sha <SHA> | --branch <BRANCH>)
 
 Exactly one of --pr/--sha/--run-id/--branch is required. --once prints one
 read of the commit's check-runs, collapsed to the latest run per name, and
 exits without polling. --sha, --run-id, and --branch have no PR to consult,
 so their `Clear` terminal fires directly off
 an all-passed check verdict--no `mergeable_state` gating (that concept is
---pr-only). See .claude/skills/orchestrate/scripts/ci_monitor/README.md for the per-mode output prefixes
+--pr-only). See README.md for the per-mode output prefixes
 (PR#/SHA#/RUN#/BRANCH#).
 
 Environment:
@@ -75,11 +76,12 @@ def _repository_arg(value):
 
 
 # Configurable behavior (issue #500). Each tunable is a regex with an in-code
-# default; the committed .claude/skills/orchestrate/scripts/ci_monitor/ci_monitor.config.json overrides the
-# defaults with this repo's specifics. load_config() reads that file, or the one
-# --config names, falling back to these defaults when the file is absent,
-# unreadable, invalid, or missing a key, so the resilient poll loop never aborts
-# on configuration.
+# default; a project's config file, which the Orchestrator passes with --config
+# (.claude/orchestrate.json in the host repository), overrides the defaults
+# with that project's specifics. load_config() reads the file --config names,
+# or ci_monitor.config.json next to this script when there is no --config,
+# falling back to these defaults when the file is absent, unreadable, invalid,
+# or missing a key, so the resilient poll loop never aborts on configuration.
 
 # Match (re.search) against an artifact's `name` to decide whether it carries
 # per-test ndjson markers worth downloading. Preserves the historical
@@ -95,8 +97,8 @@ DEFAULT_INTERESTING_STEP_REGEX = r"(?!)"
 
 # Locate the per-test marker prefix in a raw ndjson line. The JSON payload begins
 # at the end of the matched span (re.search(...).end()), which is correct for any
-# marker the regex matches. Default switched to ##TEST## per issue #500; this
-# repo's config matches both markers for back-compat (see ci_monitor.config.json).
+# marker the regex matches. Default switched to ##TEST## per issue #500; a
+# project whose CI still emits an older marker matches both in its config.
 DEFAULT_TEST_MARKER_REGEX = r"##TEST##"
 
 # Match (re.search) against a step's `name` to identify it as a deferred-verdict

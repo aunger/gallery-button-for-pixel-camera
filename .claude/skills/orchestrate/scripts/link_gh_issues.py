@@ -6,8 +6,8 @@ write them: the GitHub MCP server has `sub_issue_write` for hierarchy and nothin
 for `/dependencies/blocked_by`. This script writes the native link, so it shows in
 the issue sidebar and answers the `-is:blocked` search filters.
 
-Follows `.claude/skills/orchestrate/scripts/update_gh_labels.sh` (issue #710) and
-`.claude/skills/orchestrate/scripts/delete_gh_comment.sh` (issue #658): a plain REST call for
+Follows `update_gh_labels.sh` (issue #710) and
+`delete_gh_comment.sh` (issue #658): a plain REST call for
 environments with no `gh` CLI, standard library only.
 
 Relations
@@ -60,14 +60,14 @@ Set "closes" with a closing keyword in the pull request description. Set
 Usage
 -----
 
-    .claude/skills/orchestrate/scripts/link_gh_issues.py show <owner> <repo> <issue> [--json]
+    link_gh_issues.py show <owner> <repo> <issue> [--json]
 
-    .claude/skills/orchestrate/scripts/link_gh_issues.py add <owner> <repo> <issue> \
+    link_gh_issues.py add <owner> <repo> <issue> \
         [--blocked-by REF]... [--blocks REF]... \
         [--parent-of REF]... [--child-of REF]... \
         [--replace-parent] [--dry-run]
 
-    .claude/skills/orchestrate/scripts/link_gh_issues.py remove <owner> <repo> <issue> \
+    link_gh_issues.py remove <owner> <repo> <issue> \
         [--blocked-by REF]... ... [--dry-run]
 
 REF may be given as `123`, `#123`, `owner/repo#123`, or a github.com issue URL.
@@ -77,12 +77,12 @@ refused rather than looked up on github.com.
 
 Example, recording that issue #42 is waiting on #17 and #19 in one call:
 
-    .claude/skills/orchestrate/scripts/link_gh_issues.py add aunger gallery-button-for-pixel-camera 42 \
+    link_gh_issues.py add aunger gallery-button-for-pixel-camera 42 \
         --blocked-by 17 --blocked-by 19
 
 Adding a link that is already present, or removing one that is already absent, is
 reported and treated as success: the goal state is what matters, matching
-`.claude/skills/orchestrate/scripts/update_gh_labels.sh`.
+`update_gh_labels.sh`.
 
 Exit codes:
     0   every requested link reached its goal state

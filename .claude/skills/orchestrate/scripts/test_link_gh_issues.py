@@ -483,7 +483,7 @@ class TestGuards(unittest.TestCase):
         self.assertFalse([c for c in fake.calls if c[0] == "POST"])
 
     def test_the_pull_request_refusal_names_the_documented_route(self):
-        """verification_planning.md has an agent link the issue the PR resolves,
+        """The Verification Planner links the issue the PR resolves,
         so the error points there rather than only at `Fixes #N`."""
         issues = two_issues()
         issues[(OWNER, REPO, 17)] = issue_payload(17, id_=1700, pull_request=True)

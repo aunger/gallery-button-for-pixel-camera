@@ -83,7 +83,7 @@ class TestLabelsForPath(unittest.TestCase):
             "AGENTS.md",
             "CLAUDE.md",
             "agents/code_edit.md",
-            "agents/pr_participation.md",
+            "agents/pr_creation.md",
             "scripts/agents/verify_github_write.py",
             ".claude/rules/prose-style.md",
             ".claude/settings.json",

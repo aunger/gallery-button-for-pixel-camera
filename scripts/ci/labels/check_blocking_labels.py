@@ -2,9 +2,9 @@
 """Fail the merge gate when any open PR at this head commit carries a blocking label.
 
 Backs the "Administrative merge holds (not failure)" required status check
-(.github/workflows/administrative-merge-holds.yml), which enforces
-agents/dev_orchestration.md's "do not merge while process state is
-outstanding" rule.
+(.github/workflows/administrative-merge-holds.yml), which enforces the
+orchestrate plugin's "do not merge while process state is outstanding" rule
+(.claude/skills/orchestrate/SKILL.md).
 
 Why this asks about a commit rather than about one pull request (issue #833):
 a check run is stored against a head commit, not against a pull request, and
@@ -13,7 +13,7 @@ name on the commit with no notion of which PR produced it. A check that
 answered only "does the PR that fired this event carry a blocking label?"
 therefore let two open PRs sharing a head commit answer for each other: the
 one that fired most recently overwrote the other's verdict. That is not
-hypothetical, since agents/pr_verify.md's live-fire recipe opens a test PR
+hypothetical, since the plugin's Verifier live-fire recipe opens a test PR
 from the head of the PR being verified, i.e. exactly on the PRs the gate is
 supposed to be holding.
 
@@ -69,7 +69,7 @@ Re-running the stale run clears only the listing case: a re-run replays the
 original event, so PR_LABELS still holds the payload it was first given.
 Over-blocking is the safe direction, so this is the trade taken deliberately.
 Note that no agent reads this log: the Orchestrator does not route on this
-check at all (it is left off the named checks in agents/dev_orchestration.md),
+check at all (it is left off the named checks in .claude/orchestrate.json),
 so it never diagnoses which label the gate reported, or whose. A human reads
 it.
 

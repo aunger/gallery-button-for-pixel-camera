@@ -1,8 +1,0 @@
-{
-  "_comment": "CI Monitor configuration. Each value is a regex; absent keys fall back to in-code defaults (see README.md). artifact_name_regex selects which run artifacts carry test-result markers worth downloading. test_marker_regex locates the per-test ndjson marker. ignored_check_regex matches check-run names left out of the verdict; they still appear in the summary, marked [ignored].",
-  "_comment_test_marker": "This repo matches BOTH ##GB4PC_TEST## and ##TEST## for back-compatibility while the emit side still writes ##GB4PC_TEST##. The JSON payload begins at the end of whichever alternative matched, so both markers parse correctly. Alternation order does not matter for this pair (neither marker is a prefix of the other); the full marker is simply listed first as a readable convention.",
-  "_comment_ignored": "Administrative merge holds (not failure) is the merge gate, which agents/dev_orchestration.md leaves off the checks that count. ignored_check_regex escapes the parentheses in that name, since its value is a regex.",
-  "artifact_name_regex": "^ci-monitor-feed-",
-  "test_marker_regex": "##GB4PC_TEST##|##TEST##",
-  "ignored_check_regex": "^Administrative merge holds \\(not failure\\)$"
-}

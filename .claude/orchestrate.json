@@ -1,0 +1,26 @@
+{
+  "_comment": "Project configuration for the orchestrate plugin (.claude/skills/orchestrate/). This file holds what the development cycle needs to know about this repository; the plugin's README documents every key. The three *_regex keys are the CI Monitor's configuration, passed to it with --config; each is a regex, and a key the Monitor does not find falls back to its in-code default.",
+  "repository": "aunger/gallery-button-for-pixel-camera",
+  "_comment_named_checks": "The CI checks the Orchestrator drives to green: the required checks on main (per GET /repos/{owner}/{repo}/rules/branches/main on 2026-09-18, plus android-lint, added with #985) less the merge gate, together with the four dep-* checks of .github/workflows/dependency-version-checks.yml (#1284), which the owner adds to the ruleset once #1284 merges. The dep-* checks skip on a pull request that changes no build file, and a finding never fails them; they fail only when they could not look. A change that adds or removes a required check updates this list in the same change. No automated guard checks it: workflow_job_names in scripts/lib/workflow_yaml.sh emits job ids rather than the check names a name: override produces.",
+  "named_checks": [
+    "build-and-test",
+    "android-lint",
+    "pip-audit",
+    "shell-tests",
+    "check-diff",
+    "dep-change",
+    "dep-pin-drift",
+    "dep-classpath-mismatch",
+    "dep-compose-alignment"
+  ],
+  "_comment_ignored": "Administrative merge holds (not failure) is the merge gate: it is red for the whole of every cycle by design, and no agent may act on it. It is left off named_checks, and ignored_check_regex leaves it out of the Monitor's verdict too (the parentheses are escaped because the value is a regex).",
+  "ignored_check_regex": "^Administrative merge holds \\(not failure\\)$",
+  "_comment_artifacts": "artifact_name_regex matches ci-monitor-feed-unit, ci-monitor-feed-PixelCameraOverlayE2ETest, ci-monitor-feed-GalleryButtonVisualE2ETest, and the rest of the per-suite monitor feeds build.yml uploads.",
+  "artifact_name_regex": "^ci-monitor-feed-",
+  "_comment_test_marker": "This repo matches BOTH ##GB4PC_TEST## and ##TEST## for back-compatibility while the emit side (the Gradle/test reporters plus the build.yml greps) still writes ##GB4PC_TEST##. The JSON payload begins at the end of whichever alternative matched, so both markers parse correctly. Alternation order does not matter for this pair (neither marker is a prefix of the other); the full marker is simply listed first as a readable convention. Switching the emit side to ##TEST## is a separate, larger change; the dual marker is the bridge, not an end state.",
+  "test_marker_regex": "##GB4PC_TEST##|##TEST##",
+  "_comment_steps": "Neither interesting_step_regex nor deferred_verdict_step_regex is set, so a step line reports only a failed step (issue #1298). To bring the named-step lines back, pass --config a copy of this file with interesting_step_regex set to \"Build and run unit tests|^Run .*E2ETest$\" and deferred_verdict_step_regex to \"^Run .*E2ETest$|^Run instrumented tests$\": the first names the honest unit-test step and the Run <Class>E2ETest steps, anchored so it does not also match the Upload <Class>E2ETest monitor feed/E2E video steps (issue #600); the second names the nine deferred-verdict steps in build.yml (the eight Run <Class>E2ETest steps and Run instrumented tests), whose own success means only that the wrapper script exited 0, and leaves out Build and run unit tests, which runs testDebugUnitTest under set -o pipefail and must not be annotated.",
+  "verification_plan_marker": "<!-- gb4pc-verification-plan -->",
+  "default_model": "opus",
+  "max_rounds": 4
+}

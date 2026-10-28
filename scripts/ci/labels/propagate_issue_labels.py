@@ -21,7 +21,7 @@ linked issue.
 An issue's own orchestration-cycle state labels (PROCESS_STATE_LABELS, e.g.
 `orchestrating`, `verification needed`, `changes done`) are never propagated
 at all, even onto a PR that carries none of their conflicting siblings.
-agents/dev_orchestration.md deliberately lets an issue and its PR diverge on
+The orchestrate plugin deliberately lets an issue and its PR diverge on
 these mid-cycle (for example, `changes requested`/`changes done` live on the
 PR once one exists, and the issue's copy goes stale by design), so blindly
 copying them from issue to PR fights that state machine instead of just
@@ -161,7 +161,8 @@ def fetch_closing_issue_labels(
 # Core logic
 # ---------------------------------------------------------------------------
 
-# Labels agents/dev_orchestration.md manages as orchestration-cycle state,
+# Labels the orchestrate plugin (.claude/skills/orchestrate/SKILL.md) manages
+# as orchestration-cycle state,
 # not ordinary content/category labels (contrast with e.g. "p1"-"p3", "ci",
 # "bug", which are fine to copy as-is). The issue and its PR are deliberately
 # allowed, or required, to carry these differently while a PR is under
@@ -170,8 +171,8 @@ def fetch_closing_issue_labels(
 #     starts, and the PR carries `orchestrating` for the whole cycle. Holding
 #     the "Administrative merge holds (not failure)" gate red while it does is
 #     the label's purpose, so nothing removes it mid-cycle to open that gate
-#     (dev_orchestration.md's "Orchestrator may not"); "Concluding PR
-#     orchestration" clears it from both at the end.
+#     (SKILL.md's "Orchestrator may not"); "Concluding" clears it from both
+#     at the end.
 #   - `changes requested`/`changes done` transitions apply "to the PR if one
 #     exists; apply it to the issue otherwise"--once a PR exists, these live
 #     on the PR only, and the issue's copy (if any) goes stale by design.
@@ -331,7 +332,7 @@ def propagate_to_pr(owner: str, name: str, repo: str, pr_number: int, token: str
         print(
             f"Excluding orchestration-cycle labels {process_state} on PR #{pr_number}: the "
             "issue and its PR are allowed to carry these differently while orchestration "
-            "is active (see agents/dev_orchestration.md)."
+            "is active (see .claude/skills/orchestrate/SKILL.md)."
         )
 
     if file_determined:

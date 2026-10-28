@@ -1,0 +1,17 @@
+{
+  "description": "Refuse a dispatch to one of this plugin's agents whose prompt is not the five-line dispatch form (reference/dispatch-form.md).",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/hooks/check_dispatch.py\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

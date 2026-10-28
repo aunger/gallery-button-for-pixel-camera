@@ -148,8 +148,8 @@ MUTUALLY_EXCLUSIVE_PREFIXES: list[str] = [
 # error, a 429 rate-limit response, or a network-level URLError) may clear on a
 # repeat, so it is retried with exponential backoff before the call is allowed
 # to fail. This matches the "retry once, transient GitHub errors are expected"
-# guidance already followed by .claude/skills/orchestrate/scripts/update_gh_labels.sh and
-# agents/dev_orchestration.md for this exact class of instability. A real error
+# guidance already followed by the orchestrate plugin's update_gh_labels.sh
+# and its Orchestrator for this exact class of instability. A real error
 # (a 4xx other than 429, e.g. a 404 already-gone or a 422 validation failure) is
 # never retried: repeating it would not change the outcome.
 MAX_ATTEMPTS = 4

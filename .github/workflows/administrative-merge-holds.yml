@@ -44,7 +44,8 @@ name: Administrative merge holds
 # the most recent run of that check name on that commit, regardless of which
 # PR produced it. Reading only the triggering PR's labels therefore let two
 # open PRs sharing a head commit answer for each other, and
-# agents/pr_verify.md's live-fire recipe manufactured exactly that collision
+# the orchestrate plugin's Verifier (.claude/skills/orchestrate/agents/verifier.md)
+# live-fire recipe manufactured exactly that collision
 # on PRs that were mid-verification (issue #833). See
 # scripts/ci/labels/check_blocking_labels.py for the full rationale.
 #
