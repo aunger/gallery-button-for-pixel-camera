@@ -225,6 +225,18 @@ class TestRender(unittest.TestCase):
             out,
         )
         self.assertIn("approve the run with a comment naming them:\n\n```\nfix/a|b\n```\n", out)
+        self.assertNotIn("<details>", out)
+
+    def test_review_names_to_copy_are_collapsed(self):
+        verdicts = [
+            bcr.Verdict(branch("r1", "a"), bcr.REVIEW, "unmerged commits"),
+            bcr.Verdict(branch("r2", "b"), bcr.REVIEW, "unmerged commits"),
+        ]
+        out = bcr.render(verdicts, repo=REPO, default="main", pulls=[])
+        self.assertIn(
+            "\n\n<details>\n<summary>Names to copy</summary>\n\n```\nr1\nr2\n```\n\n</details>\n",
+            out,
+        )
 
     def test_pull_request_column_whatever_the_repo_name_case(self):
         verdicts = [bcr.Verdict(branch("b", "a"), bcr.REVIEW, "unmerged commits")]
