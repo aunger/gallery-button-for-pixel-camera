@@ -1,0 +1,72 @@
+name: Branch Cleanup Report
+
+# The report job sorts every branch into Delete, Review and Keep, and writes that to the job
+# summary, ending the Delete section with the names alone, ready to copy.
+# The delete job then waits for approval in the branch-deletion environment. To delete
+# branches, approve it with a comment naming them one per line; the copied block works as it is,
+# and a comment with any other line deletes nothing. It sorts every branch again and deletes
+# the named ones, out of the ones the report job offered.
+# The rules, and the checks delete makes before deleting anything, are in the docstring of
+# scripts/ci/prs-and-issues/branch_cleanup_report.py.
+#
+# The branch-deletion environment needs required reviewers (Settings > Environments). Without
+# them the delete job starts unapproved, and the script refuses to delete anything.
+# Limit its deployment branches to main too: a manual run can use the copy of this workflow
+# on any branch, and only main's copy has been reviewed.
+
+on:
+  schedule:
+    - cron: '23 5 * * 1'   # Mondays at 05:23 UTC
+  workflow_dispatch:
+
+# A new run cancels one still waiting for approval, whose report is then out of date. It
+# cancels a delete job already running too; that job logs each deletion as it makes it, so the
+# job log still records what a cancelled run deleted.
+concurrency:
+  group: branch-cleanup
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      choices: ${{ steps.report.outputs.choices }}
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Write report
+        id: report
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >-
+          python3 scripts/ci/prs-and-issues/branch_cleanup_report.py report
+          --choices-output "$GITHUB_OUTPUT" >> "$GITHUB_STEP_SUMMARY"
+
+  delete:
+    needs: report
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: branch-deletion
+    permissions:
+      actions: read
+      contents: write
+      pull-requests: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Delete branches named in the approval
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CHOICES: ${{ needs.report.outputs.choices }}
+        run: >-
+          python3 scripts/ci/prs-and-issues/branch_cleanup_report.py delete
+          --environment branch-deletion --choices "$CHOICES"
+          >> "$GITHUB_STEP_SUMMARY"
