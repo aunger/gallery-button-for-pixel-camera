@@ -51,11 +51,15 @@ approval for the environment named by `--environment`.
 GitHub creates an environment named in a workflow, without protection rules, the first time a
 job runs in it; until someone adds required reviewers, that job runs unapproved, and this
 check is what stops it from deleting.
-It also refuses to run as a re-run attempt (`--run-attempt` other than 1): the run's recorded
+It also refuses to run unless `--run-attempt` is 1, refusing a re-run attempt: the run's recorded
 approvals do not say which attempt they were given for, so a new run, with a new approval, is
 the only way to try again.
 The branches to delete are the names in the comments of the run's approvals for that
-environment, separated by whitespace.
+environment, one per line.
+A line may carry a list bullet (`- ` or `* `) or be wrapped in backticks, and code-fence lines
+are skipped, so the block `report` prints can be pasted as it is.
+Any other line, such as prose (`except fix/x`) or two names on one line, makes the comment
+ambiguous, and then nothing is deleted.
 An approval's comment is written with the approval and cannot be changed after it, so what is
 deleted is what the approver chose, not what anyone else could edit in between.
 It then sorts every branch afresh, and deletes a named branch only when all of these hold:
@@ -223,17 +227,12 @@ def delete_branch(repo_dir: str, remote: str, name: str, sha: str) -> str | None
 # ---------------------------------------------------------------------------
 
 
-def gh_api(path: str, token: str, method: str = "GET", body: object = None) -> object:
-    """Call *path* on the GitHub REST API and return the parsed JSON."""
+def gh_api(path: str, token: str) -> object:
+    """GET *path* from the GitHub REST API and return the parsed JSON."""
     headers = github_headers(token)
     if not token:
         del headers["Authorization"]
-    data = None
-    if body is not None:
-        data = json.dumps(body).encode()
-        headers["Content-Type"] = "application/json"
-    url = f"https://api.github.com/{path}"
-    with urlopen_https(url, data, headers=headers, method=method, timeout=30) as r:
+    with urlopen_https(f"https://api.github.com/{path}", headers=headers, timeout=30) as r:
         return json.loads(r.read())
 
 
@@ -247,12 +246,8 @@ def gh_api_pages(path: str, token: str) -> list[dict]:
     return items
 
 
-def approved_names(repo: str, token: str, run_id: str, environment: str) -> set[str] | None:
-    """Return the branch names in the comments approving run *run_id* for *environment*.
-
-    None means the run has no such approval. Bullets and code fences pasted along with the
-    names are ignored; no branch name consists only of those characters.
-    """
+def approval_comments(repo: str, token: str, run_id: str, environment: str) -> list[str] | None:
+    """Return the comments approving run *run_id* for *environment*; None if it has none."""
     reviews = [
         review
         for review in gh_api(f"repos/{repo}/actions/runs/{run_id}/approvals", token)
@@ -261,12 +256,30 @@ def approved_names(repo: str, token: str, run_id: str, environment: str) -> set[
     ]
     if not reviews:
         return None
-    return {
-        word
-        for review in reviews
-        for word in (review.get("comment") or "").split()
-        if word.strip("`-*")
-    }
+    return [review.get("comment") or "" for review in reviews]
+
+
+def parse_names(comment: str) -> tuple[set[str], list[str]]:
+    """Return the branch names on *comment*'s lines, and the lines that are not one name.
+
+    A line may carry a `- ` or `* ` bullet or be wrapped in backticks; blank lines and
+    code-fence lines are skipped.
+    """
+    names: set[str] = set()
+    other: list[str] = []
+    for line in comment.splitlines():
+        text = line.strip()
+        if not text or text.startswith("```"):
+            continue
+        if text[:2] in ("- ", "* "):
+            text = text[2:].strip()
+        if len(text) > 2 and text[0] == text[-1] == "`":
+            text = text[1:-1]
+        if text and not any(c.isspace() or c == "`" for c in text):
+            names.add(text)
+        else:
+            other.append(line.strip())
+    return names, other
 
 
 # ---------------------------------------------------------------------------
@@ -387,7 +400,7 @@ def render(verdicts: list[Verdict], *, repo: str, default: str, pulls: list[dict
     """Return the Markdown report."""
     by_head: dict[str, list[dict]] = {}
     for pr in pulls:
-        if (pr["head"].get("repo") or {}).get("full_name") == repo:
+        if ((pr["head"].get("repo") or {}).get("full_name") or "").casefold() == repo.casefold():
             by_head.setdefault(pr["head"]["ref"], []).append(pr)
 
     def pr_states(name: str) -> str:
@@ -520,18 +533,28 @@ def delete(args: argparse.Namespace, token: str) -> int:
         return 1
     if args.run_attempt != "1":
         print(
-            f"error: this is attempt {args.run_attempt} of run {args.run_id}; the run's approvals "
-            "do not say which attempt they were for, so start a new run instead",
+            f"error: --run-attempt is {args.run_attempt or 'not set'}, not 1; the approvals of "
+            f"run {args.run_id} do not say which attempt they were for, so start a new run",
             file=sys.stderr,
         )
         return 1
-    chosen = approved_names(args.repo, token, args.run_id, args.environment)
-    if chosen is None:
+    comments = approval_comments(args.repo, token, args.run_id, args.environment)
+    if comments is None:
         print(
             f"error: run {args.run_id} has no approval for environment `{args.environment}`; "
             "add required reviewers to it in the repository's environment settings",
             file=sys.stderr,
         )
+        return 1
+    chosen: set[str] = set()
+    other: list[str] = []
+    for comment in comments:
+        names, lines = parse_names(comment)
+        chosen |= names
+        other += lines
+    if other:
+        print("The approval has lines that are not one branch name each; nothing was deleted:")
+        print("", *(f"- {line}" for line in other), sep="\n")
         return 1
     if not chosen:
         print("The approval names no branches; nothing to delete.")
@@ -539,14 +562,18 @@ def delete(args: argparse.Namespace, token: str) -> int:
     _, _, verdicts = gather(args, token)
     plan = plan_deletions(chosen, choices, verdicts)
     lines = []
+    failed = 0
     for name, skip in plan.items():
         if skip is None:
-            skip = delete_branch(args.git_dir, args.remote, name, choices[name]["sha"])
+            error = delete_branch(args.git_dir, args.remote, name, choices[name]["sha"])
+            failed += error is not None
+            skip = error
         lines.append(f"- `{name}`: {'deleted' if skip is None else f'not deleted, {skip}'}")
         # The job log streams as it goes, so it keeps this even if the run is cancelled.
         print(lines[-1], file=sys.stderr, flush=True)
     print("\n".join([f"Run {args.run_id}: {len(plan)} branches named.", "", *lines]))
-    return 0
+    # A failed push is an error, unlike a branch the checks spared, so it fails the job.
+    return 1 if failed else 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -558,7 +585,7 @@ def main(argv: list[str] | None = None) -> int:
     common.add_argument("--grace-days", type=int, default=14)
     common.add_argument("--no-fetch", action="store_true")
     common.add_argument("--run-id", default=os.environ.get("GITHUB_RUN_ID", ""))
-    common.add_argument("--run-attempt", default=os.environ.get("GITHUB_RUN_ATTEMPT", "1"))
+    common.add_argument("--run-attempt", default=os.environ.get("GITHUB_RUN_ATTEMPT", ""))
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     commands = parser.add_subparsers(dest="command", required=True)
     report_parser = commands.add_parser("report", parents=[common])

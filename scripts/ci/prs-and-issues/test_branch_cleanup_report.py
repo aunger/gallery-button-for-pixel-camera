@@ -226,6 +226,13 @@ class TestRender(unittest.TestCase):
         )
         self.assertIn("approve the run with a comment naming them:\n\n```\nfix/a|b\n```\n", out)
 
+    def test_pull_request_column_whatever_the_repo_name_case(self):
+        verdicts = [bcr.Verdict(branch("b", "a"), bcr.REVIEW, "unmerged commits")]
+        out = bcr.render(
+            verdicts, repo=REPO, default="main", pulls=[pull(4, "b", head_repo=REPO.upper())]
+        )
+        self.assertIn("| #4 closed |", out)
+
     def test_copy_block_fence_outlasts_any_backticks_in_a_name(self):
         self.assertEqual(["````", "a```b", "c", "````"], bcr.fenced(["a```b", "c"]))
 
@@ -369,29 +376,39 @@ class TestPlanDeletions(unittest.TestCase):
         )
 
 
-class TestApprovedNames(unittest.TestCase):
+class TestApprovalComments(unittest.TestCase):
     @patch.object(bcr, "gh_api")
-    def test_names_come_from_approvals_of_the_environment_only(self, api):
+    def test_comments_come_from_approvals_of_the_environment_only(self, api):
         def review(state, env, comment):
             return {"state": state, "environments": [{"name": env}], "comment": comment}
 
         api.return_value = [
-            review("approved", "branch-deletion", "```\nfix/a\n- fix/b  *\n```"),
+            review("approved", "branch-deletion", "fix/a"),
             review("approved", "other", "not-this"),
             review("rejected", "branch-deletion", "nor-this"),
             review("approved", "branch-deletion", None),
         ]
-        self.assertEqual({"fix/a", "fix/b"}, bcr.approved_names(REPO, "t", "42", "branch-deletion"))
+        self.assertEqual(["fix/a", ""], bcr.approval_comments(REPO, "t", "42", "branch-deletion"))
         api.assert_called_with(f"repos/{REPO}/actions/runs/42/approvals", "t")
 
-    @patch.object(bcr, "gh_api")
-    def test_no_approval_is_none_and_an_empty_comment_is_no_names(self, api):
-        api.return_value = []
-        self.assertIsNone(bcr.approved_names(REPO, "t", "42", "branch-deletion"))
-        api.return_value = [
-            {"state": "approved", "environments": [{"name": "branch-deletion"}], "comment": ""}
-        ]
-        self.assertEqual(set(), bcr.approved_names(REPO, "t", "42", "branch-deletion"))
+    @patch.object(bcr, "gh_api", return_value=[])
+    def test_no_approval_is_none(self, api):
+        self.assertIsNone(bcr.approval_comments(REPO, "t", "42", "branch-deletion"))
+
+
+class TestParseNames(unittest.TestCase):
+    def test_the_printed_block_bullets_and_backticks(self):
+        comment = "```\nfix/a\n```\n\n- fix/b\n* `fix/c`\n  `fix/d`  \r\n"
+        self.assertEqual(({"fix/a", "fix/b", "fix/c", "fix/d"}, []), bcr.parse_names(comment))
+
+    def test_any_line_that_is_not_one_name_is_returned(self):
+        comment = "fix/a\nDelete all of these except fix/b\n`fix/c`, `fix/d`\n`"
+        names, other = bcr.parse_names(comment)
+        self.assertEqual({"fix/a"}, names)
+        self.assertEqual(["Delete all of these except fix/b", "`fix/c`, `fix/d`", "`"], other)
+
+    def test_an_empty_comment_names_nothing(self):
+        self.assertEqual((set(), []), bcr.parse_names(""))
 
 
 class TestDeleteCommand(unittest.TestCase):
@@ -403,7 +420,7 @@ class TestDeleteCommand(unittest.TestCase):
         ]
 
     def setUp(self):
-        for name in ("approved_names", "gather", "delete_branch"):
+        for name in ("approval_comments", "gather", "delete_branch"):
             patcher = patch.object(bcr, name)
             setattr(self, name, patcher.start())
             self.addCleanup(patcher.stop)
@@ -414,7 +431,7 @@ class TestDeleteCommand(unittest.TestCase):
         self.gather.return_value = ("main", [], verdicts)
         self.choices = bcr.offered(verdicts)
         # The approver names an offered branch and one the report never offered.
-        self.approved_names.return_value = {"ok", "main"}
+        self.approval_comments.return_value = ["ok\nmain"]
         self.delete_branch.return_value = None
 
     def run_main(self, argv: list[str]) -> tuple[int, str, str]:
@@ -426,12 +443,12 @@ class TestDeleteCommand(unittest.TestCase):
         return code, out.getvalue(), err.getvalue()
 
     def test_unapproved_run_deletes_nothing(self):
-        self.approved_names.return_value = None
+        self.approval_comments.return_value = None
         self.assertEqual(1, self.run_main(self.argv(self.choices))[0])
         self.delete_branch.assert_not_called()
 
     def test_an_approval_naming_nothing_deletes_nothing(self):
-        self.approved_names.return_value = set()
+        self.approval_comments.return_value = [""]
         code, out, _ = self.run_main(self.argv(self.choices))
         self.assertEqual((0, "The approval names no branches; nothing to delete.\n"), (code, out))
         self.gather.assert_not_called()
@@ -441,14 +458,34 @@ class TestDeleteCommand(unittest.TestCase):
         argv = self.argv(self.choices)
         argv[argv.index("--run-attempt") + 1] = "2"
         self.assertEqual(1, self.run_main(argv)[0])
-        self.approved_names.assert_not_called()
+        self.approval_comments.assert_not_called()
+        self.delete_branch.assert_not_called()
+
+    def test_an_unset_run_attempt_deletes_nothing(self):
+        argv = self.argv(self.choices)
+        i = argv.index("--run-attempt")
+        del argv[i : i + 2]
+        with patch.dict(os.environ, {}, clear=False) as env:
+            env.pop("GITHUB_RUN_ATTEMPT", None)
+            code, _, err = self.run_main(argv)
+        self.assertEqual(1, code)
+        self.assertIn("--run-attempt is not set", err)
+        self.approval_comments.assert_not_called()
+
+    def test_an_ambiguous_approval_deletes_nothing(self):
+        self.approval_comments.return_value = ["ok", "main\nexcept ok"]
+        code, out, _ = self.run_main(self.argv(self.choices))
+        self.assertEqual(1, code)
+        self.assertIn("nothing was deleted", out)
+        self.assertIn("- except ok", out)
+        self.gather.assert_not_called()
         self.delete_branch.assert_not_called()
 
     def test_unreadable_choices_deletes_nothing(self):
         argv = self.argv(self.choices)
         argv[argv.index("--choices") + 1] = ""
         self.assertEqual(1, self.run_main(argv)[0])
-        self.approved_names.assert_not_called()
+        self.approval_comments.assert_not_called()
         self.delete_branch.assert_not_called()
 
     def test_deletes_named_offered_branches_and_reports_the_rest(self):
@@ -459,9 +496,10 @@ class TestDeleteCommand(unittest.TestCase):
         self.assertIn("- `ok`: deleted", out)
         self.assertIn("- `main`: not deleted, not offered by the report", out)
 
-    def test_a_failed_push_is_reported(self):
+    def test_a_failed_push_is_reported_and_fails_the_job(self):
         self.delete_branch.return_value = "stale info"
-        _, out, _ = self.run_main(self.argv(self.choices))
+        code, out, _ = self.run_main(self.argv(self.choices))
+        self.assertEqual(1, code)
         self.assertIn("- `ok`: not deleted, stale info", out)
 
     def test_each_result_is_logged_as_it_happens(self):

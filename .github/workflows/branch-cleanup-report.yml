@@ -3,8 +3,9 @@ name: Branch Cleanup Report
 # The report job sorts every branch into Delete, Review and Keep, and writes that to the job
 # summary, ending the Delete section with the names alone, ready to copy.
 # The delete job then waits for approval in the branch-deletion environment. To delete
-# branches, approve it with a comment naming them, one per line or separated by spaces. It
-# sorts every branch again and deletes the named ones, out of the ones the report job offered.
+# branches, approve it with a comment naming them one per line; the copied block works as it is,
+# and a comment with any other line deletes nothing. It sorts every branch again and deletes
+# the named ones, out of the ones the report job offered.
 # The rules, and the checks delete makes before deleting anything, are in the docstring of
 # scripts/ci/prs-and-issues/branch_cleanup_report.py.
 #
