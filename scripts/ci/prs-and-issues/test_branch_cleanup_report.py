@@ -234,7 +234,7 @@ class TestRender(unittest.TestCase):
         ]
         out = bcr.render(verdicts, repo=REPO, default="main", pulls=[])
         self.assertIn(
-            "\n\n<details>\n<summary>Names to copy</summary>\n\n```\nr1\nr2\n```\n\n</details>\n",
+            "\n\n<details>\n<summary>Names to copy (these hold unmerged commits; pick from them rather than pasting all)</summary>\n\n```\nr1\nr2\n```\n\n</details>\n",
             out,
         )
 

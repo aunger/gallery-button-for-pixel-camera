@@ -432,7 +432,12 @@ def render(verdicts: list[Verdict], *, repo: str, default: str, pulls: list[dict
             lines += fenced(names)
         elif section == REVIEW:
             # GitHub renders Markdown inside <details> only after a blank line.
-            lines += ["", "<details>", "<summary>Names to copy</summary>", ""]
+            lines += [
+                "",
+                "<details>",
+                "<summary>Names to copy (these hold unmerged commits; pick from them rather than pasting all)</summary>",
+                "",
+            ]
             lines += [*fenced(names), "", "</details>"]
     return "\n".join(lines) + "\n"
 
