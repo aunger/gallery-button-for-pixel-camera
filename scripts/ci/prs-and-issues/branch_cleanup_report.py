@@ -2,12 +2,12 @@
 """branch_cleanup_report.py: Sort the repository's branches into delete, keep and review.
 
 `report` prints a Markdown report and deletes nothing.
-With `--checklist` it also writes the report to a tracking issue as a checklist: every Delete
-branch ticked, every Review branch unticked, Keep branches left out.
-With `--choices-output` it appends the branches it offered on that checklist, with their tips
-and sections, to a file of `key=value` lines such as `$GITHUB_OUTPUT`.
-`delete` deletes the branches ticked on that issue, out of the ones `report` offered, and is
-meant to run only after a person has approved it; see "Deleting" below.
+Under "Delete" it also prints the branch names alone in a block, to copy into an approval
+comment.
+With `--choices-output` it appends the branches it offered (every branch not kept), with their
+tips and sections, to a file of `key=value` lines such as `$GITHUB_OUTPUT`.
+`delete` deletes the branches a person names in the comment they approved the run with, out of
+the ones `report` offered; see "Deleting" below.
 .github/workflows/branch-cleanup-report.yml runs both weekly.
 
 A branch goes under "Delete" only on mechanical evidence that deleting it loses no commit:
@@ -54,14 +54,16 @@ check is what stops it from deleting.
 It also refuses to run as a re-run attempt (`--run-attempt` other than 1): the run's recorded
 approvals do not say which attempt they were given for, so a new run, with a new approval, is
 the only way to try again.
-It then sorts every branch afresh, and deletes a ticked branch only when all of these hold:
+The branches to delete are the names in the comments of the run's approvals for that
+environment, separated by whitespace.
+An approval's comment is written with the approval and cannot be changed after it, so what is
+deleted is what the approver chose, not what anyone else could edit in between.
+It then sorts every branch afresh, and deletes a named branch only when all of these hold:
 
-- `report` offered it, as `--choices` says.
-  Anyone who can edit the issue can add a line to it, so the issue only says which offered
-  branches were picked; `--choices` comes from the report job's output, which no one edits.
+- `report` offered it, as `--choices` says; `--choices` comes from the report job's output.
 - No rule above keeps it now.
 - It still sorts under "Delete", if `report` offered it there.
-  A branch ticked because `report` found it safe to delete is spared once that evidence is gone,
+  A branch named because `report` found it safe to delete is spared once that evidence is gone,
   as when the branch it shared a tip with was since deleted or force-pushed.
 - Its tip is still the commit `report` offered.
 - Its tip is not about to be lost: a branch under Delete because another branch holds the same
@@ -76,19 +78,17 @@ see the whole history.
 Pass `--no-fetch` to reuse what an earlier run fetched.
 
 Usage:
-    python3 scripts/ci/prs-and-issues/branch_cleanup_report.py report [--checklist]
+    python3 scripts/ci/prs-and-issues/branch_cleanup_report.py report
         [--choices-output PATH] [--keep PATTERN]
     python3 scripts/ci/prs-and-issues/branch_cleanup_report.py delete --environment NAME
         --choices JSON [--keep PATTERN]
 
 Environment variables:
     GITHUB_REPOSITORY   Owner/repo, unless --repo is given
-    GITHUB_TOKEN        Optional for `report` alone, whose API calls can be unauthenticated;
-                        `--checklist` needs issues: write, and `delete` also needs actions: read
-                        and a git remote it can push to
-    GITHUB_RUN_ID       The run `delete` checks for approval, unless --run-id is given
+    GITHUB_TOKEN        Optional for `report`, whose API calls can be unauthenticated;
+                        `delete` needs actions: read, and a git remote it can push to
+    GITHUB_RUN_ID       The run `delete` reads approvals from, unless --run-id is given
     GITHUB_RUN_ATTEMPT  The attempt of that run, unless --run-attempt is given
-    GITHUB_SERVER_URL   With GITHUB_RUN_ID, links the checklist to the run awaiting approval
 """
 
 import argparse
@@ -118,14 +118,6 @@ SECTIONS = (
     (REVIEW, "Nothing mechanical shows that these are safe to delete; a person decides."),
     (KEEP, "Kept by rule, whatever their contents."),
 )
-
-TITLE = "Branch cleanup checklist"
-MARKER = "<!-- branch-cleanup-checklist -->"
-CHECKLIST_AUTHOR = "github-actions[bot]"
-ISSUE_BODY_LIMIT = 65536
-# A checklist item records its branch, percent-encoded so no name can end the comment, in a
-# comment GitHub does not render.
-ITEM = re.compile(r"^- \[(?P<mark>[ xX])\] .*<!-- branch=(?P<name>\S+) -->$")
 
 
 @dataclass(frozen=True)
@@ -255,32 +247,26 @@ def gh_api_pages(path: str, token: str) -> list[dict]:
     return items
 
 
-def find_checklist_issue(repo: str, token: str) -> dict | None:
-    """Return the open tracking issue this script wrote, or None when there is none."""
-    creator = urllib.parse.quote(CHECKLIST_AUTHOR)
-    issues = [
-        issue
-        for issue in gh_api_pages(f"repos/{repo}/issues?state=open&creator={creator}", token)
-        if "pull_request" not in issue and (issue.get("body") or "").startswith(MARKER)
-    ]
-    return min(issues, key=lambda issue: issue["number"], default=None)
+def approved_names(repo: str, token: str, run_id: str, environment: str) -> set[str] | None:
+    """Return the branch names in the comments approving run *run_id* for *environment*.
 
-
-def write_checklist_issue(repo: str, token: str, body: str) -> dict:
-    """Replace the tracking issue's body with *body*, opening the issue if there is none."""
-    issue = find_checklist_issue(repo, token)
-    if issue is None:
-        return gh_api(f"repos/{repo}/issues", token, "POST", {"title": TITLE, "body": body})
-    return gh_api(f"repos/{repo}/issues/{issue['number']}", token, "PATCH", {"body": body})
-
-
-def run_approved(repo: str, token: str, run_id: str, environment: str) -> bool:
-    """Return whether a person approved workflow run *run_id* for *environment*."""
-    return any(
-        review["state"] == "approved"
-        and any(env["name"] == environment for env in review["environments"])
+    None means the run has no such approval. Bullets and code fences pasted along with the
+    names are ignored; no branch name consists only of those characters.
+    """
+    reviews = [
+        review
         for review in gh_api(f"repos/{repo}/actions/runs/{run_id}/approvals", token)
-    )
+        if review["state"] == "approved"
+        and any(env["name"] == environment for env in review["environments"])
+    ]
+    if not reviews:
+        return None
+    return {
+        word
+        for review in reviews
+        for word in (review.get("comment") or "").split()
+        if word.strip("`-*")
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -427,69 +413,24 @@ def render(verdicts: list[Verdict], *, repo: str, default: str, pulls: list[dict
             f"| {pr_states(v.branch.name)} |"
             for v in rows
         ]
+        if section == DELETE:
+            lines += ["", "To delete them, approve the run with a comment naming them:", ""]
+            lines += fenced([v.branch.name for v in rows])
     return "\n".join(lines) + "\n"
 
 
-def render_checklist(
-    verdicts: list[Verdict], *, repo: str, run_url: str, limit: int = ISSUE_BODY_LIMIT
-) -> tuple[str, list[Verdict]]:
-    """Return the tracking issue's body and the verdicts it lists.
-
-    Delete branches are ticked and Review branches unticked. When the body would exceed
-    *limit* characters, Review branches are left off its end, and it says how many.
-    """
-    approve = f"[the run awaiting approval]({run_url})" if run_url else "the run awaiting approval"
-    kept = sum(v.section == KEEP for v in verdicts)
-    head = [
-        MARKER,
-        f"Tick the branches to delete and untick the ones to keep, then approve {approve}.",
-        (
-            "After approval it deletes each ticked branch, except one that a keep rule protects "
-            "by then, whose tip has moved since this list was written, whose evidence for "
-            "Delete is gone, or whose tip would be lost with it."
-        ),
-        "The next scheduled run rewrites this list and cancels a run still awaiting approval.",
-        "",
-        f"{kept} branches kept by rule are not listed; the run's job summary has the full report.",
-    ]
-    rows = {section: [v for v in verdicts if v.section == section] for section, _ in SECTIONS[:2]}
-    listed = dict(rows)
-    while True:
-        lines = list(head)
-        for section, blurb in SECTIONS[:2]:
-            lines += ["", f"## {section} ({len(rows[section])})", "", blurb, ""]
-            mark = "x" if section == DELETE else " "
-            lines += [
-                f"- [{mark}] {branch_link(repo, v.branch.name)}: {v.reason} "
-                f"<!-- branch={urllib.parse.quote(v.branch.name, safe='/')} -->"
-                for v in listed[section]
-            ]
-            left_off = len(rows[section]) - len(listed[section])
-            if left_off:
-                lines.append(f"- {left_off} more did not fit here; the job summary lists them.")
-        body = "\n".join(lines) + "\n"
-        if len(body) <= limit:
-            return body, listed[DELETE] + listed[REVIEW]
-        if not listed[REVIEW]:
-            raise RuntimeError(f"checklist is {len(body)} characters, over GitHub's limit")
-        listed[REVIEW] = listed[REVIEW][:-1]
+def fenced(names: list[str]) -> list[str]:
+    """Return *names* one per line in a Markdown code block that none of them can close."""
+    longest = max((len(run) for name in names for run in re.findall("`+", name)), default=0)
+    fence = "`" * max(3, longest + 1)
+    return [fence, *names, fence]
 
 
-def ticked(body: str) -> set[str]:
-    """Return the branches ticked on the checklist *body*."""
-    found = set()
-    for line in body.splitlines():
-        m = ITEM.match(line.strip())
-        if m and m["mark"] in "xX":
-            found.add(urllib.parse.unquote(m["name"]))
-    return found
-
-
-def offered(listed: list[Verdict]) -> dict[str, dict[str, str]]:
-    """Return the branches a checklist listing *listed* offers, each with its tip and section."""
+def offered(verdicts: list[Verdict]) -> dict[str, dict[str, str]]:
+    """Return the branches the report offers for deletion, each with its tip and section."""
     return {
         v.branch.name: {"sha": v.branch.sha, "section": v.section}
-        for v in listed
+        for v in verdicts
         if v.section != KEEP
     }
 
@@ -499,7 +440,7 @@ def plan_deletions(
 ) -> dict[str, str | None]:
     """Map each chosen branch to why it must not be deleted now, or to None if it may be.
 
-    *choices* is what the checklist offered, by branch, with the tip and section it saw;
+    *choices* is what the report offered, by branch, with the tip and section it saw;
     *verdicts* is the branches as they stand now.
     """
     current = {v.branch.name: v for v in verdicts}
@@ -507,13 +448,13 @@ def plan_deletions(
     for name in sorted(chosen):
         v = current.get(name)
         if name not in choices:
-            plan[name] = "not offered on the checklist"
+            plan[name] = "not offered by the report"
         elif v is None:
             plan[name] = "no longer exists"
         elif v.section == KEEP:
             plan[name] = f"kept: {v.reason}"
         elif v.branch.sha != choices[name]["sha"]:
-            plan[name] = "tip moved since the checklist was written"
+            plan[name] = "tip moved since the report"
         elif choices[name]["section"] == DELETE and v.section != DELETE:
             plan[name] = f"no longer under {DELETE}: {v.reason}"
         else:
@@ -561,19 +502,10 @@ def gather(args: argparse.Namespace, token: str) -> tuple[str, list[dict], list[
 
 def report(args: argparse.Namespace, token: str) -> int:
     default, pulls, verdicts = gather(args, token)
-    # Printed before the checklist is written, so the report survives a failure to write it.
     print(render(verdicts, repo=args.repo, default=default, pulls=pulls), end="")
-    listed = [v for v in verdicts if v.section != KEEP]
-    if args.checklist:
-        run_url = ""
-        if args.run_id and os.environ.get("GITHUB_SERVER_URL"):
-            run_url = f"{os.environ['GITHUB_SERVER_URL']}/{args.repo}/actions/runs/{args.run_id}"
-        body, listed = render_checklist(verdicts, repo=args.repo, run_url=run_url)
-        issue = write_checklist_issue(args.repo, token, body)
-        print(f"\nChecklist: [#{issue['number']}]({issue['html_url']})")
     if args.choices_output:
         with open(args.choices_output, "a", encoding="utf-8") as f:
-            f.write(f"choices={json.dumps(offered(listed))}\n")
+            f.write(f"choices={json.dumps(offered(verdicts))}\n")
     return 0
 
 
@@ -593,19 +525,19 @@ def delete(args: argparse.Namespace, token: str) -> int:
             file=sys.stderr,
         )
         return 1
-    if not run_approved(args.repo, token, args.run_id, args.environment):
+    chosen = approved_names(args.repo, token, args.run_id, args.environment)
+    if chosen is None:
         print(
             f"error: run {args.run_id} has no approval for environment `{args.environment}`; "
             "add required reviewers to it in the repository's environment settings",
             file=sys.stderr,
         )
         return 1
-    issue = find_checklist_issue(args.repo, token)
-    if issue is None:
-        print("No open checklist issue; nothing to delete.")
+    if not chosen:
+        print("The approval names no branches; nothing to delete.")
         return 0
     _, _, verdicts = gather(args, token)
-    plan = plan_deletions(ticked(issue.get("body") or ""), choices, verdicts)
+    plan = plan_deletions(chosen, choices, verdicts)
     lines = []
     for name, skip in plan.items():
         if skip is None:
@@ -613,13 +545,7 @@ def delete(args: argparse.Namespace, token: str) -> int:
         lines.append(f"- `{name}`: {'deleted' if skip is None else f'not deleted, {skip}'}")
         # The job log streams as it goes, so it keeps this even if the run is cancelled.
         print(lines[-1], file=sys.stderr, flush=True)
-    summary = "\n".join([f"Run {args.run_id}: {len(plan)} branches ticked.", "", *lines]) + "\n"
-    # Printed first, so the job summary records the deletions even if the comment fails.
-    print(summary, end="")
-    if plan:
-        gh_api(
-            f"repos/{args.repo}/issues/{issue['number']}/comments", token, "POST", {"body": summary}
-        )
+    print("\n".join([f"Run {args.run_id}: {len(plan)} branches named.", "", *lines]))
     return 0
 
 
@@ -636,7 +562,6 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     commands = parser.add_subparsers(dest="command", required=True)
     report_parser = commands.add_parser("report", parents=[common])
-    report_parser.add_argument("--checklist", action="store_true")
     report_parser.add_argument("--choices-output", metavar="PATH")
     delete_parser = commands.add_parser("delete", parents=[common])
     delete_parser.add_argument("--environment", required=True)

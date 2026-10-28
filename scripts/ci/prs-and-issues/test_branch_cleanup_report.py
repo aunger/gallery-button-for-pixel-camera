@@ -224,6 +224,10 @@ class TestRender(unittest.TestCase):
             "| 2026-09-26 | #3 merged, #4 closed |",
             out,
         )
+        self.assertIn("approve the run with a comment naming them:\n\n```\nfix/a|b\n```\n", out)
+
+    def test_copy_block_fence_outlasts_any_backticks_in_a_name(self):
+        self.assertEqual(["````", "a```b", "c", "````"], bcr.fenced(["a```b", "c"]))
 
 
 class TestGhApiPages(unittest.TestCase):
@@ -298,55 +302,19 @@ SHA_A = "a" * 40
 SHA_B = "b" * 40
 
 
-class TestChecklist(unittest.TestCase):
-    def verdicts(self) -> list[bcr.Verdict]:
-        return [
+class TestOffered(unittest.TestCase):
+    def test_offers_every_branch_not_kept(self):
+        verdicts = [
             bcr.Verdict(branch("done", SHA_A), bcr.DELETE, "in default branch"),
-            bcr.Verdict(branch("odd-->name", SHA_B), bcr.REVIEW, "unmerged commits"),
+            bcr.Verdict(branch("odd", SHA_B), bcr.REVIEW, "unmerged commits"),
             bcr.Verdict(branch("main", SHA_B), bcr.KEEP, "default branch"),
         ]
-
-    def test_ticks_delete_leaves_review_unticked_and_omits_keep(self):
-        body, listed = bcr.render_checklist(self.verdicts(), repo=REPO, run_url="https://x/runs/1")
-        self.assertEqual(["done", "odd-->name"], [v.branch.name for v in listed])
-        self.assertTrue(body.startswith(bcr.MARKER))
-        self.assertIn("then approve [the run awaiting approval](https://x/runs/1).", body)
-        self.assertIn("1 branches kept by rule are not listed", body)
-        self.assertNotIn("tree/main", body)
-        self.assertEqual({"done"}, bcr.ticked(body))
-
-    def test_ticking_by_hand_as_github_stores_it(self):
-        body, _ = bcr.render_checklist(self.verdicts(), repo=REPO, run_url="")
-        edited = body.replace("- [x]", "- [ ]").replace("- [ ]", "- [X]", 2).replace("\n", "\r\n")
-        self.assertEqual({"done", "odd-->name"}, bcr.ticked(edited))
-
-    def test_a_ticked_line_without_the_branch_comment_is_ignored(self):
-        self.assertEqual(set(), bcr.ticked("- [x] [extra](https://example.com)\n- [x] extra"))
-
-    def test_leaves_review_branches_off_the_end_when_over_the_limit(self):
-        verdicts = [bcr.Verdict(branch("d", SHA_A), bcr.DELETE, "in default branch")] + [
-            bcr.Verdict(branch(f"r{i}", SHA_B), bcr.REVIEW, "unmerged commits") for i in range(9)
-        ]
-        full, _ = bcr.render_checklist(verdicts, repo=REPO, run_url="")
-        body, listed = bcr.render_checklist(verdicts, repo=REPO, run_url="", limit=len(full) - 1)
-        self.assertLessEqual(len(body), len(full) - 1)
-        self.assertEqual(["d"] + [f"r{i}" for i in range(8)], [v.branch.name for v in listed])
-        self.assertIn("## Review (9)", body)
-        self.assertIn("- 1 more did not fit here; the job summary lists them.", body)
-        self.assertEqual({"d"}, bcr.ticked(body))
-
-    def test_raises_when_the_delete_branches_alone_do_not_fit(self):
-        verdicts = [bcr.Verdict(branch("d", SHA_A), bcr.DELETE, "in default branch")]
-        with self.assertRaises(RuntimeError):
-            bcr.render_checklist(verdicts, repo=REPO, run_url="", limit=100)
-
-    def test_offers_every_branch_not_kept(self):
         self.assertEqual(
             {
                 "done": {"sha": SHA_A, "section": bcr.DELETE},
-                "odd-->name": {"sha": SHA_B, "section": bcr.REVIEW},
+                "odd": {"sha": SHA_B, "section": bcr.REVIEW},
             },
-            bcr.offered(self.verdicts()),
+            bcr.offered(verdicts),
         )
 
 
@@ -366,7 +334,7 @@ class TestPlanDeletions(unittest.TestCase):
         )
         self.assertEqual({"b": None}, bcr.plan_deletions({"b"}, choices, verdicts))
 
-    def test_each_reason_to_spare_a_ticked_branch(self):
+    def test_each_reason_to_spare_a_named_branch(self):
         verdicts = [
             bcr.Verdict(branch("ok", SHA_A), bcr.REVIEW, "unmerged commits"),
             bcr.Verdict(branch("still-safe", SHA_A), bcr.DELETE, "in default branch"),
@@ -391,8 +359,8 @@ class TestPlanDeletions(unittest.TestCase):
             {
                 "gone": "no longer exists",
                 "holder-gone": "no longer under Delete: unmerged commits",
-                "inserted": "not offered on the checklist",
-                "moved": "tip moved since the checklist was written",
+                "inserted": "not offered by the report",
+                "moved": "tip moved since the report",
                 "now-open": "kept: head of open #9",
                 "ok": None,
                 "still-safe": None,
@@ -401,48 +369,29 @@ class TestPlanDeletions(unittest.TestCase):
         )
 
 
-class TestIssueApi(unittest.TestCase):
-    def issue(self, number: int, body: str, **extra) -> dict:
-        return {"number": number, "body": body, "html_url": f"https://i/{number}", **extra}
+class TestApprovedNames(unittest.TestCase):
+    @patch.object(bcr, "gh_api")
+    def test_names_come_from_approvals_of_the_environment_only(self, api):
+        def review(state, env, comment):
+            return {"state": state, "environments": [{"name": env}], "comment": comment}
 
-    @patch.object(bcr, "gh_api_pages")
-    def test_finds_the_oldest_open_issue_carrying_the_marker(self, pages):
-        pages.return_value = [
-            self.issue(9, bcr.MARKER),
-            self.issue(3, bcr.MARKER, pull_request={}),
-            self.issue(5, "no marker"),
-            self.issue(7, bcr.MARKER + "\nlist"),
-            self.issue(8, None),
+        api.return_value = [
+            review("approved", "branch-deletion", "```\nfix/a\n- fix/b  *\n```"),
+            review("approved", "other", "not-this"),
+            review("rejected", "branch-deletion", "nor-this"),
+            review("approved", "branch-deletion", None),
         ]
-        self.assertEqual(7, bcr.find_checklist_issue(REPO, "t")["number"])
-        self.assertIn("creator=github-actions%5Bbot%5D", pages.call_args.args[0])
-
-    @patch.object(bcr, "gh_api")
-    @patch.object(bcr, "find_checklist_issue")
-    def test_writes_an_existing_issue_or_opens_one(self, find, api):
-        find.return_value = self.issue(7, bcr.MARKER)
-        bcr.write_checklist_issue(REPO, "t", "body")
-        api.assert_called_with(f"repos/{REPO}/issues/7", "t", "PATCH", {"body": "body"})
-        find.return_value = None
-        bcr.write_checklist_issue(REPO, "t", "body")
-        api.assert_called_with(
-            f"repos/{REPO}/issues", "t", "POST", {"title": bcr.TITLE, "body": "body"}
-        )
-
-    @patch.object(bcr, "gh_api")
-    def test_run_approved_only_for_an_approval_of_the_environment(self, api):
-        def review(state, env):
-            return {"state": state, "environments": [{"name": env}]}
-
-        for reviews, expected in [
-            ([review("approved", "branch-deletion")], True),
-            ([review("rejected", "branch-deletion")], False),
-            ([review("approved", "other")], False),
-            ([], False),
-        ]:
-            api.return_value = reviews
-            self.assertIs(expected, bcr.run_approved(REPO, "t", "42", "branch-deletion"))
+        self.assertEqual({"fix/a", "fix/b"}, bcr.approved_names(REPO, "t", "42", "branch-deletion"))
         api.assert_called_with(f"repos/{REPO}/actions/runs/42/approvals", "t")
+
+    @patch.object(bcr, "gh_api")
+    def test_no_approval_is_none_and_an_empty_comment_is_no_names(self, api):
+        api.return_value = []
+        self.assertIsNone(bcr.approved_names(REPO, "t", "42", "branch-deletion"))
+        api.return_value = [
+            {"state": "approved", "environments": [{"name": "branch-deletion"}], "comment": ""}
+        ]
+        self.assertEqual(set(), bcr.approved_names(REPO, "t", "42", "branch-deletion"))
 
 
 class TestDeleteCommand(unittest.TestCase):
@@ -450,12 +399,11 @@ class TestDeleteCommand(unittest.TestCase):
         return [
             "delete",
             *("--repo", REPO, "--environment", "branch-deletion", "--run-id", "42"),
-            *("--run-attempt", "1"),
-            *("--choices", json.dumps(choices)),
+            *("--run-attempt", "1", "--choices", json.dumps(choices)),
         ]
 
     def setUp(self):
-        for name in ("run_approved", "find_checklist_issue", "gather", "delete_branch", "gh_api"):
+        for name in ("approved_names", "gather", "delete_branch"):
             patcher = patch.object(bcr, name)
             setattr(self, name, patcher.start())
             self.addCleanup(patcher.stop)
@@ -465,68 +413,69 @@ class TestDeleteCommand(unittest.TestCase):
         ]
         self.gather.return_value = ("main", [], verdicts)
         self.choices = bcr.offered(verdicts)
-        # An edit to the issue that ticks a line it was never offered.
-        inserted = "- [x] [main](https://x): mine <!-- branch=main -->\n"
-        body = bcr.render_checklist(verdicts, repo=REPO, run_url="")[0] + inserted
-        self.find_checklist_issue.return_value = {"number": 7, "body": body}
+        # The approver names an offered branch and one the report never offered.
+        self.approved_names.return_value = {"ok", "main"}
         self.delete_branch.return_value = None
 
+    def run_main(self, argv: list[str]) -> tuple[int, str, str]:
+        with (
+            patch("sys.stdout", new_callable=io.StringIO) as out,
+            patch("sys.stderr", new_callable=io.StringIO) as err,
+        ):
+            code = bcr.main(argv)
+        return code, out.getvalue(), err.getvalue()
+
     def test_unapproved_run_deletes_nothing(self):
-        self.run_approved.return_value = False
-        with patch("sys.stderr"):
-            self.assertEqual(1, bcr.main(self.argv(self.choices)))
+        self.approved_names.return_value = None
+        self.assertEqual(1, self.run_main(self.argv(self.choices))[0])
         self.delete_branch.assert_not_called()
-        self.gh_api.assert_not_called()
+
+    def test_an_approval_naming_nothing_deletes_nothing(self):
+        self.approved_names.return_value = set()
+        code, out, _ = self.run_main(self.argv(self.choices))
+        self.assertEqual((0, "The approval names no branches; nothing to delete.\n"), (code, out))
+        self.gather.assert_not_called()
+        self.delete_branch.assert_not_called()
 
     def test_a_rerun_attempt_deletes_nothing(self):
-        self.run_approved.return_value = True
-        with patch("sys.stderr"):
-            argv = self.argv(self.choices)
-            argv[argv.index("--run-attempt") + 1] = "2"
-            self.assertEqual(1, bcr.main(argv))
-        self.run_approved.assert_not_called()
+        argv = self.argv(self.choices)
+        argv[argv.index("--run-attempt") + 1] = "2"
+        self.assertEqual(1, self.run_main(argv)[0])
+        self.approved_names.assert_not_called()
         self.delete_branch.assert_not_called()
 
     def test_unreadable_choices_deletes_nothing(self):
-        self.run_approved.return_value = True
-        with patch("sys.stderr"):
-            argv = self.argv(self.choices)
-            argv[argv.index("--choices") + 1] = ""
-            self.assertEqual(1, bcr.main(argv))
-        self.run_approved.assert_not_called()
+        argv = self.argv(self.choices)
+        argv[argv.index("--choices") + 1] = ""
+        self.assertEqual(1, self.run_main(argv)[0])
+        self.approved_names.assert_not_called()
         self.delete_branch.assert_not_called()
 
-    def test_approved_run_deletes_ticked_branches_and_reports_on_the_issue(self):
-        self.run_approved.return_value = True
-        with patch("sys.stdout"):
-            self.assertEqual(0, bcr.main(self.argv(self.choices)))
+    def test_deletes_named_offered_branches_and_reports_the_rest(self):
+        code, out, _ = self.run_main(self.argv(self.choices))
+        self.assertEqual(0, code)
         self.delete_branch.assert_called_once_with(".", "origin", "ok", SHA_A)
-        path, _, method, body = self.gh_api.call_args.args
-        self.assertEqual((f"repos/{REPO}/issues/7/comments", "POST"), (path, method))
-        self.assertIn("- `ok`: deleted", body["body"])
-        self.assertIn("- `main`: not deleted, not offered on the checklist", body["body"])
+        self.assertIn("Run 42: 2 branches named.", out)
+        self.assertIn("- `ok`: deleted", out)
+        self.assertIn("- `main`: not deleted, not offered by the report", out)
 
     def test_a_failed_push_is_reported(self):
-        self.run_approved.return_value = True
         self.delete_branch.return_value = "stale info"
-        with patch("sys.stdout"):
-            bcr.main(self.argv(self.choices))
-        self.assertIn("- `ok`: not deleted, stale info", self.gh_api.call_args.args[3]["body"])
+        _, out, _ = self.run_main(self.argv(self.choices))
+        self.assertIn("- `ok`: not deleted, stale info", out)
 
     def test_each_result_is_logged_as_it_happens(self):
-        self.run_approved.return_value = True
         logged = []
         self.delete_branch.side_effect = lambda *args: logged.append(sys.stderr.getvalue())
-        with patch("sys.stdout"), patch("sys.stderr", new_callable=io.StringIO) as stderr:
-            bcr.main(self.argv(self.choices))
+        _, _, err = self.run_main(self.argv(self.choices))
         # `main` sorts first, so its result is already logged when `ok` is deleted.
-        self.assertEqual(["- `main`: not deleted, not offered on the checklist\n"], logged)
-        self.assertTrue(stderr.getvalue().endswith("- `ok`: deleted\n"))
+        self.assertEqual(["- `main`: not deleted, not offered by the report\n"], logged)
+        self.assertTrue(err.endswith("- `ok`: deleted\n"))
 
 
 class TestReportCommand(unittest.TestCase):
     @patch.object(bcr, "gather")
-    def test_choices_output_holds_what_the_checklist_offered(self, gather):
+    def test_choices_output_holds_every_branch_not_kept(self, gather):
         verdicts = [
             bcr.Verdict(branch("ok", SHA_A), bcr.DELETE, "in default branch"),
             bcr.Verdict(branch("main", SHA_B), bcr.KEEP, "default branch"),
@@ -536,38 +485,16 @@ class TestReportCommand(unittest.TestCase):
             out = os.path.join(tmp, "github_output")
             with open(out, "w", encoding="utf-8") as f:
                 f.write("earlier=1\n")
-            with patch("sys.stdout"):
+            with patch("sys.stdout", new_callable=io.StringIO) as stdout:
                 bcr.main(["report", "--repo", REPO, "--choices-output", out])
             with open(out, encoding="utf-8") as f:
                 lines = f.read().splitlines()
+        self.assertTrue(stdout.getvalue().startswith("# Branch cleanup report"))
         self.assertEqual("earlier=1", lines[0])
         key, value = lines[1].split("=", 1)
         self.assertEqual(
             ("choices", {"ok": {"sha": SHA_A, "section": bcr.DELETE}}), (key, json.loads(value))
         )
-
-    @patch.object(bcr, "write_checklist_issue", return_value={"number": 7, "html_url": "u"})
-    @patch.object(bcr, "render_checklist")
-    @patch.object(bcr, "gather")
-    def test_choices_output_holds_only_what_the_checklist_listed(self, gather, render, write):
-        verdicts = [
-            bcr.Verdict(branch("ok", SHA_A), bcr.DELETE, "in default branch"),
-            bcr.Verdict(branch("left-off", SHA_B), bcr.REVIEW, "unmerged commits"),
-        ]
-        gather.return_value = ("main", [], verdicts)
-        render.return_value = ("body", verdicts[:1])
-        with (
-            tempfile.TemporaryDirectory() as tmp,
-            patch("sys.stdout", new_callable=io.StringIO) as out,
-        ):
-            path = os.path.join(tmp, "github_output")
-            bcr.main(["report", "--repo", REPO, "--checklist", "--choices-output", path])
-            with open(path, encoding="utf-8") as f:
-                value = f.read().split("=", 1)[1]
-        self.assertEqual((REPO, "body"), (write.call_args.args[0], write.call_args.args[2]))
-        self.assertEqual(["ok"], list(json.loads(value)))
-        self.assertTrue(out.getvalue().startswith("# Branch cleanup report"))
-        self.assertTrue(out.getvalue().endswith("\nChecklist: [#7](u)\n"))
 
 
 class TestDeleteBranch(unittest.TestCase):

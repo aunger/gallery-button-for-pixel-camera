@@ -1,11 +1,10 @@
 name: Branch Cleanup Report
 
-# The report job sorts every branch into Delete, Review and Keep, writes that to the job
-# summary, and writes a checklist of the Delete and Review branches to a tracking issue.
-# The delete job then waits for approval in the branch-deletion environment. Once approved, it
-# sorts every branch again and deletes the ones ticked on the issue at that moment, out of the
-# ones the report job offered. It takes that offer from the report job's output, not from the
-# issue, so a line someone adds to the issue deletes nothing.
+# The report job sorts every branch into Delete, Review and Keep, and writes that to the job
+# summary, ending the Delete section with the names alone, ready to copy.
+# The delete job then waits for approval in the branch-deletion environment. To delete
+# branches, approve it with a comment naming them, one per line or separated by spaces. It
+# sorts every branch again and deletes the named ones, out of the ones the report job offered.
 # The rules, and the checks delete makes before deleting anything, are in the docstring of
 # scripts/ci/prs-and-issues/branch_cleanup_report.py.
 #
@@ -19,9 +18,9 @@ on:
     - cron: '23 5 * * 1'   # Mondays at 05:23 UTC
   workflow_dispatch:
 
-# A new run rewrites the checklist, so it cancels a run still waiting for approval. It cancels
-# a delete job already running too; that job logs each deletion as it makes it, so the job log
-# still records what a cancelled run deleted.
+# A new run cancels one still waiting for approval, whose report is then out of date. It
+# cancels a delete job already running too; that job logs each deletion as it makes it, so the
+# job log still records what a cancelled run deleted.
 concurrency:
   group: branch-cleanup
   cancel-in-progress: true
@@ -36,18 +35,17 @@ jobs:
       choices: ${{ steps.report.outputs.choices }}
     permissions:
       contents: read
-      issues: write
       pull-requests: read
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
 
-      - name: Write report and checklist
+      - name: Write report
         id: report
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: >-
-          python3 scripts/ci/prs-and-issues/branch_cleanup_report.py report --checklist
+          python3 scripts/ci/prs-and-issues/branch_cleanup_report.py report
           --choices-output "$GITHUB_OUTPUT" >> "$GITHUB_STEP_SUMMARY"
 
   delete:
@@ -58,13 +56,12 @@ jobs:
     permissions:
       actions: read
       contents: write
-      issues: write
       pull-requests: read
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
 
-      - name: Delete ticked branches
+      - name: Delete branches named in the approval
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CHOICES: ${{ needs.report.outputs.choices }}
