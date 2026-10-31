@@ -113,8 +113,7 @@ The sessions that run the cycle need the GitHub MCP server, which the agents use
 
 ### Moving the plugin to its own repository
 
-Nothing in this directory refers to its host by path except one fallback: the hook command in `SKILL.md`'s frontmatter names `$CLAUDE_PROJECT_DIR/.claude/skills/orchestrate` when `CLAUDE_PLUGIN_ROOT` is not set in the hook's environment.
-When the plugin is installed from a marketplace that variable is set, and the fallback is unused.
+Nothing in this directory refers to its host by path: every script and reference is reached through `${CLAUDE_PLUGIN_ROOT}`, including the hook command in `SKILL.md`'s frontmatter.
 The host repository keeps `.claude/orchestrate.json`, its labels, and its own instructions, which is everything that was ever specific to it.
 
 ## Validating

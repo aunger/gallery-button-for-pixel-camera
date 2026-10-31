@@ -8,7 +8,7 @@ hooks:
     - matcher: "Edit|Write|NotebookEdit|Read|SendMessage"
       hooks:
         - type: command
-          command: python3 "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/orchestrate}/scripts/hooks/orchestrator_guard.py"
+          command: python3 "${CLAUDE_PLUGIN_ROOT}/scripts/hooks/orchestrator_guard.py"
 ---
 
 # Orchestrator
