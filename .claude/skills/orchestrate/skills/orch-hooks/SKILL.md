@@ -1,6 +1,6 @@
 ---
-name: orch_hooks
-description: "Disengage or engage the orchestrate plugin's hooks (the dispatch-form check and the Orchestrator guard) for this session. Usage: /orch_hooks disengage, /orch_hooks engage, /orch_hooks status."
+name: orch-hooks
+description: "Disengage or engage the orchestrate plugin's hooks (the dispatch-form check and the Orchestrator guard) for this session. Usage: /orch-hooks disengage, /orch-hooks engage, /orch-hooks status."
 argument-hint: disengage | engage | status
 disable-model-invocation: true
 allowed-tools: Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/hooks/hook_state.py *)

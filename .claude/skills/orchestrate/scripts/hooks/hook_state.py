@@ -5,7 +5,7 @@ The plugin's two hooks (check_dispatch.py and orchestrator_guard.py) enforce
 the Orchestrator's rules. Sometimes a person needs them out of the way: to
 hand-dispatch an agent with a note, to let an Orchestrator session do other
 work, or to recover from a cycle that went wrong. This script keeps the
-state those hooks consult first, and the /orch_hooks skill drives it.
+state those hooks consult first, and the /orch-hooks skill drives it.
 
 State is per session, in a file the plugin owns:
 

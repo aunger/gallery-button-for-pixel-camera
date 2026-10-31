@@ -19,7 +19,7 @@ rules from SKILL.md:
   message the Orchestrator sends an agent.
 
 A refusal exits 2 with the reason on stderr, which Claude Code puts in front
-of the model. /orch_hooks disengage (hook_state.py) switches the guard off for
+of the model. /orch-hooks disengage (hook_state.py) switches the guard off for
 the session that runs it. A fault in this script exits 0 after a warning, so a
 broken hook never blocks a session.
 
@@ -41,7 +41,7 @@ MODE_NOTE = (
     "This session is in Orchestrator mode (/orchestrate); its hooks stay registered until the "
     "session ends. The Orchestrator dispatches a Programmer for any change to the tree and a "
     "Reviewer for any judgement of it; it does neither itself. For other work, start a new "
-    "session, or have the user run /orch_hooks disengage."
+    "session, or have the user run /orch-hooks disengage."
 )
 
 
