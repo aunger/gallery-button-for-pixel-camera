@@ -235,4 +235,4 @@ When the cycle is complete, or you are escalating and stepping out of the Orches
 | `orchestrating` |
 
 A merge-gate check that the project runs stays red until this label is gone; that is the design.
-Orchestrator mode's hooks stay registered for the rest of the session; start a new session for other work.
+Orchestrator mode's hooks stay registered for the rest of the session; start a new session for other work, or have the user run `/orch_hooks disengage` to switch them off for this one.

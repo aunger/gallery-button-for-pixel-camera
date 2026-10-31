@@ -19,8 +19,9 @@ rules from SKILL.md:
   message the Orchestrator sends an agent.
 
 A refusal exits 2 with the reason on stderr, which Claude Code puts in front
-of the model. A fault in this script exits 0 after a warning, so a broken hook
-never blocks a session.
+of the model. /orch_hooks disengage (hook_state.py) switches the guard off for
+the session that runs it. A fault in this script exits 0 after a warning, so a
+broken hook never blocks a session.
 
 Standard library only.
 """
@@ -32,13 +33,15 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from dispatch_form import form_errors, refusal
+from hook_state import hooks_disengaged
 
 EDIT_TOOLS = frozenset({"Edit", "Write", "NotebookEdit"})
 
 MODE_NOTE = (
     "This session is in Orchestrator mode (/orchestrate); its hooks stay registered until the "
     "session ends. The Orchestrator dispatches a Programmer for any change to the tree and a "
-    "Reviewer for any judgement of it; it does neither itself. Start a new session for other work."
+    "Reviewer for any judgement of it; it does neither itself. For other work, start a new "
+    "session, or have the user run /orch_hooks disengage."
 )
 
 
@@ -55,6 +58,8 @@ def read_allowed(path):
 def decide(payload):
     """Return (exit_code, message) for a hook payload."""
     if not isinstance(payload, dict) or payload.get("agent_id"):
+        return 0, ""
+    if hooks_disengaged(payload.get("session_id")):
         return 0, ""
     tool = payload.get("tool_name")
     tool_input = payload.get("tool_input")

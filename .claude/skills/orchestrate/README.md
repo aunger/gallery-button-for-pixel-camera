@@ -16,6 +16,7 @@ That split is what lets the plugin move to other projects, or out of this one, w
 | `reference/`                   | Documents the skill and the agents read on demand, so no agent's context carries a phase it is not in.                                                    |
 | `hooks/hooks.json`             | A `PreToolUse` hook on the Agent tool that refuses a dispatch to one of this plugin's agents unless its prompt is the dispatch form.                      |
 | `scripts/hooks/`               | The hook scripts: `check_dispatch.py` (above), `orchestrator_guard.py` (registered by `SKILL.md` for the session that runs it), and their validator.      |
+| `skills/orch_hooks/SKILL.md`   | `/orch_hooks disengage` and `/orch_hooks reengage`: switch both hooks off, or back on, for the current session. User-invoked only.                        |
 | `scripts/ci_monitor/`          | The CI Monitor, with its README and tests.                                                                                                                |
 | `scripts/update_gh_labels.sh`  | Adds and removes specific labels through GitHub's delta endpoints, so a transition never touches a label outside its own row.                             |
 | `scripts/link_gh_issues.py`    | Records GitHub issue dependencies and sub-issues, for the Verification Planner.                                                                           |
@@ -46,6 +47,11 @@ Two hooks enforce this rather than ask for it:
 - `SKILL.md` registers `scripts/hooks/orchestrator_guard.py` for the rest of the session that invoked `/orchestrate`.
   In that session's main conversation (never in a sub-agent) it refuses `Edit`, `Write` and `NotebookEdit`, refuses `Read` of anything but a Markdown file or a file under a `.claude` directory, and refuses a `SendMessage` that is not the form.
   Those are the Orchestrator's "may not" rules in executable form.
+
+To switch the hooks off for a session, a person runs `/orch_hooks disengage` (`/orch_hooks reengage` restores them, `/orch_hooks status` reports).
+The skill records the session id in `.state/disengaged-sessions` under the plugin root, which the host repository ignores; both hooks read that file first and exit before doing anything for a listed session.
+The model cannot invoke the skill.
+Setting the environment variable `ORCHESTRATE_HOOKS_DISENGAGED` to anything but empty, `0` or `false` disengages the hooks for every session that sees it, which needs no skill.
 
 Each agent returns one fixed signal (the Reviewer's `LGTM` / `Changes requested` / `Cannot work`, the Verifier's three) or a plain location report, and the Orchestrator routes on that alone.
 

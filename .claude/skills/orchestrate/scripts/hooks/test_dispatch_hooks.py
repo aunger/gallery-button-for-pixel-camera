@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for dispatch_form.py, check_dispatch.py and orchestrator_guard.py.
+"""Unit tests for dispatch_form.py, check_dispatch.py, orchestrator_guard.py and hook_state.py.
 
 The two hooks are also driven end to end, as Claude Code drives them: a JSON
 payload on stdin, the verdict in the exit code, the reason on stderr.
@@ -10,12 +10,14 @@ import os
 import subprocess
 import sys
 import unittest
+from unittest.mock import patch
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 import check_dispatch  # noqa: E402
 import dispatch_form  # noqa: E402
+import hook_state  # noqa: E402
 import orchestrator_guard  # noqa: E402
 
 FORM = (
@@ -217,3 +219,114 @@ class TestOrchestratorGuard(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestHookState(unittest.TestCase):
+    """hook_state.py: the switch both hooks consult first."""
+
+    def setUp(self):
+        import tempfile
+
+        self.tmp = tempfile.TemporaryDirectory()
+        self.state = os.path.join(self.tmp.name, ".state", "disengaged-sessions")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_fresh_state_is_engaged(self):
+        self.assertFalse(hook_state.hooks_disengaged("s1", self.state, environ={}))
+        self.assertFalse(hook_state.hooks_disengaged(None, self.state, environ={}))
+
+    def test_disengage_then_reengage_one_session(self):
+        hook_state.disengage("s1", self.state)
+        self.assertTrue(hook_state.hooks_disengaged("s1", self.state, environ={}))
+        self.assertFalse(hook_state.hooks_disengaged("s2", self.state, environ={}))
+        hook_state.disengage("s1", self.state)
+        self.assertEqual(hook_state.listed_sessions(self.state), ["s1"])
+        hook_state.reengage("s1", self.state)
+        self.assertFalse(hook_state.hooks_disengaged("s1", self.state, environ={}))
+        self.assertEqual(hook_state.listed_sessions(self.state), [])
+
+    def test_environment_variable_disengages_every_session(self):
+        for value in ("1", "yes", "disengaged"):
+            self.assertTrue(
+                hook_state.hooks_disengaged("s1", self.state, {hook_state.ENV_VAR: value}), value
+            )
+            self.assertTrue(
+                hook_state.hooks_disengaged(None, self.state, {hook_state.ENV_VAR: value}), value
+            )
+        for value in ("", "0", "false", "False"):
+            self.assertFalse(
+                hook_state.hooks_disengaged("s1", self.state, {hook_state.ENV_VAR: value}), value
+            )
+
+    def test_status_lines(self):
+        self.assertEqual(
+            hook_state.status("s1", self.state, environ={}),
+            "orchestrate hooks engaged for session s1",
+        )
+        hook_state.disengage("s1", self.state)
+        self.assertEqual(
+            hook_state.status("s1", self.state, environ={}),
+            "orchestrate hooks disengaged for session s1",
+        )
+        self.assertIn(
+            hook_state.ENV_VAR, hook_state.status("s1", self.state, {hook_state.ENV_VAR: "1"})
+        )
+
+    def test_cli(self):
+        def cli(*args):
+            return subprocess.run(
+                [
+                    sys.executable,
+                    os.path.join(HERE, "hook_state.py"),
+                    *args,
+                    "--state-file",
+                    self.state,
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        self.assertEqual(
+            cli("disengage", "--session", "abc").stdout.strip(),
+            "orchestrate hooks disengaged for session abc",
+        )
+        self.assertEqual(
+            cli("status", "--session", "abc").stdout.strip(),
+            "orchestrate hooks disengaged for session abc",
+        )
+        self.assertEqual(
+            cli("reengage", "--session", "abc").stdout.strip(),
+            "orchestrate hooks engaged for session abc",
+        )
+        missing = cli("disengage")
+        self.assertEqual(missing.returncode, 2)
+        self.assertIn("needs --session", missing.stderr)
+
+    def test_a_disengaged_session_passes_both_hooks(self):
+        hook_state.disengage("s1", self.state)
+        with (
+            patch.object(hook_state, "STATE_FILE", self.state),
+            patch.dict(os.environ, {}, clear=False),
+        ):
+            os.environ.pop(hook_state.ENV_VAR, None)
+            bad_dispatch = agent_call("orchestrate:programmer", "Fix the bug.")
+            bad_dispatch["session_id"] = "s1"
+            self.assertEqual(check_dispatch.decide(bad_dispatch), (0, ""))
+            bad_dispatch["session_id"] = "s2"
+            self.assertEqual(check_dispatch.decide(bad_dispatch)[0], 2)
+            edit = main_call("Edit", file_path="app/Foo.kt")
+            edit["session_id"] = "s1"
+            self.assertEqual(orchestrator_guard.decide(edit), (0, ""))
+            edit["session_id"] = "s2"
+            self.assertEqual(orchestrator_guard.decide(edit)[0], 2)
+
+    def test_the_hooks_read_the_default_state_file_of_the_plugin(self):
+        # Both hooks call hooks_disengaged() with the module default, which is
+        # .state/disengaged-sessions under the plugin root, where the skill writes.
+        plugin_root = os.path.dirname(os.path.dirname(HERE))
+        self.assertEqual(
+            hook_state.STATE_FILE, os.path.join(plugin_root, ".state", "disengaged-sessions")
+        )

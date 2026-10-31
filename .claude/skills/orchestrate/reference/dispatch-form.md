@@ -43,3 +43,4 @@ The form makes over-sharing impossible rather than merely forbidden.
 When `subagent_type` names one of this plugin's agents, the hook refuses a `prompt` that is not exactly the form, and says why.
 While `/orchestrate` is active, `scripts/hooks/orchestrator_guard.py` applies the same check to every `SendMessage` the main session sends.
 The agents receive nothing else, so nothing else needs to be forbidden.
+A person can switch both hooks off for a session with `/orch_hooks disengage`; see `README.md`.
