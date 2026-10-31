@@ -1,7 +1,7 @@
 ---
 name: orch_hooks
-description: "Disengage or re-engage the orchestrate plugin's hooks (the dispatch-form check and the Orchestrator guard) for this session. Usage: /orch_hooks disengage, /orch_hooks reengage, /orch_hooks status."
-argument-hint: disengage | reengage | status
+description: "Disengage or engage the orchestrate plugin's hooks (the dispatch-form check and the Orchestrator guard) for this session. Usage: /orch_hooks disengage, /orch_hooks engage, /orch_hooks status."
+argument-hint: disengage | engage | status
 disable-model-invocation: true
 allowed-tools: Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/hooks/hook_state.py *)
 ---
@@ -19,7 +19,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/hooks/hook_state.py $ARGUMENTS --session $
 ```
 
 - `disengage` lists this session in the plugin's state file, `${CLAUDE_PLUGIN_ROOT}/.state/disengaged-sessions`; every hook that sees this session's id then exits before doing anything.
-- `reengage` removes it.
+- `engage` removes it.
 - `status` says which state the session is in.
 
 If the command prints a usage error, say so and do nothing else; do not edit the state file or set `ORCHESTRATE_HOOKS_DISENGAGED` yourself.

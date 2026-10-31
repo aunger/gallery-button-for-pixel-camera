@@ -237,13 +237,13 @@ class TestHookState(unittest.TestCase):
         self.assertFalse(hook_state.hooks_disengaged("s1", self.state, environ={}))
         self.assertFalse(hook_state.hooks_disengaged(None, self.state, environ={}))
 
-    def test_disengage_then_reengage_one_session(self):
+    def test_disengage_then_engage_one_session(self):
         hook_state.disengage("s1", self.state)
         self.assertTrue(hook_state.hooks_disengaged("s1", self.state, environ={}))
         self.assertFalse(hook_state.hooks_disengaged("s2", self.state, environ={}))
         hook_state.disengage("s1", self.state)
         self.assertEqual(hook_state.listed_sessions(self.state), ["s1"])
-        hook_state.reengage("s1", self.state)
+        hook_state.engage("s1", self.state)
         self.assertFalse(hook_state.hooks_disengaged("s1", self.state, environ={}))
         self.assertEqual(hook_state.listed_sessions(self.state), [])
 
@@ -298,7 +298,7 @@ class TestHookState(unittest.TestCase):
             "orchestrate hooks disengaged for session abc",
         )
         self.assertEqual(
-            cli("reengage", "--session", "abc").stdout.strip(),
+            cli("engage", "--session", "abc").stdout.strip(),
             "orchestrate hooks engaged for session abc",
         )
         missing = cli("disengage")

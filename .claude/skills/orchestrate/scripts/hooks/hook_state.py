@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""hook_state.py: Disengage and re-engage the orchestrate plugin's hooks.
+"""hook_state.py: Disengage and engage the orchestrate plugin's hooks.
 
 The plugin's two hooks (check_dispatch.py and orchestrator_guard.py) enforce
 the Orchestrator's rules. Sometimes a person needs them out of the way: to
@@ -22,7 +22,7 @@ ORCHESTRATE_HOOKS_DISENGAGED, set to anything but an empty string, "0" or
 
 Usage:
     hook_state.py disengage --session SESSION_ID
-    hook_state.py reengage --session SESSION_ID
+    hook_state.py engage --session SESSION_ID
     hook_state.py status [--session SESSION_ID]
 
 Each command prints one line saying what the state now is.
@@ -96,7 +96,7 @@ def disengage(session_id, state_file=None):
     return "orchestrate hooks disengaged for session %s" % session_id
 
 
-def reengage(session_id, state_file=None):
+def engage(session_id, state_file=None):
     sessions = listed_sessions(state_file)
     if session_id in sessions:
         sessions.remove(session_id)
@@ -122,7 +122,7 @@ def main(argv):
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("command", choices=("disengage", "reengage", "status"))
+    parser.add_argument("command", choices=("disengage", "engage", "status"))
     parser.add_argument("--session", metavar="SESSION_ID", default="")
     parser.add_argument("--state-file", metavar="PATH", default=None, help=argparse.SUPPRESS)
     args = parser.parse_args(argv[1:])
@@ -130,8 +130,8 @@ def main(argv):
         parser.error("%s needs --session SESSION_ID" % args.command)
     if args.command == "disengage":
         print(disengage(args.session, args.state_file))
-    elif args.command == "reengage":
-        print(reengage(args.session, args.state_file))
+    elif args.command == "engage":
+        print(engage(args.session, args.state_file))
     else:
         print(status(args.session, args.state_file))
     return 0
