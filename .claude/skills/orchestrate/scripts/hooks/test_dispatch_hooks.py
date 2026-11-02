@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for dispatch_form.py, check_dispatch.py, orchestrator_guard.py and hook_state.py.
+"""Unit tests for the orchestrate plugin's hook scripts in this directory.
 
 The two hooks are also driven end to end, as Claude Code drives them: a JSON
 payload on stdin, the verdict in the exit code, the reason on stderr.
@@ -19,6 +19,7 @@ import check_dispatch  # noqa: E402
 import dispatch_form  # noqa: E402
 import hook_state  # noqa: E402
 import orchestrator_guard  # noqa: E402
+import protect_state  # noqa: E402
 
 FORM = (
     "Repository: aunger/gallery-button-for-pixel-camera\n"
@@ -274,36 +275,84 @@ class TestHookState(unittest.TestCase):
             hook_state.ENV_VAR, hook_state.status("s1", self.state, {hook_state.ENV_VAR: "1"})
         )
 
-    def test_cli(self):
-        def cli(*args):
-            return subprocess.run(
-                [
-                    sys.executable,
-                    os.path.join(HERE, "hook_state.py"),
-                    *args,
-                    "--state-file",
-                    self.state,
-                ],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
+    def expansion(self, command_args, command_name="orchestrate:orch-hooks", session_id="s1"):
+        payload = {
+            "hook_event_name": "UserPromptExpansion",
+            "expansion_type": "slash_command",
+            "command_name": command_name,
+            "command_args": command_args,
+            "command_source": "plugin",
+            "session_id": session_id,
+        }
+        return hook_state.expansion_output(payload, self.state, environ={})
 
+    def context_of(self, output):
+        return output["hookSpecificOutput"]["additionalContext"]
+
+    def test_the_expansion_hook_applies_each_command(self):
         self.assertEqual(
-            cli("disengage", "--session", "abc").stdout.strip(),
-            "orchestrate hooks disengaged for session abc",
+            self.context_of(self.expansion("disengage")),
+            "orch-hooks result: orchestrate hooks disengaged for session s1",
+        )
+        self.assertTrue(hook_state.hooks_disengaged("s1", self.state, environ={}))
+        self.assertEqual(
+            self.context_of(self.expansion("status")),
+            "orch-hooks result: orchestrate hooks disengaged for session s1",
         )
         self.assertEqual(
-            cli("status", "--session", "abc").stdout.strip(),
-            "orchestrate hooks disengaged for session abc",
+            self.context_of(self.expansion(" engage ")),
+            "orch-hooks result: orchestrate hooks engaged for session s1",
         )
-        self.assertEqual(
-            cli("engage", "--session", "abc").stdout.strip(),
-            "orchestrate hooks engaged for session abc",
+        self.assertFalse(hook_state.hooks_disengaged("s1", self.state, environ={}))
+
+    def test_the_bare_command_name_counts_too(self):
+        self.assertIn("disengaged", self.context_of(self.expansion("disengage", "orch-hooks")))
+
+    def test_other_commands_are_left_alone(self):
+        for name in ("orchestrate:orchestrate", "orchestrate", "other:orch-hooks-x", "", None):
+            self.assertIsNone(self.expansion("disengage", name), name)
+        self.assertEqual(hook_state.listed_sessions(self.state), [])
+
+    def test_bad_arguments_block_the_expansion_and_change_nothing(self):
+        for args in ("", "off", "disengage now", None):
+            output = self.expansion(args)
+            self.assertEqual(output["decision"], "block", args)
+            self.assertIn("Usage: /orch-hooks disengage | engage | status", output["reason"])
+        self.assertEqual(hook_state.listed_sessions(self.state), [])
+
+    def test_no_session_id_blocks(self):
+        self.assertEqual(self.expansion("disengage", session_id="")["decision"], "block")
+        self.assertEqual(hook_state.listed_sessions(self.state), [])
+
+    def test_the_script_has_no_command_line_that_changes_state(self):
+        completed = subprocess.run(
+            [sys.executable, os.path.join(HERE, "hook_state.py"), "disengage", "--session", "x"],
+            input="",
+            capture_output=True,
+            text=True,
+            check=False,
         )
-        missing = cli("disengage")
-        self.assertEqual(missing.returncode, 2)
-        self.assertIn("needs --session", missing.stderr)
+        self.assertEqual(completed.returncode, 0)
+        self.assertIn("could not read its input", completed.stderr)
+        self.assertEqual(completed.stdout, "")
+
+    def test_the_hook_end_to_end_prints_json(self):
+        payload = {
+            "hook_event_name": "UserPromptExpansion",
+            "command_name": "orchestrate:orch-hooks",
+            "command_args": "status",
+            "session_id": "end-to-end-session-that-is-never-listed",
+        }
+        completed = subprocess.run(
+            [sys.executable, os.path.join(HERE, "hook_state.py")],
+            input=json.dumps(payload),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        context = json.loads(completed.stdout)["hookSpecificOutput"]["additionalContext"]
+        self.assertTrue(context.startswith("orch-hooks result: orchestrate hooks "), context)
 
     def test_a_disengaged_session_passes_both_hooks(self):
         hook_state.disengage("s1", self.state)
@@ -442,3 +491,42 @@ class TestOrchestratorGuardCoverage(unittest.TestCase):
         payload = main_call("Bash", command="cat app/src/main/java/Foo.kt")
         payload["agent_id"] = "agent-1"
         self.assertEqual(orchestrator_guard.decide(payload), (0, ""))
+
+
+class TestProtectState(unittest.TestCase):
+    def test_calls_naming_the_state_file_are_refused(self):
+        for tool, tool_input in (
+            (
+                "Bash",
+                {"command": "echo s1 >> .claude/skills/orchestrate/.state/disengaged-sessions"},
+            ),
+            ("Bash", {"command": "rm /p/.state/disengaged-sessions"}),
+            ("Write", {"file_path": "/p/.state/disengaged-sessions", "content": "s1"}),
+            ("Edit", {"file_path": "/p/.state/disengaged-sessions"}),
+            ("NotebookEdit", {"notebook_path": "/p/.state/disengaged-sessions"}),
+            ("Monitor", {"command": "tail -F /p/.state/disengaged-sessions"}),
+        ):
+            payload = {"tool_name": tool, "tool_input": tool_input}
+            code, message = protect_state.decide(payload)
+            self.assertEqual(code, 2, tool_input)
+            self.assertIn("/orch-hooks", message)
+            payload["agent_id"] = "agent-1"
+            self.assertEqual(protect_state.decide(payload)[0], 2, "sub-agents too")
+
+    def test_other_calls_pass(self):
+        for payload in (
+            {"tool_name": "Bash", "tool_input": {"command": "date -u"}},
+            {"tool_name": "Write", "tool_input": {"file_path": "/p/notes.md"}},
+            {"tool_name": "Bash", "tool_input": "not a dict"},
+            {},
+            [],
+        ):
+            self.assertEqual(protect_state.decide(payload), (0, ""), payload)
+
+    def test_end_to_end(self):
+        code, stderr = run_hook(
+            "protect_state.py",
+            {"tool_name": "Bash", "tool_input": {"command": "cat x/.state/disengaged-sessions"}},
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("refused", stderr)

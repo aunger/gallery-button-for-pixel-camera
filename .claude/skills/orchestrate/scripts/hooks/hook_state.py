@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """hook_state.py: Disengage and engage the orchestrate plugin's hooks.
 
-The plugin's two hooks (check_dispatch.py and orchestrator_guard.py) enforce
-the Orchestrator's rules. Sometimes a person needs them out of the way: to
+The plugin's hooks (check_dispatch.py and orchestrator_guard.py) enforce the
+Orchestrator's rules. Sometimes a person needs them out of the way: to
 hand-dispatch an agent with a note, to let an Orchestrator session do other
-work, or to recover from a cycle that went wrong. This script keeps the
-state those hooks consult first, and the /orch-hooks skill drives it.
+work, or to recover from a cycle that went wrong. This module keeps the state
+those hooks consult first.
 
 State is per session, in a file the plugin owns:
 
@@ -16,21 +16,25 @@ exits 0 before doing anything else. The file is not committed (the host
 repository ignores .state/), and a session that never disengaged is never
 listed, so a fresh session always has its hooks.
 
+Only a person changes the state. This script runs as the plugin's
+UserPromptExpansion hook (hooks/hooks.json), which Claude Code fires when a
+person types a command and never when the model invokes one: on
+/orch-hooks disengage, engage or status it applies the change to the session
+in its payload and hands the resulting line to the skill as context. It has
+no command line that changes anything, and protect_state.py refuses any tool
+call that names the state file, so the model has no direct path to it either.
+That last check reads the command text, so it is a guardrail, not a sandbox.
+
 A second switch needs no skill: the environment variable
 ORCHESTRATE_HOOKS_DISENGAGED, set to anything but an empty string, "0" or
-"false", disengages the hooks for every session that sees it.
+"false", disengages the hooks for every session whose Claude Code process
+has it. A command the model runs cannot set it for the hooks, which inherit
+Claude Code's environment, not the shell's.
 
-Usage:
-    hook_state.py disengage --session SESSION_ID
-    hook_state.py engage --session SESSION_ID
-    hook_state.py status [--session SESSION_ID]
-
-Each command prints one line saying what the state now is.
-
-Standard library only. The two hooks import hooks_disengaged() from here.
+Standard library only. The hooks import hooks_disengaged() from here.
 """
 
-import argparse
+import json
 import os
 import sys
 
@@ -38,7 +42,11 @@ ENV_VAR = "ORCHESTRATE_HOOKS_DISENGAGED"
 STATE_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".state"
 )
-STATE_FILE = os.path.join(STATE_DIR, "disengaged-sessions")
+STATE_FILE_NAME = "disengaged-sessions"
+STATE_FILE = os.path.join(STATE_DIR, STATE_FILE_NAME)
+
+SKILL_NAME = "orch-hooks"
+COMMANDS = ("disengage", "engage", "status")
 
 
 def env_disengaged(environ=None):
@@ -116,26 +124,59 @@ def status(session_id, state_file=None, environ=None):
     return "orchestrate hooks engaged for session %s" % session_id
 
 
-def main(argv):
-    parser = argparse.ArgumentParser(
-        prog="hook_state.py",
-        description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument("command", choices=("disengage", "engage", "status"))
-    parser.add_argument("--session", metavar="SESSION_ID", default="")
-    parser.add_argument("--state-file", metavar="PATH", default=None, help=argparse.SUPPRESS)
-    args = parser.parse_args(argv[1:])
-    if args.command != "status" and not args.session:
-        parser.error("%s needs --session SESSION_ID" % args.command)
-    if args.command == "disengage":
-        print(disengage(args.session, args.state_file))
-    elif args.command == "engage":
-        print(engage(args.session, args.state_file))
+def is_skill_command(command_name):
+    """Return True for the command names /orch-hooks can arrive under.
+
+    A plugin skill reports its full `plugin:skill` name, and a bare name
+    invokes it too while nothing else claims it, so the last segment decides.
+    """
+    return isinstance(command_name, str) and command_name.split(":")[-1] == SKILL_NAME
+
+
+def expansion_output(payload, state_file=None, environ=None):
+    """Return the JSON object the UserPromptExpansion hook prints, or None to stay silent."""
+    if not isinstance(payload, dict) or not is_skill_command(payload.get("command_name")):
+        return None
+    words = str(payload.get("command_args") or "").split()
+    usage = "Usage: /%s %s" % (SKILL_NAME, " | ".join(COMMANDS))
+    if len(words) != 1 or words[0] not in COMMANDS:
+        return {"decision": "block", "reason": usage}
+    session_id = payload.get("session_id")
+    if not isinstance(session_id, str) or not session_id:
+        return {
+            "decision": "block",
+            "reason": "The hook received no session id, so it changed nothing.",
+        }
+    command = words[0]
+    if command == "disengage":
+        line = disengage(session_id, state_file)
+    elif command == "engage":
+        line = engage(session_id, state_file)
     else:
-        print(status(args.session, args.state_file))
+        line = status(session_id, state_file, environ)
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "UserPromptExpansion",
+            "additionalContext": "orch-hooks result: " + line,
+        }
+    }
+
+
+def main():
+    try:
+        payload = json.load(sys.stdin)
+    except (OSError, ValueError) as error:
+        sys.stderr.write("[orchestrate] hook_state.py could not read its input: %s\n" % error)
+        return 0
+    try:
+        output = expansion_output(payload)
+    except Exception as error:  # noqa: BLE001 - a broken hook must never wedge a session
+        sys.stderr.write("[orchestrate] hook_state.py failed: %r\n" % (error,))
+        return 0
+    if output is not None:
+        print(json.dumps(output))
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv))
+    sys.exit(main())

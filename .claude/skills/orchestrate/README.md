@@ -8,21 +8,21 @@ That split is what lets the plugin move to other projects, or out of this one, w
 
 ## Layout
 
-| Path                           | What it is                                                                                                                                                |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `.claude-plugin/plugin.json`   | The plugin manifest.                                                                                                                                      |
-| `skills/orchestrate/SKILL.md`  | The `/orchestrate` skill: the Orchestrator's rules, the label protocol, and the routing between rounds. Loads when the user invokes it, never on its own. |
-| `agents/`                      | One sub-agent per role: `programmer`, `reviewer`, `verification-planner`, `verifier`. Each runs in its own git worktree.                                  |
-| `reference/`                   | Documents the skill and the agents read on demand, so no agent's context carries a phase it is not in.                                                    |
-| `hooks/hooks.json`             | A `PreToolUse` hook on the Agent tool that refuses a dispatch to one of this plugin's agents unless its prompt is the dispatch form.                      |
-| `scripts/hooks/`               | The hook scripts: `check_dispatch.py` (above), `orchestrator_guard.py` (registered by `SKILL.md` for the session that runs it), and their validator.      |
-| `skills/orch-hooks/SKILL.md`   | `/orch-hooks disengage` and `/orch-hooks engage`: switch both hooks off, or back on, for the current session. User-invoked only.                          |
-| `scripts/ci_monitor/`          | The CI Monitor, with its README and tests.                                                                                                                |
-| `scripts/update_gh_labels.sh`  | Adds and removes specific labels through GitHub's delta endpoints, so a transition never touches a label outside its own row.                             |
-| `scripts/link_gh_issues.py`    | Records GitHub issue dependencies and sub-issues, for the Verification Planner.                                                                           |
-| `scripts/delete_gh_comment.sh` | Deletes one issue or PR comment, for cleanup the MCP tools have no verb for.                                                                              |
-| `scripts/dispatch_cost.py`     | Reports a cycle's token spend from the session transcripts, while they exist.                                                                             |
-| `scripts/check_config.py`      | Validates a project configuration file; a project can run it in CI.                                                                                       |
+| Path                           | What it is                                                                                                                                                                                       |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `.claude-plugin/plugin.json`   | The plugin manifest.                                                                                                                                                                             |
+| `skills/orchestrate/SKILL.md`  | The `/orchestrate` skill: the Orchestrator's rules, the label protocol, and the routing between rounds. Loads when the user invokes it, never on its own.                                        |
+| `agents/`                      | One sub-agent per role: `programmer`, `reviewer`, `verification-planner`, `verifier`. Each runs in its own git worktree.                                                                         |
+| `reference/`                   | Documents the skill and the agents read on demand, so no agent's context carries a phase it is not in.                                                                                           |
+| `hooks/hooks.json`             | The plugin's hooks: the dispatch-form check on every Agent call, the `/orch-hooks` handler, and the check that keeps tool calls away from the hook state.                                        |
+| `scripts/hooks/`               | The hook scripts: `check_dispatch.py`, `orchestrator_guard.py` (registered by the Orchestrator skill for the session that runs it), `hook_state.py`, `protect_state.py`, and the form validator. |
+| `skills/orch-hooks/SKILL.md`   | `/orch-hooks disengage` and `/orch-hooks engage`: switch both hooks off, or back on, for the current session. User-invoked only.                                                                 |
+| `scripts/ci_monitor/`          | The CI Monitor, with its README and tests.                                                                                                                                                       |
+| `scripts/update_gh_labels.sh`  | Adds and removes specific labels through GitHub's delta endpoints, so a transition never touches a label outside its own row.                                                                    |
+| `scripts/link_gh_issues.py`    | Records GitHub issue dependencies and sub-issues, for the Verification Planner.                                                                                                                  |
+| `scripts/delete_gh_comment.sh` | Deletes one issue or PR comment, for cleanup the MCP tools have no verb for.                                                                                                                     |
+| `scripts/dispatch_cost.py`     | Reports a cycle's token spend from the session transcripts, while they exist.                                                                                                                    |
+| `scripts/check_config.py`      | Validates a project configuration file; a project can run it in CI.                                                                                                                              |
 
 Every script is standard-library Python or plain bash, with its tests in a `test_*` file beside it.
 
@@ -50,9 +50,11 @@ Two hooks enforce this rather than ask for it:
   The GitHub MCP tools are not checked, so not reading a PR's diff or comments stays a rule the Orchestrator keeps.
 
 To switch the hooks off for a session, a person runs `/orch-hooks disengage` (`/orch-hooks engage` restores them, `/orch-hooks status` reports).
-The skill records the session id in `.state/disengaged-sessions` under the plugin root, which the host repository ignores; both hooks read that file first and exit before doing anything for a listed session.
-The model cannot invoke the skill.
-Setting the environment variable `ORCHESTRATE_HOOKS_DISENGAGED` to anything but empty, `0` or `false` disengages the hooks for every session that sees it, which needs no skill.
+A `UserPromptExpansion` hook makes the change: Claude Code fires that event when a person types a command, never when the model invokes one, and the skill is user-invoked only besides.
+The hook records the session id in `.state/disengaged-sessions` under the plugin root, which the host repository ignores; both enforcing hooks read that file first and exit before doing anything for a listed session.
+Nothing else writes the file, and `scripts/hooks/protect_state.py` refuses any Bash, Monitor, Write or Edit call, in any session or agent, whose command or path names it.
+That check reads text, so it stops the obvious route rather than every route; in Orchestrator mode the guard's command allowlist covers the rest.
+Setting the environment variable `ORCHESTRATE_HOOKS_DISENGAGED` to anything but empty, `0` or `false` in Claude Code's own environment disengages the hooks for every session that has it.
 
 Each agent returns one fixed signal (the Reviewer's `LGTM` / `Changes requested` / `Cannot work`, the Verifier's three) or a plain location report, and the Orchestrator routes on that alone.
 
