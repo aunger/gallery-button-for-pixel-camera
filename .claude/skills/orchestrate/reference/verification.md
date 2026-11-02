@@ -19,7 +19,7 @@ surfaceBeforeMergingRequirements:
     |---|
     | `verified` |
 
-  Then goto "Concluding" in SKILL.md.
+  Then goto "Concluding" in the `/orchestrate` skill.
 
   Otherwise, relay the before-merging list to the user verbatim, and apply this transition to the PR:
 
@@ -39,13 +39,13 @@ The Verifier emits exactly one of three signals.
 - `Verification passed`: every before-merging item was confirmed automatically.
   The before-merging requirements process is complete.
   The PR is not mergeable yet: a merge gate stays red until "Concluding" removes `orchestrating`, and a draft PR also needs someone to mark it ready for review, which is the user's call.
-  Apply this transition to the PR, then goto "Concluding" in SKILL.md:
+  Apply this transition to the PR, then goto "Concluding" in the `/orchestrate` skill:
 
   | Remove label          | Add label  |
   | --------------------- | ---------- |
   | `verification needed` | `verified` |
 
-- `Verification revealed an error`: route the PR back to a new Author round (goto "Assigning a Programmer" in SKILL.md, with `Verification plan comment` filled in the form).
+- `Verification revealed an error`: route the PR back to a new Author round (goto "Assigning a Programmer" in the `/orchestrate` skill, with `Verification plan comment` filled in the form).
   The Verifier leaves its diagnosis as a PR comment, which the Author reads from GitHub; the Orchestrator does not relay it.
   Apply this transition to the PR first:
 
@@ -56,7 +56,7 @@ The Verifier emits exactly one of three signals.
 - `Verification incomplete`: no item failed, but one or more before-merging items could not be automated and remain open for a human to verify.
   Do not treat the PR as cleared and do not start a new Author round.
   Inform the user that manual verification is still required, and that the PR may be merged once every open before-merging tracking issue is resolved; if the PR is a draft, say that marking it ready for review is also needed and is the user's call.
-  Apply this transition to the PR only if needed (the label is probably already applied), then goto "Concluding" in SKILL.md:
+  Apply this transition to the PR only if needed (the label is probably already applied), then goto "Concluding" in the `/orchestrate` skill:
 
   | Add label             |
   | --------------------- |

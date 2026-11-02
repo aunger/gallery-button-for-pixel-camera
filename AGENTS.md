@@ -2,6 +2,7 @@
 
 - The development cycle for a GitHub issue or PR (Orchestrator, Programmer, Reviewer, Verification Planner, Verifier) is the `orchestrate` plugin at `.claude/skills/orchestrate/`; its `README.md` describes it.
   The user starts it with `/orchestrate <issue-number>`.
+  It is there only when the session loaded the directory as a plugin, which needs a trusted workspace or `CLAUDE_CODE_PLUGIN_DIRS`; "Loading" in its README says which.
   If you are asked to address an issue or PR without a specific assigned role, say that the cycle is started with `/orchestrate` rather than entering a role yourself.
   Its project-specific settings (the repository, the named CI checks, the verification-plan marker, the CI Monitor's regexes) are in `.claude/orchestrate.json`; `scripts/test_orchestrate_config.py` checks that file.
 - If creating a PR, read `./agents/pr_creation.md`.

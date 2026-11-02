@@ -84,8 +84,8 @@ namedChecks:
     |---|
     | `changes requested` |
 
-    goto "Assigning a Programmer" in SKILL.md
-  otherwise (every named check is green) -> goto "After the named checks are green" in SKILL.md
+    goto "Assigning a Programmer" in the `/orchestrate` skill
+  otherwise (every named check is green) -> goto "After the named checks are green" in the `/orchestrate` skill
 ```
 
 ## `missingNamedCheck`

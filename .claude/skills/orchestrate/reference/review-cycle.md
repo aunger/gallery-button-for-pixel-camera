@@ -50,5 +50,5 @@ Post and edit through the GitHub MCP server's tools wherever one exists for the 
 ## CI during the cycle
 
 Not every CI check can pass while the cycle is active, and that is expected.
-A check matched by the `ignored_check_regex` in the project configuration (`${CLAUDE_PROJECT_DIR}/.claude/orchestrate.json`) is a merge gate that fails by design during the cycle; do not act on it.
+A check matched by the `ignored_check_regex` in the project configuration (the project's `.claude/orchestrate.json`) is a merge gate that fails by design during the cycle; do not act on it.
 The Orchestrator runs the CI Monitor after the Reviewer exits; neither of you polls CI.

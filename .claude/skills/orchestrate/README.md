@@ -11,7 +11,7 @@ That split is what lets the plugin move to other projects, or out of this one, w
 | Path                           | What it is                                                                                                                                                |
 | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `.claude-plugin/plugin.json`   | The plugin manifest.                                                                                                                                      |
-| `SKILL.md`                     | The `/orchestrate` skill: the Orchestrator's rules, the label protocol, and the routing between rounds. Loads when the user invokes it, never on its own. |
+| `skills/orchestrate/SKILL.md`  | The `/orchestrate` skill: the Orchestrator's rules, the label protocol, and the routing between rounds. Loads when the user invokes it, never on its own. |
 | `agents/`                      | One sub-agent per role: `programmer`, `reviewer`, `verification-planner`, `verifier`. Each runs in its own git worktree.                                  |
 | `reference/`                   | Documents the skill and the agents read on demand, so no agent's context carries a phase it is not in.                                                    |
 | `hooks/hooks.json`             | A `PreToolUse` hook on the Agent tool that refuses a dispatch to one of this plugin's agents unless its prompt is the dispatch form.                      |
@@ -29,7 +29,7 @@ Every script is standard-library Python or plain bash, with its tests in a `test
 ## Progressive revelation
 
 Nothing here loads into a session on its own.
-`SKILL.md` sets `disable-model-invocation: true`, so its description is not even listed to the model; only `/orchestrate` loads it.
+The Orchestrator skill sets `disable-model-invocation: true`, so its description is not even listed to the model; only `/orchestrate` loads it.
 The skill holds the rules every phase needs and names the reference file for each later phase (`reference/ci-monitor-loop.md` once a Reviewer says `LGTM`, `reference/verification.md` once the named checks are green), so the Orchestrator reads a phase when it reaches it.
 Each agent definition is its own system prompt and names the reference files its role reads (`reference/review-cycle.md` for the Author and Reviewer, `reference/nested-subagents.md` for any agent that delegates), so a Reviewer never carries the Planner's procedure and the Programmer never carries the Monitor loop.
 The scripts' READMEs load only when an agent reads a file beside them.
@@ -44,7 +44,7 @@ Two hooks enforce this rather than ask for it:
 
 - `hooks/hooks.json` runs `scripts/hooks/check_dispatch.py` before every Agent call.
   A call whose `subagent_type` is one of this plugin's agents is refused, with the reason and the form printed for the model, unless its `prompt` is exactly the form.
-- `SKILL.md` registers `scripts/hooks/orchestrator_guard.py` for the rest of the session that invoked `/orchestrate`.
+- The Orchestrator skill registers `scripts/hooks/orchestrator_guard.py` for the rest of the session that invoked `/orchestrate`.
   In that session's main conversation (never in a sub-agent) it refuses `Edit`, `Write` and `NotebookEdit`, refuses `Read` of anything but a Markdown file or a file under a `.claude` directory, and refuses a `SendMessage` that is not the form.
   Those are the Orchestrator's "may not" rules in executable form.
 
@@ -99,11 +99,28 @@ The agents load the project's `CLAUDE.md` or `AGENTS.md` like any sub-agent, and
 The plugin repeats none of that.
 In this repository those live in `AGENTS.md` and the `agents/` directory beside it.
 
+## Loading
+
+Every part of the plugin loads only when Claude Code loads the directory **as a plugin**.
+No file sits at the directory's top level as `SKILL.md`, so nothing in it loads as a plain project skill, where the plugin's path variables are not set: when the plugin is not loaded, `/orchestrate` is simply not there.
+
+Claude Code loads it in one of two ways:
+
+- **As a skills-directory plugin** (`orchestrate@skills-dir`), from the project's `.claude/skills/`, once the workspace trust dialog has been accepted for the project's folder.
+  A local session in a trusted checkout needs nothing more.
+  A cloud session never shows that dialog, and a `-p` run does not count as accepting it, so neither loads the plugin this way.
+- **As a session plugin** (`orchestrate@inline`), from a path named by `--plugin-dir` at launch or by the `CLAUDE_CODE_PLUGIN_DIRS` environment variable, which needs no trust dialog.
+  For cloud sessions, set `CLAUDE_CODE_PLUGIN_DIRS` to the absolute path of this directory in the clone (for example `/home/user/<repo>/.claude/skills/orchestrate`) in the cloud environment's environment variables.
+  A project's `.claude/settings.json` cannot set it.
+
+When both apply, the session plugin takes precedence over the skills-directory one, and only one copy loads.
+`claude plugin list` shows which copy loaded, or why none did.
+
+With the plugin loaded, the Orchestrator skill's full name is `/orchestrate:orchestrate` and `/orchestrate` invokes it unless another command already uses that name; likewise `/orchestrate:orch-hooks` and `/orch-hooks`.
+
 ## Installing in another project
 
-1. Copy this directory to `<project>/.claude/skills/orchestrate/` and commit it.
-   Claude Code loads a plugin from a project's `.claude/skills/` (as `orchestrate@skills-dir`) after the workspace trust dialog, in local and cloud sessions alike; it does not scan `.claude/plugins/`.
-   To try it for one session without committing, start `claude --plugin-dir <path-to-this-directory>`.
+1. Copy this directory to `<project>/.claude/skills/orchestrate/` and commit it, then make sure each session loads it as a plugin (see "Loading" below).
 2. Write `<project>/.claude/orchestrate.json` (the table above) and run `scripts/check_config.py` over it.
 3. Create the labels above.
 4. Say in the project's `CLAUDE.md` or `AGENTS.md` that the cycle is started with `/orchestrate <issue>`, and keep the project's own conventions there.
@@ -113,7 +130,7 @@ The sessions that run the cycle need the GitHub MCP server, which the agents use
 
 ### Moving the plugin to its own repository
 
-Nothing in this directory refers to its host by path: every script and reference is reached through `${CLAUDE_PLUGIN_ROOT}`, including the hook command in `SKILL.md`'s frontmatter.
+Nothing in this directory refers to its host by path: every script and reference is reached through `${CLAUDE_PLUGIN_ROOT}`, including the hook command in the Orchestrator skill's frontmatter.
 The host repository keeps `.claude/orchestrate.json`, its labels, and its own instructions, which is everything that was ever specific to it.
 
 ## Validating

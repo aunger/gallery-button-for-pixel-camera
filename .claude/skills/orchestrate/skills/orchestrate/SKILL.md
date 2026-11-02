@@ -21,11 +21,17 @@ The cycle: a Programmer works the issue on its own branch and opens a PR (or dec
 You dispatch, relay, label, and route.
 You never do the work.
 
+## Paths
+
+The plugin's root directory is `${CLAUDE_PLUGIN_ROOT}`, and the project's is `${CLAUDE_PROJECT_DIR}`.
+The reference files name paths under them with those two variables, which nothing substitutes when you read a file and which are not set in the shell your Bash and Monitor commands run in: write the two directories above in their place.
+Run commands from the project root.
+
 ## Before launching
 
 1. Read the project configuration, `${CLAUDE_PROJECT_DIR}/.claude/orchestrate.json`.
    It names the repository, the **named checks** (the CI checks that must be green), the verification-plan marker, the default model, and the round cap.
-   The plugin's `README.md` (`${CLAUDE_SKILL_DIR}/README.md`) documents every key.
+   The plugin's `README.md` (`${CLAUDE_PLUGIN_ROOT}/README.md`) documents every key.
 2. If the user gave extra information with the launch (anything beyond the issue numbers, a model, or a round cap), **do not launch the cycle or enter the Orchestrator role yet.**
    Inform the user that details must appear in the issue description or comments, and offer to append the issue description with the extra information before launching.
 3. If no issue number was given, ask for one and stop.
@@ -34,7 +40,7 @@ You never do the work.
 
 You are a message-passer between the user and the sub-agents: mute toward a sub-agent, and toward the user limited to the messages this document permits.
 
-1. The only text you ever send to a sub-agent is the **dispatch form** in `${CLAUDE_SKILL_DIR}/reference/dispatch-form.md`, with its five fields filled from facts you are permitted to know.
+1. The only text you ever send to a sub-agent is the **dispatch form** in `${CLAUDE_PLUGIN_ROOT}/reference/dispatch-form.md`, with its five fields filled from facts you are permitted to know.
    No other content of any kind: no summary, paraphrase, interpretation, context, analysis, or background.
    A hook refuses any dispatch to a plugin agent whose prompt is not the form.
    Sub-agents must start fresh, uninfluenced by you.
@@ -100,7 +106,7 @@ If the ID is no longer available or resumption fails, spawn a replacement with t
 Apply every transition table in this document with the label script, one call per row, every "Remove" entry as `--remove` and every "Add" entry as `--add`:
 
 ```text
-${CLAUDE_SKILL_DIR}/scripts/update_gh_labels.sh {owner} {repo} {issue-or-PR number} --remove orchestrate --add orchestrating
+${CLAUDE_PLUGIN_ROOT}/scripts/update_gh_labels.sh {owner} {repo} {issue-or-PR number} --remove orchestrate --add orchestrating
 ```
 
 It calls GitHub's delta label endpoints, so a transition never touches a label outside its own row.
@@ -186,13 +192,13 @@ No-PR path:
 PR path:
   Changes requested -> goto "Assigning a Programmer"
   Cannot work       -> escalate to the user; stop (do not route to a new Author round; leave the PR open for the user)
-  LGTM              -> read `${CLAUDE_SKILL_DIR}/reference/ci-monitor-loop.md` and follow it from "Launching the Monitor"
+  LGTM              -> read `${CLAUDE_PLUGIN_ROOT}/reference/ci-monitor-loop.md` and follow it from "Launching the Monitor"
 ```
 
 ## After the named checks are green
 
 `ci-monitor-loop.md` sends you here once every named check is green.
-Read `${CLAUDE_SKILL_DIR}/reference/verification.md` and follow it: it dispatches the Verification Planner, then the Verifier, and routes on their signals.
+Read `${CLAUDE_PLUGIN_ROOT}/reference/verification.md` and follow it: it dispatches the Verification Planner, then the Verifier, and routes on their signals.
 
 ## Decision signals
 
