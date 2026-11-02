@@ -5,7 +5,7 @@ argument-hint: <issue-number> [<issue-number> ...]
 disable-model-invocation: true
 hooks:
   PreToolUse:
-    - matcher: "Edit|Write|NotebookEdit|Read|SendMessage"
+    - matcher: "Edit|Write|NotebookEdit|Read|Grep|Bash|Monitor|SendMessage"
       hooks:
         - type: command
           command: python3 "${CLAUDE_PLUGIN_ROOT}/scripts/hooks/orchestrator_guard.py"
@@ -51,7 +51,19 @@ You are a message-passer between the user and the sub-agents: mute toward a sub-
 4. You read only the titles, labels, and open/closed states of the issue and of the PR.
    You fetch no diff, description, comments, mergeability, or check-run results, and you read no source files.
    Your only window into CI is the CI Monitor; reading the per-check rows it emits is permitted, fetching check-run state from GitHub is not.
-   A hook enforces the file-side of this: in Orchestrator mode the main session cannot edit files, reads only Markdown and files under `.claude/`, and can send a sub-agent nothing but the form.
+   Hooks enforce part of this; see "What the hooks enforce".
+
+### What the hooks enforce
+
+Once `/orchestrate` has run, a guard checks the main session's tool calls for the rest of the session (never a sub-agent's):
+
+- `Edit`, `Write` and `NotebookEdit` are refused.
+- `Read` is allowed only for a Markdown file or a file under `.claude/`, and never for a path under `.claude/worktrees/`, where the sub-agents' checkouts are; `Grep` likewise.
+- `Bash` and `Monitor` run only `date`, `sleep`, `git` `branch` (create or list), `fetch`, `status`, `rev-parse` and `ls-remote`, and this plugin's label, CI Monitor, config-check and cost scripts, one command per call with no shell operators, redirections or expansions.
+- `SendMessage` must be the dispatch form, and so must an Agent call to one of this plugin's agents (that check applies in every session).
+
+The GitHub MCP tools are not checked: reading no diff, description, comment or check-run of the issue or PR is a rule you keep, not one a hook keeps for you.
+Only the user can switch the hooks off, with `/orch-hooks disengage`.
 
 ### Orchestrator may not
 

@@ -330,3 +330,115 @@ class TestHookState(unittest.TestCase):
         self.assertEqual(
             hook_state.STATE_FILE, os.path.join(plugin_root, ".state", "disengaged-sessions")
         )
+
+
+class TestOrchestratorGuardCoverage(unittest.TestCase):
+    """The worktree, Grep, Bash and Monitor rules of orchestrator_guard.py."""
+
+    ROOT = orchestrator_guard.PLUGIN_ROOT
+
+    def decide(self, tool, **tool_input):
+        return orchestrator_guard.decide(main_call(tool, **tool_input))
+
+    def test_nothing_under_a_worktree_may_be_read(self):
+        for path in (
+            "/repo/.claude/worktrees/agent-x/app/src/main/java/Foo.kt",
+            "/repo/.claude/worktrees/agent-x/README.md",
+            "/repo/.claude/worktrees/agent-x/.claude/orchestrate.json",
+            "C:\\repo\\.claude\\worktrees\\agent-x\\Foo.kt",
+        ):
+            code, message = self.decide("Read", file_path=path)
+            self.assertEqual(code, 2, path)
+            self.assertIn(".claude/worktrees/", message)
+
+    def test_a_directory_merely_named_worktrees_is_not_special(self):
+        self.assertEqual(self.decide("Read", file_path="/repo/docs/worktrees/notes.md"), (0, ""))
+
+    def test_grep(self):
+        self.assertEqual(self.decide("Grep", pattern="x", path="/repo/AGENTS.md"), (0, ""))
+        self.assertEqual(self.decide("Grep", pattern="x", path="/repo/.claude/skills"), (0, ""))
+        self.assertEqual(self.decide("Grep", pattern="x", glob="**/*.md"), (0, ""))
+        for tool_input in (
+            {"pattern": "x"},
+            {"pattern": "x", "path": "/repo/app/src"},
+            {"pattern": "x", "path": "/repo/.claude/worktrees/agent-x"},
+            {"pattern": "x", "path": "/repo/.claude/worktrees/agent-x", "glob": "*.md"},
+            {"pattern": "x", "glob": "*.kt"},
+        ):
+            self.assertEqual(self.decide("Grep", **tool_input)[0], 2, tool_input)
+
+    def test_allowed_commands(self):
+        for command in (
+            "date -u",
+            "date",
+            "date -u +%Y-%m-%dT%H:%M:%SZ",
+            "sleep 300",
+            "git branch feature/issue-7-x origin/main",
+            "git branch",
+            "git fetch origin main",
+            "git status --short",
+            "git rev-parse HEAD",
+            "git ls-remote origin",
+            self.ROOT
+            + "/scripts/update_gh_labels.sh o r 7 --remove orchestrate --add orchestrating",
+            self.ROOT + '/scripts/update_gh_labels.sh o r 7 --add "changes requested"',
+            "bash " + self.ROOT + "/scripts/update_gh_labels.sh o r 7 --add verified",
+            "python3 "
+            + self.ROOT
+            + "/scripts/ci_monitor/ci_monitor.py --pr 7 --repo o/r --config /p/.claude/orchestrate.json",
+            "python3 " + self.ROOT + "/scripts/check_config.py /p/.claude/orchestrate.json",
+            "python3 " + self.ROOT + "/scripts/dispatch_cost.py --json",
+        ):
+            self.assertTrue(orchestrator_guard.command_allowed(command), command)
+            self.assertEqual(self.decide("Bash", command=command), (0, ""), command)
+
+    def test_refused_commands(self):
+        for command in (
+            "cat app/src/main/java/Foo.kt",
+            "grep -r TODO app",
+            "sed -i s/a/b/ Foo.kt",
+            "python3 -c 'print(1)'",
+            "date -s 2020-01-01",
+            "sleep 1m",
+            "git log -p",
+            "git diff origin/main",
+            "git show HEAD",
+            "git checkout main",
+            "git branch -D feature/x",
+            "git branch --move a b",
+            "git -C /elsewhere status",
+            "date -u; cat Foo.kt",
+            "date -u && cat Foo.kt",
+            "date -u | tee x",
+            "date -u > x",
+            "echo $(cat Foo.kt)",
+            "sleep 300 &",
+            "python3 " + self.ROOT + "/scripts/hooks/hook_state.py disengage --session s",
+            "python3 " + self.ROOT + "/scripts/link_gh_issues.py add o r 1 --blocked-by 2",
+            "python3 " + self.ROOT + "/scripts/../../../../app/x.py",
+            "python3 /elsewhere/scripts/ci_monitor/ci_monitor.py --pr 7",
+            "python3",
+            "'unterminated",
+            "",
+        ):
+            self.assertFalse(orchestrator_guard.command_allowed(command), command)
+            code, message = self.decide("Bash", command=command)
+            self.assertEqual(code, 2, command)
+            self.assertIn("runs only these commands", message)
+
+    def test_a_relative_plugin_script_path_resolves_against_cwd(self):
+        project = os.path.dirname(os.path.dirname(self.ROOT))
+        relative = os.path.relpath(self.ROOT, project) + "/scripts/check_config.py x.json"
+        self.assertTrue(orchestrator_guard.command_allowed("python3 " + relative, cwd=project))
+        self.assertFalse(orchestrator_guard.command_allowed("python3 " + relative, cwd="/"))
+
+    def test_monitor_follows_the_bash_rules(self):
+        ok = "python3 " + self.ROOT + "/scripts/ci_monitor/ci_monitor.py --pr 7"
+        self.assertEqual(self.decide("Monitor", command=ok), (0, ""))
+        self.assertEqual(self.decide("Monitor", command="tail -F app.log")[0], 2)
+        self.assertEqual(self.decide("Monitor", url="wss://example.invalid"), (0, ""))
+
+    def test_a_sub_agent_may_run_anything(self):
+        payload = main_call("Bash", command="cat app/src/main/java/Foo.kt")
+        payload["agent_id"] = "agent-1"
+        self.assertEqual(orchestrator_guard.decide(payload), (0, ""))
