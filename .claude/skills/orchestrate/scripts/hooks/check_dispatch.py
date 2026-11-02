@@ -8,7 +8,8 @@ reason on stderr, which Claude Code puts in front of the model. A call to any
 other agent type passes through untouched.
 
 This is the enforcement behind the Orchestrator's communication discipline:
-the form makes over-sharing impossible rather than merely forbidden. It
+the form leaves room for five facts and no prose, rather than merely
+forbidding prose. It
 applies whoever the caller is, because the form is the agents' interface.
 
 Exit codes:

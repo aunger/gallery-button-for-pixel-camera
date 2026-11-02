@@ -21,11 +21,20 @@ PLUGIN_AGENT_TYPES = frozenset("%s:%s" % (PLUGIN_NAME, name) for name in AGENT_N
 # One (label, pattern) per line of the form, in order. A pattern matches the
 # whole value after "Label: ".
 _NUMBER_OR_NONE = r"#[0-9]+|None"
+# A branch name drawn from git's ref characters, at most BRANCH_MAX_LENGTH of
+# them: segments of letters, digits, `.`, `_` and `-`, joined by single `/`,
+# none starting with `.` or `-`, and no `..` or trailing `.lock`. The cap keeps
+# the one free-text-shaped field of the form from carrying a note.
+BRANCH_MAX_LENGTH = 64
+_BRANCH = (
+    r"(?!.*\.\.)(?!.*\.lock$)(?=.{1,%d}$)[A-Za-z0-9_][A-Za-z0-9._-]*(/[A-Za-z0-9_][A-Za-z0-9._-]*)*"
+    % (BRANCH_MAX_LENGTH)
+)
 FORM_LINES = (
     ("Repository", r"[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+"),
     ("Issue", _NUMBER_OR_NONE),
     ("PR", _NUMBER_OR_NONE),
-    ("Branch", r"None|[^\s]+"),
+    ("Branch", r"None|" + _BRANCH),
     ("Verification plan comment", r"[0-9]+|None"),
 )
 

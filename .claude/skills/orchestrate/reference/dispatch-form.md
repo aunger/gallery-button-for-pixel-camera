@@ -25,7 +25,8 @@ Verification plan comment: None
 
 Everything a sub-agent needs beyond these five facts lives on GitHub, where it reads it fresh: the issue, the PR's description and its three comment surfaces, the review bodies, the tracking issues.
 A dispatch that carried more would carry the Orchestrator's reading of those things, and the sub-agent would start from that reading instead of its own.
-The form makes over-sharing impossible rather than merely forbidden.
+The form leaves room for five facts and no prose, rather than merely forbidding prose.
+Its one text field, the branch, takes only git's ref characters, at most 64 of them.
 
 ## Rules
 

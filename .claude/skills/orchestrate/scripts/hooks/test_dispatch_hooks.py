@@ -99,6 +99,42 @@ class TestFormErrors(unittest.TestCase):
     def test_a_repository_needs_owner_and_name(self):
         self.assertNotEqual(dispatch_form.form_errors(FORM.replace("aunger/", "")), [])
 
+    def test_branch_names(self):
+        def branch_ok(value):
+            return (
+                dispatch_form.form_errors(
+                    FORM.replace("feature/issue-164-orchestrate-plugin", value)
+                )
+                == []
+            )
+
+        for value in (
+            "None",
+            "main",
+            "fix/issue-7-null-check",
+            "claude/deep-planner-requester-comment-ncpws6",
+            "release/v1.2.3",
+            "a" * dispatch_form.BRANCH_MAX_LENGTH,
+        ):
+            self.assertTrue(branch_ok(value), value)
+        for value in (
+            "fix/issue-12-NOTE:the-null-check-in-CameraOverlay.kt:88-is-the-bug",
+            "a" * (dispatch_form.BRANCH_MAX_LENGTH + 1),
+            "fix/../main",
+            "-x",
+            "/x",
+            "x/",
+            "x//y",
+            ".hidden",
+            "x/.y",
+            "x.lock",
+            "x~1",
+            "x^2",
+            "focus,on,tests",
+            "a'b",
+        ):
+            self.assertFalse(branch_ok(value), value)
+
     def test_a_branch_with_a_space_is_an_error(self):
         self.assertNotEqual(
             dispatch_form.form_errors(FORM.replace("Branch: feature", "Branch: my feature")), []
