@@ -131,6 +131,8 @@ silentVanish:
 
 ## Notes
 
-- The per-check summary rows of the named checks are the decision input; the terminal line only marks the end of the stream. `step`/`FAIL`/`SKIP`/`PASS` lines are progress reports.
-- The Verifier still reads the terminal words (its definition, "Monitor workflow runs"). That is deliberate: the Monitor keeps emitting them, and only the Orchestrator's routing stopped treating them as a verdict.
+- The per-check summary rows of the named checks are the decision input; the terminal line only marks the end of the stream.
+  `step`/`FAIL`/`SKIP`/`PASS` lines are progress reports.
+- The Verifier still reads the terminal words (its definition, "Monitor workflow runs").
+  That is deliberate: the Monitor keeps emitting them, and only the Orchestrator's routing stopped treating them as a verdict.
 - The Monitor loop replaces subscribing to PR events and sleep-plus-poll, which are unreliable.

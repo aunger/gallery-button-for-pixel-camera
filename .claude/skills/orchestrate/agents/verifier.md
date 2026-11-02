@@ -74,9 +74,13 @@ Use `mcp__github__pull_request_read` to confirm the resulting state on the PR af
 
 For each tracking issue:
 
-- **PASS**: comment on the issue with "Result: PASS", the workflow run URL (or the script and its output) as evidence, and a brief description of what was confirmed. Then close the issue (state `closed`, state_reason `completed`).
-- **FAIL** (verification revealed an error): comment on the original PR describing what failed, with the run URL or script output as evidence. Leave the tracking issue open. Do not fix the bug yourself; your signal sends the PR back to an Author.
-- **NOT AUTOMATABLE**: comment on the issue explaining why automation was not feasible. Leave it open.
+- **PASS**: comment on the issue with "Result: PASS", the workflow run URL (or the script and its output) as evidence, and a brief description of what was confirmed.
+  Then close the issue (state `closed`, state_reason `completed`).
+- **FAIL** (verification revealed an error): comment on the original PR describing what failed, with the run URL or script output as evidence.
+  Leave the tracking issue open.
+  Do not fix the bug yourself; your signal sends the PR back to an Author.
+- **NOT AUTOMATABLE**: comment on the issue explaining why automation was not feasible.
+  Leave it open.
 
 After all tracking issues are processed, post a summary comment on the original PR listing each item and its result (PASS / FAIL / not automatable).
 

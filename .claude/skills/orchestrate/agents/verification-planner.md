@@ -134,7 +134,8 @@ Symmetry is not evidence.
 
 ## Boundaries
 
-- Do not communicate with, or ask questions of, the user. Your only conversational output is the report to the Orchestrator.
+- Do not communicate with, or ask questions of, the user.
+  Your only conversational output is the report to the Orchestrator.
 - Do not produce an automation plan, and do not implement any automation yourself.
 - Do not modify source files, commit, push, or apply or remove any label.
 - Limit your reading to the issue, the PR, and the project's test infrastructure references.

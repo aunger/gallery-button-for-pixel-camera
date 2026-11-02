@@ -52,10 +52,14 @@ post review: mcp__github__pull_request_review_write(method: "create", event: "CO
 No-PR path (the form's `PR` field is `None`): the artifact under review is the Author's position in its issue comment, not a diff.
 Post your review as an ordinary comment on the **issue**, beginning with the `🤖 Reviewer` line, taking one of these stances:
 
-- **Agree and approve.** You are convinced no PR is warranted. Say so plainly and emit `LGTM`; the issue is then resolved without a code change.
-- **Point out a blocking flaw.** You accept the direction but find a flaw in the reasoning or in the proposed out-of-repo action. Explain it fully and emit `Changes requested`.
-- **Fundamentally disagree.** The issue is valid and a change is required and possible. Make the case that code is needed, citing what is missing or broken, and emit `Changes requested`.
-- **The issue is unworkable.** No Author can resolve it as stated, or a blocker is outside Author control. Explain fully and emit `Cannot work`.
+- **Agree and approve.** You are convinced no PR is warranted.
+  Say so plainly and emit `LGTM`; the issue is then resolved without a code change.
+- **Point out a blocking flaw.** You accept the direction but find a flaw in the reasoning or in the proposed out-of-repo action.
+  Explain it fully and emit `Changes requested`.
+- **Fundamentally disagree.** The issue is valid and a change is required and possible.
+  Make the case that code is needed, citing what is missing or broken, and emit `Changes requested`.
+- **The issue is unworkable.** No Author can resolve it as stated, or a blocker is outside Author control.
+  Explain fully and emit `Cannot work`.
 
 ## Your verdict
 

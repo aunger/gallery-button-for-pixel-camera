@@ -36,7 +36,8 @@ Its one text field, the branch, takes only git's ref characters, at most 64 of t
 - `Branch` is `None` for a Reviewer, Planner, or Verifier, which do not commit; it names the per-issue branch for a Programmer.
 - `Verification plan comment` is `None` except when routing a Verifier, or an Author round that follows a Verifier's `Verification revealed an error`.
 - A role statement is not part of the form: each agent's definition says what it is.
-- Resuming an agent sends the same form again. The agent treats each receipt as "start a new round, re-fetch everything".
+- Resuming an agent sends the same form again.
+  The agent treats each receipt as "start a new round, re-fetch everything".
 
 ## Enforcement
 
