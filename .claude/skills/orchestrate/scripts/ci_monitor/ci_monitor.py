@@ -79,9 +79,14 @@ def _repository_arg(value):
 # default; a project's config file, which the Orchestrator passes with --config
 # (.claude/orchestrate.json in the host repository), overrides the defaults
 # with that project's specifics. load_config() reads the file --config names,
-# or ci_monitor.config.json next to this script when there is no --config,
+# or DEFAULT_CONFIG_PATH in the working directory when there is no --config,
 # falling back to these defaults when the file is absent, unreadable, invalid,
 # or missing a key, so the resilient poll loop never aborts on configuration.
+
+# The config file read when --config names none, relative to the working
+# directory: where the orchestrate plugin keeps a project's configuration, so
+# a run from the project root without --config still gets the project's regexes.
+DEFAULT_CONFIG_PATH = os.path.join(".claude", "orchestrate.json")
 
 # Match (re.search) against an artifact's `name` to decide whether it carries
 # per-test ndjson markers worth downloading. Preserves the historical
@@ -123,8 +128,8 @@ DEFAULT_IGNORED_CHECK_REGEX = r"(?!)"
 def load_config(path=None):
     """Load the CI Monitor config, falling back to in-code defaults.
 
-    `path` is the --config value; None means ci_monitor.config.json next to
-    this script. Returns a dict with keys artifact_name_regex, interesting_step_regex,
+    `path` is the --config value; None means DEFAULT_CONFIG_PATH, resolved
+    against the working directory. Returns a dict with keys artifact_name_regex, interesting_step_regex,
     deferred_verdict_step_regex, test_marker_regex, and ignored_check_regex.
     A missing file, unreadable file, or invalid JSON falls back entirely to the
     DEFAULT_* regexes (the Monitor must never abort on config). Each key
@@ -139,7 +144,7 @@ def load_config(path=None):
         "ignored_check_regex": DEFAULT_IGNORED_CHECK_REGEX,
     }
     if path is None:
-        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ci_monitor.config.json")
+        path = DEFAULT_CONFIG_PATH
     try:
         with open(path, encoding="utf-8") as fh:
             raw = json.load(fh)
@@ -1182,7 +1187,8 @@ def main(argv):
         "--config",
         metavar="PATH",
         default=None,
-        help="The config file to load (default: ci_monitor.config.json next to the script).",
+        help="The config file to load (default: %s in the working directory)."
+        % DEFAULT_CONFIG_PATH,
     )
     # argparse runs a string default through `type` when the option is absent,
     # so a malformed $GITHUB_REPOSITORY is rejected the way a malformed --repo

@@ -372,10 +372,11 @@ REPOSITORY_T = ci_monitor.DEFAULT_REPOSITORY
 MPR_BLOCKED = {"merged": False, "state": "open", "mergeable_state": "blocked"}
 
 
-def main() -> int:
+def _run_checks() -> int:
     """Run every check (a) through (bq) and print PASS/FAIL for each.
 
-    Returns 1 if any check failed, 0 otherwise.
+    Returns 1 if any check, here or in _check_default_config_path(), failed,
+    0 otherwise.
     Only runs when this file is executed directly; see the __main__ guard below.
     The fixtures and helpers above (including check_runs_payload()) stay at module
     scope so they can be imported and reused without running the suite; only the
@@ -383,22 +384,6 @@ def main() -> int:
     check (o)'s subprocess/SIGTERM and check (q)'s real time.sleep--is gated
     behind this function.
     """
-    # The main() checks below were written against the project config of the
-    # repository this suite grew up in, which the Orchestrator passes with
-    # --config. The Monitor ships no config file of its own, so a main() call
-    # that names no --config would read the in-code defaults, whose artifact
-    # and marker regexes match none of the fixtures. Stand REPO_CONFIG in for
-    # the absent default instead: a check that passes --config is unaffected,
-    # and one that patches load_config() replaces this stand-in too.
-    _real_load_config = ci_monitor.load_config
-
-    def _load_config_with_repo_default(path=None):
-        if path is None:
-            with repo_config() as repo_path:
-                return _real_load_config(repo_path)
-        return _real_load_config(path)
-
-    ci_monitor.load_config = _load_config_with_repo_default
 
     # ── (a) All-success: exactly 3 test-step lines emitted ─────────────────────────
     print("\n=== (a) Signal 1: all-success build-and-test emits exactly 3 test-step lines ===")
@@ -7041,6 +7026,65 @@ def main() -> int:
     # ── Summary ────────────────────────────────────────────────────────────────────
     print("\nResults: %d passed, %d failed." % (PASS, FAIL))
     return 1 if FAIL else 0
+
+
+def _check_default_config_path():
+    """load_config(None) reads DEFAULT_CONFIG_PATH in the working directory, or uses defaults."""
+    print("\n=== (bs) load_config(None): the project config in the working directory ===")
+    here = os.getcwd()
+    with tempfile.TemporaryDirectory() as tmp:
+        os.chdir(tmp)
+        try:
+            with unittest.mock.patch("sys.stderr", new=io.StringIO()) as err:
+                cfg_none = ci_monitor.load_config(None)
+            check(
+                cfg_none["artifact_name_regex"] == ci_monitor.DEFAULT_ARTIFACT_NAME_REGEX
+                and cfg_none["ignored_check_regex"] == ci_monitor.DEFAULT_IGNORED_CHECK_REGEX
+                and ci_monitor.DEFAULT_CONFIG_PATH in err.getvalue(),
+                "with no project config, load_config(None) says so and uses the in-code defaults",
+                "got %r; stderr %r" % (cfg_none, err.getvalue()),
+            )
+            os.makedirs(".claude")
+            project = dict(REPO_CONFIG, repository="o/r", named_checks=["build"])
+            with open(ci_monitor.DEFAULT_CONFIG_PATH, "w", encoding="utf-8") as fh:
+                json.dump(project, fh)
+            cfg_project = ci_monitor.load_config(None)
+            check(
+                all(cfg_project[key] == value for key, value in REPO_CONFIG.items()),
+                "with .claude/orchestrate.json present, load_config(None) reads its regexes"
+                " and ignores its other keys",
+                "got %r" % cfg_project,
+            )
+        finally:
+            os.chdir(here)
+
+
+def main() -> int:
+    """Run the suite and return 1 if any check failed, 0 otherwise.
+
+    The main() checks in _run_checks() were written against the project
+    config of the repository this suite grew up in. A main() call that names
+    no --config reads DEFAULT_CONFIG_PATH from the working directory, which
+    would tie the result to wherever the suite is run, so for the length of
+    _run_checks() load_config(None) reads REPO_CONFIG instead. A check that
+    passes --config is unaffected, and one that patches load_config() replaces
+    the stand-in too. The real load_config() is restored afterwards, and
+    _check_default_config_path() runs against it first.
+    """
+    _check_default_config_path()
+    real_load_config = ci_monitor.load_config
+
+    def load_config_with_repo_default(path=None):
+        if path is None:
+            with repo_config() as repo_path:
+                return real_load_config(repo_path)
+        return real_load_config(path)
+
+    ci_monitor.load_config = load_config_with_repo_default
+    try:
+        return _run_checks()
+    finally:
+        ci_monitor.load_config = real_load_config
 
 
 if __name__ == "__main__":

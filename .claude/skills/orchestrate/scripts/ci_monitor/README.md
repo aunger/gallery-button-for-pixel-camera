@@ -127,7 +127,8 @@ With no pattern (`--include-pass ''`), every passing test is reported.
 ## Configuration
 
 A JSON config file tunes five behaviors as regexes.
-`--config PATH` names it; without the flag the Monitor looks for `ci_monitor.config.json` next to the script, which the plugin does not ship, so the in-code defaults apply.
+`--config PATH` names it; without the flag the Monitor reads `.claude/orchestrate.json` in the working directory, and when that is absent too, it says so on stderr and uses the in-code defaults.
+Run from a project's root, a plain `ci_monitor.py --pr N` therefore gets the project's configuration.
 The orchestrate plugin keeps a project's values in that project's `.claude/orchestrate.json`, beside the keys its own agents read, and passes the file with `--config`; the Monitor reads only the five keys below and ignores the rest.
 The monitor loads the file once at startup; each value is optional, and a missing file, unreadable file, invalid JSON, or non-compiling regex falls back to the in-code default for that key without aborting the resilient poll loop.
 
