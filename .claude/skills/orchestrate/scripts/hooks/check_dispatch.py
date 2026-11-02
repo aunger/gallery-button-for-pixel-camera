@@ -41,7 +41,8 @@ def decide(payload):
     tool_input = payload.get("tool_input")
     if not isinstance(tool_input, dict):
         return 0, ""
-    if tool_input.get("subagent_type") not in PLUGIN_AGENT_TYPES:
+    subagent_type = tool_input.get("subagent_type")
+    if not isinstance(subagent_type, str) or subagent_type not in PLUGIN_AGENT_TYPES:
         return 0, ""
     errors = form_errors(tool_input.get("prompt"))
     if not errors:
@@ -55,7 +56,11 @@ def main():
     except (OSError, ValueError) as error:
         sys.stderr.write("[orchestrate] check_dispatch.py could not read its input: %s\n" % error)
         return 0
-    code, message = decide(payload)
+    try:
+        code, message = decide(payload)
+    except Exception as error:  # noqa: BLE001 - a broken hook must never wedge a session
+        sys.stderr.write("[orchestrate] check_dispatch.py failed: %r\n" % (error,))
+        return 0
     if message:
         sys.stderr.write(message + "\n")
     return code

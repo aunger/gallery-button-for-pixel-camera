@@ -5,6 +5,7 @@ The two hooks are also driven end to end, as Claude Code drives them: a JSON
 payload on stdin, the verdict in the exit code, the reason on stderr.
 """
 
+import io
 import json
 import os
 import subprocess
@@ -530,3 +531,37 @@ class TestProtectState(unittest.TestCase):
         )
         self.assertEqual(code, 2)
         self.assertIn("refused", stderr)
+
+
+class TestFaultsNeverBlock(unittest.TestCase):
+    """A payload of an unexpected shape passes, and a crash exits 0 with a warning."""
+
+    def test_odd_shapes_pass(self):
+        for payload in (
+            {"tool_name": "Agent", "tool_input": {"subagent_type": ["orchestrate:reviewer"]}},
+            {"tool_name": "Agent", "tool_input": {"subagent_type": {"a": 1}, "prompt": "x"}},
+            {"tool_name": ["Edit"], "tool_input": {}},
+            {"tool_name": {"x": 1}},
+        ):
+            self.assertEqual(check_dispatch.decide(payload), (0, ""), payload)
+            self.assertEqual(orchestrator_guard.decide(payload), (0, ""), payload)
+
+    def test_a_crash_exits_zero_with_a_warning(self):
+        for module, script in (
+            (check_dispatch, "check_dispatch.py"),
+            (orchestrator_guard, "orchestrator_guard.py"),
+        ):
+            with (
+                patch.object(module, "decide", side_effect=RuntimeError("boom")),
+                patch("sys.stdin", new=io.StringIO("{}")),
+                patch("sys.stderr", new=io.StringIO()) as err,
+            ):
+                self.assertEqual(module.main(), 0, script)
+            self.assertIn(script + " failed: RuntimeError('boom')", err.getvalue())
+
+    def test_an_unhashable_type_end_to_end(self):
+        code, stderr = run_hook(
+            "check_dispatch.py",
+            {"tool_name": "Agent", "tool_input": {"subagent_type": ["x"], "prompt": "y"}},
+        )
+        self.assertEqual((code, stderr), (0, ""))

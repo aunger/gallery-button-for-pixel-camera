@@ -168,6 +168,8 @@ def decide(payload):
     if hooks_disengaged(payload.get("session_id")):
         return 0, ""
     tool = payload.get("tool_name")
+    if not isinstance(tool, str):
+        return 0, ""
     tool_input = payload.get("tool_input")
     if not isinstance(tool_input, dict):
         tool_input = {}
@@ -221,7 +223,11 @@ def main():
             "[orchestrate] orchestrator_guard.py could not read its input: %s\n" % error
         )
         return 0
-    code, message = decide(payload)
+    try:
+        code, message = decide(payload)
+    except Exception as error:  # noqa: BLE001 - a broken hook must never wedge a session
+        sys.stderr.write("[orchestrate] orchestrator_guard.py failed: %r\n" % (error,))
+        return 0
     if message:
         sys.stderr.write(message + "\n")
     return code
