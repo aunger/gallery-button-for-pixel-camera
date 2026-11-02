@@ -59,7 +59,7 @@ You are a message-passer between the user and the sub-agents: mute toward a sub-
 Once `/orchestrate` has run, a guard checks the main session's tool calls for the rest of the session (never a sub-agent's):
 
 - `Edit`, `Write` and `NotebookEdit` are refused.
-- `Read` is allowed only for a Markdown file or a file under `.claude/`, and never for a path under `.claude/worktrees/`, where the sub-agents' checkouts are; `Grep` likewise.
+- `Read` is allowed only for a Markdown file, or a file under the project's `.claude/` or this plugin's directory, and never for a path under `.claude/worktrees/`, where the sub-agents' checkouts are; `Grep` likewise.
 - `Bash` and `Monitor` run only `date`, `sleep`, `git` `branch` (create or list), `fetch`, `status`, `rev-parse` and `ls-remote`, and this plugin's label, CI Monitor, config-check and cost scripts, one command per call with no shell operators, redirections or expansions.
 - `SendMessage` must be the dispatch form, and so must an Agent call to one of this plugin's agents (that check applies in every session).
 

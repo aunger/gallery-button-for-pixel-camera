@@ -216,16 +216,36 @@ class TestOrchestratorGuard(unittest.TestCase):
         self.assertEqual(orchestrator_guard.decide(payload), (0, ""))
 
     def test_reading_markdown_and_dot_claude_files_is_allowed(self):
-        for path in (
-            "AGENTS.md",
-            "/repo/agents/code_edit.md",
-            "/repo/.claude/orchestrate.json",
-            "/repo/.claude/skills/orchestrate/reference/ci-monitor-loop.md",
-            "C:\\repo\\.claude\\settings.json",
-        ):
-            self.assertEqual(
-                orchestrator_guard.decide(main_call("Read", file_path=path)), (0, ""), path
-            )
+        with patch.dict(os.environ, {"CLAUDE_PROJECT_DIR": "/repo"}):
+            for path in (
+                "AGENTS.md",
+                "/repo/agents/code_edit.md",
+                "/repo/.claude/orchestrate.json",
+                "/repo/.claude/skills/orchestrate/reference/ci-monitor-loop.md",
+                os.path.join(orchestrator_guard.PLUGIN_ROOT, "hooks", "hooks.json"),
+            ):
+                self.assertEqual(
+                    orchestrator_guard.decide(main_call("Read", file_path=path)), (0, ""), path
+                )
+
+    def test_a_dot_claude_directory_outside_the_project_is_not_readable(self):
+        with patch.dict(os.environ, {"CLAUDE_PROJECT_DIR": "/repo"}):
+            for path in (
+                "/root/.claude/projects/-repo/session/subagents/agent-x.jsonl",
+                "/elsewhere/.claude/settings.json",
+                "/repo/app/.claude/x.json",
+            ):
+                code, _ = orchestrator_guard.decide(main_call("Read", file_path=path))
+                self.assertEqual(code, 2, path)
+
+    def test_without_a_project_dir_the_payload_cwd_stands_in(self):
+        env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"}
+        with patch.dict(os.environ, env, clear=True):
+            payload = main_call("Read", file_path="/repo/.claude/orchestrate.json")
+            payload["cwd"] = "/repo"
+            self.assertEqual(orchestrator_guard.decide(payload), (0, ""))
+            payload["cwd"] = "/other"
+            self.assertEqual(orchestrator_guard.decide(payload)[0], 2)
 
     def test_reading_source_is_refused(self):
         for path in ("app/src/main/java/Foo.kt", "scripts/ci/x.py", "build.gradle.kts", ""):
@@ -441,6 +461,8 @@ class TestOrchestratorGuardCoverage(unittest.TestCase):
         self.assertEqual(self.decide("Read", file_path="/repo/docs/worktrees/notes.md"), (0, ""))
 
     def test_grep(self):
+        os.environ["CLAUDE_PROJECT_DIR"] = "/repo"
+        self.addCleanup(os.environ.pop, "CLAUDE_PROJECT_DIR", None)
         self.assertEqual(self.decide("Grep", pattern="x", path="/repo/AGENTS.md"), (0, ""))
         self.assertEqual(self.decide("Grep", pattern="x", path="/repo/.claude/skills"), (0, ""))
         self.assertEqual(self.decide("Grep", pattern="x", glob="**/*.md"), (0, ""))

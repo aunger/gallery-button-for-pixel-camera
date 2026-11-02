@@ -45,7 +45,7 @@ Two hooks enforce this rather than ask for it:
 - `hooks/hooks.json` runs `scripts/hooks/check_dispatch.py` before every Agent call.
   A call whose `subagent_type` is one of this plugin's agents is refused, with the reason and the form printed for the model, unless its `prompt` is exactly the form.
 - The Orchestrator skill registers `scripts/hooks/orchestrator_guard.py` for the rest of the session that invoked `/orchestrate`.
-  In that session's main conversation (never in a sub-agent) it refuses `Edit`, `Write` and `NotebookEdit`; allows `Read` and `Grep` only on Markdown or files under `.claude/`, never under `.claude/worktrees/`; lets `Bash` and `Monitor` run only the commands the skill names (`date`, `sleep`, a few `git` subcommands, and the plugin's own scripts), with no shell operators; and refuses a `SendMessage` that is not the form.
+  In that session's main conversation (never in a sub-agent) it refuses `Edit`, `Write` and `NotebookEdit`; allows `Read` and `Grep` only on Markdown or files under the project's `.claude/` or the plugin's directory, never under `.claude/worktrees/`; lets `Bash` and `Monitor` run only the commands the skill names (`date`, `sleep`, a few `git` subcommands, and the plugin's own scripts), with no shell operators; and refuses a `SendMessage` that is not the form.
   Those are the file and shell side of the Orchestrator's "may not" rules in executable form.
   The GitHub MCP tools are not checked, so not reading a PR's diff or comments stays a rule the Orchestrator keeps.
 

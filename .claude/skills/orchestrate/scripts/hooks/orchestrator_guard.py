@@ -12,10 +12,11 @@ In the main session it enforces the file and shell side of the Orchestrator's
 non-negotiable rules from that skill:
 
 - Edit, Write and NotebookEdit are refused: the Orchestrator edits no file.
-- Read is refused except for a Markdown file, or a file under a `.claude`
-  directory (the project configuration, this plugin's reference files); a
-  path under `.claude/worktrees/`, where the sub-agents' checkouts live, is
-  refused whatever it is. The Orchestrator reads project instructions, not
+- Read is refused except for a Markdown file, or a file under the project's
+  `.claude/` (the project configuration) or this plugin's directory (its
+  reference files); a path under `.claude/worktrees/`, where the sub-agents'
+  checkouts live, is refused whatever it is, and so is a `.claude` directory
+  outside the project, such as ~/.claude/projects/ with its transcripts. The Orchestrator reads project instructions, not
   source.
 - Grep is refused unless it searches a path Read would allow, or only
   Markdown files (`glob` ending in `.md`), since its matches are file content.
@@ -100,8 +101,33 @@ def _in_worktree(parts):
     )
 
 
-def read_allowed(path):
-    """Return True when the Orchestrator may Read `path`."""
+def _within(path, directory):
+    """Return True when `path` is `directory` or lies under it."""
+    if not directory:
+        return False
+    try:
+        relative = os.path.relpath(os.path.realpath(path), os.path.realpath(directory))
+    except ValueError:
+        return False
+    return relative == "." or not relative.startswith("..")
+
+
+def project_dir(payload=None):
+    """Return the project root: $CLAUDE_PROJECT_DIR, which Claude Code exports to hooks, else cwd."""
+    directory = os.environ.get("CLAUDE_PROJECT_DIR")
+    if not directory and isinstance(payload, dict):
+        directory = payload.get("cwd")
+    return directory or None
+
+
+def read_allowed(path, project=None):
+    """Return True when the Orchestrator may Read `path`.
+
+    Markdown anywhere, or any file under the project's `.claude/` or this
+    plugin's own directory, but nothing under `.claude/worktrees/`. A
+    `.claude` directory elsewhere, such as ~/.claude/projects/ with its
+    sub-agent transcripts, is not the project's and is not allowed.
+    """
     if not isinstance(path, str) or not path:
         return False
     parts = path.replace("\\", "/").split("/")
@@ -109,16 +135,18 @@ def read_allowed(path):
         return False
     if parts[-1].lower().endswith((".md", ".markdown")):
         return True
-    return ".claude" in parts
+    if _within(path, PLUGIN_ROOT):
+        return True
+    return bool(project) and _within(path, os.path.join(project, ".claude"))
 
 
-def grep_allowed(tool_input):
+def grep_allowed(tool_input, project=None):
     """Return True when the Orchestrator may run this Grep."""
     path = tool_input.get("path")
     if isinstance(path, str) and path:
         if _in_worktree(path.replace("\\", "/").split("/")):
             return False
-        if read_allowed(path):
+        if read_allowed(path, project):
             return True
     glob = tool_input.get("glob")
     return isinstance(glob, str) and glob.lower().endswith((".md", ".markdown"))
@@ -180,21 +208,20 @@ def decide(payload):
         )
     if tool == "Read":
         path = tool_input.get("file_path")
-        if read_allowed(path):
+        if read_allowed(path, project_dir(payload)):
             return 0, ""
         return 2, (
             "[orchestrate] refused: the Orchestrator does not read source files (%r). It reads "
-            "Markdown and files under .claude/ only (never under .claude/worktrees/, where the "
-            "sub-agents' checkouts are): project instructions, the project configuration, and the "
-            "plugin's own files. " % path
+            "Markdown, the project's .claude/ and the plugin's own files only, never under "
+            ".claude/worktrees/, where the sub-agents' checkouts are. " % path
         ) + MODE_NOTE
     if tool == "Grep":
-        if grep_allowed(tool_input):
+        if grep_allowed(tool_input, project_dir(payload)):
             return 0, ""
         return 2, (
             "[orchestrate] refused: Grep returns file content, and the Orchestrator reads only "
-            "Markdown and files under .claude/ (outside .claude/worktrees/). Give a `path` it may "
-            "read, or a `glob` ending in .md. "
+            "Markdown, the project's .claude/ and the plugin's own files (outside "
+            ".claude/worktrees/). Give a `path` it may read, or a `glob` ending in .md. "
         ) + MODE_NOTE
     if tool in SHELL_TOOLS:
         command = tool_input.get("command")
