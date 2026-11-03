@@ -369,6 +369,51 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
 YAML
 
+# A trailing comment is not part of a grant's value (issue #957), whether the
+# grant is a key in the block or the block's own inline value.
+cat > "$TMP/good-actions-inline-comment.yml" <<'YAML'
+permissions:
+  contents: read
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read  # needed to reach the triggering run's artifacts
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          run-id: ${{ github.event.workflow_run.id }}
+YAML
+
+cat > "$TMP/good-read-all-inline-comment.yml" <<'YAML'
+permissions: read-all  # every scope, actions included
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          run-id: ${{ github.event.workflow_run.id }}
+YAML
+
+# A grant spelled only inside a comment grants nothing. The braces matter:
+# splitting a flow mapping at `{`, `}` and `,` before dropping comments would
+# put `actions: read` on a line of its own and read it as the grant.
+cat > "$TMP/bad-grant-only-in-comment.yml" <<'YAML'
+permissions:
+  contents: read  # deliberately not { actions: read }
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          run-id: ${{ github.event.workflow_run.id }}
+YAML
+
 # A same-run download needs no grant, and a run id mentioned by an unrelated
 # step in the same job must not make one look cross-run.
 cat > "$TMP/good-same-run.yml" <<'YAML'
@@ -403,11 +448,14 @@ expect_verdict bad bad-inline-comment.yml
 expect_verdict bad bad-space-before-colon.yml
 expect_verdict bad bad-job-permissions-space-before-colon.yml
 expect_verdict bad bad-jobs-space-before-colon.yml
+expect_verdict bad bad-grant-only-in-comment.yml
 expect_verdict ok good-job.yml
 expect_verdict ok good-flow-mapping.yml
 expect_verdict ok good-permissions-after-jobs.yml
 expect_verdict ok good-workflow-permissions-space-before-colon.yml
 expect_verdict ok good-actions-space-before-colon.yml
+expect_verdict ok good-actions-inline-comment.yml
+expect_verdict ok good-read-all-inline-comment.yml
 
 # The same-run fixture must produce no verdict at all: nothing to judge.
 if [ -z "$(audit_workflow "$TMP/good-same-run.yml")" ]; then
