@@ -398,6 +398,36 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
 YAML
 
+# More than one blank before the comment, a tab among them, is the same
+# grant. Written with printf so the tabs are visible here rather than literal.
+T="$(printf '\t')"
+printf '%s\n' \
+    'permissions:' \
+    '  contents: read' \
+    '' \
+    'jobs:' \
+    '  detect:' \
+    '    runs-on: ubuntu-latest' \
+    '    permissions:' \
+    "      actions: read${T}${T}# two tabs before the comment" \
+    '    steps:' \
+    '      - uses: actions/download-artifact@v7' \
+    '        with:' \
+    '          run-id: ${{ github.event.workflow_run.id }}' \
+    > "$TMP/good-actions-tabbed-comment.yml"
+
+printf '%s\n' \
+    "permissions: read-all${T} # a tab and a space before the comment" \
+    '' \
+    'jobs:' \
+    '  detect:' \
+    '    runs-on: ubuntu-latest' \
+    '    steps:' \
+    '      - uses: actions/download-artifact@v7' \
+    '        with:' \
+    '          run-id: ${{ github.event.workflow_run.id }}' \
+    > "$TMP/good-read-all-tabbed-comment.yml"
+
 # A grant spelled only inside a comment grants nothing. The braces matter:
 # splitting a flow mapping at `{`, `}` and `,` before dropping comments would
 # put `actions: read` on a line of its own and read it as the grant.
@@ -456,6 +486,8 @@ expect_verdict ok good-workflow-permissions-space-before-colon.yml
 expect_verdict ok good-actions-space-before-colon.yml
 expect_verdict ok good-actions-inline-comment.yml
 expect_verdict ok good-read-all-inline-comment.yml
+expect_verdict ok good-actions-tabbed-comment.yml
+expect_verdict ok good-read-all-tabbed-comment.yml
 
 # The same-run fixture must produce no verdict at all: nothing to judge.
 if [ -z "$(audit_workflow "$TMP/good-same-run.yml")" ]; then
