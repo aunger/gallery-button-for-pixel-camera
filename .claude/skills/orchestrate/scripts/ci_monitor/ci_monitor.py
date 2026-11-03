@@ -1,28 +1,29 @@
 #!/usr/bin/env python3
 """ci_monitor.py: Poll a PR's CI and stream a terminal outcome plus per-test signals.
 
-Invoked by the Orchestrator's Monitor tool call (see agents/dev_orchestration.md).
+Invoked by the Orchestrator's Monitor tool call (see the orchestrate plugin's
+reference/ci-monitor-loop.md).
 Each stdout line is consumed as a task-notification event, so output is the
 interface: terminal outcome lines end the loop, while informational lines
 (in_progress heartbeat, per-step deltas, per-test FAILs) keep it alive.
 
-See scripts/ci_monitor/README.md for full usage instructions, including the
+See README.md next to this script for full usage instructions, including the
 command-line arguments (--repo, --config, and the per-outcome filter flags)
 and the outcome vocabulary.
 
 Usage:
-    python3 scripts/ci_monitor/ci_monitor.py --pr <PR_NUMBER> [flags]
-    python3 scripts/ci_monitor/ci_monitor.py --sha <SHA> [flags]
-    python3 scripts/ci_monitor/ci_monitor.py --run-id <RUN_ID> [flags]
-    python3 scripts/ci_monitor/ci_monitor.py --branch <BRANCH> [flags]
-    python3 scripts/ci_monitor/ci_monitor.py --once (--pr <N> | --sha <SHA> | --branch <BRANCH>)
+    python3 ci_monitor.py --pr <PR_NUMBER> [flags]
+    python3 ci_monitor.py --sha <SHA> [flags]
+    python3 ci_monitor.py --run-id <RUN_ID> [flags]
+    python3 ci_monitor.py --branch <BRANCH> [flags]
+    python3 ci_monitor.py --once (--pr <N> | --sha <SHA> | --branch <BRANCH>)
 
 Exactly one of --pr/--sha/--run-id/--branch is required. --once prints one
 read of the commit's check-runs, collapsed to the latest run per name, and
 exits without polling. --sha, --run-id, and --branch have no PR to consult,
 so their `Clear` terminal fires directly off
 an all-passed check verdict--no `mergeable_state` gating (that concept is
---pr-only). See scripts/ci_monitor/README.md for the per-mode output prefixes
+--pr-only). See README.md for the per-mode output prefixes
 (PR#/SHA#/RUN#/BRANCH#).
 
 Environment:
@@ -75,11 +76,17 @@ def _repository_arg(value):
 
 
 # Configurable behavior (issue #500). Each tunable is a regex with an in-code
-# default; the committed scripts/ci_monitor/ci_monitor.config.json overrides the
-# defaults with this repo's specifics. load_config() reads that file, or the one
-# --config names, falling back to these defaults when the file is absent,
-# unreadable, invalid, or missing a key, so the resilient poll loop never aborts
-# on configuration.
+# default; a project's config file, which the Orchestrator passes with --config
+# (.claude/orchestrate.json in the host repository), overrides the defaults
+# with that project's specifics. load_config() reads the file --config names,
+# or DEFAULT_CONFIG_PATH in the working directory when there is no --config,
+# falling back to these defaults when the file is absent, unreadable, invalid,
+# or missing a key, so the resilient poll loop never aborts on configuration.
+
+# The config file read when --config names none, relative to the working
+# directory: where the orchestrate plugin keeps a project's configuration, so
+# a run from the project root without --config still gets the project's regexes.
+DEFAULT_CONFIG_PATH = os.path.join(".claude", "orchestrate.json")
 
 # Match (re.search) against an artifact's `name` to decide whether it carries
 # per-test ndjson markers worth downloading. Preserves the historical
@@ -95,8 +102,8 @@ DEFAULT_INTERESTING_STEP_REGEX = r"(?!)"
 
 # Locate the per-test marker prefix in a raw ndjson line. The JSON payload begins
 # at the end of the matched span (re.search(...).end()), which is correct for any
-# marker the regex matches. Default switched to ##TEST## per issue #500; this
-# repo's config matches both markers for back-compat (see ci_monitor.config.json).
+# marker the regex matches. Default switched to ##TEST## per issue #500; a
+# project whose CI still emits an older marker matches both in its config.
 DEFAULT_TEST_MARKER_REGEX = r"##TEST##"
 
 # Match (re.search) against a step's `name` to identify it as a deferred-verdict
@@ -121,8 +128,8 @@ DEFAULT_IGNORED_CHECK_REGEX = r"(?!)"
 def load_config(path=None):
     """Load the CI Monitor config, falling back to in-code defaults.
 
-    `path` is the --config value; None means ci_monitor.config.json next to
-    this script. Returns a dict with keys artifact_name_regex, interesting_step_regex,
+    `path` is the --config value; None means DEFAULT_CONFIG_PATH, resolved
+    against the working directory. Returns a dict with keys artifact_name_regex, interesting_step_regex,
     deferred_verdict_step_regex, test_marker_regex, and ignored_check_regex.
     A missing file, unreadable file, or invalid JSON falls back entirely to the
     DEFAULT_* regexes (the Monitor must never abort on config). Each key
@@ -137,7 +144,7 @@ def load_config(path=None):
         "ignored_check_regex": DEFAULT_IGNORED_CHECK_REGEX,
     }
     if path is None:
-        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ci_monitor.config.json")
+        path = DEFAULT_CONFIG_PATH
     try:
         with open(path, encoding="utf-8") as fh:
             raw = json.load(fh)
@@ -1180,7 +1187,8 @@ def main(argv):
         "--config",
         metavar="PATH",
         default=None,
-        help="The config file to load (default: ci_monitor.config.json next to the script).",
+        help="The config file to load (default: %s in the working directory)."
+        % DEFAULT_CONFIG_PATH,
     )
     # argparse runs a string default through `type` when the option is absent,
     # so a malformed $GITHUB_REPOSITORY is rejected the way a malformed --repo

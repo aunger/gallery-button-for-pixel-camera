@@ -1,0 +1,12 @@
+{
+  "name": "orchestrate",
+  "displayName": "Orchestrate",
+  "version": "1.0.0",
+  "description": "A multi-agent development cycle for GitHub issues: /orchestrate dispatches Programmer, Reviewer, Verification Planner and Verifier sub-agents, routes their decision signals, and monitors CI.",
+  "author": {
+    "name": "aunger"
+  },
+  "repository": "https://github.com/aunger/gallery-button-for-pixel-camera",
+  "license": "MIT",
+  "keywords": ["orchestration", "code-review", "github", "ci"]
+}

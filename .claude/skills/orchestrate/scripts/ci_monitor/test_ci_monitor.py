@@ -136,10 +136,10 @@ Covers:
        `snapshot <sha> <verdict>` line, with no polling, no PID line and no
        Merged/Closed short-circuit; fetch failures exit 1; --run-id is refused;
        #1229 a counted check that already failed outranks one still running
-  (bp) #1298 main(): the committed config prints no line for a named step's
+  (bp) #1298 main(): the project config prints no line for a named step's
        success, and the unprinted line does not reset the heartbeat timer
   (bq) #1298 main(): a named step that lists only during the drain prints
-       nothing under the committed config, so the undiagnosed-drain flag
+       nothing under the project config, so the undiagnosed-drain flag
        precedes the bare Blocked terminal
   (br) #1341 _request: a URL whose scheme is not https raises ValueError, on
        both the JSON and the raw path, before anything is opened
@@ -274,38 +274,40 @@ PASS_ONLY_NDJSON = [
     '##GB4PC_TEST## {"suite":"com.gb4pc.e2e.GalleryButtonVisualE2ETest","name":"test3b","outcome":"PASS","ms":110,"msg":"","trace":""}',
 ]
 
-# The step regexes that name build.yml's test steps. The committed config no
+# The step regexes that name build.yml's test steps. The project config no
 # longer sets them, so main() prints a step line only for a failed step (issue
 # #1298). The parser-direct tests pass them explicitly, and named_step_config()
 # writes them into a config for the main() tests that need a named step's line.
 REPO_STEP_REGEX = "Build and run unit tests|^Run .*E2ETest$"
 REPO_DEFERRED_REGEX = "^Run .*E2ETest$|^Run instrumented tests$"
-# This repo's committed config values (scripts/ci_monitor/ci_monitor.config.json).
-# The parser-direct tests pass these explicitly so they exercise the same regexes
-# main() loads from the config file (issue #500).
+# The config values the repository this suite was written against commits in
+# its project configuration (.claude/orchestrate.json, passed with --config).
+# They stand here as a realistic configuration: the parser-direct tests pass
+# them explicitly, and repo_config() writes them into a file for the main()
+# tests, so both exercise the same regexes main() loads from a config file
+# (issue #500). The Monitor itself carries no config file; a key a config does
+# not set falls back to the in-code default.
 REPO_MARKER_REGEX = "##GB4PC_TEST##|##TEST##"
 REPO_ARTIFACT_REGEX = "^ci-monitor-feed-"
-# The merge gate's check name, and the committed regex that ignores it. The
-# name holds parentheses, so it is not a regex for itself.
+# The merge gate's check name, and the regex that ignores it. The name holds
+# parentheses, so it is not a regex for itself.
 REPO_GATE_NAME = "Administrative merge holds (not failure)"
 REPO_IGNORED_REGEX = r"^Administrative merge holds \(not failure\)$"
-REPO_CONFIG_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "ci_monitor.config.json"
-)
+REPO_CONFIG = {
+    "artifact_name_regex": REPO_ARTIFACT_REGEX,
+    "test_marker_regex": REPO_MARKER_REGEX,
+    "ignored_check_regex": REPO_IGNORED_REGEX,
+}
 
 
 @contextlib.contextmanager
-def named_step_config():
-    """Yield the path of a config that names build.yml's test steps.
+def repo_config(**overrides):
+    """Yield the path of a config file holding REPO_CONFIG plus `overrides`.
 
-    The file is a copy of the committed config with both step regexes set to
-    REPO_STEP_REGEX and REPO_DEFERRED_REGEX, so its other keys stay in force.
     It is removed on exit.
     """
-    with open(REPO_CONFIG_PATH, encoding="utf-8") as fh:
-        cfg = json.load(fh)
-    cfg["interesting_step_regex"] = REPO_STEP_REGEX
-    cfg["deferred_verdict_step_regex"] = REPO_DEFERRED_REGEX
+    cfg = dict(REPO_CONFIG)
+    cfg.update(overrides)
     fd, path = tempfile.mkstemp(suffix=".json")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
@@ -313,6 +315,18 @@ def named_step_config():
         yield path
     finally:
         os.remove(path)
+
+
+def named_step_config():
+    """Yield the path of a config that also names build.yml's test steps.
+
+    REPO_CONFIG with both step regexes set to REPO_STEP_REGEX and
+    REPO_DEFERRED_REGEX, so its other keys stay in force.
+    """
+    return repo_config(
+        interesting_step_regex=REPO_STEP_REGEX,
+        deferred_verdict_step_regex=REPO_DEFERRED_REGEX,
+    )
 
 
 def check_runs_payload(*pairs):
@@ -358,10 +372,11 @@ REPOSITORY_T = ci_monitor.DEFAULT_REPOSITORY
 MPR_BLOCKED = {"merged": False, "state": "open", "mergeable_state": "blocked"}
 
 
-def main() -> int:
+def _run_checks() -> int:
     """Run every check (a) through (bq) and print PASS/FAIL for each.
 
-    Returns 1 if any check failed, 0 otherwise.
+    Returns 1 if any check, here or in _check_default_config_path(), failed,
+    0 otherwise.
     Only runs when this file is executed directly; see the __main__ guard below.
     The fixtures and helpers above (including check_runs_payload()) stay at module
     scope so they can be imported and reused without running the suite; only the
@@ -369,6 +384,7 @@ def main() -> int:
     check (o)'s subprocess/SIGTERM and check (q)'s real time.sleep--is gated
     behind this function.
     """
+
     # ── (a) All-success: exactly 3 test-step lines emitted ─────────────────────────
     print("\n=== (a) Signal 1: all-success build-and-test emits exactly 3 test-step lines ===")
     out_a = ci_monitor.parse_steps(ALL_SUCCESS_JOBS, set(), None, REPO_STEP_REGEX)
@@ -811,7 +827,7 @@ def main() -> int:
         clock["t"] += secs
 
     # The named step's success line is the emission under test, so this run names
-    # the steps itself rather than rely on the committed config.
+    # the steps itself rather than rely on the project config.
     buf_j = io.StringIO()
     with (
         named_step_config() as cfg_j,
@@ -3245,22 +3261,19 @@ def main() -> int:
         "bad-regex fallback wrong; got %r" % cfg_badre,
     )
 
-    # The committed repo config carries this repo's values, including the dual
+    # A project config carries the project's values, including the dual
     # marker, and leaves both step regexes at their never-match defaults, so a
     # step line reports only a failed step (issue #1298).
-    _repo_cfg_path = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "ci_monitor.config.json"
-    )
-    cfg_repo = ci_monitor.load_config(_repo_cfg_path)
+    with repo_config() as _repo_cfg_path:
+        cfg_repo = ci_monitor.load_config(_repo_cfg_path)
     check(
         cfg_repo["test_marker_regex"] == REPO_MARKER_REGEX
         and cfg_repo["artifact_name_regex"] == REPO_ARTIFACT_REGEX
         and cfg_repo["interesting_step_regex"] == ci_monitor.DEFAULT_INTERESTING_STEP_REGEX
         and cfg_repo["deferred_verdict_step_regex"]
         == ci_monitor.DEFAULT_DEFERRED_VERDICT_STEP_REGEX,
-        "the committed ci_monitor.config.json carries this repo's regexes (incl. dual marker)"
-        " and names no steps",
-        "committed repo config wrong; got %r" % cfg_repo,
+        "a project config carries its regexes (incl. dual marker) and names no steps",
+        "project config wrong; got %r" % cfg_repo,
     )
 
     # ── (ad) #499 wrong-run regression + multi-run discovery via main() ────────────
@@ -3557,7 +3570,7 @@ def main() -> int:
         return side_effects_af.popleft()
 
     # The named steps' success lines show which jobs were tracked, so this run
-    # names the steps itself rather than rely on the committed config.
+    # names the steps itself rather than rely on the project config.
     buf_af = io.StringIO()
     with (
         named_step_config() as cfg_af,
@@ -3922,21 +3935,19 @@ def main() -> int:
         "absent-file fallback wrong; got %r" % cfg_ai_absent.get("ignored_check_regex"),
     )
 
-    # Committed repo config carries the escaped regex for the merge gate's name.
-    _repo_cfg_path_ai = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "ci_monitor.config.json"
-    )
-    cfg_ai_repo = ci_monitor.load_config(_repo_cfg_path_ai)
+    # A project config carries the escaped regex for the merge gate's name.
+    with repo_config() as _repo_cfg_path_ai:
+        cfg_ai_repo = ci_monitor.load_config(_repo_cfg_path_ai)
     check(
         cfg_ai_repo.get("ignored_check_regex") == REPO_IGNORED_REGEX,
-        "committed config carries ignored_check_regex = REPO_IGNORED_REGEX",
-        "committed config wrong; got %r" % cfg_ai_repo.get("ignored_check_regex"),
+        "a project config carries ignored_check_regex = REPO_IGNORED_REGEX",
+        "project config wrong; got %r" % cfg_ai_repo.get("ignored_check_regex"),
     )
 
     # ── (aj) #516 end-to-end: an ignored red gate on a non-draft PR ─────────
     print("\n=== (aj) #516 end-to-end: ignored gate hold -> 'Infra (mergeable_state=blocked)' ===")
 
-    # A red merge gate, ignored by the committed config, beside three
+    # A red merge gate, ignored by the project config, beside three
     # passing checks. mergeable_state is still "blocked", so the terminal is the bare
     # Infra, preceded by the undiagnosed-drain flag.
     PR_AJ = {"head": {"sha": "513c0de1"}}
@@ -6842,15 +6853,15 @@ def main() -> int:
         "exit %r; stderr %r" % (code_bm, err_bm.getvalue()),
     )
 
-    # ── (bp) #1298 committed config: an unprinted step does not reset the timer ─
+    # ── (bp) #1298 project config: an unprinted step does not reset the timer ─
     print(
-        "\n=== (bp) #1298 main(): a named step's success prints nothing under the committed config ==="
+        "\n=== (bp) #1298 main(): a named step's success prints nothing under the project config ==="
     )
 
     # (j)'s fixtures, with the named step completing on poll 11 (t=300 s), the
     # first poll more than 120 s after the poll-6 heartbeat (t=150 s). Printed,
     # the step line resets the timer and poll 11 has no heartbeat; unprinted, it
-    # must not, so poll 11 has one. Run once with the committed config and once
+    # must not, so poll 11 has one. Run once with the project config and once
     # with the steps named, so the heartbeat count tells the two apart.
     def run_bp(extra_argv):
         req_bp = collections.deque()
@@ -6881,10 +6892,11 @@ def main() -> int:
             rc_bp = ci_monitor.main(["ci_monitor.py", "--pr", "285"] + extra_argv)
         return buf_bp.getvalue().splitlines(), rc_bp, len(req_bp)
 
-    lines_bp, rc_bp, left_bp = run_bp([])
+    with repo_config() as cfg_bp0:
+        lines_bp, rc_bp, left_bp = run_bp(["--config", cfg_bp0])
     check(
         not any(ln.startswith("PR#285: step ") for ln in lines_bp),
-        "the committed config prints no step line for a named step's success",
+        "the project config prints no step line for a named step's success",
         "unexpected step line; lines: %r" % lines_bp,
     )
     check(
@@ -6910,12 +6922,12 @@ def main() -> int:
         "rc %r, %d requests left" % (rc_bp2, left_bp2),
     )
 
-    # ── (bq) #1298 committed config: a step listed only in the drain is no signal ─
+    # ── (bq) #1298 project config: a step listed only in the drain is no signal ─
     print("\n=== (bq) #1298 main(): a named step listed only during the drain flags the drain ===")
 
     # Every check passed but mergeable_state is behind, so the bare Blocked terminal
     # follows a drain (as in (bj)). The named step first lists during the drain.
-    # Under the committed config it prints nothing, so the drain found no new
+    # Under the project config it prints nothing, so the drain found no new
     # signal and the undiagnosed-drain flag precedes the terminal; with the steps
     # named, its line is the new signal and the flag is suppressed.
     PR_BQ = {"head": {"sha": "1298d4a1"}}
@@ -6957,18 +6969,19 @@ def main() -> int:
             rc_bq = ci_monitor.main(["ci_monitor.py", "--pr", "1298"] + extra_argv)
         return buf_bq.getvalue().splitlines(), rc_bq, len(req_bq)
 
-    lines_bq, rc_bq, left_bq = run_bq([])
+    with repo_config() as cfg_bq0:
+        lines_bq, rc_bq, left_bq = run_bq(["--config", cfg_bq0])
     check(
         step_bq not in lines_bq
         and flag_bq in lines_bq
         and lines_bq[-1] == terminal_bq
         and lines_bq.index(flag_bq) < lines_bq.index(terminal_bq),
-        "the committed config: no step line, and the drain flag precedes the bare Blocked",
+        "the project config: no step line, and the drain flag precedes the bare Blocked",
         "lines: %r" % lines_bq,
     )
     check(
         rc_bq == 0 and left_bq == 0,
-        "the committed-config run consumed every mocked request",
+        "the project-config run consumed every mocked request",
         "rc %r, %d requests left" % (rc_bq, left_bq),
     )
     with named_step_config() as cfg_bq:
@@ -7013,6 +7026,65 @@ def main() -> int:
     # ── Summary ────────────────────────────────────────────────────────────────────
     print("\nResults: %d passed, %d failed." % (PASS, FAIL))
     return 1 if FAIL else 0
+
+
+def _check_default_config_path():
+    """load_config(None) reads DEFAULT_CONFIG_PATH in the working directory, or uses defaults."""
+    print("\n=== (bs) load_config(None): the project config in the working directory ===")
+    here = os.getcwd()
+    with tempfile.TemporaryDirectory() as tmp:
+        os.chdir(tmp)
+        try:
+            with unittest.mock.patch("sys.stderr", new=io.StringIO()) as err:
+                cfg_none = ci_monitor.load_config(None)
+            check(
+                cfg_none["artifact_name_regex"] == ci_monitor.DEFAULT_ARTIFACT_NAME_REGEX
+                and cfg_none["ignored_check_regex"] == ci_monitor.DEFAULT_IGNORED_CHECK_REGEX
+                and ci_monitor.DEFAULT_CONFIG_PATH in err.getvalue(),
+                "with no project config, load_config(None) says so and uses the in-code defaults",
+                "got %r; stderr %r" % (cfg_none, err.getvalue()),
+            )
+            os.makedirs(".claude")
+            project = dict(REPO_CONFIG, repository="o/r", named_checks=["build"])
+            with open(ci_monitor.DEFAULT_CONFIG_PATH, "w", encoding="utf-8") as fh:
+                json.dump(project, fh)
+            cfg_project = ci_monitor.load_config(None)
+            check(
+                all(cfg_project[key] == value for key, value in REPO_CONFIG.items()),
+                "with .claude/orchestrate.json present, load_config(None) reads its regexes"
+                " and ignores its other keys",
+                "got %r" % cfg_project,
+            )
+        finally:
+            os.chdir(here)
+
+
+def main() -> int:
+    """Run the suite and return 1 if any check failed, 0 otherwise.
+
+    The main() checks in _run_checks() were written against the project
+    config of the repository this suite grew up in. A main() call that names
+    no --config reads DEFAULT_CONFIG_PATH from the working directory, which
+    would tie the result to wherever the suite is run, so for the length of
+    _run_checks() load_config(None) reads REPO_CONFIG instead. A check that
+    passes --config is unaffected, and one that patches load_config() replaces
+    the stand-in too. The real load_config() is restored afterwards, and
+    _check_default_config_path() runs against it first.
+    """
+    _check_default_config_path()
+    real_load_config = ci_monitor.load_config
+
+    def load_config_with_repo_default(path=None):
+        if path is None:
+            with repo_config() as repo_path:
+                return real_load_config(repo_path)
+        return real_load_config(path)
+
+    ci_monitor.load_config = load_config_with_repo_default
+    try:
+        return _run_checks()
+    finally:
+        ci_monitor.load_config = real_load_config
 
 
 if __name__ == "__main__":
