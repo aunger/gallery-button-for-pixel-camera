@@ -18,8 +18,8 @@
 #   - At most one top-level `permissions:` key, at column 0. Its position
 #     relative to `jobs:` does not matter.
 #   - Job names that are plain scalars, matched literally, not as patterns.
-#     A job header may carry a trailing `# comment`; anything else after the
-#     colon makes the line a key with a value rather than a job header.
+#     Anything after a job header's colon other than a trailing comment makes
+#     the line a key with a value rather than a job header.
 #
 # Any key these helpers look for (`jobs:`, `permissions:`, a job header,
 # `actions:` in a permissions block) may put blanks between its name and its
