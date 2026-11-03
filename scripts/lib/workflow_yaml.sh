@@ -18,12 +18,12 @@
 #   - At most one top-level `permissions:` key, at column 0. Its position
 #     relative to `jobs:` does not matter.
 #   - Job names that are plain scalars, matched literally, not as patterns.
-#     A job header may carry a trailing `# comment`; anything else after the
-#     colon makes the line a key with a value rather than a job header.
+#     Anything after a job header's colon other than a trailing comment makes
+#     the line a key with a value rather than a job header.
 #
 # Any key these helpers look for (`jobs:`, `permissions:`, a job header,
 # `actions:` in a permissions block) may put blanks between its name and its
-# colon, as YAML allows.
+# colon, as YAML allows, and may end in a trailing `# comment`.
 #
 # A file that breaks an assumption fails loudly (a block comes back empty, and
 # the caller reports its own check as failed) rather than passing vacuously.
@@ -162,9 +162,17 @@ workflow_job_permissions() { workflow_job_block "$1" "$2" | yaml_sub_block permi
 # and `write-all` both include it. The block is normalized first so a flow
 # mapping, `permissions: { actions: read, issues: write }`, is read the same
 # way as the equivalent block mapping.
+#
+# Comments are removed before that: a `#` at the start of a line or after a
+# blank begins one, as in YAML, so `actions: read  # why` is the grant
+# (issue #957). Every blank before the `#` goes with it, so no tab is left
+# for the pattern below to have to absorb. Removing comments first, rather
+# than letting the pattern tolerate a trailing comment, also keeps the
+# flow-mapping split from lifting a grant out of comment text:
+# `contents: read  # not { actions: read }` grants nothing.
 permissions_grant_actions_read() {
     local normalized
-    normalized="$(printf '%s\n' "$1" | tr '{},' '\n\n\n')"
+    normalized="$(printf '%s\n' "$1" | sed -E 's/(^|[[:blank:]]+)#.*$//' | tr '{},' '\n\n\n')"
     grep -Eq '^[ \t]*(actions[ \t]*:[ \t]*(read|write)|read-all|write-all)[ \t]*$' <<<"$normalized"
 }
 
