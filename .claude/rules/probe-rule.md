@@ -1,0 +1,1 @@
+../dot-and-tilde/plugins/probe/rules/probe-rule.md
