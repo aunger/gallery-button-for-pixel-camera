@@ -1,0 +1,3 @@
+[submodule ".claude/dot-and-tilde"]
+	path = .claude/dot-and-tilde
+	url = https://github.com/aunger/dot-and-tilde
