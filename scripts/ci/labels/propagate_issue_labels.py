@@ -161,7 +161,7 @@ def fetch_closing_issue_labels(
 # Core logic
 # ---------------------------------------------------------------------------
 
-# Labels the orchestrate plugin (.claude/skills/orchestrate/skills/orchestrate/SKILL.md) manages
+# Labels the orchestrate plugin (its Orchestrator skill) manages
 # as orchestration-cycle state,
 # not ordinary content/category labels (contrast with e.g. "p1"-"p3", "ci",
 # "bug", which are fine to copy as-is). The issue and its PR are deliberately
@@ -332,7 +332,7 @@ def propagate_to_pr(owner: str, name: str, repo: str, pr_number: int, token: str
         print(
             f"Excluding orchestration-cycle labels {process_state} on PR #{pr_number}: the "
             "issue and its PR are allowed to carry these differently while orchestration "
-            "is active (see .claude/skills/orchestrate/skills/orchestrate/SKILL.md)."
+            "is active (see the orchestrate plugin's Orchestrator skill)."
         )
 
     if file_determined:

@@ -51,9 +51,8 @@ import requests
 from github_headers import github_headers
 from session_bylines import strip_bylines
 
-# The byline pattern and strip_bylines() live in session_bylines.py, which
-# imports nothing outside the standard library, so the write-time checker in
-# scripts/agents/verify_github_write.py can reuse them from inside a hook
+# The byline pattern and strip_bylines() live in session_bylines.py, whose
+# docstring names the write-time checker that carries a copy of them
 # (issue #909).  strip_bylines is re-exported here because this module's
 # callers and tests have always reached it through this name.
 
