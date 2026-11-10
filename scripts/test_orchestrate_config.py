@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 """The committed .claude/orchestrate.json is a usable orchestrate configuration.
 
-The orchestrate plugin (.claude/skills/orchestrate/) reads this repository's
-facts from that file; its check_config.py says what the file must hold. This
-test runs that check over the committed file, and pins each value to the part
-of this repository it describes, so a change on either side that leaves the
-other behind fails here:
+The orchestrate plugin reads this repository's facts from that file; its
+check_config.py says what the file must hold. The plugin lives in
+aunger/dot-and-tilde, and .claude/gb4pc-tools pins the commit this repository
+installs, so this test fetches check_config.py at that commit and runs it over
+the committed file. Where the fetch fails (offline, or a sandbox that cannot
+reach GitHub) that check is skipped with the reason, except when CI is set,
+where it fails, so CI always runs it.
+
+The test also pins each value to the part of this repository it describes, so
+a change on either side that leaves the other behind fails here:
 
 - every named check is the check name of a job some workflow defines (the
   job's `name:`, or its id when it has none);
@@ -21,13 +26,17 @@ which only the GitHub API knows.
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 CONFIG = os.path.join(REPO_ROOT, ".claude", "orchestrate.json")
-CHECK = os.path.join(REPO_ROOT, ".claude", "skills", "orchestrate", "scripts", "check_config.py")
+MARKETPLACE = os.path.join(
+    REPO_ROOT, ".claude", "gb4pc-tools", ".claude-plugin", "marketplace.json"
+)
 BUILD_YML = os.path.join(REPO_ROOT, ".github", "workflows", "build.yml")
 MERGE_GATE = "Administrative merge holds (not failure)"
 
@@ -38,6 +47,37 @@ from workflow_files import load_workflow, workflow_paths  # noqa: E402
 def load_config():
     with open(CONFIG, encoding="utf-8") as handle:
         return json.load(handle)
+
+
+def fetch_pinned_check_config(directory):
+    """Fetch orchestrate's check_config.py at the commit the marketplace pins; return its path.
+
+    Raises CalledProcessError, TimeoutExpired or OSError when it cannot.
+    """
+    with open(MARKETPLACE, encoding="utf-8") as handle:
+        entries = {entry["name"]: entry for entry in json.load(handle)["plugins"]}
+    source = entries["orchestrate"]["source"]
+    executable = shutil.which("git")
+    if executable is None:
+        raise FileNotFoundError("git is not on PATH")
+    git_dir = os.path.join(directory, "repo.git")
+
+    def git(*args):
+        # --git-dir, so a GIT_DIR inherited from a git hook cannot redirect it.
+        return subprocess.run(
+            [executable, "--git-dir", git_dir, *args],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=120,
+        ).stdout
+
+    git("init", "-q", "--bare", git_dir)
+    git("fetch", "-q", "--depth", "1", f"https://github.com/{source['url']}.git", source["sha"])
+    check = os.path.join(directory, "check_config.py")
+    with open(check, "w", encoding="utf-8") as handle:
+        handle.write(git("show", f"FETCH_HEAD:{source['path']}/scripts/check_config.py"))
+    return check
 
 
 def read_build_yml():
@@ -57,9 +97,18 @@ def workflow_check_names():
 
 class TestCommittedConfig(unittest.TestCase):
     def test_check_config_accepts_it_without_warnings(self):
-        completed = subprocess.run(
-            [sys.executable, CHECK, CONFIG], capture_output=True, text=True, check=False
-        )
+        with tempfile.TemporaryDirectory() as directory:
+            try:
+                check = fetch_pinned_check_config(directory)
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as error:
+                detail = getattr(error, "stderr", None) or error
+                message = f"could not fetch the pinned check_config.py: {detail}"
+                if os.environ.get("CI"):
+                    self.fail(message)
+                self.skipTest(message)
+            completed = subprocess.run(
+                [sys.executable, check, CONFIG], capture_output=True, text=True, check=False
+            )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertNotIn("warning:", completed.stdout)
 
