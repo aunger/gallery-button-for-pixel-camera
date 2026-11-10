@@ -2,14 +2,18 @@
 """session_bylines.py: Recognize Claude session-URL bylines in GitHub content.
 
 `strip_session_bylines.py` repairs bylines after the fact, from a webhook.
-`scripts/agents/verify_github_write.py` has to recognize the same bylines at
-write time, so it can subtract them before diffing sent text against stored
-text.  This module holds the pattern and the one function both need, so the
-two callers share a definition instead of drifting apart.
+The read-back hook of aunger/dot-and-tilde's github-supplement plugin,
+`verify_github_write.py`, has to recognize the same bylines at write time, so
+it can subtract them before diffing sent text against stored text.  It
+carries its own copy of the pattern and of `strip_bylines`, since the plugin
+imports nothing from this repository. scripts/test_plugin_helper_copies.py
+compares the two at the commit .claude/gb4pc-tools pins, so a change to the
+pattern here is made there in the same pass, and lands with the pin bump that
+takes it.
 
-It deliberately imports nothing outside the standard library.  The write-time
-caller runs inside a Claude Code hook, where a missing third-party package
-would turn a check into a crash.
+It imports nothing outside the standard library, and neither may the hook's
+copy: inside a Claude Code hook, a missing third-party package would turn a
+check into a crash.
 
 This module has no `main`; it is imported, not run directly.
 A copy of this module also runs inside

@@ -1,0 +1,39 @@
+{
+  "name": "gb4pc-tools",
+  "description": "The dot-and-tilde plugins this repository uses, each pinned to one dot-and-tilde commit.",
+  "owner": {
+    "name": "aunger"
+  },
+  "plugins": [
+    {
+      "name": "orchestrate",
+      "description": "A multi-agent development cycle for GitHub issues, started with /orchestrate.",
+      "source": {
+        "source": "git-subdir",
+        "url": "aunger/dot-and-tilde",
+        "path": "plugins/orchestrate",
+        "sha": "717d9403d6da3cdb64e53e22e48c05e357ee5155"
+      }
+    },
+    {
+      "name": "github-supplement",
+      "description": "GitHub REST helpers on PATH, and hooks that fetch after sub-agents, read back GitHub writes, and keep worktree agents in their own scratchpad subdirectory.",
+      "source": {
+        "source": "git-subdir",
+        "url": "aunger/dot-and-tilde",
+        "path": "plugins/github-supplement",
+        "sha": "717d9403d6da3cdb64e53e22e48c05e357ee5155"
+      }
+    },
+    {
+      "name": "bag-o-agents",
+      "description": "General-purpose sub-agents, starting with deep-planner.",
+      "source": {
+        "source": "git-subdir",
+        "url": "aunger/dot-and-tilde",
+        "path": "plugins/bag-o-agents",
+        "sha": "717d9403d6da3cdb64e53e22e48c05e357ee5155"
+      }
+    }
+  ]
+}

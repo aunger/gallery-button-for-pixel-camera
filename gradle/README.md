@@ -161,7 +161,7 @@ Adding `workflow_dispatch` (#878) is the intended fix for that dead end.
 > It does not happen every time.
 > A probe posted through `add_issue_comment` on 2026-08-23 stored its mention intact.
 > The behavior is external to this repository and it is not constant, so neither outcome can be predicted, and deciding by memory in either direction is the error.
-> The `PostToolUse` hook `.claude/hooks/post-tool-use-github-readback.sh` reads every GitHub write back and reports any difference (issue #909), which turns the question from a prediction into a measurement: post it, then believe the hook's verdict rather than the stored text, which looks right either way.
+> github-supplement's `PostToolUse` read-back hook reads every GitHub write back and reports any difference (issue #909), which turns the question from a prediction into a measurement: post it, then believe the hook's verdict rather than the stored text, which looks right either way.
 > If the hook reports the mention was dotted, that command did not arrive and the attempt failed silently.
 >
 > Prefer the routes that do not depend on a mention at all: re-run the regen workflow run, or ask a human to post the command and say plainly why you cannot.

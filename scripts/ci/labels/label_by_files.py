@@ -63,9 +63,7 @@ TEST_SCRIPT_BASENAME = re.compile(r"test_.+\.(py|sh)\Z")
 # {ci, automated tests}, so unanimity fires on {ci}.
 #
 # scripts/lint/ is deliberately excluded: lint.sh is a local pre-commit tool as
-# much as a CI step. The CI Monitor is the Orchestrator's own tool rather than
-# repo CI, and lives with the orchestrate plugin under .claude/, which the
-# agents set below covers.
+# much as a CI step.
 CI_PATH_PREFIXES = (".github/workflows/", "scripts/ci/")
 
 # The repository owner's "agents" path set, recorded on issue #775 as the

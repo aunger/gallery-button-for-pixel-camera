@@ -4,7 +4,7 @@
 Backs the "Administrative merge holds (not failure)" required status check
 (.github/workflows/administrative-merge-holds.yml), which enforces the
 orchestrate plugin's "do not merge while process state is outstanding" rule
-(.claude/skills/orchestrate/skills/orchestrate/SKILL.md).
+(its Orchestrator skill).
 
 Why this asks about a commit rather than about one pull request (issue #833):
 a check run is stored against a head commit, not against a pull request, and

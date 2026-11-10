@@ -4,7 +4,7 @@
 
 Before creating a PR, confirm one is warranted.
 An Author may legitimately decline to open a PR when addressing the issue needs no code change, when it cannot fix the issue, or when the issue is flawed or should not be acted upon.
-In those cases, explain why in a comment on the issue instead of creating a PR; an Author dispatched by the `orchestrate` plugin follows "Open a PR, or decline to" in its definition (`.claude/skills/orchestrate/agents/programmer.md`).
+In those cases, explain why in a comment on the issue instead of creating a PR; an Author dispatched by the `orchestrate` plugin follows "Open a PR, or decline to" in the plugin's `programmer` agent definition.
 The rest of this document applies only once you have decided a PR is the right artifact.
 
 ## One topic per PR

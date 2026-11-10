@@ -3,7 +3,7 @@
   "alwaysThinkingEnabled": true,
   "permissions": {
     "allow": [
-      "mcp__Claude_Code_Remote__send_later"
+      "mcp__claude-code-remote__send_later"
     ]
   },
   "hooks": {
@@ -13,35 +13,6 @@
           {
             "type": "command",
             "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Agent",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-tool-use-fetch.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "mcp__github__.*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-tool-use-github-readback.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "Bash|Write|Edit|NotebookEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-tool-use-scratchpad-isolation.sh"
           }
         ]
       }

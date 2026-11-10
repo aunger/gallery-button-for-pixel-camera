@@ -12,8 +12,25 @@ cd gallery-button-for-pixel-camera
 ```
 
 The `SessionStart` hook (`.claude/hooks/session-start.sh`) runs automatically
-at session start and sets up the Android SDK and proxy configuration. See the
+at session start and sets up the Claude Code plugins, the Android SDK and proxy configuration. See the
 script for implementation details; each step is commented.
+
+______________________________________________________________________
+
+## Claude Code plugins (Step 0a)
+
+The orchestrate development cycle, the `deep-planner` agent, the `PostToolUse` hooks and the GitHub REST helpers come from [aunger/dot-and-tilde](https://github.com/aunger/dot-and-tilde)'s `orchestrate`, `github-supplement` and `bag-o-agents` plugins.
+`.claude/gb4pc-tools/.claude-plugin/marketplace.json` pins each of them to one dot-and-tilde commit, and `.claude/install-plugins.sh` installs them at that commit.
+The hook's Step 0a runs that script in cloud sessions; elsewhere, run it by hand.
+
+- **Scope.** The installs are at local scope, recorded in this checkout's gitignored `.claude/settings.local.json`, so the plugins and their hooks are enabled in this repository only.
+- **Network.** A run that installs or moves a plugin fetches the pinned commit of `aunger/dot-and-tilde` from GitHub.
+  A run that finds every plugin already at the pin makes one `claude plugin list --json` call and nothing else.
+- **Loading.** Claude Code loads plugins when it starts, and the hook runs after that, so a plugin the hook installs is missing from the session until the user runs `/reload-skills`.
+  A plugin moved to a new pin keeps running its earlier version until Claude Code restarts.
+  The script's one line of output, which reaches the session's context, says which of the two applies.
+  Until then, the github-supplement hooks (the read-back of GitHub writes, the fetch after a sub-agent, and the scratchpad check) do not run.
+- **Failure.** The hook reports a failed run on its Step 0a line and goes on with the Android setup; run `.claude/install-plugins.sh` from the Bash tool to see the error.
 
 ______________________________________________________________________
 
@@ -286,11 +303,10 @@ endpoints.
 
 **Re-verified 2026-07 (issue #710 / PR #717):** `POST /issues/{n}/labels` (add) and
 `DELETE /issues/{n}/labels/{name}` (remove) both succeed with `GITHUB_TOKEN`. A
-round trip on issue #710's own `P3` label (`.claude/skills/orchestrate/scripts/update_gh_labels.sh ... --remove P3`, then `--add P3`) was confirmed by a follow-up `get_labels` read after each
-call. `.claude/skills/orchestrate/scripts/update_gh_labels.sh` (issue #710) relies on this, and is the
+round trip on issue #710's own `P3` label (`update_gh_labels.sh ... --remove P3`, then `--add P3`) was confirmed by a follow-up `get_labels` read after each
+call. github-supplement's `update_gh_labels.sh` (issue #710) relies on this, and is the
 supported way to add or remove specific labels without the replace-all behavior of
-`mcp__github__issue_write` (see "Labels" in the orchestrate plugin's
-`.claude/skills/orchestrate/skills/orchestrate/SKILL.md`).
+`mcp__github__issue_write` (see "Labels" in the orchestrate plugin's Orchestrator skill).
 
 Why the 2026-05 finding differed is unconfirmed: either the fine-grained PAT's
 permissions changed since then, or the original 403 was specific to `PATCH /issues/{n}` (updating the issue resource itself) rather than the labels

@@ -17,13 +17,13 @@ variable.
 `https_request` is for a caller that keeps its own opener (to refuse or
 rewrite redirects); `urlopen_https` is for one that uses `urlopen` itself.
 
-Two scripts of the orchestrate plugin carry their own copies, so that the
-plugin imports nothing from this repository:
-`.claude/skills/orchestrate/scripts/ci_monitor/ci_monitor.py` (the check, in
-its own style) and `.claude/skills/orchestrate/scripts/link_gh_issues.py`
-(`_after_https_scheme` and `https_request` verbatim, which
-scripts/test_orchestrate_helper_copies.py keeps identical to these). Change
-them together.
+aunger/dot-and-tilde's plugins carry their own copies, so that they import
+nothing from this repository: github-supplement's `link_gh_issues.py` and
+`verify_github_write.py` (`_after_https_scheme` and `https_request`), and
+orchestrate's `ci_monitor.py` (`_after_https_scheme`, in its own style).
+scripts/test_plugin_helper_copies.py compares github-supplement's two with
+these at the commit .claude/gb4pc-tools pins; nothing compares ci_monitor.py's.
+Change them together.
 
 This module has no `main`; it is imported, not run directly.
 """

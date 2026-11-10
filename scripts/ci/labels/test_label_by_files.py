@@ -57,8 +57,8 @@ class TestLabelsForPath(unittest.TestCase):
         self.assertEqual(lbf.labels_for_path("scripts/lint/lint.sh"), frozenset())
 
     def test_ci_monitor_is_agents_not_ci(self):
-        # The CI Monitor is the Orchestrator's tool rather than repo CI; it
-        # lives with the orchestrate plugin under .claude/, the agents set.
+        # The CI Monitor is the Orchestrator's tool rather than repo CI, so at
+        # a path under .claude/, the agents set, it is agents and not ci.
         path = ".claude/skills/orchestrate/scripts/ci_monitor/ci_monitor.py"
         self.assertEqual(lbf.labels_for_path(path), frozenset({"agents"}))
 

@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
 """The committed .claude/orchestrate.json is a usable orchestrate configuration.
 
-The orchestrate plugin (.claude/skills/orchestrate/) reads this repository's
-facts from that file; its check_config.py says what the file must hold. This
-test runs that check over the committed file, and pins each value to the part
-of this repository it describes, so a change on either side that leaves the
-other behind fails here:
+The orchestrate plugin reads this repository's facts from that file; its
+check_config.py says what the file must hold. The plugin lives in
+aunger/dot-and-tilde, and .claude/gb4pc-tools pins the commit this repository
+installs, so this test fetches check_config.py at that commit (through
+pinned_plugin_files.py) and runs it over the committed file. Where the fetch
+fails (offline, or a sandbox that cannot reach GitHub) that check is skipped
+with the reason, except when CI is set, where it fails, so CI always runs it.
+A fetched commit with no check_config.py where the test looks for it fails the
+test everywhere.
+
+The test also pins each value to the part of this repository it describes, so
+a change on either side that leaves the other behind fails here:
 
 - every named check is the check name of a job some workflow defines (the
   job's `name:`, or its id when it has none);
@@ -23,15 +30,17 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import unittest
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 CONFIG = os.path.join(REPO_ROOT, ".claude", "orchestrate.json")
-CHECK = os.path.join(REPO_ROOT, ".claude", "skills", "orchestrate", "scripts", "check_config.py")
 BUILD_YML = os.path.join(REPO_ROOT, ".github", "workflows", "build.yml")
 MERGE_GATE = "Administrative merge holds (not failure)"
 
 sys.path.insert(0, os.path.join(REPO_ROOT, "scripts", "ci"))
+sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
+from pinned_plugin_files import FetchFailed, PinnedCommit  # noqa: E402
 from workflow_files import load_workflow, workflow_paths  # noqa: E402
 
 
@@ -57,9 +66,21 @@ def workflow_check_names():
 
 class TestCommittedConfig(unittest.TestCase):
     def test_check_config_accepts_it_without_warnings(self):
-        completed = subprocess.run(
-            [sys.executable, CHECK, CONFIG], capture_output=True, text=True, check=False
-        )
+        with tempfile.TemporaryDirectory() as directory:
+            try:
+                pinned = PinnedCommit(directory)
+            except FetchFailed as error:
+                if os.environ.get("CI"):
+                    self.fail(str(error))
+                self.skipTest(str(error))
+            # A check_config.py missing from the fetched commit raises MissingFile,
+            # which fails the test rather than skipping it.
+            check = os.path.join(directory, "check_config.py")
+            with open(check, "w", encoding="utf-8") as handle:
+                handle.write(pinned.read("orchestrate", "scripts/check_config.py"))
+            completed = subprocess.run(
+                [sys.executable, check, CONFIG], capture_output=True, text=True, check=False
+            )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertNotIn("warning:", completed.stdout)
 
