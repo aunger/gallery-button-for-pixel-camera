@@ -9,8 +9,9 @@ holds, so a pin bump is what brings a plugin change into them.
 `PinnedCommit(directory)` makes a shallow fetch of that one commit into a bare
 repository under `directory`, and raises `FetchFailed` when it cannot (offline,
 or a sandbox that cannot reach GitHub), which a test may treat as a reason to
-skip. `PinnedCommit.read(plugin, path)` returns one file of a plugin, and
-raises CalledProcessError when it cannot.
+skip. `PinnedCommit.read(plugin, path)` returns one file of a plugin; a file
+missing from the fetched commit raises `MissingFile`, which is not a fetch
+failure and is never a reason to skip.
 
 This module has no `main`; it is imported, not run directly.
 Standard library only.
@@ -30,6 +31,10 @@ GIT_TIMEOUT_SECONDS = 120
 
 class FetchFailed(Exception):
     """The pinned commit could not be fetched."""
+
+
+class MissingFile(Exception):
+    """The pinned commit was fetched, but holds no file at the path asked for."""
 
 
 def marketplace_sources():
@@ -75,4 +80,10 @@ class PinnedCommit:
 
     def read(self, plugin, path):
         """Return the text of `path`, relative to `plugin`'s directory, at the pinned commit."""
-        return self._git("show", "%s:%s/%s" % (self.sha, self.paths[plugin], path))
+        full_path = "%s/%s" % (self.paths[plugin], path)
+        try:
+            return self._git("show", "%s:%s" % (self.sha, full_path))
+        except subprocess.CalledProcessError as error:
+            raise MissingFile(
+                "%s at %s has no %s: %s" % (self.url, self.sha, full_path, error.stderr.strip())
+            ) from error

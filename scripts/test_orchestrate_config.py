@@ -8,6 +8,8 @@ installs, so this test fetches check_config.py at that commit (through
 pinned_plugin_files.py) and runs it over the committed file. Where the fetch
 fails (offline, or a sandbox that cannot reach GitHub) that check is skipped
 with the reason, except when CI is set, where it fails, so CI always runs it.
+A fetched commit with no check_config.py where the test looks for it fails the
+test everywhere.
 
 The test also pins each value to the part of this repository it describes, so
 a change on either side that leaves the other behind fails here:
@@ -65,17 +67,17 @@ def workflow_check_names():
 class TestCommittedConfig(unittest.TestCase):
     def test_check_config_accepts_it_without_warnings(self):
         with tempfile.TemporaryDirectory() as directory:
-            check = os.path.join(directory, "check_config.py")
             try:
-                text = PinnedCommit(directory).read("orchestrate", "scripts/check_config.py")
-            except (FetchFailed, subprocess.CalledProcessError) as error:
-                detail = getattr(error, "stderr", None) or error
-                message = f"could not fetch the pinned check_config.py: {detail}"
+                pinned = PinnedCommit(directory)
+            except FetchFailed as error:
                 if os.environ.get("CI"):
-                    self.fail(message)
-                self.skipTest(message)
+                    self.fail(str(error))
+                self.skipTest(str(error))
+            # A check_config.py missing from the fetched commit raises MissingFile,
+            # which fails the test rather than skipping it.
+            check = os.path.join(directory, "check_config.py")
             with open(check, "w", encoding="utf-8") as handle:
-                handle.write(text)
+                handle.write(pinned.read("orchestrate", "scripts/check_config.py"))
             completed = subprocess.run(
                 [sys.executable, check, CONFIG], capture_output=True, text=True, check=False
             )
