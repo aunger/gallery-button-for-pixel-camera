@@ -17,4 +17,3 @@ e2e/pixel-camera.apkm
 .claude/worktrees/
 .claude/settings.local.json
 __pycache__/
-.claude/skills/orchestrate/.state/
