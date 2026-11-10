@@ -54,8 +54,9 @@ fi
 #
 # .claude/install-plugins.sh installs the plugins .claude/gb4pc-tools pins
 # (orchestrate, github-supplement, bag-o-agents), or moves them to a new pin; see
-# that script.  Its one line of stdout reaches the session's context and says
-# whether the user has to run /reload-skills.
+# that script and "Claude Code plugins" in .claude/environment.md.  Its one line
+# of stdout reaches the session's context and says whether the user has to run
+# /reload-skills or restart.
 #
 # Its failure is reported rather than left to end the hook under set -e, which
 # would skip the Android and lint setup below.  It runs ahead of those steps so
