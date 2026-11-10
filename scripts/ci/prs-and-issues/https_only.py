@@ -20,8 +20,10 @@ rewrite redirects); `urlopen_https` is for one that uses `urlopen` itself.
 aunger/dot-and-tilde's plugins carry their own copies, so that they import
 nothing from this repository: github-supplement's `link_gh_issues.py` and
 `verify_github_write.py` (`_after_https_scheme` and `https_request`), and
-orchestrate's `ci_monitor.py` (`_after_https_scheme`). Nothing here compares
-them with these; change them together, by hand.
+orchestrate's `ci_monitor.py` (`_after_https_scheme`, in its own style).
+scripts/test_plugin_helper_copies.py compares github-supplement's two with
+these at the commit .claude/gb4pc-tools pins; nothing compares ci_monitor.py's.
+Change them together.
 
 This module has no `main`; it is imported, not run directly.
 """

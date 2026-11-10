@@ -12,8 +12,9 @@ A copy of this module also runs inside
 generate_strip_bylines_workflow.py after editing it. aunger/dot-and-tilde's
 github-supplement plugin carries two more, in link_gh_issues.py and
 verify_github_write.py, so that it imports nothing from this repository.
-Nothing here compares them with this one; a change here is copied there by
-hand.
+scripts/test_plugin_helper_copies.py compares them with this one at the
+commit .claude/gb4pc-tools pins, so a change here is copied there and lands
+with the pin bump that takes it.
 """
 
 
