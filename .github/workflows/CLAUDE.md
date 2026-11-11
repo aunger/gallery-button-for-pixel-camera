@@ -124,3 +124,13 @@ Its script runs from the workflow file itself, between `# generated code begins 
 `scripts/ci/prs-and-issues/generate_strip_bylines_workflow.py` writes that region from `github_headers.py`, `session_bylines.py` and `strip_session_bylines.py`.
 Rerun it after editing any of them; `test_generate_strip_bylines_workflow.py` fails while the region is out of date.
 Unlike the checkout-pinned jobs above, a pull request that changes the script runs its own copy on its own `pull_request` and review events.
+
+## GitHub Actions version reminders
+
+When editing YAML files, keep these priorities in mind:
+
+1. Be consistent with Action versions across this project.
+   Match the versions used by other workflows and *particularly* this same workflow.
+2. If introducing an Action to this project, start with the current version (not just the most recent version you're aware of).
+3. Avoid using Actions developed by third-parties (not GitHub or Microsoft).
+   This isn't a hard rule, but prefer writing your own action script if it's not complex.
