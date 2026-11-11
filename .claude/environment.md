@@ -19,7 +19,7 @@ ______________________________________________________________________
 
 ## Claude Code plugins (Step 0a)
 
-The orchestrate development cycle, the `deep-planner` agent, the `PostToolUse` hooks and the GitHub REST helpers come from [aunger/dot-and-tilde](https://github.com/aunger/dot-and-tilde)'s `orchestrate`, `github-supplement` and `bag-o-agents` plugins.
+The orchestrate development cycle, the `deep-planner` agent, the `PostToolUse` hooks, the GitHub REST helpers and the code-edit, PR-creation and writing skills come from [aunger/dot-and-tilde](https://github.com/aunger/dot-and-tilde)'s `orchestrate`, `github-supplement`, `bag-o-agents` and `agent-citizenship` plugins.
 `.claude/gb4pc-tools/.claude-plugin/marketplace.json` pins each of them to one dot-and-tilde commit, and `.claude/install-plugins.sh` installs them at that commit.
 The hook's Step 0a runs that script in cloud sessions; elsewhere, run it by hand.
 
