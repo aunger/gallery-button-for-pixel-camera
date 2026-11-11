@@ -41,7 +41,7 @@ Do not resolve them by guess.
 
 ## Mechanics
 
-See `.claude/rules/prose-style.md`.
+See "Prose style and typographical standards" in `AGENTS.md`.
 
 Post and edit through the GitHub MCP server's tools, not `curl` or `gh api`, wherever it has a tool for the write.
 github-supplement's read-back hook checks the stored text of MCP writes only, so an alteration of text sent any other way goes unreported.

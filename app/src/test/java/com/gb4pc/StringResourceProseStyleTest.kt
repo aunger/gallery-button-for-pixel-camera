@@ -11,12 +11,13 @@ import java.lang.reflect.Modifier
 /**
  * Regression guard for issue #935.
  *
- * `.claude/rules/prose-style.md` applies to every file in the repo, `strings.xml` included, and
- * asks prose to prefer widely compatible characters: no em or en dashes, no ellipsis character,
- * and no angled or smart quotes. Eleven user-visible strings had drifted past that rule before
- * issue #935 swept them, and a twelfth was caught only by a human reviewing PR #934. Copy is
- * written by hand, often pasted from an editor that substitutes these characters on its own, so
- * nothing but a test keeps them out.
+ * The prose-style rules in `AGENTS.md` apply to prose in documents, code comments, and text
+ * output, so to the user-visible strings in `strings.xml`, and one of them asks for widely
+ * compatible characters: no em or en dashes, no ellipsis character, and no angled or smart
+ * quotes. Eleven user-visible strings had drifted past that rule before issue #935 swept them,
+ * and a twelfth was caught only by a human reviewing PR #934. Copy is written by hand, often
+ * pasted from an editor that substitutes these characters on its own, so nothing but a test
+ * keeps them out.
  *
  * The banned characters are spelled as escapes below so that this file, which has to name them,
  * is not itself a place they can be copied out of by accident.
