@@ -52,10 +52,11 @@ fi
 # ───────────────────────────────────────────────────────────────────────────────
 # STEP 0a: Claude Code plugins.
 #
-# .claude/install-plugins.sh installs every plugin .claude/gb4pc-tools lists, or
-# moves them to a new pin; see that script and "Claude Code plugins" in
-# .claude/environment.md.  Its one line of stdout reaches the session's context
-# and says whether the user has to run /reload-skills or restart.
+# .claude/install-plugins.sh installs the plugins .claude/gb4pc-tools lists, or
+# moves them to a new pin, except any turned off for this checkout; see that
+# script and "Claude Code plugins" in .claude/environment.md.  Its one line of
+# stdout reaches the session's context, says whether the user has to run
+# /reload-skills or restart, and names any plugin it left off.
 #
 # Its failure is reported rather than left to end the hook under set -e, which
 # would skip the Android and lint setup below.  It runs ahead of those steps so

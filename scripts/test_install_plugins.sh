@@ -83,11 +83,28 @@ EOF
     chmod +x "$case_dir/bin/claude"
 }
 
+# One state entry: plugin $1 at the 12-digit version prefix $2, for the checkout
+# at $3, enabled unless $4 is "false".
+entry() {
+    printf '{"id": "%s@fixture-tools", "version": "%s-0000", "scope": "local", "enabled": %s, "projectPath": "%s"}' \
+        "$1" "${2:0:12}" "${4:-true}" "$3"
+}
+
 # The state of a checkout at $1 with alpha and beta installed at the 12-digit
 # version prefix $2.
 installed_state() {
-    printf '[{"id": "alpha@fixture-tools", "version": "%s-0000", "scope": "local", "enabled": true, "projectPath": "%s"}, {"id": "beta@fixture-tools", "version": "%s-0000", "scope": "local", "enabled": true, "projectPath": "%s"}]' \
-        "${2:0:12}" "$1" "${2:0:12}" "$1"
+    printf '[%s, %s]' "$(entry alpha "$2" "$1")" "$(entry beta "$2" "$1")"
+}
+
+# Turns plugins $2... off for the case at $1, as `claude plugin disable --scope
+# local` does: by setting each to false in .claude/settings.local.json.
+turn_off() {
+    local case_dir="$1" plugin entries=""
+    shift
+    for plugin in "$@"; do
+        entries+="${entries:+, }\"$plugin@fixture-tools\": false"
+    done
+    printf '{"enabledPlugins": {%s}}\n' "$entries" > "$case_dir/repo/.claude/settings.local.json"
 }
 
 # Runs the case's copy of the script from / (it must not depend on the working
@@ -181,7 +198,7 @@ else
 fi
 check_commands "$CASE_C" "plugin list --json" "only plugin list --json runs"
 STDOUT_C="$(cat "$CASE_C/stdout")"
-if [[ "$STDOUT_C" == "[install-plugins] alpha beta were already installed "* ]]; then
+if [[ "$STDOUT_C" == "[install-plugins] Already installed at the commit .claude/gb4pc-tools pins: alpha beta. "* ]]; then
     pass "it reports that the plugins were already installed"
 else
     fail "unexpected stdout for an unchanged install: $STDOUT_C"
@@ -212,6 +229,119 @@ if [[ "$STDOUT_C3" == "[install-plugins] Moved alpha beta "*"until Claude Code r
     pass "it says the moved plugins take effect after a restart"
 else
     fail "unexpected stdout for a moved install: $STDOUT_C3"
+fi
+
+if [[ "$STDOUT_C3" != *" and installed "* && "$STDOUT_C3" != *"Warning"* ]]; then
+    pass "it names no plugin as installed or re-enabled when every plugin was moved"
+else
+    fail "a run that only moved plugins should report nothing else: $STDOUT_C3"
+fi
+if [[ "$STDOUT_C3" == *"/orchestrate or another plugin skill is missing"* ]]; then
+    pass "its /reload-skills advice covers any missing skill, not only /orchestrate"
+else
+    fail "the /reload-skills advice should cover any missing skill: $STDOUT_C3"
+fi
+
+echo ""
+echo "=== (c4) a plugin newly listed beside one at an earlier pin is reported as installed ==="
+CASE_C4="$TMP/c4"
+mkdir -p "$CASE_C4"
+CASE_C4="$(cd "$CASE_C4" && pwd -P)"
+make_case "$CASE_C4" changes "[$(entry alpha "$OLD_PIN" "$CASE_C4/repo")]"
+if run_case "$CASE_C4"; then
+    pass "the script exits 0"
+else
+    fail "the script should exit 0 when the install and update succeed"
+fi
+check_commands "$CASE_C4" "$(full_sequence "$CASE_C4")" "the full sequence runs"
+STDOUT_C4="$(cat "$CASE_C4/stdout")"
+if [[ "$STDOUT_C4" == "[install-plugins] Moved alpha to the commit .claude/gb4pc-tools pins and installed beta there. "*"until Claude Code restarts"* ]]; then
+    pass "it names alpha as moved and beta as installed"
+else
+    fail "unexpected stdout for a moved and a new plugin: $STDOUT_C4"
+fi
+
+echo ""
+echo "=== (c5) one plugin newly listed beside one at the pin: stdout names it alone, singular ==="
+CASE_C5="$TMP/c5"
+mkdir -p "$CASE_C5"
+CASE_C5="$(cd "$CASE_C5" && pwd -P)"
+make_case "$CASE_C5" changes "[$(entry alpha "$PIN" "$CASE_C5/repo")]"
+run_case "$CASE_C5"
+check_commands "$CASE_C5" "$(printf '%s\n' "plugin list --json" "plugin marketplace add $CASE_C5/repo/.claude/gb4pc-tools --scope local" "plugin install beta@fixture-tools --scope local" "plugin marketplace update fixture-tools" "plugin update beta@fixture-tools --scope local" "plugin list --json")" "only beta is installed and updated, not alpha at the pin"
+STDOUT_C5="$(cat "$CASE_C5/stdout")"
+if [[ "$STDOUT_C5" == "[install-plugins] Installed beta at the commit .claude/gb4pc-tools pins. It loads in this session only after /reload-skills: ask the user to run /reload-skills." ]]; then
+    pass "it names only beta as installed, and says it loads after /reload-skills"
+else
+    fail "unexpected stdout for one new plugin: $STDOUT_C5"
+fi
+
+echo ""
+echo "=== (c6) a plugin turned off is left alone, and stdout warns with the command to turn it on ==="
+CASE_C6="$TMP/c6"
+mkdir -p "$CASE_C6"
+CASE_C6="$(cd "$CASE_C6" && pwd -P)"
+make_case "$CASE_C6" changes "[$(entry alpha "$PIN" "$CASE_C6/repo"), $(entry beta "$PIN" "$CASE_C6/repo" false)]"
+turn_off "$CASE_C6" beta
+if run_case "$CASE_C6"; then
+    pass "the script exits 0"
+else
+    fail "the script should exit 0 when the only other plugin is turned off"
+fi
+check_commands "$CASE_C6" "plugin list --json" "only plugin list --json runs"
+STDOUT_C6="$(cat "$CASE_C6/stdout")"
+if [[ "$STDOUT_C6" == "[install-plugins] Already installed at the commit .claude/gb4pc-tools pins: alpha. "*"Warning: left alone because turned off for this checkout: beta. Tell the user, who can turn each back on in $CASE_C6/repo with \`claude plugin enable beta@fixture-tools --scope local\`, then rerun .claude/install-plugins.sh." ]]; then
+    pass "it warns that beta was left off, with the command that turns it on"
+else
+    fail "unexpected stdout for a disabled plugin: $STDOUT_C6"
+fi
+
+echo ""
+echo "=== (c7) a plugin turned off is neither installed nor updated beside one that is ==="
+CASE_C7="$TMP/c7"
+mkdir -p "$CASE_C7"
+CASE_C7="$(cd "$CASE_C7" && pwd -P)"
+make_case "$CASE_C7" changes "[$(entry beta "$PIN" "$CASE_C7/repo" false)]"
+turn_off "$CASE_C7" beta
+if run_case "$CASE_C7"; then
+    pass "the script exits 0"
+else
+    fail "the script should exit 0 when alpha installs and beta is left off"
+fi
+check_commands "$CASE_C7" "$(printf '%s\n' "plugin list --json" "plugin marketplace add $CASE_C7/repo/.claude/gb4pc-tools --scope local" "plugin install alpha@fixture-tools --scope local" "plugin marketplace update fixture-tools" "plugin update alpha@fixture-tools --scope local" "plugin list --json")" "only alpha is installed and updated"
+if [[ "$(cat "$CASE_C7/stdout")" == "[install-plugins] Installed alpha at the commit "*"Warning: left alone because turned off for this checkout: beta."* ]]; then
+    pass "it reports alpha as installed and warns that beta was left off"
+else
+    fail "unexpected stdout: $(cat "$CASE_C7/stdout")"
+fi
+
+echo ""
+echo "=== (c8) an install whose settings entry is gone counts as missing, not turned off ==="
+CASE_C8="$TMP/c8"
+mkdir -p "$CASE_C8"
+CASE_C8="$(cd "$CASE_C8" && pwd -P)"
+make_case "$CASE_C8" changes "[$(entry alpha "$PIN" "$CASE_C8/repo"), $(entry beta "$PIN" "$CASE_C8/repo" false)]"
+run_case "$CASE_C8"
+check_commands "$CASE_C8" "$(printf '%s\n' "plugin list --json" "plugin marketplace add $CASE_C8/repo/.claude/gb4pc-tools --scope local" "plugin install beta@fixture-tools --scope local" "plugin marketplace update fixture-tools" "plugin update beta@fixture-tools --scope local" "plugin list --json")" "beta is installed again"
+if [[ "$(cat "$CASE_C8/stdout")" == "[install-plugins] Installed beta at the commit "* && "$(cat "$CASE_C8/stdout")" != *"Warning"* ]]; then
+    pass "it reports beta as installed, with no warning"
+else
+    fail "unexpected stdout: $(cat "$CASE_C8/stdout")"
+fi
+
+echo ""
+echo "=== (c9) every plugin turned off: only the list runs, and the warning names both ==="
+CASE_C9="$TMP/c9"
+mkdir -p "$CASE_C9"
+CASE_C9="$(cd "$CASE_C9" && pwd -P)"
+make_case "$CASE_C9" changes "[$(entry alpha "$PIN" "$CASE_C9/repo" false), $(entry beta "$OLD_PIN" "$CASE_C9/repo" false)]"
+turn_off "$CASE_C9" alpha beta
+run_case "$CASE_C9"
+check_commands "$CASE_C9" "plugin list --json" "only plugin list --json runs, even for beta at an earlier pin"
+if [[ "$(cat "$CASE_C9/stdout")" == "[install-plugins] Warning: left alone because turned off for this checkout: alpha beta. Tell the user, who can turn each back on in $CASE_C9/repo with \`claude plugin enable alpha@fixture-tools --scope local\`; \`claude plugin enable beta@fixture-tools --scope local\`, then rerun .claude/install-plugins.sh." ]]; then
+    pass "it warns that both are off, with a command for each"
+else
+    fail "unexpected stdout: $(cat "$CASE_C9/stdout")"
 fi
 
 echo ""

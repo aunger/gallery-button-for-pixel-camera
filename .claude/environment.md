@@ -28,8 +28,10 @@ The hook's Step 0a runs that script in cloud sessions; elsewhere, run it by hand
   A run that finds every plugin already at the pin makes one `claude plugin list --json` call and nothing else.
 - **Loading.** Claude Code loads plugins when it starts, and the hook runs after that, so a plugin the hook installs is missing from the session until the user runs `/reload-skills`.
   A plugin moved to a new pin keeps running its earlier version until Claude Code restarts.
-  The script's one line of output, which reaches the session's context, says which of the two applies.
   Until then, the github-supplement hooks (the read-back of GitHub writes, the fetch after a sub-agent, and the scratchpad check) do not run.
+  A plugin turned off for this checkout (set to false in `.claude/settings.local.json`) is left off, so its hooks and skills stay off until the user turns it back on; the script's output names it with the command that does.
+  The exception is a dependency: installing `orchestrate` turns a turned-off `github-supplement` back on, and the output does not say so.
+  The script's one line of output, which reaches the session's context, names the plugins it installed and moved, and those it left off.
 - **Failure.** The hook reports a failed run on its Step 0a line and goes on with the Android setup; run `.claude/install-plugins.sh` from the Bash tool to see the error.
 
 ______________________________________________________________________
