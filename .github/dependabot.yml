@@ -144,7 +144,7 @@ updates:
   #
   # directory is "/" because that is where Dependabot looks for workflows: it reads `.github/workflows`, and a root `action.yml`, from there and nowhere else.
   #
-  # The two groups split third-party actions from first-party ones, the split agents/code_edit.md draws.
+  # The two groups split third-party actions from first-party ones, the split agent-citizenship's code-edit skill draws.
   # A third-party action is pinned to a commit SHA, so its bump rewrites that SHA and the version comment beside it and wants a review of its own; the `actions/` and `github/` namespaces are tag pins, whose bump moves a major tag.
   # The third-party group is `*` minus those two namespaces, so an action a workflow adds later falls into it instead of getting a pull request to itself.
   #
