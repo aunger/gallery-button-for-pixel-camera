@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check text files for the typographic characters .claude/rules/prose-style.md bans.
+"""Check text files for the typographic characters AGENTS.md's prose-style rules ban.
 
 The rule reaches "prose in documents, code comments, and text output" and asks
 for widely compatible characters: no em or en dash, no ellipsis character, and

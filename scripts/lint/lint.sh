@@ -199,7 +199,7 @@ declare -a LARGE_FILES_ARGS=()
 #
 # scripts/lint/check_prose_chars.py is first-party and read-only in both modes,
 # like check_md040.py below. It flags the em dashes, ellipses, and smart or
-# angle quotes .claude/rules/prose-style.md bans, in comments, build output, and
+# angle quotes AGENTS.md's prose-style rules ban, in comments, build output, and
 # docs alike (issue #964). It is a hygiene check rather than a markdown one
 # because most of what it guards is not Markdown.
 if want hygiene; then
@@ -230,7 +230,7 @@ fi
 
 # markdown family: format Markdown.
 # --wrap keep preserves this repo's one-sentence-per-line prose (see
-# .claude/rules/prose-style.md); --number keeps ordered-list numbering
+# the prose-style rules in AGENTS.md); --number keeps ordered-list numbering
 # sequential. These match the retired .pre-commit-config.yaml mdformat args.
 #
 # mdformat does not enforce MD040 (fenced code blocks must name a language);

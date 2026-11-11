@@ -141,7 +141,7 @@ android {
                 // targetSdk moves when the platform behaviors it opts into are worth taking on, not
                 // when a newer one exists (SPEC.md OV-03, #984).
                 "OldTargetApi",
-                // Both ask for the characters .claude/rules/prose-style.md bans, which
+                // Both ask for the characters AGENTS.md's prose-style rules ban, which
                 // StringResourceProseStyleTest enforces on every string resource (#935).
                 "TypographyDashes",
                 "TypographyEllipsis",
