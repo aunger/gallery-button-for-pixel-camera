@@ -411,7 +411,11 @@ mkdir -p "$CASE_C12"
 CASE_C12="$(cd "$CASE_C12" && pwd -P)"
 make_case "$CASE_C12" changes "[$(entry beta "$PIN" "$CASE_C12/repo" false)]" "" beta
 turn_off "$CASE_C12" beta
-run_case "$CASE_C12"
+if run_case "$CASE_C12"; then
+    pass "the script exits 0"
+else
+    fail "the script should exit 0: $(cat "$CASE_C12/stderr")"
+fi
 check_commands "$CASE_C12" "$(printf '%s\n' "plugin list --json" "plugin marketplace add $CASE_C12/repo/.claude/gb4pc-tools --scope local" "plugin install alpha@fixture-tools --scope local" "plugin marketplace update fixture-tools" "plugin update alpha@fixture-tools --scope local" "plugin list --json")" "beta, already at the pin, needs no update"
 if [[ "$(cat "$CASE_C12/stdout")" == *"Warning: installing turned back on beta,"* ]]; then
     pass "it names beta as turned back on"
