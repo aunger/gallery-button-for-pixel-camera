@@ -120,8 +120,10 @@ Land the rename separately, or accept one red job on it.
 ### A job that runs its script from an action
 
 `strip-session-bylines.yml` has no checkout step.
-It calls vcs-automation's `strip-session-bylines` action, which runs its own copy of the script at the commit the `uses:` line pins, so the job runs no code a pull request controls.
+It calls vcs-automation's `strip-session-bylines` action, which runs its own copy of the script at the commit the `uses:` line pins, so the job checks out nothing.
+That is not a boundary on the `pull_request` and review events: there the workflow file comes from the merge ref, as above, so a pull request can repoint the `uses:` line or add a step of its own.
 This repository holds no copy of that script: a change to it is made in vcs-automation and arrives here with a bump of the pin.
+`scripts/test_session_byline_pins.py` fails when the action's byline pattern at that pin differs from github-supplement's at the commit `.claude/gb4pc-tools` pins, so the two pins move together.
 
 ## GitHub Actions version reminders
 

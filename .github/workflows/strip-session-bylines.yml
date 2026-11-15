@@ -9,7 +9,9 @@ name: Strip Claude session-URL bylines
 # prevents the bot's own edits from re-triggering the workflow.
 #
 # No checkout: the action runs its own copy of the script, at the commit the
-# `uses:` line pins, so the job never runs code a pull request controls.
+# `uses:` line pins. On pull request and review events this file itself comes
+# from the pull request's merge ref, so that is no boundary there; see
+# .github/workflows/CLAUDE.md.
 
 on:
   issues:
