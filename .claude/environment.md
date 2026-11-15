@@ -31,7 +31,7 @@ The hook's Step 0a runs that script in cloud sessions; elsewhere, run it by hand
   Until then, the github-supplement hooks (the read-back of GitHub writes, the fetch after a sub-agent, and the scratchpad check) do not run.
   A plugin turned off for this checkout (set to false in `.claude/settings.local.json`) is left off, so its hooks and skills stay off until the user turns it back on; the script's output names it with the command that does.
   The exception is a dependency: installing `orchestrate` turns a turned-off `github-supplement` back on, and the script then moves it to the pin and says so.
-  The script's one line of output, which reaches the session's context, names the plugins it installed and moved, those it left off, and any it turned back on.
+  The script's one line of output, which reaches the session's context, names the plugins it installed and moved, those it left off, and any it turned back on, and says when it ignored a malformed `.claude/settings.local.json`.
 - **Failure.** The hook reports a failed run on its Step 0a line and goes on with the Android setup; run `.claude/install-plugins.sh` from the Bash tool to see the error.
 
 ______________________________________________________________________

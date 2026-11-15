@@ -421,7 +421,7 @@ else
 fi
 
 echo ""
-echo "=== (c13) a settings file whose enabledPlugins is not an object is ignored, with a warning ==="
+echo "=== (c13) a settings file whose enabledPlugins is not an object is ignored, and stdout says so once ==="
 for shape in '{"enabledPlugins": null}' '[]' '{"enabledPlugins": ["beta@fixture-tools"]}' 'not json'; do
     CASE_C13="$TMP/c13-$((++C13_N))"
     mkdir -p "$CASE_C13"
@@ -439,10 +439,10 @@ for shape in '{"enabledPlugins": null}' '[]' '{"enabledPlugins": ["beta@fixture-
     else
         fail "$shape: unexpected stdout: $(cat "$CASE_C13/stdout")"
     fi
-    if grep -q "warning: ignoring .*settings.local.json" "$CASE_C13/stderr"; then
-        pass "$shape: it warns that the file was ignored"
+    if [[ "$(grep -o "Warning: ignored $CASE_C13/repo/.claude/settings.local.json" "$CASE_C13/stdout" | wc -l)" -eq 1 ]]; then
+        pass "$shape: stdout warns once that the file was ignored"
     else
-        fail "$shape: no warning on stderr: $(cat "$CASE_C13/stderr")"
+        fail "$shape: expected one warning on stdout: $(cat "$CASE_C13/stdout")"
     fi
 done
 
@@ -465,6 +465,21 @@ if [[ "$(cat "$CASE_C14/stdout")" == "[install-plugins] Installed alpha at the c
     pass "it names beta as turned back on"
 else
     fail "unexpected stdout: $(cat "$CASE_C14/stdout")"
+fi
+
+echo ""
+echo "=== (c15) an ignored settings file is reported when nothing needs installing too ==="
+CASE_C15="$TMP/c15"
+mkdir -p "$CASE_C15"
+CASE_C15="$(cd "$CASE_C15" && pwd -P)"
+make_case "$CASE_C15" changes "$(installed_state "$CASE_C15/repo" "$PIN")"
+printf '{"enabledPlugins": {"alpha@fixture-tools": true,}}\n' > "$CASE_C15/repo/.claude/settings.local.json"
+run_case "$CASE_C15"
+check_commands "$CASE_C15" "plugin list --json" "only plugin list --json runs"
+if [[ "$(cat "$CASE_C15/stdout")" == "[install-plugins] Already installed at the commit "*"Warning: ignored $CASE_C15/repo/.claude/settings.local.json,"* ]]; then
+    pass "stdout warns that the file was ignored"
+else
+    fail "unexpected stdout: $(cat "$CASE_C15/stdout")"
 fi
 
 echo ""

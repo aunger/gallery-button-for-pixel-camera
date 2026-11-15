@@ -34,8 +34,8 @@
 # after the checkout moves. An install whose entry in that file is gone (after a
 # re-clone or `git clean -fdx`) lists as not enabled, so it counts as missing and is
 # installed again. Only that file is read, so a plugin turned off in another
-# settings file counts as missing too; a file whose enabledPlugins is not a JSON
-# object is ignored, with a warning on stderr.
+# settings file counts as missing too. A file that is not valid JSON, or whose
+# enabledPlugins is not a JSON object, is ignored, and the output says so.
 #
 # Installing a plugin turns its turned-off dependencies back on; orchestrate
 # depends on github-supplement. The script names each plugin turned back on that
@@ -88,10 +88,12 @@ PLUGINS=("${NAMES[@]:2}")
 # are installed and enabled for this checkout at the pin, with "missing:",
 # "disabled:" or "moved:" before each that is not: one enabled at another version
 # is moved, one set to false in .claude/settings.local.json is disabled, installed
-# or not, and any other is missing. Only local-scope entries
-# recorded for this repository root count: the list also shows other checkouts'
-# installs, and marks them enabled when this checkout's settings enable the same
-# plugin id.
+# or not, and any other is missing. When .claude/settings.local.json is not valid
+# JSON, or its enabledPlugins is not a JSON object, the file is ignored, so no
+# plugin counts as disabled, and the first line is "settings:ignored".
+# Only local-scope entries recorded for this repository root count: the list also
+# shows other checkouts' installs, and marks them enabled when this checkout's
+# settings enable the same plugin id.
 plugin_states() {
     python3 -c '
 import json, os, sys
@@ -107,11 +109,7 @@ except ValueError:
     settings = None
 enabled_plugins = settings.get("enabledPlugins", {}) if isinstance(settings, dict) else None
 if not isinstance(enabled_plugins, dict):
-    print(
-        "[install-plugins] warning: ignoring " + settings_path + ", whose enabledPlugins is not a"
-        " JSON object; no plugin counts as turned off",
-        file=sys.stderr,
-    )
+    print("settings:ignored")
     enabled_plugins = {}
 for name in sys.argv[4:]:
     entries = [
@@ -135,6 +133,13 @@ for name in sys.argv[4:]:
 
 before=$(claude plugin list --json | plugin_states)
 
+# Appended to the one line of output when the settings file was ignored, since a
+# plugin turned off there may then have been installed and turned on.
+settings_warning=""
+if grep -Fqx "settings:ignored" <<< "$before"; then
+    settings_warning=" Warning: ignored $REPO_ROOT/.claude/settings.local.json, which is not valid JSON or whose enabledPlugins is not a JSON object, so no plugin counted as turned off; one the user turned off there may have been installed and turned on. Tell the user."
+fi
+
 # The plugins to work on: those missing or at another version, not those turned off.
 PENDING=()
 while IFS= read -r line; do
@@ -157,7 +162,7 @@ left_off_warning() {
 
 if [[ ${#PENDING[@]} -eq 0 ]]; then
     current=$(grep -v ':' <<< "$before" | paste -sd ' ' - || true)
-    echo "[install-plugins]${current:+ Already installed at the commit .claude/gb4pc-tools pins: $current. If /orchestrate or another plugin skill is missing from this session, ask the user to run /reload-skills.}$(left_off_warning "$before")"
+    echo "[install-plugins]${current:+ Already installed at the commit .claude/gb4pc-tools pins: $current. If /orchestrate or another plugin skill is missing from this session, ask the user to run /reload-skills.}$(left_off_warning "$before")$settings_warning"
     exit 0
 fi
 
@@ -217,12 +222,12 @@ if [[ -n "$moved" ]]; then
     if [[ -n "$added" ]]; then
         changed+=" and installed $added there"
     fi
-    echo "[install-plugins] $changed. A plugin that was already loaded keeps its earlier version until Claude Code restarts: ask the user to restart the session, or to run /reload-skills if /orchestrate or another plugin skill is missing.$(left_off_warning "$after")$turned_on_warning"
+    echo "[install-plugins] $changed. A plugin that was already loaded keeps its earlier version until Claude Code restarts: ask the user to restart the session, or to run /reload-skills if /orchestrate or another plugin skill is missing.$(left_off_warning "$after")$turned_on_warning$settings_warning"
 else
     if [[ $(wc -w <<< "$added") -gt 1 ]]; then
         they="They load"
     else
         they="It loads"
     fi
-    echo "[install-plugins] Installed $added at the commit .claude/gb4pc-tools pins. $they in this session only after /reload-skills: ask the user to run /reload-skills.$(left_off_warning "$after")$turned_on_warning"
+    echo "[install-plugins] Installed $added at the commit .claude/gb4pc-tools pins. $they in this session only after /reload-skills: ask the user to run /reload-skills.$(left_off_warning "$after")$turned_on_warning$settings_warning"
 fi
