@@ -42,8 +42,11 @@ OLD_PIN=fedcba9876543210fedcba9876543210fedcba98
 # plugin records it in the state at $PIN, enabled, at local scope, for the
 # directory the stub ran in, standing in for an install that changed something.
 # The stub fails, exit 3, on any invocation that starts with $4 (when given).
+# With $5 = a plugin name, each `plugin install` also turns that plugin back on, at
+# the version it has, and sets it to true in .claude/settings.local.json, as
+# Claude Code does for a turned-off dependency of the plugin it installs.
 make_case() {
-    local case_dir="$1" changes="${2:-}" state="${3:-[]}" fail_on="${4:-}"
+    local case_dir="$1" changes="${2:-}" state="${3:-[]}" fail_on="${4:-}" turns_on="${5:-}"
     mkdir -p "$case_dir/repo/.claude/gb4pc-tools/.claude-plugin" "$case_dir/bin"
     cp "$INSTALL_SH" "$case_dir/repo/.claude/install-plugins.sh"
     cat > "$case_dir/repo/.claude/gb4pc-tools/.claude-plugin/marketplace.json" << EOF
@@ -66,12 +69,23 @@ else
     echo "stub claude output: \$*"
 fi
 if [[ "$changes" == "changes" && ( "\$1 \$2" == "plugin install" || "\$1 \$2" == "plugin update" ) ]]; then
-    python3 - "$case_dir/state" "\$3" "\$PWD" "$PIN" << 'PY2'
-import json, sys
-path, plugin_id, cwd, pin = sys.argv[1:]
+    python3 - "$case_dir/state" "\$3" "\$PWD" "$PIN" "\$2" "$turns_on" << 'PY2'
+import json, os, sys
+path, plugin_id, cwd, pin, command, turns_on = sys.argv[1:]
 with open(path, encoding="utf-8") as handle:
     state = [entry for entry in json.load(handle) if entry["id"] != plugin_id or entry.get("projectPath") != cwd]
 state.append({"id": plugin_id, "version": pin[:12] + "-0000", "scope": "local", "enabled": True, "projectPath": cwd})
+if command == "install" and turns_on:
+    dependency = turns_on + "@" + plugin_id.split("@", 1)[1]
+    for entry in state:
+        if entry["id"] == dependency and entry.get("projectPath") == cwd:
+            entry["enabled"] = True
+    settings_path = os.path.join(cwd, ".claude", "settings.local.json")
+    with open(settings_path, encoding="utf-8") as handle:
+        settings = json.load(handle)
+    settings["enabledPlugins"][dependency] = True
+    with open(settings_path, "w", encoding="utf-8") as handle:
+        json.dump(settings, handle)
 with open(path, "w", encoding="utf-8") as handle:
     json.dump(state, handle)
 PY2
@@ -343,6 +357,67 @@ if [[ "$(cat "$CASE_C9/stdout")" == "[install-plugins] Warning: left alone becau
     pass "it warns that both are off, with a command for each"
 else
     fail "unexpected stdout: $(cat "$CASE_C9/stdout")"
+fi
+
+echo ""
+echo "=== (c10) a plugin set to false with no install for this checkout stays off ==="
+# A moved checkout: settings.local.json moved with it, and the list still records
+# beta's install under the old path.
+CASE_C10="$TMP/c10"
+mkdir -p "$CASE_C10"
+CASE_C10="$(cd "$CASE_C10" && pwd -P)"
+make_case "$CASE_C10" changes "[$(entry alpha "$PIN" "$CASE_C10/repo"), $(entry beta "$PIN" "$CASE_C10/old-path" false)]"
+turn_off "$CASE_C10" beta
+if run_case "$CASE_C10"; then
+    pass "the script exits 0"
+else
+    fail "the script should exit 0: $(cat "$CASE_C10/stderr")"
+fi
+check_commands "$CASE_C10" "plugin list --json" "beta is not installed again"
+if [[ "$(cat "$CASE_C10/stdout")" == *"Warning: left alone because turned off for this checkout: beta."* ]]; then
+    pass "it warns that beta was left off"
+else
+    fail "unexpected stdout: $(cat "$CASE_C10/stdout")"
+fi
+
+echo ""
+echo "=== (c11) a turned-off dependency that an install turns back on is named and moved to the pin ==="
+CASE_C11="$TMP/c11"
+mkdir -p "$CASE_C11"
+CASE_C11="$(cd "$CASE_C11" && pwd -P)"
+make_case "$CASE_C11" changes "[$(entry beta "$OLD_PIN" "$CASE_C11/repo" false)]" "" beta
+turn_off "$CASE_C11" beta
+if run_case "$CASE_C11"; then
+    pass "the script exits 0"
+else
+    fail "the script should exit 0: $(cat "$CASE_C11/stderr")"
+fi
+check_commands "$CASE_C11" "$(printf '%s\n' "plugin list --json" "plugin marketplace add $CASE_C11/repo/.claude/gb4pc-tools --scope local" "plugin install alpha@fixture-tools --scope local" "plugin marketplace update fixture-tools" "plugin update alpha@fixture-tools --scope local" "plugin list --json" "plugin update beta@fixture-tools --scope local" "plugin list --json")" "beta, turned back on at an earlier pin, is updated to the pin"
+STDOUT_C11="$(cat "$CASE_C11/stdout")"
+if [[ "$STDOUT_C11" == "[install-plugins] Installed alpha at the commit "*"Warning: installing turned back on beta, which this checkout had turned off, because a plugin installed depends on it."* ]]; then
+    pass "it names beta as turned back on"
+else
+    fail "unexpected stdout: $STDOUT_C11"
+fi
+if [[ "$STDOUT_C11" != *"left alone"* ]]; then
+    pass "it does not call beta left off"
+else
+    fail "stdout calls beta left off: $STDOUT_C11"
+fi
+
+echo ""
+echo "=== (c12) a turned-off dependency turned back on at the pin is named, and not updated ==="
+CASE_C12="$TMP/c12"
+mkdir -p "$CASE_C12"
+CASE_C12="$(cd "$CASE_C12" && pwd -P)"
+make_case "$CASE_C12" changes "[$(entry beta "$PIN" "$CASE_C12/repo" false)]" "" beta
+turn_off "$CASE_C12" beta
+run_case "$CASE_C12"
+check_commands "$CASE_C12" "$(printf '%s\n' "plugin list --json" "plugin marketplace add $CASE_C12/repo/.claude/gb4pc-tools --scope local" "plugin install alpha@fixture-tools --scope local" "plugin marketplace update fixture-tools" "plugin update alpha@fixture-tools --scope local" "plugin list --json")" "beta, already at the pin, needs no update"
+if [[ "$(cat "$CASE_C12/stdout")" == *"Warning: installing turned back on beta,"* ]]; then
+    pass "it names beta as turned back on"
+else
+    fail "unexpected stdout: $(cat "$CASE_C12/stdout")"
 fi
 
 echo ""
