@@ -17,13 +17,9 @@ variable.
 `https_request` is for a caller that keeps its own opener (to refuse or
 rewrite redirects); `urlopen_https` is for one that uses `urlopen` itself.
 
-aunger/dot-and-tilde's plugins carry their own copies, so that they import
-nothing from this repository: github-supplement's `link_gh_issues.py` and
-`verify_github_write.py` (`_after_https_scheme` and `https_request`), and
-orchestrate's `ci_monitor.py` (`_after_https_scheme`, in its own style).
-scripts/test_plugin_helper_copies.py compares github-supplement's two with
-these at the commit .claude/gb4pc-tools pins; nothing compares ci_monitor.py's.
-Change them together.
+aunger/vcs-automation's `shared/https_only.py` is the copy its actions use,
+and the one aunger/dot-and-tilde's github-supplement plugin copies are
+checked against; nothing compares this one with either.
 
 This module has no `main`; it is imported, not run directly.
 """

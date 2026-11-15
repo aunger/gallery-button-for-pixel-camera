@@ -62,7 +62,7 @@ Usage:
 GitHub state.  It needs no token.
 
 Exit code is always 0; API and network failures are logged but do not fail the CI run, matching
-`archive_stale_test_failures.py`.  The one deliberate exception is the coordinate collision
+vcs-automation's archive-stale-test-failures action.  The one deliberate exception is the coordinate collision
 assertion in ``collect_state``: it guards against this script's own bug rather than an upstream
 hiccup, so it is left to propagate and crash the run loudly instead of degrading quietly (#858).
 

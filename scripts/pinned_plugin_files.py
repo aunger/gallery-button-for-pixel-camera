@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """pinned_plugin_files.py: Read plugin files at the commit .claude/gb4pc-tools pins.
 
-The tests that check this repository against aunger/dot-and-tilde's plugins
-(test_orchestrate_config.py, test_plugin_helper_copies.py) read the plugins'
-files at the commit the marketplace pins, not at whatever dot-and-tilde's main
-holds, so a pin bump is what brings a plugin change into them.
+A test that checks this repository against aunger/dot-and-tilde's plugins
+(test_orchestrate_config.py) reads the plugins' files at the commit the
+marketplace pins, not at whatever dot-and-tilde's main holds, so a pin bump is
+what brings a plugin change into it.
 
 `PinnedCommit(directory)` makes a shallow fetch of that one commit into a bare
 repository under `directory`, and raises `FetchFailed` when it cannot (offline,

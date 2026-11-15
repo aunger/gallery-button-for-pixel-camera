@@ -121,8 +121,8 @@ class LoadWorkflowTest(unittest.TestCase):
     def test_a_populated_file_loads_as_its_mapping(self):
         """The key reads True, not "on", because YAML 1.1 resolves the bare key `on` to
         the boolean and `load_workflow()` hands PyYAML's parse back unchanged.
-        `triggers()` in `test_privileged_workflow_checkouts.py` looks the key up both
-        ways for this reason."""
+        `triggers()` in vcs-automation's privileged-checkout-guard looks the key up
+        both ways for this reason."""
         loaded = load_workflow(self.write("on: push\njobs:\n  build:\n    steps: []\n"))
         self.assertEqual({True: "push", "jobs": {"build": {"steps": []}}}, loaded)
 

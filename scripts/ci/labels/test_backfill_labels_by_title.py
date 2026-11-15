@@ -50,7 +50,7 @@ class TestFetchAllIssues(unittest.TestCase):
     def test_paginates_until_empty_page(self):
         # A full page (100 items) is followed by a short page (1 item) and
         # then the terminating empty page, mirroring the pagination
-        # convention in archive_stale_test_failures.py: stop only on an
+        # convention in vcs-automation's archive-stale-test-failures: stop only on an
         # empty batch, not merely a short one.
         page1 = [_issue(i, f"title {i}", []) for i in range(100)]
         page2 = [_issue(100, "title 100", [])]

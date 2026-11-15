@@ -1,5 +1,7 @@
-# Findings that scripts/ci/audit_requirements.py tolerates, one entry per
-# advisory ID per lock (issue #804).
+# Findings that .github/workflows/dependency-audit.yml tolerates, one entry per
+# advisory ID per lock (issue #804). The workflow passes this file to
+# aunger/vcs-automation's dependency-audit action, whose README.md documents
+# the format.
 #
 # An entry says "this finding is real, and here is why it does not block this
 # repo". It is not a dismissal of the advisory; it is a record of a reachability

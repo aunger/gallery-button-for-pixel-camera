@@ -35,7 +35,7 @@ Usage:
     python3 scripts/ci/labels/wake_snoozed_issues.py
 
 Exit code is always 0; API failures are logged but do not fail the CI run,
-matching scripts/ci/prs-and-issues/archive_stale_test_failures.py.
+matching aunger/vcs-automation's archive-stale-test-failures action.
 
 Required environment variables:
     GITHUB_TOKEN        Personal access token or Actions secret with
