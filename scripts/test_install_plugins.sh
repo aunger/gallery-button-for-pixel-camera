@@ -41,8 +41,15 @@ OLD_PIN=fedcba9876543210fedcba9876543210fedcba98
 # plugin records it in the state at $PIN, enabled, at local scope, for the
 # directory the stub ran in, standing in for an install that changed something.
 # The stub fails, exit 3, on any invocation that starts with $4 (when given).
+# With $5 = a plugin name, alpha depends on that plugin: its plugin.json under
+# the case's cache/ says so, and each `plugin install` also turns that plugin back
+# on, at the version it has, and sets it to true in .claude/settings.local.json,
+# as Claude Code does for a turned-off dependency of the plugin it installs.
+# `plugin disable` sets the plugin to false in that file and turns off its entry
+# for this directory, and refuses, exit 1, while an enabled plugin there depends
+# on it, as Claude Code does.
 make_case() {
-    local case_dir="$1" changes="${2:-}" state="${3:-[]}" fail_on="${4:-}"
+    local case_dir="$1" changes="${2:-}" state="${3:-[]}" fail_on="${4:-}" turns_on="${5:-}"
     mkdir -p "$case_dir/repo/.claude/gb4pc-tools/.claude-plugin" "$case_dir/bin"
     cp "$INSTALL_SH" "$case_dir/repo/.claude/install-plugins.sh"
     cat > "$case_dir/repo/.claude/gb4pc-tools/.claude-plugin/marketplace.json" << EOF
@@ -56,6 +63,15 @@ make_case() {
 }
 EOF
     printf '%s\n' "$state" > "$case_dir/state"
+    local plugin
+    for plugin in alpha beta; do
+        mkdir -p "$case_dir/cache/$plugin/.claude-plugin"
+        if [[ "$plugin" == alpha && -n "$turns_on" ]]; then
+            printf '{"name": "alpha", "dependencies": ["%s"]}\n' "$turns_on"
+        else
+            printf '{"name": "%s"}\n' "$plugin"
+        fi > "$case_dir/cache/$plugin/.claude-plugin/plugin.json"
+    done
     cat > "$case_dir/bin/claude" << EOF
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >> "$case_dir/claude-args.log"
@@ -65,15 +81,55 @@ else
     echo "stub claude output: \$*"
 fi
 if [[ "$changes" == "changes" && ( "\$1 \$2" == "plugin install" || "\$1 \$2" == "plugin update" ) ]]; then
-    python3 - "$case_dir/state" "\$3" "\$PWD" "$PIN" << 'PY2'
-import json, sys
-path, plugin_id, cwd, pin = sys.argv[1:]
+    python3 - "$case_dir/state" "\$3" "\$PWD" "$PIN" "\$2" "$turns_on" << 'PY2'
+import json, os, sys
+path, plugin_id, cwd, pin, command, turns_on = sys.argv[1:]
 with open(path, encoding="utf-8") as handle:
     state = [entry for entry in json.load(handle) if entry["id"] != plugin_id or entry.get("projectPath") != cwd]
-state.append({"id": plugin_id, "version": pin[:12] + "-0000", "scope": "local", "enabled": True, "projectPath": cwd})
+state.append({"id": plugin_id, "version": pin[:12] + "-0000", "scope": "local", "enabled": True, "projectPath": cwd, "installPath": os.path.join(os.path.dirname(cwd), "cache", plugin_id.split("@")[0])})
+if command == "install" and turns_on:
+    dependency = turns_on + "@" + plugin_id.split("@", 1)[1]
+    for entry in state:
+        if entry["id"] == dependency and entry.get("projectPath") == cwd:
+            entry["enabled"] = True
+    settings_path = os.path.join(cwd, ".claude", "settings.local.json")
+    with open(settings_path, encoding="utf-8") as handle:
+        settings = json.load(handle)
+    settings["enabledPlugins"][dependency] = True
+    with open(settings_path, "w", encoding="utf-8") as handle:
+        json.dump(settings, handle)
 with open(path, "w", encoding="utf-8") as handle:
     json.dump(state, handle)
 PY2
+fi
+if [[ "\$1 \$2" == "plugin disable" ]]; then
+    python3 - "$case_dir/state" "\$3" "\$PWD" "$case_dir/cache" << 'PY3' || exit 1
+import json, os, sys
+path, plugin_id, cwd, cache = sys.argv[1:]
+name, _, market = plugin_id.partition("@")
+with open(path, encoding="utf-8") as handle:
+    state = json.load(handle)
+for entry in state:
+    other = entry["id"].split("@")[0]
+    if entry.get("projectPath") == cwd and entry.get("enabled") and other != name:
+        with open(os.path.join(cache, other, ".claude-plugin", "plugin.json"), encoding="utf-8") as handle:
+            if name in json.load(handle).get("dependencies", []):
+                sys.exit(name + " is still required by " + other)
+for entry in state:
+    if entry["id"] == plugin_id and entry.get("projectPath") == cwd:
+        entry["enabled"] = False
+settings_path = os.path.join(cwd, ".claude", "settings.local.json")
+try:
+    with open(settings_path, encoding="utf-8") as handle:
+        settings = json.load(handle)
+except OSError:
+    settings = {"enabledPlugins": {}}
+settings.setdefault("enabledPlugins", {})[plugin_id] = False
+with open(settings_path, "w", encoding="utf-8") as handle:
+    json.dump(settings, handle)
+with open(path, "w", encoding="utf-8") as handle:
+    json.dump(state, handle)
+PY3
 fi
 if [[ -n "$fail_on" && "\$*" == "$fail_on"* ]]; then
     exit 3
@@ -86,8 +142,8 @@ EOF
 # One state entry: plugin $1 at the 12-digit version prefix $2, for the checkout
 # at $3, enabled unless $4 is "false".
 entry() {
-    printf '{"id": "%s@fixture-tools", "version": "%s-0000", "scope": "local", "enabled": %s, "projectPath": "%s"}' \
-        "$1" "${2:0:12}" "${4:-true}" "$3"
+    printf '{"id": "%s@fixture-tools", "version": "%s-0000", "scope": "local", "enabled": %s, "projectPath": "%s", "installPath": "%s"}' \
+        "$1" "${2:0:12}" "${4:-true}" "$3" "$(dirname "$3")/cache/$1"
 }
 
 # The state of a checkout at $1 with alpha and beta installed at the 12-digit
@@ -342,6 +398,174 @@ if [[ "$(cat "$CASE_C9/stdout")" == "[install-plugins] Warning: left alone becau
     pass "it warns that both are off, with a command for each"
 else
     fail "unexpected stdout: $(cat "$CASE_C9/stdout")"
+fi
+
+echo ""
+echo "=== (c10) a plugin set to false with no install for this checkout stays off ==="
+# A moved checkout: settings.local.json moved with it, and the list still records
+# beta's install under the old path.
+CASE_C10="$TMP/c10"
+mkdir -p "$CASE_C10"
+CASE_C10="$(cd "$CASE_C10" && pwd -P)"
+make_case "$CASE_C10" changes "[$(entry alpha "$PIN" "$CASE_C10/repo"), $(entry beta "$PIN" "$CASE_C10/old-path" false)]"
+turn_off "$CASE_C10" beta
+if run_case "$CASE_C10"; then
+    pass "the script exits 0"
+else
+    fail "the script should exit 0: $(cat "$CASE_C10/stderr")"
+fi
+check_commands "$CASE_C10" "plugin list --json" "beta is not installed again"
+if [[ "$(cat "$CASE_C10/stdout")" == *"Warning: left alone because turned off for this checkout: beta."* ]]; then
+    pass "it warns that beta was left off"
+else
+    fail "unexpected stdout: $(cat "$CASE_C10/stdout")"
+fi
+
+echo ""
+echo "=== (c11) a turned-off dependency an install turns back on is turned off again, with what depends on it ==="
+CASE_C11="$TMP/c11"
+mkdir -p "$CASE_C11"
+CASE_C11="$(cd "$CASE_C11" && pwd -P)"
+make_case "$CASE_C11" changes "[$(entry beta "$OLD_PIN" "$CASE_C11/repo" false)]" "" beta
+turn_off "$CASE_C11" beta
+if run_case "$CASE_C11"; then
+    pass "the script exits 0"
+else
+    fail "the script should exit 0: $(cat "$CASE_C11/stderr")"
+fi
+check_commands "$CASE_C11" "$(printf '%s\n' "plugin list --json" "plugin marketplace add $CASE_C11/repo/.claude/gb4pc-tools --scope local" "plugin install alpha@fixture-tools --scope local" "plugin marketplace update fixture-tools" "plugin update alpha@fixture-tools --scope local" "plugin list --json" "plugin disable alpha@fixture-tools --scope local" "plugin disable beta@fixture-tools --scope local" "plugin list --json")" "alpha, then beta, is turned off after the install"
+STDOUT_C11="$(cat "$CASE_C11/stdout")"
+if [[ "$STDOUT_C11" == "[install-plugins] Warning: installing turned back on, as a dependency, what this checkout had turned off (beta), so the script turned off again alpha beta: "*"Warning: left alone because turned off for this checkout: alpha beta."* ]]; then
+    pass "it names beta as turned back on, and both as left off"
+else
+    fail "unexpected stdout: $STDOUT_C11"
+fi
+if [[ "$STDOUT_C11" != *"Installed"* ]]; then
+    pass "it does not report alpha as installed"
+else
+    fail "stdout reports alpha as installed: $STDOUT_C11"
+fi
+if [[ "$(python3 -c 'import json, sys; print(sorted(k for k, v in json.load(open(sys.argv[1]))["enabledPlugins"].items() if v is False))' "$CASE_C11/repo/.claude/settings.local.json")" == "['alpha@fixture-tools', 'beta@fixture-tools']" ]]; then
+    pass "settings.local.json sets both to false"
+else
+    fail "settings.local.json: $(cat "$CASE_C11/repo/.claude/settings.local.json")"
+fi
+
+echo ""
+echo "=== (c11b) after that, a rerun leaves both off and only lists ==="
+: > "$CASE_C11/claude-args.log"
+run_case "$CASE_C11"
+check_commands "$CASE_C11" "plugin list --json" "only plugin list --json runs"
+if [[ "$(cat "$CASE_C11/stdout")" == "[install-plugins] Warning: left alone because turned off for this checkout: alpha beta."* ]]; then
+    pass "it names both as left off"
+else
+    fail "unexpected stdout: $(cat "$CASE_C11/stdout")"
+fi
+
+echo ""
+echo "=== (c12) the same with the dependency at the pin ==="
+CASE_C12="$TMP/c12"
+mkdir -p "$CASE_C12"
+CASE_C12="$(cd "$CASE_C12" && pwd -P)"
+make_case "$CASE_C12" changes "[$(entry beta "$PIN" "$CASE_C12/repo" false)]" "" beta
+turn_off "$CASE_C12" beta
+if run_case "$CASE_C12"; then
+    pass "the script exits 0"
+else
+    fail "the script should exit 0: $(cat "$CASE_C12/stderr")"
+fi
+check_commands "$CASE_C12" "$(printf '%s\n' "plugin list --json" "plugin marketplace add $CASE_C12/repo/.claude/gb4pc-tools --scope local" "plugin install alpha@fixture-tools --scope local" "plugin marketplace update fixture-tools" "plugin update alpha@fixture-tools --scope local" "plugin list --json" "plugin disable alpha@fixture-tools --scope local" "plugin disable beta@fixture-tools --scope local" "plugin list --json")" "alpha, then beta, is turned off after the install"
+STDOUT_C12="$(cat "$CASE_C12/stdout")"
+if [[ "$STDOUT_C12" == "[install-plugins] Warning: installing turned back on, as a dependency, what this checkout had turned off (beta), so the script turned off again alpha beta: "*"Warning: left alone because turned off for this checkout: alpha beta."* ]]; then
+    pass "it names beta as turned back on, and both as left off"
+else
+    fail "unexpected stdout: $STDOUT_C12"
+fi
+if [[ "$STDOUT_C12" != *"Installed"* ]]; then
+    pass "it does not report alpha as installed"
+else
+    fail "stdout reports alpha as installed: $STDOUT_C12"
+fi
+if [[ "$(python3 -c 'import json, sys; print(sorted(k for k, v in json.load(open(sys.argv[1]))["enabledPlugins"].items() if v is False))' "$CASE_C12/repo/.claude/settings.local.json")" == "['alpha@fixture-tools', 'beta@fixture-tools']" ]]; then
+    pass "settings.local.json sets both to false"
+else
+    fail "settings.local.json: $(cat "$CASE_C12/repo/.claude/settings.local.json")"
+fi
+
+echo ""
+echo "=== (c13) a settings file whose enabledPlugins is not an object is ignored, and stdout says so once ==="
+C13_SHAPES=('{"enabledPlugins": null}' '[]' '{"enabledPlugins": ["beta@fixture-tools"]}' 'not json')
+C13_REASONS=("its enabledPlugins is not a JSON object" "it is not a JSON object" "its enabledPlugins is not a JSON object" "it is not valid JSON")
+for i in "${!C13_SHAPES[@]}"; do
+    shape="${C13_SHAPES[$i]}"
+    CASE_C13="$TMP/c13-$i"
+    mkdir -p "$CASE_C13"
+    CASE_C13="$(cd "$CASE_C13" && pwd -P)"
+    # beta is listed but not enabled, the state in which the file is consulted.
+    make_case "$CASE_C13" changes "[$(entry alpha "$PIN" "$CASE_C13/repo"), $(entry beta "$PIN" "$CASE_C13/repo" false)]"
+    printf '%s\n' "$shape" > "$CASE_C13/repo/.claude/settings.local.json"
+    if run_case "$CASE_C13"; then
+        pass "$shape: the script exits 0"
+    else
+        fail "$shape: the script should exit 0: $(cat "$CASE_C13/stderr")"
+    fi
+    if [[ "$(cat "$CASE_C13/stdout")" == "[install-plugins] Installed beta at the commit "* ]]; then
+        pass "$shape: the missing plugin is installed"
+    else
+        fail "$shape: unexpected stdout: $(cat "$CASE_C13/stdout")"
+    fi
+    if [[ "$(grep -oF "Warning: ignored $CASE_C13/repo/.claude/settings.local.json because ${C13_REASONS[$i]}," "$CASE_C13/stdout" | wc -l)" -eq 1 ]]; then
+        pass "$shape: stdout warns once that the file was ignored, and why"
+    else
+        fail "$shape: expected one warning on stdout: $(cat "$CASE_C13/stdout")"
+    fi
+done
+
+echo ""
+echo "=== (c14) the same in a moved checkout, with the dependency's install recorded under the old path ==="
+# Installing alpha turns beta back on in the settings, while the list still
+# records beta's install under the old path.
+CASE_C14="$TMP/c14"
+mkdir -p "$CASE_C14"
+CASE_C14="$(cd "$CASE_C14" && pwd -P)"
+make_case "$CASE_C14" changes "[$(entry beta "$PIN" "$CASE_C14/old-path" false)]" "" beta
+turn_off "$CASE_C14" beta
+if run_case "$CASE_C14"; then
+    pass "the script exits 0"
+else
+    fail "the script should exit 0: $(cat "$CASE_C14/stderr")"
+fi
+check_commands "$CASE_C14" "$(printf '%s\n' "plugin list --json" "plugin marketplace add $CASE_C14/repo/.claude/gb4pc-tools --scope local" "plugin install alpha@fixture-tools --scope local" "plugin marketplace update fixture-tools" "plugin update alpha@fixture-tools --scope local" "plugin list --json" "plugin disable alpha@fixture-tools --scope local" "plugin disable beta@fixture-tools --scope local" "plugin list --json")" "alpha, then beta, is turned off after the install"
+STDOUT_C14="$(cat "$CASE_C14/stdout")"
+if [[ "$STDOUT_C14" == "[install-plugins] Warning: installing turned back on, as a dependency, what this checkout had turned off (beta), so the script turned off again alpha beta: "*"Warning: left alone because turned off for this checkout: alpha beta."* ]]; then
+    pass "it names beta as turned back on, and both as left off"
+else
+    fail "unexpected stdout: $STDOUT_C14"
+fi
+if [[ "$STDOUT_C14" != *"Installed"* ]]; then
+    pass "it does not report alpha as installed"
+else
+    fail "stdout reports alpha as installed: $STDOUT_C14"
+fi
+if [[ "$(python3 -c 'import json, sys; print(sorted(k for k, v in json.load(open(sys.argv[1]))["enabledPlugins"].items() if v is False))' "$CASE_C14/repo/.claude/settings.local.json")" == "['alpha@fixture-tools', 'beta@fixture-tools']" ]]; then
+    pass "settings.local.json sets both to false"
+else
+    fail "settings.local.json: $(cat "$CASE_C14/repo/.claude/settings.local.json")"
+fi
+
+echo ""
+echo "=== (c15) an ignored settings file is reported when nothing needs installing too ==="
+CASE_C15="$TMP/c15"
+mkdir -p "$CASE_C15"
+CASE_C15="$(cd "$CASE_C15" && pwd -P)"
+make_case "$CASE_C15" changes "$(installed_state "$CASE_C15/repo" "$PIN")"
+printf '{"enabledPlugins": {"alpha@fixture-tools": true,}}\n' > "$CASE_C15/repo/.claude/settings.local.json"
+run_case "$CASE_C15"
+check_commands "$CASE_C15" "plugin list --json" "only plugin list --json runs"
+if [[ "$(cat "$CASE_C15/stdout")" == "[install-plugins] Already installed at the commit "*"Warning: ignored $CASE_C15/repo/.claude/settings.local.json because it is not valid JSON,"* ]]; then
+    pass "stdout warns that the file was ignored"
+else
+    fail "unexpected stdout: $(cat "$CASE_C15/stdout")"
 fi
 
 echo ""

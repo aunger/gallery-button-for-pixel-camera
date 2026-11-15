@@ -29,14 +29,21 @@
 # A plugin turned off for this checkout, one that .claude/settings.local.json sets
 # to false, is left alone: `claude plugin install` would turn it back on (seen with
 # Claude Code 2.1.322), so the script neither installs nor updates it, and its
-# output names it with the command that turns it back on. An install whose entry
-# in that file is gone (after a re-clone or `git clean -fdx`) also lists as not
-# enabled, so it counts as missing and is installed again, as does a plugin set to
-# false with no install for this checkout. Only that file is read, so a plugin
-# turned off in another settings file counts as missing too. Installing a plugin
-# whose dependency is turned off turns the dependency back on, and the script
-# neither updates that dependency nor says so; orchestrate depends on
-# github-supplement.
+# output names it with the command that turns it back on. That holds whether or
+# not `claude plugin list` shows an install for this checkout, which it does not
+# after the checkout moves. An install whose entry in that file is gone (after a
+# re-clone or `git clean -fdx`) lists as not enabled, so it counts as missing and is
+# installed again. Only that file is read, so a plugin turned off in another
+# settings file counts as missing too. A file that is not valid JSON, or whose
+# enabledPlugins is not a JSON object, is ignored, and the output says so.
+#
+# Installing a plugin turns its turned-off dependencies back on; orchestrate
+# depends on github-supplement. So after the installs, the script turns each
+# plugin that came back on that way off again, together with every plugin that
+# depends on it (a plugin cannot run without its dependencies, and Claude Code
+# refuses to turn a dependency off while a plugin that needs it is on), and names
+# them all in its output as left off. Until then they are on: a session that
+# loads plugins before the hook finishes could load them.
 #
 # All of that is skipped when one `claude plugin list --json` already shows every
 # plugin turned off or installed for this checkout at the pinned commit (its
@@ -82,22 +89,35 @@ PLUGINS=("${NAMES[@]:2}")
 
 # Reads `claude plugin list --json` on stdin. Prints the plugins (one per line) that
 # are installed and enabled for this checkout at the pin, with "missing:",
-# "disabled:" or "moved:" before each that is not: a plugin with no such install is
-# missing, one installed but set to false in .claude/settings.local.json is
-# disabled, and one enabled at another version is moved. Only local-scope entries
-# recorded for this repository root count: the list also shows other checkouts'
-# installs, and marks them enabled when this checkout's settings enable the same
-# plugin id.
+# "disabled:" or "moved:" before each that is not: one enabled at another version
+# is moved, one set to false in .claude/settings.local.json is disabled, installed
+# or not, and any other is missing. When .claude/settings.local.json is not valid
+# JSON, or its enabledPlugins is not a JSON object, the file is ignored, so no
+# plugin counts as disabled, and the first line is "settings:ignored:" and why.
+# Only local-scope entries recorded for this repository root count: the list also
+# shows other checkouts' installs, and marks them enabled when this checkout's
+# settings enable the same plugin id.
 plugin_states() {
     python3 -c '
 import json, os, sys
 marketplace, pin, root = sys.argv[1], sys.argv[2][:12], os.path.realpath(sys.argv[3])
 listed = json.load(sys.stdin)
+settings_path = os.path.join(root, ".claude", "settings.local.json")
+ignored = ""
 try:
-    with open(os.path.join(root, ".claude", "settings.local.json"), encoding="utf-8") as handle:
-        enabled_plugins = json.load(handle).get("enabledPlugins", {})
-except (OSError, ValueError):
-    enabled_plugins = {}
+    with open(settings_path, encoding="utf-8") as handle:
+        settings = json.load(handle)
+except OSError:
+    settings = {}
+except ValueError:
+    settings, ignored = {}, "it is not valid JSON"
+if not isinstance(settings, dict):
+    settings, ignored = {}, "it is not a JSON object"
+enabled_plugins = settings.get("enabledPlugins", {})
+if not isinstance(enabled_plugins, dict):
+    enabled_plugins, ignored = {}, "its enabledPlugins is not a JSON object"
+if ignored:
+    print("settings:ignored:" + ignored)
 for name in sys.argv[4:]:
     entries = [
         entry
@@ -111,14 +131,68 @@ for name in sys.argv[4:]:
         print(name)
     elif versions:
         print("moved:" + name)
-    elif entries and enabled_plugins.get(name + "@" + marketplace) is False:
+    elif enabled_plugins.get(name + "@" + marketplace) is False:
         print("disabled:" + name)
     else:
         print("missing:" + name)
 ' "$MARKETPLACE" "$PIN" "$REPO_ROOT" "${PLUGINS[@]}"
 }
 
+# Reads `claude plugin list --json` on stdin. Prints the plugins named as
+# arguments, and every plugin installed and enabled for this checkout that
+# depends on one of them, directly or through another, one per line, each before
+# the plugins it depends on: the order `claude plugin disable` accepts. A
+# plugin's dependencies are those its installed plugin.json declares.
+turn_off_order() {
+    python3 -c '
+import json, os, sys
+marketplace, root, targets = sys.argv[1], os.path.realpath(sys.argv[2]), set(sys.argv[3:])
+needs = {}
+for entry in json.load(sys.stdin):
+    name, _, market = str(entry.get("id", "")).partition("@")
+    if (
+        market != marketplace
+        or entry.get("scope") != "local"
+        or not entry.get("enabled")
+        or os.path.realpath(str(entry.get("projectPath", ""))) != root
+    ):
+        continue
+    manifest = os.path.join(str(entry.get("installPath", "")), ".claude-plugin", "plugin.json")
+    try:
+        with open(manifest, encoding="utf-8") as handle:
+            declared = json.load(handle).get("dependencies") or []
+    except (OSError, ValueError, AttributeError):
+        declared = []
+    needs[name] = {
+        str(dep.get("name", "") if isinstance(dep, dict) else dep).partition("@")[0]
+        for dep in declared
+    }
+off = set(targets)
+grown = True
+while grown:
+    grown = False
+    for name, deps in needs.items():
+        if name not in off and deps & off:
+            off.add(name)
+            grown = True
+order = []
+while off:
+    ready = sorted(p for p in off if not any(p in needs.get(q, ()) for q in off if q != p))
+    order += ready or sorted(off)
+    off -= set(ready or off)
+print("\n".join(order))
+' "$MARKETPLACE" "$REPO_ROOT" "$@"
+}
+
 before=$(claude plugin list --json | plugin_states)
+
+# Appended to the one line of output when the settings file was ignored, since a
+# plugin turned off there may then have been installed and turned on.
+settings_warning=""
+ignored_because=$(sed -n 's/^settings:ignored://p' <<< "$before")
+if [[ -n "$ignored_because" ]]; then
+    settings_warning=" Warning: ignored $REPO_ROOT/.claude/settings.local.json because $ignored_because, so no plugin counted as turned off; one the user turned off there may have been installed and turned on. Tell the user."
+fi
 
 # The plugins to work on: those missing or at another version, not those turned off.
 PENDING=()
@@ -142,7 +216,7 @@ left_off_warning() {
 
 if [[ ${#PENDING[@]} -eq 0 ]]; then
     current=$(grep -v ':' <<< "$before" | paste -sd ' ' - || true)
-    echo "[install-plugins]${current:+ Already installed at the commit .claude/gb4pc-tools pins: $current. If /orchestrate or another plugin skill is missing from this session, ask the user to run /reload-skills.}$(left_off_warning "$before")"
+    echo "[install-plugins]${current:+ Already installed at the commit .claude/gb4pc-tools pins: $current. If /orchestrate or another plugin skill is missing from this session, ask the user to run /reload-skills.}$(left_off_warning "$before")$settings_warning"
     exit 0
 fi
 
@@ -154,31 +228,83 @@ claude plugin marketplace update "$MARKETPLACE" >&2
 for plugin in "${PENDING[@]}"; do
     claude plugin update "$plugin@$MARKETPLACE" --scope local >&2
 done
-after=$(claude plugin list --json | plugin_states)
+listed=$(claude plugin list --json)
+after=$(plugin_states <<< "$listed")
 
+# Installing a plugin turns its dependencies back on, those turned off included.
+# Each plugin that was turned off and no longer is came back on that way, and is
+# turned off again, after every plugin that depends on it.
+TURNED_ON=()
+for plugin in $(sed -n 's/^disabled://p' <<< "$before"); do
+    grep -Fqx "disabled:$plugin" <<< "$after" || TURNED_ON+=("$plugin")
+done
+TURNED_OFF=()
+if [[ ${#TURNED_ON[@]} -gt 0 ]]; then
+    order=$(turn_off_order "${TURNED_ON[@]}" <<< "$listed")
+    for plugin in $order; do
+        claude plugin disable "$plugin@$MARKETPLACE" --scope local >&2
+        TURNED_OFF+=("$plugin")
+    done
+    after=$(claude plugin list --json | plugin_states)
+fi
+
+# Whether plugin $1 is one this run turned off again.
+turned_off() {
+    local plugin
+    for plugin in ${TURNED_OFF[@]+"${TURNED_OFF[@]}"}; do
+        [[ "$plugin" == "$1" ]] && return 0
+    done
+    return 1
+}
+
+# The words of $1 that are not plugins this run turned off again.
+still_on() {
+    local plugin kept=""
+    for plugin in $1; do
+        turned_off "$plugin" || kept+="${kept:+ }$plugin"
+    done
+    printf '%s' "$kept"
+}
+
+turned_off_warning=""
+if [[ ${#TURNED_OFF[@]} -gt 0 ]]; then
+    turned_off_warning=" Warning: installing turned back on, as a dependency, what this checkout had turned off (${TURNED_ON[*]}), so the script turned off again ${TURNED_OFF[*]}: each plugin turned back on, and the plugins that depend on one."
+fi
+
+# Each plugin worked on must now be at the pin, or off again if this run turned
+# it off.
 failed=""
-for plugin in "${PENDING[@]}"; do
-    grep -Fqx "$plugin" <<< "$after" || failed+="$(grep -E ":$plugin\$" <<< "$after") "
+for plugin in "${PENDING[@]}" ${TURNED_ON[@]+"${TURNED_ON[@]}"}; do
+    if turned_off "$plugin"; then
+        grep -Fqx "disabled:$plugin" <<< "$after" && continue
+    else
+        grep -Fqx "$plugin" <<< "$after" && continue
+    fi
+    failed+="$(grep -E "(^|:)$plugin\$" <<< "$after") "
 done
 if [[ -n "$failed" ]]; then
     echo "[install-plugins] warning: after installing, these are still not enabled at the commit .claude/gb4pc-tools pins: $failed" >&2
     exit 1
 fi
 # Name what changed: plugins at another version were moved, and plugins with no
-# install for this checkout (a plugin newly listed, say) were installed.
-moved=$(sed -n 's/^moved://p' <<< "$before" | paste -sd ' ' -)
-added=$(sed -n 's/^missing://p' <<< "$before" | paste -sd ' ' -)
-if [[ -n "$moved" ]]; then
+# install for this checkout (a plugin newly listed, say) were installed. A plugin
+# turned off again is named only as left off.
+moved=$(still_on "$(sed -n 's/^moved://p' <<< "$before")")
+added=$(still_on "$(sed -n 's/^missing://p' <<< "$before")")
+warnings="$turned_off_warning$(left_off_warning "$after")$settings_warning"
+if [[ -z "$moved" && -z "$added" ]]; then
+    echo "[install-plugins]$warnings"
+elif [[ -n "$moved" ]]; then
     changed="Moved $moved to the commit .claude/gb4pc-tools pins"
     if [[ -n "$added" ]]; then
         changed+=" and installed $added there"
     fi
-    echo "[install-plugins] $changed. A plugin that was already loaded keeps its earlier version until Claude Code restarts: ask the user to restart the session, or to run /reload-skills if /orchestrate or another plugin skill is missing.$(left_off_warning "$after")"
+    echo "[install-plugins] $changed. A plugin that was already loaded keeps its earlier version until Claude Code restarts: ask the user to restart the session, or to run /reload-skills if /orchestrate or another plugin skill is missing.$warnings"
 else
     if [[ $(wc -w <<< "$added") -gt 1 ]]; then
         they="They load"
     else
         they="It loads"
     fi
-    echo "[install-plugins] Installed $added at the commit .claude/gb4pc-tools pins. $they in this session only after /reload-skills: ask the user to run /reload-skills.$(left_off_warning "$after")"
+    echo "[install-plugins] Installed $added at the commit .claude/gb4pc-tools pins. $they in this session only after /reload-skills: ask the user to run /reload-skills.$warnings"
 fi
