@@ -32,7 +32,6 @@ TMP="$(mktemp -d "${TMPDIR:-/tmp}/install-plugins-test-XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
 
 PIN=0123456789abcdef0123456789abcdef01234567
-C13_N=0
 OLD_PIN=fedcba9876543210fedcba9876543210fedcba98
 
 # A case directory holds a copy of the script in its own .claude/, a fixture
@@ -422,8 +421,11 @@ fi
 
 echo ""
 echo "=== (c13) a settings file whose enabledPlugins is not an object is ignored, and stdout says so once ==="
-for shape in '{"enabledPlugins": null}' '[]' '{"enabledPlugins": ["beta@fixture-tools"]}' 'not json'; do
-    CASE_C13="$TMP/c13-$((++C13_N))"
+C13_SHAPES=('{"enabledPlugins": null}' '[]' '{"enabledPlugins": ["beta@fixture-tools"]}' 'not json')
+C13_REASONS=("its enabledPlugins is not a JSON object" "it is not a JSON object" "its enabledPlugins is not a JSON object" "it is not valid JSON")
+for i in "${!C13_SHAPES[@]}"; do
+    shape="${C13_SHAPES[$i]}"
+    CASE_C13="$TMP/c13-$i"
     mkdir -p "$CASE_C13"
     CASE_C13="$(cd "$CASE_C13" && pwd -P)"
     # beta is listed but not enabled, the state in which the file is consulted.
@@ -439,8 +441,8 @@ for shape in '{"enabledPlugins": null}' '[]' '{"enabledPlugins": ["beta@fixture-
     else
         fail "$shape: unexpected stdout: $(cat "$CASE_C13/stdout")"
     fi
-    if [[ "$(grep -o "Warning: ignored $CASE_C13/repo/.claude/settings.local.json" "$CASE_C13/stdout" | wc -l)" -eq 1 ]]; then
-        pass "$shape: stdout warns once that the file was ignored"
+    if [[ "$(grep -oF "Warning: ignored $CASE_C13/repo/.claude/settings.local.json because ${C13_REASONS[$i]}," "$CASE_C13/stdout" | wc -l)" -eq 1 ]]; then
+        pass "$shape: stdout warns once that the file was ignored, and why"
     else
         fail "$shape: expected one warning on stdout: $(cat "$CASE_C13/stdout")"
     fi
@@ -476,7 +478,7 @@ make_case "$CASE_C15" changes "$(installed_state "$CASE_C15/repo" "$PIN")"
 printf '{"enabledPlugins": {"alpha@fixture-tools": true,}}\n' > "$CASE_C15/repo/.claude/settings.local.json"
 run_case "$CASE_C15"
 check_commands "$CASE_C15" "plugin list --json" "only plugin list --json runs"
-if [[ "$(cat "$CASE_C15/stdout")" == "[install-plugins] Already installed at the commit "*"Warning: ignored $CASE_C15/repo/.claude/settings.local.json,"* ]]; then
+if [[ "$(cat "$CASE_C15/stdout")" == "[install-plugins] Already installed at the commit "*"Warning: ignored $CASE_C15/repo/.claude/settings.local.json because it is not valid JSON,"* ]]; then
     pass "stdout warns that the file was ignored"
 else
     fail "unexpected stdout: $(cat "$CASE_C15/stdout")"

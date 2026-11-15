@@ -90,7 +90,7 @@ PLUGINS=("${NAMES[@]:2}")
 # is moved, one set to false in .claude/settings.local.json is disabled, installed
 # or not, and any other is missing. When .claude/settings.local.json is not valid
 # JSON, or its enabledPlugins is not a JSON object, the file is ignored, so no
-# plugin counts as disabled, and the first line is "settings:ignored".
+# plugin counts as disabled, and the first line is "settings:ignored:" and why.
 # Only local-scope entries recorded for this repository root count: the list also
 # shows other checkouts' installs, and marks them enabled when this checkout's
 # settings enable the same plugin id.
@@ -100,17 +100,21 @@ import json, os, sys
 marketplace, pin, root = sys.argv[1], sys.argv[2][:12], os.path.realpath(sys.argv[3])
 listed = json.load(sys.stdin)
 settings_path = os.path.join(root, ".claude", "settings.local.json")
+ignored = ""
 try:
     with open(settings_path, encoding="utf-8") as handle:
         settings = json.load(handle)
 except OSError:
     settings = {}
 except ValueError:
-    settings = None
-enabled_plugins = settings.get("enabledPlugins", {}) if isinstance(settings, dict) else None
+    settings, ignored = {}, "it is not valid JSON"
+if not isinstance(settings, dict):
+    settings, ignored = {}, "it is not a JSON object"
+enabled_plugins = settings.get("enabledPlugins", {})
 if not isinstance(enabled_plugins, dict):
-    print("settings:ignored")
-    enabled_plugins = {}
+    enabled_plugins, ignored = {}, "its enabledPlugins is not a JSON object"
+if ignored:
+    print("settings:ignored:" + ignored)
 for name in sys.argv[4:]:
     entries = [
         entry
@@ -136,8 +140,9 @@ before=$(claude plugin list --json | plugin_states)
 # Appended to the one line of output when the settings file was ignored, since a
 # plugin turned off there may then have been installed and turned on.
 settings_warning=""
-if grep -Fqx "settings:ignored" <<< "$before"; then
-    settings_warning=" Warning: ignored $REPO_ROOT/.claude/settings.local.json, which is not valid JSON or whose enabledPlugins is not a JSON object, so no plugin counted as turned off; one the user turned off there may have been installed and turned on. Tell the user."
+ignored_because=$(sed -n 's/^settings:ignored://p' <<< "$before")
+if [[ -n "$ignored_because" ]]; then
+    settings_warning=" Warning: ignored $REPO_ROOT/.claude/settings.local.json because $ignored_because, so no plugin counted as turned off; one the user turned off there may have been installed and turned on. Tell the user."
 fi
 
 # The plugins to work on: those missing or at another version, not those turned off.
