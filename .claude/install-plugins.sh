@@ -33,10 +33,11 @@
 # in that file is gone (after a re-clone or `git clean -fdx`) also lists as not
 # enabled, so it counts as missing and is installed again, as does a plugin set to
 # false with no install for this checkout. Only that file is read, so a plugin
-# turned off in another settings file counts as missing too. Installing a plugin
-# whose dependency is turned off turns the dependency back on, and the script
-# neither updates that dependency nor says so; orchestrate depends on
-# github-supplement.
+# turned off in another settings file counts as missing too, and a file whose
+# enabledPlugins is not a JSON object is ignored, with a warning on stderr.
+# Installing a plugin whose dependency is turned off turns the dependency back on,
+# and the script neither updates that dependency nor says so; orchestrate depends
+# on github-supplement.
 #
 # All of that is skipped when one `claude plugin list --json` already shows every
 # plugin turned off or installed for this checkout at the pinned commit (its
@@ -93,10 +94,21 @@ plugin_states() {
 import json, os, sys
 marketplace, pin, root = sys.argv[1], sys.argv[2][:12], os.path.realpath(sys.argv[3])
 listed = json.load(sys.stdin)
+settings_path = os.path.join(root, ".claude", "settings.local.json")
 try:
-    with open(os.path.join(root, ".claude", "settings.local.json"), encoding="utf-8") as handle:
-        enabled_plugins = json.load(handle).get("enabledPlugins", {})
-except (OSError, ValueError):
+    with open(settings_path, encoding="utf-8") as handle:
+        settings = json.load(handle)
+except OSError:
+    settings = {}
+except ValueError:
+    settings = None
+enabled_plugins = settings.get("enabledPlugins", {}) if isinstance(settings, dict) else None
+if not isinstance(enabled_plugins, dict):
+    print(
+        "[install-plugins] warning: ignoring " + settings_path + ", whose enabledPlugins is not a"
+        " JSON object; no plugin counts as turned off",
+        file=sys.stderr,
+    )
     enabled_plugins = {}
 for name in sys.argv[4:]:
     entries = [

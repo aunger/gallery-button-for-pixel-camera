@@ -32,6 +32,7 @@ TMP="$(mktemp -d "${TMPDIR:-/tmp}/install-plugins-test-XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
 
 PIN=0123456789abcdef0123456789abcdef01234567
+C13_N=0
 OLD_PIN=fedcba9876543210fedcba9876543210fedcba98
 
 # A case directory holds a copy of the script in its own .claude/, a fixture
@@ -343,6 +344,32 @@ if [[ "$(cat "$CASE_C9/stdout")" == "[install-plugins] Warning: left alone becau
 else
     fail "unexpected stdout: $(cat "$CASE_C9/stdout")"
 fi
+
+echo ""
+echo "=== (c13) a settings file whose enabledPlugins is not an object is ignored, with a warning ==="
+for shape in '{"enabledPlugins": null}' '[]' '{"enabledPlugins": ["beta@fixture-tools"]}' 'not json'; do
+    CASE_C13="$TMP/c13-$((++C13_N))"
+    mkdir -p "$CASE_C13"
+    CASE_C13="$(cd "$CASE_C13" && pwd -P)"
+    # beta is listed but not enabled, the state in which the file is consulted.
+    make_case "$CASE_C13" changes "[$(entry alpha "$PIN" "$CASE_C13/repo"), $(entry beta "$PIN" "$CASE_C13/repo" false)]"
+    printf '%s\n' "$shape" > "$CASE_C13/repo/.claude/settings.local.json"
+    if run_case "$CASE_C13"; then
+        pass "$shape: the script exits 0"
+    else
+        fail "$shape: the script should exit 0: $(cat "$CASE_C13/stderr")"
+    fi
+    if [[ "$(cat "$CASE_C13/stdout")" == "[install-plugins] Installed beta at the commit "* ]]; then
+        pass "$shape: the missing plugin is installed"
+    else
+        fail "$shape: unexpected stdout: $(cat "$CASE_C13/stdout")"
+    fi
+    if grep -q "warning: ignoring .*settings.local.json" "$CASE_C13/stderr"; then
+        pass "$shape: it warns that the file was ignored"
+    else
+        fail "$shape: no warning on stderr: $(cat "$CASE_C13/stderr")"
+    fi
+done
 
 echo ""
 echo "=== (d) a failing command stops the script with a non-zero exit ==="
