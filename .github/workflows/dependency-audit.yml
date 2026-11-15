@@ -1,6 +1,8 @@
 name: Dependency audit
 
-# pip-audit over every hash-pinned requirements lock in the repo (issue #804).
+# pip-audit over every hash-pinned requirements lock in the repo (issue #804),
+# through aunger/vcs-automation's dependency-audit action, which installs
+# pip-audit from its own hash-pinned lock and documents the ignore file's format.
 #
 # The locks are pinned hard and installed with --require-hashes (issue #723),
 # which is what makes them go quietly stale: a dependency ships a fix and the
@@ -47,16 +49,13 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: Install pip-audit
-        # --require-hashes refuses any artifact whose SHA-256 is not in the
-        # generated lock scripts/ci/requirements-audit.txt (issue #723; see
-        # scripts/ci/requirements-audit.in for the top-level pin).
-        run: pip install --require-hashes -r scripts/ci/requirements-audit.txt
-
       - name: Audit requirements locks
-        # Discovers every scripts/**/requirements*.txt, including its own lock,
-        # so a lock added later is audited without registering it anywhere.
+        # Discovers every scripts/**/requirements*.txt, so a lock added later is
+        # audited without registering it anywhere.
         # Fails on any finding that is not justified in
         # scripts/ci/requirements-audit-ignore.toml, and equally on any entry
         # in that file that is no longer reported.
-        run: python3 scripts/ci/audit_requirements.py
+        uses: aunger/vcs-automation/dependency-audit@7473f2326de1ee204e4121633ae86f6938a5f2a7
+        with:
+          lock-glob: 'scripts/**/requirements*.txt'
+          ignore-file: scripts/ci/requirements-audit-ignore.toml

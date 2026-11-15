@@ -144,8 +144,8 @@
 #
 # The fifth family, the uv checks, covers the entry that updates the Python
 # locks under scripts/ (issue #1191). The locks are found and parsed by
-# scripts/ci/audit_requirements.py, the same way pip-audit's gate finds them,
-# so a lock that gates an audit and that no entry reaches fails here. Each lock
+# the lock-glob dependency-audit.yml passes vcs-automation's dependency-audit
+# action, so a lock that gates an audit and that no entry reaches fails here. Each lock
 # needs its `.in` beside it under the same basename and a header recording
 # `--universal` and `--python-version`, since that is how Dependabot's uv
 # updater finds what to recompile and how it reproduces the lock as it was
@@ -223,10 +223,40 @@ except ImportError:
 sys.path.insert(0, os.path.join(repo_root, "scripts", "ci"))
 from workflow_files import load_workflow, relative, workflow_paths  # noqa: E402
 
-# The lock reader pip-audit's gate uses, for the Python lock checks: the locks
-# this file asks Dependabot to cover are the ones that gate audits, found and
-# parsed the same way.
-from audit_requirements import discover_locks, normalize, parse_pins  # noqa: E402
+
+
+def normalize(name):
+    """Return *name* in PEP 503 normalized form, the form the uv parser gives it."""
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+# The locks dependency-audit.yml audits, for the Python lock checks: the locks
+# this file asks Dependabot to cover are the ones that gate audits, found with
+# the lock-glob that workflow passes its action.
+AUDIT_ACTION = "aunger/vcs-automation/dependency-audit@"
+
+
+def audit_lock_glob():
+    with open(os.path.join(repo_root, ".github", "workflows", "dependency-audit.yml")) as handle:
+        workflow = yaml.safe_load(handle) or {}
+    for job in (workflow.get("jobs") or {}).values():
+        for step in job.get("steps") or []:
+            if str(step.get("uses", "")).startswith(AUDIT_ACTION):
+                return (step.get("with") or {}).get("lock-glob", "**/requirements*.txt")
+    return None
+
+
+def discover_locks(root):
+    """Every lock the audit's glob matches under *root*, outside dot-directories, sorted."""
+    pattern = audit_lock_glob()
+    if pattern is None:
+        return []
+    return sorted(
+        path
+        for path in root.glob(pattern)
+        if path.is_file() and not any(part.startswith(".") for part in path.relative_to(root).parts)
+    )
+
 
 # The coordinates each gradle entry's manifests declare, and which of them are
 # Google-hosted, for the cooldown, grouping and limit checks. The classification
@@ -836,8 +866,7 @@ def scanned_directories(directory):
 
 
 def lock_pins(path):
-    with open(path) as handle:
-        return {pin.name for pin in parse_pins(handle.read(), path)}
+    return {name for name, _version, _marker in lock_entries(path)}
 
 
 # A pin line with its environment marker, if it has one:
@@ -880,7 +909,11 @@ def parser_keeps(marker):
 UV_HEADER_FLAGS = ("--universal", "--python-version")
 
 locks = [os.path.relpath(str(path), repo_root) for path in discover_locks(Path(repo_root))]
-check(bool(locks), "scripts/ holds at least one Python lock for the uv entry to cover (issue #1191)")
+check(
+    bool(locks),
+    "dependency-audit.yml calls %s with a lock-glob, and it finds at least one Python lock"
+    " for the uv entry to cover (issue #1191)" % AUDIT_ACTION.rstrip("@"),
+)
 
 pip_entries = [
     (index, entry)

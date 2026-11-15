@@ -8,7 +8,7 @@ name: Branch Cleanup Report
 # and a comment with any other line deletes nothing. It sorts every branch again and deletes
 # the named ones, out of the ones the report job offered.
 # The rules, and the checks delete makes before deleting anything, are in the docstring of
-# scripts/ci/prs-and-issues/branch_cleanup_report.py.
+# branch_cleanup_report.py in aunger/vcs-automation's branch-cleanup-report action.
 #
 # The branch-deletion environment needs required reviewers (Settings > Environments). Without
 # them the delete job starts unapproved, and the script refuses to delete anything.
@@ -44,11 +44,9 @@ jobs:
 
       - name: Write report
         id: report
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: >-
-          python3 scripts/ci/prs-and-issues/branch_cleanup_report.py report
-          --choices-output "$GITHUB_OUTPUT" >> "$GITHUB_STEP_SUMMARY"
+        uses: aunger/vcs-automation/branch-cleanup-report@7473f2326de1ee204e4121633ae86f6938a5f2a7
+        with:
+          mode: report
 
   delete:
     needs: report
@@ -64,10 +62,8 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Delete branches named in the approval
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CHOICES: ${{ needs.report.outputs.choices }}
-        run: >-
-          python3 scripts/ci/prs-and-issues/branch_cleanup_report.py delete
-          --environment branch-deletion --choices "$CHOICES"
-          >> "$GITHUB_STEP_SUMMARY"
+        uses: aunger/vcs-automation/branch-cleanup-report@7473f2326de1ee204e4121633ae86f6938a5f2a7
+        with:
+          mode: delete
+          environment: branch-deletion
+          choices: ${{ needs.report.outputs.choices }}

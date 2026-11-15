@@ -11,12 +11,7 @@ jobs:
   archive:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-
       - name: Archive stale test-failure issues
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          STALE_DAYS: '10'
-        run: python3 scripts/ci/prs-and-issues/archive_stale_test_failures.py
+        uses: aunger/vcs-automation/archive-stale-test-failures@7473f2326de1ee204e4121633ae86f6938a5f2a7
+        with:
+          stale-days: '10'

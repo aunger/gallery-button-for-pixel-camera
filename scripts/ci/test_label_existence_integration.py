@@ -13,7 +13,7 @@ Sources:
   scripts/ci/labels/enforce_mutually_exclusive_labels.py: MUTUALLY_EXCLUSIVE_SETS
   scripts/ci/labels/check_blocking_labels.py:            BLOCKING_LABELS constant
   scripts/ci/prs-and-issues/file_test_failure_issues.py:          LABELS constant
-  scripts/ci/prs-and-issues/archive_stale_test_failures.py:       LABEL_TEST_FAILURE_ARCHIVE constant
+  .github/workflows/archive-stale-test-failures.yml:               test-failure-archive, which its action applies
   scripts/ci/prs-and-issues/watch_toolchain_bump.py:              TRACKING_ISSUE_LABEL constant
   scripts/ci/dependency-checks/dependency_checks.py:              ALL_LABELS constant
   .github/release.yml:                          changelog.exclude.labels
@@ -35,7 +35,6 @@ sys.path.insert(0, os.path.join(_CI_DIR, "labels"))
 sys.path.insert(0, os.path.join(_CI_DIR, "prs-and-issues"))
 sys.path.insert(0, os.path.join(_CI_DIR, "dependency-checks"))
 
-from archive_stale_test_failures import LABEL_TEST_FAILURE_ARCHIVE  # noqa: E402
 from check_blocking_labels import BLOCKING_LABELS  # noqa: E402
 from dependency_checks import ALL_LABELS as _DEPENDENCY_CHECK_LABELS  # noqa: E402
 from enforce_mutually_exclusive_labels import MUTUALLY_EXCLUSIVE_SETS  # noqa: E402
@@ -43,6 +42,12 @@ from file_test_failure_issues import LABELS as _TEST_FAILURE_LABELS  # noqa: E40
 from watch_toolchain_bump import TRACKING_ISSUE_LABEL  # noqa: E402
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(_CI_DIR))
+
+# The label archive-stale-test-failures.yml's action swaps test-failure for.
+# The action's script, in aunger/vcs-automation, is not in this repository to
+# import from.
+LABEL_TEST_FAILURE_ARCHIVE = "test-failure-archive"
+
 _RELEASE_CONFIG_PATH = os.path.join(_REPO_ROOT, ".github", "release.yml")
 
 
