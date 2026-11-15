@@ -447,6 +447,27 @@ for shape in '{"enabledPlugins": null}' '[]' '{"enabledPlugins": ["beta@fixture-
 done
 
 echo ""
+echo "=== (c14) a turned-off dependency turned back on with no install for this checkout is installed ==="
+# The c10 setup, a moved checkout, but alpha is missing: installing it turns beta
+# back on in the settings, and beta's install is still recorded under the old path.
+CASE_C14="$TMP/c14"
+mkdir -p "$CASE_C14"
+CASE_C14="$(cd "$CASE_C14" && pwd -P)"
+make_case "$CASE_C14" changes "[$(entry beta "$PIN" "$CASE_C14/old-path" false)]" "" beta
+turn_off "$CASE_C14" beta
+if run_case "$CASE_C14"; then
+    pass "the script exits 0"
+else
+    fail "the script should exit 0: $(cat "$CASE_C14/stderr")"
+fi
+check_commands "$CASE_C14" "$(printf '%s\n' "plugin list --json" "plugin marketplace add $CASE_C14/repo/.claude/gb4pc-tools --scope local" "plugin install alpha@fixture-tools --scope local" "plugin marketplace update fixture-tools" "plugin update alpha@fixture-tools --scope local" "plugin list --json" "plugin install beta@fixture-tools --scope local" "plugin update beta@fixture-tools --scope local" "plugin list --json")" "beta is installed for this checkout and updated"
+if [[ "$(cat "$CASE_C14/stdout")" == "[install-plugins] Installed alpha at the commit "*"Warning: installing turned back on beta,"* ]]; then
+    pass "it names beta as turned back on"
+else
+    fail "unexpected stdout: $(cat "$CASE_C14/stdout")"
+fi
+
+echo ""
 echo "=== (d) a failing command stops the script with a non-zero exit ==="
 CASE_D="$TMP/d"
 make_case "$CASE_D" changes "[]" "plugin marketplace update"

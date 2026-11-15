@@ -173,20 +173,25 @@ after=$(claude plugin list --json | plugin_states)
 
 # Installing a plugin turns its dependencies back on, those turned off included.
 # Each plugin that was turned off and no longer is was turned back on that way:
-# it is named in the output, and moved to the pin if it is not there already,
-# since it now runs.
+# it is named in the output, and brought to the pin if it is not there already,
+# since it now runs. One at another version is updated. One with no install for
+# this checkout (its install recorded under a path the checkout has moved from)
+# is installed here first.
 TURNED_ON=()
 for plugin in $(sed -n 's/^disabled://p' <<< "$before"); do
     grep -Fqx "disabled:$plugin" <<< "$after" || TURNED_ON+=("$plugin")
 done
-moved_on=no
+relist=no
 for plugin in ${TURNED_ON[@]+"${TURNED_ON[@]}"}; do
-    if grep -Fqx "moved:$plugin" <<< "$after"; then
+    if grep -Fqx "missing:$plugin" <<< "$after"; then
+        claude plugin install "$plugin@$MARKETPLACE" --scope local >&2
+    fi
+    if grep -Fqx -e "missing:$plugin" -e "moved:$plugin" <<< "$after"; then
         claude plugin update "$plugin@$MARKETPLACE" --scope local >&2
-        moved_on=yes
+        relist=yes
     fi
 done
-if [[ $moved_on == yes ]]; then
+if [[ $relist == yes ]]; then
     after=$(claude plugin list --json | plugin_states)
 fi
 
