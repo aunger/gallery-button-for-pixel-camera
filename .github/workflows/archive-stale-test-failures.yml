@@ -1,8 +1,5 @@
 name: Archive Stale Test-Failure Issues
 
-# The schedule's minute is off the hour, which GitHub's scheduler is busiest at;
-# scheduled runs of this workflow have started four to eight hours late.
-# workflow_dispatch lets a run be started by hand.
 on:
   schedule:
     - cron: '37 4 * * *'   # daily at 04:37 UTC
