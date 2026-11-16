@@ -7,8 +7,8 @@ name: Wake snoozed issues
 # triage rather than resuming mid-orchestration-cycle. See
 # scripts/ci/labels/wake_snoozed_issues.py's docstring for the full design.
 #
-# Offset an hour from archive-stale-test-failures.yml's 04:00 UTC cron so the
-# two daily issue-label jobs do not start at the same minute.
+# Offset from archive-stale-test-failures.yml's 04:37 UTC cron so the two
+# daily issue-label jobs do not start at the same minute.
 
 on:
   schedule:
