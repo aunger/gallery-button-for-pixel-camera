@@ -55,7 +55,7 @@ jobs:
         # Fails on any finding that is not justified in
         # scripts/ci/requirements-audit-ignore.toml, and equally on any entry
         # in that file that is no longer reported.
-        uses: aunger/vcs-automation/dependency-audit@7473f2326de1ee204e4121633ae86f6938a5f2a7
+        uses: aunger/vcs-automation/dependency-audit@d761b016d150f9d6e511afb04341a3f009a71a7e # v1.0.0
         with:
           lock-glob: 'scripts/**/requirements*.txt'
           ignore-file: scripts/ci/requirements-audit-ignore.toml
