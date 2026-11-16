@@ -242,6 +242,9 @@ It discovers every `scripts/**/requirements*.txt` and runs `pip-audit` over the 
 That covers both locks the session-start hook installs.
 
 The action installs `pip-audit` from a hash-pinned lock of its own, in a virtual environment, so this repository keeps no lock for it and sessions do not provision it.
+This repository's audit does not cover that lock.
+vcs-automation's own CI audits it weekly, and its Dependabot bumps it there.
+A fixed version reaches this repository only when the workflow's pin moves, and aunger/dot-and-tilde#8 decides how the pins move.
 
 The check fails on any finding without an entry in `scripts/ci/requirements-audit-ignore.toml`, and equally on any entry in that file that is *no longer* reported.
 The second half is the point: a stale entry usually means an upstream cap lifted, which is when the reasoning it records needs re-reading.
