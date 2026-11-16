@@ -95,8 +95,10 @@ jobs:
 
       - name: Check privileged workflow checkouts
         # The rule is in .github/workflows/CLAUDE.md. It runs here because
-        # shell-tests is a required check, which a lint.yml job is not.
-        if: needs.check-diff.outputs.needs_full_build == 'true'
+        # shell-tests is a required check, which a lint.yml job is not, and it
+        # runs even when a shell test failed, so its verdict is not hidden
+        # behind an unrelated failure.
+        if: ${{ !cancelled() && needs.check-diff.outputs.needs_full_build == 'true' }}
         uses: aunger/vcs-automation/privileged-checkout-guard@7473f2326de1ee204e4121633ae86f6938a5f2a7
 
   # Android Lint over the app's debug variant (issue #985). Its NewApi check is the one guard
