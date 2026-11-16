@@ -19,102 +19,40 @@ Docstrings and comments are left out of the comparison. Where a fetch fails the
 test skips with the reason, except when CI is set, where it fails.
 """
 
-import ast
 import os
-import re
-import shutil
-import subprocess
 import sys
 import tempfile
 import unittest
 
-REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-STRIP_WORKFLOW = os.path.join(REPO_ROOT, ".github", "workflows", "strip-session-bylines.yml")
-ACTION_USES = re.compile(r"uses:\s*aunger/vcs-automation/strip-session-bylines@([0-9a-f]{40})\b")
-VCS_AUTOMATION = "https://github.com/aunger/vcs-automation.git"
-GIT_TIMEOUT_SECONDS = 120
-
-sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
-from pinned_plugin_files import FetchFailed, PinnedCommit  # noqa: E402
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from pinned_plugin_files import (
+    VCS_AUTOMATION,
+    FetchFailed,
+    PinnedCommit,
+    PinnedRepository,
+    definition_without_docstring,
+    vcs_automation_pin,
+)
 
 NAMES = ("BYLINE_RE", "strip_bylines")
-
-
-def strip_action_sha():
-    """Return the vcs-automation commit strip-session-bylines.yml pins."""
-    with open(STRIP_WORKFLOW, encoding="utf-8") as handle:
-        found = set(ACTION_USES.findall(handle.read()))
-    if len(found) != 1:
-        raise AssertionError(
-            "expected one aunger/vcs-automation/strip-session-bylines@<sha> in %s, found %r"
-            % (os.path.relpath(STRIP_WORKFLOW, REPO_ROOT), sorted(found))
-        )
-    return found.pop()
-
-
-def read_vcs_automation(directory, sha, path):
-    """Fetch *sha* of vcs-automation into a bare repository under *directory*; return *path*."""
-    git = shutil.which("git")
-    git_dir = os.path.join(directory, "vcs-automation.git")
-
-    def run(*args):
-        # --git-dir, so a GIT_DIR inherited from a git hook cannot redirect it.
-        return subprocess.run(
-            [git, "--git-dir", git_dir, *args],
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=GIT_TIMEOUT_SECONDS,
-        ).stdout
-
-    try:
-        if git is None:
-            raise FileNotFoundError("git is not on PATH")
-        run("init", "-q", "--bare", git_dir)
-        run("fetch", "-q", "--depth", "1", VCS_AUTOMATION, sha)
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as error:
-        detail = getattr(error, "stderr", None) or error
-        raise FetchFailed("could not fetch %s at %s: %s" % (VCS_AUTOMATION, sha, detail)) from error
-    return run("show", "%s:%s" % (sha, path))
-
-
-def definition_without_docstring(source, name, where):
-    """Return the ast dump of the top-level function or assignment `name`, docstring removed."""
-    for node in ast.parse(source).body:
-        if isinstance(node, ast.FunctionDef) and node.name == name:
-            body = node.body
-            if (
-                body
-                and isinstance(body[0], ast.Expr)
-                and isinstance(body[0].value, ast.Constant)
-                and isinstance(body[0].value.value, str)
-            ):
-                node.body = body[1:]
-            return ast.dump(node)
-        if isinstance(node, ast.Assign) and any(
-            isinstance(target, ast.Name) and target.id == name for target in node.targets
-        ):
-            return ast.dump(node)
-    raise AssertionError("%s defines no top-level %s" % (where, name))
 
 
 class TestSessionBylinePins(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.action_sha = strip_action_sha()
+        cls.action_sha = vcs_automation_pin("strip-session-bylines")
         cls._directory = tempfile.TemporaryDirectory()
         try:
-            pinned = PinnedCommit(cls._directory.name)
-            cls.hook_sha = pinned.sha
-            cls.hook = pinned.read("github-supplement", "scripts/verify_github_write.py")
-            cls.action = read_vcs_automation(
-                cls._directory.name, cls.action_sha, "shared/session_bylines.py"
-            )
+            hook = PinnedCommit(cls._directory.name)
+            action = PinnedRepository(cls._directory.name, VCS_AUTOMATION, cls.action_sha)
         except FetchFailed as error:
             cls._directory.cleanup()
             if os.environ.get("CI"):
                 raise
             raise unittest.SkipTest(str(error)) from error
+        cls.hook_sha = hook.sha
+        cls.hook = hook.read("github-supplement", "scripts/verify_github_write.py")
+        cls.action = action.read("shared/session_bylines.py")
 
     @classmethod
     def tearDownClass(cls):
@@ -154,8 +92,12 @@ class TestComparison(unittest.TestCase):
             definition_without_docstring(b, "BYLINE_RE", "b"),
         )
 
-    def test_the_workflow_pins_the_action_once(self):
-        self.assertRegex(strip_action_sha(), r"^[0-9a-f]{40}$")
+    def test_a_missing_definition_fails(self):
+        with self.assertRaises(AssertionError):
+            definition_without_docstring("x = 1\n", "BYLINE_RE", "here")
+
+    def test_the_workflows_pin_the_strip_action_once(self):
+        self.assertRegex(vcs_automation_pin("strip-session-bylines"), r"^[0-9a-f]{40}$")
 
 
 if __name__ == "__main__":
