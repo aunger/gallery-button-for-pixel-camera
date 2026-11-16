@@ -144,8 +144,8 @@
 #
 # The fifth family, the uv checks, covers the entry that updates the Python
 # locks under scripts/ (issue #1191). The locks are found and parsed by
-# scripts/ci/audit_requirements.py, the same way pip-audit's gate finds them,
-# so a lock that gates an audit and that no entry reaches fails here. Each lock
+# the lock-glob dependency-audit.yml passes vcs-automation's dependency-audit
+# action, so a lock that gates an audit and that no entry reaches fails here. Each lock
 # needs its `.in` beside it under the same basename and a header recording
 # `--universal` and `--python-version`, since that is how Dependabot's uv
 # updater finds what to recompile and how it reproduces the lock as it was
@@ -223,10 +223,39 @@ except ImportError:
 sys.path.insert(0, os.path.join(repo_root, "scripts", "ci"))
 from workflow_files import load_workflow, relative, workflow_paths  # noqa: E402
 
-# The lock reader pip-audit's gate uses, for the Python lock checks: the locks
-# this file asks Dependabot to cover are the ones that gate audits, found and
-# parsed the same way.
-from audit_requirements import discover_locks, normalize, parse_pins  # noqa: E402
+
+
+def normalize(name):
+    """Return *name* in PEP 503 normalized form, the form the uv parser gives it."""
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+# The locks dependency-audit.yml audits, for the Python lock checks: the locks
+# this file asks Dependabot to cover are the ones that gate audits, found with
+# the lock-glob that workflow passes its action.
+AUDIT_ACTION = "aunger/vcs-automation/dependency-audit@"
+
+
+def audit_lock_glob():
+    workflow = load_workflow(os.path.join(repo_root, ".github", "workflows", "dependency-audit.yml"))
+    for job in (workflow.get("jobs") or {}).values():
+        for step in job.get("steps") or []:
+            if str(step.get("uses", "")).startswith(AUDIT_ACTION):
+                return (step.get("with") or {}).get("lock-glob", "**/requirements*.txt")
+    return None
+
+
+def discover_locks(root):
+    """Every lock the audit's glob matches under *root*, outside dot-directories, sorted."""
+    pattern = audit_lock_glob()
+    if pattern is None:
+        return []
+    return sorted(
+        path
+        for path in root.glob(pattern)
+        if path.is_file() and not any(part.startswith(".") for part in path.relative_to(root).parts)
+    )
+
 
 # The coordinates each gradle entry's manifests declare, and which of them are
 # Google-hosted, for the cooldown, grouping and limit checks. The classification
@@ -835,9 +864,36 @@ def scanned_directories(directory):
     return found
 
 
+# The start of a pin in a `.in` file or a lock: name, then `==` and a version.
+# What follows (a marker, a line continuation, a comment) is not read here.
+PIN_RE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)==([^\s;\\]+)")
+
+
 def lock_pins(path):
+    """The normalized names a `.in` file or a lock pins.
+
+    Every column-0 line that is not a comment must be a pin, and the file must
+    pin something: a line this cannot read, or a file it reads nothing from,
+    means the format changed, and skipping it would quietly shrink the checks
+    below instead of failing them.
+    """
+    names = set()
+    unread = []
     with open(path) as handle:
-        return {pin.name for pin in parse_pins(handle.read(), path)}
+        for lineno, line in enumerate(handle, start=1):
+            if not line.strip() or line[0].isspace() or line.startswith("#"):
+                continue
+            match = PIN_RE.match(line)
+            if match:
+                names.add(normalize(match.group(1)))
+            else:
+                unread.append("%d: %r" % (lineno, line.rstrip("\n")))
+    rel = os.path.relpath(path, repo_root)
+    if unread:
+        check(False, "%s holds only `name==version` pins at column 0 (unread: %s)" % (rel, "; ".join(unread)))
+    if not names:
+        check(False, "%s pins at least one package" % rel)
+    return names
 
 
 # A pin line with its environment marker, if it has one:
@@ -880,7 +936,11 @@ def parser_keeps(marker):
 UV_HEADER_FLAGS = ("--universal", "--python-version")
 
 locks = [os.path.relpath(str(path), repo_root) for path in discover_locks(Path(repo_root))]
-check(bool(locks), "scripts/ holds at least one Python lock for the uv entry to cover (issue #1191)")
+check(
+    bool(locks),
+    "dependency-audit.yml calls %s with a lock-glob, and it finds at least one Python lock"
+    " for the uv entry to cover (issue #1191)" % AUDIT_ACTION.rstrip("@"),
+)
 
 pip_entries = [
     (index, entry)

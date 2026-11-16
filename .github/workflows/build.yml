@@ -87,11 +87,19 @@ jobs:
 
       - name: Run shell script unit tests
         if: needs.check-diff.outputs.needs_full_build == 'true'
-        run: |
-          while IFS= read -r test_script; do
-            echo "==> Running $test_script"
-            bash "$test_script"
-          done < <(find scripts -name 'test_*.sh' -type f | sort)
+        # Every scripts/**/test_*.sh, each run with bash.
+        uses: aunger/vcs-automation/run-python-tests@7473f2326de1ee204e4121633ae86f6938a5f2a7
+        with:
+          paths: scripts
+          kind: shell
+
+      - name: Check privileged workflow checkouts
+        # The rule is in .github/workflows/CLAUDE.md. It runs here because
+        # shell-tests is a required check, which a lint.yml job is not, and it
+        # runs even when a shell test failed, so its verdict is not hidden
+        # behind an unrelated failure.
+        if: ${{ !cancelled() && needs.check-diff.outputs.needs_full_build == 'true' }}
+        uses: aunger/vcs-automation/privileged-checkout-guard@7473f2326de1ee204e4121633ae86f6938a5f2a7
 
   # Android Lint over the app's debug variant (issue #985). Its NewApi check is the one guard
   # against a call to an API above minSdk, since the compiler accepts any symbol up to
@@ -221,28 +229,15 @@ jobs:
 
       - name: Run Python script unit tests
         if: needs.check-diff.outputs.needs_full_build == 'true'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-        run: |
-          # A single recursive `unittest discover -s scripts` cannot be used now that
-          # scripts/ has subdirectories with no __init__.py: discover does not descend
-          # into them at all (namespace packages are not auto-discovered), and adding
-          # __init__.py so it would descend breaks the bare intra-directory imports
-          # several scripts rely on (e.g. backfill_labels_by_title.py's `import
-          # label_by_title`, which resolves only because both files' directory is on
-          # sys.path the same way a flat scripts/ directory used to be). Discovering
-          # each directory that actually holds test_*.py files separately keeps every
-          # directory's own sys.path behavior exactly as before.
-          while IFS= read -r dir; do
-            echo "==> Discovering tests in $dir"
-            python3 -m unittest discover -s "$dir" -p "test_*.py" -v && rc=0 || rc=$?
-            # Python 3.12+ exits 5 for "no tests were collected" instead of 0.
-            # Tolerate 5; any other nonzero code is a real failure.
-            if [[ $rc -ne 0 && $rc -ne 5 ]]; then
-              exit "$rc"
-            fi
-          done < <(find scripts -name "test_*.py" -printf '%h\n' | sort -u)
+        # Each directory under scripts/ that holds test_*.py files is discovered
+        # on its own, keeping each directory's bare intra-directory imports
+        # working; the action's run_tests.sh says why.
+        # GITHUB_REPOSITORY is set by the runner.
+        uses: aunger/vcs-automation/run-python-tests@7473f2326de1ee204e4121633ae86f6938a5f2a7
+        with:
+          paths: scripts
+          kind: python
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up JDK 17
         if: needs.check-diff.outputs.needs_full_build == 'true'
@@ -1548,7 +1543,7 @@ jobs:
         # Pinned to a ref the pull request does not control: this job holds
         # write scopes and runs a script out of this checkout (issue #882).
         # The fallback covers this workflow's non-pull-request events. Rule,
-        # rationale and limits: scripts/ci/test_privileged_workflow_checkouts.py.
+        # rationale and limits: .github/workflows/CLAUDE.md.
         uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.base.sha || github.sha }}
@@ -1671,7 +1666,7 @@ jobs:
       - name: Check out repository
         # Pinned to a ref the pull request does not control: this job holds
         # write scopes and runs a script out of this checkout (issue #882). Rule,
-        # rationale and limits: scripts/ci/test_privileged_workflow_checkouts.py.
+        # rationale and limits: .github/workflows/CLAUDE.md.
         uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.base.sha }}

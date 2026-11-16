@@ -13,15 +13,17 @@ Sources:
   scripts/ci/labels/enforce_mutually_exclusive_labels.py: MUTUALLY_EXCLUSIVE_SETS
   scripts/ci/labels/check_blocking_labels.py:            BLOCKING_LABELS constant
   scripts/ci/prs-and-issues/file_test_failure_issues.py:          LABELS constant
-  scripts/ci/prs-and-issues/archive_stale_test_failures.py:       LABEL_TEST_FAILURE_ARCHIVE constant
+  .github/workflows/archive-stale-test-failures.yml:               test-failure-archive, which its action applies
   scripts/ci/prs-and-issues/watch_toolchain_bump.py:              TRACKING_ISSUE_LABEL constant
   scripts/ci/dependency-checks/dependency_checks.py:              ALL_LABELS constant
   .github/release.yml:                          changelog.exclude.labels
 """
 
+import ast
 import json
 import os
 import sys
+import tempfile
 import unittest
 import urllib.error
 import urllib.request
@@ -34,15 +36,46 @@ _CI_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(_CI_DIR, "labels"))
 sys.path.insert(0, os.path.join(_CI_DIR, "prs-and-issues"))
 sys.path.insert(0, os.path.join(_CI_DIR, "dependency-checks"))
+sys.path.insert(0, os.path.dirname(_CI_DIR))
 
-from archive_stale_test_failures import LABEL_TEST_FAILURE_ARCHIVE  # noqa: E402
 from check_blocking_labels import BLOCKING_LABELS  # noqa: E402
 from dependency_checks import ALL_LABELS as _DEPENDENCY_CHECK_LABELS  # noqa: E402
 from enforce_mutually_exclusive_labels import MUTUALLY_EXCLUSIVE_SETS  # noqa: E402
 from file_test_failure_issues import LABELS as _TEST_FAILURE_LABELS  # noqa: E402
+from pinned_plugin_files import (  # noqa: E402
+    VCS_AUTOMATION,
+    FetchFailed,
+    PinnedRepository,
+    vcs_automation_pin,
+)
 from watch_toolchain_bump import TRACKING_ISSUE_LABEL  # noqa: E402
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(_CI_DIR))
+
+# The label archive-stale-test-failures.yml's action swaps test-failure for.
+# The action's script, in aunger/vcs-automation, is not in this repository to
+# import from; TestArchiveLabelMatchesAction holds this to its value at the pin.
+LABEL_TEST_FAILURE_ARCHIVE = "test-failure-archive"
+ARCHIVE_ACTION = "archive-stale-test-failures"
+ARCHIVE_SCRIPT = "archive-stale-test-failures/archive_stale_test_failures.py"
+
+
+def module_constant(source, name):
+    """Return the literal value a top-level assignment in *source* gives *name*."""
+    for node in ast.parse(source).body:
+        if isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == name for target in node.targets
+        ):
+            return ast.literal_eval(node.value)
+        if (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == name
+        ):
+            return ast.literal_eval(node.value)
+    raise AssertionError(f"no top-level {name}")
+
+
 _RELEASE_CONFIG_PATH = os.path.join(_REPO_ROOT, ".github", "release.yml")
 
 
@@ -169,6 +202,36 @@ class TestRequiredLabelsExist(unittest.TestCase):
                     self.repo_labels,
                     msg=(f"Required label {label!r} does not exist in {self.repo}."),
                 )
+
+
+class TestArchiveLabelMatchesAction(unittest.TestCase):
+    """LABEL_TEST_FAILURE_ARCHIVE is the label the pinned archive action applies.
+
+    Fetches aunger/vcs-automation at the commit archive-stale-test-failures.yml
+    pins. Skips when the fetch fails, except when CI is set, where it fails.
+    """
+
+    def test_the_constant_matches_the_pinned_action(self):
+        sha = vcs_automation_pin(ARCHIVE_ACTION)
+        with tempfile.TemporaryDirectory() as directory:
+            try:
+                pinned = PinnedRepository(directory, VCS_AUTOMATION, sha)
+            except FetchFailed as error:
+                if os.environ.get("CI"):
+                    raise
+                self.skipTest(str(error))
+            source = pinned.read(ARCHIVE_SCRIPT)
+        self.assertEqual(
+            LABEL_TEST_FAILURE_ARCHIVE,
+            module_constant(source, "LABEL_TEST_FAILURE_ARCHIVE"),
+            f"vcs-automation's {ARCHIVE_SCRIPT} at {sha} applies another archive label",
+        )
+
+    def test_module_constant_reads_both_assignment_forms(self):
+        self.assertEqual("a", module_constant('X = "a"\n', "X"))
+        self.assertEqual("b", module_constant('X: str = "b"\n', "X"))
+        with self.assertRaises(AssertionError):
+            module_constant("Y = 1\n", "X")
 
 
 if __name__ == "__main__":

@@ -107,7 +107,7 @@ A pull request that edits a script one of these pinned jobs runs no longer exerc
 The job checks out the base branch, so `main`'s copy of that script is what runs during the pull request's own CI, and the change only takes effect once it is merged.
 Expect the new behavior not to show up on the pull request that introduces it, and do not read that as the change being broken.
 
-This applies to every script a pinned job invokes, not to a fixed list: whatever the jobs named by `scripts/ci/test_privileged_workflow_checkouts.py` execute is subject to it.
+This applies to every script a pinned job invokes, not to a fixed list: whatever the jobs the privileged-checkout guard (below) treats as privileged execute is subject to it.
 Today that is the entry points of the four label workflows (`administrative-merge-holds.yml` has two, `enforce_mutually_exclusive_labels.py` and `check_blocking_labels.py`) plus `build.yml`'s issue-filing and CI-summary scripts.
 It also reaches past the entry points, because they import each other.
 `label_by_files.py` and `propagate_issue_labels.py` both `import enforce_mutually_exclusive_labels` and `import label_by_title`, so an edit to either of those changes the behavior of two more jobs and is equally invisible until merge.
@@ -115,15 +115,15 @@ It also reaches past the entry points, because they import each other.
 Relatedly, a pull request that renames or moves one of these scripts *and* updates its workflow in the same change will fail that job: the workflow comes from the merge ref and names the new path, while the checkout supplies the base branch, where that path does not exist yet.
 Land the rename separately, or accept one red job on it.
 
-`scripts/ci/test_privileged_workflow_checkouts.py` enforces the rule over every workflow, and its docstring carries the full rationale and the guard's own limits (among them that it only inspects `actions/checkout` steps, so `gh pr checkout` or a bare `git fetch` would slip past).
+`build.yml`'s `shell-tests` job enforces the rule over every workflow with the `privileged-checkout-guard` action of [aunger/vcs-automation](https://github.com/aunger/vcs-automation), and the docstring of that action's `check_privileged_checkouts.py` carries the full rationale and the guard's own limits (among them that it only inspects `actions/checkout` steps, so `gh pr checkout` or a bare `git fetch` would slip past).
 
-### A job that runs its script from the workflow file
+### A job that runs its script from an action
 
 `strip-session-bylines.yml` has no checkout step.
-Its script runs from the workflow file itself, between `# generated code begins here` and `# generated code ends here`, so the job runs only code the workflow file holds.
-`scripts/ci/prs-and-issues/generate_strip_bylines_workflow.py` writes that region from `github_headers.py`, `session_bylines.py` and `strip_session_bylines.py`.
-Rerun it after editing any of them; `test_generate_strip_bylines_workflow.py` fails while the region is out of date.
-Unlike the checkout-pinned jobs above, a pull request that changes the script runs its own copy on its own `pull_request` and review events.
+It calls vcs-automation's `strip-session-bylines` action, which runs its own copy of the script at the commit the `uses:` line pins, so the job checks out nothing.
+That is not a boundary on the `pull_request` and review events: there the workflow file comes from the merge ref, as above, so a pull request can repoint the `uses:` line or add a step of its own.
+This repository holds no copy of that script: a change to it is made in vcs-automation and arrives here with a bump of the pin.
+`scripts/test_session_byline_pins.py` fails when the action's byline pattern at that pin differs from github-supplement's at the commit `.claude/gb4pc-tools` pins, so the two pins move together.
 
 ## GitHub Actions version reminders
 

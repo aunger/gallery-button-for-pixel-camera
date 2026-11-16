@@ -237,17 +237,18 @@ The hook lints the working-tree copy of each staged file rather than stashing un
 
 ### Requirements audit (CI only)
 
-`.github/workflows/dependency-audit.yml` runs `scripts/ci/audit_requirements.py` on PRs, on pushes to `main`, and weekly.
+`.github/workflows/dependency-audit.yml` runs the `dependency-audit` action of [aunger/vcs-automation](https://github.com/aunger/vcs-automation) on PRs, on pushes to `main`, and weekly.
 It discovers every `scripts/**/requirements*.txt` and runs `pip-audit` over the pins in each, so a lock added later is audited without being registered anywhere (issue #804).
-That covers all three locks: the two the session-start hook installs and the auditor's own.
+That covers both locks the session-start hook installs.
 
-`pip-audit` installs from `scripts/ci/requirements-audit.txt`, a hash-pinned lock of its own (top-level pin in `scripts/ci/requirements-audit.in`).
-It is deliberately CI-only, unlike the two locks in the section below, so it is not provisioned for sessions and `scripts/install-pinned-requirements.sh` does not install it.
-Keeping it out of `scripts/lint/requirements-lint.in` keeps its 29-package closure out of every session and out of the four CI steps that install the lint lock.
+The action installs `pip-audit` from a hash-pinned lock of its own, in a virtual environment, so this repository keeps no lock for it and sessions do not provision it.
+This repository's audit does not cover that lock.
+vcs-automation's own CI audits it weekly, and its Dependabot bumps it there.
+A fixed version reaches this repository only when the workflow's pin moves, and aunger/dot-and-tilde#8 decides how the pins move.
 
 The check fails on any finding without an entry in `scripts/ci/requirements-audit-ignore.toml`, and equally on any entry in that file that is *no longer* reported.
 The second half is the point: a stale entry usually means an upstream cap lifted, which is when the reasoning it records needs re-reading.
-Entries are per-lock and must state both why the finding is tolerated and what would make the entry unnecessary; see the file's header.
+Entries are per-lock and must state both why the finding is tolerated and what would make the entry unnecessary; the action's `README.md` documents the format.
 This list is not the Dependabot dismissal list and is not kept in sync with it--the two advisory databases do not carry the same set.
 
 Take a fix by regenerating the affected lock with `--upgrade` (see the note in each `.in` file header), not by adding an ignore entry.

@@ -1,20 +1,16 @@
 #!/usr/bin/env python3
 """github_headers.py: Shared GitHub REST API request headers.
 
-`post_pr_ci_summary_link.py`, `strip_session_bylines.py`, and
-`file_test_failure_issues.py` each authenticate to the GitHub REST API the
-same way. This module holds that one shared helper so the three scripts
-import it instead of each carrying its own byte-identical copy (issue #822).
+`post_pr_ci_summary_link.py` and `file_test_failure_issues.py`, among
+others, authenticate to the GitHub REST API the same way. This module holds
+that one shared helper so the scripts import it instead of each carrying its
+own byte-identical copy (issue #822).
 
 This module has no `main`; it is imported, not run directly.
-A copy of this module also runs inside
-.github/workflows/strip-session-bylines.yml; rerun
-generate_strip_bylines_workflow.py after editing it. aunger/dot-and-tilde's
-github-supplement plugin carries two more, in link_gh_issues.py and
-verify_github_write.py, so that it imports nothing from this repository.
-scripts/test_plugin_helper_copies.py compares them with this one at the
-commit .claude/gb4pc-tools pins, so a change here is copied there and lands
-with the pin bump that takes it.
+aunger/vcs-automation's `shared/github_headers.py` is the copy its actions
+use, and the one aunger/dot-and-tilde's github-supplement plugin copies are
+checked against. scripts/test_shared_helper_copies.py fails when this one
+differs from it at a commit the workflows pin, so change them together.
 """
 
 

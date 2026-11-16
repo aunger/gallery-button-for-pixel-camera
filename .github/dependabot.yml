@@ -181,8 +181,8 @@ updates:
   # The uv ecosystem runs `uv pip compile` instead, reading `--universal`, `--python-version` and `--generate-hashes` back out of the existing lock and restoring its header.
   #
   # It is not quite the regeneration each `.in` file documents, in two ways.
-  # It compiles in a scratch directory with paths relative to scripts/, so a Dependabot bump rewrites the body's `# via -r scripts/ci/requirements-audit.in` annotations to `# via -r ci/requirements-audit.in`, and the next regeneration from the repository root rewrites them back.
-  # Nothing reads those lines (scripts/ci/audit_requirements.py skips indented ones), so that is churn and nothing more.
+  # It compiles in a scratch directory with paths relative to scripts/, so a Dependabot bump rewrites the body's `# via -r scripts/lint/requirements-lint.in` annotations to `# via -r lint/requirements-lint.in`, and the next regeneration from the repository root rewrites them back.
+  # Nothing reads those lines (the dependency-audit action skips indented ones), so that is churn and nothing more.
   # And it pins with `-P <package>==<version>` where the `.in` files say `-P <package>`, and uv applies that pin to every fork of a universal resolution, including the Python 3.11 fork that `--python-version 3.11` creates.
   # A package whose new release drops Python 3.11 therefore cannot be moved: uv reports no solution for the 3.11 fork, and a grouped run drops that package from its pull request and logs the error.
   # The locks show where that has happened, as a package pinned at two versions under complementary markers.
@@ -193,8 +193,8 @@ updates:
   # scripts/test_dependabot_config.sh requires the name-only `ignore` rules to name exactly the packages some lock pins at more than one version, so a rule goes once its fork does.
   # Raising the floor, as #1196 did, collapses the forks the dropped version left, and that check then names the rules to remove.
   #
-  # directory is "/scripts" because the uv file fetcher reads requirement files from the directory it is given and from each directory immediately below it, which covers scripts/, scripts/ci/ and scripts/lint/ in one entry.
-  # It pairs a lock with its input by basename (requirements-audit.txt with requirements-audit.in), since the headers name the output with `-o`, a spelling the updater does not match.
+  # directory is "/scripts" because the uv file fetcher reads requirement files from the directory it is given and from each directory immediately below it, which covers scripts/ and scripts/lint/ in one entry.
+  # It pairs a lock with its input by basename (requirements-lint.txt with requirements-lint.in), since the headers name the output with `-o`, a spelling the updater does not match.
   # One entry rather than one per directory also keeps a package that several locks share (requests, urllib3, certifi, idna) moving in all of them in the same pull request.
   #
   # `allow: dependency-type: all` is what lets this entry propose the bump #1189 needed.
@@ -227,8 +227,6 @@ updates:
           - "defusedxml"
           - "requests"
           - "pyyaml"
-          - "pip-audit"
-          - "typing-extensions"
           - "ruff"
           - "pre-commit-hooks"
           - "mdformat"
@@ -241,8 +239,6 @@ updates:
           - "defusedxml"
           - "requests"
           - "pyyaml"
-          - "pip-audit"
-          - "typing-extensions"
           - "ruff"
           - "pre-commit-hooks"
           - "mdformat"

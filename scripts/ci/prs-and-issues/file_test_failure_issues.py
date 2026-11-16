@@ -335,7 +335,7 @@ def find_existing_issue(
 
     A failed search is reported as None here, the same as no match.  For this
     caller that is deliberate: a duplicate test-failure issue is noise that
-    archive_stale_test_failures.py eventually sweeps up, so the simpler return
+    archive-stale-test-failures.yml eventually sweeps up, so the simpler return
     type is worth it.  A caller that cannot tolerate a duplicate must use
     lookup_issue_by_title and check fetch_ok.
     """
