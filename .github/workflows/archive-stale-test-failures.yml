@@ -2,7 +2,8 @@ name: Archive Stale Test-Failure Issues
 
 on:
   schedule:
-    - cron: '0 4 * * *'   # daily at 04:00 UTC
+    - cron: '37 4 * * *'   # daily at 04:37 UTC
+  workflow_dispatch:
 
 permissions:
   issues: write
