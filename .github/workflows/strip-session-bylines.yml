@@ -36,4 +36,4 @@ jobs:
 
     steps:
       - name: Strip session-URL bylines
-        uses: aunger/vcs-automation/strip-session-bylines@7473f2326de1ee204e4121633ae86f6938a5f2a7
+        uses: aunger/vcs-automation/strip-session-bylines@d761b016d150f9d6e511afb04341a3f009a71a7e # v1.0.0
