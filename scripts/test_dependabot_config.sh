@@ -237,8 +237,7 @@ AUDIT_ACTION = "aunger/vcs-automation/dependency-audit@"
 
 
 def audit_lock_glob():
-    with open(os.path.join(repo_root, ".github", "workflows", "dependency-audit.yml")) as handle:
-        workflow = yaml.safe_load(handle) or {}
+    workflow = load_workflow(os.path.join(repo_root, ".github", "workflows", "dependency-audit.yml"))
     for job in (workflow.get("jobs") or {}).values():
         for step in job.get("steps") or []:
             if str(step.get("uses", "")).startswith(AUDIT_ACTION):
@@ -865,8 +864,36 @@ def scanned_directories(directory):
     return found
 
 
+# The start of a pin in a `.in` file or a lock: name, then `==` and a version.
+# What follows (a marker, a line continuation, a comment) is not read here.
+PIN_RE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)==([^\s;\\]+)")
+
+
 def lock_pins(path):
-    return {name for name, _version, _marker in lock_entries(path)}
+    """The normalized names a `.in` file or a lock pins.
+
+    Every column-0 line that is not a comment must be a pin, and the file must
+    pin something: a line this cannot read, or a file it reads nothing from,
+    means the format changed, and skipping it would quietly shrink the checks
+    below instead of failing them.
+    """
+    names = set()
+    unread = []
+    with open(path) as handle:
+        for lineno, line in enumerate(handle, start=1):
+            if not line.strip() or line[0].isspace() or line.startswith("#"):
+                continue
+            match = PIN_RE.match(line)
+            if match:
+                names.add(normalize(match.group(1)))
+            else:
+                unread.append("%d: %r" % (lineno, line.rstrip("\n")))
+    rel = os.path.relpath(path, repo_root)
+    if unread:
+        check(False, "%s holds only `name==version` pins at column 0 (unread: %s)" % (rel, "; ".join(unread)))
+    if not names:
+        check(False, "%s pins at least one package" % rel)
+    return names
 
 
 # A pin line with its environment marker, if it has one:
