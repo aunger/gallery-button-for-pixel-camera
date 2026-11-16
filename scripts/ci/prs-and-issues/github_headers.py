@@ -9,7 +9,8 @@ own byte-identical copy (issue #822).
 This module has no `main`; it is imported, not run directly.
 aunger/vcs-automation's `shared/github_headers.py` is the copy its actions
 use, and the one aunger/dot-and-tilde's github-supplement plugin copies are
-checked against; nothing compares this one with either.
+checked against. scripts/test_shared_helper_copies.py fails when this one
+differs from it at a commit the workflows pin, so change them together.
 """
 
 

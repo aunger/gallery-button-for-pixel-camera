@@ -19,7 +19,8 @@ rewrite redirects); `urlopen_https` is for one that uses `urlopen` itself.
 
 aunger/vcs-automation's `shared/https_only.py` is the copy its actions use,
 and the one aunger/dot-and-tilde's github-supplement plugin copies are
-checked against; nothing compares this one with either.
+checked against. scripts/test_shared_helper_copies.py fails when this one
+differs from it at a commit the workflows pin, so change them together.
 
 This module has no `main`; it is imported, not run directly.
 """
