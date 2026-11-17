@@ -148,7 +148,12 @@ updates:
   # A third-party action is pinned to a commit SHA, so its bump rewrites that SHA and the version comment beside it and wants a review of its own; the `actions/` and `github/` namespaces are tag pins, whose bump moves a major tag.
   # The third-party group is `*` minus those two namespaces, so an action a workflow adds later falls into it instead of getting a pull request to itself.
   #
-  # No `cooldown` key, unlike the gradle entry above: GitHub's Dependabot options reference does not list github-actions among the ecosystems cooldown supports (checked 2026-09-23).
+  # Cooldown applies to this ecosystem: a triggered run on 2026-11-17 logged "All versions are in cooldown period" for a release tagged that day, and proposed nothing.
+  # The `cooldown` block keeps the three-day delay for every action but aunger/vcs-automation's.
+  # Those releases are tagged by this repository's owner, so the delay guards against nothing there and only holds back a release that was just cut on purpose.
+  # `default-days: 3` is written out for the reason the gradle entry gives: it pins the delay here instead of inheriting GitHub's default.
+  # The `exclude` patterns match the dependency name through File.fnmatch?, and Dependabot names a subpath action pinned to a SHA `owner/repo/path`, so both that form and the bare `owner/repo` are listed.
+  # scripts/test_dependabot_config.sh checks that every vcs-automation action the workflows use is exempt and that no other action is.
   # No `open-pull-requests-limit` either: every action is grouped, so this entry wants one pull request per group, and the default of 5 covers that.
   # scripts/test_dependabot_config.sh checks the grouping and the limit against the workflows.
   #
@@ -160,6 +165,11 @@ updates:
       day: "monday"
       time: "11:00"
       timezone: "UTC"
+    cooldown:
+      default-days: 3
+      exclude:
+        - "aunger/vcs-automation"
+        - "aunger/vcs-automation/*"
     groups:
       first-party-actions:
         patterns:
