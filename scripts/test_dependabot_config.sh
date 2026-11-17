@@ -137,6 +137,12 @@
 # The action list is read out of the workflows, so an action no pattern reaches
 # fails a check instead of quietly getting a pull request of its own.
 #
+# The entry's cooldown is checked too. GitHub's three-day default holds a
+# release back until it is three days old, which is wanted for actions other
+# people publish and not for aunger/vcs-automation's, whose releases this
+# repository's owner tags. So every vcs-automation action the workflows use
+# must be exempt, under either name, and no other action may be.
+#
 # Both names Dependabot can give a reference are checked, `owner/repo` and
 # `owner/repo/path`, because which one it gets follows from how it is pinned: a
 # pattern taking one name and not the other would move an action between pull
@@ -675,6 +681,10 @@ for index, entry, names, directories in gradle_entries:
 # against the other rather than either being derived from the other.
 GITHUB_ACTIONS_MAX_GROUPS = 5
 
+# The actions this repository's owner publishes, as `owner/repo`. Their releases
+# are tagged on purpose, so the github-actions entry's cooldown exempts them.
+OWN_ACTIONS = "aunger/vcs-automation"
+
 
 def workflow_action_references():
     """Every GitHub-hosted action the workflows use, mapped to the files using it.
@@ -819,6 +829,35 @@ if check(
         # every action grouped, the streams are the declared groups, and that
         # count rises only by an edit to the groups block, which the band check
         # above reads.
+        # Cooldown. The owner's own actions are exempt; every other action
+        # keeps the delay. Read under both names, as the grouping is.
+        own = sorted(name for name in names if name == OWN_ACTIONS or name.startswith(OWN_ACTIONS + "/"))
+        if own:
+            cooldown = entry.get("cooldown")
+            if check(
+                isinstance(cooldown, dict),
+                "%s declares a cooldown block, without which GitHub's three-day default also holds back each "
+                "%s release this repository's owner tags" % (label, OWN_ACTIONS),
+            ):
+                check(
+                    "default-days" in cooldown,
+                    "%s's cooldown sets default-days explicitly, pinning the delay here rather than inheriting "
+                    "GitHub's default" % label,
+                )
+                still_held = sorted(name for name in own if cooldown_holds(name, cooldown))
+                check(
+                    not still_held,
+                    "%s's cooldown exempts all %d names of the %s actions the workflows use%s"
+                    % (label, len(own), OWN_ACTIONS, ("; still held: " + ", ".join(still_held)) if still_held else ""),
+                )
+                exempted = sorted(name for name in names - set(own) if not cooldown_holds(name, cooldown))
+                check(
+                    not exempted,
+                    "%s's cooldown still holds every action other people publish, where the delay is what gives "
+                    "a bad release time to be noticed%s"
+                    % (label, ("; exempted: " + ", ".join(exempted)) if exempted else ""),
+                )
+
         streams = len(groups) + len(ungrouped)
         limit = entry.get("open-pull-requests-limit", DEFAULT_OPEN_PULL_REQUESTS_LIMIT)
         if check(
