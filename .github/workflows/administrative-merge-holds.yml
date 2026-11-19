@@ -119,7 +119,7 @@ jobs:
       - name: Enforce mutually exclusive label sets
         id: enforce
         if: github.event.action == 'labeled'
-        uses: aunger/vcs-automation/enforce-mutually-exclusive-labels@3a677839fad0d24f69887ad547a3f911b9d876e3 # v1.2.0
+        uses: aunger/vcs-automation/enforce-mutually-exclusive-labels@2f12f1a9c1f064e1a69c4b098776041946092712 # v1.3.0
         with:
           exclusive-sets: |
             [
@@ -134,7 +134,7 @@ jobs:
 
       - name: Red to hold merge, not a failure
         if: github.event_name == 'pull_request'
-        uses: aunger/vcs-automation/check-blocking-labels@3a677839fad0d24f69887ad547a3f911b9d876e3 # v1.2.0
+        uses: aunger/vcs-automation/check-blocking-labels@2f12f1a9c1f064e1a69c4b098776041946092712 # v1.3.0
         with:
           blocking-labels: |
             ["verification needed", "changes requested", "changes done", "orchestrating"]

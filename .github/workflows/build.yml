@@ -88,7 +88,7 @@ jobs:
       - name: Run shell script unit tests
         if: needs.check-diff.outputs.needs_full_build == 'true'
         # Every scripts/**/test_*.sh, each run with bash.
-        uses: aunger/vcs-automation/run-python-tests@3a677839fad0d24f69887ad547a3f911b9d876e3 # v1.2.0
+        uses: aunger/vcs-automation/run-python-tests@2f12f1a9c1f064e1a69c4b098776041946092712 # v1.3.0
         with:
           paths: scripts
           kind: shell
@@ -99,7 +99,7 @@ jobs:
         # runs even when a shell test failed, so its verdict is not hidden
         # behind an unrelated failure.
         if: ${{ !cancelled() && needs.check-diff.outputs.needs_full_build == 'true' }}
-        uses: aunger/vcs-automation/privileged-checkout-guard@3a677839fad0d24f69887ad547a3f911b9d876e3 # v1.2.0
+        uses: aunger/vcs-automation/privileged-checkout-guard@2f12f1a9c1f064e1a69c4b098776041946092712 # v1.3.0
 
   # Android Lint over the app's debug variant (issue #985). Its NewApi check is the one guard
   # against a call to an API above minSdk, since the compiler accepts any symbol up to
@@ -233,7 +233,7 @@ jobs:
         # on its own, keeping each directory's bare intra-directory imports
         # working; the action's run_tests.sh says why.
         # GITHUB_REPOSITORY is set by the runner.
-        uses: aunger/vcs-automation/run-python-tests@3a677839fad0d24f69887ad547a3f911b9d876e3 # v1.2.0
+        uses: aunger/vcs-automation/run-python-tests@2f12f1a9c1f064e1a69c4b098776041946092712 # v1.3.0
         with:
           paths: scripts
           kind: python

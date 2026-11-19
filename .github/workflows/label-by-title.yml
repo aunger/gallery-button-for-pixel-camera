@@ -47,7 +47,7 @@ jobs:
     if: github.event.action == 'opened' || github.event.changes.title
     steps:
       - name: Apply labels matching the title
-        uses: aunger/vcs-automation/label-by-title@3a677839fad0d24f69887ad547a3f911b9d876e3 # v1.2.0
+        uses: aunger/vcs-automation/label-by-title@2f12f1a9c1f064e1a69c4b098776041946092712 # v1.3.0
         with:
           rules: |
             {
