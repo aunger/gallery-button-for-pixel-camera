@@ -165,9 +165,11 @@ turn_off() {
 
 # Runs the case's copy of the script from / (it must not depend on the working
 # directory), with the stub first on PATH. Stdout and stderr go to separate files.
+# CLAUDECODE=1 is what Claude Code sets in its Bash tool and its hooks, so the run
+# is the one a session's hook or Bash tool makes, wherever this test itself runs.
 run_case() {
     local case_dir="$1"
-    (cd / && PATH="$case_dir/bin:$PATH" bash "$case_dir/repo/.claude/install-plugins.sh" \
+    (cd / && CLAUDECODE=1 PATH="$case_dir/bin:$PATH" bash "$case_dir/repo/.claude/install-plugins.sh" \
         > "$case_dir/stdout" 2> "$case_dir/stderr")
 }
 
