@@ -7,14 +7,35 @@ disagree (the rules are label_tables.shared_table_problems'), and
 TestSharedTableProblems feeds each rule two diverging copies to see it fail.
 TestSnoozeLadder and TestTitleAndFileLabels hold this repository's own tables
 to the choices its issues record.
+
+TestTablesAtThePin parses each table with vcs-automation's own parsers, at the
+commit the workflows pin the action, since a table that is valid JSON can still
+be one the action refuses, and three of the label workflows never run on a
+pull request (snooze on issue events, wake on a schedule, reconcile on
+dispatch). It also checks each step's `with:` keys against the inputs the
+action declares, since GitHub only warns about an unknown input, and a
+misspelled optional table would then read as its default. Where the fetch
+fails the test skips with the reason, except when CI is set, where it fails.
 """
 
+import contextlib
+import importlib
 import os
+import sys
 import tempfile
 import textwrap
 import unittest
 
 import label_tables as lt
+import yaml
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from pinned_plugin_files import (
+    VCS_AUTOMATION,
+    FetchFailed,
+    PinnedRepository,
+    vcs_automation_pin,
+)
 
 # ---------------------------------------------------------------------------
 # The workflows' own tables
@@ -278,6 +299,159 @@ class TestTable(unittest.TestCase):
         step = _step(lt.GATE, {"blocking-labels": '["a"]', "removed-labels": "${{ x }}"})
         (found,) = lt.tables({lt.GATE: step}).values()
         self.assertEqual(found.inputs, {"blocking-labels": ["a"]})
+
+
+# ---------------------------------------------------------------------------
+# The tables, parsed by vcs-automation's own code at the pin
+# ---------------------------------------------------------------------------
+
+# The modules the parsers need, at their paths in vcs-automation.
+_PINNED_SOURCES = (
+    "shared/label_common.py",
+    "shared/github_api.py",
+    "shared/github_headers.py",
+    "shared/https_only.py",
+    "shared/path_globs.py",
+    "label-by-title/label_by_title.py",
+    "label-by-files/label_by_files.py",
+)
+# Inputs every label action declares that are not tables.
+_NOT_TABLES = {"github-token", "removed-labels"}
+
+
+@contextlib.contextmanager
+def _pinned_modules(root):
+    """Import label_common, label_by_title and label_by_files from the tree at *root*.
+
+    The names are taken out of sys.modules for the duration, and sys.path and
+    sys.modules are put back afterwards, so nothing else in this process sees
+    the pinned copies or loses its own.
+    """
+    names = [os.path.splitext(os.path.basename(path))[0] for path in _PINNED_SOURCES]
+    saved_path = list(sys.path)
+    saved = {name: sys.modules.pop(name) for name in names if name in sys.modules}
+    sys.path[:0] = [os.path.join(root, os.path.dirname(path)) for path in _PINNED_SOURCES]
+    try:
+        yield tuple(
+            importlib.import_module(name)
+            for name in ("label_common", "label_by_title", "label_by_files")
+        )
+    finally:
+        for name in names:
+            sys.modules.pop(name, None)
+        sys.modules.update(saved)
+        sys.path[:] = saved_path
+
+
+def _parsers(lc, lbt, lbf):
+    """Return {(action, input): the call that action makes to parse that input}."""
+    by_input = {
+        "exclusive-sets": lambda text: lc.parse_label_sets("exclusive-sets", text),
+        "exclusive-prefixes": lambda text: lc.parse_prefixes("exclusive-prefixes", text),
+        "excluded-labels": lambda text: lc.parse_label_list("excluded-labels", text),
+        "remove-on-wake": lambda text: lc.parse_label_list("remove-on-wake", text),
+        "skip-on-pull-requests": lambda text: lc.parse_label_list("skip-on-pull-requests", text),
+        "snooze-labels": lambda text: lc.parse_snooze_labels("snooze-labels", text),
+        "blocking-labels": lambda text: lc.parse_label_list("blocking-labels", text, required=True),
+    }
+    parsers = {
+        (action, name): by_input[name]
+        for action, inputs in lt.TABLE_INPUTS.items()
+        for name in inputs
+        if name in by_input
+    }
+    parsers[(lt.TITLE, "rules")] = lambda text: lbt.parse_rules(text, "rules")
+    parsers[(lt.FILES, "rules")] = lambda text: lbf.parse_rules(text, "rules")
+    return parsers
+
+
+class TestTablesAtThePin(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.steps = lt.steps_by_action(lt.label_steps())
+        directory = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(directory.cleanup)
+        cls.trees = {}  # {sha: a tree holding _PINNED_SOURCES at that commit}
+        cls.manifests = {}  # {action: its action.yml at the commit the workflows pin}
+        repositories = {}
+        for action in lt.LABEL_ACTIONS:
+            sha = vcs_automation_pin(action)
+            if sha not in repositories:
+                repositories[sha] = cls._fetch(directory.name, sha)
+                cls.trees[sha] = cls._write_tree(directory.name, repositories[sha])
+            cls.manifests[action] = yaml.safe_load(repositories[sha].read(f"{action}/action.yml"))
+
+    @staticmethod
+    def _fetch(directory, sha):
+        try:
+            return PinnedRepository(directory, VCS_AUTOMATION, sha)
+        except FetchFailed as error:
+            if os.environ.get("CI"):
+                raise
+            raise unittest.SkipTest(str(error)) from error
+
+    @staticmethod
+    def _write_tree(directory, pinned):
+        tree = os.path.join(directory, f"tree-{pinned.sha}")
+        for path in _PINNED_SOURCES:
+            os.makedirs(os.path.join(tree, os.path.dirname(path)), exist_ok=True)
+            with open(os.path.join(tree, path), "w", encoding="utf-8") as f:
+                f.write(pinned.read(path))
+        return tree
+
+    def test_each_step_passes_only_inputs_its_action_declares(self):
+        for action, step in self.steps.items():
+            with self.subTest(workflow=step.workflow, action=action):
+                declared = set(self.manifests[action].get("inputs") or {})
+                self.assertLessEqual(set(step.inputs), declared)
+
+    def test_table_inputs_match_what_each_action_declares(self):
+        """TABLE_INPUTS, and which of them are required, follow each action.yml at the pin."""
+        for action in lt.LABEL_ACTIONS:
+            with self.subTest(action=action):
+                inputs = self.manifests[action].get("inputs") or {}
+                declared = {
+                    name: bool(spec.get("required"))
+                    for name, spec in inputs.items()
+                    if name not in _NOT_TABLES
+                }
+                self.assertEqual(lt.TABLE_INPUTS[action], declared)
+                for name, spec in inputs.items():
+                    if name in declared and not declared[name]:
+                        self.assertEqual(spec.get("default"), lt.OPTIONAL_DEFAULT, name)
+
+    def test_every_table_parses_with_the_action_parser(self):
+        for sha, tree in self.trees.items():
+            with _pinned_modules(tree) as modules:
+                parsers = _parsers(*modules)
+                lc = modules[0]
+                for action, step in self.steps.items():
+                    if vcs_automation_pin(action) != sha:
+                        continue
+                    for name in lt.TABLE_INPUTS[action]:
+                        text = step.inputs.get(name, "") or lt.OPTIONAL_DEFAULT
+                        with self.subTest(workflow=step.workflow, input=name):
+                            try:
+                                parsers[(action, name)](text)
+                            except lc.InputError as error:
+                                self.fail(f"{step.workflow}: {error}")
+
+    def test_the_parsers_refuse_a_malformed_table(self):
+        """The parsers are strict about what JSON alone allows: a check that they ran."""
+        tree = next(iter(self.trees.values()))
+        with _pinned_modules(tree) as modules:
+            parsers = _parsers(*modules)
+            lc = modules[0]
+            for (action, name), text in {
+                (lt.ENFORCE, "exclusive-sets"): '[["only one"]]',
+                (lt.SNOOZE, "snooze-labels"): '{"snooze 3 days": 3, "snooze 3 days": 4}',
+                (lt.WAKE, "snooze-labels"): '{"snooze 0 days": 0}',
+                (lt.GATE, "blocking-labels"): "[]",
+                (lt.FILES, "rules"): '{"ci": {"mode": "every-file"}}',
+                (lt.TITLE, "rules"): '{"ci": "("}',
+            }.items():
+                with self.subTest(action=action, input=name), self.assertRaises(lc.InputError):
+                    parsers[(action, name)](text)
 
 
 if __name__ == "__main__":

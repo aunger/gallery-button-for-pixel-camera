@@ -5,9 +5,10 @@ This repository pins two others: aunger/dot-and-tilde's plugins through
 .claude/gb4pc-tools, and aunger/vcs-automation's actions through the `uses:`
 lines of .github/workflows. The tests that check this repository against either
 (test_orchestrate_config.py, test_session_byline_pins.py,
-test_shared_helper_copies.py, ci/test_label_existence_integration.py) read the
-files at the pinned commit, not at whatever the other repository's main holds,
-so a pin bump is what brings a change into them.
+test_shared_helper_copies.py, ci/test_label_existence_integration.py,
+ci/test_label_tables.py) read the files at the pinned commit, not at whatever
+the other repository's main holds, so a pin bump is what brings a change into
+them.
 
 `PinnedRepository(directory, url, sha)` makes a shallow fetch of one commit
 into a bare repository under `directory`, and raises `FetchFailed` when it
