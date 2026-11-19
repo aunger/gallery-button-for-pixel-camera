@@ -2,10 +2,17 @@ name: Propagate issue labels to linked PR
 
 # When a pull request closes an issue via a closing-keyword relationship
 # ("Fixes #N", "Closes #N", the other variants GitHub recognizes, or a
-# manually linked issue), copies that issue's labels onto the pull request.
-# See scripts/ci/labels/propagate_issue_labels.py for the exact rules, including the
-# exception that protects an existing PR label from an indirect
-# mutual-exclusion removal.
+# manually linked issue), copies that issue's labels onto the pull request,
+# through vcs-automation's propagate-issue-labels action. A label that would
+# displace a mutually exclusive label the pull request already carries is
+# skipped; the action's action.yml and the docstring of its
+# propagate_issue_labels.py give the exact rules.
+#
+# `excluded-labels` are never copied: the orchestrate protocol's six labels,
+# which an issue and its pull request carry separately, and "agents", which
+# label-by-files.yml decides from the changed files. `exclusive-sets` and
+# `exclusive-prefixes` are administrative-merge-holds.yml's. The same three
+# tables go to reconcile-issue-labels.yml.
 #
 # GitHub fires no webhook event for linking a PR to an issue via the
 # "Development" sidebar after the PR is already open, so a closing
@@ -24,9 +31,11 @@ name: Propagate issue labels to linked PR
 # runs, since none of them carry a "changes" object to gate on.
 #
 # A PR that gets sidebar-linked and then sees none of these events before
-# merge is not covered automatically; scripts/ci/labels/reconcile_issue_labels.py is
-# available to reconcile every open PR on demand (run locally, or dispatch
-# it in Actions) for that residual case.
+# merge is not covered automatically; reconcile-issue-labels.yml reconciles
+# every open PR on demand (dispatch it in Actions) for that residual case.
+#
+# No checkout: the action runs its own copy of the script, at the commit the
+# `uses:` line pins; see .github/workflows/CLAUDE.md.
 
 on:
   pull_request:
@@ -41,17 +50,26 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event.action != 'edited' || github.event.changes.body
     steps:
-      - name: Check out repository
-        # Pinned to a ref the pull request does not control: this job holds
-        # write scopes and runs a script out of this checkout (issue #882). Rule,
-        # rationale and limits: .github/workflows/CLAUDE.md.
-        uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event.pull_request.base.sha }}
-
       - name: Propagate linked issue labels
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: python3 scripts/ci/labels/propagate_issue_labels.py
+        uses: aunger/vcs-automation/propagate-issue-labels@3a677839fad0d24f69887ad547a3f911b9d876e3 # v1.2.0
+        with:
+          excluded-labels: |
+            [
+              "orchestrate",
+              "orchestrating",
+              "verification needed",
+              "verified",
+              "changes requested",
+              "changes done",
+              "agents"
+            ]
+          exclusive-sets: |
+            [
+              ["p1", "p2", "p3"],
+              ["verification needed", "verified"],
+              ["changes requested", "changes done"],
+              ["orchestrate", "orchestrating"],
+              ["snooze 3 days", "snooze 7 days", "snooze 14 days", "snooze 30 days", "snooze 90 days", "snooze 180 days"]
+            ]
+          exclusive-prefixes: |
+            ["c-a-", "c-r-", "test-failure"]

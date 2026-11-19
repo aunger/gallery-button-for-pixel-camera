@@ -1,17 +1,34 @@
 name: Label issue/PR by title
 
-# Applies labels to an issue or pull request based on regex matches
-# against its title. See scripts/ci/labels/label_by_title.py for the exact rules.
+# Applies labels to an issue or pull request based on regex matches against
+# its title, through vcs-automation's label-by-title action. The `rules` input
+# below is the table: each label maps to regexes that count as alternatives,
+# matched case-insensitively; the action's action.yml gives the format.
 # Labels are only ever added, never removed.
 #
-# IS_PULL_REQUEST tells the script which artifact it is labeling. On a pull
-# request it suppresses the labels label-by-files.yml determines from the
-# changed files, so the two signals never race for the same label.
+# `skip-on-pull-requests` keeps "agents" off pull requests: label-by-files.yml
+# decides it there from the changed files, so the two signals never race for
+# the same label. The two tables must agree on it, and on what
+# propagate-issue-labels.yml excludes.
 #
 # Runs on "opened" (a fresh title) or "edited" where the title itself
 # changed (github.event.changes.title is only present when the title was
 # part of the edit), so unrelated edits (body, labels, base branch) do
 # not re-trigger it.
+#
+# To apply a rule change to existing issues and pull requests, run
+# label-by-title/backfill_labels_by_title.py from a checkout of
+# aunger/vcs-automation, with its requirements.txt installed (reading
+# --workflow needs PyYAML), pointing it at this file:
+#
+#   GITHUB_TOKEN=... GITHUB_REPOSITORY=aunger/gallery-button-for-pixel-camera \
+#     python3 label-by-title/backfill_labels_by_title.py -n \
+#     --workflow <this checkout>/.github/workflows/label-by-title.yml
+#
+# -n reports what it would add; -f adds it. Its docstring has the rest.
+#
+# No checkout: the action runs its own copy of the script, at the commit the
+# `uses:` line pins; see .github/workflows/CLAUDE.md.
 
 on:
   issues:
@@ -28,20 +45,42 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event.action == 'opened' || github.event.changes.title
     steps:
-      - name: Check out repository
-        # Pinned to a ref the pull request does not control: this job holds
-        # write scopes and runs a script out of this checkout (issue #882).
-        # The fallback covers this workflow's non-pull-request events. Rule,
-        # rationale and limits: .github/workflows/CLAUDE.md.
-        uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event.pull_request.base.sha || github.sha }}
-
       - name: Apply labels matching the title
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          ISSUE_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
-          ISSUE_TITLE: ${{ github.event.pull_request.title || github.event.issue.title }}
-          IS_PULL_REQUEST: ${{ github.event_name == 'pull_request' }}
-        run: python3 scripts/ci/labels/label_by_title.py
+        uses: aunger/vcs-automation/label-by-title@3a677839fad0d24f69887ad547a3f911b9d876e3 # v1.2.0
+        with:
+          rules: |
+            {
+              "ci": [
+                "(\\b|_)ci(\\b|_)",
+                "(\\b|_)automat\\w+(\\b|_)",
+                "(\\b|_)workflow\\w*",
+                "(\\b|_)github[\\W_]*action\\w*",
+                "(\\b|_)e2e\\w*",
+                "(?=.*(\\b|_)merg\\w+)(?=.*((\\b|_)gat(ing|e[ds]?)(\\b|_)|(\\b|_)(un)?block\\w*|(\\b|_)prs?(\\b|_)))",
+                "(\\b|_)pre-?flight\\w*",
+                "(\\b|_)codeql(\\b|_)"
+              ],
+              "agents": [
+                "(\\b|_)agent\\w*",
+                "(\\b|_)dev_orchestration(\\b|_)",
+                "(\\b|_)rules?(\\b|_)",
+                "(\\b|_)attributions?(\\b|_)",
+                "(\\b|_)bylines?(\\b|_)",
+                "(?=.*(\\b|_)verif\\w+(\\b|_))(?=.*((\\b|_)planner(\\b|_)|(\\b|_)labels?(\\b|_)|(\\b|_)prs?(\\b|_)))",
+                "(\\b|_)author(\\b|_)",
+                "(\\b|_)reviewers?(\\b|_)",
+                "(\\b|_)orchestrat\\w*",
+                "(\\b|_)ci[\\W_]*monitor\\w*",
+                "(\\b|_)sub[\\W_]?agent\\w*"
+              ],
+              "automated tests": [
+                "(\\b|_)e2e(\\b|_)",
+                "(\\b|_)unit(\\b|_)",
+                "(\\b|_)test\\w*",
+                "\\w*e2etest\\w*",
+                "(\\b|_)pre-?flight\\w*",
+                "(?-i:\\w*Test(\\b|_))"
+              ]
+            }
+          skip-on-pull-requests: |
+            ["agents"]

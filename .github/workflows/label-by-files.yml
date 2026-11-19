@@ -1,15 +1,32 @@
 name: Label PR by changed files
 
-# Applies labels to a pull request based on the set of files it changed.
-# "ci" and "automated tests" are applied when every changed file maps to the
-# label, and never removed. "agents" follows an if-and-only-if rule instead:
-# applied when any changed file maps to it, and removed when none does. See
-# scripts/ci/labels/label_by_files.py for the exact rules.
+# Applies labels to a pull request based on the set of files it changed,
+# through vcs-automation's label-by-files action. The `rules` input below is
+# the table; the action's action.yml gives the format.
+# "ci" and "automated tests" are every-file rules: applied when every changed
+# file matches the label's globs, and never removed. "agents" is an any-file
+# rule, if-and-only-if instead: applied when any changed file matches, and
+# removed when none does. That is why label-by-title.yml skips "agents" on pull
+# requests and propagate-issue-labels.yml never copies it.
 #
 # A separate workflow from label-by-title.yml because the two signals want
 # different triggers: title labeling only needs to run when the title
 # itself changes, while this needs to run on every push (synchronize) and
 # has nothing to do on title edits or issue events.
+#
+# To check a rule change against merged pull requests, or to backfill one, run
+# label-by-files/audit_labels_by_files.py from a checkout of
+# aunger/vcs-automation, with its requirements.txt installed (reading
+# --workflow needs PyYAML), pointing it at this file:
+#
+#   GITHUB_TOKEN=... GITHUB_REPOSITORY=aunger/gallery-button-for-pixel-camera \
+#     python3 label-by-files/audit_labels_by_files.py -n --limit 50 \
+#     --workflow <this checkout>/.github/workflows/label-by-files.yml
+#
+# -n reports what it would change; -f changes it. Its docstring has the rest.
+#
+# No checkout: the action runs its own copy of the script, at the commit the
+# `uses:` line pins; see .github/workflows/CLAUDE.md.
 
 on:
   pull_request:
@@ -23,17 +40,24 @@ jobs:
   label-by-files:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
-        # Pinned to a ref the pull request does not control: this job holds
-        # write scopes and runs a script out of this checkout (issue #882). Rule,
-        # rationale and limits: .github/workflows/CLAUDE.md.
-        uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event.pull_request.base.sha }}
-
       - name: Apply labels matching the changed files
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: python3 scripts/ci/labels/label_by_files.py
+        uses: aunger/vcs-automation/label-by-files@3a677839fad0d24f69887ad547a3f911b9d876e3 # v1.2.0
+        with:
+          rules: |
+            {
+              "automated tests": {
+                "mode": "every-file",
+                "paths": [
+                  "**/test/**",
+                  "**/androidTest/**",
+                  "**/sharedTest/**",
+                  "**/test_?*.py",
+                  "**/test_?*.sh"
+                ]
+              },
+              "ci": {"mode": "every-file", "paths": [".github/workflows/**", "scripts/ci/**"]},
+              "agents": {
+                "mode": "any-file",
+                "paths": ["**/AGENTS.md", "**/CLAUDE.md", "**/agents/**", ".claude/**"]
+              }
+            }
