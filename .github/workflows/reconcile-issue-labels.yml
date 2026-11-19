@@ -14,7 +14,8 @@ name: Reconcile issue labels on open PRs
 # propagate-issue-labels.yml. Run this manually from the Actions tab if you
 # suspect a PR was sidebar-linked without triggering that workflow.
 #
-# The three tables are propagate-issue-labels.yml's.
+# The three tables are propagate-issue-labels.yml's;
+# scripts/ci/test_label_tables.py fails when the copies differ.
 #
 # No checkout: the action runs its own copy of the script, at the commit the
 # `uses:` line pins.

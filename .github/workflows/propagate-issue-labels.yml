@@ -12,7 +12,8 @@ name: Propagate issue labels to linked PR
 # which an issue and its pull request carry separately, and "agents", which
 # label-by-files.yml decides from the changed files. `exclusive-sets` and
 # `exclusive-prefixes` are administrative-merge-holds.yml's. The same three
-# tables go to reconcile-issue-labels.yml.
+# tables go to reconcile-issue-labels.yml; scripts/ci/test_label_tables.py
+# fails when any copy differs.
 #
 # GitHub fires no webhook event for linking a PR to an issue via the
 # "Development" sidebar after the PR is already open, so a closing

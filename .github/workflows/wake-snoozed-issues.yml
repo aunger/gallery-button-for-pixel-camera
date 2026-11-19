@@ -15,7 +15,8 @@ name: Wake snoozed issues
 #
 # `snooze-labels` is the same table as snooze-issues.yml's, and
 # `remove-on-wake` is the orchestrate protocol's six labels, which
-# propagate-issue-labels.yml also never copies.
+# propagate-issue-labels.yml also never copies; scripts/ci/test_label_tables.py
+# checks both pairings.
 #
 # Offset from archive-stale-test-failures.yml's cron so the two
 # daily issue-label jobs do not start at the same minute.

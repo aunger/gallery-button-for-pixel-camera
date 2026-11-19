@@ -18,7 +18,7 @@ name: Snooze issues
 #
 # The same table goes to wake-snoozed-issues.yml, and its labels are one of
 # administrative-merge-holds.yml's exclusive sets, so an issue carries at most
-# one.
+# one; scripts/ci/test_label_tables.py checks both.
 # A malformed table fails the step.
 #
 # Scoped to issues only, not pull requests: closing an open PR is a different

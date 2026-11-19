@@ -9,7 +9,8 @@ name: Label issue/PR by title
 # `skip-on-pull-requests` keeps "agents" off pull requests: label-by-files.yml
 # decides it there from the changed files, so the two signals never race for
 # the same label. The two tables must agree on it, and on what
-# propagate-issue-labels.yml excludes.
+# propagate-issue-labels.yml excludes; scripts/ci/test_label_tables.py checks
+# that.
 #
 # Runs on "opened" (a fresh title) or "edited" where the title itself
 # changed (github.event.changes.title is only present when the title was

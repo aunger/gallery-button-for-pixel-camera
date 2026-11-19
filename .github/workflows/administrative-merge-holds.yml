@@ -39,7 +39,8 @@ name: Administrative merge holds
 #     orchestration run no other label holds the gate closed.
 # The last set is the snooze ladder, which snooze-issues.yml and
 # wake-snoozed-issues.yml read too. propagate-issue-labels.yml and
-# reconcile-issue-labels.yml take the same sets and prefixes.
+# reconcile-issue-labels.yml take the same sets and prefixes;
+# scripts/ci/test_label_tables.py fails when the copies differ.
 #
 # Enforcement runs first because it can remove a blocking label: adding
 # `verified` drops `verification needed`, and adding `orchestrate` drops

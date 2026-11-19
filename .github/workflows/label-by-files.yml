@@ -7,7 +7,8 @@ name: Label PR by changed files
 # file matches the label's globs, and never removed. "agents" is an any-file
 # rule, if-and-only-if instead: applied when any changed file matches, and
 # removed when none does. That is why label-by-title.yml skips "agents" on pull
-# requests and propagate-issue-labels.yml never copies it.
+# requests and propagate-issue-labels.yml never copies it;
+# scripts/ci/test_label_tables.py checks that the three tables agree.
 #
 # A separate workflow from label-by-title.yml because the two signals want
 # different triggers: title labeling only needs to run when the title
