@@ -7,11 +7,11 @@ name: Wake snoozed issues
 # the snooze has run out. The docstring of the action's wake_snoozed_issues.py
 # has the full design.
 #
-# An issue still carrying an elapsed snooze label that is no longer closed as
-# not planned (reopened by hand, or closed as completed) only loses the snooze
-# label. The script this job ran before the action reopened it, stripped the
-# process labels and commented whatever its state.
-# A malformed table fails the step; that script always exited 0.
+# The snooze label decides, not the issue's state: a closed issue is reopened
+# whatever its close reason, and one reopened by hand is stripped and
+# commented on without a reopen, even mid-cycle, as the script this job ran
+# before the action did. Remove the snooze label from an issue that should not
+# wake. A malformed table fails the step; that script always exited 0.
 #
 # `snooze-labels` is the same table as snooze-issues.yml's, and
 # `remove-on-wake` is the orchestrate protocol's six labels, which
