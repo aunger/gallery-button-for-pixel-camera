@@ -108,22 +108,24 @@ The job checks out the base branch, so `main`'s copy of that script is what runs
 Expect the new behavior not to show up on the pull request that introduces it, and do not read that as the change being broken.
 
 This applies to every script a pinned job invokes, not to a fixed list: whatever the jobs the privileged-checkout guard (below) treats as privileged execute is subject to it.
-Today that is the entry points of the four label workflows (`administrative-merge-holds.yml` has two, `enforce_mutually_exclusive_labels.py` and `check_blocking_labels.py`) plus `build.yml`'s issue-filing and CI-summary scripts.
-It also reaches past the entry points, because they import each other.
-`label_by_files.py` and `propagate_issue_labels.py` both `import enforce_mutually_exclusive_labels` and `import label_by_title`, so an edit to either of those changes the behavior of two more jobs and is equally invisible until merge.
+Today that is `build.yml`'s issue-filing and CI-summary scripts (`file_test_failure_issues.py` and `post_pr_ci_summary_link.py`), and whatever they import.
 
 Relatedly, a pull request that renames or moves one of these scripts *and* updates its workflow in the same change will fail that job: the workflow comes from the merge ref and names the new path, while the checkout supplies the base branch, where that path does not exist yet.
 Land the rename separately, or accept one red job on it.
+The reverse holds once the move merges: a pull request opened before it still runs its old workflow from its merge ref until GitHub recomputes that ref, so the job checks out the new base branch and looks for the old path.
+Once GitHub has recomputed the ref, the next event on that pull request (a push, or a label change) runs the new workflow.
 
 `build.yml`'s `shell-tests` job enforces the rule over every workflow with the `privileged-checkout-guard` action of [aunger/vcs-automation](https://github.com/aunger/vcs-automation), and the docstring of that action's `check_privileged_checkouts.py` carries the full rationale and the guard's own limits (among them that it only inspects `actions/checkout` steps, so `gh pr checkout` or a bare `git fetch` would slip past).
 
 ### A job that runs its script from an action
 
-`strip-session-bylines.yml` has no checkout step.
-It calls vcs-automation's `strip-session-bylines` action, which runs its own copy of the script at the commit the `uses:` line pins, so the job checks out nothing.
+`strip-session-bylines.yml` and the seven label workflows (`label-by-title.yml`, `label-by-files.yml`, `administrative-merge-holds.yml`, `snooze-issues.yml`, `wake-snoozed-issues.yml`, `propagate-issue-labels.yml` and `reconcile-issue-labels.yml`) have no checkout step.
+Each calls a vcs-automation action, which runs its own copy of the script at the commit the `uses:` line pins, so the job checks out nothing.
 That is not a boundary on the `pull_request` and review events: there the workflow file comes from the merge ref, as above, so a pull request can repoint the `uses:` line or add a step of its own.
-This repository holds no copy of that script: a change to it is made in vcs-automation and arrives here with a bump of the pin.
-`scripts/test_session_byline_pins.py` fails when the action's byline pattern at that pin differs from github-supplement's at the commit `.claude/gb4pc-tools` pins, so the two pins move together.
+This repository holds no copy of those scripts: a change to one is made in vcs-automation and arrives here with a bump of the pin.
+What stays here is the data the label actions take as `with:` inputs, this repository's label tables, and a change to a table does show on the pull request that makes it, for the workflows that pull request's events run.
+`scripts/test_session_byline_pins.py` fails when the byline action's pattern at that pin differs from github-supplement's at the commit `.claude/gb4pc-tools` pins, so the two pins move together.
+`scripts/ci/test_label_tables.py` fails when two label workflows pass different copies of a shared table, or when a table is one the action at the pin would refuse.
 
 ## GitHub Actions version reminders
 
