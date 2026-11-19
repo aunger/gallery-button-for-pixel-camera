@@ -94,9 +94,9 @@ class PostTest(unittest.TestCase):
         out, err = io.StringIO(), io.StringIO()
         with (
             mock.patch.dict(os.environ, env, clear=True),
-            mock.patch.object(post.emxl, "gh_api", github.gh_api),
+            mock.patch.object(post.github_rest, "gh_api", github.gh_api),
             mock.patch.object(
-                post.emxl, "fetch_open_pull_requests", github.fetch_open_pull_requests
+                post.github_rest, "fetch_open_pull_requests", github.fetch_open_pull_requests
             ),
             contextlib.redirect_stdout(out),
             contextlib.redirect_stderr(err),

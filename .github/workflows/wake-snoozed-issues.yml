@@ -1,14 +1,28 @@
 name: Wake snoozed issues
 
-# Daily check for issues whose snooze (see snooze-issues.yml and
-# SNOOZE_LABEL_DAYS in scripts/ci/labels/enforce_mutually_exclusive_labels.py)
-# has elapsed. Reopens each one, strips its snooze label, and strips
-# propagate_issue_labels.PROCESS_STATE_LABELS so it lands back in plain
-# triage rather than resuming mid-orchestration-cycle. See
-# scripts/ci/labels/wake_snoozed_issues.py's docstring for the full design.
+# Daily check, through vcs-automation's wake-snoozed-issues action, for issues
+# whose snooze (see snooze-issues.yml) has elapsed. Reopens each one, strips
+# its snooze label, strips the `remove-on-wake` labels so it lands back in
+# plain triage rather than resuming mid-orchestration-cycle, and comments that
+# the snooze has run out. The docstring of the action's wake_snoozed_issues.py
+# has the full design.
+#
+# The snooze label decides, not the issue's state: a closed issue is reopened
+# whatever its close reason, and one reopened by hand is stripped and
+# commented on without a reopen, even mid-cycle, as the script this job ran
+# before the action did. Remove the snooze label from an issue that should not
+# wake. A malformed table fails the step; that script always exited 0.
+#
+# `snooze-labels` is the same table as snooze-issues.yml's, and
+# `remove-on-wake` is the orchestrate protocol's six labels, which
+# propagate-issue-labels.yml also never copies; scripts/ci/test_label_tables.py
+# checks both pairings.
 #
 # Offset from archive-stale-test-failures.yml's cron so the two
 # daily issue-label jobs do not start at the same minute.
+#
+# No checkout: the action runs its own copy of the script, at the commit the
+# `uses:` line pins.
 
 on:
   schedule:
@@ -21,11 +35,24 @@ jobs:
   wake:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-
       - name: Wake issues past their snooze
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-        run: python3 scripts/ci/labels/wake_snoozed_issues.py
+        uses: aunger/vcs-automation/wake-snoozed-issues@2f12f1a9c1f064e1a69c4b098776041946092712 # v1.3.0
+        with:
+          snooze-labels: |
+            {
+              "snooze 3 days": 3,
+              "snooze 7 days": 7,
+              "snooze 14 days": 14,
+              "snooze 30 days": 30,
+              "snooze 90 days": 90,
+              "snooze 180 days": 180
+            }
+          remove-on-wake: |
+            [
+              "orchestrate",
+              "orchestrating",
+              "verification needed",
+              "verified",
+              "changes requested",
+              "changes done"
+            ]

@@ -2,8 +2,9 @@
 """This repository's GitHub helpers are the same code as vcs-automation's.
 
 scripts/ci/prs-and-issues/github_headers.py and https_only.py stay here while
-scripts here import them (gradle_coordinates.py, the label scripts, and
-post_pr_ci_summary_link.py and watch_toolchain_bump.py among them).
+scripts here import them (gradle_coordinates.py,
+dependency-checks/github_rest.py, and post_pr_ci_summary_link.py and
+watch_toolchain_bump.py among them).
 aunger/vcs-automation's shared/ holds the copies its actions use, and the ones
 aunger/dot-and-tilde's github-supplement plugin copies are checked against.
 

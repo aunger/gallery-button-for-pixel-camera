@@ -13,6 +13,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Archive stale test-failure issues
-        uses: aunger/vcs-automation/archive-stale-test-failures@3a677839fad0d24f69887ad547a3f911b9d876e3 # v1.2.0
+        uses: aunger/vcs-automation/archive-stale-test-failures@2f12f1a9c1f064e1a69c4b098776041946092712 # v1.3.0
         with:
           stale-days: '10'

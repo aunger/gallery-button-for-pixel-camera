@@ -1,23 +1,46 @@
 name: Administrative merge holds
 
-# One job, two steps, run in this order:
+# One job, two steps, run in this order, each a vcs-automation action:
 #
 #   1. Enforce mutually exclusive label sets (issues and pull requests,
-#      `labeled` only). When a label belonging to a mutually exclusive set is
-#      added, removes any other label from the same set, so that at most one
-#      member of each set is present at any time. The sets live in
-#      scripts/ci/labels/enforce_mutually_exclusive_labels.py
-#      (MUTUALLY_EXCLUSIVE_SETS and MUTUALLY_EXCLUSIVE_PREFIXES).
+#      `labeled` only; enforce-mutually-exclusive-labels). When a label
+#      belonging to a mutually exclusive set is added, removes any other label
+#      from the same set, so that at most one member of each set is present at
+#      any time. The sets are the `exclusive-sets` and `exclusive-prefixes`
+#      inputs below. If the added label is already gone when the step reads
+#      the labels, it removes nothing (the script this job ran before the
+#      action removed the siblings anyway), which can leave a blocking label
+#      in place: the safe direction for step 2.
 #
-#   2. "Red to hold merge, not a failure" (pull requests only). Fails the job,
-#      and with it the required status check named after the job, whenever a
-#      blocking label is present on any open PR whose head is this commit,
-#      preventing merge until the label is removed. The blocking labels live
-#      in scripts/ci/labels/check_blocking_labels.py (BLOCKING_LABELS):
-#        - verification needed
-#        - changes requested
-#        - changes done
-#        - orchestrating
+#   2. "Red to hold merge, not a failure" (pull requests only;
+#      check-blocking-labels). Fails the job, and with it the required status
+#      check named after the job, whenever a blocking label (the
+#      `blocking-labels` input) is present on any open PR whose head is this
+#      commit, preventing merge until the label is removed.
+#
+# The tables pair with the orchestrate plugin's label protocol: vcs-automation's
+# README, section "The merge gate and orchestrate's labels", gives the wiring.
+# The `verification needed`/`verified` and `changes requested`/`changes done`
+# pairs are deliberately separate sets, not one. They track independent
+# things: the first pair is the state of the before-merging requirements, and
+# the second is the state of the Author/Reviewer round. Merging them would rule
+# out states that are coherent, and would open a hole in the merge gate:
+#   - `verified` + `changes requested`: a Reviewer asks for changes on a PR
+#     that is still verified for its current head. Adding `changes requested`
+#     would strip `verified` for no reason (remove-verified-on-push.yml already
+#     clears it when a push makes it stale).
+#   - `verification needed` + `changes requested`/`changes done`: manual
+#     before-merging items are still open while a code round runs. A shared
+#     set would let either side's label drop the other's, losing either the
+#     record that those items are open or the record of where the round stands.
+#   - Merge gate: `verified` does not block merging, but the other three labels
+#     do. Adding `verified` to a PR carrying `changes requested` or
+#     `changes done` would remove a blocking label, and outside an
+#     orchestration run no other label holds the gate closed.
+# The last set is the snooze ladder, which snooze-issues.yml and
+# wake-snoozed-issues.yml read too. propagate-issue-labels.yml and
+# reconcile-issue-labels.yml take the same sets and prefixes;
+# scripts/ci/test_label_tables.py fails when the copies differ.
 #
 # Enforcement runs first because it can remove a blocking label: adding
 # `verified` drops `verification needed`, and adding `orchestrate` drops
@@ -45,8 +68,9 @@ name: Administrative merge holds
 # PR produced it. Reading only the triggering PR's labels therefore let two
 # open PRs sharing a head commit answer for each other, and
 # the orchestrate plugin's Verifier live-fire recipe manufactured exactly that collision
-# on PRs that were mid-verification (issue #833). See
-# scripts/ci/labels/check_blocking_labels.py for the full rationale.
+# on PRs that were mid-verification (issue #833). The docstring of
+# vcs-automation's check-blocking-labels/check_blocking_labels.py has the full
+# rationale.
 #
 # Every pull request event that can change a commit's verdict, and that fires
 # a run against that commit, is a trigger. Both halves are narrower than "all
@@ -62,9 +86,9 @@ name: Administrative merge holds
 # The pull request events that are listed:
 #   - opened / reopened / synchronize: ensure fresh PRs are blocked from the start.
 #   - labeled / unlabeled: re-evaluate immediately when the label changes.
-#   - closed: closing a PR removes it from the set the script considers, so
+#   - closed: closing a PR removes it from the set the gate considers, so
 #     closing one can be exactly what unblocks a commit. The gate's observable
-#     state is the stored check run rather than any one script run, so without
+#     state is the stored check run rather than any one run, so without
 #     this event the failing run a since-closed PR earned would remain the most
 #     recent run on the commit and would keep its siblings blocked with no
 #     blocking label applied anywhere and no automatic way out. Recovery would
@@ -73,6 +97,9 @@ name: Administrative merge holds
 #     the closed PR's own event fired would read that PR as open again.
 #
 # The `issues` trigger serves step 1 only.
+#
+# No checkout: each action runs its own copy of its script, at the commit the
+# `uses:` line pins; see .github/workflows/CLAUDE.md.
 
 on:
   issues:
@@ -81,7 +108,6 @@ on:
     types: [opened, reopened, synchronize, labeled, unlabeled, closed]
 
 permissions:
-  contents: read
   issues: write
   pull-requests: write
 
@@ -90,34 +116,27 @@ jobs:
     name: Administrative merge holds (not failure)
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
-        # Pinned to a ref the pull request does not control: this job holds
-        # write scopes and runs scripts out of this checkout (issue #882).
-        # The fallback covers the `issues` event. Rule, rationale and limits:
-        # .github/workflows/CLAUDE.md.
-        uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event.pull_request.base.sha || github.sha }}
-
       - name: Enforce mutually exclusive label sets
         id: enforce
         if: github.event.action == 'labeled'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          ISSUE_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
-          ADDED_LABEL: ${{ github.event.label.name }}
-        run: python3 scripts/ci/labels/enforce_mutually_exclusive_labels.py
+        uses: aunger/vcs-automation/enforce-mutually-exclusive-labels@2f12f1a9c1f064e1a69c4b098776041946092712 # v1.3.0
+        with:
+          exclusive-sets: |
+            [
+              ["p1", "p2", "p3"],
+              ["verification needed", "verified"],
+              ["changes requested", "changes done"],
+              ["orchestrate", "orchestrating"],
+              ["snooze 3 days", "snooze 7 days", "snooze 14 days", "snooze 30 days", "snooze 90 days", "snooze 180 days"]
+            ]
+          exclusive-prefixes: |
+            ["c-a-", "c-r-", "test-failure"]
 
       - name: Red to hold merge, not a failure
         if: github.event_name == 'pull_request'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_STATE: ${{ github.event.pull_request.state }}
-          PR_LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
+        uses: aunger/vcs-automation/check-blocking-labels@2f12f1a9c1f064e1a69c4b098776041946092712 # v1.3.0
+        with:
+          blocking-labels: |
+            ["verification needed", "changes requested", "changes done", "orchestrating"]
           # Empty when step 1 was skipped or removed nothing.
-          REMOVED_LABELS: ${{ steps.enforce.outputs.removed }}
-        run: python3 scripts/ci/labels/check_blocking_labels.py
+          removed-labels: ${{ steps.enforce.outputs.removed }}

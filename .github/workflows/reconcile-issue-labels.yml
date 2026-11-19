@@ -1,18 +1,22 @@
 name: Reconcile issue labels on open PRs
 
-# On-demand re-application of scripts/ci/labels/propagate_issue_labels.py's label
-# propagation rule to every open pull request. propagate-issue-labels.yml's
-# pull_request triggers cover a sidebar-linked PR whenever it sees further
-# ordinary activity (a push, a reopen, and so on); this workflow exists for
-# the residual case of a PR that gets sidebar-linked and then sees none of
-# those events before merge.
+# On-demand re-application of propagate-issue-labels.yml's label propagation
+# rule to every open pull request, through vcs-automation's
+# reconcile-issue-labels action. propagate-issue-labels.yml's pull_request
+# triggers cover a sidebar-linked PR only when it is later reopened or its
+# body is edited; this workflow exists for a PR that gets sidebar-linked and
+# then sees neither before merge. A push does not re-run propagation.
 #
 # Deliberately workflow_dispatch-only rather than a schedule: a periodic
 # cron would poll every open PR indefinitely even when nothing needs
-# reconciling, for a gap that is otherwise already closed by the pokes in
-# propagate-issue-labels.yml. Run this manually (from the Actions tab, or
-# locally with `python3 scripts/ci/labels/reconcile_issue_labels.py`) if you suspect a
-# PR was sidebar-linked without triggering that workflow.
+# reconciling. Run this manually from the Actions tab if you suspect a PR was
+# sidebar-linked without triggering propagate-issue-labels.yml.
+#
+# The three tables are propagate-issue-labels.yml's;
+# scripts/ci/test_label_tables.py fails when the copies differ.
+#
+# No checkout: the action runs its own copy of the script, at the commit the
+# `uses:` line pins.
 
 on:
   workflow_dispatch: {}
@@ -25,11 +29,26 @@ jobs:
   reconcile:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-
       - name: Reconcile issue labels across open PRs
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-        run: python3 scripts/ci/labels/reconcile_issue_labels.py
+        uses: aunger/vcs-automation/reconcile-issue-labels@2f12f1a9c1f064e1a69c4b098776041946092712 # v1.3.0
+        with:
+          excluded-labels: |
+            [
+              "orchestrate",
+              "orchestrating",
+              "verification needed",
+              "verified",
+              "changes requested",
+              "changes done",
+              "agents"
+            ]
+          exclusive-sets: |
+            [
+              ["p1", "p2", "p3"],
+              ["verification needed", "verified"],
+              ["changes requested", "changes done"],
+              ["orchestrate", "orchestrating"],
+              ["snooze 3 days", "snooze 7 days", "snooze 14 days", "snooze 30 days", "snooze 90 days", "snooze 180 days"]
+            ]
+          exclusive-prefixes: |
+            ["c-a-", "c-r-", "test-failure"]

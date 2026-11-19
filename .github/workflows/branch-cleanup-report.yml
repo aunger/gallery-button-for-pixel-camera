@@ -44,7 +44,7 @@ jobs:
 
       - name: Write report
         id: report
-        uses: aunger/vcs-automation/branch-cleanup-report@3a677839fad0d24f69887ad547a3f911b9d876e3 # v1.2.0
+        uses: aunger/vcs-automation/branch-cleanup-report@2f12f1a9c1f064e1a69c4b098776041946092712 # v1.3.0
         with:
           mode: report
 
@@ -62,7 +62,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Delete branches named in the approval
-        uses: aunger/vcs-automation/branch-cleanup-report@3a677839fad0d24f69887ad547a3f911b9d876e3 # v1.2.0
+        uses: aunger/vcs-automation/branch-cleanup-report@2f12f1a9c1f064e1a69c4b098776041946092712 # v1.3.0
         with:
           mode: delete
           environment: branch-deletion

@@ -1,16 +1,32 @@
 name: Snooze issues
 
-# When a snooze label (see SNOOZE_LABEL_DAYS in
-# scripts/ci/labels/enforce_mutually_exclusive_labels.py) is added to an
-# issue, closes it as not planned. This is the snooze half of issue #821:
-# the issue stops reading as open, dispatchable work while it waits out its
-# snooze.
+# When a snooze label is added to an issue, closes it as not planned, through
+# vcs-automation's snooze-issues action. This is the snooze half of issue
+# #821: the issue stops reading as open, dispatchable work while it waits out
+# its snooze.
 # wake-snoozed-issues.yml is the other half, reopening it once the snooze
 # elapses.
+#
+# The `snooze-labels` input below is the snooze ladder, each label mapped to
+# its days. A fixed ladder (#821) rather than an open-ended "snooze <N> days"
+# family, since mutual exclusion takes fixed sets; the short rungs (#1019)
+# cover a revisit days rather than months away. The long rungs were first
+# spelled "hold N days"; #1028 renamed them and #1029 retired that spelling.
+# Renaming a rung again strands every snooze running under it, since the wake
+# dates a snooze from the rung's "labeled" events; read the docstring of
+# vcs-automation's wake-snoozed-issues/wake_snoozed_issues.py first.
+#
+# The same table goes to wake-snoozed-issues.yml, and its labels are one of
+# administrative-merge-holds.yml's exclusive sets, so an issue carries at most
+# one; scripts/ci/test_label_tables.py checks both.
+# A malformed table fails the step.
 #
 # Scoped to issues only, not pull requests: closing an open PR is a different
 # action (abandoning work) from snoozing an issue, and the snooze ladder is
 # meant for issues whose revisit condition is elapsed time, not PRs.
+#
+# No checkout: the action runs its own copy of the script, at the commit the
+# `uses:` line pins.
 
 on:
   issues:
@@ -23,13 +39,15 @@ jobs:
   snooze:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-
       - name: Snooze the issue
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
-          ADDED_LABEL: ${{ github.event.label.name }}
-        run: python3 scripts/ci/labels/snooze_issues.py
+        uses: aunger/vcs-automation/snooze-issues@2f12f1a9c1f064e1a69c4b098776041946092712 # v1.3.0
+        with:
+          snooze-labels: |
+            {
+              "snooze 3 days": 3,
+              "snooze 7 days": 7,
+              "snooze 14 days": 14,
+              "snooze 30 days": 30,
+              "snooze 90 days": 90,
+              "snooze 180 days": 180
+            }

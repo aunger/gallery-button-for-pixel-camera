@@ -52,11 +52,8 @@ import os
 import sys
 import urllib.error
 
-_CI_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(_CI_DIR, "labels"))
-
-import dependency_checks as dc  # noqa: E402
-import enforce_mutually_exclusive_labels as emxl  # noqa: E402
+import dependency_checks as dc
+import github_rest
 
 BOT_LOGIN = "github-actions[bot]"
 
@@ -69,7 +66,7 @@ def pulls_with_head(repo: str, token: str, head_sha: str) -> list[dict]:
     """Return every open pull request whose head commit is *head_sha*."""
     return [
         pr
-        for pr in emxl.fetch_open_pull_requests(repo, token)
+        for pr in github_rest.fetch_open_pull_requests(repo, token)
         if (pr.get("head") or {}).get("sha") == head_sha
     ]
 
@@ -79,7 +76,7 @@ def list_comments(repo: str, token: str, number: int) -> list[dict]:
     comments: list[dict] = []
     page = 1
     while True:
-        batch = emxl.gh_api(
+        batch = github_rest.gh_api(
             f"repos/{repo}/issues/{number}/comments?per_page={COMMENTS_PER_PAGE}&page={page}",
             token=token,
         )
@@ -132,7 +129,7 @@ def report_check(
 
     still_held = []
     for label in sorted((previous & current) - set(wanted)):
-        if not emxl.remove_labels(number, [label], repo, token, reason="cleared"):
+        if not github_rest.remove_labels(number, [label], repo, token, reason="cleared"):
             still_held.append(label)
             ok = False
 
@@ -140,7 +137,7 @@ def report_check(
     body = dc.render_comment(check, findings, owned)
     try:
         if existing is None:
-            emxl.gh_api(
+            github_rest.gh_api(
                 f"repos/{repo}/issues/{number}/comments",
                 token=token,
                 method="POST",
@@ -148,7 +145,7 @@ def report_check(
             )
             print(f"Posted the {check} comment on #{number}.")
         elif existing.get("body") != body:
-            emxl.gh_api(
+            github_rest.gh_api(
                 f"repos/{repo}/issues/comments/{existing['id']}",
                 token=token,
                 method="PATCH",
@@ -168,7 +165,7 @@ def report_check(
     to_add = [label for label in wanted if label not in current]
     if to_add:
         try:
-            emxl.gh_api(
+            github_rest.gh_api(
                 f"repos/{repo}/issues/{number}/labels",
                 token=token,
                 method="POST",

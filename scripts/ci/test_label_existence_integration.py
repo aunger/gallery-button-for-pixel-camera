@@ -10,8 +10,7 @@ These are the labels whose absence would cause silent misbehavior in the
 automation (as happened with the stale spellings in issue #477).
 
 Sources:
-  scripts/ci/labels/enforce_mutually_exclusive_labels.py: MUTUALLY_EXCLUSIVE_SETS
-  scripts/ci/labels/check_blocking_labels.py:            BLOCKING_LABELS constant
+  .github/workflows/administrative-merge-holds.yml:                exclusive-sets and blocking-labels, which its actions enforce
   scripts/ci/prs-and-issues/file_test_failure_issues.py:          LABELS constant
   .github/workflows/archive-stale-test-failures.yml:               test-failure-archive, which its action applies
   scripts/ci/prs-and-issues/watch_toolchain_bump.py:              TRACKING_ISSUE_LABEL constant
@@ -33,14 +32,12 @@ import yaml
 # The source scripts live in sibling directories, one per concern; make each
 # importable.
 _CI_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(_CI_DIR, "labels"))
 sys.path.insert(0, os.path.join(_CI_DIR, "prs-and-issues"))
 sys.path.insert(0, os.path.join(_CI_DIR, "dependency-checks"))
 sys.path.insert(0, os.path.dirname(_CI_DIR))
 
-from check_blocking_labels import BLOCKING_LABELS  # noqa: E402
+import label_tables  # noqa: E402
 from dependency_checks import ALL_LABELS as _DEPENDENCY_CHECK_LABELS  # noqa: E402
-from enforce_mutually_exclusive_labels import MUTUALLY_EXCLUSIVE_SETS  # noqa: E402
 from file_test_failure_issues import LABELS as _TEST_FAILURE_LABELS  # noqa: E402
 from pinned_plugin_files import (  # noqa: E402
     VCS_AUTOMATION,
@@ -93,20 +90,29 @@ def _release_notes_excluded_labels() -> frozenset[str]:
     return frozenset(labels)
 
 
+# The tables administrative-merge-holds.yml passes to its two actions, read
+# from the workflow. test_label_tables.py holds the other workflows' copies of
+# the exclusive sets to these.
+_LABEL_TABLES = label_tables.tables(label_tables.steps_by_action(label_tables.label_steps()))
+_EXCLUSIVE_SETS = label_tables.label_sets(
+    _LABEL_TABLES[label_tables.ENFORCE].inputs["exclusive-sets"]
+)
+_BLOCKING_LABELS = label_tables.names(_LABEL_TABLES[label_tables.GATE].inputs["blocking-labels"])
+
 # ---------------------------------------------------------------------------
 # Derive the set of required labels from their authoritative sources.
 # When a new label is added to automation, updating the source constant
-# (or MUTUALLY_EXCLUSIVE_SETS, or .github/release.yml) is sufficient; this
+# (or a workflow's table, or .github/release.yml) is sufficient; this
 # test picks it up automatically.
 # ---------------------------------------------------------------------------
 
 REQUIRED_LABELS: frozenset[str] = (
-    # All labels in every mutually-exclusive set defined in
-    # enforce_mutually_exclusive_labels.py, the snooze ladder included. Each
-    # rung is exactly one label, so requiring every member of the set to exist
-    # is the same rule as requiring every rung to be reachable: a rung with no
-    # label is one the code offers and nobody can apply.
-    frozenset().union(*MUTUALLY_EXCLUSIVE_SETS)
+    # All labels in every mutually-exclusive set administrative-merge-holds.yml
+    # enforces, the snooze ladder included. Each rung is exactly one label, so
+    # requiring every member of the set to exist is the same rule as requiring
+    # every rung to be reachable: a rung with no label is one the workflows
+    # offer and nobody can apply.
+    frozenset().union(*_EXCLUSIVE_SETS)
     # Label(s) applied to new test-failure issues.
     | frozenset(_TEST_FAILURE_LABELS)
     # Label swapped in when a test-failure issue goes stale.
@@ -120,13 +126,13 @@ REQUIRED_LABELS: frozenset[str] = (
     | _release_notes_excluded_labels()
     # Labels that block a merge via the "Administrative merge holds (not failure)"
     # required check.
-    # Every current member is also in MUTUALLY_EXCLUSIVE_SETS above, so this
-    # adds nothing today; it is named explicitly so that a blocking label
-    # added later without an exclusive sibling is still covered.
-    | BLOCKING_LABELS
+    # Every current member is also in an exclusive set above, so this adds
+    # nothing today; it is named explicitly so that a blocking label added
+    # later without an exclusive sibling is still covered.
+    | _BLOCKING_LABELS
     # Note: the label referenced in remove-verified-on-push.yml (verified) is
-    # already a member of MUTUALLY_EXCLUSIVE_SETS, so no additional entry is
-    # needed here.
+    # already a member of an exclusive set, so no additional entry is needed
+    # here.
 )
 
 
