@@ -630,6 +630,61 @@ else
     fail "the hook should run .claude/install-plugins.sh after its CLAUDE_CODE_REMOTE guard and before the Android setup, followed by || so a failure is reported instead of ending the hook"
 fi
 
+echo ""
+echo "=== (f) outside Claude Code, stdout says the plugins load at its next start ==="
+# As from a cloud environment's Setup script before Claude Code launches, or from a
+# terminal: no CLAUDECODE, so no advice addressed to a running session.
+run_case_outside() {
+    local case_dir="$1"
+    (cd / && env -u CLAUDECODE PATH="$case_dir/bin:$PATH" bash "$case_dir/repo/.claude/install-plugins.sh" \
+        > "$case_dir/stdout" 2> "$case_dir/stderr")
+}
+CASE_F="$TMP/f"
+make_case "$CASE_F" changes
+run_case_outside "$CASE_F"
+CASE_F="$(cd "$CASE_F" && pwd -P)"
+check_commands "$CASE_F" "$(full_sequence "$CASE_F")" "a fresh install runs the full sequence"
+STDOUT_F="$(cat "$CASE_F/stdout")"
+if [[ "$STDOUT_F" == "[install-plugins] Installed alpha beta at the commit .claude/gb4pc-tools pins. Claude Code loads them when it next starts in $CASE_F/repo." ]]; then
+    pass "after an install, it says Claude Code loads them at its next start in the checkout"
+else
+    fail "unexpected stdout for an install outside Claude Code: $STDOUT_F"
+fi
+CASE_F2="$TMP/f2"
+mkdir -p "$CASE_F2"
+CASE_F2="$(cd "$CASE_F2" && pwd -P)"
+make_case "$CASE_F2" changes "$(installed_state "$CASE_F2/repo" "$OLD_PIN")"
+run_case_outside "$CASE_F2"
+STDOUT_F2="$(cat "$CASE_F2/stdout")"
+if [[ "$STDOUT_F2" == "[install-plugins] Moved alpha beta to the commit .claude/gb4pc-tools pins. Claude Code loads them when it next starts in $CASE_F2/repo. A session already running there keeps the earlier version until it restarts." ]]; then
+    pass "after a move, it says the same, and that a running session keeps the earlier version"
+else
+    fail "unexpected stdout for a move outside Claude Code: $STDOUT_F2"
+fi
+CASE_F3="$TMP/f3"
+mkdir -p "$CASE_F3"
+CASE_F3="$(cd "$CASE_F3" && pwd -P)"
+make_case "$CASE_F3" "" "$(installed_state "$CASE_F3/repo" "$PIN")"
+run_case_outside "$CASE_F3"
+STDOUT_F3="$(cat "$CASE_F3/stdout")"
+if [[ "$STDOUT_F3" == "[install-plugins] Already installed at the commit .claude/gb4pc-tools pins: alpha beta." ]]; then
+    pass "with nothing to do, it lists the plugins without session advice"
+else
+    fail "unexpected stdout for an unchanged install outside Claude Code: $STDOUT_F3"
+fi
+addressed=""
+for stdout in "$STDOUT_F" "$STDOUT_F2" "$STDOUT_F3"; do
+    if [[ "$stdout" == *"/reload-skills"* || "$stdout" == *"ask the user"* ]]; then
+        addressed+="$stdout"$'\n'
+    fi
+done
+if [[ -z "$addressed" ]]; then
+    pass "none of the three asks for /reload-skills or addresses the user"
+else
+    fail "outside Claude Code, stdout should not ask for /reload-skills or address the user:
+$addressed"
+fi
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""
 echo "test_install_plugins.sh: $PASS passed, $FAIL failed"

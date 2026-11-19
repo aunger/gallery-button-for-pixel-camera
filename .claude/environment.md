@@ -32,6 +32,7 @@ The hook's Step 0a runs that script in cloud sessions; elsewhere, run it by hand
   A plugin turned off for this checkout (set to false in `.claude/settings.local.json`) is left off, so its hooks and skills stay off until the user turns it back on; the script's output names it with the command that does.
   Installing `orchestrate` turns a turned-off `github-supplement` back on, so the script then turns both off, and names both as left off; they are on in between.
   The script's one line of output, which reaches the session's context, names the plugins it installed and moved, and those it left off, and says when it ignored a malformed `.claude/settings.local.json`.
+  Its advice to ask for `/reload-skills` or a restart is given only inside Claude Code, which sets `CLAUDECODE=1` in its Bash tool and hooks; run elsewhere, such as from the environment's Setup script before Claude Code launches, the line says Claude Code loads the plugins when it next starts in the checkout.
 - **Failure.** The hook reports a failed run on its Step 0a line and goes on with the Android setup; run `.claude/install-plugins.sh` from the Bash tool to see the error.
 
 ______________________________________________________________________
