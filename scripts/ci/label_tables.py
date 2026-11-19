@@ -15,7 +15,8 @@ copies in step. This module finds those steps and parses their tables:
 - `shared_table_problems()`: what differs between the copies of a shared
   table, as messages naming both workflows.
 
-Label names are compared after `strip().lower()`, as the actions compare them.
+Label names are compared after `strip().lower()`, and prefixes after `lower()`,
+as the actions compare them.
 
 Imported by bare module name, like workflow_files.py beside it.
 This module has no `main`; it is imported, not run directly.
@@ -146,8 +147,17 @@ def tables(steps: dict[str, LabelStep]) -> dict[str, Tables]:
 
 
 def names(value: object) -> frozenset[str]:
-    """Return a JSON array of label names (or prefixes) as a normalized set."""
+    """Return a JSON array of label names as a normalized set."""
     return frozenset(str(item).strip().lower() for item in value)
+
+
+def prefixes(value: object) -> frozenset[str]:
+    """Return a JSON array of label prefixes as a set, lowercased but not stripped.
+
+    The actions strip label names but not prefixes, so "c-a- " is a different
+    prefix from "c-a-" to them, and to this comparison.
+    """
+    return frozenset(str(item).lower() for item in value)
 
 
 def label_sets(value: object) -> frozenset[frozenset[str]]:
@@ -203,7 +213,7 @@ def shared_table_problems(found: dict[str, Tables]) -> list[str]:
     propagating = (PROPAGATE, RECONCILE)
     problems = []
     problems += _differ(found, "exclusive-sets", (ENFORCE, *propagating), label_sets)
-    problems += _differ(found, "exclusive-prefixes", (ENFORCE, *propagating), names)
+    problems += _differ(found, "exclusive-prefixes", (ENFORCE, *propagating), prefixes)
     problems += _differ(found, "excluded-labels", propagating, names)
     problems += _differ(found, "snooze-labels", (SNOOZE, WAKE), snooze_days)
 

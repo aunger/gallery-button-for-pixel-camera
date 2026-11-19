@@ -169,6 +169,17 @@ class TestSharedTableProblems(unittest.TestCase):
         tables[lt.PROPAGATE]["exclusive-prefixes"] = ["c-a-", "c-r-"]
         self.assertOneProblemNaming(tables, f"{lt.ENFORCE}.yml", f"{lt.PROPAGATE}.yml")
 
+    def test_a_prefix_with_a_trailing_space_differs(self):
+        """The actions do not strip a prefix, so neither does the comparison."""
+        tables = _good()
+        tables[lt.RECONCILE]["exclusive-prefixes"] = ["c-a- ", *_PREFIXES[1:]]
+        self.assertOneProblemNaming(tables, f"{lt.ENFORCE}.yml", f"{lt.RECONCILE}.yml")
+
+    def test_prefixes_that_differ_only_in_case_agree(self):
+        tables = _good()
+        tables[lt.RECONCILE]["exclusive-prefixes"] = [p.upper() for p in _PREFIXES]
+        self.assertEqual([], _problems(tables))
+
     def test_excluded_labels_that_differ(self):
         tables = _good()
         tables[lt.RECONCILE]["excluded-labels"] = [*_PROCESS, "agents", "p1"]
