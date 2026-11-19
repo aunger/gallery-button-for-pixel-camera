@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Tests of the label workflows' own wiring: their triggers and steps."""
+"""Tests of administrative-merge-holds.yml's own wiring: its triggers and steps.
+
+The other label workflows' steps and tables are tested in test_label_tables.py;
+nothing tests their triggers.
+"""
 
 import os
 import unittest

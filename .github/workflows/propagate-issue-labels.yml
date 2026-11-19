@@ -19,12 +19,12 @@ name: Propagate issue labels to linked PR
 # "Development" sidebar after the PR is already open, so a closing
 # relationship established that way, with no body edit, cannot be caught by a
 # single trigger type. Rather than run on a perpetual schedule to cover that
-# gap, this runs on every pull_request event type that commonly recurs during
-# a PR's normal review lifecycle in this repo (a fresh push, a reopen, a
-# ready-for-review flip, a review request), so most sidebar-linked PRs get
-# reconciled by their own ordinary activity. "labeled"/"unlabeled" are
-# deliberately excluded: re-running on "unlabeled" would re-apply a label a
-# human just removed on purpose, clobbering their edit.
+# gap, this also runs when a PR is reopened or its body is edited, so a
+# sidebar-linked PR that sees either is reconciled then. A push, a
+# ready-for-review flip or a review request does not re-run it.
+# "labeled"/"unlabeled" are deliberately excluded: re-running on "unlabeled"
+# would re-apply a label a human just removed on purpose, clobbering their
+# edit.
 #
 # "edited" only re-runs when the body itself changed
 # (github.event.changes.body is only present then), so unrelated edits
