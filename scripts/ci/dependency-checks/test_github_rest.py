@@ -195,11 +195,10 @@ def _pull(number: int) -> dict:
 
 
 class TestFetchOpenPullRequests(unittest.TestCase):
-    """Tests for the listing helper shared by check_blocking_labels and
-    reconcile_issue_labels.
+    """Tests for the listing helper post_dependency_checks.pulls_with_head filters.
 
-    Both callers inherit the pagination contract asserted here, so it is
-    asserted once against the helper rather than once per caller.
+    The pagination contract is asserted here once, against the helper, so a
+    caller's own tests cover only the filter it applies.
     """
 
     def test_returns_the_raw_objects_so_callers_can_project_them(self):
@@ -351,15 +350,14 @@ class TestRemoveLabels(unittest.TestCase):
         self.assertIn("Removed conflicting label 'p2' from #1.", out.getvalue())
 
     def test_custom_reason_replaces_conflicting_in_the_log_line(self):
-        # scripts/ci/labels/label_by_files.py and
-        # scripts/ci/labels/audit_labels_by_files.py reuse this function for a
-        # removal where nothing conflicts, so they pass reason="unjustified"
-        # to keep the log line honest.
+        # A caller whose removal is not a conflict, such as
+        # post_dependency_checks.py's "cleared", passes its own reason to keep
+        # the log line honest.
         with patch.object(github_rest, "gh_api"):
             out = io.StringIO()
             with redirect_stdout(out):
-                github_rest.remove_labels(1, ["agents"], "owner/repo", "tok", reason="unjustified")
-        self.assertIn("Removed unjustified label 'agents' from #1.", out.getvalue())
+                github_rest.remove_labels(1, ["p2"], "owner/repo", "tok", reason="cleared")
+        self.assertIn("Removed cleared label 'p2' from #1.", out.getvalue())
         self.assertNotIn("conflicting", out.getvalue())
 
 

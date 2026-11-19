@@ -142,14 +142,8 @@ def remove_labels(
     """Remove each label in *to_remove* from the issue/PR, logging each removal.
 
     *reason* is substituted directly into the per-label log line ("Removed
-    {reason} label '<name>' from #N."). It defaults to "conflicting" for this
-    module's own mutual-exclusion callers, where that is literally what
-    happened. scripts/ci/labels/label_by_files.py and
-    scripts/ci/labels/audit_labels_by_files.py reuse this function for a
-    different kind of removal--a label no changed file justifies under an
-    if-and-only-if rule, where nothing conflicts--and pass reason="unjustified"
-    so the log line describes what actually happened instead of contradicting
-    it.
+    {reason} label '<name>' from #N."), so the line says what kind of removal
+    it was; post_dependency_checks.py passes "cleared".
 
     Returns True if every removal succeeded or was already absent (404),
     False if any removal failed with a non-404 HTTPError or a URLError.
