@@ -5,6 +5,12 @@ name: Strip Claude session-URL bylines
 # When a byline is found it is removed in place via the GitHub REST API
 # so reviewers never need to catch it manually.
 #
+# The other half of the same policy is the `attribution` block of
+# .claude/settings.json, which tells Claude Code to add no attribution, trailer
+# or session link to the commits and pull requests it writes here. That block
+# reaches only contributors who use Claude Code in this checkout; this workflow
+# catches whatever still gets through.
+#
 # The `if: github.actor != 'github-actions[bot]'` guard on the job
 # prevents the bot's own edits from re-triggering the workflow.
 #

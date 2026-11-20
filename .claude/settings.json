@@ -17,7 +17,8 @@
     ]
   },
   "attribution": {
-    "commit": "🦀",
-    "pr": "🦀"
+    "commit": "",
+    "pr": "",
+    "sessionUrl": false
   }
 }
