@@ -14,7 +14,7 @@
 # session and in build.yml's shell-tests job, which installs a pinned version;
 # elsewhere that case is skipped. With REQUIRE_CLAUDE_CLI=1, as build.yml's
 # shell-tests job sets it, a missing `claude` is a failure instead, so CI cannot
-# drift back to skipping the validate unseen (issue #1415).
+# drift back to skipping the validate unseen.
 #
 # Always exits 0 on success, non-zero on failure.
 

@@ -87,12 +87,12 @@ jobs:
 
       - name: Install Claude Code
         # scripts/test_plugin_marketplace.sh runs `claude plugin validate` over
-        # .claude/gb4pc-tools only when the claude CLI is on PATH (issue #1406);
-        # the next step's REQUIRE_CLAUDE_CLI makes a missing CLI fail that case
-        # rather than skip it (issue #1415). The version is exact so a new Claude Code
-        # release cannot change the verdict unseen. Dependabot does not bump a
-        # version in a run: line, so bump it by hand, after running the validate
-        # locally with the new version.
+        # .claude/gb4pc-tools only when the claude CLI is on PATH; the next
+        # step's REQUIRE_CLAUDE_CLI makes a missing CLI fail that case rather
+        # than skip it. The version is exact so a new Claude Code release cannot
+        # change the verdict unseen. Dependabot does not bump a version in a
+        # run: line, so bump it by hand, after running the validate locally with
+        # the new version.
         if: needs.check-diff.outputs.needs_full_build == 'true'
         run: npm install -g @anthropic-ai/claude-code@2.1.328
 
@@ -103,7 +103,7 @@ jobs:
         env:
           # test_plugin_marketplace.sh fails, rather than skips, its
           # `claude plugin validate` case when the previous step's claude is not
-          # on PATH (issue #1415).
+          # on PATH.
           REQUIRE_CLAUDE_CLI: "1"
         with:
           paths: scripts
