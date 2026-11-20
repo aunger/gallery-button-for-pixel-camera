@@ -1,6 +1,4 @@
 {
-  "effortLevel": "xhigh",
-  "alwaysThinkingEnabled": true,
   "permissions": {
     "allow": [
       "mcp__claude-code-remote__send_later"
@@ -19,7 +17,8 @@
     ]
   },
   "attribution": {
-    "commit": "🦀",
-    "pr": "🦀"
+    "commit": "",
+    "pr": "",
+    "sessionUrl": false
   }
 }
