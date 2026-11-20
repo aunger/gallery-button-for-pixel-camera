@@ -52,14 +52,20 @@
 # compaction.
 #
 # The session-start hook runs this in cloud sessions. Elsewhere, or when the hook
-# did not run, run it by hand from anywhere. A plugin installed while Claude Code is
+# did not run, run it by hand from anywhere. A cloud environment's Setup script can
+# also run it before Claude Code launches, which then loads the plugins at startup
+# (aunger/dot-and-tilde#1). A plugin installed while Claude Code is
 # running loads only after the user runs /reload-skills; one that `plugin update`
 # moved to a new pin takes effect only after Claude Code restarts, as that command
 # itself says.
 #
 # Output: the claude commands' own output goes to stderr. Stdout is one line, which
 # the session-start hook passes into the session's context: whether the run changed
-# anything, and so what to ask the user for.
+# anything, and so what to ask the user for. That advice is for a running session,
+# so the line gives it only inside Claude Code, which sets CLAUDECODE=1 in its Bash
+# tool and its hooks. Run anywhere else, such as from a cloud environment's Setup
+# script before Claude Code launches, or from a terminal, the line says instead that
+# Claude Code loads the plugins when it next starts in this checkout.
 #
 # Exits non-zero at the first command that fails.
 
@@ -214,9 +220,19 @@ left_off_warning() {
     printf ' Warning: left alone because turned off for this checkout: %s. Tell the user, who can turn each back on in %s with %s, then rerun .claude/install-plugins.sh.' "$off" "$REPO_ROOT" "$commands"
 }
 
+# Whether a running Claude Code session reads stdout: see "Output" above.
+in_session=false
+[[ "${CLAUDECODE:-}" == "1" ]] && in_session=true
+next_start="Claude Code loads them when it next starts in $REPO_ROOT."
+
 if [[ ${#PENDING[@]} -eq 0 ]]; then
     current=$(grep -v ':' <<< "$before" | paste -sd ' ' - || true)
-    echo "[install-plugins]${current:+ Already installed at the commit .claude/gb4pc-tools pins: $current. If /orchestrate or another plugin skill is missing from this session, ask the user to run /reload-skills.}$(left_off_warning "$before")$settings_warning"
+    if $in_session; then
+        advice=" If /orchestrate or another plugin skill is missing from this session, ask the user to run /reload-skills."
+    else
+        advice=""
+    fi
+    echo "[install-plugins]${current:+ Already installed at the commit .claude/gb4pc-tools pins: $current.$advice}$(left_off_warning "$before")$settings_warning"
     exit 0
 fi
 
@@ -299,12 +315,18 @@ elif [[ -n "$moved" ]]; then
     if [[ -n "$added" ]]; then
         changed+=" and installed $added there"
     fi
-    echo "[install-plugins] $changed. A plugin that was already loaded keeps its earlier version until Claude Code restarts: ask the user to restart the session, or to run /reload-skills if /orchestrate or another plugin skill is missing.$warnings"
-else
+    if $in_session; then
+        echo "[install-plugins] $changed. A plugin that was already loaded keeps its earlier version until Claude Code restarts: ask the user to restart the session, or to run /reload-skills if /orchestrate or another plugin skill is missing.$warnings"
+    else
+        echo "[install-plugins] $changed. $next_start A session already running there keeps the earlier version until it restarts.$warnings"
+    fi
+elif $in_session; then
     if [[ $(wc -w <<< "$added") -gt 1 ]]; then
         they="They load"
     else
         they="It loads"
     fi
     echo "[install-plugins] Installed $added at the commit .claude/gb4pc-tools pins. $they in this session only after /reload-skills: ask the user to run /reload-skills.$warnings"
+else
+    echo "[install-plugins] Installed $added at the commit .claude/gb4pc-tools pins. $next_start$warnings"
 fi
