@@ -42,9 +42,9 @@ jobs:
           fi
 
   # Run the shell script unit tests (scripts/**/test_*.sh) in their own job (issue #618).
-  # They need a checkout, bash, the pinned Python script dependencies, and the lint
-  # tools, but not the JDK/Android SDK setup of build-and-test, where they used to
-  # run. Running them here lets them execute concurrently with
+  # They need a checkout, bash, the pinned Python script dependencies, the lint
+  # tools, and Claude Code, but not the JDK/Android SDK setup of build-and-test,
+  # where they used to run. Running them here lets them execute concurrently with
   # build-and-test instead of adding to its sequential critical path. Each step
   # is gated on check-diff's needs_full_build so a docs-only change skips them, the
   # same per-step gating build-and-test uses; the job itself still runs (and reports
@@ -84,6 +84,16 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/lintvenv"
           "$RUNNER_TEMP/lintvenv/bin/pip" install --quiet --force-reinstall --require-hashes -r scripts/lint/requirements-lint.txt
           echo "LINT_BIN_DIR=$RUNNER_TEMP/lintvenv/bin" >> "$GITHUB_ENV"
+
+      - name: Install Claude Code
+        # scripts/test_plugin_marketplace.sh runs `claude plugin validate` over
+        # .claude/gb4pc-tools only when the claude CLI is on PATH, and skips that
+        # case otherwise (issue #1406). The version is exact so a new Claude Code
+        # release cannot change the verdict unseen. Dependabot does not bump a
+        # version in a run: line, so bump it by hand, after running the validate
+        # locally with the new version.
+        if: needs.check-diff.outputs.needs_full_build == 'true'
+        run: npm install -g @anthropic-ai/claude-code@2.1.328
 
       - name: Run shell script unit tests
         if: needs.check-diff.outputs.needs_full_build == 'true'
