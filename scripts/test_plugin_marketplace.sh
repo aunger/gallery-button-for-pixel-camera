@@ -11,7 +11,8 @@
 #
 # `claude plugin validate` checks the file against Claude Code's own schema.
 # It runs only where the `claude` CLI is on PATH, as it is in every Claude Code
-# session; CI does not install Claude Code, so there that case is skipped.
+# session and in build.yml's shell-tests job, which installs a pinned version;
+# elsewhere that case is skipped.
 #
 # Always exits 0 on success, non-zero on failure.
 
