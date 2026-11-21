@@ -206,6 +206,7 @@ pass "$CONFIG exists"
 set +e
 OUTPUT="$(python3 - "$CONFIG" "$REPO_ROOT" <<'PY'
 import fnmatch
+import json
 import os
 import re
 import sys
@@ -1188,6 +1189,44 @@ if check(
                 "%s's open-pull-requests-limit of %d covers the %d pull requests its groups and ungrouped packages "
                 "can want open at once (issue #1191)" % (label, limit, streams),
             )
+
+# npm entries (issue #1416). An npm entry whose directory holds no manifest
+# proposes nothing and says so only in its run log, and a manifest without its
+# committed lock leaves build.yml's `npm ci` with nothing to install from. An
+# exact version keeps package.json saying which version CI installs, as that
+# step's comment claims; under a range only the lock would say it.
+EXACT_NPM_VERSION = re.compile(r"^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$")
+NPM_DEPENDENCY_KEYS = ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies")
+
+for index, entry in enumerate(updates):
+    if not (isinstance(entry, dict) and entry.get("package-ecosystem") == "npm"):
+        continue
+    directories = entry_directories(index, entry)
+    if directories is None:
+        continue
+    for directory in directories:
+        manifest_dir = os.path.join(repo_root, str(directory).lstrip("/"))
+        label = "npm update entry %d (%s)" % (index, directory)
+        manifest = os.path.join(manifest_dir, "package.json")
+        if not check(os.path.isfile(manifest), "%s's directory holds a package.json (issue #1416)" % label):
+            continue
+        check(
+            os.path.isfile(os.path.join(manifest_dir, "package-lock.json")),
+            "%s's directory holds the package-lock.json that `npm ci` installs from (issue #1416)" % label,
+        )
+        with open(manifest) as handle:
+            package = json.load(handle)
+        loose = sorted(
+            "%s@%s" % (name, version)
+            for key in NPM_DEPENDENCY_KEYS
+            for name, version in (package.get(key) or {}).items()
+            if not EXACT_NPM_VERSION.match(str(version))
+        )
+        check(
+            not loose,
+            "%s's package.json pins every dependency to an exact version%s (issue #1416)"
+            % (label, ("; not exact: " + ", ".join(loose)) if loose else ""),
+        )
 
 for name in registries:
     check(name in referenced, "declared registry %r is referenced by an update entry" % name)
