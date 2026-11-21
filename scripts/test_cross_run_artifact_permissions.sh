@@ -428,6 +428,55 @@ printf '%s\n' \
     '          run-id: ${{ github.event.workflow_run.id }}' \
     > "$TMP/good-read-all-tabbed-comment.yml"
 
+# A trailing tab with no comment after it is still the grant (issue #1386).
+# The grant pattern once spelled its blank class `[ \t]`, which grep -E reads
+# as space, backslash and `t`, so a trailing tab was not a blank to it.
+printf '%s\n' \
+    'permissions:' \
+    '  contents: read' \
+    '' \
+    'jobs:' \
+    '  detect:' \
+    '    runs-on: ubuntu-latest' \
+    '    permissions:' \
+    "      actions: read${T}" \
+    '    steps:' \
+    '      - uses: actions/download-artifact@v7' \
+    '        with:' \
+    '          run-id: ${{ github.event.workflow_run.id }}' \
+    > "$TMP/good-actions-trailing-tab.yml"
+
+# The same tab before a flow mapping's comma. The inline value is trimmed as a
+# whole, but splitting at `,` leaves this tab at the end of its own line.
+printf '%s\n' \
+    "permissions: { actions: read${T}, issues: write }" \
+    '' \
+    'jobs:' \
+    '  detect:' \
+    '    runs-on: ubuntu-latest' \
+    '    steps:' \
+    '      - uses: actions/download-artifact@v7' \
+    '        with:' \
+    '          run-id: ${{ github.event.workflow_run.id }}' \
+    > "$TMP/good-flow-mapping-tab-before-comma.yml"
+
+# The other direction of the same defect (issue #1386): `t` was in that class,
+# so `actions: readt` read as `actions: read` followed by a blank.
+cat > "$TMP/bad-actions-readt.yml" <<'YAML'
+permissions:
+  contents: read
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: readt
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          run-id: ${{ github.event.workflow_run.id }}
+YAML
+
 # A grant spelled only inside a comment grants nothing. The braces matter:
 # splitting a flow mapping at `{`, `}` and `,` before dropping comments would
 # put `actions: read` on a line of its own and read it as the grant.
@@ -479,6 +528,7 @@ expect_verdict bad bad-space-before-colon.yml
 expect_verdict bad bad-job-permissions-space-before-colon.yml
 expect_verdict bad bad-jobs-space-before-colon.yml
 expect_verdict bad bad-grant-only-in-comment.yml
+expect_verdict bad bad-actions-readt.yml
 expect_verdict ok good-job.yml
 expect_verdict ok good-flow-mapping.yml
 expect_verdict ok good-permissions-after-jobs.yml
@@ -488,6 +538,8 @@ expect_verdict ok good-actions-inline-comment.yml
 expect_verdict ok good-read-all-inline-comment.yml
 expect_verdict ok good-actions-tabbed-comment.yml
 expect_verdict ok good-read-all-tabbed-comment.yml
+expect_verdict ok good-actions-trailing-tab.yml
+expect_verdict ok good-flow-mapping-tab-before-comma.yml
 
 # The same-run fixture must produce no verdict at all: nothing to judge.
 if [ -z "$(audit_workflow "$TMP/good-same-run.yml")" ]; then

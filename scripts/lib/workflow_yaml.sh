@@ -165,15 +165,18 @@ workflow_job_permissions() { workflow_job_block "$1" "$2" | yaml_sub_block permi
 #
 # Comments are removed before that: a `#` at the start of a line or after a
 # blank begins one, as in YAML, so `actions: read  # why` is the grant
-# (issue #957). Every blank before the `#` goes with it, so no tab is left
-# for the pattern below to have to absorb. Removing comments first, rather
-# than letting the pattern tolerate a trailing comment, also keeps the
-# flow-mapping split from lifting a grant out of comment text:
+# (issue #957). Every blank before the `#` goes with it. Removing comments
+# first, rather than letting the pattern tolerate a trailing comment, also
+# keeps the flow-mapping split from lifting a grant out of comment text:
 # `contents: read  # not { actions: read }` grants nothing.
+#
+# The pattern spells a blank `[[:blank:]]`, not `[ \t]`: grep -E reads `\t`
+# in a bracket expression as a backslash and a `t`, which would let
+# `actions: readt` through and miss a trailing tab (issue #1386).
 permissions_grant_actions_read() {
     local normalized
     normalized="$(printf '%s\n' "$1" | sed -E 's/(^|[[:blank:]]+)#.*$//' | tr '{},' '\n\n\n')"
-    grep -Eq '^[ \t]*(actions[ \t]*:[ \t]*(read|write)|read-all|write-all)[ \t]*$' <<<"$normalized"
+    grep -Eq '^[[:blank:]]*(actions[[:blank:]]*:[[:blank:]]*(read|write)|read-all|write-all)[[:blank:]]*$' <<<"$normalized"
 }
 
 # Whether $1 (a captured block) has a line matching the ERE $2. Plain grep on a
