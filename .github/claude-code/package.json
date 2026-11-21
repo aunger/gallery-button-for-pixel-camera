@@ -1,0 +1,8 @@
+{
+  "name": "shell-tests-claude-code",
+  "private": true,
+  "description": "The Claude Code CLI that the Install Claude Code step of .github/workflows/build.yml's shell-tests job installs with npm ci; that step's comment says why.",
+  "dependencies": {
+    "@anthropic-ai/claude-code": "2.1.328"
+  }
+}

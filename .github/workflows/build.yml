@@ -89,12 +89,21 @@ jobs:
         # scripts/test_plugin_marketplace.sh runs `claude plugin validate` over
         # .claude/gb4pc-tools only when the claude CLI is on PATH; the next
         # step's REQUIRE_CLAUDE_CLI makes a missing CLI fail that case rather
-        # than skip it. The version is exact so a new Claude Code release cannot
-        # change the verdict unseen. Dependabot does not bump a version in a
-        # run: line, so bump it by hand, after running the validate locally with
-        # the new version.
+        # than skip it. The version is exact, in .github/claude-code/package.json,
+        # so a new Claude Code release cannot change the verdict unseen. It sits
+        # in a manifest rather than in this run: line because Dependabot reads a
+        # manifest and not a run: line; its npm entry in .github/dependabot.yml
+        # proposes each bump as a pull request whose CI runs this validate with
+        # the new version (issue #1416). npm ci installs exactly what the
+        # committed package-lock.json names and checks each tarball against the
+        # lock's integrity hash, which npm install -g did not. The package's
+        # postinstall script runs, as it did under npm install -g, so that its
+        # bin/claude.exe is the platform binary.
         if: needs.check-diff.outputs.needs_full_build == 'true'
-        run: npm install -g @anthropic-ai/claude-code@2.1.328
+        working-directory: .github/claude-code
+        run: |
+          npm ci
+          echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
 
       - name: Run shell script unit tests
         if: needs.check-diff.outputs.needs_full_build == 'true'
