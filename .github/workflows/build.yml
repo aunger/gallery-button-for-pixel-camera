@@ -87,9 +87,9 @@ jobs:
 
       - name: Install Claude Code
         # scripts/test_plugin_marketplace.sh runs `claude plugin validate` over
-        # .claude/gb4pc-tools only when the claude CLI is on PATH; the next
-        # step's REQUIRE_CLAUDE_CLI makes a missing CLI fail that case rather
-        # than skip it. The version is exact so a new Claude Code release cannot
+        # .claude/gb4pc-tools only when the claude CLI is on PATH; under GitHub
+        # Actions it fails that case, rather than skipping it, when this step's
+        # CLI is missing. The version is exact so a new Claude Code release cannot
         # change the verdict unseen. Dependabot does not bump a version in a
         # run: line, so bump it by hand, after running the validate locally with
         # the new version.
@@ -100,11 +100,6 @@ jobs:
         if: needs.check-diff.outputs.needs_full_build == 'true'
         # Every scripts/**/test_*.sh, each run with bash.
         uses: aunger/vcs-automation/run-python-tests@2f12f1a9c1f064e1a69c4b098776041946092712 # v1.3.0
-        env:
-          # test_plugin_marketplace.sh fails, rather than skips, its
-          # `claude plugin validate` case when the previous step's claude is not
-          # on PATH.
-          REQUIRE_CLAUDE_CLI: "1"
         with:
           paths: scripts
           kind: shell
