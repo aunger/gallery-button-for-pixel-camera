@@ -144,9 +144,13 @@ updates:
   #
   # directory is "/" because that is where Dependabot looks for workflows: it reads `.github/workflows`, and a root `action.yml`, from there and nowhere else.
   #
-  # The two groups split third-party actions from first-party ones, the split agent-citizenship's code-edit skill draws.
-  # A third-party action is pinned to a commit SHA, so its bump rewrites that SHA and the version comment beside it and wants a review of its own; the `actions/` and `github/` namespaces are tag pins, whose bump moves a major tag.
-  # The third-party group is `*` minus those two namespaces, so an action a workflow adds later falls into it instead of getting a pull request to itself.
+  # The three groups split the actions by who publishes them, because each kind wants a different review.
+  # first-party-actions takes the `actions/` and `github/` namespaces, the first-party ones agent-citizenship's code-edit skill exempts from SHA pinning; they are tag pins, whose bump moves a major tag.
+  # vcs-automation takes aunger/vcs-automation's actions, the owner's own code, already reviewed in that repository and exempt from the cooldown below (issue #1402).
+  # Before it had a group of its own, a vcs-automation release arrived in the same pull request as an outside publisher's bump, so neither could be merged without the other (#1400).
+  # third-party-actions takes everything else: each is pinned to a commit SHA, so its bump rewrites that SHA and the version comment beside it and wants a review of its own.
+  # It is `*` minus the other two groups' patterns, so an action a workflow adds later falls into it instead of getting a pull request to itself, and no action lands in two groups.
+  # The vcs-automation patterns list both `owner/repo` and `owner/repo/*` for the reason the `cooldown` exclude below gives.
   #
   # Cooldown applies to this ecosystem: a triggered run on 2026-11-17 logged "All versions are in cooldown period" for a release tagged that day, and proposed nothing.
   # The `cooldown` block keeps the three-day delay for every action but aunger/vcs-automation's.
@@ -155,7 +159,7 @@ updates:
   # The `exclude` patterns match the dependency name through File.fnmatch?, and Dependabot names a subpath action pinned to a SHA `owner/repo/path`, so both that form and the bare `owner/repo` are listed.
   # scripts/test_dependabot_config.sh checks that every vcs-automation action the workflows use is exempt and that no other action is.
   # No `open-pull-requests-limit` either: every action is grouped, so this entry wants one pull request per group, and the default of 5 covers that.
-  # scripts/test_dependabot_config.sh checks the grouping and the limit against the workflows.
+  # scripts/test_dependabot_config.sh checks the grouping and the limit against the workflows, and that the vcs-automation actions share a group with no other action.
   #
   # 11:00 Monday keeps the run an hour clear of the gradle entry above.
   - package-ecosystem: "github-actions"
@@ -175,12 +179,18 @@ updates:
         patterns:
           - "actions/*"
           - "github/*"
+      vcs-automation:
+        patterns:
+          - "aunger/vcs-automation"
+          - "aunger/vcs-automation/*"
       third-party-actions:
         patterns:
           - "*"
         exclude-patterns:
           - "actions/*"
           - "github/*"
+          - "aunger/vcs-automation"
+          - "aunger/vcs-automation/*"
 
   # The hash-pinned Python locks under scripts/, which nothing else in this repository updates (issue #1191).
   # Without this entry an advisory against a locked package surfaces only as a red pip-audit on whatever pull request runs next, related or not, which is how #1189 reached PR #1188.

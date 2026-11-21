@@ -132,7 +132,9 @@
 # group, the group count stays inside the one-to-five band #1135 settled on,
 # and the entry's pull request limit covers one per group. Ungrouped,
 # Dependabot opens a pull request per action; a limit under the group count
-# starves one of them permanently.
+# starves one of them permanently. A fourth property comes from #1402: the
+# aunger/vcs-automation actions share a group with no other action, so the
+# owner's own releases never wait on, or hold up, another publisher's bump.
 #
 # The action list is read out of the workflows, so an action no pattern reaches
 # fails a check instead of quietly getting a pull request of its own.
@@ -822,6 +824,21 @@ if check(
             % (label, ("; split: " + ", ".join(split)) if split else ""),
         )
 
+        # The owner's own actions get a pull request of their own. A group
+        # that takes one of them and any other action ties a release already
+        # reviewed in its own repository to an outside publisher's bump, so
+        # neither can be merged without the other (#1400).
+        # Read under both names, as the grouping is; the cooldown check below
+        # reads the same list.
+        own = sorted(name for name in names if name == OWN_ACTIONS or name.startswith(OWN_ACTIONS + "/"))
+        mixed = sorted(g for g in grouped if grouped[g] & set(own) and grouped[g] - set(own))
+        check(
+            not mixed,
+            "%s keeps the %s actions in a group no other action shares, so their releases merge apart from "
+            "other publishers' bumps%s (issue #1402)"
+            % (label, OWN_ACTIONS, ("; mixed: " + ", ".join(mixed)) if mixed else ""),
+        )
+
         # One pull request per group the entry declares, plus one per action no
         # group takes. Declared, not populated: a group whose patterns match
         # nothing yet fills as soon as a workflow adds an action they reach.
@@ -832,7 +849,6 @@ if check(
         # above reads.
         # Cooldown. The owner's own actions are exempt; every other action
         # keeps the delay. Read under both names, as the grouping is.
-        own = sorted(name for name in names if name == OWN_ACTIONS or name.startswith(OWN_ACTIONS + "/"))
         if own:
             cooldown = entry.get("cooldown")
             if check(
