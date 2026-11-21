@@ -12,9 +12,11 @@
 # `claude plugin validate` checks the file against Claude Code's own schema.
 # It runs only where the `claude` CLI is on PATH, as it is in every Claude Code
 # session and in build.yml's shell-tests job, which installs a pinned version;
-# elsewhere that case is skipped. With REQUIRE_CLAUDE_CLI=1, as build.yml's
-# shell-tests job sets it, a missing `claude` is a failure instead, so CI cannot
-# drift back to skipping the validate unseen.
+# elsewhere that case is skipped. Under GitHub Actions (GITHUB_ACTIONS=true, which
+# the runner sets in every step) a missing `claude` is a failure instead, so CI
+# cannot drift back to skipping the validate unseen. The runner's own variable is
+# used, rather than one a workflow sets, so that dropping an env: entry, or an
+# action that stops passing one through, cannot turn the check off (issue #1418).
 #
 # Always exits 0 on success, non-zero on failure.
 
@@ -75,8 +77,8 @@ fi
 echo ""
 echo "=== (b) claude plugin validate accepts the marketplace ==="
 if ! command -v claude > /dev/null 2>&1; then
-    if [[ "${REQUIRE_CLAUDE_CLI:-}" == 1 ]]; then
-        fail "the claude CLI is not on PATH, and REQUIRE_CLAUDE_CLI=1 says it must be"
+    if [[ "${GITHUB_ACTIONS:-}" == true ]]; then
+        fail "the claude CLI is not on PATH, and GITHUB_ACTIONS=true says it must be"
     else
         echo "  SKIP: the claude CLI is not on PATH"
     fi
@@ -91,26 +93,26 @@ fi
 # recurse: the rerun sets _MARKETPLACE_TEST_RERUN and stops after case (b).
 if [[ -z "${_MARKETPLACE_TEST_RERUN:-}" ]]; then
     echo ""
-    echo "=== (c) without the claude CLI, case (b) skips, or fails under REQUIRE_CLAUDE_CLI=1 ==="
+    echo "=== (c) without the claude CLI, case (b) skips, or fails under GITHUB_ACTIONS=true ==="
     no_claude_bin=$(mktemp -d)
     trap 'rm -rf "$no_claude_bin"' EXIT
     for tool in python3 dirname; do
         ln -s "$(command -v "$tool")" "$no_claude_bin/$tool"
     done
     rerun() {
-        env -u REQUIRE_CLAUDE_CLI PATH="$no_claude_bin" _MARKETPLACE_TEST_RERUN=1 "$@" \
+        env -u GITHUB_ACTIONS PATH="$no_claude_bin" _MARKETPLACE_TEST_RERUN=1 "$@" \
             "$BASH" "${BASH_SOURCE[0]}" 2>&1
     }
     if output=$(rerun) && grep -q "SKIP: the claude CLI is not on PATH" <<< "$output"; then
-        pass "without REQUIRE_CLAUDE_CLI, case (b) skips and the script exits 0"
+        pass "outside GitHub Actions, case (b) skips and the script exits 0"
     else
-        fail "without REQUIRE_CLAUDE_CLI, case (b) did not skip cleanly:
+        fail "outside GitHub Actions, case (b) did not skip cleanly:
 $output"
     fi
-    if ! output=$(rerun REQUIRE_CLAUDE_CLI=1) && grep -q "FAIL: the claude CLI is not on PATH" <<< "$output"; then
-        pass "with REQUIRE_CLAUDE_CLI=1, case (b) fails and the script exits non-zero"
+    if ! output=$(rerun GITHUB_ACTIONS=true) && grep -q "FAIL: the claude CLI is not on PATH" <<< "$output"; then
+        pass "with GITHUB_ACTIONS=true, case (b) fails and the script exits non-zero"
     else
-        fail "with REQUIRE_CLAUDE_CLI=1, case (b) did not fail:
+        fail "with GITHUB_ACTIONS=true, case (b) did not fail:
 $output"
     fi
 fi
