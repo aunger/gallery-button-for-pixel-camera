@@ -264,3 +264,23 @@ updates:
           - "mdformat"
           - "mdformat-gfm"
           - "mdformat-frontmatter"
+
+  # The Claude Code CLI that build.yml's shell-tests job installs to run `claude plugin validate` (issue #1416).
+  # Its version is exact in .github/claude-code/package.json, and the job installs it with `npm ci` from the committed package-lock.json beside it, so this entry is what moves it: each bump arrives as a pull request whose CI runs the validate with the new version.
+  # It covers only that CI pin.
+  # The Claude Code version the session-start hook and .claude/install-plugins.sh use is a separate pin, which #1406 left free to drift from this one.
+  #
+  # The directory holds that manifest and nothing else, so this entry proposes nothing but Claude Code.
+  # Its platform packages (`@anthropic-ai/claude-code-linux-x64` and the rest) are optionalDependencies of the one direct dependency, which names each at its own version, so they move in the same pull request and are not proposed on their own.
+  # scripts/test_dependabot_config.sh checks that each npm entry's directory holds a package.json and its package-lock.json, and that every dependency there is an exact version.
+  #
+  # Claude Code releases several times a week, so a weekly run usually proposes one bump spanning several releases, which is the intent: one validate run, and one review, per week.
+  # No `cooldown` key: GitHub's default three-day cooldown applies, and npm records each release's publish time, so it holds a bump the way it does for the gradle entry's Central-hosted coordinates.
+  # 13:00 Monday keeps the run an hour clear of the uv entry above.
+  - package-ecosystem: "npm"
+    directory: "/.github/claude-code"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "13:00"
+      timezone: "UTC"
