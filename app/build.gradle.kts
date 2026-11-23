@@ -145,10 +145,6 @@ android {
                 // StringResourceProseStyleTest enforces on every string resource (#935).
                 "TypographyDashes",
                 "TypographyEllipsis",
-                // Deferred to #1235: clearing it means deciding whether settings may move to a new
-                // phone by device-to-device transfer, which allowBackup="false" does not stop on
-                // some devices from Android 12.
-                "DataExtractionRules",
                 // Deferred to #1237: the foreground cannot double as the themed icon's monochrome
                 // layer, because it tells the gallery mark from the camera only by color, and a
                 // monochrome layer keeps only alpha. The icon needs a monochrome drawable of its own.

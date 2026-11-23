@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Backup rules for API 26-30, which ignore android:dataExtractionRules (issue #1235). Excludes
+    the per-install prefs file, Constants.INSTALL_PREFS_NAME, for the reason given in
+    data_extraction_rules.xml; keep the two in step.
+-->
+<full-backup-content>
+    <exclude domain="sharedpref" path="gb4pc_install_prefs.xml" />
+</full-backup-content>
