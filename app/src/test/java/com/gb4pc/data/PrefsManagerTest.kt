@@ -11,6 +11,8 @@ import org.mockito.kotlin.*
 class PrefsManagerTest {
     private lateinit var prefs: SharedPreferences
     private lateinit var editor: SharedPreferences.Editor
+    private lateinit var installPrefs: SharedPreferences
+    private lateinit var installEditor: SharedPreferences.Editor
     private lateinit var context: Context
     private lateinit var prefsManager: PrefsManager
 
@@ -25,14 +27,25 @@ class PrefsManagerTest {
             mock {
                 on { edit() } doReturn editor
                 on { getString(eq(Constants.PREF_GALLERY_PACKAGE), anyOrNull()) } doReturn null
-                on { getBoolean(eq(Constants.PREF_SERVICE_ENABLED), any()) } doReturn false
-                on { getBoolean(eq(Constants.PREF_SETUP_COMPLETED), any()) } doReturn false
                 on { getBoolean(eq(Constants.PREF_FOCUSABLE_OVERLAY), any()) } doReturn false
                 on { getString(eq(Constants.PREF_OVERLAY_POSITIONS), anyOrNull()) } doReturn ""
+            }
+        installEditor =
+            mock {
+                on { putBoolean(any(), anyOrNull<Boolean>() ?: false) } doReturn it
+            }
+        installPrefs =
+            mock {
+                on { edit() } doReturn installEditor
+                on { getBoolean(eq(Constants.PREF_SERVICE_ENABLED), any()) } doReturn false
+                on { getBoolean(eq(Constants.PREF_SETUP_COMPLETED), any()) } doReturn false
             }
         context =
             mock {
                 on { getSharedPreferences(eq(Constants.PREFS_NAME), eq(Context.MODE_PRIVATE)) } doReturn prefs
+                on {
+                    getSharedPreferences(eq(Constants.INSTALL_PREFS_NAME), eq(Context.MODE_PRIVATE))
+                } doReturn installPrefs
             }
         prefsManager = PrefsManager(context)
     }
@@ -43,10 +56,11 @@ class PrefsManagerTest {
     }
 
     @Test
-    fun `setServiceEnabled persists to prefs`() {
+    fun `setServiceEnabled persists to the per-install file`() {
         prefsManager.isServiceEnabled = true
-        verify(editor).putBoolean(Constants.PREF_SERVICE_ENABLED, true)
-        verify(editor).apply()
+        verify(installEditor).putBoolean(Constants.PREF_SERVICE_ENABLED, true)
+        verify(installEditor).apply()
+        verifyNoInteractions(editor)
     }
 
     @Test
@@ -59,11 +73,36 @@ class PrefsManagerTest {
         prefsManager.galleryPackage = "com.example.gallery"
         verify(editor).putString(Constants.PREF_GALLERY_PACKAGE, "com.example.gallery")
         verify(editor).apply()
+        verifyNoInteractions(installEditor)
     }
 
     @Test
     fun `isSetupCompleted returns false by default`() {
         assertFalse(prefsManager.isSetupCompleted)
+    }
+
+    @Test
+    fun `setSetupCompleted persists to the per-install file`() {
+        prefsManager.isSetupCompleted = true
+        verify(installEditor).putBoolean(Constants.PREF_SETUP_COMPLETED, true)
+        verify(installEditor).apply()
+        verifyNoInteractions(editor)
+    }
+
+    @Test
+    fun `setRuntimePermissionRequested persists to the per-install file`() {
+        prefsManager.setRuntimePermissionRequested("android.permission.CAMERA", true)
+        verify(installEditor).putBoolean(Constants.PREF_PERMISSION_REQUESTED_PREFIX + "android.permission.CAMERA", true)
+        verify(installEditor).apply()
+        verifyNoInteractions(editor)
+    }
+
+    @Test
+    fun `setPermissionHistorySeeded persists to the per-install file`() {
+        prefsManager.isPermissionHistorySeeded = true
+        verify(installEditor).putBoolean(Constants.PREF_PERMISSION_HISTORY_SEEDED, true)
+        verify(installEditor).apply()
+        verifyNoInteractions(editor)
     }
 
     @Test
@@ -153,5 +192,6 @@ class PrefsManagerTest {
         prefsManager.focusableOverlay = true
         verify(editor).putBoolean(Constants.PREF_FOCUSABLE_OVERLAY, true)
         verify(editor).apply()
+        verifyNoInteractions(installEditor)
     }
 }

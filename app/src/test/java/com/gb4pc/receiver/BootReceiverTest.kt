@@ -28,7 +28,10 @@ class BootReceiverTest {
             }
         context =
             mock {
-                on { getSharedPreferences(eq(Constants.PREFS_NAME), eq(Context.MODE_PRIVATE)) } doReturn prefs
+                on { getSharedPreferences(eq(Constants.PREFS_NAME), eq(Context.MODE_PRIVATE)) } doReturn mock()
+                on {
+                    getSharedPreferences(eq(Constants.INSTALL_PREFS_NAME), eq(Context.MODE_PRIVATE))
+                } doReturn prefs
                 on { startForegroundService(any()) } doReturn ComponentName("pkg", "cls")
             }
     }
