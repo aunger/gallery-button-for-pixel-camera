@@ -14,25 +14,10 @@ name: Backup & Restore
 # with the <device-transfer> exclusion removed. The device-transfer run must then bring the file
 # back, and the cloud run must still not, which shows each mode reaches its own section.
 
+# Off by default: it runs only when someone asks for it, from the Actions tab ("Run workflow",
+# on a branch) or with `gh workflow run backup-restore.yml --ref <branch>`. Run it when the backup
+# rules, the manifest's backup attributes, or which prefs file a key lives in change.
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/backup-restore.yml'
-      - 'scripts/ci/test-support/backup-restore-check.sh'
-      - 'app/src/main/res/xml/**'
-      - 'app/src/main/AndroidManifest.xml'
-      - 'app/src/main/java/com/gb4pc/Constants.kt'
-      - 'app/src/main/java/com/gb4pc/data/PrefsManager.kt'
-  pull_request:
-    branches: [main]
-    paths:
-      - '.github/workflows/backup-restore.yml'
-      - 'scripts/ci/test-support/backup-restore-check.sh'
-      - 'app/src/main/res/xml/**'
-      - 'app/src/main/AndroidManifest.xml'
-      - 'app/src/main/java/com/gb4pc/Constants.kt'
-      - 'app/src/main/java/com/gb4pc/data/PrefsManager.kt'
   workflow_dispatch:
 
 permissions:
