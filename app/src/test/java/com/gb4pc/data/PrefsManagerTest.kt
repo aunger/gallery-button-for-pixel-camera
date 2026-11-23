@@ -22,6 +22,7 @@ class PrefsManagerTest {
             mock {
                 on { putString(any(), any()) } doReturn it
                 on { putBoolean(any(), anyOrNull<Boolean>() ?: false) } doReturn it
+                on { putLong(any(), any()) } doReturn it
             }
         prefs =
             mock {
@@ -141,6 +142,7 @@ class PrefsManagerTest {
         prefsManager.saveOverlayPosition("0.45", OverlayPosition(25f, 85f, 12f))
         verify(editor).putString(eq(Constants.PREF_OVERLAY_POSITIONS), any())
         verify(editor).apply()
+        verifyNoInteractions(installEditor)
     }
 
     @Test
@@ -193,5 +195,59 @@ class PrefsManagerTest {
         verify(editor).putBoolean(Constants.PREF_FOCUSABLE_OVERLAY, true)
         verify(editor).apply()
         verifyNoInteractions(installEditor)
+    }
+
+    @Test
+    fun `setCameraDebounceMs persists to prefs`() {
+        prefsManager.cameraDebounceMs = 120L
+        verify(editor).putLong(Constants.PREF_CAMERA_DEBOUNCE_MS, 120L)
+        verify(editor).apply()
+        verifyNoInteractions(installEditor)
+    }
+
+    // Read side of the split (issue #1235). Each test stubs one file only; a mock answers the
+    // other file with false, null or 0, so a getter reading the wrong file fails the assertion.
+
+    @Test
+    fun `isServiceEnabled reads the per-install file`() {
+        whenever(installPrefs.getBoolean(eq(Constants.PREF_SERVICE_ENABLED), any())).thenReturn(true)
+        assertTrue(prefsManager.isServiceEnabled)
+    }
+
+    @Test
+    fun `isSetupCompleted reads the per-install file`() {
+        whenever(installPrefs.getBoolean(eq(Constants.PREF_SETUP_COMPLETED), any())).thenReturn(true)
+        assertTrue(prefsManager.isSetupCompleted)
+    }
+
+    @Test
+    fun `hasRequestedRuntimePermission reads the per-install file`() {
+        val key = Constants.PREF_PERMISSION_REQUESTED_PREFIX + "android.permission.CAMERA"
+        whenever(installPrefs.getBoolean(eq(key), any())).thenReturn(true)
+        assertTrue(prefsManager.hasRequestedRuntimePermission("android.permission.CAMERA"))
+    }
+
+    @Test
+    fun `isPermissionHistorySeeded reads the per-install file`() {
+        whenever(installPrefs.getBoolean(eq(Constants.PREF_PERMISSION_HISTORY_SEEDED), any())).thenReturn(true)
+        assertTrue(prefsManager.isPermissionHistorySeeded)
+    }
+
+    @Test
+    fun `galleryPackage reads prefs`() {
+        whenever(prefs.getString(eq(Constants.PREF_GALLERY_PACKAGE), anyOrNull())).thenReturn("com.example.gallery")
+        assertEquals("com.example.gallery", prefsManager.galleryPackage)
+    }
+
+    @Test
+    fun `cameraDebounceMs reads prefs`() {
+        whenever(prefs.getLong(eq(Constants.PREF_CAMERA_DEBOUNCE_MS), any())).thenReturn(120L)
+        assertEquals(120L, prefsManager.cameraDebounceMs)
+    }
+
+    @Test
+    fun `focusableOverlay reads prefs`() {
+        whenever(prefs.getBoolean(eq(Constants.PREF_FOCUSABLE_OVERLAY), any())).thenReturn(true)
+        assertTrue(prefsManager.focusableOverlay)
     }
 }
