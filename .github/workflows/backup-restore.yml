@@ -1,0 +1,189 @@
+name: Backup & Restore
+
+# Runs a real backup, data wipe and restore through the local transport, and checks that the
+# per-install prefs file stays out of it (issue #1235, PR #1430; checks #1431, #1432, #1433).
+# BackupRulesRobolectricTest checks only the contents of the rule files; this checks what Android
+# does with them. The checks live in scripts/ci/test-support/backup-restore-check.sh.
+#
+#   API 30  reads backup_rules.xml (android:fullBackupContent); dataExtractionRules is ignored.
+#   API 35  reads data_extraction_rules.xml: <cloud-backup>, and <device-transfer> when the local
+#           transport is told is_device_transfer=true.
+#
+# Both sections of data_extraction_rules.xml exclude the same file, so a pass on the real build
+# does not show which section was applied. API 35 therefore also builds a control: the same app
+# with the <device-transfer> exclusion removed. The device-transfer run must then bring the file
+# back, and the cloud run must still not, which shows each mode reaches its own section.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/backup-restore.yml'
+      - 'scripts/ci/test-support/backup-restore-check.sh'
+      - 'app/src/main/res/xml/**'
+      - 'app/src/main/AndroidManifest.xml'
+      - 'app/src/main/java/com/gb4pc/Constants.kt'
+      - 'app/src/main/java/com/gb4pc/data/PrefsManager.kt'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/backup-restore.yml'
+      - 'scripts/ci/test-support/backup-restore-check.sh'
+      - 'app/src/main/res/xml/**'
+      - 'app/src/main/AndroidManifest.xml'
+      - 'app/src/main/java/com/gb4pc/Constants.kt'
+      - 'app/src/main/java/com/gb4pc/data/PrefsManager.kt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup-restore:
+    name: backup-restore (API ${{ matrix.api }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [30, 35]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v6
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Android SDK
+        # see: scripts/ci/test_setup_android_packages.py
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+        with:
+          packages: platform-tools
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | \
+            sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Install emulator, system image, and create AVD
+        run: |
+          IMAGE="system-images;android-${{ matrix.api }};google_apis;x86_64"
+          bash scripts/ci/retry.sh 3 30 sdkmanager --install "emulator" "$IMAGE"
+
+          AVD_HOME="$HOME/.android/avd"
+          mkdir -p "$AVD_HOME"
+          echo "ANDROID_AVD_HOME=$AVD_HOME" >> $GITHUB_ENV
+          echo "no" | ANDROID_AVD_HOME="$AVD_HOME" avdmanager create avd \
+            --name backup_avd --package "$IMAGE" --device pixel_6 --force
+
+      - name: Build the debug APK
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+          mkdir -p build-apks
+          cp app/build/outputs/apk/debug/app-debug.apk build-apks/real.apk
+
+      - name: Build the control APK, without the device-transfer exclusion
+        if: matrix.api == 35
+        run: |
+          # Deletes the one <exclude> inside <device-transfer>, nothing else.
+          sed -i '/<device-transfer>/,/<\/device-transfer>/{/<exclude/d}' \
+            app/src/main/res/xml/data_extraction_rules.xml
+          git diff --stat -- app/src/main/res/xml/data_extraction_rules.xml
+          # The edit must have removed that line, and left the <cloud-backup> one.
+          test "$(git diff -U0 -- app/src/main/res/xml/data_extraction_rules.xml | grep -c '^-.*<exclude')" -eq 1
+          ./gradlew assembleDebug
+          cp app/build/outputs/apk/debug/app-debug.apk build-apks/control.apk
+          git checkout -- app/src/main/res/xml/data_extraction_rules.xml
+
+      - name: Start emulator
+        run: |
+          "$ANDROID_HOME/emulator/emulator" \
+            -avd backup_avd \
+            -no-window -no-audio -no-boot-anim -no-snapshot \
+            -gpu swiftshader_indirect \
+            > /tmp/emulator.log 2>&1 &
+          echo "EMULATOR_PID=$!" >> $GITHUB_ENV
+
+      - name: Wait for emulator service readiness
+        timeout-minutes: 10
+        run: |
+          ADB="$ANDROID_HOME/platform-tools/adb"
+          timeout 240 "$ADB" wait-for-device || {
+            echo "ERROR: Emulator did not appear on ADB after 240s" >&2
+            tail -80 /tmp/emulator.log >&2
+            exit 1
+          }
+          BOOT_START=$SECONDS
+          until [[ "$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]]; do
+            if [[ $((SECONDS - BOOT_START)) -ge 180 ]]; then
+              echo "ERROR: sys.boot_completed did not reach 1 within 180s of the device appearing." >&2
+              tail -80 /tmp/emulator.log >&2
+              exit 1
+            fi
+            sleep 5
+          done
+          SVC_START=$SECONDS
+          until "$ADB" shell settings get global airplane_mode_on > /dev/null 2>&1; do
+            if [[ $((SECONDS - SVC_START)) -ge 120 ]]; then
+              echo "ERROR: Services not ready after 120s post-boot." >&2
+              exit 1
+            fi
+            sleep 5
+          done
+          "$ADB" shell getprop ro.build.version.sdk
+
+      - name: Check the device is API ${{ matrix.api }}
+        run: |
+          sdk="$("$ANDROID_HOME/platform-tools/adb" shell getprop ro.build.version.sdk | tr -d '\r')"
+          test "$sdk" = "${{ matrix.api }}" || { echo "device is API $sdk" >&2; exit 1; }
+
+      - name: Real build, cloud backup
+        run: |
+          "$ANDROID_HOME/platform-tools/adb" install -r -t build-apks/real.apk
+          scripts/ci/test-support/backup-restore-check.sh "$ANDROID_HOME/platform-tools/adb" cloud excluded
+
+      - name: Real build, device transfer
+        if: matrix.api == 35
+        run: |
+          "$ANDROID_HOME/platform-tools/adb" install -r -t build-apks/real.apk
+          scripts/ci/test-support/backup-restore-check.sh "$ANDROID_HOME/platform-tools/adb" device-transfer excluded
+
+      - name: Control build, device transfer brings the file back
+        if: matrix.api == 35
+        run: |
+          "$ANDROID_HOME/platform-tools/adb" install -r -t build-apks/control.apk
+          scripts/ci/test-support/backup-restore-check.sh "$ANDROID_HOME/platform-tools/adb" device-transfer restored
+
+      - name: Control build, cloud backup still excludes it
+        if: matrix.api == 35
+        run: |
+          "$ANDROID_HOME/platform-tools/adb" install -r -t build-apks/control.apk
+          scripts/ci/test-support/backup-restore-check.sh "$ANDROID_HOME/platform-tools/adb" cloud excluded
+
+      - name: Upload emulator log
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: emulator-log-api-${{ matrix.api }}
+          path: /tmp/emulator.log
+          retention-days: 14
+
+      - name: Kill emulator
+        if: always()
+        run: kill "$EMULATOR_PID" 2>/dev/null || true
