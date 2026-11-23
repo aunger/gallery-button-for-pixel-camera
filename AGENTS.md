@@ -3,9 +3,10 @@
 - The development cycle for a GitHub issue or PR (Orchestrator, Programmer, Reviewer, Verification Planner, Verifier) is the `orchestrate` plugin from [aunger/dot-and-tilde](https://github.com/aunger/dot-and-tilde); its `README.md` there describes it.
   The user starts it with `/orchestrate <issue-number>`.
   The plugins come from `.claude/install-plugins.sh`, which installs `orchestrate`, `github-supplement`, `bag-o-agents` and `agent-citizenship` at the dot-and-tilde commit `.claude/gb4pc-tools/.claude-plugin/marketplace.json` pins; the session-start hook runs it in cloud sessions.
-  If `/orchestrate` or an `agent-citizenship` skill is missing, run `.claude/install-plugins.sh`, then ask the user to run `/reload-skills`.
-  Before that, check that the session's project directory is this checkout: with more than one repository attached it is their parent directory, where this repository's `.claude/settings.json` (the session-start hook) and its local-scope plugins do not load, and a manual install does not change that.
-  In that case stop and ask the user for a session with only this repository attached.
+  If `/orchestrate` or an `agent-citizenship` skill is missing, first look at the primary working directory your environment section reports.
+  If it is not inside this repository (its main checkout, or a worktree of it under `.claude/worktrees/`), but a directory that holds this checkout beside others, the session has more than one repository attached and that parent directory is its project.
+  There neither this repository's `.claude/settings.json` (and so the session-start hook) nor its local-scope plugins load, and running `.claude/install-plugins.sh` does not change that, so do not run it: stop and ask the user for a session with only this repository attached.
+  Otherwise, run `.claude/install-plugins.sh`, then ask the user to run `/reload-skills`.
   An agent that cannot load Claude Code plugins finds the agent-citizenship skills' text in [aunger/dot-and-tilde](https://github.com/aunger/dot-and-tilde)'s `plugins/agent-citizenship/skills/`, at the commit the marketplace pins.
   If you are asked to address an issue or PR without a specific assigned role, say that the cycle is started with `/orchestrate` rather than entering a role yourself.
   Its project-specific settings (the repository, the named CI checks, the verification-plan marker, the CI Monitor's regexes) are in `.claude/orchestrate.json`; `scripts/test_orchestrate_config.py` checks that file.
