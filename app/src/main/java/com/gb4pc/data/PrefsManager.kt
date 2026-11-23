@@ -11,9 +11,10 @@ import org.json.JSONObject
  *
  * Settings live in two files (issue #1235). [prefs] holds the user's choices, which cloud backup
  * and device transfer may carry to a new phone. [installPrefs] holds state that is true of this
- * install only: whether the service is on, whether setup has finished, and which permission
- * dialogs have been shown. The backup rules exclude that file, because a carried value would
- * describe permissions the new phone has never granted or been asked for.
+ * install only: whether the service is on, whether setup has finished, which permission dialogs
+ * have been shown, and whether the one-time backfill of that record has run. The backup rules
+ * exclude that file, because a carried value would describe permissions the new phone has never
+ * granted or been asked for.
  *
  * Overlay positions are serialized as JSON keyed by quantized aspect ratio (DA-02).
  */
