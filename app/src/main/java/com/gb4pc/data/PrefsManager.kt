@@ -9,6 +9,13 @@ import org.json.JSONObject
 /**
  * Manages all app settings via SharedPreferences (DA-01).
  *
+ * Settings live in two files (issue #1235). [prefs] holds the user's choices, which cloud backup
+ * and device transfer may carry to a new phone. [installPrefs] holds state that is true of this
+ * install only: whether the service is on, whether setup has finished, which permission dialogs
+ * have been shown, and whether the one-time backfill of that record has run. The backup rules
+ * exclude that file, because a carried value would describe permissions the new phone has never
+ * granted or been asked for.
+ *
  * Overlay positions are serialized as JSON keyed by quantized aspect ratio (DA-02).
  */
 class PrefsManager(
@@ -17,17 +24,20 @@ class PrefsManager(
     private val prefs: SharedPreferences =
         context.getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE)
 
+    private val installPrefs: SharedPreferences =
+        context.getSharedPreferences(Constants.INSTALL_PREFS_NAME, Context.MODE_PRIVATE)
+
     var isServiceEnabled: Boolean
-        get() = prefs.getBoolean(Constants.PREF_SERVICE_ENABLED, false)
-        set(value) = prefs.edit { putBoolean(Constants.PREF_SERVICE_ENABLED, value) }
+        get() = installPrefs.getBoolean(Constants.PREF_SERVICE_ENABLED, false)
+        set(value) = installPrefs.edit { putBoolean(Constants.PREF_SERVICE_ENABLED, value) }
 
     var galleryPackage: String?
         get() = prefs.getString(Constants.PREF_GALLERY_PACKAGE, null)
         set(value) = prefs.edit { putString(Constants.PREF_GALLERY_PACKAGE, value) }
 
     var isSetupCompleted: Boolean
-        get() = prefs.getBoolean(Constants.PREF_SETUP_COMPLETED, false)
-        set(value) = prefs.edit { putBoolean(Constants.PREF_SETUP_COMPLETED, value) }
+        get() = installPrefs.getBoolean(Constants.PREF_SETUP_COMPLETED, false)
+        set(value) = installPrefs.edit { putBoolean(Constants.PREF_SETUP_COMPLETED, value) }
 
     var cameraDebounceMs: Long
         get() = prefs.getLong(Constants.PREF_CAMERA_DEBOUNCE_MS, Constants.CAMERA_DEBOUNCE_MS)
@@ -47,20 +57,20 @@ class PrefsManager(
      * is what separates them. See `PermissionHelper.permissionRequestRoute`.
      */
     fun hasRequestedRuntimePermission(permission: String): Boolean =
-        prefs.getBoolean(Constants.PREF_PERMISSION_REQUESTED_PREFIX + permission, false)
+        installPrefs.getBoolean(Constants.PREF_PERMISSION_REQUESTED_PREFIX + permission, false)
 
     /**
      * Whether the one-time backfill of [hasRequestedRuntimePermission] has already run on this
      * install (issue #572). See `PermissionHelper.seedPermissionRequestHistoryForUpgrade`.
      */
     var isPermissionHistorySeeded: Boolean
-        get() = prefs.getBoolean(Constants.PREF_PERMISSION_HISTORY_SEEDED, false)
-        set(value) = prefs.edit { putBoolean(Constants.PREF_PERMISSION_HISTORY_SEEDED, value) }
+        get() = installPrefs.getBoolean(Constants.PREF_PERMISSION_HISTORY_SEEDED, false)
+        set(value) = installPrefs.edit { putBoolean(Constants.PREF_PERMISSION_HISTORY_SEEDED, value) }
 
     fun setRuntimePermissionRequested(
         permission: String,
         requested: Boolean,
-    ) = prefs.edit { putBoolean(Constants.PREF_PERMISSION_REQUESTED_PREFIX + permission, requested) }
+    ) = installPrefs.edit { putBoolean(Constants.PREF_PERMISSION_REQUESTED_PREFIX + permission, requested) }
 
     /**
      * Returns the overlay position for the given aspect ratio.

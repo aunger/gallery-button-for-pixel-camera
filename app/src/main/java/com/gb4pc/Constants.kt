@@ -38,8 +38,13 @@ object Constants {
     const val NOTIFICATION_PERMISSION_ID = 2
     const val NOTIFICATION_MEDIA_PERMISSION_ID = 3
 
-    // SharedPreferences
+    // SharedPreferences. PREFS_NAME holds settings that may follow the user to a new phone by
+    // cloud backup or device transfer. INSTALL_PREFS_NAME holds state that describes this install
+    // only (what setup and the permission dialogs have done here, and whether the service is on),
+    // and res/xml/data_extraction_rules.xml and res/xml/backup_rules.xml keep it out of both
+    // (issue #1235). PrefsManager decides which file each key lives in.
     const val PREFS_NAME = "gb4pc_prefs"
+    const val INSTALL_PREFS_NAME = "gb4pc_install_prefs"
     const val PREF_SERVICE_ENABLED = "service_enabled"
     const val PREF_GALLERY_PACKAGE = "gallery_package"
     const val PREF_OVERLAY_POSITIONS = "overlay_positions"

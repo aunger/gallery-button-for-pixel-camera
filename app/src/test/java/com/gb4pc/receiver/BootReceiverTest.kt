@@ -17,18 +17,21 @@ import org.mockito.kotlin.whenever
 
 class BootReceiverTest {
     private lateinit var context: Context
-    private lateinit var prefs: SharedPreferences
+    private lateinit var installPrefs: SharedPreferences
     private val receiver = BootReceiver()
 
     @Before
     fun setUp() {
-        prefs =
+        installPrefs =
             mock {
                 on { getBoolean(eq(Constants.PREF_SERVICE_ENABLED), any()) } doReturn false
             }
         context =
             mock {
-                on { getSharedPreferences(eq(Constants.PREFS_NAME), eq(Context.MODE_PRIVATE)) } doReturn prefs
+                on { getSharedPreferences(eq(Constants.PREFS_NAME), eq(Context.MODE_PRIVATE)) } doReturn mock()
+                on {
+                    getSharedPreferences(eq(Constants.INSTALL_PREFS_NAME), eq(Context.MODE_PRIVATE))
+                } doReturn installPrefs
                 on { startForegroundService(any()) } doReturn ComponentName("pkg", "cls")
             }
     }
@@ -37,7 +40,7 @@ class BootReceiverTest {
 
     @Test
     fun `BOOT_COMPLETED with service enabled starts foreground service`() {
-        whenever(prefs.getBoolean(Constants.PREF_SERVICE_ENABLED, false)).thenReturn(true)
+        whenever(installPrefs.getBoolean(Constants.PREF_SERVICE_ENABLED, false)).thenReturn(true)
 
         receiver.onReceive(context, intentWithAction(Intent.ACTION_BOOT_COMPLETED))
 
@@ -46,7 +49,7 @@ class BootReceiverTest {
 
     @Test
     fun `BOOT_COMPLETED with service disabled does not start service`() {
-        whenever(prefs.getBoolean(Constants.PREF_SERVICE_ENABLED, false)).thenReturn(false)
+        whenever(installPrefs.getBoolean(Constants.PREF_SERVICE_ENABLED, false)).thenReturn(false)
 
         receiver.onReceive(context, intentWithAction(Intent.ACTION_BOOT_COMPLETED))
 
@@ -55,7 +58,7 @@ class BootReceiverTest {
 
     @Test
     fun `MY_PACKAGE_REPLACED with service enabled starts foreground service`() {
-        whenever(prefs.getBoolean(Constants.PREF_SERVICE_ENABLED, false)).thenReturn(true)
+        whenever(installPrefs.getBoolean(Constants.PREF_SERVICE_ENABLED, false)).thenReturn(true)
 
         receiver.onReceive(context, intentWithAction(Intent.ACTION_MY_PACKAGE_REPLACED))
 
@@ -64,7 +67,7 @@ class BootReceiverTest {
 
     @Test
     fun `MY_PACKAGE_REPLACED with service disabled does not start service`() {
-        whenever(prefs.getBoolean(Constants.PREF_SERVICE_ENABLED, false)).thenReturn(false)
+        whenever(installPrefs.getBoolean(Constants.PREF_SERVICE_ENABLED, false)).thenReturn(false)
 
         receiver.onReceive(context, intentWithAction(Intent.ACTION_MY_PACKAGE_REPLACED))
 
@@ -73,7 +76,7 @@ class BootReceiverTest {
 
     @Test
     fun `unrecognized action is ignored regardless of pref`() {
-        whenever(prefs.getBoolean(Constants.PREF_SERVICE_ENABLED, false)).thenReturn(true)
+        whenever(installPrefs.getBoolean(Constants.PREF_SERVICE_ENABLED, false)).thenReturn(true)
 
         receiver.onReceive(context, intentWithAction("com.example.OTHER"))
 
@@ -82,7 +85,7 @@ class BootReceiverTest {
 
     @Test
     fun `intent with null action is ignored`() {
-        whenever(prefs.getBoolean(Constants.PREF_SERVICE_ENABLED, false)).thenReturn(true)
+        whenever(installPrefs.getBoolean(Constants.PREF_SERVICE_ENABLED, false)).thenReturn(true)
 
         receiver.onReceive(context, intentWithAction(null))
 
