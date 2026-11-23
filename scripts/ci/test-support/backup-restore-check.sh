@@ -65,8 +65,13 @@ write_prefs() {
 # read_prefs <file>: prints the file, or nothing when it is absent.
 read_prefs() { "$ADB" shell "run-as $PKG cat shared_prefs/$1" 2> /dev/null | tr -d '\r'; }
 
+# A package that was installed and never launched is in the stopped state, which the backup
+# manager can refuse to back up; launch once, then seed without touching the app again.
+echo "=== Launching the app once"
+"$ADB" shell monkey -p "$PKG" -c android.intent.category.LAUNCHER 1 > /dev/null 2>&1 || true
+sleep 5
+
 echo "=== Seeding both prefs files"
-"$ADB" shell am force-stop "$PKG"
 write_prefs "$PREFS" '    <string name="gallery_package">com.example.gallery</string>
     <string name="overlay_positions">backup-restore-check</string>
     <long name="camera_debounce_ms" value="123" />
@@ -89,24 +94,38 @@ fi
 echo "=== Backing up"
 backup_out="$("$ADB" shell bmgr backupnow "$PKG" 2>&1)"
 echo "$backup_out"
-grep -q "Success" <<< "$backup_out" || fail "bmgr backupnow did not report Success"
+if ! grep -q "Package $PKG with result: Success" <<< "$backup_out"; then
+  echo "--- diagnostics" >&2
+  "$ADB" shell dumpsys package "$PKG" | grep -iE "flags=|pkgFlags|stopped|versionName|targetSdk" >&2 || true
+  "$ADB" shell dumpsys backup | head -60 >&2 || true
+  fail "bmgr backupnow did not report Success for $PKG"
+fi
 
 echo "=== Clearing the app's data"
 "$ADB" shell pm clear "$PKG" | grep -q Success || fail "pm clear did not report Success"
 [[ -z "$(read_prefs "$PREFS")" ]] || fail "$PREFS survived pm clear, so the restore proves nothing"
 
 echo "=== Restoring"
-restore_out="$("$ADB" shell bmgr restore "$PKG" 2>&1)"
-echo "$restore_out"
+# `bmgr restore <package>` is rejected on API 30 and 35 ("restore <token> <package>" is required),
+# so list the transport's restore sets and try each token until the settings file reappears.
+sets_out="$("$ADB" shell bmgr list sets 2>&1)"
+echo "$sets_out"
+tokens="$(sed -n 's/^[[:space:]]*\([0-9a-fA-F][0-9a-fA-F]*\)[[:space:]]*:.*/\1/p' <<< "$sets_out")"
+[[ -n "$tokens" ]] || fail "bmgr list sets showed no restore set"
 
 # The restore is asynchronous: wait, up to a bound, for the settings file to reappear.
-WAIT_START=$SECONDS
-until [[ -n "$(read_prefs "$PREFS")" ]]; do
-  if [[ $((SECONDS - WAIT_START)) -ge 60 ]]; then
-    fail "$PREFS did not come back within 60s of bmgr restore"
-  fi
-  sleep 2
+restored=false
+for token in $tokens; do
+  echo "--- bmgr restore $token $PKG"
+  "$ADB" shell bmgr restore "$token" "$PKG" 2>&1
+  WAIT_START=$SECONDS
+  until [[ -n "$(read_prefs "$PREFS")" ]]; do
+    [[ $((SECONDS - WAIT_START)) -ge 30 ]] && break
+    sleep 2
+  done
+  if [[ -n "$(read_prefs "$PREFS")" ]]; then restored=true; break; fi
 done
+$restored || fail "$PREFS did not come back from any restore set within 30s each"
 
 echo "=== Restored files"
 restored_settings="$(read_prefs "$PREFS")"
