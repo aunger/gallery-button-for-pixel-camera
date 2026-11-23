@@ -3,7 +3,7 @@ package com.gb4pc.receiver
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import com.gb4pc.Constants
+import com.gb4pc.data.PrefsManager
 import com.gb4pc.service.OverlayService
 import com.gb4pc.util.DebugLog
 
@@ -21,8 +21,7 @@ class BootReceiver : BroadcastReceiver() {
         if (!isBoot && !isInstallOrUpdate) return
 
         val trigger = if (isBoot) "Boot" else "Install/update"
-        val prefs = context.getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE)
-        val wasEnabled = prefs.getBoolean(Constants.PREF_SERVICE_ENABLED, false)
+        val wasEnabled = PrefsManager(context).isServiceEnabled
         DebugLog.log("$trigger completed: serviceWasEnabled=$wasEnabled")
 
         if (wasEnabled) {
