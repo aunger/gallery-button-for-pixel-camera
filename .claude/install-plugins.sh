@@ -52,16 +52,14 @@
 # compaction.
 #
 # The session-start hook runs this in cloud sessions. Elsewhere, or when the hook
-# did not run, run it by hand from anywhere. The exception is a cloud session with
-# more than one repository attached: its project is their parent directory, so the
-# hook does not run and installs recorded for this checkout do not load there
-# either; such a session needs only this repository attached. A cloud
-# environment's Setup script can also run it before Claude Code launches, which
-# then loads the plugins at startup
-# (aunger/dot-and-tilde#1). A plugin installed while Claude Code is
-# running loads only after the user runs /reload-skills; one that `plugin update`
-# moved to a new pin takes effect only after Claude Code restarts, as that command
-# itself says.
+# did not run, run it by hand from anywhere, except in a cloud session with more
+# than one repository attached, whose project is their parent directory: the
+# plugins it installs for this checkout do not load there. A cloud environment's
+# Setup script can also run it before Claude Code launches, which then loads the
+# plugins at startup (aunger/dot-and-tilde#1). A plugin installed while Claude
+# Code is running loads only after the user runs /reload-skills; one that `plugin
+# update` moved to a new pin takes effect only after Claude Code restarts, as that
+# command itself says.
 #
 # Output: the claude commands' own output goes to stderr. Stdout is one line, which
 # the session-start hook passes into the session's context: whether the run changed

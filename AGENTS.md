@@ -3,9 +3,7 @@
 - The development cycle for a GitHub issue or PR (Orchestrator, Programmer, Reviewer, Verification Planner, Verifier) is the `orchestrate` plugin from [aunger/dot-and-tilde](https://github.com/aunger/dot-and-tilde); its `README.md` there describes it.
   The user starts it with `/orchestrate <issue-number>`.
   The plugins come from `.claude/install-plugins.sh`, which installs `orchestrate`, `github-supplement`, `bag-o-agents` and `agent-citizenship` at the dot-and-tilde commit `.claude/gb4pc-tools/.claude-plugin/marketplace.json` pins; the session-start hook runs it in cloud sessions.
-  If `/orchestrate` or an `agent-citizenship` skill is missing, first look at the primary working directory your environment section reports.
-  If it is not inside this repository (its main checkout, or a worktree of it under `.claude/worktrees/`), but a directory that holds this checkout beside others, the session has more than one repository attached and that parent directory is its project.
-  There neither this repository's `.claude/settings.json` (and so the session-start hook) nor its local-scope plugins load, and running `.claude/install-plugins.sh` does not change that, so do not run it: stop and ask the user for a session with only this repository attached.
+  If `/orchestrate` or an `agent-citizenship` skill is missing and your primary working directory is outside this repository (a parent holding several checkouts), the plugins cannot load in this session; ask the user for one with only this repository attached.
   Otherwise, run `.claude/install-plugins.sh`, then ask the user to run `/reload-skills`.
   An agent that cannot load Claude Code plugins finds the agent-citizenship skills' text in [aunger/dot-and-tilde](https://github.com/aunger/dot-and-tilde)'s `plugins/agent-citizenship/skills/`, at the commit the marketplace pins.
   If you are asked to address an issue or PR without a specific assigned role, say that the cycle is started with `/orchestrate` rather than entering a role yourself.
