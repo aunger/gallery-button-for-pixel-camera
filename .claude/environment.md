@@ -24,6 +24,7 @@ The orchestrate development cycle, the `deep-planner` agent, the `PostToolUse` h
 The hook's Step 0a runs that script in cloud sessions; elsewhere, run it by hand.
 
 - **Scope.** The installs are at local scope, recorded in this checkout's gitignored `.claude/settings.local.json`, so the plugins and their hooks are enabled in this repository only.
+  A cloud session with more than one repository attached has their parent directory as its project, so neither this repository's `.claude/settings.json` (and the hook) nor its local-scope plugins load there; the plugins need a session with only this repository attached.
 - **Network.** A run that installs or moves a plugin fetches the pinned commit of `aunger/dot-and-tilde` from GitHub.
   A run that finds every plugin already at the pin makes one `claude plugin list --json` call and nothing else.
 - **Loading.** Claude Code loads plugins when it starts, and the hook runs after that, so a plugin the hook installs is missing from the session until the user runs `/reload-skills`.
