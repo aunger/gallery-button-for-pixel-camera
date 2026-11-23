@@ -16,7 +16,7 @@ name: Backup & Restore
 
 on:
   push:
-    branches: [main]
+    branches: [main, ccr-72ea257a-3gggyq]
     paths:
       - '.github/workflows/backup-restore.yml'
       - 'scripts/ci/test-support/backup-restore-check.sh'
